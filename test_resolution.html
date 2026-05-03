@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Resolution Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        #log { background: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; }
+        .success { color: green; font-weight: bold; }
+        .fail { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Google Maps Resolution Debug</h1>
+    <div id="status">Testing link: <span id="link">https://maps.app.goo.gl/9SAHH2t8aCYJ3xBo9?g_st=ic</span></div>
+    <hr>
+    <div id="log">Initializing...</div>
+
+    <script>
+        const logEl = document.getElementById('log');
+        const log = (msg) => { logEl.textContent += msg + '\n'; console.log(msg); };
+
+        async function testResolution() {
+            const googleMapsLink = "https://maps.app.goo.gl/9SAHH2t8aCYJ3xBo9?g_st=ic";
+            log(`Testing link: ${googleMapsLink}`);
+
+            const tryExtract = (text) => {
+                if (!text || typeof text !== 'string' || text.length < 5) return null;
+                log(`  Checking text length: ${text.length}`);
+                
+                let m = text.match(/@(-?\d+\.\d+)\s*[,|%2C]\s*(-?\d+\.\d+)/i) ||
+                        text.match(/[?&](?:q|ll|query|center|markers|latlng|daddr)=(-?\d+\.\d+)\s*[,|%2C]\s*(-?\d+\.\d+)/i);
+                
+                if (!m) {
+                    const latM = text.match(/!3d(-?\d+\.\d+)/);
+                    const lngM = text.match(/!(?:2d|4d)(-?\d+\.\d+)/);
+                    if (latM && lngM) m = [null, latM[1], lngM[1]];
+                }
+
+                if (!m) {
+                    const brute = text.matchAll(/(-?\d+\.\d+)\s*[,|%2C]\s*(-?\d+\.\d+)/g);
+                    for (const b of brute) {
+                        const lat = parseFloat(b[1]);
+                        const lng = parseFloat(b[2]);
+                        if (lat > 15 && lat < 33 && lng > 33 && lng < 56) {
+                            log(`    Brute match found: ${lat}, ${lng}`);
+                            return b;
+                        }
+                    }
+                }
+                return m;
+            };
+
+            const proxies = [
+                `https://api.allorigins.win/get?url=${encodeURIComponent(googleMapsLink)}`,
+                `https://corsproxy.io/?${encodeURIComponent(googleMapsLink)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(googleMapsLink)}`
+            ];
+
+            let finalMatch = null;
+
+            for (const proxy of proxies) {
+                log(`\nTrying Proxy: ${proxy.split('?')[0]}...`);
+                try {
+                    const res = await fetch(proxy);
+                    log(`  Response Status: ${res.status}`);
+                    
+                    const contentType = res.headers.get('content-type') || '';
+                    log(`  Content-Type: ${contentType}`);
+                    
+                    let content = '';
+                    if (contentType.includes('application/json')) {
+                        const data = await res.json();
+                        log(`  JSON parsed successfully`);
+                        if (data.status?.url) {
+                            log(`  Found resolved URL: ${data.status.url}`);
+                            finalMatch = tryExtract(data.status.url);
+                        }
+                        content = data.contents || JSON.stringify(data);
+                    } else {
+                        content = await res.text();
+                        log(`  Text content loaded (${content.length} chars)`);
+                    }
+
+                    if (!finalMatch && content) {
+                        finalMatch = tryExtract(content);
+                    }
+
+                    if (finalMatch) {
+                        log(`\nSUCCESS via ${proxy.split('?')[0]}`);
+                        log(`Result: ${finalMatch[1]}, ${finalMatch[2]}`);
+                        break;
+                    }
+                } catch (e) {
+                    log(`  ERROR: ${e.message}`);
+                }
+            }
+
+            if (finalMatch) {
+                document.body.innerHTML += `<div class="success">TEST PASSED: Found ${finalMatch[1]}, ${finalMatch[2]}</div>`;
+            } else {
+                document.body.innerHTML += `<div class="fail">TEST FAILED: No coordinates found.</div>`;
+            }
+        }
+
+        testResolution();
+    </script>
+</body>
+</html>

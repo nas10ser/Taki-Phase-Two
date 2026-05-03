@@ -1,0 +1,144 @@
+import React from 'react';
+import { useHistory } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
+import Navbar from '../components/Navbar';
+import BottomNav from '../components/BottomNav';
+
+const Notifications: React.FC = () => {
+    const history = useHistory();
+    const { 
+        notifications, 
+        markNotifRead, 
+        language, 
+        user, 
+        loading 
+    } = useApp();
+
+    const isRTL = language === 'ar';
+
+    if (loading) {
+        return (
+            <div style={{ padding: 20, textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
+                {isRTL ? 'جاري التحميل...' : 'Loading...'}
+            </div>
+        );
+    }
+
+    if (!user) {
+        return (
+            <div style={{ padding: 40, textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
+                <div style={{ fontSize: '3rem', marginBottom: 20 }}>🔒</div>
+                <h2>{isRTL ? 'يرجى تسجيل الدخول' : 'Please Sign In'}</h2>
+                <button 
+                    onClick={() => history.push('/register')}
+                    style={{
+                        marginTop: 20, padding: '12px 24px', borderRadius: 12,
+                        background: 'var(--primary)', color: 'white', border: 'none',
+                        fontWeight: 900, cursor: 'pointer'
+                    }}
+                >
+                    {isRTL ? 'تسجيل الدخول' : 'Sign In'}
+                </button>
+                <BottomNav />
+            </div>
+        );
+    }
+
+    const myNotifications = notifications.filter(n => n.userId === user.id)
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+    return (
+        <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', paddingBottom: 100, direction: isRTL ? 'rtl' : 'ltr' }}>
+            <Navbar />
+            
+            <div style={{ padding: '20px 16px' }}>
+                <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: 20, boxShadow: 'var(--shadow-sm)' }}>
+                    <h1 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        📬 {isRTL ? 'الإشعارات' : 'Notifications'}
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>
+                            {myNotifications.length}
+                        </span>
+                    </h1>
+
+                    {myNotifications.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {myNotifications.map(n => {
+                                const dealId = n.metadata?.dealId;
+                                const followerId = n.metadata?.followerId;
+                                const dest = dealId
+                                    ? `/deal/${dealId}${n.metadata?.barcode ? `?barcode=${n.metadata.barcode}` : ''}`
+                                    : n.type === 'booking' && user.userType === 'seller'
+                                        ? '/seller?tab=orders'
+                                        : n.type === 'booking'
+                                            ? '/bookings'
+                                            : n.type === 'follow' || followerId
+                                                ? '/profile'
+                                                : n.type === 'marketing'
+                                                    ? '/'
+                                                    : null;
+
+                                const isHighPriority = !n.isRead && (
+                                    n.type === 'follow' || 
+                                    n.metadata?.followerId ||
+                                    n.title.ar.includes('حجز جديد') || 
+                                    n.title.en.includes('New Booking') || 
+                                    n.title.ar.includes('تفاصيل') || 
+                                    n.title.en.includes('Prep') ||
+                                    n.title.ar.includes('متابع') ||
+                                    n.title.en.includes('Follow')
+                                );
+
+                                return (
+                                    <button
+                                        key={n.id}
+                                        onClick={() => {
+                                            if (!n.isRead) markNotifRead(n.id);
+                                            if (dest) history.push(dest);
+                                        }}
+                                        style={{
+                                            textAlign: isRTL ? 'right' : 'left',
+                                            background: n.isRead ? 'var(--card-bg)' : isHighPriority ? 'var(--danger-light)' : 'var(--notif-unread-bg)',
+                                            border: n.isRead ? '1px solid var(--border-color)' : `1.5px solid ${isHighPriority ? 'var(--danger)' : 'var(--accent)'}`,
+                                            padding: '16px 18px',
+                                            borderRadius: 20,
+                                            cursor: dest ? 'pointer' : 'default',
+                                            display: 'flex', 
+                                            flexDirection: 'column', 
+                                            gap: 6,
+                                            width: '100%',
+                                            position: 'relative',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: !n.isRead ? '0 4px 12px var(--accent-glow)' : 'none',
+                                            transform: !n.isRead ? 'scale(1.01)' : 'scale(1)'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 900, color: 'var(--text-primary)', fontSize: '1rem' }}>
+                                            {!n.isRead && <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', display: 'inline-block', flexShrink: 0 }} />}
+                                            {isRTL ? n.title.ar : n.title.en}
+                                        </div>
+                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5, fontWeight: 500 }}>
+                                            {isRTL ? n.body.ar : n.body.en}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 800, marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                                            {new Date(n.createdAt).toLocaleString(isRTL ? 'ar-SA' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
+                            <div style={{ fontSize: '4rem', marginBottom: 20 }}>📭</div>
+                            <h3 style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد إشعارات حالياً' : 'No notifications yet'}</h3>
+                            <p style={{ fontSize: '0.9rem', marginTop: 10 }}>{isRTL ? 'سنقوم بتنبيهك عند توفر عروض جديدة تهمك' : 'We will notify you when relevant new deals arrive'}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <BottomNav />
+        </div>
+    );
+};
+
+export default Notifications;

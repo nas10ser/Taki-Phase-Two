@@ -1,0 +1,100 @@
+<!--
+  TAKI — Confirm Signup email template
+  Place into:  Supabase Dashboard → Authentication → Email Templates → "Confirm signup"
+  Template variables:
+    {{ .Token }}            → 6-digit code the user types into the app
+    {{ .ConfirmationURL }}  → magic link that confirms the email in one click
+  Both are included so the user can choose whichever is convenient.
+-->
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>TAKI — تأكيد التسجيل</title>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:'Tajawal','Segoe UI',Tahoma,sans-serif;color:#1e293b;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0"
+               style="max-width:520px;background:#ffffff;border-radius:16px;
+                      box-shadow:0 8px 32px rgba(0,137,123,0.08);overflow:hidden;">
+          <!-- Brand strip -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#00897b 0%,#0f766e 100%);
+                       padding:28px 24px;text-align:center;">
+              <div style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">
+                TAKI
+              </div>
+              <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px;">
+                منصة حجوزات التخفيضات
+              </div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 28px 8px 28px;">
+              <h2 style="margin:0 0 8px 0;font-size:20px;font-weight:800;color:#0f172a;">
+                مرحباً بك في تاكي 👋
+              </h2>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.7;color:#475569;">
+                لإكمال إنشاء حسابك، استخدم أحد الخيارين أدناه — أيهما أسهل لك.
+              </p>
+
+              <!-- Option 1: Code -->
+              <div style="background:#f0fdfa;border:1px dashed #14b8a6;border-radius:12px;
+                          padding:20px;text-align:center;margin-bottom:18px;">
+                <div style="font-size:12px;color:#0f766e;font-weight:700;
+                            letter-spacing:1px;margin-bottom:8px;">
+                  الخيار 1 — أدخل هذا الكود في التطبيق
+                </div>
+                <div style="font-size:36px;font-weight:900;color:#0f766e;
+                            letter-spacing:8px;font-family:'Courier New',monospace;">
+                  {{ .Token }}
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-top:8px;">
+                  صالح لمدة 60 دقيقة
+                </div>
+              </div>
+
+              <!-- Divider -->
+              <div style="text-align:center;color:#94a3b8;font-size:12px;margin:18px 0;">
+                — أو —
+              </div>
+
+              <!-- Option 2: Link -->
+              <div style="text-align:center;margin-bottom:8px;">
+                <div style="font-size:12px;color:#475569;margin-bottom:12px;">
+                  الخيار 2 — اضغط الزر للتأكيد التلقائي
+                </div>
+                <a href="{{ .ConfirmationURL }}"
+                   style="display:inline-block;background:#00897b;color:#ffffff;
+                          text-decoration:none;font-weight:800;font-size:15px;
+                          padding:13px 36px;border-radius:10px;
+                          box-shadow:0 4px 12px rgba(0,137,123,0.3);">
+                  تأكيد البريد الآن
+                </a>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:18px 28px 28px 28px;border-top:1px solid #e2e8f0;
+                       margin-top:16px;">
+              <p style="margin:0 0 8px 0;font-size:12px;color:#94a3b8;line-height:1.6;">
+                إن لم تطلب إنشاء حساب في تاكي، تجاهل هذه الرسالة بأمان — لن يتم تفعيل أي حساب
+                بدون تأكيدك.
+              </p>
+              <p style="margin:0;font-size:11px;color:#cbd5e1;text-align:center;">
+                © TAKI · {{ .SiteURL }}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

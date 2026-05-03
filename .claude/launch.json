@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "TAKI",
+      "runtimeExecutable": "/Users/nasser/Desktop/TAKI/node_modules/.bin/parcel",
+      "runtimeArgs": ["index.html", "--public-url", "/", "--host", "127.0.0.1"],
+      "port": 1234
+    }
+  ]
+}

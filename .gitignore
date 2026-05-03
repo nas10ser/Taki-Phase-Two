@@ -1,0 +1,10 @@
+node_modules/
+.env
+.cache/
+.parcel-cache/
+dist/
+.DS_Store
+*.log
+api/node_modules/
+supabase/.temp/
+everything-claude-code/
