@@ -12,6 +12,8 @@ import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
+import { realtimeService } from '../services/realtimeService';
+import { supabase } from '../services/supabaseClient';
 
 interface StoreProfile {
     phone?: string;
@@ -71,7 +73,8 @@ interface AppContextType {
     bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string) => any;
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
-    acknowledgeBooking: (barcode: string) => void;
+    acknowledgeBooking: (barcode: string, note?: string) => void;
+    customPrompt: (message: string) => Promise<string | null>;
     refreshBookings: () => Promise<void>;
     refreshDeals: () => Promise<void>;
     storeProfiles: Record<string, StoreProfile>;
@@ -98,6 +101,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [language, setLanguageState] = useState<'ar' | 'en'>('ar');
 
     const [deals, setDeals] = useState<Deal[]>([]);
+    const dealsRef = useRef<Deal[]>([]);
+    useEffect(() => { dealsRef.current = deals; }, [deals]);
+
+
     // Tracks deals the seller (or any local action) just wrote, so the
     // realtime echo can't clobber the optimistic status with a stale
     // packet — the recurring "pause flips back to active" bug. Each entry
@@ -125,6 +132,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     });
     const [favorites, setFavorites] = useState<string[]>([]);
+    const favoritesRef = useRef<string[]>([]);
+    useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
     const [followedMerchants, setFollowedMerchants] = useState<string[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [bookings, setBookings] = useState<any[]>([]);
@@ -138,6 +147,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         completed: 2,
         cancelled: 2
     };
+
+    const [promptConfig, setPromptConfig] = useState<{message: string, resolve: (val: string | null) => void} | null>(null);
+
+    const customPrompt = useCallback((message: string): Promise<string | null> => {
+        return new Promise(resolve => {
+            setPromptConfig({ message, resolve });
+        });
+    }, []);
 
     const reconcileStatus = useCallback((localStatus: string, remoteStatus: string) => {
         return (STATUS_RANK[localStatus] || 0) >= (STATUS_RANK[remoteStatus] || 0) ? localStatus : remoteStatus;
@@ -246,34 +263,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             try {
                 logger.info('🚀 Initializing App Context (Direct Remote Only)...');
                 
-                // 1. Sync Link Logic (Priority - purely in-memory now)
-                const urlParams = new URLSearchParams(window.location.search);
-                const syncData = urlParams.get('sync');
-                if (syncData) {
-                    try {
-                        const decodedStr = decodeURIComponent(atob(syncData).split('').map((c) => {
-                            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-                        }).join(''));
-                        const data = JSON.parse(decodedStr);
-                        
-                        if (data.deals) setDeals(data.deals);
-                        if (data.profiles) setStoreProfiles(data.profiles);
-                        if (data.bookings) setBookings(data.bookings);
-                        if (data.notifications) setNotifications(data.notifications);
-                        if (data.user) {
-                            setUser(data.user);
-                            setFavorites(data.user.favorites || []);
-                            setFollowedMerchants(data.user.followedMerchants || []);
-                            setNotifKeywords(data.user.notifKeywords || []);
-                            setSmartAlerts(data.user.smartAlerts || []);
-                            userRepository.saveProfile(data.user);
-                        }
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        customAlert(language === 'ar' ? '✅ تمت المزامنة الشاملة!' : '✅ Sync complete');
-                    } catch (e) {
-                        console.error('Sync parse error', e);
-                    }
-                }
+                // SECURITY: Sync link feature removed — it accepted unsigned
+                // Base64 payloads from URL params, allowing session hijacking.
+                // Data synchronisation now relies exclusively on Supabase auth.
 
                 logger.info('📡 Fetching state from remote...');
                 setLoading(true);
@@ -316,7 +308,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         initData();
 
-        (window as any).appContextSetters = { setLoading };
+        // SECURITY: Removed window.appContextSetters debug backdoor
 
         // Supabase Real-Time Auth Listener
         const authListenerPromise = import('../services/supabaseClient').then(({ supabase }) => {
@@ -390,124 +382,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 document.dir = pref === 'ar' ? 'rtl' : 'ltr';
                             }
 
-                            // After login, kick off Web Push subscription so
-                            // alerts can land on the device even when the tab
-                            // is closed. Best-effort; respects browser perms.
-                            pushService.ensurePermissionAndSubscribe(spUser.id).catch(() => {});
-
-                            // Tear down only the previous user-sync channel
-                            // (if any). Calling removeAllChannels() also kills
-                            // global-sync and deals-matching, so realtime
-                            // would silently die after every login until the
-                            // next page refresh. Targeted removal keeps those
-                            // listeners alive.
-                            const allChannels = supabase.getChannels();
-                            allChannels
-                                .filter((c: any) => typeof c?.topic === 'string' && c.topic.startsWith('realtime:user-sync-'))
-                                .forEach((c: any) => supabase.removeChannel(c));
-                            const userChannel = supabase.channel(`user-sync-${spUser.id}`);
-
-                            // Notifications listener — append in place instead of
-                            // refetching the whole list, so the buyer/seller see a
-                            // new alert without an extra round trip.
-                            userChannel.on('postgres_changes', {
-                                event: 'INSERT',
-                                schema: 'public',
-                                table: 'notifications',
-                                filter: `user_id=eq.${spUser.id}`
-                            }, async (payload) => {
-                                const n = payload.new as any;
-                                const mapped: Notification = {
-                                    id: n.id,
-                                    userId: n.user_id,
-                                    title: { ar: n.title_ar, en: n.title_en },
-                                    body: { ar: n.body_ar, en: n.body_en },
-                                    type: n.type,
-                                    isRead: !!n.is_read,
-                                    createdAt: new Date(n.created_at).getTime(),
-                                    metadata: n.meta_data
-                                };
-                                setNotifications(prev => {
-                                    if (prev.find(p => p.id === mapped.id)) return prev;
-                                    const updated = [mapped, ...prev];
-                                    return updated;
-                                });
-                                showRealTimeAlert(mapped.title, mapped.body);
-                            });
-
-                            // ─── Bookings listener (single, no server-side filter) ───
-                            // We deliberately drop the per-user filter from the
-                            // postgres_changes config because it requires
-                            // REPLICA IDENTITY FULL on the bookings table.
-                            // Without that, UPDATE payloads only carry the
-                            // primary key (barcode) and the eq filter never
-                            // matches for either party. Listening to all
-                            // changes and filtering client-side guarantees the
-                            // buyer sees the seller's "تأكيد استلام" the
-                            // instant it's persisted, regardless of replica
-                            // identity configuration.
-                            userChannel.on('postgres_changes', {
-                                event: '*',
-                                schema: 'public',
-                                table: 'bookings'
-                            }, async (payload) => {
-                                const row = (payload.new || payload.old) as any;
-                                if (!row) return;
-                                const isMine = row.user_id === spUser.id || row.store_id === spUser.id;
-
-                                if (payload.eventType === 'UPDATE' && payload.new) {
-                                    const updated = payload.new as any;
-                                    setBookings(prev => {
-                                        // If we know the booking, patch in place
-                                        // — works whether or not user_id arrived.
-                                        const known = prev.find(b => b.barcode === updated.barcode);
-                                        if (known) {
-                                            return prev.map(b => b.barcode === updated.barcode
-                                                ? { ...b, status: reconcileStatus(b.status, updated.status) }
-                                                : b);
-                                        }
-                                        return prev;
-                                    });
-                                    return;
-                                }
-                                if (!isMine) return;
-
-                                // INSERT/DELETE → reconcile from the server so
-                                // the buyer's "My Bookings" reflects the new
-                                // ticket and the seller's order list updates
-                                // without manual refresh. The local `bookDeal`
-                                // call already inserted the row optimistically;
-                                // this just guarantees parity with the server.
-                                const { bookingRepository: br } = await import('../repositories/bookingRepository');
-                                br.getByUser(spUser.id).then(setBookings);
-                            });
-
-                             userChannel.subscribe((status) => {
-                                 if (status === 'SUBSCRIBED') {
-                                     console.log('✅ Realtime connected for user:', spUser.id);
-                                 } else if (status === 'CHANNEL_ERROR') {
-                                     console.warn('❌ Realtime connection error for user:', spUser.id);
-                                 }
-                             });
-
-                            if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-                                // Profile sync is best-effort and not blocking; the auth
-                                // listener returns immediately so the UI is interactive
-                                // before the profile round-trips.
-                                if (!existingProfile) {
-                                    ur.saveProfile(profile as any).catch(e =>
-                                        console.error('❌ Failed to sync profile:', e)
-                                    );
-                                } else {
-                                    authService.setUser(existingProfile as any);
-                                }
-                            }
-                        } else if (event === 'SIGNED_OUT') {
-                            setUser(null);
-                            setFavorites([]);
-                            setFollowedMerchants([]);
-                            setNotifications([]);
-                            setBookings([]);
                             // Targeted cleanup — keep global-sync alive so
                             // public deal/store updates still flow even when
                             // no one is signed in.
@@ -532,67 +406,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
     }, []);
 
-    // 🌍 GLOBAL REALTIME SYNC (Deals & Store Profiles)
-    // Ensures that any change on the server is reflected instantly in the UI
-    useEffect(() => {
-        import('../services/supabaseClient').then(({ supabase }) => {
-            const globalChannel = supabase.channel('global-sync');
-            
-            // 1. Deals Listener
-            globalChannel.on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'deals'
-            }, async (payload) => {
-                logger.info('🔄 Realtime deal update:', payload.eventType);
-                const { dealRepository: dr } = await import('../repositories/dealRepository');
-                
-                if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                    const mapped = dr.mapRowToDeal(payload.new) as any;
-                    if (mapped.status === 'deleted') {
-                        setDeals(prev => prev.filter(d => d.id !== mapped.id));
-                        return;
-                    }
-                    setDeals(prev => {
-                        const exists = prev.find(d => d.id === mapped.id);
-                        let next;
-                        if (exists) {
-                            next = prev.map(d => d.id === mapped.id ? { ...d, ...mapped } : d);
-                        } else {
-                            next = [mapped, ...prev];
-                        }
-                        return next;
-                    });
-                } else if (payload.eventType === 'DELETE') {
-                    setDeals(prev => {
-                        const next = prev.filter(d => d.id !== payload.old.id);
-                        return next;
-                    });
-                }
-            });
-            
-            // 2. Sellers Listener (Store Profiles)
-            globalChannel.on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'users'
-                // Filter user_type=eq.seller is handled in the callback to be safe
-            }, async (payload) => {
-                const newUser = payload.new as any;
-                const oldUser = payload.old as any;
-                if (newUser?.user_type === 'seller' || oldUser?.user_type === 'seller' || payload.eventType === 'DELETE') {
-                    logger.info('🔄 Realtime store profile update:', payload.eventType);
-                    const { userRepository: ur } = await import('../repositories/userRepository');
-                    const sellers = await ur.getAllSellers();
-                    const profiles: Record<string, any> = {};
-                    sellers.forEach(s => { profiles[s.id] = s; });
-                    setStoreProfiles(profiles);
-                }
-            });
-            
-            globalChannel.subscribe();
-        });
-    }, []);
+
 
     // ⚡️ STABILIZATION: Safety Timeout to prevent permanent "Loading" hang
     useEffect(() => {
@@ -1184,16 +998,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // completion does NOT deduct again.
     }, [bookings, language, customAlert]);
 
-    const acknowledgeBooking = useCallback((barcode: string) => {
+    const acknowledgeBooking = useCallback(async (barcode: string, note?: string) => {
         const target = bookings.find(b => b.barcode === barcode);
         if (!target || target.status !== 'pending') return;
 
         setBookings(prev => {
-            const updated = prev.map(b => b.barcode === barcode ? { ...b, status: 'acknowledged' } : b);
+            const updated = prev.map(b => b.barcode === barcode ? { ...b, status: 'acknowledged' as const, notes: note || b.notes } : b);
             return updated;
         });
 
-        bookingRepository.updateStatus(barcode, 'acknowledged').catch(e => {
+        bookingRepository.updateStatus(barcode, 'acknowledged', note).catch(e => {
             console.warn('Booking status sync deferred:', e?.message || e);
             customAlert(language === 'ar'
                 ? `⚠️ لم يتم مزامنة التحديث: ${e?.message || 'خطأ غير معروف'}`
@@ -1240,66 +1054,174 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [user]);
 
-    // REAL-TIME DEAL MATCHING ENGINE
-    // ─── INSERT notifications (followers + keywords) are now handled
-    // ─── 100% server-side by tr_deal_smart_notifications (migration v8.11).
-    // ─── The client no longer fires addNotification on INSERT; it receives
-    // ─── the server-emitted notification via the user-sync channel listener.
-    //
-    // ─── UPDATE notifications (favorites price-drop / restock) still run
-    // ─── client-side because they depend on the per-user `favorites` array
-    // ─── which only this client knows.
+    // 🌍 CENTRAL REALTIME SYNC (Handles visibility, online/offline, etc.)
     useEffect(() => {
-        if (!user) return;
+        const disconnect = realtimeService.connect({
+            userId: user?.id || null,
+            onNotificationInsert: (payload) => {
+                const n = payload.new as any;
+                const mapped: Notification = {
+                    id: n.id,
+                    userId: n.user_id,
+                    title: { ar: n.title_ar, en: n.title_en },
+                    body: { ar: n.body_ar, en: n.body_en },
+                    type: n.type,
+                    isRead: !!n.is_read,
+                    createdAt: new Date(n.created_at).getTime(),
+                    metadata: n.meta_data
+                };
+                setNotifications(prev => {
+                    if (prev.find(p => p.id === mapped.id)) return prev;
+                    return [mapped, ...prev];
+                });
+                if (user?.id === n.user_id) showRealTimeAlert(mapped.title, mapped.body);
+            },
+            onNotificationUpdate: (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    setNotifications(prev => prev.filter(n => n.id !== payload.old.id));
+                } else if (payload.eventType === 'UPDATE' && payload.new) {
+                    setNotifications(prev => prev.map(n => n.id === payload.new.id ? { ...n, isRead: !!payload.new.is_read } : n));
+                }
+            },
+            onBookingChange: (payload) => {
+                if (payload.eventType === 'INSERT') {
+                    const n = payload.new as any;
+                    const isMine = n.user_id === user?.id || n.store_id === user?.id;
+                    if (!isMine) return;
 
-        const setupMatching = async () => {
-            const { supabase } = await import('../services/supabaseClient');
-            const channel = supabase
-                .channel('deals-matching')
-                .on('postgres_changes' as any, { event: 'UPDATE', schema: 'public', table: 'deals' }, (payload: any) => {
+                    const mapped: any = {
+                        barcode: n.barcode,
+                        backupCode: n.backup_code,
+                        deal: dealsRef.current.find(d => d.id === n.deal_id) || { id: n.deal_id, storeId: n.store_id, itemName: 'تخفيض' },
+                        userId: n.user_id,
+                        bookedQuantity: n.booked_quantity,
+                        prepTime: n.prep_time,
+                        notes: n.notes,
+                        status: n.status as any,
+                        bookedAt: n.booked_at,
+                        expiryTime: n.expiry_time
+                    };
+                    setBookings(prev => {
+                        if (prev.find(b => b.barcode === mapped.barcode)) return prev;
+                        return [mapped, ...prev];
+                    });
+                } else if (payload.eventType === 'UPDATE' && payload.new) {
                     const updated = payload.new as any;
-                    const before = payload.old as any;
-                    if (!updated || updated.store_id === user.id) return;
-
-                    // Notify the buyer when one of their favorited deals materially
-                    // changes — typically a price drop or a quantity refresh. We
-                    // don't fire on every UPDATE because sellers also bump rows
-                    // for housekeeping (e.g. createdAt re-activation).
-                    if (favorites.includes(updated.id)) {
-                        const priceDropped = before?.discounted_price != null && updated.discounted_price != null && updated.discounted_price < before.discounted_price;
-                        const restocked = before?.quantity === 0 && updated.quantity && updated.quantity > 0;
-                        if (priceDropped) {
-                            addNotification(
-                                user.id,
-                                { ar: '💸 انخفض سعر منتج في مفضلتك!', en: '💸 Price drop on a favorite!' },
-                                { ar: `${updated.item_name}: ${updated.discounted_price} ر.س (كان ${before.discounted_price} ر.س)`, en: `${updated.item_name}: ${updated.discounted_price} SAR (was ${before.discounted_price} SAR)` },
-                                'deal',
-                                { dealId: updated.id }
-                            );
-                        } else if (restocked) {
-                            addNotification(
-                                user.id,
-                                { ar: '📦 منتجك المفضل عاد للتوفر!', en: '📦 Favorite restocked!' },
-                                { ar: `${updated.item_name} في ${updated.shop_name} أصبح متاحاً مجدداً.`, en: `${updated.item_name} at ${updated.shop_name} is available again.` },
-                                'deal',
-                                { dealId: updated.id }
-                            );
+                    setBookings(prev => {
+                        const known = prev.find(b => b.barcode === updated.barcode);
+                        if (known) {
+                            return prev.map(b => b.barcode === updated.barcode
+                                ? { ...b, status: reconcileStatus(b.status, updated.status), notes: updated.notes || b.notes }
+                                : b);
                         }
+                        return prev;
+                    });
+                } else if (payload.eventType === 'DELETE') {
+                    setBookings(prev => prev.filter(b => b.barcode !== payload.old.barcode));
+                }
+            },
+            onDealChange: (payload) => {
+                import('../repositories/dealRepository').then(({ dealRepository: dr }) => {
+                    if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const mapped = dr.mapRowToDeal(payload.new) as any;
+                        if (mapped.status === 'deleted') {
+                            setDeals(prev => prev.filter(d => d.id !== mapped.id));
+                            return;
+                        }
+
+                        // DEAL MATCHING ENGINE: Notify the buyer if favorited deal price dropped or restocked
+                        if (payload.eventType === 'UPDATE' && user?.id && mapped.storeId !== user.id) {
+                            const before = payload.old as any;
+                            const updated = payload.new as any;
+                            if (favoritesRef.current.includes(mapped.id)) {
+                                const priceDropped = before?.discounted_price != null && updated.discounted_price != null && updated.discounted_price < before.discounted_price;
+                                const restocked = before?.quantity === 0 && updated.quantity && updated.quantity > 0;
+                                if (priceDropped) {
+                                    addNotification(
+                                        user.id,
+                                        { ar: '💸 انخفض سعر منتج في مفضلتك!', en: '💸 Price drop on a favorite!' },
+                                        { ar: `${updated.item_name}: ${updated.discounted_price} ر.س (كان ${before.discounted_price} ر.س)`, en: `${updated.item_name}: ${updated.discounted_price} SAR (was ${before.discounted_price} SAR)` },
+                                        'deal',
+                                        { dealId: updated.id }
+                                    );
+                                } else if (restocked) {
+                                    addNotification(
+                                        user.id,
+                                        { ar: '📦 منتجك المفضل عاد للتوفر!', en: '📦 Favorite restocked!' },
+                                        { ar: `${updated.item_name} في ${updated.shop_name} أصبح متاحاً مجدداً.`, en: `${updated.item_name} at ${updated.shop_name} is available again.` },
+                                        'deal',
+                                        { dealId: updated.id }
+                                    );
+                                }
+                            }
+                        }
+
+                        setDeals(prev => {
+                            const exists = prev.find(d => d.id === mapped.id);
+                            if (exists) return prev.map(d => d.id === mapped.id ? { ...d, ...mapped } : d);
+                            return [mapped, ...prev];
+                        });
+                    } else if (payload.eventType === 'DELETE') {
+                        setDeals(prev => prev.filter(d => d.id !== payload.old.id));
                     }
-                })
-                .subscribe();
+                });
+            },
+            onUserChange: (payload) => {
+                const newUser = payload.new as any;
+                const oldUser = payload.old as any;
+                // Update store profiles if seller
+                if (newUser?.user_type === 'seller' || oldUser?.user_type === 'seller' || payload.eventType === 'DELETE') {
+                    import('../repositories/userRepository').then(({ userRepository: ur }) => {
+                        ur.getAllSellers().then(sellers => {
+                            const profiles: Record<string, any> = {};
+                            sellers.forEach(s => { profiles[s.id] = s; });
+                            setStoreProfiles(profiles);
+                        });
+                    });
+                }
+                // Update current user if it's me
+                if (user?.id && newUser?.id === user.id && payload.eventType === 'UPDATE') {
+                     const newFollowed = Array.isArray(newUser.followed_merchants) ? newUser.followed_merchants : undefined;
+                     if (newFollowed) {
+                         setFollowedMerchants(newFollowed);
+                     }
+                     setUser((prev: any) => ({
+                         ...prev,
+                         name: newUser.name,
+                         phone: newUser.phone,
+                         shop: newUser.shop,
+                         bio: newUser.bio,
+                         avatar_url: newUser.avatar_url,
+                         contactPhone: newUser.contact_phone,
+                         followedMerchants: newFollowed || prev.followedMerchants,
+                     }));
+                }
+            },
+            onFavoriteChange: (payload) => {
+               if (payload.eventType === 'INSERT') {
+                   setFavorites(prev => prev.includes(payload.new.deal_id) ? prev : [...prev, payload.new.deal_id]);
+               } else if (payload.eventType === 'DELETE') {
+                   setFavorites(prev => prev.filter(id => id !== payload.old.deal_id));
+               }
+            },
+            onRefreshAll: async () => {
+                logger.info('🔄 Full Refresh Triggered');
+                await Promise.allSettled([
+                    import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => fresh && setDeals(fresh))),
+                    user?.id ? import('../repositories/bookingRepository').then(({ bookingRepository: br }) => br.getByUser(user.id).then(setBookings)) : Promise.resolve(),
+                    user?.id ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(user.id).then(setNotifications)) : Promise.resolve(),
+                    user?.id ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(setFavorites)) : Promise.resolve(),
+                    import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getAllSellers().then(sellers => {
+                        const profiles: Record<string, any> = {};
+                        sellers.forEach(s => { profiles[s.id] = s; });
+                        setStoreProfiles(profiles);
+                    }))
+                ]);
+            }
+        });
 
-            return channel;
-        };
-
-        const channelPromise = setupMatching();
-
-        return () => {
-            channelPromise.then(c => {
-                if (c) import('../services/supabaseClient').then(({ supabase }) => supabase.removeChannel(c));
-            });
-        };
-    }, [user, favorites, addNotification]);
+        return () => disconnect();
+    }, [user?.id, showRealTimeAlert, reconcileStatus, addNotification]);
 
     // Effective user-type for rendering. Admins can flip into buyer/seller
     // preview mode via setViewAs; non-admins always see their real role.
@@ -1321,7 +1243,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
-        customAlert, customConfirm,
+        customAlert, customConfirm, customPrompt,
         viewAs, setViewAs, effectiveUserType
     }), [
         language, setLanguage,
@@ -1337,7 +1259,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
-        customAlert, customConfirm,
+        customAlert, customConfirm, customPrompt,
         viewAs, setViewAs, effectiveUserType
     ]);
 
@@ -1389,6 +1311,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             <button onClick={() => { dialogConfig.resolve(true); setDialogConfig(null); }}
                                 style={{ flex: 1, padding: '12px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: 'white', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}>
                                 {language === 'ar' ? 'موافق' : 'OK'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {promptConfig && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+                    zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+                }}>
+                    <div style={{
+                        backgroundColor: 'var(--card-bg)', borderRadius: 24, padding: 24,
+                        width: '100%', maxWidth: 400, boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                        textAlign: 'center'
+                    }}>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: 20, color: 'var(--text-primary)' }}>{promptConfig.message}</div>
+                        <textarea 
+                            id="custom-prompt-input"
+                            autoFocus
+                            style={{ 
+                                width: '100%', minHeight: 100, padding: 12, borderRadius: 12, 
+                                border: '1.5px solid var(--border-color)', background: 'var(--body-bg)', 
+                                color: 'var(--text-primary)', fontSize: '1rem', marginBottom: 20, outline: 'none' 
+                            }} 
+                        />
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <button onClick={() => {
+                                const val = (document.getElementById('custom-prompt-input') as HTMLTextAreaElement).value;
+                                promptConfig.resolve(val);
+                                setPromptConfig(null);
+                            }} style={{ flex: 1, padding: '14px', borderRadius: 12, backgroundColor: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, fontSize: '0.95rem' }}>
+                                {language === 'ar' ? 'إرسال' : 'Send'}
+                            </button>
+                            <button onClick={() => {
+                                promptConfig.resolve(null);
+                                setPromptConfig(null);
+                            }} style={{ flex: 1, padding: '14px', borderRadius: 12, backgroundColor: 'var(--gray-200)', color: 'var(--text-secondary)', border: 'none', fontWeight: 800, fontSize: '0.95rem' }}>
+                                {language === 'ar' ? 'إلغاء' : 'Cancel'}
                             </button>
                         </div>
                     </div>

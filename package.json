@@ -4,8 +4,8 @@
   "description": "TAKI — discount booking platform (React 18 + Parcel 2 + Supabase, Node 24)",
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
-    "start": "parcel index.html --public-url / --host 127.0.0.1",
-    "dev": "parcel index.html --public-url / --host 127.0.0.1",
+    "start": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
+    "dev": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
     "build": "parcel build index.html --public-url ./",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist"

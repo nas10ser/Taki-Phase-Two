@@ -215,15 +215,16 @@ CREATE POLICY "bookings_delete_own" ON bookings FOR DELETE USING (
     auth.uid()::text = user_id OR auth.uid()::text = store_id
 );
 
--- NOTIFICATIONS: users see only their own; any authenticated user can write a
--- notification because a buyer's booking creates a row whose user_id is the
--- SELLER. Strictly tying it to auth.uid() = user_id would break that flow.
--- Long-term, replace this INSERT path with a SECURITY DEFINER function.
+-- NOTIFICATIONS: users see only their own; INSERT restricted to self-only.
+-- The handle_booking_notification trigger is SECURITY DEFINER and bypasses
+-- RLS, so seller-to-buyer notifications still work. Direct client inserts
+-- can only target the authenticated user's own id.
 DROP POLICY IF EXISTS "notifs_select_own" ON notifications;
 DROP POLICY IF EXISTS "notifs_insert_auth" ON notifications;
+DROP POLICY IF EXISTS "notifs_insert_self" ON notifications;
 DROP POLICY IF EXISTS "notifs_update_own" ON notifications;
 CREATE POLICY "notifs_select_own" ON notifications FOR SELECT USING (auth.uid()::text = user_id);
-CREATE POLICY "notifs_insert_auth" ON notifications FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "notifs_insert_self" ON notifications FOR INSERT WITH CHECK (auth.uid()::text = user_id);
 CREATE POLICY "notifs_update_own" ON notifications FOR UPDATE USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
 
 -- STORE PROFILES: anyone can read; only the owning store can insert/update their own profile
@@ -305,12 +306,21 @@ ALTER TABLE promo_impressions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "promo_select_active" ON promotional_campaigns;
 CREATE POLICY "promo_select_active" ON promotional_campaigns FOR SELECT USING (true);
+-- v9.0 SECURITY: Only admin users can manage promotional campaigns
 DROP POLICY IF EXISTS "promo_insert_admin" ON promotional_campaigns;
-CREATE POLICY "promo_insert_admin" ON promotional_campaigns FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "promo_insert_admin" ON promotional_campaigns FOR INSERT WITH CHECK (
+    auth.uid()::text IN (SELECT id FROM users WHERE user_type = 'admin')
+);
 DROP POLICY IF EXISTS "promo_update_admin" ON promotional_campaigns;
-CREATE POLICY "promo_update_admin" ON promotional_campaigns FOR UPDATE USING (auth.uid() IS NOT NULL);
+CREATE POLICY "promo_update_admin" ON promotional_campaigns FOR UPDATE USING (
+    auth.uid()::text IN (SELECT id FROM users WHERE user_type = 'admin')
+) WITH CHECK (
+    auth.uid()::text IN (SELECT id FROM users WHERE user_type = 'admin')
+);
 DROP POLICY IF EXISTS "promo_delete_admin" ON promotional_campaigns;
-CREATE POLICY "promo_delete_admin" ON promotional_campaigns FOR DELETE USING (auth.uid() IS NOT NULL);
+CREATE POLICY "promo_delete_admin" ON promotional_campaigns FOR DELETE USING (
+    auth.uid()::text IN (SELECT id FROM users WHERE user_type = 'admin')
+);
 
 DROP POLICY IF EXISTS "imp_select_own" ON promo_impressions;
 CREATE POLICY "imp_select_own" ON promo_impressions FOR SELECT USING (auth.uid()::text = user_id);

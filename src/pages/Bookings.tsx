@@ -216,6 +216,12 @@ const Bookings: React.FC = () => {
                                                             <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
                                                         </div>
                                                     </div>
+                                                    {booking.notes && (
+                                                        <div style={{ marginTop: 16, padding: 12, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 12, borderRight: isRTL ? '3px solid #f59e0b' : 'none', borderLeft: !isRTL ? '3px solid #f59e0b' : 'none' }}>
+                                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>💬 {isRTL ? 'ملاحظة التاجر:' : 'Seller Note:'}</div>
+                                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.notes}</div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {/* Code & QR */}

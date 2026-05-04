@@ -232,12 +232,23 @@ export const userRepository = {
     searchStores: async (query: string): Promise<UserProfile[]> => {
         if (!query || !query.trim()) return [];
         try {
+            // SECURITY: Sanitize query to prevent PostgREST filter injection.
+            // Escape %, _, and \ which are special in ILIKE patterns.
+            const sanitized = query.trim()
+                .substring(0, 100) // Limit length
+                .replace(/\\/g, '\\\\')
+                .replace(/%/g, '\\%')
+                .replace(/_/g, '\\_')
+                .replace(/['"(),.:]/g, ''); // Strip filter-breaking chars
+
+            if (!sanitized) return [];
+
             // Fetch top 10 sellers that match the query
             const { data, error } = await supabase
                 .from('users')
                 .select('*')
                 .eq('user_type', 'seller')
-                .or(`shop.ilike.%${query}%,name.ilike.%${query}%`)
+                .or(`shop.ilike.%${sanitized}%,name.ilike.%${sanitized}%`)
                 .limit(10);
             
             if (data && !error) {

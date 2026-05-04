@@ -176,8 +176,15 @@ const StoreDetails: React.FC = () => {
     const storeDeals = useMemo(() => {
         return deals.filter(d => {
             if (d.storeId !== id || d.status !== 'active') return false;
+            
+            // Time-based check
+            const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
+            const isTimedOut = Date.now() > (d.createdAt + lifespanMs);
+            if (isTimedOut) return false;
+
             if (d.quantity === 'unlimited') return true;
             if (typeof d.quantity === 'number' && d.quantity > 0) return true;
+            
             // No stock cap → time-based; let the countdown gate visibility.
             const hasCap = typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
             return !hasCap;
@@ -185,10 +192,17 @@ const StoreDetails: React.FC = () => {
     }, [deals, id]);
 
     const pastStoreDeals = useMemo(() => {
-        return deals.filter(d =>
-            d.storeId === id &&
-            (d.status === 'expired' || d.status === 'paused' || (typeof d.quantity === 'number' && d.quantity <= 0))
-        );
+        return deals.filter(d => {
+            if (d.storeId !== id) return false;
+            
+            const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
+            const isTimedOut = Date.now() > (d.createdAt + lifespanMs);
+            
+            return d.status === 'expired' || 
+                   d.status === 'paused' || 
+                   isTimedOut ||
+                   (typeof d.quantity === 'number' && d.quantity <= 0 && d.quantity !== 'unlimited');
+        });
     }, [deals, id]);
 
     const allStoreReviews = useMemo(() => {

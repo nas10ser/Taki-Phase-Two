@@ -47,14 +47,79 @@ const tryExtract = (text) => {
     return null;
 };
 
+// ====================== SECURITY: URL Allowlist ======================
+// Only accept URLs from known Google Maps domains to prevent SSRF attacks.
+const ALLOWED_HOSTS = [
+    'maps.app.goo.gl',
+    'goo.gl',
+    'maps.google.com',
+    'www.google.com',
+    'google.com',
+    'maps.google.com.sa',
+    'maps.google.co.uk',
+];
+
+// Reject requests to private/internal IP ranges (SSRF protection)
+const BLOCKED_PATTERNS = [
+    /^https?:\/\/localhost/i,
+    /^https?:\/\/127\./,
+    /^https?:\/\/10\./,
+    /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,
+    /^https?:\/\/192\.168\./,
+    /^https?:\/\/169\.254\./,  // AWS metadata
+    /^https?:\/\/0\./,
+    /^https?:\/\/\[/,          // IPv6
+];
+
+function isUrlAllowed(urlStr) {
+    try {
+        const parsed = new URL(urlStr);
+        // Block private/internal IPs
+        if (BLOCKED_PATTERNS.some(p => p.test(urlStr))) return false;
+        // Only allow known Google Maps hosts
+        return ALLOWED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
+    } catch {
+        return false;
+    }
+}
+
+// ====================== SECURITY: CORS Allowlist ======================
+const ALLOWED_ORIGINS = [
+    'https://taki.app',
+    'https://www.taki.app',
+    /^https:\/\/taki[\w-]*\.vercel\.app$/,
+];
+
+function isOriginAllowed(origin) {
+    if (!origin) return false;
+    return ALLOWED_ORIGINS.some(o => {
+        if (typeof o === 'string') return o === origin;
+        return o.test(origin);
+    });
+}
+
 module.exports = async (req, res) => {
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
-    // Enable CORS for API
-    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // CORS: restrict to TAKI origins only (+ dev localhost)
+    const origin = req.headers && req.headers.origin;
+    if (origin && (isOriginAllowed(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(origin))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    // Preflight
+    if (req.method === 'OPTIONS') {
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        return res.status(204).end();
+    }
     
     const target = (req.query && req.query.url) || '';
     if (!target || !/^https?:\/\//i.test(target)) {
         return res.status(400).json({ error: 'missing url' });
+    }
+
+    // SSRF protection: only allow known Google Maps domains
+    if (!isUrlAllowed(target)) {
+        return res.status(403).json({ error: 'URL domain not allowed. Only Google Maps links are accepted.' });
     }
 
     try {

@@ -73,7 +73,7 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, addReply, acknowledgeBooking } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile } = useApp();
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications'>('form');
@@ -469,10 +469,13 @@ const SellerDashboard: React.FC = () => {
 
     const saveShopLocation = async () => {
         if (!user) return;
-        const updatedUser = { ...user, lat: mapPos[0], lng: mapPos[1], googleMapsLink };
-        const { userRepository } = await import('../repositories/userRepository');
-        await userRepository.saveProfile(updatedUser);
-        customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
+        try {
+            await updateProfile({ lat: mapPos[0], lng: mapPos[1], googleMapsLink });
+            customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
+        } catch (e: any) {
+            console.error('Save shop location error:', e);
+            customAlert(isRTL ? '❌ فشل حفظ الموقع. حاول مرة أخرى.' : '❌ Failed to save location. Try again.');
+        }
     };
 
     const normalizedOriginalPrice = normalizeArabicNumerals(originalPrice);
@@ -538,22 +541,53 @@ const SellerDashboard: React.FC = () => {
 
     const handleLocateMe = () => {
         if (!navigator.geolocation) {
-            // Fallback to default Riyadh coordinates silently
-            console.warn('Geolocation not supported, using defaults');
+            customAlert(isRTL ? 'المتصفح لا يدعم تحديد الموقع' : 'Geolocation not supported');
+            return;
+        }
+
+        // On iPhone/Safari, Geolocation requires HTTPS. Check if we are in a secure context.
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            customAlert(isRTL 
+                ? '⚠️ تحديد الموقع يتطلب اتصالاً آمناً (HTTPS). يرجى التأكد من تشغيل الموقع عبر رابط آمن على الايفون.' 
+                : '⚠️ Geolocation requires HTTPS. Please ensure you are using a secure connection on iPhone.');
+            // Fallback to default but warn
             autoUpdateLocation(24.7136, 46.6753);
             return;
         }
+        
+        const options = { 
+            enableHighAccuracy: true, 
+            timeout: 15000, 
+            maximumAge: 0
+        };
+
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 autoUpdateLocation(pos.coords.latitude, pos.coords.longitude);
-                customAlert(isRTL ? '✅ تم تحديد موقعك بنجاح!' : '✅ Location captured!');
+                customAlert(isRTL ? '✅ تم تحديد موقعك بدقة!' : '✅ Precise location captured!');
             },
-            () => {
-                // DON'T block with a popup — silently use defaults
-                console.warn('Geolocation permission denied, using defaults');
-                autoUpdateLocation(24.7136, 46.6753);
+            (err) => {
+                console.warn('Geolocation error:', err);
+                let errorMsg = '';
+                if (err.code === 1) {
+                    errorMsg = isRTL 
+                        ? 'يرجى السماح بصلاحية الموقع من إعدادات المتصفح والجهاز.' 
+                        : 'Please enable location permission in browser and device settings.';
+                } else if (err.code === 3) {
+                    errorMsg = isRTL 
+                        ? 'انتهى وقت المحاولة. تأكد من أنك في مكان مفتوح أو مفعل الـ GPS.' 
+                        : 'Location request timed out. Ensure GPS is on and try again.';
+                } else {
+                    errorMsg = isRTL ? 'تعذر الحصول على الموقع بدقة.' : 'Could not get precise location.';
+                }
+                
+                customAlert(errorMsg);
+                // Only fallback to Riyadh if the user is truly lost and has no previous coords
+                if (mapPos[0] === 24.7136 && mapPos[1] === 46.6753) {
+                    autoUpdateLocation(24.7136, 46.6753);
+                }
             },
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+            options
         );
     };
 
@@ -701,7 +735,11 @@ const SellerDashboard: React.FC = () => {
             let finalLng = mapPos[1];
             
             if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
-                const resolved = await handleMapLinkUpdate();
+                // Add a 5s timeout to link resolution to avoid hanging the entire form submission
+                const resolutionPromise = handleMapLinkUpdate();
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+                
+                const resolved = await Promise.race([resolutionPromise, timeoutPromise]);
                 if (resolved) {
                     finalLat = resolved[0];
                     finalLng = resolved[1];
@@ -898,14 +936,28 @@ const SellerDashboard: React.FC = () => {
     }, [notifications, user, loading, processedNotifIds, isRTL, customAlert]);
 
     const myDeals = deals.filter(d => d.storeId === user?.id);
+    
+    // Check if a deal has timed out based on its creation date and lifespan
+    const isTimedOut = (d: any) => {
+        const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
+        return Date.now() > (d.createdAt + lifespanMs);
+    };
+
     // A deal is "sold out" only when the seller actually picked a stock cap
-    // (initialQuantity > 0) and bookings drained it to zero. Time-based deals
-    // saved without a quantity are 'unlimited' and never appear here.
     const isSoldOut = (d: any) => d.quantity !== 'unlimited'
         && typeof d.quantity === 'number' && d.quantity <= 0
         && typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
-    const activeDeals = myDeals.filter(d => d.status === 'active' && !isSoldOut(d));
-    const expiredDeals = myDeals.filter(d => d.status === 'expired' || d.status === 'paused' || (d.status === 'active' && isSoldOut(d)));
+
+    // Filters must be strictly mutually exclusive to prevent "appearing in both"
+    const activeDeals = myDeals.filter(d => 
+        d.status === 'active' && !isSoldOut(d) && !isTimedOut(d)
+    );
+    
+    const expiredDeals = myDeals.filter(d => 
+        d.status === 'expired' || 
+        d.status === 'paused' || 
+        (d.status === 'active' && (isSoldOut(d) || isTimedOut(d)))
+    );
 
     const inputGroupStyle: React.CSSProperties = {
         display: 'flex', gap: 16, marginBottom: 20
@@ -1596,7 +1648,10 @@ const SellerDashboard: React.FC = () => {
                                 )}
                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                                     {order.status === 'pending' && (
-                                        <button onClick={() => acknowledgeBooking(order.barcode)}
+                                        <button onClick={async () => {
+                                            const note = await customPrompt(isRTL ? 'اكتب ملاحظة للمشتري (اختياري):' : 'Write a note to the buyer (optional):');
+                                            acknowledgeBooking(order.barcode, note || undefined);
+                                        }}
                                             style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--dark)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', marginBottom: 8 }}>
                                             {isRTL ? 'تأكيد استلام الطلب 📦' : 'Confirm Receipt of Order 📦'}
                                         </button>

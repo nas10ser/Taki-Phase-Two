@@ -4,23 +4,66 @@
  * This server serves as the bridge between messaging platforms
  * and the TAKI Supabase backend.
  * 
- * v5.0 — Now directly connected to Supabase for real-time data.
+ * v6.0 — Security-hardened: webhook verification, rate limiting,
+ *         no hardcoded secrets, input sanitization.
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
 
-// Supabase Configuration
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kbmqzxcjdankdgiovctm.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || '';
-const supabase = SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+// ====================== SECURITY: Rate Limiting ======================
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 30; // max requests per window per IP/chatId
+
+function checkRateLimit(key) {
+    const now = Date.now();
+    const entry = rateLimitMap.get(key);
+    if (!entry || now - entry.start > RATE_LIMIT_WINDOW_MS) {
+        rateLimitMap.set(key, { start: now, count: 1 });
+        return true;
+    }
+    entry.count++;
+    if (entry.count > RATE_LIMIT_MAX) return false;
+    return true;
+}
+
+// Periodic cleanup of stale rate-limit entries
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of rateLimitMap) {
+        if (now - val.start > RATE_LIMIT_WINDOW_MS * 2) rateLimitMap.delete(key);
+    }
+}, 5 * 60 * 1000);
+
+// ====================== SECURITY: Input Sanitization ======================
+function sanitize(str, maxLen = 200) {
+    if (!str || typeof str !== 'string') return '';
+    return str.replace(/<[^>]*>?/gm, '').trim().substring(0, maxLen);
+}
+
+function isValidPhone(phone) {
+    return /^05\d{8}$/.test(phone);
+}
+
+function isValidBarcode(code) {
+    return /^[A-Z0-9-]{4,20}$/i.test(code);
+}
+
+// Supabase Configuration — NEVER hardcode URLs or keys
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || ''; // Intentionally anon-only; service key bypasses RLS
+if (!SUPABASE_URL) console.error('❌ FATAL: SUPABASE_URL environment variable is missing!');
+const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // Token setup via Env Vars
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
 const bot = TELEGRAM_TOKEN ? new Telegraf(TELEGRAM_TOKEN) : null;
 
 // Helper: Get active deals from Supabase
@@ -120,9 +163,20 @@ if (bot) {
     });
 
     bot.command('bookings', async (ctx) => {
-        const phone = ctx.message.text.split(' ')[1];
+        // Rate limit per chat
+        if (!checkRateLimit(`tg_${ctx.chat.id}`)) {
+            ctx.reply('⚠️ تم تجاوز حد المحاولات، حاول بعد دقيقة.');
+            return;
+        }
+
+        const phone = sanitize(ctx.message.text.split(' ')[1], 15);
         if (!phone) {
             ctx.reply('📱 أرسل رقم جوالك بعد الأمر:\n/bookings 05xxxxxxxx');
+            return;
+        }
+
+        if (!isValidPhone(phone)) {
+            ctx.reply('❌ صيغة رقم الجوال غير صحيحة. استخدم: 05xxxxxxxx');
             return;
         }
 
@@ -149,9 +203,20 @@ if (bot) {
     });
 
     bot.command('verify', async (ctx) => {
-        const code = ctx.message.text.split(' ')[1];
+        // Rate limit per chat
+        if (!checkRateLimit(`tg_verify_${ctx.chat.id}`)) {
+            ctx.reply('⚠️ تم تجاوز حد المحاولات، حاول بعد دقيقة.');
+            return;
+        }
+
+        const code = sanitize(ctx.message.text.split(' ')[1], 20);
         if (!code) {
             ctx.reply('🔍 أرسل كود الحجز بعد الأمر:\n/verify XXXXXXXX');
+            return;
+        }
+
+        if (!isValidBarcode(code)) {
+            ctx.reply('❌ صيغة الكود غير صحيحة.');
             return;
         }
 
@@ -211,8 +276,16 @@ if (bot) {
         }
     });
 
-    // Launch Telegram Webhook
+    // Launch Telegram Webhook — with secret verification
     app.post(`/webhook/telegram`, (req, res) => {
+        // Verify webhook secret token if configured
+        if (TELEGRAM_WEBHOOK_SECRET) {
+            const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+            if (secretHeader !== TELEGRAM_WEBHOOK_SECRET) {
+                console.warn('⚠️ Telegram webhook: invalid secret token');
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+        }
         bot.handleUpdate(req.body, res);
     });
 }
@@ -233,10 +306,34 @@ if (supabase && bot) {
     console.log('📡 Supabase Realtime listener active for bookings');
 }
 
-// WhatsApp Scaffold
+// WhatsApp Scaffold — with signature verification placeholder
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || '';
+const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET || '';
+
+app.get('/webhook/whatsapp', (req, res) => {
+    // Meta Webhook verification (challenge response)
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+    if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN && WHATSAPP_VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+    }
+    return res.status(403).send('Forbidden');
+});
+
 app.post('/webhook/whatsapp', (req, res) => {
-    // In production, verify signature from Meta/Twilio
-    console.log('WhatsApp Webhook Activity');
+    // Verify Meta signature (X-Hub-Signature-256)
+    if (WHATSAPP_APP_SECRET) {
+        const signature = req.headers['x-hub-signature-256'];
+        if (!signature) return res.status(401).json({ error: 'Missing signature' });
+        const body = JSON.stringify(req.body);
+        const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(body).digest('hex');
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+            console.warn('⚠️ WhatsApp webhook: invalid signature');
+            return res.status(403).json({ error: 'Invalid signature' });
+        }
+    }
+    // Process WhatsApp messages here in the future
     res.status(200).send('OK');
 });
 

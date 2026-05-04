@@ -32,16 +32,41 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const startCamera = async () => {
         try {
+            console.log('📷 Attempting to start camera...');
+
+            // On iOS/iPhone, getUserMedia ONLY works over HTTPS.
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                const secureMsg = isRTL 
+                    ? '⚠️ الكاميرا تتطلب اتصالاً آمناً (HTTPS) لتعمل على الايفون. يرجى استخدام رابط يبدأ بـ https://' 
+                    : '⚠️ Camera access requires a secure connection (HTTPS) on iPhone. Please use a link starting with https://';
+                setScanError(secureMsg);
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('MediaDevices API not supported');
+            }
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
+                video: { 
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
             });
             streamRef.current = stream;
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
+                // Explicitly call play() for iOS Safari stability
+                await videoRef.current.play().catch(e => console.error('Video play error:', e));
             }
             setCameraActive(true);
-        } catch (err) {
-            setScanError(isRTL ? 'لا يمكن الوصول إلى الكاميرا' : 'Cannot access camera');
+            setScanError('');
+        } catch (err: any) {
+            console.error('❌ Camera access error:', err);
+            const msg = err.name === 'NotAllowedError' 
+                ? (isRTL ? 'يرجى السماح بالوصول للكاميرا من إعدادات المتصفح' : 'Please allow camera access in browser settings')
+                : (isRTL ? `فشل الوصول للكاميرا: ${err.message || 'خطأ غير معروف'}` : `Camera error: ${err.message || 'Unknown error'}`);
+            setScanError(msg);
         }
     };
 
@@ -203,7 +228,13 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                 marginBottom: 20, overflow: 'hidden', position: 'relative'
                             }}>
                                 {cameraActive ? (
-                                    <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <video 
+                                        ref={videoRef} 
+                                        autoPlay 
+                                        playsInline 
+                                        muted 
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                    />
                                 ) : (
                                     <button onClick={startCamera} style={{
                                         background: 'rgba(80, 80, 90, 0.3)', border: '2px dashed rgba(80, 80, 95, 0.2)',

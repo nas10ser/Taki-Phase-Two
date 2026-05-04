@@ -48,24 +48,35 @@ export const storageService = {
             const fileExt = file.name.split('.').pop() || 'png';
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('deals')
-                .upload(fileName, file, {
-                    cacheControl: '3600',
-                    upsert: false
-                });
+            // Create a timeout promise
+            const timeoutPromise = new Promise<null>((_, reject) => 
+                setTimeout(() => reject(new Error('Upload Timeout')), 12000)
+            );
 
-            if (uploadError) {
-                console.error('❌ Supabase Storage Error:', uploadError);
-                throw uploadError;
+            const uploadPromise = (async () => {
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('deals')
+                    .upload(fileName, file, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+
+                if (uploadError) throw uploadError;
+                
+                const { data } = supabase.storage.from('deals').getPublicUrl(fileName);
+                return data.publicUrl;
+            })();
+
+            // Race the upload against the timeout
+            const result = await Promise.race([uploadPromise, timeoutPromise]);
+            
+            if (result) {
+                logger.info('✅ Image uploaded successfully:', result);
             }
-
-            logger.info('✅ Image uploaded successfully:', uploadData.path);
-            const { data } = supabase.storage.from('deals').getPublicUrl(fileName);
-            return data.publicUrl;
+            return result;
         } catch (error: any) {
             console.error('❌ Failed to upload image to Supabase:', error.message || error);
-            // Fallback: we return null, the UI should handle local preview if needed
+            // Fallback: we return null, the UI will handle local preview (Base64)
             return null; 
         }
     }

@@ -35,12 +35,15 @@ export const getDistance = (lat1: number, lon1: number, lat2: number, lon2: numb
 /**
  * Generates a random alphanumeric barcode string.
  * Excludes confusing characters (0/O, 1/I/L).
+ * Uses Web Crypto API for cryptographically strong randomness.
  */
 export const generateBarcode = (length: number = 8): string => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const randomValues = new Uint32Array(length);
+    crypto.getRandomValues(randomValues);
     let barcode = '';
     for (let i = 0; i < length; i++) {
-        barcode += chars.charAt(Math.floor(Math.random() * chars.length));
+        barcode += chars.charAt(randomValues[i] % chars.length);
     }
     return barcode;
 };

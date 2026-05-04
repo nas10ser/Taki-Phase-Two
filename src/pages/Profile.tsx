@@ -384,7 +384,7 @@ const SmartAlertsCard: React.FC<{
             return c ? `${c.emoji} ${isRTL ? c.ar : c.en}` : id;
         }).join('، '));
         if (r.keywords?.length) out.push('🔍 ' + r.keywords.join('، '));
-        if (r.radiusKm && r.coords) out.push(`📍 ${r.radiusKm}${isRTL ? ' كم' : ' km'}`);
+        if (r.radiusKm && r.coords) out.push(`📍 ${r.radiusKm} ${isRTL ? 'كم' : 'km'}`);
         return out.length > 0 ? out.join('  •  ') : (isRTL ? 'تنبيه فارغ' : 'empty rule');
     };
 
@@ -461,9 +461,9 @@ const SmartAlertsCard: React.FC<{
                 <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 110, background: 'var(--card-bg)', borderRadius: 12, border: '1.5px solid var(--border-color)', padding: '0 12px' }}>
                     <input type="tel" value={filterKm}
                         onChange={e => setFilterKm(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
-                        placeholder={isRTL ? 'كم' : 'KM'}
-                        style={{ flex: 1, padding: '12px 0', border: 'none', background: 'transparent', fontSize: '0.9rem', outline: 'none' }} />
-                    <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '1rem', letterSpacing: 0.5 }}>KM</span>
+                        placeholder={isRTL ? 'مثال: 5' : 'e.g. 5'}
+                        style={{ flex: 1, padding: '12px 0', border: 'none', background: 'transparent', fontSize: '0.9rem', outline: 'none', textAlign: isRTL ? 'right' : 'left' }} />
+                    <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.85rem', marginInlineStart: 8 }}>{isRTL ? 'كم' : 'KM'}</span>
                 </div>
                 {filterKm && (
                     <button onClick={handleCaptureLocation} disabled={gettingLocation}

@@ -125,11 +125,13 @@ export const bookingRepository = {
         }
     },
 
-    updateStatus: async (barcode: string, status: Booking['status']): Promise<void> => {
+    updateStatus: async (barcode: string, status: Booking['status'], note?: string): Promise<void> => {
         // Direct remote update
-
         try {
-            const { error, data } = await supabase.from('bookings').update({ status }).eq('barcode', barcode).select();
+            const updatePayload: any = { status };
+            if (note !== undefined) updatePayload.notes = note;
+
+            const { error, data } = await supabase.from('bookings').update(updatePayload).eq('barcode', barcode).select();
             if (error) throw error;
             if (!data || data.length === 0) {
                 throw new Error('لم يتم العثور على الحجز أو أنك لا تملك صلاحية التعديل (RLS).');

@@ -156,8 +156,14 @@ export const botService = {
     bookDeal: async (dealId: string, userId: string): Promise<{ barcode: string; backupCode: string } | null> => {
         const deal = await dealRepository.getById(dealId);
         if (!deal || (deal.quantity !== 'unlimited' && deal.quantity <= 0)) return null;
-        const barcode = Math.random().toString(36).substring(2, 10).toUpperCase();
-        const backupCode = `TK-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        // SECURITY: Use crypto.getRandomValues() instead of Math.random()
+        // to generate unpredictable barcodes resistant to brute-force.
+        const cryptoArray = new Uint8Array(10);
+        crypto.getRandomValues(cryptoArray);
+        const barcode = Array.from(cryptoArray).map(b => b.toString(36)).join('').substring(0, 10).toUpperCase();
+        const backupArray = new Uint8Array(4);
+        crypto.getRandomValues(backupArray);
+        const backupCode = `TK-${Array.from(backupArray).map(b => b.toString(36)).join('').substring(0, 6).toUpperCase()}`;
         
         // Update quantity
         await dealRepository.save({ ...deal, quantity: deal.quantity === 'unlimited' ? 'unlimited' : deal.quantity - 1 });
