@@ -9,7 +9,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const history = useHistory();
-    const { user, language, setLanguage, logout, customConfirm, deleteAccount } = useApp();
+    const { user, language, setLanguage, logout, customConfirm, deleteAccount, setViewAs, viewAs, effectiveUserType } = useApp();
 
     const isRTL = language === 'ar';
 
@@ -40,6 +40,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
     if (user?.userType === 'seller' || user?.userType === 'admin') {
         menuItems.push({ id: 'seller', icon: '🏪', ar: 'لوحة التاجر', en: 'Seller Dashboard', path: '/seller' });
+    }
+    if (user?.userType === 'admin') {
+        menuItems.push({ id: 'admin', icon: '🛠️', ar: 'مركز الإدارة', en: 'Admin Center', path: '/admin' });
     }
 
     const handleNav = (path: string) => {
@@ -163,6 +166,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{isRTL ? 'تغيير اللغة' : 'Change Language'}</span>
                         <span style={{ fontWeight: 900, color: '#0284c7', fontSize: '0.85rem' }}>{language === 'ar' ? 'English' : 'عربي'}</span>
                     </button>
+
+                    {user?.userType === 'admin' && (
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => { setViewAs('buyer'); onClose(); history.push('/'); }} 
+                                    style={{ flex: 1, padding: '8px', borderRadius: 10, border: 'none', background: effectiveUserType === 'buyer' && viewAs ? 'var(--primary)' : 'var(--gray-100)', color: effectiveUserType === 'buyer' && viewAs ? 'white' : 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                                    🛒 {isRTL ? 'مشتري' : 'Buyer'}
+                                </button>
+                                <button onClick={() => { setViewAs('seller'); onClose(); history.push('/seller'); }}
+                                    style={{ flex: 1, padding: '8px', borderRadius: 10, border: 'none', background: effectiveUserType === 'seller' && viewAs ? 'var(--primary)' : 'var(--gray-100)', color: effectiveUserType === 'seller' && viewAs ? 'white' : 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                                    🏪 {isRTL ? 'تاجر' : 'Seller'}
+                                </button>
+                                <button onClick={() => { setViewAs(null); onClose(); history.push('/admin'); }}
+                                    style={{ flex: 1, padding: '8px', borderRadius: 10, border: 'none', background: !viewAs ? 'var(--primary)' : 'var(--gray-100)', color: !viewAs ? 'white' : 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                                    🛠️ {isRTL ? 'مدير' : 'Admin'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {!user ? (
                         <button

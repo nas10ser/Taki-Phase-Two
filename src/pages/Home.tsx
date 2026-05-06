@@ -9,6 +9,8 @@ import { dealService } from '../services/dealService';
 import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
+import BannerSlider from '../components/BannerSlider';
+import { bannerRepository, Banner } from '../repositories/bannerRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
@@ -18,6 +20,7 @@ const Home: React.FC = () => {
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
     const [matchingStores, setMatchingStores] = useState<UserProfile[]>([]);
+    const [banners, setBanners] = useState<Banner[]>([]);
 
     const isRTL = language === 'ar';
 
@@ -27,8 +30,9 @@ const Home: React.FC = () => {
     // throttled or dropped a packet.
     useEffect(() => {
         refreshDeals();
-        const onVis = () => { if (document.visibilityState === 'visible') refreshDeals(); };
-        const onFocus = () => refreshDeals();
+        bannerRepository.getActive('home_top').then(setBanners);
+        const onVis = () => { if (document.visibilityState === 'visible') { refreshDeals(); bannerRepository.getActive('home_top').then(setBanners); } };
+        const onFocus = () => { refreshDeals(); bannerRepository.getActive('home_top').then(setBanners); };
         document.addEventListener('visibilitychange', onVis);
         window.addEventListener('focus', onFocus);
         return () => {
@@ -113,8 +117,35 @@ const Home: React.FC = () => {
         if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
         if (sortBy === 'reliability') list.sort((a, b) => b.reliabilityScore - a.reliabilityScore);
 
-        return list;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy]);
+        // Insertion Logic for Sponsored Deals
+        const sponsored: Deal[] = [];
+        const normal: Deal[] = [];
+        list.forEach(d => {
+            const profile = storeProfiles[d.storeId] as any;
+            if (profile?.is_pinned) {
+                sponsored.push(d);
+            } else {
+                normal.push(d);
+            }
+        });
+
+        const interleaved: Deal[] = [];
+        let sponsoredIndex = 0;
+        let normalIndex = 0;
+        
+        // Insert 1 sponsored deal every 3 normal deals
+        while (normalIndex < normal.length || sponsoredIndex < sponsored.length) {
+            // Add up to 3 normal deals
+            for (let i = 0; i < 3 && normalIndex < normal.length; i++) {
+                interleaved.push(normal[normalIndex++]);
+            }
+            // Add 1 sponsored deal
+            if (sponsoredIndex < sponsored.length) {
+                interleaved.push(sponsored[sponsoredIndex++]);
+            }
+        }
+        return interleaved;
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles]);
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -172,6 +203,13 @@ const Home: React.FC = () => {
                 </div>
             </div>
 
+            {/* Banner Slider Section */}
+            {banners.length > 0 && (
+                <div style={{ margin: '16px 0 8px' }}>
+                    <BannerSlider banners={banners} isRTL={isRTL} />
+                </div>
+            )}
+
             {/* Sub-Nav Filters */}
             <div style={{ position: 'sticky', top: 110, zIndex: 90, background: 'var(--nav-bg)', backdropFilter: 'blur(10px)', padding: '10px 0 12px', transition: 'background 0.3s ease' }}>
                 <div style={{ display: 'flex', gap: 8, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
@@ -200,11 +238,14 @@ const Home: React.FC = () => {
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>{isRTL ? 'الأكثر تداولاً 🔥' : 'Most Trending 🔥'}</h2>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
-                    {trendingDeals.map(deal => (
-                        <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
-                            <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
-                        </div>
-                    ))}
+                    {trendingDeals.map(deal => {
+                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                        return (
+                            <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                                <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -214,11 +255,14 @@ const Home: React.FC = () => {
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>{isRTL ? 'أقوى الخصومات 💸' : 'Highest Discount 💸'}</h2>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
-                    {bestDiscounts.map(deal => (
-                        <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
-                            <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
-                        </div>
-                    ))}
+                    {bestDiscounts.map(deal => {
+                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                        return (
+                            <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                                <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -253,9 +297,10 @@ const Home: React.FC = () => {
 
             {/* Deals Grid */}
             <div style={{ padding: '0 16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-                {filteredDeals.length > 0 ? filteredDeals.map(deal => (
-                    <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
-                )) : (
+                {filteredDeals.length > 0 ? filteredDeals.map(deal => {
+                    const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                    return <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
+                }) : (
                     <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
                         <div style={{ fontSize: '3rem', marginBottom: 15 }}>🔍</div>
                         <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>{isRTL ? 'لم نجد عروضاً تطابق هذا البحث' : 'No deals found for this search'}</div>

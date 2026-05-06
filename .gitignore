@@ -8,3 +8,4 @@ dist/
 api/node_modules/
 supabase/.temp/
 everything-claude-code/
+.claude/

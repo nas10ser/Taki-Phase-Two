@@ -22,6 +22,11 @@ interface StoreProfile {
     avatar?: string;
     bio?: string;
     address?: string;
+    subscription_plan?: string;
+    subscription_expires_at?: string;
+    discount_percentage?: number;
+    is_pinned?: boolean;
+    max_branches?: number;
 }
 
 interface TopLocation {
@@ -90,6 +95,8 @@ interface AppContextType {
     viewAs: 'buyer' | 'seller' | null;
     setViewAs: (role: 'buyer' | 'seller' | null) => void;
     effectiveUserType: 'buyer' | 'seller' | 'admin';
+    incrementDealView: (dealId: string) => Promise<void>;
+    incrementDealClick: (dealId: string) => Promise<void>;
 }
 
 
@@ -1228,6 +1235,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const effectiveUserType: 'buyer' | 'seller' | 'admin' =
         (user?.userType === 'admin' && viewAs) ? viewAs : (user?.userType || 'buyer');
 
+    const incrementDealView = async (dealId: string) => {
+        try {
+            const { error } = await supabase.rpc('increment_deal_view', { target_deal_id: dealId });
+            if (error) throw error;
+            setDeals(prev => prev.map(d => d.id === dealId ? { ...d, views: (d.views || 0) + 1 } : d));
+        } catch (err) { logger.error('View inc error:', err); }
+    };
+
+    const incrementDealClick = async (dealId: string) => {
+        try {
+            const { error } = await supabase.rpc('increment_deal_click', { target_deal_id: dealId });
+            if (error) throw error;
+            setDeals(prev => prev.map(d => d.id === dealId ? { ...d, clicks: (d.clicks || 0) + 1 } : d));
+        } catch (err) { logger.error('Click inc error:', err); }
+    };
+
     // Memoize the context value to prevent unnecessary re-renders
     const contextValue = useMemo(() => ({
         language, setLanguage,
@@ -1244,7 +1267,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
-        viewAs, setViewAs, effectiveUserType
+        viewAs, setViewAs, effectiveUserType,
+        incrementDealView, incrementDealClick,
     }), [
         language, setLanguage,
         deals, loading, addDeal, updateDeal, deleteDeal,
@@ -1260,7 +1284,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
-        viewAs, setViewAs, effectiveUserType
+        viewAs, setViewAs, effectiveUserType,
+        incrementDealView, incrementDealClick
     ]);
 
     return (

@@ -76,7 +76,7 @@ const SellerDashboard: React.FC = () => {
     const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile } = useApp();
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
-    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications'>('form');
+    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
     const [scannerOpen, setScannerOpen] = useState(false);
     const [showDualPicker, setShowDualPicker] = useState(false);
     // Stores selected dates from DualCalendarPicker
@@ -85,12 +85,37 @@ const SellerDashboard: React.FC = () => {
     const [manualCodes, setManualCodes] = useState<{ [key: string]: string }>({});
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [editingDealId, setEditingDealId] = useState<string | null>(null);
+    const [isPaymentEnabled, setIsPaymentEnabled] = useState(false);
+    const [isSubscriptionValid, setIsSubscriptionValid] = useState(true);
+
+    // Fetch payment settings
+    React.useEffect(() => {
+        const checkSub = async () => {
+            const { supabase } = await import('../services/supabaseClient');
+            const { data } = await supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single();
+            const enabled = data?.value === 'true';
+            setIsPaymentEnabled(enabled);
+
+            if (enabled && user?.id) {
+                const profile = storeProfiles[user.id];
+                if (!profile || !profile.subscription_expires_at) {
+                    setIsSubscriptionValid(false);
+                } else {
+                    const expiry = new Date(profile.subscription_expires_at).getTime();
+                    setIsSubscriptionValid(expiry > Date.now());
+                }
+            } else {
+                setIsSubscriptionValid(true);
+            }
+        };
+        checkSub();
+    }, [user, storeProfiles]);
 
     // Sync view with URL tab parameter
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const tab = params.get('tab');
-        if (tab && (['form', 'products', 'orders', 'notifications', 'scanner'] as const).includes(tab as any)) {
+        if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights'] as const).includes(tab as any)) {
             setView(tab as any);
         } else if (!tab && !params.get('edit')) {
             // Default to form if no tab and not editing
@@ -987,7 +1012,7 @@ const SellerDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(10px)', borderRadius: 16, padding: 6, overflowX: 'auto', gap: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                    {(['form', 'products', 'orders', 'scanner'] as const).map(tab => {
+                    {(['form', 'products', 'orders', 'scanner', 'insights'] as const).map(tab => {
                         const unreadOrdersCount = notifications.filter(n => n.userId === user?.id && !n.isRead && n.type === 'booking').length;
                         const badgeCount = tab === 'orders' ? unreadOrdersCount : 0;
 
@@ -1010,13 +1035,15 @@ const SellerDashboard: React.FC = () => {
                                     {tab === 'form' ? (editingDealId ? '✏️' : '➕') :
                                      tab === 'products' ? '📦' :
                                      tab === 'orders' ? '🔔' :
-                                     '📷'}
+                                     tab === 'scanner' ? '📷' :
+                                     '📊'}
                                 </span>
                                 <span style={{ whiteSpace: 'nowrap' }}>
                                     {tab === 'form' ? (isRTL ? (editingDealId ? 'تعديل' : 'إضافة') : (editingDealId ? 'Edit' : 'Add')) : 
                                      tab === 'products' ? (isRTL ? 'عروضي' : 'Deals') :
                                      tab === 'orders' ? (isRTL ? 'الطلبات' : 'Orders') :
-                                     (isRTL ? 'سكانر' : 'Scanner')}
+                                     tab === 'scanner' ? (isRTL ? 'سكانر' : 'Scanner') :
+                                     (isRTL ? 'تحليلات' : 'Insights')}
                                 </span>
 
                                 {badgeCount > 0 && (
@@ -1045,7 +1072,7 @@ const SellerDashboard: React.FC = () => {
             )}
 
             <div style={{ padding: 16 }}>
-                {view === 'form' ? (
+                {view === 'form' && (!isPaymentEnabled || isSubscriptionValid) ? (
                     <form onSubmit={(e) => { e.preventDefault(); submitAction(false); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: '24px 20px', boxShadow: 'var(--shadow-lg)' }}>
                         {submitted && <div style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '12px', borderRadius: 16, marginBottom: 20, textAlign: 'center', fontWeight: 700 }}>✅ {isRTL ? 'تم الحفظ بنجاح' : 'Saved Successfully'}</div>}
                         
@@ -1691,119 +1718,96 @@ const SellerDashboard: React.FC = () => {
                                             const enteredCode = normalizeArabicNumerals(rawInput.trim().toUpperCase());
                                             const targetBarcode = (order.barcode || '').trim().toUpperCase();
                                             const targetBackup = (order.backupCode || '').trim().toUpperCase();
-                                            
-                                            logger.log('🧐 Verifying barcode:', { entered: enteredCode, target: targetBarcode, backup: targetBackup });
-
-                                            if (enteredCode && (enteredCode === targetBarcode || enteredCode === targetBackup)) {
-                                                if (await customConfirm(isRTL ? "هل تم استلام المنتج؟ سيتم إغلاق الحجز وإشعار المشتري." : "Product received? Booking will close and buyer will be notified.")) {
-                                                    try {
-                                                        await completeBooking(order.barcode);
-                                                        setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
-                                                        logger.log('✅ Booking completion triggered successfully');
-                                                    } catch (err: any) {
-                                                        customAlert(isRTL ? `❌ فشل التحديث: ${err.message}` : `❌ Update failed: ${err.message}`);
-                                                    }
+                                            if ((enteredCode === targetBarcode || enteredCode === targetBackup) && enteredCode) {
+                                                if (await customConfirm(isRTL ? 'هل تم استلام المنتج؟' : 'Product received?')) {
+                                                    completeBooking(order.barcode);
+                                                    setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
                                                 }
                                             } else {
-                                                await customAlert(isRTL ? `رمز غير صحيح! يرجى التأكد من الرمز وإعادة المحاولة.` : `Invalid code! Please check and try again.`);
+                                                await customAlert(isRTL ? 'رمز غير صحيح!' : 'Invalid code!');
                                             }
-                                        }} style={{ padding: '0 20px', borderRadius: 16, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', fontWeight: 800, color: 'white', cursor: 'pointer', boxShadow: '0 4px 15px rgba(37,99,235,0.3)' }}>
-                                            {isRTL ? 'اعتماد' : 'Verify'}
+                                        }}
+                                            style={{ width: 60, height: 48, borderRadius: 12, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, cursor: 'pointer' }}>
+                                            {isRTL ? 'تحقق' : 'Go'}
                                         </button>
                                     </div>
                                 </div>
                             </div>
-                        )) : activeOrders.length === 0 && pastOrders.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-secondary)' }}>
-                                <div style={{ fontSize: '3.5rem', marginBottom: 16, opacity: 0.8 }}>📭</div>
-                                <div style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-secondary)' }}>{isRTL ? 'لا توجد طلبات جديدة' : 'No new orders'}</div>
-                            </div>
+                        )) : (
+                            <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders'}</div>
                         )}
-
-                        {/* Past Orders History Section for Seller */}
-                        {pastOrders.length > 0 && (
-                            <div style={{ marginTop: 24, paddingBottom: 40 }}>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-secondary)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    📜 {isRTL ? 'سجل الطلبات السابقة' : 'Past Orders History'}
-                                    <div style={{ height: 1, flex: 1, background: 'var(--gray-200)', opacity: 0.5 }} />
-                                </h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                    {pastOrders.map(order => {
-                                        const isExpanded = manualCodes[`EXP_${order.barcode}`] === 'true';
-                                        return (
-                                            <div key={order.barcode} 
-                                                onClick={() => setManualCodes(prev => ({...prev, [`EXP_${order.barcode}`]: isExpanded ? 'false' : 'true'}))}
-                                                style={{ 
-                                                    background: 'var(--card-bg)', 
-                                                    borderRadius: 24, 
-                                                    padding: '20px', 
-                                                    border: isExpanded ? '2px solid var(--primary)' : '1px solid var(--border-color)', 
-                                                    boxShadow: isExpanded ? '0 10px 30px rgba(0,0,0,0.1)' : 'var(--shadow-sm)',
-                                                    transition: 'all 0.3s ease',
-                                                    cursor: 'pointer',
-                                                    opacity: isExpanded ? 1 : 0.8
-                                                }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: 4 }}>{order.deal.itemName}</div>
-                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
-                                                            {isRTL ? 'المشتري:' : 'Buyer:'} {(order as any).userName || order.userId.substring(0, 8)}... | {new Date(order.bookedAt).toLocaleDateString(isRTL ? 'ar-SA' : 'en-US')}
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ 
-                                                        padding: '8px 16px', 
-                                                        borderRadius: 14, 
-                                                        fontSize: '0.8rem', 
-                                                        fontWeight: 900,
-                                                        background: order.status === 'completed' ? 'var(--gray-50)' : '#fff1f2',
-                                                        color: order.status === 'completed' ? 'var(--primary)' : '#f43f5e'
-                                                    }}>
-                                                        {order.status === 'completed' ? (isRTL ? 'تم التسليم' : 'Delivered') : (isRTL ? 'ملغي' : 'Cancelled')}
-                                                    </div>
-                                                </div>
-
-                                                {/* Expanded Content: Full Status Tracker for Seller History */}
-                                                {isExpanded && (
-                                                    <div className="animate-fade-in" style={{ marginTop: 24, paddingTop: 24, borderTop: '2px dashed var(--gray-100)' }} onClick={e => e.stopPropagation()}>
-                                                        <div style={{ background: order.status === 'completed' ? 'var(--gray-100)' : 'var(--gray-50)', padding: 20, borderRadius: 20, marginBottom: 0, border: order.status === 'completed' ? '1px solid var(--border-color)' : '1px solid var(--border-color)' }}>
-                                                            <h4 style={{ fontSize: '0.85rem', fontWeight: 900, color: '#166534', marginBottom: 16, marginTop: 0, textAlign: isRTL ? 'right' : 'left' }}>
-                                                                {order.status === 'completed' ? (isRTL ? '🎊 تم الاستلام بنجاح!' : '🎊 Delivery Successful!') : (isRTL ? 'تفاصيل حالة الطلب المؤرشف:' : 'Archived Order Status:')}
-                                                            </h4>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                                    <div style={{ width: 28, height: 28, borderRadius: 14, background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', boxShadow: '0 2px 8px rgba(var(--primary-rgb), 0.3)' }}>✓</div>
-                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'مؤكد' : 'Confirmed'}</div>
-                                                                </div>
-                                                                <div style={{ flex: 1, height: 3, background: 'var(--primary)', borderRadius: 2 }} />
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                                    <div style={{ width: 28, height: 28, borderRadius: 14, background: (order.status === 'acknowledged' || order.status === 'completed') ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{(order.status === 'acknowledged' || order.status === 'completed') ? '✓' : ''}</div>
-                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'استلمه التاجر' : 'S. Received'}</div>
-                                                                </div>
-                                                                <div style={{ flex: 1, height: 3, background: order.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', borderRadius: 2 }} />
-                                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                                    <div style={{ width: 28, height: 28, borderRadius: 14, background: order.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{order.status === 'completed' ? '✓' : ''}</div>
-                                                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
-                                                                </div>
-                                                            </div>
-                                                            {order.status === 'completed' && (
-                                                                <div style={{ marginTop: 16, textAlign: 'center', padding: '10px', background: 'var(--primary-glow)', borderRadius: 12 }}>
-                                                                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--primary)' }}>
-                                                                        ✅ {isRTL ? 'تم إغلاق هذا الحجز بنجاح' : 'This booking has been closed successfully'}
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <div style={{ marginTop: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--gray-400)', fontWeight: 700 }}>
-                                                            {isRTL ? `كود الحجز: ${order.barcode}` : `Booking Code: ${order.barcode}`}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                    </div>
+                ) : view === 'insights' ? (
+                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {/* Summary Cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div style={{ background: 'var(--card-bg)', padding: 20, borderRadius: 24, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)' }}>
+                                <div style={{ fontSize: '1.8rem', marginBottom: 4 }}>👁️</div>
+                                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                                    {myDeals.reduce((acc, d) => acc + (d.views || 0), 0)}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                    {isRTL ? 'إجمالي المشاهدات' : 'Total Views'}
                                 </div>
                             </div>
-                        )}
+                            <div style={{ background: 'var(--card-bg)', padding: 20, borderRadius: 24, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)' }}>
+                                <div style={{ fontSize: '1.8rem', marginBottom: 4 }}>🎟️</div>
+                                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                                    {myOrders.length}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                    {isRTL ? 'إجمالي الحجوزات' : 'Total Bookings'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Conversion Card */}
+                        <div style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', padding: 24, borderRadius: 24, color: 'white', position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: -20, right: -20, width: 100, height: 100, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
+                            <div style={{ position: 'relative', zIndex: 1 }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 800, opacity: 0.9, marginBottom: 8 }}>
+                                    {isRTL ? 'معدل التحويل الإجمالي' : 'Overall Conversion Rate'}
+                                </div>
+                                <div style={{ fontSize: '2rem', fontWeight: 900 }}>
+                                    {(() => {
+                                        const views = myDeals.reduce((acc, d) => acc + (d.views || 0), 0);
+                                        return views > 0 ? ((myOrders.length / views) * 100).toFixed(1) : '0';
+                                    })()}%
+                                </div>
+                                <div style={{ marginTop: 12, height: 6, background: 'rgba(255,255,255,0.2)', borderRadius: 3 }}>
+                                    <div style={{ 
+                                        width: `${Math.min(100, (myDeals.reduce((acc, d) => acc + (d.views || 0), 0) > 0 ? (myOrders.length / myDeals.reduce((acc, d) => acc + (d.views || 0), 0)) * 100 : 0))}%`, 
+                                        height: '100%', background: 'white', borderRadius: 3, boxShadow: '0 0 10px white' 
+                                    }} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Detailed Table */}
+                        <div style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16 }}>{isRTL ? 'أداء العروض' : 'Deals Performance'}</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                {myDeals.sort((a, b) => (b.views || 0) - (a.views || 0)).map(deal => {
+                                    const dealBookings = myOrders.filter(b => b.deal.id === deal.id).length;
+                                    const conversion = (deal.views || 0) > 0 ? ((dealBookings / deal.views) * 100).toFixed(1) : '0';
+                                    return (
+                                        <div key={deal.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--gray-50)' }}>
+                                            <img src={deal.images[0]} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }} />
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 2 }}>{deal.itemName}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                    {isRTL ? 'المشاهدات:' : 'Views:'} {deal.views || 0} | {isRTL ? 'الحجوزات:' : 'Bookings:'} {dealBookings}
+                                                </div>
+                                            </div>
+                                            <div style={{ textAlign: 'end' }}>
+                                                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--primary)' }}>{conversion}%</div>
+                                                <div style={{ fontSize: '0.65rem', color: 'var(--gray-400)', fontWeight: 700 }}>{isRTL ? 'تحويل' : 'Conv.'}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <div style={{ textAlign: 'center', padding: '20px 0' }}>

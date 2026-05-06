@@ -6,6 +6,7 @@ import { dealService } from '../services/dealService';
 interface Props {
     deal: Deal;
     onClick: (id: string) => void;
+    isSponsored?: boolean;
 }
 
 const GENDER_EMOJI: { [key: string]: string } = {
@@ -36,7 +37,7 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
     return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, expired: false };
 };
 
-const DealCard: React.FC<Props> = ({ deal, onClick }) => {
+const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
     const { toggleFollowMerchant, followedMerchants, language } = useApp();
     const { average, count } = dealService.calculateRating(deal.ratings);
     const loc = getLocation(deal.locationId);
@@ -61,10 +62,32 @@ const DealCard: React.FC<Props> = ({ deal, onClick }) => {
 
     return (
         <div
-            className="deal-card animate-fade-in"
+            className={`deal-card animate-fade-in ${isSponsored ? 'shadow-yellow-500/20' : ''}`}
             onClick={() => onClick(deal.id)}
+            style={isSponsored ? { border: '2px solid #fbbf24', position: 'relative' } : { position: 'relative' }}
         >
-            <div style={{ position: 'relative', overflow: 'hidden' }}>
+            {isSponsored && (
+                <div style={{
+                    position: 'absolute',
+                    top: -12,
+                    [isRTL ? 'right' : 'left']: 16,
+                    background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                    color: '#fff',
+                    padding: '2px 12px',
+                    borderRadius: '12px',
+                    fontSize: '0.7rem',
+                    fontWeight: 900,
+                    zIndex: 10,
+                    boxShadow: '0 2px 4px rgba(245,158,11,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                }}>
+                    <span>⭐</span>
+                    {isRTL ? 'برعاية' : 'Sponsored'}
+                </div>
+            )}
+            <div style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
                 <img
                     src={imageUrl}
                     loading="lazy"

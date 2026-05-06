@@ -201,7 +201,7 @@ const StoreDetails: React.FC = () => {
             return d.status === 'expired' || 
                    d.status === 'paused' || 
                    isTimedOut ||
-                   (typeof d.quantity === 'number' && d.quantity <= 0 && d.quantity !== 'unlimited');
+                   (typeof d.quantity === 'number' && d.quantity <= 0);
         });
     }, [deals, id]);
 
@@ -413,7 +413,7 @@ const StoreDetails: React.FC = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                             {storeDeals.length > 0 ? storeDeals.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
                                     {user?.id === store?.id && (
                                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                                             <button onClick={() => history.push(`/seller?tab=form&edit=${deal.id}&origin=active&source=store`)} style={{ flex: 1, padding: '6px', fontSize: '0.7rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800 }}>✏️ {isRTL ? 'تعديل' : 'Edit'}</button>
@@ -437,7 +437,7 @@ const StoreDetails: React.FC = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                             {pastStoreDeals.length > 0 ? pastStoreDeals.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column', opacity: 0.85 }}>
-                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
                                     {user?.id === store?.id && (
                                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                                             <button

@@ -378,6 +378,13 @@ const DealDetails: React.FC = () => {
         }
     }, [activeBooking?.status]);
 
+    const { incrementDealView } = useApp();
+    React.useEffect(() => {
+        if (id) {
+            incrementDealView(id);
+        }
+    }, [id]);
+
     if (!deal) {
         return (
             <div className="empty-state animate-fade-in">
