@@ -1,7 +1,7 @@
 // TAKI service worker
 // Bumping CACHE_NAME forces every active client to evict the previous
 // bundle (which was holding stale strings like "تعذر الحصول على موقعك").
-const CACHE_NAME = 'taki-cache-v8.13';
+const CACHE_NAME = 'taki-cache-v9.7';
 const urlsToCache = [
   '/',
   '/index.html',

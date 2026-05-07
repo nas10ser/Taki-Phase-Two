@@ -9,3 +9,6 @@ api/node_modules/
 supabase/.temp/
 everything-claude-code/
 .claude/
+node16/
+npm-cache/
+*.tgz
