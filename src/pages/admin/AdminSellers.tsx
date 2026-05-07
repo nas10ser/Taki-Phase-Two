@@ -393,17 +393,463 @@ const SellerRow = memo<{
 SellerRow.displayName = 'SellerRow';
 
 // ============================================================
+// Bulk Subscription Panel — full control over ANY subset of sellers.
+// Pick stores by name (search), set plan, dates, amount, discount,
+// then apply once. Replaces the previous 2-button limitation.
+// ============================================================
+type BulkPlan = 'free' | 'trial' | 'premium';
+
+const BulkSubscriptionPanel = memo<{
+    sellers: AdminUserRow[];
+    isOpen: boolean;
+    onToggle: () => void;
+    onApplied: () => void;
+}>(({ sellers, isOpen, onToggle, onApplied }) => {
+    const { customAlert, customConfirm } = useApp();
+    const [scope, setScope] = useState<'all-active' | 'pick'>('pick');
+    const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
+    const [searchQ, setSearchQ] = useState('');
+    const [debouncedSearchQ, setDebouncedSearchQ] = useState('');
+
+    const [plan, setPlan] = useState<BulkPlan>('free');
+    const today = new Date();
+    const [startedAt, setStartedAt] = useState(toDateInput(today));
+    const [expiresAt, setExpiresAt] = useState<string>(''); // empty = no expiry
+    const [amount, setAmount] = useState<number>(0);
+    const [discount, setDiscount] = useState<number>(100);
+    const [sendNotif, setSendNotif] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+    // Debounce the inline seller search so typing stays buttery on big lists.
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearchQ(searchQ.trim().toLowerCase()), 150);
+        return () => clearTimeout(t);
+    }, [searchQ]);
+
+    const visibleSellers = useMemo(() => {
+        const list = sellers.filter((s) => !s.is_suspended);
+        if (!debouncedSearchQ) return list;
+        return list.filter((s) => {
+            const blob = `${s.shop ?? ''} ${s.name ?? ''} ${s.phone ?? ''} ${s.email ?? ''}`.toLowerCase();
+            return blob.includes(debouncedSearchQ);
+        });
+    }, [sellers, debouncedSearchQ]);
+
+    const targetIds = useMemo(() => {
+        if (scope === 'all-active') return sellers.filter((s) => !s.is_suspended).map((s) => s.id);
+        return Array.from(pickedIds);
+    }, [scope, pickedIds, sellers]);
+
+    const togglePick = useCallback((id: string) => {
+        setPickedIds((prev) => {
+            const n = new Set(prev);
+            if (n.has(id)) n.delete(id); else n.add(id);
+            return n;
+        });
+    }, []);
+
+    const selectAllVisible = () => {
+        setPickedIds((prev) => {
+            const n = new Set(prev);
+            visibleSellers.forEach((s) => n.add(s.id));
+            return n;
+        });
+    };
+    const clearPicks = () => setPickedIds(new Set());
+
+    // ---- Plan presets — one tap fills sensible defaults ---------------
+    const applyPreset = (preset: 'free-perpetual' | 'free-30d' | 'trial-30d' | 'premium-full' | 'premium-half') => {
+        const now = new Date();
+        if (preset === 'free-perpetual') {
+            setPlan('free'); setAmount(0); setDiscount(100); setExpiresAt('');
+        } else if (preset === 'free-30d') {
+            setPlan('free'); setAmount(0); setDiscount(100);
+            setExpiresAt(toDateInput(new Date(now.getTime() + 30 * 86400000)));
+        } else if (preset === 'trial-30d') {
+            setPlan('trial'); setAmount(199); setDiscount(0);
+            setExpiresAt(toDateInput(new Date(now.getTime() + 30 * 86400000)));
+        } else if (preset === 'premium-full') {
+            setPlan('premium'); setAmount(199); setDiscount(0);
+            setExpiresAt(toDateInput(new Date(now.getTime() + 365 * 86400000)));
+        } else if (preset === 'premium-half') {
+            setPlan('premium'); setAmount(199); setDiscount(50);
+            setExpiresAt(toDateInput(new Date(now.getTime() + 365 * 86400000)));
+        }
+    };
+
+    // ---- Quick durations for the end date ---------------------------
+    const setQuickDuration = (days: number | null) => {
+        if (days === null) { setExpiresAt(''); return; }
+        const start = startedAt ? new Date(startedAt) : new Date();
+        if (isNaN(start.getTime())) return;
+        setExpiresAt(toDateInput(new Date(start.getTime() + days * 86400000)));
+    };
+
+    const finalAmount = Math.max(0, amount - (amount * discount) / 100);
+
+    const handleApply = async () => {
+        if (targetIds.length === 0) {
+            await customAlert('⚠️ اختر بائعاً واحداً على الأقل، أو حوّل الفلتر إلى "كل النشطين".');
+            return;
+        }
+        const expiresLabel = expiresAt
+            ? `حتى ${new Date(expiresAt).toLocaleDateString('ar-SA')}`
+            : 'بلا انتهاء';
+        const planLabel = plan === 'free' ? 'مجانية' : plan === 'trial' ? 'تجريبية' : 'مميزة';
+        const ok = await customConfirm(
+            `سيتم تطبيق:\n` +
+            `• الباقة: ${planLabel}\n` +
+            `• المبلغ: ${finalAmount.toLocaleString('ar-SA')} ر.س/شهر${discount > 0 ? ` (خصم ${discount}%)` : ''}\n` +
+            `• الانتهاء: ${expiresLabel}\n` +
+            `على ${targetIds.length} متجر. متابعة؟`
+        );
+        if (!ok) return;
+
+        setBusy(true);
+        setProgress({ done: 0, total: targetIds.length });
+        const expiresDate = expiresAt ? new Date(expiresAt) : null;
+        const startDate = startedAt ? new Date(startedAt) : new Date();
+
+        // Run in chunks of 8 — keeps Supabase happy and updates progress as we go.
+        const CHUNK = 8;
+        let okCount = 0;
+        let failCount = 0;
+        for (let i = 0; i < targetIds.length; i += CHUNK) {
+            const slice = targetIds.slice(i, i + CHUNK);
+            const results = await Promise.allSettled(
+                slice.map((sid) =>
+                    adminService.applySubscription({
+                        storeId: sid,
+                        plan,
+                        startedAt: startDate,
+                        expiresAt: expiresDate,
+                        discount,
+                        amount,
+                        notes: 'Bulk panel (admin)',
+                        sendNotification: sendNotif,
+                    })
+                )
+            );
+            results.forEach((r) => {
+                if (r.status === 'fulfilled' && (r.value as any).success) okCount++;
+                else failCount++;
+            });
+            setProgress({ done: Math.min(i + CHUNK, targetIds.length), total: targetIds.length });
+        }
+        setBusy(false);
+        setProgress(null);
+
+        await customAlert(
+            failCount === 0
+                ? `✅ تم تطبيق الإعدادات على ${okCount} متجر بنجاح.`
+                : `⚠️ نجح: ${okCount} | فشل: ${failCount}. افتح DevTools Console للتفاصيل.`
+        );
+        if (okCount > 0) {
+            // Reset picks so the admin doesn't accidentally re-apply on the next click.
+            setPickedIds(new Set());
+            onApplied();
+        }
+    };
+
+    if (!isOpen) {
+        return (
+            <button
+                onClick={onToggle}
+                className="w-full bg-gradient-to-br from-amber-50 via-orange-50 to-pink-50 border border-amber-200 rounded-2xl p-4 text-right hover:shadow-md transition-all"
+            >
+                <div className="flex items-center gap-3">
+                    <div className="text-3xl">⚡</div>
+                    <div className="flex-1">
+                        <div className="font-bold text-sm text-amber-900">تحكم جماعي قوي بالاشتراكات</div>
+                        <div className="text-xs text-amber-700 mt-0.5">
+                            اختر متاجر معينة (بحث بالاسم) أو الكل، حدد الباقة والمبلغ والتاريخ والخصم بحرية، ثم طبّق بضغطة. اضغط للفتح →
+                        </div>
+                    </div>
+                </div>
+            </button>
+        );
+    }
+
+    return (
+        <div className="bg-[var(--card-bg)] border-2 border-amber-300 rounded-2xl shadow-xl overflow-hidden">
+            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 text-white p-4 flex items-center justify-between">
+                <div>
+                    <div className="font-bold text-base flex items-center gap-2">⚡ تحكم جماعي بالاشتراكات</div>
+                    <div className="text-xs opacity-90 mt-0.5">حدّد كل التفاصيل بحرية — بدون قيود.</div>
+                </div>
+                <button onClick={onToggle} className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-lg">✕</button>
+            </div>
+
+            <div className="p-4 space-y-5">
+                {/* --- 1) Scope -------------------------------------------------- */}
+                <section>
+                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">👥 على من تُطبَّق؟</div>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                        <button
+                            onClick={() => setScope('all-active')}
+                            className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                                scope === 'all-active'
+                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                            }`}
+                        >
+                            🌐 كل النشطين
+                            <div className="text-[10px] font-normal mt-0.5 opacity-80">
+                                {sellers.filter((s) => !s.is_suspended).length} متجر
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setScope('pick')}
+                            className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                                scope === 'pick'
+                                    ? 'bg-purple-50 border-purple-500 text-purple-700'
+                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                            }`}
+                        >
+                            🎯 متاجر محددة
+                            <div className="text-[10px] font-normal mt-0.5 opacity-80">
+                                {pickedIds.size} مختار
+                            </div>
+                        </button>
+                    </div>
+
+                    {scope === 'pick' && (
+                        <div className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] overflow-hidden">
+                            <div className="p-2 border-b border-[var(--border-color)]">
+                                <input
+                                    type="text"
+                                    value={searchQ}
+                                    onChange={(e) => setSearchQ(e.target.value)}
+                                    placeholder="🔍 ابحث باسم المتجر، الاسم، الجوال أو الإيميل..."
+                                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-purple-500 outline-none"
+                                />
+                                <div className="flex gap-2 mt-2 text-[11px]">
+                                    <button onClick={selectAllVisible} className="px-2 py-1 bg-purple-100 text-purple-700 rounded font-bold">
+                                        ✓ اختر كل المعروض ({visibleSellers.length})
+                                    </button>
+                                    <button onClick={clearPicks} className="px-2 py-1 bg-[var(--gray-100)] text-[var(--text-secondary)] rounded font-bold">
+                                        مسح الاختيار
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto divide-y divide-[var(--border-color)]">
+                                {visibleSellers.length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-[var(--gray-400)]">لا نتائج لهذا البحث.</div>
+                                ) : visibleSellers.map((s) => {
+                                    const checked = pickedIds.has(s.id);
+                                    const planMeta: Record<string, string> = {
+                                        premium: '⭐',
+                                        trial: '🎁',
+                                        free: '🆓',
+                                    };
+                                    return (
+                                        <label
+                                            key={s.id}
+                                            className={`flex items-center gap-3 p-2.5 cursor-pointer transition-colors ${
+                                                checked ? 'bg-purple-50' : 'hover:bg-[var(--gray-100)]'
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => togglePick(s.id)}
+                                                className="w-4 h-4 accent-purple-600"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-bold text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                                                    {planMeta[s.subscription_plan ?? 'free'] ?? '🆓'} {s.shop ?? s.name ?? '(بدون اسم)'}
+                                                </div>
+                                                <div className="text-[10px] text-[var(--text-secondary)] truncate" dir="ltr">
+                                                    {s.phone ?? s.email ?? '—'}
+                                                </div>
+                                            </div>
+                                            {(s.subscription_amount ?? 0) > 0 && (
+                                                <span className="text-[10px] text-emerald-600 font-bold flex-shrink-0">
+                                                    {(s.subscription_amount ?? 0).toLocaleString('ar-SA')} ر.س
+                                                </span>
+                                            )}
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </section>
+
+                {/* --- 2) Quick presets --------------------------------------- */}
+                <section>
+                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">⚡ قوالب سريعة (تعبّي الحقول لك):</div>
+                    <div className="flex flex-wrap gap-2">
+                        <button onClick={() => applyPreset('free-perpetual')} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">🆓 مجاني دائم</button>
+                        <button onClick={() => applyPreset('free-30d')} className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-xs font-bold">🆓 مجاني 30 يوم</button>
+                        <button onClick={() => applyPreset('trial-30d')} className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-bold">🎁 تجريبي 30 يوم</button>
+                        <button onClick={() => applyPreset('premium-half')} className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold">⭐ مميز -50%</button>
+                        <button onClick={() => applyPreset('premium-full')} className="px-3 py-1.5 bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 rounded-lg text-xs font-bold">⭐ مميز سنة كاملة</button>
+                    </div>
+                </section>
+
+                {/* --- 3) Plan ------------------------------------------------- */}
+                <section>
+                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">📦 الباقة</div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {([
+                            { v: 'free', label: 'مجانية', icon: '🆓' },
+                            { v: 'trial', label: 'تجريبية', icon: '🎁' },
+                            { v: 'premium', label: 'مميزة', icon: '⭐' },
+                        ] as const).map((o) => (
+                            <button
+                                key={o.v}
+                                onClick={() => setPlan(o.v)}
+                                className={`p-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                                    plan === o.v
+                                        ? 'bg-amber-50 border-amber-500 text-amber-800'
+                                        : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                }`}
+                            >
+                                <div className="text-xl mb-0.5">{o.icon}</div>
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* --- 4) Dates ------------------------------------------------ */}
+                <section>
+                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">📅 الفترة</div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                        <div>
+                            <div className="text-[10px] text-[var(--gray-400)] mb-1">يبدأ</div>
+                            <input
+                                type="date"
+                                value={startedAt}
+                                onChange={(e) => setStartedAt(e.target.value)}
+                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <div className="text-[10px] text-[var(--gray-400)] mb-1">ينتهي (فارغ = بلا انتهاء)</div>
+                            <input
+                                type="date"
+                                value={expiresAt}
+                                onChange={(e) => setExpiresAt(e.target.value)}
+                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {[
+                            { label: 'أسبوع', d: 7 },
+                            { label: 'شهر', d: 30 },
+                            { label: '3 أشهر', d: 90 },
+                            { label: '6 أشهر', d: 180 },
+                            { label: 'سنة', d: 365 },
+                            { label: 'بلا انتهاء', d: null as null | number },
+                        ].map((q) => (
+                            <button
+                                key={q.label}
+                                onClick={() => setQuickDuration(q.d as any)}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-[11px] font-bold"
+                            >
+                                {q.label}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* --- 5) Amount + Discount ----------------------------------- */}
+                <section className="grid grid-cols-2 gap-3">
+                    <div>
+                        <div className="text-xs font-bold text-[var(--text-secondary)] mb-1.5">💰 المبلغ الشهري (ر.س)</div>
+                        <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={amount}
+                            onChange={(e) => setAmount(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <div className="text-xs font-bold text-[var(--text-secondary)]">🎉 الخصم</div>
+                            <span className="text-sm font-extrabold text-amber-700 tabular-nums">{discount}%</span>
+                        </div>
+                        <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={discount}
+                            onChange={(e) => setDiscount(Number(e.target.value))}
+                            className="w-full accent-amber-600"
+                        />
+                    </div>
+                </section>
+
+                {/* --- 6) Summary --------------------------------------------- */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3">
+                    <div className="text-xs text-emerald-700 mb-1">💡 الخلاصة:</div>
+                    <div className="text-sm text-[var(--text-primary)]">
+                        سيتم تطبيق <strong>{plan === 'free' ? 'باقة مجانية' : plan === 'trial' ? 'باقة تجريبية' : 'باقة مميزة'}</strong>
+                        {' '}بمبلغ صافي <strong className="text-emerald-700 tabular-nums">{finalAmount.toLocaleString('ar-SA')} ر.س/شهر</strong>
+                        {discount > 0 && <> (بعد خصم {discount}%)</>}
+                        {' '}على <strong className="text-amber-700">{targetIds.length}</strong> متجر
+                        {expiresAt ? <>، ينتهي <strong>{new Date(expiresAt).toLocaleDateString('ar-SA')}</strong>.</> : <>، <strong>بلا انتهاء</strong>.</>}
+                    </div>
+                </div>
+
+                {/* --- 7) Notify toggle --------------------------------------- */}
+                <label className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer">
+                    <div>
+                        <div className="font-bold text-sm text-blue-800">إرسال إشعار للبائعين</div>
+                        <div className="text-xs text-blue-600 mt-0.5">قد تحتاج إيقافه لو الإجراء كبير لتجنّب إزعاج الجميع.</div>
+                    </div>
+                    <input
+                        type="checkbox"
+                        checked={sendNotif}
+                        onChange={(e) => setSendNotif(e.target.checked)}
+                        className="w-5 h-5 accent-blue-600"
+                    />
+                </label>
+
+                {/* --- 8) Apply button ---------------------------------------- */}
+                {progress && (
+                    <div className="bg-[var(--gray-100)] rounded-xl overflow-hidden h-2">
+                        <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
+                            style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                        />
+                    </div>
+                )}
+                <button
+                    onClick={handleApply}
+                    disabled={busy || targetIds.length === 0}
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-sm"
+                >
+                    {busy
+                        ? `... جاري التطبيق ${progress ? `(${progress.done}/${progress.total})` : ''}`
+                        : targetIds.length === 0
+                        ? 'اختر متاجر أولاً'
+                        : `⚡ تطبيق على ${targetIds.length} متجر`}
+                </button>
+            </div>
+        </div>
+    );
+});
+BulkSubscriptionPanel.displayName = 'BulkSubscriptionPanel';
+
+// ============================================================
 // Main Component
 // ============================================================
 const AdminSellers: React.FC = () => {
-    const { customAlert, customConfirm } = useApp();
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const [filter, setFilter] = useState<FilterTab>('all');
     const [sellers, setSellers] = useState<AdminUserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<AdminUserRow | null>(null);
-    const [bulkBusy, setBulkBusy] = useState<null | 'free' | 'trial'>(null);
+    const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -426,49 +872,6 @@ const AdminSellers: React.FC = () => {
         if (filter === 'suspended') return sellers.filter((s) => s.is_suspended);
         return sellers.filter((s) => s.subscription_plan === filter && !s.is_suspended);
     }, [sellers, filter]);
-
-    const bulkApply = useCallback(
-        async (kind: 'free' | 'trial-30') => {
-            const targets = sellers.filter((s) => !s.is_suspended);
-            if (targets.length === 0) {
-                await customAlert('لا يوجد بائعون نشطون لتطبيق الإجراء.');
-                return;
-            }
-            const isFree = kind === 'free';
-            const ok = await customConfirm(
-                isFree
-                    ? `سيتم جعل ${targets.length} متجر نشط مجانياً (بلا انتهاء، 100% خصم). متابعة؟`
-                    : `سيتم منح ${targets.length} متجر نشط تجربة مجانية لمدة 30 يوماً. متابعة؟`
-            );
-            if (!ok) return;
-            setBulkBusy(isFree ? 'free' : 'trial');
-            const expiresAt = isFree ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-            const results = await Promise.allSettled(
-                targets.map((s) =>
-                    adminService.applySubscription({
-                        storeId: s.id,
-                        plan: isFree ? 'free' : 'trial',
-                        startedAt: new Date(),
-                        expiresAt,
-                        discount: isFree ? 100 : 0,
-                        amount: isFree ? 0 : 199,
-                        notes: isFree ? 'Bulk: free for all (admin)' : 'Bulk: 30-day trial (admin)',
-                        sendNotification: false,
-                    })
-                )
-            );
-            setBulkBusy(null);
-            const ok_ = results.filter((r) => r.status === 'fulfilled' && (r.value as any).success).length;
-            const failed = results.length - ok_;
-            await customAlert(
-                failed === 0
-                    ? `✅ تم تطبيق الإجراء على ${ok_} متجر بنجاح.`
-                    : `⚠️ نجح ${ok_} | فشل ${failed}. افتح Console للتفاصيل.`
-            );
-            fetchSellers();
-        },
-        [sellers, customAlert, customConfirm, fetchSellers]
-    );
 
     const stats = useMemo(() => {
         const premium = sellers.filter((s) => s.subscription_plan === 'premium').length;
@@ -516,32 +919,14 @@ const AdminSellers: React.FC = () => {
                 </div>
             </div>
 
-            {/* Bulk actions */}
-            <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-pink-50 border border-amber-200 rounded-2xl p-4">
-                <div className="flex items-start gap-3 mb-3">
-                    <div className="text-2xl">⚡</div>
-                    <div>
-                        <div className="font-bold text-sm text-amber-900">إجراءات جماعية على كل البائعين النشطين</div>
-                        <div className="text-xs text-amber-700 mt-0.5">للتحكم الفردي بكل بائع، اضغط بطاقته في القائمة بالأسفل.</div>
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => bulkApply('free')}
-                        disabled={bulkBusy !== null}
-                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
-                    >
-                        {bulkBusy === 'free' ? '... جاري التطبيق' : '🆓 جعل الكل مجانياً'}
-                    </button>
-                    <button
-                        onClick={() => bulkApply('trial-30')}
-                        disabled={bulkBusy !== null}
-                        className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
-                    >
-                        {bulkBusy === 'trial' ? '... جاري التطبيق' : '🎁 تجربة 30 يوم للجميع'}
-                    </button>
-                </div>
-            </div>
+            {/* Bulk subscription panel — open it to apply ANY plan, ANY dates, ANY
+                amount, ANY discount, to ANY subset of sellers (or all). */}
+            <BulkSubscriptionPanel
+                sellers={sellers}
+                isOpen={bulkPanelOpen}
+                onToggle={() => setBulkPanelOpen((v) => !v)}
+                onApplied={fetchSellers}
+            />
 
             {/* Filters + Search */}
             <div className="space-y-3">
