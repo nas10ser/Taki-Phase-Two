@@ -27,6 +27,7 @@
  */
 
 import React, { Suspense, lazy, useState, useEffect, useCallback, memo } from 'react';
+import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { adminService } from '../services/adminService';
 
@@ -77,26 +78,36 @@ LoadingSkeleton.displayName = 'LoadingSkeleton';
 const TabNav = memo<{
     active: Tab;
     onChange: (t: Tab) => void;
-}>(({ active, onChange }) => (
+    onBack: () => void;
+}>(({ active, onChange, onBack }) => (
     <div className="sticky top-0 z-20 -mx-4 px-4 pt-2 pb-3 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {TABS.map((tab) => {
-                const isActive = active === tab.value;
-                return (
-                    <button
-                        key={tab.value}
-                        onClick={() => onChange(tab.value)}
-                        className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                            isActive
-                                ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
-                                : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                    >
-                        <span className="text-lg ml-1">{tab.icon}</span>
-                        {tab.label}
-                    </button>
-                );
-            })}
+        <div className="flex items-center gap-2">
+            <button
+                onClick={onBack}
+                aria-label="رجوع"
+                className="flex-shrink-0 w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center transition-all"
+            >
+                <span className="text-xl">›</span>
+            </button>
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1">
+                {TABS.map((tab) => {
+                    const isActive = active === tab.value;
+                    return (
+                        <button
+                            key={tab.value}
+                            onClick={() => onChange(tab.value)}
+                            className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                                isActive
+                                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
+                                    : 'text-gray-600 hover:bg-gray-50'
+                            }`}
+                        >
+                            <span className="text-lg ml-1">{tab.icon}</span>
+                            {tab.label}
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     </div>
 ));
@@ -107,7 +118,17 @@ TabNav.displayName = 'TabNav';
 // ============================================================
 const AdminDashboard: React.FC = () => {
     const { user } = useApp();
+    const history = useHistory();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
+
+    const handleBack = useCallback(() => {
+        if (activeTab !== 'overview') {
+            setActiveTab('overview');
+            return;
+        }
+        if (history.length > 1) history.goBack();
+        else history.push('/');
+    }, [activeTab, history]);
 
     // Heartbeat لتتبع جلسة الأدمن
     useEffect(() => {
@@ -150,7 +171,7 @@ const AdminDashboard: React.FC = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 pb-24" dir="rtl">
             <div className="max-w-7xl mx-auto px-4 pt-3">
-                <TabNav active={activeTab} onChange={setActiveTab} />
+                <TabNav active={activeTab} onChange={setActiveTab} onBack={handleBack} />
 
                 <div className="mt-4">
                     <Suspense fallback={<LoadingSkeleton />}>
