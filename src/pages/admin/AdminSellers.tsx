@@ -387,12 +387,14 @@ SellerRow.displayName = 'SellerRow';
 // Main Component
 // ============================================================
 const AdminSellers: React.FC = () => {
+    const { customAlert, customConfirm } = useApp();
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const [filter, setFilter] = useState<FilterTab>('all');
     const [sellers, setSellers] = useState<AdminUserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<AdminUserRow | null>(null);
+    const [bulkBusy, setBulkBusy] = useState<null | 'free' | 'trial'>(null);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -415,6 +417,49 @@ const AdminSellers: React.FC = () => {
         if (filter === 'suspended') return sellers.filter((s) => s.is_suspended);
         return sellers.filter((s) => s.subscription_plan === filter && !s.is_suspended);
     }, [sellers, filter]);
+
+    const bulkApply = useCallback(
+        async (kind: 'free' | 'trial-30') => {
+            const targets = sellers.filter((s) => !s.is_suspended);
+            if (targets.length === 0) {
+                await customAlert('لا يوجد بائعون نشطون لتطبيق الإجراء.');
+                return;
+            }
+            const isFree = kind === 'free';
+            const ok = await customConfirm(
+                isFree
+                    ? `سيتم جعل ${targets.length} متجر نشط مجانياً (بلا انتهاء، 100% خصم). متابعة؟`
+                    : `سيتم منح ${targets.length} متجر نشط تجربة مجانية لمدة 30 يوماً. متابعة؟`
+            );
+            if (!ok) return;
+            setBulkBusy(isFree ? 'free' : 'trial');
+            const expiresAt = isFree ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const results = await Promise.allSettled(
+                targets.map((s) =>
+                    adminService.applySubscription({
+                        storeId: s.id,
+                        plan: isFree ? 'free' : 'trial',
+                        startedAt: new Date(),
+                        expiresAt,
+                        discount: isFree ? 100 : 0,
+                        amount: isFree ? 0 : 199,
+                        notes: isFree ? 'Bulk: free for all (admin)' : 'Bulk: 30-day trial (admin)',
+                        sendNotification: false,
+                    })
+                )
+            );
+            setBulkBusy(null);
+            const ok_ = results.filter((r) => r.status === 'fulfilled' && (r.value as any).success).length;
+            const failed = results.length - ok_;
+            await customAlert(
+                failed === 0
+                    ? `✅ تم تطبيق الإجراء على ${ok_} متجر بنجاح.`
+                    : `⚠️ نجح ${ok_} | فشل ${failed}. افتح Console للتفاصيل.`
+            );
+            fetchSellers();
+        },
+        [sellers, customAlert, customConfirm, fetchSellers]
+    );
 
     const stats = useMemo(() => {
         const premium = sellers.filter((s) => s.subscription_plan === 'premium').length;
@@ -459,6 +504,33 @@ const AdminSellers: React.FC = () => {
                 <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
                     <div className="text-2xl font-extrabold text-[var(--text-secondary)]">{stats.free}</div>
                     <div className="text-xs text-[var(--text-secondary)] mt-0.5">🆓 مجاني</div>
+                </div>
+            </div>
+
+            {/* Bulk actions */}
+            <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-pink-50 border border-amber-200 rounded-2xl p-4">
+                <div className="flex items-start gap-3 mb-3">
+                    <div className="text-2xl">⚡</div>
+                    <div>
+                        <div className="font-bold text-sm text-amber-900">إجراءات جماعية على كل البائعين النشطين</div>
+                        <div className="text-xs text-amber-700 mt-0.5">للتحكم الفردي بكل بائع، اضغط بطاقته في القائمة بالأسفل.</div>
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={() => bulkApply('free')}
+                        disabled={bulkBusy !== null}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
+                    >
+                        {bulkBusy === 'free' ? '... جاري التطبيق' : '🆓 جعل الكل مجانياً'}
+                    </button>
+                    <button
+                        onClick={() => bulkApply('trial-30')}
+                        disabled={bulkBusy !== null}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
+                    >
+                        {bulkBusy === 'trial' ? '... جاري التطبيق' : '🎁 تجربة 30 يوم للجميع'}
+                    </button>
                 </div>
             </div>
 
