@@ -1,4 +1,156 @@
-# TAKI — تقرير التقدم v9.6 (المرحلة السابعة - أدوات الإدارة الخارقة وإصلاح البيئة) 🛠️👑
+# TAKI — تقرير التقدم v9.7 (المرحلة الثامنة - Premium Admin Dashboard) 👑⚡
+
+## الإصدار v9.7 — لوحة إدارة احترافية بمعايير 2026
+
+**التاريخ:** ٧ مايو ٢٠٢٦
+**الفرع:** `claude/exciting-napier-83f3b2` → دُمج في `main`
+**Commits:** `86d99df`, `e810129`, `69e39d3`
+
+ترقية شاملة للوحة التحكم من نسخة بسيطة بدون تصميم إلى لوحة احترافية بـ Tailwind + Glassmorphism + تحليلات لحظية + تحكم كامل بالاشتراكات.
+
+---
+
+### 🎯 1. لوحة الإدارة الجديدة (8 ملفات)
+
+استبدال [AdminDashboard.tsx](src/pages/AdminDashboard.tsx) القديم (530 سطر، تصميم مكسور) بمعمارية lazy-loaded:
+
+```
+src/pages/AdminDashboard.tsx          ← ملف رئيسي خفيف (210 سطر) + TabNav + auth gate
+src/pages/admin/
+  ├── AdminOverview.tsx               ← الصفحة الرئيسية + 3 أزرار كبيرة + مؤشرات لحظية
+  ├── AdminBuyers.tsx                 ← إدارة المشترين (بحث + Modal تعديل + إيقاف/تعليق)
+  ├── AdminSellers.tsx                ← إدارة البائعين + Modal التحكم بالاشتراك
+  ├── AdminAnalytics.tsx              ← تحليلات لحظية + رسم بياني SVG + فلاتر زمنية
+  └── AdminTools.tsx                  ← بوابة الدفع + البانرات + الحملات
+src/services/adminService.ts          ← Service layer + TTL cache (3s)
+supabase/migration_v9_7_admin_pro.sql ← 13 عمود + 2 جدول + 10 RPC + 2 view
+```
+
+**الميزات المضافة:**
+- ⚡ **React.lazy** لكل تاب → التحميل عند الطلب فقط (ينخفض initial bundle بـ ~70%)
+- 🎯 **3 أزرار كبيرة** في الصفحة الرئيسية: المشترون / البائعون / الأدوات
+- 👑 **Modal تحكم سريع بالاشتراك**: تاريخ بداية + تاريخ نهاية + خصم (slider 0-100%) + مبلغ شهري + ملاحظات + إشعار للبائع
+- 📊 **تحليلات لحظية**: عدد المتصلين الآن، فلاتر 5د/ساعة/24س/7أ/30ي/مخصص، Activity feed يحدّث كل 3 ثوان
+- 🔒 **أمان عالي**: كل RPC مغلق بـ `user_type='admin'` داخل قاعدة البيانات
+
+---
+
+### 🗄️ 2. ترقية قاعدة البيانات (Migration v9.7)
+
+تطبيق `migration_v9_7_admin_pro.sql` على Supabase — تم رفعه عبر MCP مباشرة:
+
+| العنصر | التفاصيل |
+|---|---|
+| **أعمدة جديدة** | `store_profiles`: subscription_amount, subscription_started_at, admin_notes, is_suspended, custom_features<br>`users`: is_suspended, last_active_at, admin_notes, total_bookings, total_spent |
+| **جداول جديدة** | `user_sessions` (heartbeat-based)، `activity_log` (RLS صارم) |
+| **RPC functions** | get_live_stats، get_bookings_timeline، get_recent_activity، admin_apply_subscription، admin_update_user، admin_soft_delete_user، admin_search_users، session_heartbeat، log_activity، cleanup_old_activity |
+| **Views** | v_top_sellers، v_top_buyers (مع `security_invoker=true`) |
+| **Indexes** | 6 indexes جديدة على last_active_at، user_type، last_seen_at، action، created_at |
+| **Realtime** | تفعيل Realtime على user_sessions و activity_log |
+
+---
+
+### 🔐 3. إصلاحات أمنية (Migration v9.7 Hardening)
+
+كشف Supabase advisor عن **2 ERRORs أمنية** في الـ migration الأصلي — أُصلحت في migration ثانية:
+
+| المشكلة | الإصلاح |
+|---|---|
+| `v_top_sellers` كان SECURITY DEFINER ضمنياً | حُوّل إلى `WITH (security_invoker=true)` |
+| `v_top_buyers` كان SECURITY DEFINER ضمنياً | حُوّل إلى `WITH (security_invoker=true)` |
+| صلاحيات `INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER` على views للـ anon والـ authenticated | سُحبت — بقي `SELECT` للـ authenticated فقط |
+| `cleanup_old_activity` بدون `SET search_path` (WARN) | ثُبّت على `public` |
+| Defense-in-depth | إضافة `admin_top_sellers()` و `admin_top_buyers()` كـ admin-gated RPCs، تحديث `adminService.ts` لاستخدامها بدل الاستعلام المباشر |
+
+**النتيجة:** advisor الأمان من 2 ERRORs إلى **0 ERRORs**.
+
+---
+
+### 🎨 4. اكتشاف وحل المشكلة الجذرية: Tailwind CSS
+
+**المشكلة:** بعد تطبيق الملفات، شاشة بدون أي تصميم — كل classes الـ Tailwind لا تُطبَّق.
+
+**التشخيص:** المشروع لم يكن يستخدم Tailwind أصلاً! فقط `tailwind-merge` (utility) في الـ deps. الـ AdminDashboard القديم كان يستخدم Tailwind classes هي الأخرى لكن بدون أن تعمل — ولذلك كان "بسيطاً".
+
+**الحل:**
+1. تثبيت `tailwindcss@3.4.19` + `postcss` (Parcel يقوم بالـ vendor prefixing تلقائياً → autoprefixer غير ضروري)
+2. إنشاء [tailwind.config.js](tailwind.config.js) مع `preflight: false` لئلّا يكسر تصميم الصفحات الأخرى المعتمد على [styles.css](src/styles.css)
+3. إنشاء `.postcssrc.json` (JSON بدل JS لتفعيل cache Parcel)
+4. إضافة `@tailwind components; @tailwind utilities;` في أعلى [styles.css](src/styles.css)
+
+**النتيجة:** Parcel build ينجح في 3.89s، CSS bundle يحتوي 11+ Tailwind utility class مُستخدم في صفحات الإدمن.
+
+---
+
+### ⬅️ 5. زر رجوع ذكي في الإدمن
+
+أُضيف زر رجوع في `TabNav` بمنطق ذكي:
+- إذا التاب الحالي ليس `overview` → ارجع للـ overview
+- إذا أنت في overview → استخدم `history.goBack()` أو ارجع للصفحة الرئيسية
+
+```tsx
+const handleBack = useCallback(() => {
+    if (activeTab !== 'overview') { setActiveTab('overview'); return; }
+    if (history.length > 1) history.goBack();
+    else history.push('/');
+}, [activeTab, history]);
+```
+
+---
+
+### 🛠️ 6. إصلاح Service Worker Caching
+
+**المشكلة:** خطأ `Cannot find module '7h6Pi'` عند فتح صفحة الإدمن.
+
+**السبب:** SW القديم `taki-cache-v8.13` يخدم JS بـ chunk hashes قديمة، والـ chunks الجديدة لها hashes مختلفة.
+
+**الحل:** رفع `CACHE_NAME` من `v8.13` إلى `v9.7` في [sw.js](sw.js) — حدث `activate` يمسح الكاش القديم تلقائياً لكل المستخدمين.
+
+---
+
+### 🩻 7. تنظيف Git State (إنقاذ كبير)
+
+**المشكلة المكتشفة:** كان في commit فاسد على `main` باسم `ff28282 v9.7 admin pro` يحتوي **1121 ملف garbage** (parcel-cache بـ hash names + node16 binary headers) و **صفر ملفات إدمن حقيقية**.
+
+**الإصلاح:**
+1. `git reset --hard d8389e9` على main (آمن — الـ commit لم يُدفع لـ origin)
+2. إضافة `node16/`, `npm-cache/`, `*.tgz` إلى [.gitignore](.gitignore)
+3. التزام صحيح في الـ worktree: 11 ملف فقط (3319+ insertions، صفر garbage)
+4. دمج نظيف لـ main عبر fast-forward
+
+---
+
+### ✅ التحقق النهائي
+
+| الفحص | النتيجة |
+|---|---|
+| TypeScript typecheck (ملفات v9.7) | **0 أخطاء** |
+| Parcel production build | **3.89s، نجح بدون warnings** |
+| كل admin chunks مبنية | ✅ AdminDashboard 7.4kB، AdminSellers 14.5kB، AdminAnalytics 11.2kB، إلخ |
+| CSS bundle يحتوي Tailwind | ✅ 11+ utility classes |
+| Supabase advisor: ERRORs | **0 (من 2)** |
+| Supabase RPCs مطابقة للـ migration المحلي | ✅ كل signatures صحيحة |
+| Working tree نظيف | ✅ |
+
+---
+
+### 📊 ملخص v9.7
+
+```
+الملفات الجديدة:           8  (5 admin tabs + service + migration + readme)
+الملفات المعدّلة:          5  (AdminDashboard، sw.js، styles.css، .gitignore، package.json)
+ملفات config جديدة:        2  (tailwind.config.js, .postcssrc.json)
+سطور مضافة:               ~3,400
+Migrations مطبّقة:        2  (v9_7_admin_pro_dashboard، v9_7_admin_pro_security_hardening)
+RPCs جديدة:               12 (10 من v9.7 الأصلية + admin_top_sellers/buyers)
+حذف garbage من git:       1,121 ملف
+حجم initial bundle:       ↓ ~70% (lazy loading لكل تاب)
+الأمان:                   ✅ 0 ERRORs، كل RPCs admin-gated داخل DB
+```
+
+**الحالة النهائية:** اللوحة جاهزة، قاعدة البيانات نظيفة وآمنة، dev server يبني في 3.89s. ✅
+
+---
 
 ## الإصدار v9.6 — مبدل الأدوار وإصلاحات الوصول (Admin Super-Tools)
 
