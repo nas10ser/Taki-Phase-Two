@@ -285,38 +285,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     useEffect(() => {
         let isInitializing = false;
+        // SAFETY: even if every Supabase call hangs (cold start, dropped
+        // packet, RLS misconfig), auth must NEVER block the UI for more than
+        // 2.5s. After that we treat the visitor as a guest and let them in.
+        const safetyTimer = setTimeout(() => {
+            setIsAuthReady(true);
+            setLoading(false);
+        }, 2500);
+
         const initData = async () => {
             if (isInitializing) return;
             isInitializing = true;
             try {
                 logger.info('🚀 Initializing App Context (Direct Remote Only)...');
-                
-                // SECURITY: Sync link feature removed — it accepted unsigned
-                // Base64 payloads from URL params, allowing session hijacking.
-                // Data synchronisation now relies exclusively on Supabase auth.
-
                 logger.info('📡 Fetching state from remote...');
                 setLoading(true);
 
-                // Initial fetch
-                await Promise.allSettled([
-                    dealRepository.getAll().then(fetchedDeals => {
-                        if (fetchedDeals) setDeals(fetchedDeals);
-                    }),
-                    userRepository.getCurrentUser().then(async currentUser => {
+                // FAST PATH — auth check on its own. As soon as it resolves
+                // (success or failure), we flip isAuthReady so protected routes
+                // can render without waiting for deals/sellers/notifications.
+                userRepository.getCurrentUser()
+                    .then(async currentUser => {
                         if (currentUser) {
                             logger.info(`👤 Session found: ${currentUser.name}`);
                             setUser(currentUser);
-                            
-                            // Background hydration
-                            await Promise.allSettled([
+                            // Background hydration of user-specific data — does
+                            // not gate isAuthReady; pages render immediately.
+                            Promise.allSettled([
                                 userRepository.getFavorites().then(setFavorites),
                                 notificationRepository.fetchByUserId(currentUser.id).then(setNotifications),
-                                import('../repositories/bookingRepository').then(({ bookingRepository }) => 
+                                import('../repositories/bookingRepository').then(({ bookingRepository }) =>
                                     bookingRepository.getByUser(currentUser.id).then(setBookings)
-                                )
-                            ]);
+                                ),
+                            ]).catch(() => {});
                         }
+                    })
+                    .catch((err) => console.warn('Auth check failed:', err))
+                    .finally(() => {
+                        clearTimeout(safetyTimer);
+                        setIsAuthReady(true);
+                    });
+
+                // PARALLEL — global data fetch. Doesn't block auth gate.
+                Promise.allSettled([
+                    dealRepository.getAll().then(fetchedDeals => {
+                        if (fetchedDeals) setDeals(fetchedDeals);
                     }),
                     userRepository.getAllSellers().then(sellers => {
                         if (sellers) {
@@ -324,18 +337,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             sellers.forEach(s => { profiles[s.id] = s; });
                             setStoreProfiles(profiles);
                         }
-                    })
-                ]);
+                    }),
+                ]).finally(() => {
+                    setLoading(false);
+                });
             } catch (error) {
                 console.error('❌ Failed to initialize app data:', error);
-            } finally {
+                clearTimeout(safetyTimer);
                 setLoading(false);
-                setIsAuthReady(true); // signal AuthRedirector that hydration is complete
+                setIsAuthReady(true);
+            } finally {
                 isInitializing = false;
             }
         };
 
         initData();
+        return () => clearTimeout(safetyTimer);
 
         // SECURITY: Removed window.appContextSetters debug backdoor
 
