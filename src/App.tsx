@@ -38,6 +38,7 @@ const RouteFallback = () => (
 const AuthRedirector = () => {
     const context = useApp();
     const user = context.user;
+    const isAuthReady = context.isAuthReady;
     const language = context.language;
     const customAlert = context.customAlert;
     const history = useHistory();
@@ -99,8 +100,11 @@ const AuthRedirector = () => {
                            : '/';
                 history.replace(dest);
             }
-        } else {
-            // Protected routes
+        } else if (isAuthReady) {
+            // Only kick to home AFTER auth has resolved. Without this guard,
+            // a refresh on /admin or /seller bounces logged-in users to '/'
+            // because user is briefly null while the Supabase session loads
+            // (the white-screen bug the admin reported).
             if (location.pathname === '/seller' || location.pathname === '/admin') {
                 logger.info('🚪 AuthRedirector: Guest on protected route, redirecting to home');
                 history.replace('/');
@@ -110,7 +114,7 @@ const AuthRedirector = () => {
         if (location.pathname && location.pathname !== '/register') {
             localStorage.setItem('TAKI_LAST_PATH', location.pathname + location.search);
         }
-    }, [user, location.pathname, location.search, history]);
+    }, [user, isAuthReady, location.pathname, location.search, history]);
 
     return null;
 };
