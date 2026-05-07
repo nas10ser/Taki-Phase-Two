@@ -405,22 +405,25 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
     const [loaded, setLoaded] = useState(false);
     const [globalAmount, setGlobalAmount] = useState<number>(199);
     const [draftAmount, setDraftAmount] = useState<string>('199');
+    const [trialDays, setTrialDays] = useState<number>(14);
     const [gatewayEnabled, setGatewayEnabled] = useState<boolean>(false);
     const [savingAmount, setSavingAmount] = useState(false);
-    const [busyMode, setBusyMode] = useState<null | 'free' | 'paid'>(null);
+    const [busyMode, setBusyMode] = useState<null | 'free' | 'paid' | 'trial-paid'>(null);
 
     // Hydrate current settings on mount.
     useEffect(() => {
         let alive = true;
         (async () => {
-            const [amount, enabled] = await Promise.all([
+            const [amount, enabled, trial] = await Promise.all([
                 adminService.getPlatformSetting<number>('basic_plan_price_sar'),
                 adminService.getPlatformSetting<boolean>('payment_gateway_enabled'),
+                adminService.getPlatformSetting<number>('trial_days'),
             ]);
             if (!alive) return;
             const amt = Number(amount) || 199;
             setGlobalAmount(amt);
             setDraftAmount(String(amt));
+            setTrialDays(Math.max(1, Number(trial) || 14));
             setGatewayEnabled(Boolean(enabled));
             setLoaded(true);
         })();
@@ -514,6 +517,45 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         onApplied();
     };
 
+    const handleTrialThenPaid = async () => {
+        const trialEndsAt = new Date(Date.now() + trialDays * 86400000);
+        const ok = await customConfirm(
+            'سيتم:\n' +
+            '• تفعيل بوابة الدفع\n' +
+            `• منح كل البائعين النشطين فترة تجريبية مجانية لمدة ${trialDays} يوم (تنتهي ${trialEndsAt.toLocaleDateString('ar-SA')})\n` +
+            `• بعد انتهاء التجربة → الزام الكل بـ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n\n` +
+            'متابعة؟'
+        );
+        if (!ok) return;
+        setBusyMode('trial-paid');
+
+        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
+        if (!settingRes.success) {
+            setBusyMode(null);
+            await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+            return;
+        }
+        setGatewayEnabled(true);
+
+        // Trial plan with the global amount baked in. When the trial expires
+        // (auto-handled by migration_v12_trial_automation), the seller will
+        // need to subscribe — and the amount they're billed is `globalAmount`.
+        const r = await adminService.bulkSetAllActiveSellers({
+            plan: 'trial',
+            amount: globalAmount,
+            discount: 0,
+            expiresAt: trialEndsAt,
+            notes: `Platform mode: ${trialDays}-day trial → mandatory ${globalAmount} SAR/mo`,
+        });
+        setBusyMode(null);
+        await customAlert(
+            r.failed === 0
+                ? `🎁 تم تطبيق الوضع.\n${r.ok} متجر بدأ تجربة ${trialDays} يوم. بعدها يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+        );
+        onApplied();
+    };
+
     return (
         <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
@@ -563,17 +605,29 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 )}
             </div>
 
-            {/* Two big mode buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {/* Three platform-mode buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 <button
                     onClick={handleFreeForAll}
                     disabled={busyMode !== null}
                     className="p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
                 >
                     <div className="text-2xl mb-1">🆓</div>
-                    <div className="text-sm font-extrabold">الموقع مجاني للجميع</div>
+                    <div className="text-sm font-extrabold">مجاني للجميع</div>
                     <div className="text-[11px] opacity-90 mt-0.5">إيقاف البوابة + تحويل كل التجار للباقة المجانية</div>
                     {busyMode === 'free' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
+                </button>
+                <button
+                    onClick={handleTrialThenPaid}
+                    disabled={busyMode !== null}
+                    className="p-4 bg-gradient-to-br from-amber-500 to-orange-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
+                >
+                    <div className="text-2xl mb-1">🎁</div>
+                    <div className="text-sm font-extrabold">{trialDays} يوم تجريبي ثم إلزامي</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">
+                        تجربة مجانية ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر إلزامي
+                    </div>
+                    {busyMode === 'trial-paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
                 </button>
                 <button
                     onClick={handlePaidForAll}
@@ -581,12 +635,27 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                     className="p-4 bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
                 >
                     <div className="text-2xl mb-1">💰</div>
-                    <div className="text-sm font-extrabold">إلزامي بالمبلغ الافتراضي</div>
+                    <div className="text-sm font-extrabold">إلزامي فوراً</div>
                     <div className="text-[11px] opacity-90 mt-0.5">
-                        تفعيل البوابة + الزام الكل بـ {globalAmount.toLocaleString('ar-SA')} ر.س/شهر بدون خصم
+                        تفعيل البوابة + الزام الكل بـ {globalAmount.toLocaleString('ar-SA')} ر.س/شهر بدون تجربة
                     </div>
                     {busyMode === 'paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
                 </button>
+            </div>
+
+            {/* Editable trial duration — affects the trial-then-paid button label & action */}
+            <div className="flex items-center gap-2 mt-3 bg-white/60 rounded-lg p-2 text-[11px]">
+                <span className="text-amber-800 font-bold">⏱ مدة التجربة:</span>
+                <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={trialDays}
+                    onChange={(e) => setTrialDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
+                    onBlur={() => adminService.setPlatformSetting('trial_days', trialDays).catch(() => {})}
+                    className="w-14 px-2 py-1 bg-[var(--card-bg)] border border-amber-200 rounded text-center font-bold text-amber-900 outline-none focus:border-amber-500"
+                />
+                <span className="text-amber-800">يوم — تطبَّق على زر "تجريبي ثم إلزامي". تُحفظ تلقائياً.</span>
             </div>
 
             <div className="text-[11px] text-emerald-700 mt-3 leading-relaxed bg-white/60 rounded-lg p-2">
