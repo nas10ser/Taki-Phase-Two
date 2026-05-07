@@ -141,22 +141,20 @@ const Home: React.FC = () => {
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
+            {/* No more full-screen blocker — modern apps show content shells while
+                data hydrates in the background. A thin top progress bar gives a
+                subtle hint that data is still arriving without blocking taps. */}
             {loading && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--body-bg)', backdropFilter: 'blur(15px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div className="spinner" style={{ width: 50, height: 50, border: '5px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ marginTop: 20, fontWeight: 900, color: 'var(--text-primary)', fontSize: '1.1rem' }}>{isRTL ? 'جاري تجهيز TAKI...' : 'Preparing TAKI...'}</p>
-                    
-                    <button 
-                        onClick={() => {
-                            const { setLoading } = (window as any).appContextSetters || {};
-                            if (setLoading) setLoading(false);
-                            else window.location.reload(); 
-                        }}
-                        style={{ marginTop: 30, padding: '10px 20px', borderRadius: 12, border: '1.5px solid var(--gray-300)', background: 'none', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
-                    >
-                        {isRTL ? 'تجاوز الانتظار ⏭️' : 'Skip Loading ⏭️'}
-                    </button>
-                </div>
+                <div
+                    aria-hidden
+                    style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 1100,
+                        background: 'linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%)',
+                        backgroundSize: '200% 100%',
+                        animation: 'taki-progress 1.2s linear infinite',
+                        pointerEvents: 'none',
+                    }}
+                />
             )}
             <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
@@ -289,10 +287,18 @@ const Home: React.FC = () => {
 
             {/* Deals Grid */}
             <div style={{ padding: '0 16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-                {filteredDeals.length > 0 ? filteredDeals.map(deal => {
-                    const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                    return <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
-                }) : (
+                {filteredDeals.length > 0 ? (
+                    filteredDeals.map(deal => {
+                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                        return <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />;
+                    })
+                ) : loading ? (
+                    // Skeleton placeholders while initial fetch is in flight.
+                    // Shows immediately so the user never sees a blank screen.
+                    Array.from({ length: 8 }).map((_, i) => (
+                        <div key={`sk-${i}`} className="taki-skeleton" style={{ height: 240 }} />
+                    ))
+                ) : (
                     <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
                         <div style={{ fontSize: '3rem', marginBottom: 15 }}>🔍</div>
                         <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>{isRTL ? 'لم نجد عروضاً تطابق هذا البحث' : 'No deals found for this search'}</div>

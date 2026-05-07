@@ -1086,6 +1086,24 @@ textarea:focus {
   }
 }
 
+/* Top progress bar — replaces full-screen "preparing TAKI" blocker.
+   Lets the page paint instantly while data hydrates in the background. */
+@keyframes taki-progress {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: -200% 50%; }
+}
+
+/* Inline shimmer skeleton card used for deal grid placeholders. */
+.taki-skeleton {
+  background: linear-gradient(90deg,
+    var(--gray-100) 0%,
+    var(--gray-200) 50%,
+    var(--gray-100) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 16px;
+}
+
 @keyframes scaleIn {
   from {
     opacity: 0;

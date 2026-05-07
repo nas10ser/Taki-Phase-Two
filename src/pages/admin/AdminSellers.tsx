@@ -31,17 +31,24 @@ const SubscriptionModal = memo<{
 }>(({ seller, onClose, onSaved }) => {
     const { customAlert } = useApp();
     const today = new Date();
-    const defaultExpiry = seller.subscription_expires_at
-        ? new Date(seller.subscription_expires_at)
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Defensive: subscription_expires_at can be a malformed string from
+    // legacy rows. Fall back to "today + 30 days" instead of letting an
+    // Invalid Date crash the modal (was a white-screen culprit).
+    const defaultExpiry = (() => {
+        if (seller.subscription_expires_at) {
+            const d = new Date(seller.subscription_expires_at);
+            if (!isNaN(d.getTime())) return d;
+        }
+        return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    })();
 
     const [plan, setPlan] = useState<'free' | 'trial' | 'premium'>(
         (seller.subscription_plan as any) ?? 'premium'
     );
     const [startedAt, setStartedAt] = useState(toDateInput(today));
     const [expiresAt, setExpiresAt] = useState(toDateInput(defaultExpiry));
-    const [discount, setDiscount] = useState(seller.discount_percentage ?? 0);
-    const [amount, setAmount] = useState(seller.subscription_amount ?? 199);
+    const [discount, setDiscount] = useState(Number(seller.discount_percentage) || 0);
+    const [amount, setAmount] = useState(Number(seller.subscription_amount) || 199);
     const [notes, setNotes] = useState('');
     const [sendNotif, setSendNotif] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -304,6 +311,8 @@ const SubscriptionModal = memo<{
 SubscriptionModal.displayName = 'SubscriptionModal';
 
 function toDateInput(d: Date): string {
+    // Guard against Invalid Date (legacy rows with malformed timestamps).
+    if (!d || isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
     return d.toISOString().split('T')[0];
 }
 
