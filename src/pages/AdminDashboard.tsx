@@ -117,7 +117,7 @@ TabNav.displayName = 'TabNav';
 // Main Component
 // ============================================================
 const AdminDashboard: React.FC = () => {
-    const { user } = useApp();
+    const { user, isAuthReady } = useApp();
     const history = useHistory();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
 
@@ -138,8 +138,20 @@ const AdminDashboard: React.FC = () => {
         return () => clearInterval(id);
     }, [user]);
 
-    // Auth gate
+    // Auth gate. While the Supabase session is still hydrating after a hard
+    // refresh, `user` is briefly null — show a soft loader instead of an
+    // "Access denied" flash that confuses returning admins.
     const userType = user?.user_type ?? user?.userType;
+    if (!isAuthReady) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4" dir="rtl">
+                <div className="text-center">
+                    <div className="w-10 h-10 mx-auto rounded-full border-4 border-emerald-200 border-t-emerald-500 animate-spin" />
+                    <p className="text-sm text-[var(--text-secondary)] mt-3 font-bold">جاري التحقق من الجلسة...</p>
+                </div>
+            </div>
+        );
+    }
     if (userType !== 'admin') {
         return (
             <div className="min-h-screen flex items-center justify-center p-4" dir="rtl">
@@ -155,6 +167,12 @@ const AdminDashboard: React.FC = () => {
                         نوع حسابك الحالي:{' '}
                         <span className="font-bold">{userType ?? 'غير معروف'}</span>
                     </p>
+                    <button
+                        onClick={() => history.push('/register')}
+                        className="mt-4 px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl text-sm hover:bg-emerald-600"
+                    >
+                        تسجيل الدخول
+                    </button>
                 </div>
             </div>
         );

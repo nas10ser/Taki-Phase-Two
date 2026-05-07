@@ -51,6 +51,10 @@ interface AppContextType {
     setLanguage: (lang: 'ar' | 'en') => void;
     deals: Deal[];
     loading: boolean;
+    /** True once the initial Supabase auth check resolves. Use this in
+     *  redirect logic instead of `!user` so refreshed protected routes
+     *  don't bounce logged-in users to home before hydration. */
+    isAuthReady: boolean;
     addDeal: (deal: Deal) => Promise<void>;
     updateDeal: (deal: Deal) => Promise<void>;
     deleteDeal: (id: string) => Promise<void>;
@@ -138,6 +142,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return null;
         }
     });
+    // True once the initial Supabase session check has resolved (success OR
+    // failure). Distinguishes "still hydrating" from "definitively a guest".
+    // Without this, AuthRedirector kicks logged-in admins off /admin on
+    // refresh because user is briefly null while the session loads.
+    const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
     const [favorites, setFavorites] = useState<string[]>([]);
     const favoritesRef = useRef<string[]>([]);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
@@ -321,6 +330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 console.error('❌ Failed to initialize app data:', error);
             } finally {
                 setLoading(false);
+                setIsAuthReady(true); // signal AuthRedirector that hydration is complete
                 isInitializing = false;
             }
         };
@@ -1266,7 +1276,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Memoize the context value to prevent unnecessary re-renders
     const contextValue = useMemo(() => ({
         language, setLanguage,
-        deals, loading, addDeal, updateDeal, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
@@ -1283,7 +1293,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         incrementDealView, incrementDealClick,
     }), [
         language, setLanguage,
-        deals, loading, addDeal, updateDeal, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
