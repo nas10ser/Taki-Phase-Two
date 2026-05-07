@@ -1,12 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
+import { pushService } from '../services/pushService';
 
 const SeasonalOffers: React.FC = () => {
     const history = useHistory();
-    const { language } = useApp();
+    const { language, customAlert } = useApp();
     const isRTL = language === 'ar';
+    const [notifyState, setNotifyState] = useState<'idle' | 'subscribing' | 'done'>('idle');
+
+    const handleNotifyMe = async () => {
+        if (notifyState !== 'idle') return;
+        setNotifyState('subscribing');
+        try {
+            await pushService.ensurePermissionAndSubscribe();
+            try { localStorage.setItem('TAKI_SEASONAL_NOTIFY', '1'); } catch { /* ignore */ }
+            setNotifyState('done');
+            await customAlert(isRTL ? '✅ سنخبرك أول من يعلم بانطلاق الموسم!' : '✅ We will notify you the moment the season launches!');
+        } catch (err: any) {
+            setNotifyState('idle');
+            await customAlert(isRTL
+                ? '❌ تعذر تفعيل التنبيهات. تأكد من السماح للموقع بإرسال إشعارات في إعدادات المتصفح.'
+                : '❌ Could not enable notifications. Please allow notifications in your browser settings.');
+        }
+    };
 
     return (
         <div className="page-content" style={{ 
@@ -96,17 +114,28 @@ const SeasonalOffers: React.FC = () => {
                             ? 'نحن نعمل حالياً مع أكبر الماركات التجارية والمحلات لتوفير أفضل العروض الحصرية لك. فعل التنبيهات لتكون أول من يعلم!' 
                             : "We're currently partnering with premium brands and stores to bring you the best exclusive deals. Enable notifications to be the first to know!"}
                     </p>
-                    <button style={{
-                        background: 'var(--secondary)',
-                        color: 'var(--text-primary)',
-                        padding: '16px 32px',
-                        borderRadius: 16,
-                        border: 'none',
-                        fontWeight: 900,
-                        fontSize: '1rem',
-                        boxShadow: '0 8px 24px rgba(251,191,36,0.3)'
-                    }}>
-                        {isRTL ? 'أعلمني عند الانطلاق' : 'Notify Me at Launch'}
+                    <button
+                        onClick={handleNotifyMe}
+                        disabled={notifyState !== 'idle'}
+                        aria-live="polite"
+                        style={{
+                            background: notifyState === 'done' ? '#10b981' : 'var(--secondary)',
+                            color: notifyState === 'done' ? 'white' : 'var(--text-primary)',
+                            padding: '16px 32px',
+                            borderRadius: 16,
+                            border: 'none',
+                            fontWeight: 900,
+                            fontSize: '1rem',
+                            boxShadow: '0 8px 24px rgba(251,191,36,0.3)',
+                            cursor: notifyState === 'idle' ? 'pointer' : 'default',
+                            opacity: notifyState === 'subscribing' ? 0.7 : 1,
+                            transition: 'background 0.25s ease, color 0.25s ease',
+                        }}>
+                        {notifyState === 'subscribing'
+                            ? (isRTL ? 'جارٍ التفعيل...' : 'Enabling...')
+                            : notifyState === 'done'
+                            ? (isRTL ? '✅ تم تفعيل التنبيه' : '✅ Notifications On')
+                            : (isRTL ? 'أعلمني عند الانطلاق' : 'Notify Me at Launch')}
                     </button>
                 </div>
 

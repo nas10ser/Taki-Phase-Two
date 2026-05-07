@@ -32,8 +32,6 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const startCamera = async () => {
         try {
-            console.log('📷 Attempting to start camera...');
-
             // On iOS/iPhone, getUserMedia ONLY works over HTTPS.
             if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
                 const secureMsg = isRTL 

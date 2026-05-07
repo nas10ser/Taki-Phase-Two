@@ -5,6 +5,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =====================================================================
+ * Tailwind CSS variable initializers (replaces preflight, which we
+ * keep disabled to preserve the legacy design tokens above/below).
+ *
+ * Tailwind v3 gradient/shadow/ring/transform/filter utilities reference
+ * these `--tw-*` variables; without them, classes like `from-blue-500`
+ * compile to `--tw-gradient-from: #3b82f6 var(--tw-gradient-from-position)`
+ * which is invalid (var is undefined) and the gradient silently fails to
+ * render. This was the root cause of the washed-out v9.7 admin dashboard.
+ * ===================================================================== */
+*, ::before, ::after {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x: ;
+  --tw-pan-y: ;
+  --tw-pinch-zoom: ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ordinal: ;
+  --tw-slashed-zero: ;
+  --tw-numeric-figure: ;
+  --tw-numeric-spacing: ;
+  --tw-numeric-fraction: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / .5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur: ;
+  --tw-brightness: ;
+  --tw-contrast: ;
+  --tw-grayscale: ;
+  --tw-hue-rotate: ;
+  --tw-invert: ;
+  --tw-saturate: ;
+  --tw-sepia: ;
+  --tw-drop-shadow: ;
+  --tw-backdrop-blur: ;
+  --tw-backdrop-brightness: ;
+  --tw-backdrop-contrast: ;
+  --tw-backdrop-grayscale: ;
+  --tw-backdrop-hue-rotate: ;
+  --tw-backdrop-invert: ;
+  --tw-backdrop-opacity: ;
+  --tw-backdrop-saturate: ;
+  --tw-backdrop-sepia: ;
+}
+
 :root {
   --primary: #0f172a; /* Midnight Navy */
   --primary-dark: #1e293b; /* Dark Slate Blue */
@@ -1223,3 +1283,71 @@ input, select, textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* =====================================================================
+ * Admin theme helpers (v9.7.1)
+ * Bridge Tailwind utility classes used in admin pages with the existing
+ * --css-variable based light/dark theme system, so admin surface colors
+ * follow the global theme toggle.
+ * ===================================================================== */
+.bg-card-glass {
+  background-color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+}
+.dark-mode .bg-card-glass,
+:root:not(.light-mode) .bg-card-glass {
+  background-color: rgba(15, 18, 25, 0.82);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode) .bg-card-glass {
+    background-color: rgba(15, 18, 25, 0.82);
+  }
+}
+
+/* admin status pills — readable on both card-bg modes */
+.dark-mode .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.15); }
+.dark-mode .bg-blue-50    { background-color: rgba(59, 130, 246, 0.15); }
+.dark-mode .bg-green-50   { background-color: rgba(34, 197, 94, 0.15); }
+.dark-mode .bg-red-50     { background-color: rgba(239, 68, 68, 0.18); }
+.dark-mode .bg-purple-50  { background-color: rgba(168, 85, 247, 0.15); }
+.dark-mode .bg-amber-50   { background-color: rgba(245, 158, 11, 0.15); }
+.dark-mode .bg-pink-50    { background-color: rgba(236, 72, 153, 0.15); }
+.dark-mode .bg-yellow-50  { background-color: rgba(234, 179, 8, 0.15); }
+.dark-mode .bg-indigo-50  { background-color: rgba(99, 102, 241, 0.15); }
+.dark-mode .bg-sky-50     { background-color: rgba(14, 165, 233, 0.15); }
+.dark-mode .bg-rose-50    { background-color: rgba(244, 63, 94, 0.18); }
+.dark-mode .bg-orange-50  { background-color: rgba(249, 115, 22, 0.15); }
+
+.dark-mode .text-emerald-600,
+.dark-mode .text-emerald-700 { color: #34d399; }
+.dark-mode .text-blue-600,
+.dark-mode .text-blue-700    { color: #60a5fa; }
+.dark-mode .text-green-600,
+.dark-mode .text-green-700   { color: #4ade80; }
+.dark-mode .text-red-600,
+.dark-mode .text-red-700     { color: #f87171; }
+.dark-mode .text-purple-600,
+.dark-mode .text-purple-700  { color: #c084fc; }
+.dark-mode .text-amber-600,
+.dark-mode .text-amber-700   { color: #fbbf24; }
+.dark-mode .text-pink-600,
+.dark-mode .text-pink-700    { color: #f472b6; }
+.dark-mode .text-yellow-600,
+.dark-mode .text-yellow-700  { color: #facc15; }
+.dark-mode .text-indigo-600,
+.dark-mode .text-indigo-700  { color: #818cf8; }
+.dark-mode .text-sky-600,
+.dark-mode .text-sky-700     { color: #38bdf8; }
+.dark-mode .text-rose-600,
+.dark-mode .text-rose-700    { color: #fb7185; }
+.dark-mode .text-orange-600,
+.dark-mode .text-orange-700  { color: #fb923c; }
+
+/* shadow softening on dark mode for admin cards */
+.dark-mode .shadow-sm  { box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.dark-mode .shadow,
+.dark-mode .shadow-md  { box-shadow: 0 4px 8px -2px rgba(0,0,0,.6); }
+.dark-mode .shadow-lg  { box-shadow: 0 10px 24px -6px rgba(0,0,0,.7); }
+.dark-mode .shadow-xl  { box-shadow: 0 20px 40px -10px rgba(0,0,0,.75); }
+.dark-mode .shadow-2xl { box-shadow: 0 30px 60px -12px rgba(0,0,0,.8); }

@@ -26,8 +26,9 @@ export const paymentService = {
      * Note: In a real environment, this would call your backend which then calls Moyasar.
      */
     async initiateMoyasarPayment(req: PaymentRequest): Promise<PaymentResponse> {
-        console.log('Initiating Moyasar Payment...', req);
-        // Simulation of a successful payment gateway response
+        // Simulation of a successful payment gateway response.
+        // NOTE: do NOT log `req` — it contains PII (customerEmail, customerName).
+        void req;
         return new Promise((resolve) => {
             setTimeout(() => {
                 resolve({
@@ -43,7 +44,8 @@ export const paymentService = {
      * Initiates a payment session with PayTabs
      */
     async initiatePayTabsPayment(req: PaymentRequest): Promise<PaymentResponse> {
-        console.log('Initiating PayTabs Payment...', req);
+        // NOTE: do NOT log `req` — it contains PII.
+        void req;
         return new Promise((resolve) => {
             setTimeout(() => {
                 resolve({

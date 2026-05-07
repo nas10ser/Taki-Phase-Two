@@ -191,7 +191,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>({});
 
-    const [darkMode, setDarkMode] = useState<boolean>(false);
+    const [darkMode, setDarkMode] = useState<boolean>(() => {
+        try {
+            const stored = localStorage.getItem('TAKI_DARK_MODE');
+            if (stored === '1') return true;
+            if (stored === '0') return false;
+            // first-time visitor: respect OS preference
+            if (typeof window !== 'undefined' && window.matchMedia) {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+        } catch { /* localStorage may be blocked (private mode) */ }
+        return false;
+    });
 
     // Admin "view as" — lets an admin preview the app as a buyer or
     // seller without changing their actual role. Only meaningful when
@@ -206,7 +217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         else localStorage.removeItem('TAKI_VIEW_AS');
     }, []);
 
-    // Apply dark mode class to document
+    // Apply dark mode class to document + persist preference
     useEffect(() => {
         if (darkMode) {
             document.documentElement.classList.add('dark-mode');
@@ -215,6 +226,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             document.documentElement.classList.remove('dark-mode');
             document.documentElement.classList.add('light-mode');
         }
+        try { localStorage.setItem('TAKI_DARK_MODE', darkMode ? '1' : '0'); } catch { /* ignore */ }
     }, [darkMode]);
 
     // Request notification permission on mount and (best-effort) subscribe

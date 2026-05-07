@@ -54,20 +54,26 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                 transform: `translateX(${isRTL ? (currentIndex * (100 / banners.length)) : (-currentIndex * (100 / banners.length))}%)`,
                 transition: 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
             }}>
-                {banners.map((banner) => (
-                    <div 
-                        key={banner.id} 
+                {banners.map((banner, idx) => (
+                    <div
+                        key={banner.id}
                         onClick={() => handleBannerClick(banner)}
-                        style={{ 
-                            width: `${100 / banners.length}%`, 
-                            height: '100%', 
+                        style={{
+                            width: `${100 / banners.length}%`,
+                            height: '100%',
                             position: 'relative',
                             cursor: 'pointer'
                         }}
                     >
-                        <img 
-                            src={banner.image_url} 
-                            alt={isRTL ? banner.title_ar : banner.title_en} 
+                        <img
+                            src={banner.image_url}
+                            alt={isRTL ? banner.title_ar : banner.title_en}
+                            width={1200}
+                            height={400}
+                            loading={idx === 0 ? 'eager' : 'lazy'}
+                            decoding="async"
+                            // First banner is the LCP element on Home; prioritize it.
+                            {...(idx === 0 ? { fetchpriority: 'high' as 'high' } : {})}
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
                         {(banner.title_ar || banner.title_en) && (

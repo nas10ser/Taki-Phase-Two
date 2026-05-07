@@ -85,7 +85,7 @@ const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
     register: { icon: '✨', color: 'bg-green-50 text-green-600' },
     book: { icon: '🎟️', color: 'bg-emerald-50 text-emerald-600' },
     cancel_booking: { icon: '❌', color: 'bg-red-50 text-red-600' },
-    view_deal: { icon: '👀', color: 'bg-gray-50 text-gray-600' },
+    view_deal: { icon: '👀', color: 'bg-[var(--gray-100)] text-[var(--text-secondary)]' },
     add_deal: { icon: '➕', color: 'bg-purple-50 text-purple-600' },
     edit_deal: { icon: '✏️', color: 'bg-amber-50 text-amber-600' },
     delete_deal: { icon: '🗑️', color: 'bg-red-50 text-red-600' },
@@ -111,30 +111,30 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const ActivityItem = memo<{ row: ActivityRow }>(({ row }) => {
-    const meta = ACTION_ICONS[row.action] ?? { icon: '•', color: 'bg-gray-50 text-gray-600' };
+    const meta = ACTION_ICONS[row.action] ?? { icon: '•', color: 'bg-[var(--gray-100)] text-[var(--text-secondary)]' };
     const label = ACTION_LABELS[row.action] ?? row.action;
     const time = new Date(row.created_at);
     const ago = formatTimeAgo(time);
 
     return (
-        <div className="flex gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+        <div className="flex gap-3 p-3 rounded-xl hover:bg-[var(--gray-100)] transition-colors">
             <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg ${meta.color}`}>
                 {meta.icon}
             </div>
             <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2">
-                    <span className="font-bold text-sm text-gray-800 truncate">
+                    <span className="font-bold text-sm text-[var(--text-primary)] truncate">
                         {row.user_name ?? 'زائر'}
                     </span>
-                    <span className="text-xs text-gray-500">{label}</span>
+                    <span className="text-xs text-[var(--text-secondary)]">{label}</span>
                 </div>
                 {row.entity_id && (
-                    <div className="text-xs text-gray-400 truncate mt-0.5">
+                    <div className="text-xs text-[var(--gray-400)] truncate mt-0.5">
                         {row.entity_type} · {row.entity_id.slice(0, 24)}
                     </div>
                 )}
             </div>
-            <div className="text-xs text-gray-400 flex-shrink-0 self-center tabular-nums">{ago}</div>
+            <div className="text-xs text-[var(--gray-400)] flex-shrink-0 self-center tabular-nums">{ago}</div>
         </div>
     );
 });
@@ -204,7 +204,7 @@ const AdminOverview: React.FC<{
 
             {/* الـ 3 أزرار الكبيرة */}
             <div>
-                <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                     🎯 الأقسام الرئيسية
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -237,7 +237,7 @@ const AdminOverview: React.FC<{
             {/* KPIs اللحظية */}
             <div>
                 <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                         📊 المؤشرات اللحظية
                     </h2>
                     <button
@@ -282,17 +282,17 @@ const AdminOverview: React.FC<{
 
             {/* Activity Feed */}
             <div>
-                <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                     ⚡ النشاط اللحظي
                     <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
                         Live
                     </span>
                 </h2>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+                <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm divide-y divide-[var(--border-color)]">
                     {loading ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">جاري التحميل...</div>
+                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">جاري التحميل...</div>
                     ) : activity.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
+                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">
                             لا توجد نشاطات حديثة بعد. ستظهر هنا مباشرةً.
                         </div>
                     ) : (
