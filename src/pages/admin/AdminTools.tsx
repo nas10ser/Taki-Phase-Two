@@ -458,6 +458,103 @@ function toLocalDateInput(iso: string): string {
 }
 
 // ============================================================
+// Quick-post box — write a campaign right inside the page, in 3 fields.
+// For anything more than a one-shot announcement, use the full modal.
+// ============================================================
+const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void }> = ({ onPosted, onAdvanced }) => {
+    const { customAlert } = useApp();
+    const [title, setTitle] = useState('');
+    const [body, setBody] = useState('');
+    const [audience, setAudience] = useState<'all' | 'buyer' | 'seller'>('all');
+    const [posting, setPosting] = useState(false);
+
+    const handlePost = async () => {
+        const t = title.trim();
+        const b = body.trim();
+        if (!t || !b) {
+            await customAlert('⚠️ اكتب العنوان والمحتوى قبل النشر.');
+            return;
+        }
+        setPosting(true);
+        const { error } = await supabase.from('promotional_campaigns').insert([{
+            title_ar: t,
+            title_en: t,    // mirror — admin can refine later via modal
+            body_ar: b,
+            body_en: b,
+            target_audience: audience,
+            starts_at: new Date().toISOString(),
+            ends_at: null,
+            priority: 0,
+            is_active: true,
+        }]);
+        setPosting(false);
+        if (error) {
+            await customAlert('❌ ' + error.message);
+            return;
+        }
+        setTitle('');
+        setBody('');
+        onPosted();
+    };
+
+    return (
+        <div className="bg-gradient-to-br from-pink-50 via-rose-50 to-orange-50 border border-pink-200 rounded-2xl p-4 mb-3">
+            <div className="flex items-center justify-between mb-3">
+                <div className="font-bold text-sm text-pink-900 flex items-center gap-2">📝 اكتب حملة بسرعة</div>
+                <button
+                    onClick={onAdvanced}
+                    className="text-[11px] text-pink-700 font-bold hover:underline"
+                >
+                    ⚙️ خيارات متقدمة (تواريخ، صورة، زر إجراء...)
+                </button>
+            </div>
+            <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="✏️ اكتب العنوان هنا..."
+                className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-pink-200 rounded-xl text-sm font-bold focus:border-pink-500 outline-none mb-2"
+            />
+            <textarea
+                rows={3}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="📄 اكتب المحتوى الذي سيظهر للمستخدمين..."
+                className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-pink-200 rounded-xl text-sm focus:border-pink-500 outline-none mb-3"
+            />
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex gap-1.5">
+                    {([
+                        { v: 'all', label: '👥 الكل' },
+                        { v: 'buyer', label: '🛒 المشترون' },
+                        { v: 'seller', label: '🏪 البائعون' },
+                    ] as const).map((o) => (
+                        <button
+                            key={o.v}
+                            onClick={() => setAudience(o.v)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                audience === o.v
+                                    ? 'bg-pink-500 text-white'
+                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border border-pink-200'
+                            }`}
+                        >
+                            {o.label}
+                        </button>
+                    ))}
+                </div>
+                <button
+                    onClick={handlePost}
+                    disabled={posting || !title.trim() || !body.trim()}
+                    className="px-5 py-2 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
+                >
+                    {posting ? '... جاري النشر' : '📤 نشر فوراً'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// ============================================================
 // Main Component
 // ============================================================
 const AdminTools: React.FC = () => {
@@ -636,16 +733,17 @@ const AdminTools: React.FC = () => {
             <section>
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">📢 الحملات الترويجية</h2>
-                    <button
-                        onClick={() => setCampaignModal({ open: true, initial: null })}
-                        className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all"
-                    >
-                        ➕ حملة جديدة
-                    </button>
                 </div>
+
+                {/* Inline quick-post — fastest path: title + body + go */}
+                <QuickCampaignBox
+                    onPosted={fetchAll}
+                    onAdvanced={() => setCampaignModal({ open: true, initial: null })}
+                />
+
                 {campaigns.length === 0 ? (
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-8 border border-dashed border-[var(--border-color)] text-center text-sm text-[var(--text-secondary)]">
-                        لا توجد حملات بعد. اضغط <span className="font-bold text-pink-600">"+ حملة جديدة"</span> لإنشاء أول حملة ترويجية تظهر للمستخدمين.
+                    <div className="bg-[var(--card-bg)] rounded-2xl p-6 border border-dashed border-[var(--border-color)] text-center text-sm text-[var(--text-secondary)]">
+                        لا توجد حملات بعد. اكتب حملتك الأولى في المربع أعلاه واضغط نشر.
                     </div>
                 ) : (
                     <div className="space-y-2">
