@@ -516,27 +516,53 @@ const SellerDashboard: React.FC = () => {
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (files) {
-            setUploadingImages(true);
-            const uploadPromises = Array.from(files).map(async (file) => {
+        if (!files || files.length === 0) return;
+        setUploadingImages(true);
+        const results = await Promise.all(
+            Array.from(files).map(async (file) => {
+                // Reject obviously broken inputs early so the user gets a clear msg.
+                if (!file.type.startsWith('image/')) {
+                    return { ok: false, reason: 'type', name: file.name } as const;
+                }
+                if (file.size > 8 * 1024 * 1024) {
+                    return { ok: false, reason: 'size', name: file.name } as const;
+                }
+                // Try Supabase storage first.
                 const url = await storageService.uploadImage(file);
                 if (url) {
                     setImages(prev => [...prev, url].slice(0, 4));
-                } else {
-                    // Fallback to local base64 if Supabase fails (better than nothing)
-                    return new Promise<void>((resolve) => {
+                    return { ok: true, via: 'remote' } as const;
+                }
+                // Fallback: base64 — works offline / when storage RLS rejects.
+                try {
+                    const dataUrl = await new Promise<string>((resolve, reject) => {
                         const reader = new FileReader();
-                        reader.onload = (event) => {
-                            const result = event.target?.result as string;
-                            if (result) setImages(prev => [...prev, result].slice(0, 4));
-                            resolve();
-                        };
+                        reader.onload = (ev) => resolve((ev.target?.result as string) || '');
+                        reader.onerror = () => reject(reader.error);
                         reader.readAsDataURL(file);
                     });
+                    if (dataUrl) {
+                        setImages(prev => [...prev, dataUrl].slice(0, 4));
+                        return { ok: true, via: 'local' } as const;
+                    }
+                } catch (err) {
+                    console.error('Local image fallback failed:', err);
                 }
-            });
-            await Promise.all(uploadPromises);
-            setUploadingImages(false);
+                return { ok: false, reason: 'upload', name: file.name } as const;
+            })
+        );
+        setUploadingImages(false);
+
+        const failed = results.filter((r) => !r.ok) as Array<{ ok: false; reason: 'type' | 'size' | 'upload'; name: string }>;
+        if (failed.length > 0) {
+            const sizeFails = failed.filter((f) => f.reason === 'size');
+            const typeFails = failed.filter((f) => f.reason === 'type');
+            const uploadFails = failed.filter((f) => f.reason === 'upload');
+            const lines: string[] = [];
+            if (sizeFails.length) lines.push(isRTL ? `⚠️ ${sizeFails.length} صورة أكبر من 8MB` : `⚠️ ${sizeFails.length} image(s) exceed 8MB`);
+            if (typeFails.length) lines.push(isRTL ? `⚠️ ${typeFails.length} ملف ليس صورة` : `⚠️ ${typeFails.length} file(s) not an image`);
+            if (uploadFails.length) lines.push(isRTL ? `❌ تعذّر رفع ${uploadFails.length} صورة (تحقق من اتصال الإنترنت)` : `❌ Failed to upload ${uploadFails.length} image(s) (check connection)`);
+            customAlert(lines.join('\n'));
         }
     };
 
@@ -1415,6 +1441,19 @@ const SellerDashboard: React.FC = () => {
                                     ) : '📍'}
                                     {isRTL ? (resolvingLink ? 'جاري..' : 'تحديد') : (resolvingLink ? 'Wait..' : 'Set')}
                                 </button>
+                            </div>
+                            <div style={{
+                                fontSize: '0.7rem',
+                                color: 'var(--text-secondary)',
+                                background: 'var(--notif-unread-bg)',
+                                padding: '8px 12px',
+                                borderRadius: 10,
+                                marginBottom: 8,
+                                lineHeight: 1.5
+                            }}>
+                                💡 {isRTL
+                                    ? 'إذا لم يتعرّف على رابط قوقل ماب، اضغط على الخريطة مباشرة لتثبيت الدبوس على موقع متجرك (يمكنك سحبه أيضاً).'
+                                    : "If the Google Maps link doesn't resolve, tap the map directly to drop a pin (you can drag it too)."}
                             </div>
                             <div style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
                                 <MapContainer center={mapPos} zoom={13} style={{ height: '100%', width: '100%' }}>
