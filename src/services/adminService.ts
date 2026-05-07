@@ -270,4 +270,90 @@ export const adminService = {
             // silent — non-blocking
         }
     },
+
+    // ─── Platform settings ──────────────────────────────────────────────
+    /**
+     * Read a value from platform_settings. Returns null if missing.
+     * Values are jsonb — could be number, boolean, string, etc.
+     */
+    async getPlatformSetting<T = any>(key: string): Promise<T | null> {
+        const { data, error } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', key)
+            .maybeSingle();
+        if (error) {
+            console.warn('[getPlatformSetting]', key, error);
+            return null;
+        }
+        return (data?.value ?? null) as T | null;
+    },
+
+    /**
+     * Write a platform_settings row. Uses UPDATE first; if no row was matched
+     * (i.e., key missing), upserts a fresh row so callers don't need to know
+     * which one applies.
+     */
+    async setPlatformSetting(key: string, value: any, description?: string): Promise<{ success: boolean; error?: string }> {
+        const updatePayload: any = { value, updated_at: new Date().toISOString() };
+        const { data, error } = await supabase
+            .from('platform_settings')
+            .update(updatePayload)
+            .eq('key', key)
+            .select('key');
+        if (error) return { success: false, error: error.message };
+        if (data && data.length > 0) return { success: true };
+        // No existing row — upsert.
+        const { error: insErr } = await supabase
+            .from('platform_settings')
+            .upsert({ key, value, description: description ?? null, updated_at: new Date().toISOString() });
+        if (insErr) return { success: false, error: insErr.message };
+        return { success: true };
+    },
+
+    /**
+     * Convenience: bulk-apply a single uniform subscription to every active
+     * seller (used by the "Free for all" / "Paid for all" platform-mode
+     * buttons). Returns counts of OK / failed.
+     */
+    async bulkSetAllActiveSellers(params: {
+        plan: 'free' | 'trial' | 'premium';
+        amount: number;
+        discount: number;
+        expiresAt: Date | null;
+        notes?: string;
+    }): Promise<{ ok: number; failed: number; total: number }> {
+        const { data: sellersData, error } = await supabase.rpc('admin_search_users', {
+            p_query: '',
+            p_user_type: 'seller',
+            p_limit: 1000,
+            p_offset: 0,
+        });
+        if (error || !sellersData) return { ok: 0, failed: 0, total: 0 };
+        const targets = (sellersData as any[]).filter((s) => !s.is_suspended);
+        let ok = 0, failed = 0;
+        const CHUNK = 8;
+        for (let i = 0; i < targets.length; i += CHUNK) {
+            const slice = targets.slice(i, i + CHUNK);
+            const results = await Promise.allSettled(
+                slice.map((s) =>
+                    adminService.applySubscription({
+                        storeId: s.id,
+                        plan: params.plan,
+                        startedAt: new Date(),
+                        expiresAt: params.expiresAt,
+                        discount: params.discount,
+                        amount: params.amount,
+                        notes: params.notes,
+                        sendNotification: false,
+                    })
+                )
+            );
+            results.forEach((r) => {
+                if (r.status === 'fulfilled' && (r.value as any).success) ok++;
+                else failed++;
+            });
+        }
+        return { ok, failed, total: targets.length };
+    },
 };

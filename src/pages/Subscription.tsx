@@ -21,8 +21,8 @@ const Subscription: React.FC = () => {
     useEffect(() => {
         // If payment gateway is disabled, they shouldn't even be here normally,
         // but if they navigate manually, we should tell them.
-        supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single().then(({ data }) => {
-            if (data && data.value === 'false') {
+        supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle().then(({ data }) => {
+            if (data && data.value === false) {
                 setIsPaymentEnabled(false);
             }
         });

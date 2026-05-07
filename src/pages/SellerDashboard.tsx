@@ -92,8 +92,8 @@ const SellerDashboard: React.FC = () => {
     React.useEffect(() => {
         const checkSub = async () => {
             const { supabase } = await import('../services/supabaseClient');
-            const { data } = await supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single();
-            const enabled = data?.value === 'true';
+            const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
+            const enabled = data?.value === true;
             setIsPaymentEnabled(enabled);
 
             if (enabled && user?.id) {

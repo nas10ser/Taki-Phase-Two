@@ -568,13 +568,16 @@ const AdminTools: React.FC = () => {
 
     const fetchAll = useCallback(async () => {
         setLoading(true);
+        // BUG FIX: code used to query a non-existent `global_settings` table
+        // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
+        // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
         const [paymentRes, bannerRes, campaignRes] = await Promise.all([
-            supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
 
-        setPaymentEnabled(paymentRes.data?.value === 'true');
+        setPaymentEnabled(paymentRes.data?.value === true);
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -587,11 +590,15 @@ const AdminTools: React.FC = () => {
     const togglePayment = async () => {
         const newValue = !paymentEnabled;
         setPaymentEnabled(newValue);
-        await supabase.from('global_settings').upsert({
-            key: 'is_payment_gateway_enabled',
-            value: newValue.toString(),
-            updated_at: new Date().toISOString(),
-        });
+        const { error } = await supabase
+            .from('platform_settings')
+            .update({ value: newValue, updated_at: new Date().toISOString() })
+            .eq('key', 'payment_gateway_enabled');
+        if (error) {
+            setPaymentEnabled(!newValue); // rollback optimistic update
+            await customAlert('❌ ' + error.message);
+            return;
+        }
         await customAlert(
             newValue
                 ? '✅ تم تفعيل بوابة الدفع. التجار سيحتاجون اشتراك لإضافة عروض.'

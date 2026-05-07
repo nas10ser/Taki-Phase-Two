@@ -393,6 +393,211 @@ const SellerRow = memo<{
 SellerRow.displayName = 'SellerRow';
 
 // ============================================================
+// Global Subscription Mode — platform-wide controls.
+// Sets the default subscription amount + lets the admin flip the entire
+// site between "free for everyone" and "paid for everyone" with one tap.
+// This is the answer to the "exception became the default" feedback —
+// the global mode lives at the top, and the bulk panel below handles
+// per-store exceptions.
+// ============================================================
+const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) => {
+    const { customAlert, customConfirm } = useApp();
+    const [loaded, setLoaded] = useState(false);
+    const [globalAmount, setGlobalAmount] = useState<number>(199);
+    const [draftAmount, setDraftAmount] = useState<string>('199');
+    const [gatewayEnabled, setGatewayEnabled] = useState<boolean>(false);
+    const [savingAmount, setSavingAmount] = useState(false);
+    const [busyMode, setBusyMode] = useState<null | 'free' | 'paid'>(null);
+
+    // Hydrate current settings on mount.
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const [amount, enabled] = await Promise.all([
+                adminService.getPlatformSetting<number>('basic_plan_price_sar'),
+                adminService.getPlatformSetting<boolean>('payment_gateway_enabled'),
+            ]);
+            if (!alive) return;
+            const amt = Number(amount) || 199;
+            setGlobalAmount(amt);
+            setDraftAmount(String(amt));
+            setGatewayEnabled(Boolean(enabled));
+            setLoaded(true);
+        })();
+        return () => { alive = false; };
+    }, []);
+
+    const saveAmount = async () => {
+        const n = Math.max(0, Math.round(Number(draftAmount) || 0));
+        if (n === globalAmount) return;
+        setSavingAmount(true);
+        const res = await adminService.setPlatformSetting(
+            'basic_plan_price_sar',
+            n,
+            'Default monthly subscription price for sellers (SAR).'
+        );
+        setSavingAmount(false);
+        if (!res.success) {
+            await customAlert('❌ ' + (res.error ?? 'تعذّر الحفظ'));
+            return;
+        }
+        setGlobalAmount(n);
+        await customAlert(`✅ المبلغ الافتراضي: ${n.toLocaleString('ar-SA')} ر.س/شهر`);
+    };
+
+    const handleFreeForAll = async () => {
+        const ok = await customConfirm(
+            'سيتم:\n' +
+            '• تعطيل بوابة الدفع (الموقع مجاني تماماً)\n' +
+            '• تحويل كل البائعين النشطين إلى باقة مجانية بلا انتهاء\n\n' +
+            'متابعة؟'
+        );
+        if (!ok) return;
+        setBusyMode('free');
+
+        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', false);
+        if (!settingRes.success) {
+            setBusyMode(null);
+            await customAlert('❌ تعذر تعطيل البوابة: ' + (settingRes.error ?? ''));
+            return;
+        }
+        setGatewayEnabled(false);
+
+        const r = await adminService.bulkSetAllActiveSellers({
+            plan: 'free',
+            amount: 0,
+            discount: 100,
+            expiresAt: null,
+            notes: 'Platform mode: free for all',
+        });
+        setBusyMode(null);
+        await customAlert(
+            r.failed === 0
+                ? `🆓 الموقع الآن مجاني تماماً.\n${r.ok} متجر تم ضبطه على الباقة المجانية.`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+        );
+        onApplied();
+    };
+
+    const handlePaidForAll = async () => {
+        const ok = await customConfirm(
+            'سيتم:\n' +
+            '• تفعيل بوابة الدفع\n' +
+            `• تحويل كل البائعين النشطين إلى باقة مميزة بمبلغ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر بلا خصم\n` +
+            '• إلغاء أي خصومات أو فترات مجانية حالية\n\n' +
+            'متابعة؟'
+        );
+        if (!ok) return;
+        setBusyMode('paid');
+
+        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
+        if (!settingRes.success) {
+            setBusyMode(null);
+            await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+            return;
+        }
+        setGatewayEnabled(true);
+
+        const r = await adminService.bulkSetAllActiveSellers({
+            plan: 'premium',
+            amount: globalAmount,
+            discount: 0,
+            expiresAt: null,
+            notes: 'Platform mode: mandatory paid for all',
+        });
+        setBusyMode(null);
+        await customAlert(
+            r.failed === 0
+                ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+        );
+        onApplied();
+    };
+
+    return (
+        <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+                <div className="text-2xl">💼</div>
+                <div className="flex-1">
+                    <div className="font-bold text-base text-emerald-900">وضع الاشتراك العام للموقع</div>
+                    <div className="text-xs text-emerald-700 mt-0.5">
+                        {loaded
+                            ? gatewayEnabled
+                                ? '🟢 بوابة الدفع مُفعّلة — التجار يحتاجون اشتراك'
+                                : '🟡 بوابة الدفع مُعطّلة — التطبيق مجاني للجميع'
+                            : 'جاري التحميل...'}
+                    </div>
+                </div>
+            </div>
+
+            {/* Global default amount input */}
+            <div className="bg-[var(--card-bg)] rounded-xl p-3 mb-3 border border-emerald-100">
+                <div className="text-xs font-bold text-[var(--text-secondary)] mb-1.5">
+                    💰 المبلغ الافتراضي للاشتراك (يطبَّق على التجار الجدد)
+                </div>
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={draftAmount}
+                            onChange={(e) => setDraftAmount(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveAmount(); }}
+                            className="w-full px-3 py-2.5 pl-12 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm font-bold focus:border-emerald-500 outline-none"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[var(--text-secondary)] pointer-events-none">
+                            ر.س/شهر
+                        </span>
+                    </div>
+                    <button
+                        onClick={saveAmount}
+                        disabled={savingAmount || Number(draftAmount) === globalAmount}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm disabled:opacity-40 transition-all"
+                    >
+                        {savingAmount ? '...' : '💾 حفظ'}
+                    </button>
+                </div>
+                {Number(draftAmount) !== globalAmount && draftAmount !== '' && (
+                    <div className="text-[10px] text-amber-700 mt-1">⚡ مبلغ غير محفوظ — اضغط حفظ</div>
+                )}
+            </div>
+
+            {/* Two big mode buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <button
+                    onClick={handleFreeForAll}
+                    disabled={busyMode !== null}
+                    className="p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
+                >
+                    <div className="text-2xl mb-1">🆓</div>
+                    <div className="text-sm font-extrabold">الموقع مجاني للجميع</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">إيقاف البوابة + تحويل كل التجار للباقة المجانية</div>
+                    {busyMode === 'free' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
+                </button>
+                <button
+                    onClick={handlePaidForAll}
+                    disabled={busyMode !== null}
+                    className="p-4 bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
+                >
+                    <div className="text-2xl mb-1">💰</div>
+                    <div className="text-sm font-extrabold">إلزامي بالمبلغ الافتراضي</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">
+                        تفعيل البوابة + الزام الكل بـ {globalAmount.toLocaleString('ar-SA')} ر.س/شهر بدون خصم
+                    </div>
+                    {busyMode === 'paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
+                </button>
+            </div>
+
+            <div className="text-[11px] text-emerald-700 mt-3 leading-relaxed bg-white/60 rounded-lg p-2">
+                💡 <strong>للاستثناءات</strong> (إعفاء متجر معين، خصم لمدة محدودة، متاجر VIP) استخدم لوحة "تحكم جماعي قوي" بالأسفل أو اضغط على بطاقة المتجر مباشرة.
+            </div>
+        </div>
+    );
+});
+GlobalSubscriptionMode.displayName = 'GlobalSubscriptionMode';
+
+// ============================================================
 // Bulk Subscription Panel — full control over ANY subset of sellers.
 // Pick stores by name (search), set plan, dates, amount, discount,
 // then apply once. Replaces the previous 2-button limitation.
@@ -919,8 +1124,13 @@ const AdminSellers: React.FC = () => {
                 </div>
             </div>
 
-            {/* Bulk subscription panel — open it to apply ANY plan, ANY dates, ANY
-                amount, ANY discount, to ANY subset of sellers (or all). */}
+            {/* Platform-wide subscription mode — set the default amount + flip
+                the entire site to free / paid in one click. This is the
+                "default" that applies to everyone unless an exception is set. */}
+            <GlobalSubscriptionMode onApplied={fetchSellers} />
+
+            {/* Per-store exceptions: pick any subset of sellers and apply ANY
+                plan / dates / amount / discount. */}
             <BulkSubscriptionPanel
                 sellers={sellers}
                 isOpen={bulkPanelOpen}
