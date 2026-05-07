@@ -1,12 +1,19 @@
-// TAKI service worker
-// Bumping CACHE_NAME forces every active client to evict the previous
-// bundle (which was holding stale strings like "تعذر الحصول على موقعك").
-const CACHE_NAME = 'taki-cache-v9.7';
+// TAKI service worker — v9.8 (instant-load tier)
+// Strategy:
+//  • Navigations  → cache-first (instant paint) + background revalidate
+//  • JS / CSS     → cache-first (assets are content-hashed, immutable)
+//  • API / data   → network-first with cache fallback (freshness wins)
+//  • Other GETs   → stale-while-revalidate
+const CACHE_NAME = 'taki-cache-v9.8';
 const urlsToCache = [
   '/',
   '/index.html',
   '/manifest.json'
 ];
+
+const isAsset = url => /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|gif|ico)(?:\?.*)?$/i.test(url.pathname);
+const isNavigation = req => req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+const isApi = url => url.hostname.endsWith('supabase.co') || url.pathname.startsWith('/api/');
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -27,27 +34,69 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.open(CACHE_NAME).then(cache =>
-      cache.match(event.request).then(cachedResponse => {
-        const fetchedResponse = fetch(event.request).then(networkResponse => {
-          if (networkResponse && networkResponse.status === 200) {
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        }).catch(() => cachedResponse);
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  let url;
+  try { url = new URL(req.url); } catch { return; }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-        // Always go to the network for navigations so a fresh deploy
-        // is picked up on the next page load instead of being shadowed
-        // by the cached HTML.
-        if (event.request.mode === 'navigate') {
-          return fetchedResponse.catch(() => cachedResponse);
+  // Never cache API / Supabase responses (auth, queries, RPCs, realtime)
+  if (isApi(url)) {
+    event.respondWith(fetch(req).catch(() => caches.match(req)));
+    return;
+  }
+
+  // 1) Navigations: cache-first → instant paint, refresh in background.
+  if (isNavigation(req)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match('/index.html') || await cache.match(req);
+      const networkPromise = fetch(req).then(res => {
+        if (res && res.status === 200) {
+          cache.put('/index.html', res.clone()).catch(() => {});
         }
-        return cachedResponse || fetchedResponse;
-      })
-    )
-  );
+        return res;
+      }).catch(() => null);
+      // Return cached HTML instantly if we have it; otherwise wait for network.
+      return cached || (await networkPromise) || new Response('Offline', { status: 503 });
+    })());
+    return;
+  }
+
+  // 2) Static assets: cache-first (Parcel bundles are content-hashed → immutable)
+  if (isAsset(url)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+      const res = await fetch(req).catch(() => null);
+      if (res && res.status === 200) cache.put(req, res.clone()).catch(() => {});
+      return res || new Response('', { status: 504 });
+    })());
+    return;
+  }
+
+  // 3) Default: stale-while-revalidate
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(req);
+    const networkPromise = fetch(req).then(res => {
+      if (res && res.status === 200) cache.put(req, res.clone()).catch(() => {});
+      return res;
+    }).catch(() => cached);
+    return cached || (await networkPromise);
+  })());
+});
+
+// ─── Cache versioning escape hatch ──────────────────────────────
+// If a deploy ships with a hash mismatch, the page can post {type:'SKIP_WAITING'}
+// or {type:'CLEAR_CACHE'} to recover without a hard reload loop.
+self.addEventListener('message', event => {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data.type === 'CLEAR_CACHE') {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+  }
 });
 
 // ─── Web Push ────────────────────────────────────────────────────

@@ -24,21 +24,13 @@ const Home: React.FC = () => {
 
     const isRTL = language === 'ar';
 
-    // Safety net for the buyer's home feed: a fresh fetch on mount and on
-    // every tab-focus event guarantees newly posted deals appear without
-    // requiring the user to hard-refresh, even if the realtime channel was
-    // throttled or dropped a packet.
+    // Initial fetch on mount. Tab-switch / focus refetching is handled
+    // centrally in realtimeService.handleVisibilityChange — duplicating it
+    // here was firing 4-5 redundant Supabase round-trips per focus event,
+    // hurting perceived speed on resumed tabs.
     useEffect(() => {
         refreshDeals();
         bannerRepository.getActive('home_top').then(setBanners);
-        const onVis = () => { if (document.visibilityState === 'visible') { refreshDeals(); bannerRepository.getActive('home_top').then(setBanners); } };
-        const onFocus = () => { refreshDeals(); bannerRepository.getActive('home_top').then(setBanners); };
-        document.addEventListener('visibilitychange', onVis);
-        window.addEventListener('focus', onFocus);
-        return () => {
-            document.removeEventListener('visibilitychange', onVis);
-            window.removeEventListener('focus', onFocus);
-        };
     }, [refreshDeals]);
 
     useEffect(() => {

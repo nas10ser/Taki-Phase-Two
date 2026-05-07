@@ -7,7 +7,7 @@ import { subscriptionRepository } from '../repositories/subscriptionRepository';
 
 const Subscription: React.FC = () => {
     const history = useHistory();
-    const { user, storeProfiles } = useApp();
+    const { user, storeProfiles, customAlert } = useApp();
     const [branches, setBranches] = useState(1);
     const [isPaying, setIsPaying] = useState(false);
     const [isPaymentEnabled, setIsPaymentEnabled] = useState(true);
@@ -54,14 +54,14 @@ const Subscription: React.FC = () => {
                     await supabase.from('store_profiles').update({ max_branches: branches }).eq('store_id', user.id);
                 }
 
-                alert('✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي.');
+                await customAlert('✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي.');
                 history.push('/seller');
             } else {
-                alert('❌ فشل عملية الدفع: ' + (response.error || 'خطأ غير معروف'));
+                await customAlert('❌ فشل عملية الدفع: ' + (response.error || 'خطأ غير معروف'));
             }
         } catch (err) {
             console.error(err);
-            alert('❌ حدث خطأ أثناء تفعيل الاشتراك.');
+            await customAlert('❌ حدث خطأ أثناء تفعيل الاشتراك.');
         } finally {
             setIsPaying(false);
         }

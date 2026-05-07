@@ -108,6 +108,11 @@ export interface Deal {
     prepTime?: string;
     createdAt: number;
     status: 'active' | 'expired' | 'paused';
+    /** Aggregated impressions counter — incremented by RPC `increment_deal_view`
+     *  (migration v13). Optional because legacy deals predate the column. */
+    views?: number;
+    /** Aggregated click-throughs — incremented by RPC `increment_deal_click`. */
+    clicks?: number;
 }
 
 export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: string }[] = [

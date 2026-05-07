@@ -9,7 +9,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const history = useHistory();
-    const { user, language, setLanguage, logout, customConfirm, deleteAccount, setViewAs, viewAs, effectiveUserType } = useApp();
+    const { user, language, setLanguage, logout, customConfirm, deleteAccount, setViewAs, viewAs, effectiveUserType, darkMode, toggleDarkMode } = useApp();
 
     const isRTL = language === 'ar';
 
@@ -165,6 +165,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid var(--border-color, #e2e8f0)', background: 'var(--card-bg, white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, color: 'var(--text-primary, #0f172a)', cursor: 'pointer' }}>
                         <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{isRTL ? 'تغيير اللغة' : 'Change Language'}</span>
                         <span style={{ fontWeight: 900, color: '#0284c7', fontSize: '0.85rem' }}>{language === 'ar' ? 'English' : 'عربي'}</span>
+                    </button>
+
+                    <button onClick={toggleDarkMode}
+                        aria-pressed={darkMode}
+                        style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid var(--border-color, #e2e8f0)', background: 'var(--card-bg, white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, color: 'var(--text-primary, #0f172a)', cursor: 'pointer' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span aria-hidden>{darkMode ? '🌙' : '☀️'}</span>
+                            {isRTL ? (darkMode ? 'الوضع الليلي' : 'الوضع الفاتح') : (darkMode ? 'Dark Mode' : 'Light Mode')}
+                        </span>
+                        <span aria-hidden style={{
+                            position: 'relative', width: 38, height: 22, borderRadius: 999,
+                            background: darkMode ? 'var(--primary, #0f172a)' : 'var(--gray-200, #e2e8f0)',
+                            transition: 'background 0.25s ease',
+                        }}>
+                            <span style={{
+                                position: 'absolute', top: 2,
+                                [isRTL ? 'right' : 'left']: darkMode ? 18 : 2,
+                                width: 18, height: 18, borderRadius: '50%',
+                                background: '#ffffff', boxShadow: '0 2px 4px rgba(0,0,0,.2)',
+                                transition: `${isRTL ? 'right' : 'left'} 0.25s ease`,
+                            }} />
+                        </span>
                     </button>
 
                     {user?.userType === 'admin' && (

@@ -34,7 +34,7 @@ const SparkChart = memo<{
 }>(({ data, height = 220 }) => {
     if (!data || data.length === 0) {
         return (
-            <div className="h-56 flex items-center justify-center text-gray-400 text-sm">
+            <div className="h-56 flex items-center justify-center text-[var(--gray-400)] text-sm">
                 لا توجد بيانات في هذه الفترة
             </div>
         );
@@ -90,8 +90,8 @@ const LiveCounter = memo<{ value: number; label: string; gradient: string }>(({ 
     >
         <div className="absolute top-2 right-2 flex items-center gap-1.5 text-[10px] font-bold bg-white/20 backdrop-blur-sm px-2 py-1 rounded-full">
             <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--card-bg)] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--card-bg)]"></span>
             </span>
             LIVE
         </div>
@@ -180,7 +180,7 @@ const AdminAnalytics: React.FC = () => {
         <div className="space-y-5 animate-fade-in" dir="rtl">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
+                <h1 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
                     📊 التحليلات اللحظية
                     <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                         <span className="relative flex h-2 w-2">
@@ -190,7 +190,7 @@ const AdminAnalytics: React.FC = () => {
                         Live
                     </span>
                 </h1>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
                     مراقبة لحظية لكل ما يحدث على المنصة الآن
                 </p>
             </div>
@@ -220,8 +220,8 @@ const AdminAnalytics: React.FC = () => {
             </div>
 
             {/* Time Range Filter */}
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm space-y-3">
-                <div className="text-sm font-bold text-gray-700">⏰ الفترة الزمنية</div>
+            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm space-y-3">
+                <div className="text-sm font-bold text-[var(--text-primary)]">⏰ الفترة الزمنية</div>
                 <div className="flex flex-wrap gap-2">
                     {(Object.keys(TIME_RANGES) as TimeRange[]).map((r) => (
                         <button
@@ -230,7 +230,7 @@ const AdminAnalytics: React.FC = () => {
                             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                                 range === r
                                     ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-md'
-                                    : 'bg-gray-50 border border-gray-200 text-gray-600 hover:border-purple-300'
+                                    : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-purple-300'
                             }`}
                         >
                             {TIME_RANGES[r].label}
@@ -241,21 +241,21 @@ const AdminAnalytics: React.FC = () => {
                 {range === 'custom' && (
                     <div className="grid grid-cols-2 gap-3 pt-2">
                         <div>
-                            <label className="block text-xs font-bold text-gray-600 mb-1.5">من</label>
+                            <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">من</label>
                             <input
                                 type="datetime-local"
                                 value={customFrom}
                                 onChange={(e) => setCustomFrom(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-600 mb-1.5">إلى</label>
+                            <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">إلى</label>
                             <input
                                 type="datetime-local"
                                 value={customTo}
                                 onChange={(e) => setCustomTo(e.target.value)}
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm"
                             />
                         </div>
                     </div>
@@ -263,10 +263,10 @@ const AdminAnalytics: React.FC = () => {
             </div>
 
             {/* Bookings Chart */}
-            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+            <div className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
                 <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold text-gray-800">🎟️ منحنى الحجوزات</h2>
-                    <div className="text-xs text-gray-500">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🎟️ منحنى الحجوزات</h2>
+                    <div className="text-xs text-[var(--text-secondary)]">
                         {timeline.reduce((s, t) => s + t.count, 0)} حجز في هذه الفترة
                     </div>
                 </div>
@@ -275,41 +275,41 @@ const AdminAnalytics: React.FC = () => {
 
             {/* Two columns: Top Sellers + Top Buyers */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
+                    <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                         🏆 أعلى البائعين
                     </h3>
                     {topSellers.length === 0 ? (
-                        <div className="text-sm text-gray-400 text-center py-6">لا بيانات</div>
+                        <div className="text-sm text-[var(--gray-400)] text-center py-6">لا بيانات</div>
                     ) : (
                         <div className="space-y-2">
                             {topSellers.map((s, i) => (
                                 <div
                                     key={s.id}
-                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50"
+                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--body-bg)]"
                                 >
                                     <div
                                         className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
                                             i === 0
                                                 ? 'bg-yellow-100 text-yellow-700'
                                                 : i === 1
-                                                ? 'bg-gray-100 text-gray-700'
+                                                ? 'bg-[var(--gray-100)] text-[var(--text-primary)]'
                                                 : i === 2
                                                 ? 'bg-orange-100 text-orange-700'
-                                                : 'bg-gray-50 text-gray-500'
+                                                : 'bg-[var(--body-bg)] text-[var(--text-secondary)]'
                                         }`}
                                     >
                                         {i + 1}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-sm truncate">{s.shop ?? s.name}</div>
-                                        <div className="text-xs text-gray-500">{s.deals_count} عرض</div>
+                                        <div className="text-xs text-[var(--text-secondary)]">{s.deals_count} عرض</div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-sm font-bold text-emerald-600">
                                             {s.bookings_count}
                                         </div>
-                                        <div className="text-[10px] text-gray-500">حجز</div>
+                                        <div className="text-[10px] text-[var(--text-secondary)]">حجز</div>
                                     </div>
                                 </div>
                             ))}
@@ -317,41 +317,41 @@ const AdminAnalytics: React.FC = () => {
                     )}
                 </div>
 
-                <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
+                    <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                         💎 أعلى المشترين
                     </h3>
                     {topBuyers.length === 0 ? (
-                        <div className="text-sm text-gray-400 text-center py-6">لا بيانات</div>
+                        <div className="text-sm text-[var(--gray-400)] text-center py-6">لا بيانات</div>
                     ) : (
                         <div className="space-y-2">
                             {topBuyers.map((b, i) => (
                                 <div
                                     key={b.id}
-                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50"
+                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--body-bg)]"
                                 >
                                     <div
                                         className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
                                             i === 0
                                                 ? 'bg-yellow-100 text-yellow-700'
                                                 : i === 1
-                                                ? 'bg-gray-100 text-gray-700'
+                                                ? 'bg-[var(--gray-100)] text-[var(--text-primary)]'
                                                 : i === 2
                                                 ? 'bg-orange-100 text-orange-700'
-                                                : 'bg-gray-50 text-gray-500'
+                                                : 'bg-[var(--body-bg)] text-[var(--text-secondary)]'
                                         }`}
                                     >
                                         {i + 1}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-sm truncate">{b.name}</div>
-                                        <div className="text-xs text-gray-500" dir="ltr">{b.phone}</div>
+                                        <div className="text-xs text-[var(--text-secondary)]" dir="ltr">{b.phone}</div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-sm font-bold text-blue-600">
                                             {b.bookings_count}
                                         </div>
-                                        <div className="text-[10px] text-gray-500">حجز</div>
+                                        <div className="text-[10px] text-[var(--text-secondary)]">حجز</div>
                                     </div>
                                 </div>
                             ))}
@@ -361,16 +361,16 @@ const AdminAnalytics: React.FC = () => {
             </div>
 
             {/* Activity Feed */}
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
+                <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                     ⚡ النشاط اللحظي
                     <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
                         Live
                     </span>
                 </h3>
-                <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                <div className="divide-y divide-[var(--border-color)] max-h-96 overflow-y-auto">
                     {activity.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
+                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">
                             في انتظار النشاطات...
                         </div>
                     ) : (
@@ -380,15 +380,15 @@ const AdminAnalytics: React.FC = () => {
                                     {actionIcon(row.action)}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-gray-800 truncate">
+                                    <div className="font-bold text-[var(--text-primary)] truncate">
                                         {row.user_name ?? 'زائر'}
-                                        <span className="font-normal text-gray-500 ml-1">
+                                        <span className="font-normal text-[var(--text-secondary)] ml-1">
                                             {' '}
                                             {actionLabel(row.action)}
                                         </span>
                                     </div>
                                 </div>
-                                <div className="text-xs text-gray-400 self-center tabular-nums whitespace-nowrap">
+                                <div className="text-xs text-[var(--gray-400)] self-center tabular-nums whitespace-nowrap">
                                     {timeAgo(row.created_at)}
                                 </div>
                             </div>

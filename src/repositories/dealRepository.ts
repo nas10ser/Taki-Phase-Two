@@ -182,6 +182,10 @@ export const dealRepository = {
         if ('expiry_type' in d && d.expiry_type) deal.expiryType = d.expiry_type;
         if ('expiry_date' in d && d.expiry_date) deal.expiryDate = d.expiry_date;
 
+        // Analytics counters (migration v13). Optional — older rows may be null.
+        if ('views' in d && d.views != null)   deal.views  = Number(d.views)  || 0;
+        if ('clicks' in d && d.clicks != null) deal.clicks = Number(d.clicks) || 0;
+
         return deal;
     }
 };

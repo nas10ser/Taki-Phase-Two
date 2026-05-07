@@ -1789,7 +1789,7 @@ const SellerDashboard: React.FC = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 {myDeals.sort((a, b) => (b.views || 0) - (a.views || 0)).map(deal => {
                                     const dealBookings = myOrders.filter(b => b.deal.id === deal.id).length;
-                                    const conversion = (deal.views || 0) > 0 ? ((dealBookings / deal.views) * 100).toFixed(1) : '0';
+                                    const conversion = (deal.views || 0) > 0 ? ((dealBookings / (deal.views || 1)) * 100).toFixed(1) : '0';
                                     return (
                                         <div key={deal.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--gray-50)' }}>
                                             <img src={deal.images[0]} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }} />
