@@ -138,6 +138,17 @@ const AdminDashboard: React.FC = () => {
         return () => clearInterval(id);
     }, [user]);
 
+    // IMPORTANT: every hook must run on every render (Rules of Hooks).
+    // Define handleNavigate ABOVE the early returns or React throws
+    // "Rendered more hooks than during the previous render" when isAuthReady
+    // flips from false to true (different number of hooks each render).
+    const handleNavigate = useCallback((t: 'buyers' | 'sellers' | 'tools' | 'analytics') => {
+        setActiveTab(t);
+        if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, []);
+
     // Auth gate. While the Supabase session is still hydrating after a hard
     // refresh, `user` is briefly null — show a soft loader instead of an
     // "Access denied" flash that confuses returning admins.
@@ -177,14 +188,6 @@ const AdminDashboard: React.FC = () => {
             </div>
         );
     }
-
-    const handleNavigate = useCallback((t: 'buyers' | 'sellers' | 'tools' | 'analytics') => {
-        setActiveTab(t);
-        // Smooth scroll to top بعد التغيير
-        if (typeof window !== 'undefined') {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    }, []);
 
     return (
         <div className="min-h-screen bg-[var(--body-bg)] pb-24" dir="rtl">
