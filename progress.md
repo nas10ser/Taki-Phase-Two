@@ -1,3 +1,111 @@
+# TAKI — تقرير التقدم v9.19 (إصلاح جذري لـ auth + مزامنة فورية شاملة + إشعارات admin) 🔐⚡️🔔
+
+## الإصدار v9.19 — Auth root-fix + Realtime everywhere + Admin notifications
+
+**التاريخ:** ٨ مايو ٢٠٢٦
+**الفرع:** `claude/wonderful-davinci-2ba86d`
+**Migration:** `v9_19_realtime_admin_notifications` (مطبَّق على Production عبر MCP)
+
+---
+
+### 🔴 1. الخلل الجذري: المشتري يدخل ويظهر "غير مسجل"
+
+**المشكلة:** بعد تسجيل دخول المشتري، صفحات Profile / Notifications تعرض "🔒 يرجى تسجيل الدخول" وكأنه ضيف.
+
+**ثلاث طبقات للسبب الحقيقي:**
+
+| الطبقة | المشكلة |
+|---|---|
+| **Dead-code regression (v9.15)** | `return () => clearTimeout(safetyTimer);` بعد `initData()` مباشرة جعل تسجيل `onAuthStateChange` كله **dead code**. أي event من Supabase (SIGNED_IN, INITIAL_SESSION) لا يُعالج إلى أن يُعمل refresh. |
+| **`getCurrentUser` يفشل بصمت** | لو الـ session موجود لكن صف `users` غير متاح (RLS، cold start، أو ما زال في الكتابة)، الدالة كانت ترجع `null` ⇒ AppContext يعتبر المستخدم ضيفاً للأبد. |
+| **لا فرع SIGNED_OUT** | الـ listener ما كان عنده branch لتنظيف الحالة عند تسجيل الخروج، فبيانات الجلسة السابقة تبقى ظاهرة على جلسة الضيف الجديدة. |
+
+**الإصلاح في [src/context/AppContext.tsx](src/context/AppContext.tsx):**
+```diff
+  initData();
+- return () => clearTimeout(safetyTimer);   // ← regression: كان يقتل listener
+  ...
++ // SIGNED_OUT branch
++ if (event === 'SIGNED_OUT' || (!session?.user && event !== 'INITIAL_SESSION')) {
++     setUser(null); authService.setUser(null);
++     setBookings([]); setNotifications([]); setFavorites([]); setFollowedMerchants([]);
++     setIsAuthReady(true);
++     return;
++ }
++ // Mirror optimistic profile + unlock UI on first event
++ authService.setUser(optimisticProfile);
++ setIsAuthReady(true);
++ clearTimeout(safetyTimer);
+  ...
+  return () => {
++   clearTimeout(safetyTimer);
+    authListenerPromise.then(l => l?.subscription?.unsubscribe?.());
+  };
+```
+
+**الإصلاح في [src/repositories/userRepository.ts](src/repositories/userRepository.ts) `getCurrentUser`:**
+- إذا `findById` أرجع `null` لكن الـ session صالحة، نبني optimistic profile من `session.user.user_metadata` ونحفظه في `authService` كـ fallback. لا يوجد مسار يتركنا نرى المستخدم كضيف رغم وجود JWT صالحة.
+
+### 🔴 2. الـ Realtime publication ناقص
+
+كان `deals` و `users` و `favorites` **ليست** ضمن `supabase_realtime` publication، فالـ central `realtimeService` يشترك في events ما تصلنا. النتيجة: تحديثات العروض، تعديل البائع للمتجر، وإضافة/إزالة المفضلة كلها تحتاج refresh يدوي.
+
+**الإصلاح (في الـ Migration):**
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.deals, public.users, public.favorites;
+ALTER TABLE public.deals     REPLICA IDENTITY FULL;
+ALTER TABLE public.users     REPLICA IDENTITY FULL;
+ALTER TABLE public.favorites REPLICA IDENTITY FULL;
+```
+
+`REPLICA IDENTITY FULL` ضرورية لأن الـ client-side reconciliation يقرأ `payload.old.*` لإكتشاف الـ deletions ومقارنة الأسعار (price drop alerts).
+
+### 🔔 3. مزامنة إشعارات الأدمن — فورية ومضمونة
+
+**القبل:** الأدمن لم يكن يستلم أي إشعار من نشاط المنصة (حجوزات، بيع، تسجيل، إلغاء). كان لازم يفتح لوحة الأدمن ويعمل refresh ليرى المستجدات.
+
+**الآن (في `handle_booking_notification` المُحدَّثة):**
+- 🛒 **حجز جديد** → كل admin يستلم: "{المشتري} حجز {العرض} من {البائع}"
+- 💰 **إتمام بيع** (`status = completed`) → كل admin: "{البائع} أكمل بيع {العرض} لـ {المشتري}"
+- ↩️ **إلغاء حجز** → كل admin يستلم alert الإلغاء
+- 👤 **مستخدم جديد** (trigger جديد `tr_new_user_admin_alert`) → كل admin يستلم "بائع/مشتري جديد انضم"
+
+كل هذه تصل عبر `tr_notification_push` ⟶ Edge Function ⟶ Web Push، فحتى لو الأدمن ما كان فاتح التطبيق، يصل له push browser notification.
+
+### 🔄 4. تنظيف Service Worker
+
+[sw.js:7](sw.js): `taki-cache-v9.17` → `taki-cache-v9.19`. هذا يضمن أن المتصفحات اللي عندها JS قديم من الـ regression السابق تُحمّل البناء الجديد عند أول زيارة.
+
+---
+
+### ✅ التحقق
+
+| الفحص | النتيجة |
+|---|---|
+| TypeScript typecheck | **0 أخطاء** |
+| Migration على Production | ✅ مطبَّقة عبر MCP |
+| Realtime publication يشمل deals/users/favorites | ✅ تأكدت من `pg_publication_tables` |
+| dev server | ❌ غير ممكن من الـ worktree (sandbox منع الوصول لـ parcel) — يلزم اختبار يدوي |
+
+### 🧪 خطوات اختبار يدوية (للـ user)
+
+1. أوقف dev server، شغّل: `npm run clean && npm run dev` (لإزالة `.parcel-cache` القديم).
+2. في المتصفح: DevTools → Application → Service Workers → **Unregister** + Storage → **Clear site data**.
+3. سجّل دخول كمشتري — يفترض ينتقل لـ `/` ويظهرك مسجلاً في Navbar فوراً.
+4. روح Profile و Notifications — يفترض تشاهد بياناتك (لا "🔒 يرجى تسجيل الدخول").
+5. افتح حساب admin في تبويب آخر — لما المشتري يحجز، يفترض الـ admin يستلم "🛒 حجز جديد" بدون refresh.
+
+### 📊 ملخص v9.19
+
+```
+ملفات معدّلة:           3  (AppContext.tsx, userRepository.ts, sw.js)
+DB أُضيف:                tr_new_user_admin_alert + handle_booking_notification (admin fan-out)
+                        + supabase_realtime: deals/users/favorites
+سطور مضافة:              ~110 (TS) + ~200 (SQL)
+```
+
+---
+
 # TAKI — تقرير التقدم v9.18 (تحكم بعروض الموسم + تشديد admin gating) 🌙🛡️
 
 ## الإصدار v9.18 — Seasonal toggle + admin-only UI + sw cache bump

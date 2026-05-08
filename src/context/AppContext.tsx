@@ -410,7 +410,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         initData();
-        return () => clearTimeout(safetyTimer);
 
         // SECURITY: Removed window.appContextSetters debug backdoor
 
@@ -419,6 +418,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             try {
                 const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
                     try {
+                        // Explicit sign-out branch — without this, logging out
+                        // left `user` populated until a full reload, so the UI
+                        // showed the previous account on a guest session.
+                        if (event === 'SIGNED_OUT' || (!session?.user && event !== 'INITIAL_SESSION')) {
+                            setUser(null);
+                            authService.setUser(null as any);
+                            setBookings([]);
+                            setNotifications([]);
+                            setFavorites([]);
+                            setFollowedMerchants([]);
+                            setIsAuthReady(true);
+                            return;
+                        }
                         if (session?.user) {
                             const spUser = session.user;
                             const meta = spUser.user_metadata || {};
@@ -453,6 +465,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 }
                                 return prev && prev.id === optimisticProfile.id ? prev : optimisticProfile;
                             });
+                            // Mirror to authService memory and unlock the UI
+                            // even on the very first event — without this, a
+                            // refreshed protected route could still bounce a
+                            // signed-in user to '/' before the canonical row
+                            // arrives.
+                            authService.setUser(optimisticProfile as any);
+                            setIsAuthReady(true);
+                            clearTimeout(safetyTimer);
 
                             // Fetch the canonical profile in the background — never
                             // block the auth callback on it.
@@ -533,6 +553,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         return () => {
+            clearTimeout(safetyTimer);
             authListenerPromise.then((l: any) => l?.subscription?.unsubscribe?.());
         };
     }, []);

@@ -6,7 +6,7 @@ export const userRepository = {
     getCurrentUser: async (): Promise<UserProfile | null> => {
         const memory = authService.getUser();
         if (memory) return memory;
-        
+
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
@@ -15,6 +15,30 @@ export const userRepository = {
                     authService.setUser(profile);
                     return profile;
                 }
+                // Optimistic fallback: a valid session whose `users` row is
+                // missing or blocked by RLS used to leave us treating the
+                // visitor as a guest forever. Build the profile from the JWT
+                // metadata so the UI unlocks immediately. The realtime
+                // listener replaces this with the canonical row when it lands.
+                const meta = (session.user.user_metadata || {}) as Record<string, any>;
+                const fallback: UserProfile = {
+                    id: session.user.id,
+                    name: meta.name || 'مستخدم',
+                    phone: meta.phone || session.user.phone || '',
+                    email: meta.email || session.user.email || '',
+                    userType: (meta.user_type as UserProfile['userType']) || 'buyer',
+                    shop: meta.shop || '',
+                    contactPhone: meta.contact_phone || meta.phone || session.user.phone || '',
+                    address: meta.address || '',
+                    savings: 0,
+                    bookingsCount: 0,
+                    notifKeywords: [],
+                    smartAlerts: [],
+                    preferredLang: 'ar',
+                    followedMerchants: []
+                };
+                authService.setUser(fallback);
+                return fallback;
             }
         } catch (e) {
             console.error('Failed to fetch session from remote', e);
