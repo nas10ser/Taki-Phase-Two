@@ -71,3 +71,20 @@ export const toHijri = (dateStr: string): string => {
  * @param isRTL Whether the current language is Arabic
  */
 export const createT = (isRTL: boolean) => (ar: string, en: string): string => isRTL ? ar : en;
+
+// PWA standalone (iOS Safari add-to-homescreen, Android TWA) blocks `window.open`
+// silently. A programmatically-clicked anchor delegates to the OS URL handler,
+// which opens the default browser instead.
+export const openExternalUrl = (url: string): void => {
+    try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch {
+        window.location.href = url;
+    }
+};

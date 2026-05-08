@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Banner } from '../repositories/bannerRepository';
+import { openExternalUrl } from '../utils/helpers';
 
 interface BannerSliderProps {
     banners: Banner[];
@@ -38,7 +39,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
             history.push(`/store/${banner.store_id}`);
         } else if (banner.target_url) {
             if (banner.target_url.startsWith('http')) {
-                window.open(banner.target_url, '_blank');
+                openExternalUrl(banner.target_url);
             } else {
                 history.push(banner.target_url);
             }

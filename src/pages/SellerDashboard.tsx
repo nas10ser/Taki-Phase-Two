@@ -1064,9 +1064,10 @@ const SellerDashboard: React.FC = () => {
                                 transform: view === tab ? 'scale(1.02)' : 'scale(1)',
                                 boxShadow: view === tab ? '0 10px 20px rgba(0,0,0,0.2)' : 'none'
                             }}
-                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.96)'; }}
-                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
-                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
+                            onPointerDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.96)'; }}
+                            onPointerUp={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
+                            onPointerLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
+                            onPointerCancel={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
                             >
                                 <span style={{ fontSize: '1rem' }}>
                                     {tab === 'form' ? (editingDealId ? '✏️' : '➕') :
@@ -1321,14 +1322,25 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {images.length < 4 && (
-                                    <label
-                                        htmlFor="seller-image-upload"
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
+                                        aria-disabled={uploadingImages}
+                                        onClick={() => { if (!uploadingImages) fileInputRef.current?.click(); }}
+                                        onKeyDown={(e) => {
+                                            if (!uploadingImages && (e.key === 'Enter' || e.key === ' ')) {
+                                                e.preventDefault();
+                                                fileInputRef.current?.click();
+                                            }
+                                        }}
                                         style={{
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                             height: 130, borderRadius: 12, border: '2px dashed var(--primary)',
                                             cursor: uploadingImages ? 'default' : 'pointer', background: 'var(--notif-unread-bg)', color: 'var(--primary)',
                                             transition: 'background 0.2s ease', WebkitTapHighlightColor: 'transparent',
-                                            opacity: uploadingImages ? 0.6 : 1, pointerEvents: uploadingImages ? 'none' : 'auto'
+                                            opacity: uploadingImages ? 0.6 : 1, pointerEvents: uploadingImages ? 'none' : 'auto',
+                                            position: 'relative', userSelect: 'none'
                                         }}
                                     >
                                         <input
@@ -1338,8 +1350,17 @@ const SellerDashboard: React.FC = () => {
                                             multiple
                                             accept="image/*"
                                             onChange={handleImageUpload}
-                                            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                                            style={{ display: 'none' }}
+                                            onClick={(e) => {
+                                                (e.target as HTMLInputElement).value = '';
+                                                e.stopPropagation();
+                                            }}
+                                            style={{
+                                                position: 'absolute', left: 0, top: 0,
+                                                width: 1, height: 1, opacity: 0,
+                                                pointerEvents: 'none', overflow: 'hidden'
+                                            }}
+                                            aria-hidden="true"
+                                            tabIndex={-1}
                                         />
                                         {uploadingImages ? (
                                             <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
@@ -1349,7 +1370,7 @@ const SellerDashboard: React.FC = () => {
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صورة' : 'Add Image'}</span>
                                             </>
                                         )}
-                                    </label>
+                                    </div>
                                 )}
                             </div>
                         </div>

@@ -184,7 +184,15 @@ const Profile: React.FC = () => {
                     <div className="animate-fade-in">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             {followedMerchantsList.length > 0 ? followedMerchantsList.map(m => (
-                                <div key={m.id} onClick={() => history.push(`/store/${m.id}`)} style={{ background: 'var(--card-bg)', padding: '14px 16px', borderRadius: 16, border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
+                                <div
+                                    key={m.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={m.name}
+                                    onClick={() => history.push(`/store/${m.id}`)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/store/${m.id}`); } }}
+                                    style={{ background: 'var(--card-bg)', padding: '14px 16px', borderRadius: 16, border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent' }}
+                                >
                                     <div style={{ width: 50, height: 50, borderRadius: 14, background: m.avatar ? 'transparent' : 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', overflow: 'hidden' }}>
                                         {m.avatar ? <img src={m.avatar} alt="Store" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🏪'}
                                     </div>

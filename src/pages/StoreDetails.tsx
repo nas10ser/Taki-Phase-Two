@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useParams, useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
@@ -18,6 +18,7 @@ const StoreDetails: React.FC = () => {
     const profile = storeProfiles[id] || {};
     const [isEditingStore, setIsEditingStore] = useState(false);
     const [followerCount, setFollowerCount] = useState<number | null>(null);
+    const avatarInputRef = useRef<HTMLInputElement>(null);
 
     // Real follower count from the database. Updates whenever this user
     // follows / unfollows so the badge reflects reality immediately.
@@ -277,9 +278,31 @@ const StoreDetails: React.FC = () => {
                             {((profile as any).avatar_url || (profile as any).avatar) ? <img src={(profile as any).avatar_url || (profile as any).avatar} loading="lazy" alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : store.name.charAt(0)}
                         </div>
                         {user?.id === store.id && isEditingStore && (
-                            <div onClick={() => document.getElementById('store-avatar-upload')?.click()} style={{ position: 'absolute', bottom: -5, right: -5, background: 'var(--primary)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}>
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                aria-label={isRTL ? 'تغيير صورة المتجر' : 'Change store avatar'}
+                                onClick={() => avatarInputRef.current?.click()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        avatarInputRef.current?.click();
+                                    }
+                                }}
+                                style={{ position: 'absolute', bottom: -5, right: -5, background: 'var(--primary)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}
+                            >
                                 📸
-                                <input id="store-avatar-upload" type="file" accept="image/*" onChange={handleAvatarUpload} onClick={e => { (e.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} />
+                                <input
+                                    id="store-avatar-upload"
+                                    ref={avatarInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleAvatarUpload}
+                                    onClick={(e) => { (e.target as HTMLInputElement).value = ''; e.stopPropagation(); }}
+                                    style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, opacity: 0, pointerEvents: 'none', overflow: 'hidden' }}
+                                    aria-hidden="true"
+                                    tabIndex={-1}
+                                />
                             </div>
                         )}
                     </div>

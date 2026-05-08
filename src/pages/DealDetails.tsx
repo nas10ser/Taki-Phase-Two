@@ -7,7 +7,7 @@ import { dealService } from '../services/dealService';
 import { getLocation } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl } from '../utils/helpers';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -167,7 +167,7 @@ const ImageZoomViewer: React.FC<{
         <div
             onClick={onClose}
             style={{
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh',
+                position: 'fixed', inset: 0,
                 zIndex: 99999,
                 background: 'rgba(0,0,0,0.94)',
                 WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)',
@@ -246,7 +246,7 @@ const ImageZoomViewer: React.FC<{
                     <a
                         href={images[index]}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         style={{
                             display: 'inline-block', marginTop: 14, padding: '8px 16px',
                             background: 'var(--card-bg)', color: 'var(--text-primary)', borderRadius: 12,
@@ -674,7 +674,14 @@ const DealDetails: React.FC = () => {
 
                 {/* Title & Price */}
                 <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                    <div onClick={() => history.push(`/store/${deal.storeId}`)} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, cursor: 'pointer', background: 'var(--body-bg)', padding: '12px', borderRadius: 16, border: '1px solid var(--gray-100)' }}>
+                    <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={isRTL ? `عرض ${deal.shopName}` : `View ${deal.shopName}`}
+                        onClick={() => history.push(`/store/${deal.storeId}`)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/store/${deal.storeId}`); } }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, cursor: 'pointer', background: 'var(--body-bg)', padding: '12px', borderRadius: 16, border: '1px solid var(--gray-100)', WebkitTapHighlightColor: 'transparent' }}
+                    >
                         <div style={{ width: 50, height: 50, borderRadius: 14, background: 'var(--primary-light)', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', overflow: 'hidden' }}>
                             {storeProfiles[deal.storeId]?.avatar ? <img src={storeProfiles[deal.storeId].avatar} alt="Merchant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🏪'}
                         </div>
@@ -741,11 +748,11 @@ const DealDetails: React.FC = () => {
                                 <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600 }}>{loc?.type === 'mall' ? '🛍️' : '🏛️'} {loc?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
                             </div>
                         </div>
-                        <button onClick={() => {
+                        <button type="button" onClick={() => {
                             const lat = deal.mapLocation?.lat || loc?.lat || 0;
                             const lng = deal.mapLocation?.lng || loc?.lng || 0;
                             if(lat && lng) {
-                                window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank', 'noopener,noreferrer');
+                                openExternalUrl(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
                             }
                         }} style={{ width: '100%', padding: '12px', borderRadius: 14, background: '#e0f2fe', color: '#0369a1', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s' }}>
                             🗺️ {isRTL ? 'الاتجاهات عبر خرائط جوجل' : 'Directions on Google Maps'}
@@ -824,9 +831,10 @@ const DealDetails: React.FC = () => {
                                                 fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
                                                 transition: 'transform 0.12s ease, background 0.2s'
                                             }}
-                                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
-                                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
-                                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
+                                            onPointerUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerCancel={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                                         >
                                             <span style={{ fontSize: '0.95rem' }}>{liked ? '❤️' : '🤍'}</span>
                                             <span>{r.likeCount ?? 0}</span>
@@ -846,9 +854,10 @@ const DealDetails: React.FC = () => {
                                                 fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
                                                 transition: 'transform 0.12s ease'
                                             }}
-                                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
-                                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
-                                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
+                                            onPointerUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onPointerCancel={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
                                             aria-label={isRTL ? 'حذف التعليق' : 'Delete review'}
                                         >
                                             🗑 {isRTL ? 'حذف' : 'Delete'}

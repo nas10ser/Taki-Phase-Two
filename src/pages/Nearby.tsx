@@ -290,7 +290,14 @@ const Nearby: React.FC = () => {
                     {nearbyDeals.map(deal => (
                         <Marker key={deal.id} position={[deal.lat, deal.lng]}>
                             <Popup>
-                                <div onClick={() => history.push(`/deal/${deal.id}`)} style={{ cursor: 'pointer' }}>
+                                <div
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={deal.itemName}
+                                    onClick={() => history.push(`/deal/${deal.id}`)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
+                                    style={{ cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                                >
                                     <strong>{deal.itemName}</strong><br />
                                     <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{deal.discountedPrice} SAR</span><br />
                                     <small>📍 {deal.distance.toFixed(1)} km</small>
@@ -311,7 +318,16 @@ const Nearby: React.FC = () => {
                 {nearbyDeals.length > 0 ? nearbyDeals.map(deal => {
                     const dLoc = getLocation(deal.locationId);
                     return (
-                        <div key={deal.id} className="nearby-card animate-fade-in" onClick={() => history.push(`/deal/${deal.id}`)} style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                        <div
+                            key={deal.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={deal.itemName}
+                            className="nearby-card animate-fade-in"
+                            onClick={() => history.push(`/deal/${deal.id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
+                            style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent' }}
+                        >
                             <img src={deal.images[0]} loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
                                 onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300'; }} />
                              <div style={{ flex: 1 }}>

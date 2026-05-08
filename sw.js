@@ -1,10 +1,10 @@
-// TAKI service worker — v9.19 (auth listener fix + realtime + admin notifs)
+// TAKI service worker — v9.20 (cross-browser/PWA file picker + pointer events)
 // Strategy:
 //  • Navigations  → cache-first (instant paint) + background revalidate
 //  • JS / CSS     → cache-first (assets are content-hashed, immutable)
 //  • API / data   → network-first with cache fallback (freshness wins)
 //  • Other GETs   → stale-while-revalidate
-const CACHE_NAME = 'taki-cache-v9.19';
+const CACHE_NAME = 'taki-cache-v9.20';
 const urlsToCache = [
   '/',
   '/index.html',
