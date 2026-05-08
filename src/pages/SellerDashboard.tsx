@@ -1341,24 +1341,14 @@ const SellerDashboard: React.FC = () => {
                                 ))}
                                 {images.length < 4 && (
                                     <div
-                                        role="button"
-                                        tabIndex={0}
-                                        aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
-                                        aria-disabled={uploadingImages}
-                                        onClick={() => { if (!uploadingImages) fileInputRef.current?.click(); }}
-                                        onKeyDown={(e) => {
-                                            if (!uploadingImages && (e.key === 'Enter' || e.key === ' ')) {
-                                                e.preventDefault();
-                                                fileInputRef.current?.click();
-                                            }
-                                        }}
                                         style={{
+                                            position: 'relative',
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                             height: 130, borderRadius: 12, border: '2px dashed var(--primary)',
                                             cursor: uploadingImages ? 'default' : 'pointer', background: 'var(--notif-unread-bg)', color: 'var(--primary)',
                                             transition: 'background 0.2s ease', WebkitTapHighlightColor: 'transparent',
-                                            opacity: uploadingImages ? 0.6 : 1, pointerEvents: uploadingImages ? 'none' : 'auto',
-                                            position: 'relative', userSelect: 'none'
+                                            opacity: uploadingImages ? 0.6 : 1,
+                                            userSelect: 'none', overflow: 'hidden'
                                         }}
                                     >
                                         <input
@@ -1367,26 +1357,26 @@ const SellerDashboard: React.FC = () => {
                                             type="file"
                                             multiple
                                             accept="image/*"
+                                            disabled={uploadingImages}
                                             onChange={handleImageUpload}
-                                            onClick={(e) => {
-                                                (e.target as HTMLInputElement).value = '';
-                                                e.stopPropagation();
-                                            }}
+                                            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                                            aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
                                             style={{
-                                                position: 'absolute', left: 0, top: 0,
-                                                width: 1, height: 1, opacity: 0,
-                                                pointerEvents: 'none', overflow: 'hidden'
+                                                position: 'absolute', inset: 0,
+                                                width: '100%', height: '100%',
+                                                opacity: 0,
+                                                cursor: uploadingImages ? 'default' : 'pointer',
+                                                fontSize: 0,
+                                                zIndex: 2
                                             }}
-                                            aria-hidden="true"
-                                            tabIndex={-1}
                                         />
                                         {uploadingImages ? (
-                                            <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                            <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
                                         ) : (
-                                            <>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
                                                 <span style={{ fontSize: '1.5rem', marginBottom: 4 }}>📸</span>
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صورة' : 'Add Image'}</span>
-                                            </>
+                                            </div>
                                         )}
                                     </div>
                                 )}

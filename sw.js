@@ -1,10 +1,10 @@
-// TAKI service worker — v9.21 (non-blocking loader on seller dashboard)
+// TAKI service worker — v9.22 (transparent-overlay file inputs — Chrome 147 fix)
 // Strategy:
 //  • Navigations  → cache-first (instant paint) + background revalidate
 //  • JS / CSS     → cache-first (assets are content-hashed, immutable)
 //  • API / data   → network-first with cache fallback (freshness wins)
 //  • Other GETs   → stale-while-revalidate
-const CACHE_NAME = 'taki-cache-v9.21';
+const CACHE_NAME = 'taki-cache-v9.22';
 const urlsToCache = [
   '/',
   '/index.html',

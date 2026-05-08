@@ -279,29 +279,18 @@ const StoreDetails: React.FC = () => {
                         </div>
                         {user?.id === store.id && isEditingStore && (
                             <div
-                                role="button"
-                                tabIndex={0}
-                                aria-label={isRTL ? 'تغيير صورة المتجر' : 'Change store avatar'}
-                                onClick={() => avatarInputRef.current?.click()}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault();
-                                        avatarInputRef.current?.click();
-                                    }
-                                }}
-                                style={{ position: 'absolute', bottom: -5, right: -5, background: 'var(--primary)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}
+                                style={{ position: 'absolute', bottom: -5, right: -5, background: 'var(--primary)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.3)', WebkitTapHighlightColor: 'transparent', userSelect: 'none', overflow: 'hidden' }}
                             >
-                                📸
+                                <span style={{ pointerEvents: 'none' }}>📸</span>
                                 <input
                                     id="store-avatar-upload"
                                     ref={avatarInputRef}
                                     type="file"
                                     accept="image/*"
                                     onChange={handleAvatarUpload}
-                                    onClick={(e) => { (e.target as HTMLInputElement).value = ''; e.stopPropagation(); }}
-                                    style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, opacity: 0, pointerEvents: 'none', overflow: 'hidden' }}
-                                    aria-hidden="true"
-                                    tabIndex={-1}
+                                    onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                                    aria-label={isRTL ? 'تغيير صورة المتجر' : 'Change store avatar'}
+                                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', fontSize: 0, zIndex: 2 }}
                                 />
                             </div>
                         )}
