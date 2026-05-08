@@ -119,6 +119,17 @@ const AuthRedirector = () => {
     return null;
 };
 
+// Gate the seasonal page on the admin-controlled flag. When the section
+// is hidden, navigating directly to /seasonal silently redirects home so
+// stale links don't leak the page.
+const SeasonalGate: React.FC = () => {
+    const { platformSettings } = useApp();
+    if (!platformSettings.seasonalOffersVisible) {
+        return <Redirect to="/" />;
+    }
+    return <SeasonalOffers />;
+};
+
 const App = () => {
     return (
         <Router>
@@ -137,7 +148,7 @@ const App = () => {
                         <Route path="/deal/:id" component={DealDetails} />
                         <Route path="/profile" component={Profile} />
                         <Route path="/notifications" component={Notifications} />
-                        <Route path="/seasonal" component={SeasonalOffers} />
+                        <Route path="/seasonal" component={SeasonalGate} />
                         {/* 🔄 Unified Redirects for v7.2 */}
                         <Route path="/dashboard">
                             <Redirect to="/seller" />

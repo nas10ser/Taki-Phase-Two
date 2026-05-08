@@ -9,9 +9,13 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const history = useHistory();
-    const { user, language, setLanguage, logout, customConfirm, deleteAccount, setViewAs, viewAs, effectiveUserType, darkMode, toggleDarkMode } = useApp();
+    const { user, isAuthReady, language, setLanguage, logout, customConfirm, deleteAccount, setViewAs, viewAs, effectiveUserType, darkMode, toggleDarkMode, platformSettings } = useApp();
 
     const isRTL = language === 'ar';
+    // Admin-only UI guards. We require BOTH `userType === 'admin'` (DB-backed)
+    // and `isAuthReady` so the sidebar never flashes admin controls based on
+    // a stale optimistic profile (e.g. legacy JWT user_metadata mismatch).
+    const isRealAdmin = isAuthReady && user?.userType === 'admin';
 
     // Lock body scroll while open so the page underneath doesn't move when
     // the user scrolls inside the panel on iOS Safari.
@@ -35,13 +39,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { id: 'favs', icon: '❤️', ar: 'المفضلة', en: 'Favorites', path: '/profile' },
         { id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' },
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
-        { id: 'seasonal', icon: '🌙', ar: 'عروض الموسم', en: 'Seasonal Offers', path: '/seasonal' },
     ];
+    // Seasonal offers section — admin can show/hide globally from
+    // platform_settings.seasonal_offers_visible. Hidden by default.
+    if (platformSettings.seasonalOffersVisible) {
+        menuItems.push({ id: 'seasonal', icon: '🌙', ar: 'عروض الموسم', en: 'Seasonal Offers', path: '/seasonal' });
+    }
 
-    if (user?.userType === 'seller' || user?.userType === 'admin') {
+    if (isAuthReady && (user?.userType === 'seller' || user?.userType === 'admin')) {
         menuItems.push({ id: 'seller', icon: '🏪', ar: 'لوحة التاجر', en: 'Seller Dashboard', path: '/seller' });
     }
-    if (user?.userType === 'admin') {
+    if (isRealAdmin) {
         menuItems.push({ id: 'admin', icon: '🛠️', ar: 'مركز الإدارة', en: 'Admin Center', path: '/admin' });
     }
 
@@ -189,7 +197,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </span>
                     </button>
 
-                    {user?.userType === 'admin' && (
+                    {isRealAdmin && (
                         <div style={{ marginBottom: 16 }}>
                             <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
                             <div style={{ display: 'flex', gap: 6 }}>

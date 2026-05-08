@@ -616,6 +616,7 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
 const AdminTools: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [paymentEnabled, setPaymentEnabled] = useState(false);
+    const [seasonalVisible, setSeasonalVisible] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
@@ -627,13 +628,15 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, seasonalRes, bannerRes, campaignRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'seasonal_offers_visible').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
 
         setPaymentEnabled(paymentRes.data?.value === true);
+        setSeasonalVisible(seasonalRes.data?.value === true);
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -660,6 +663,20 @@ const AdminTools: React.FC = () => {
                 ? '✅ تم تفعيل بوابة الدفع. التجار سيحتاجون اشتراك لإضافة عروض.'
                 : '✅ تم تعطيل البوابة. التطبيق الآن مجاني بالكامل.'
         );
+    };
+
+    const toggleSeasonal = async () => {
+        const newValue = !seasonalVisible;
+        setSeasonalVisible(newValue); // optimistic — toggle pill snaps instantly
+        // Upsert so the row is created the first time. Supabase realtime
+        // listener in AppContext propagates the new value to every client.
+        const { error } = await supabase
+            .from('platform_settings')
+            .upsert({ key: 'seasonal_offers_visible', value: newValue, description: 'Show/hide seasonal offers section across the app', updated_at: new Date().toISOString() });
+        if (error) {
+            setSeasonalVisible(!newValue);
+            await customAlert('❌ ' + error.message);
+        }
     };
 
     const deleteBanner = async (id: string) => {
@@ -731,6 +748,18 @@ const AdminTools: React.FC = () => {
                         }
                         enabled={paymentEnabled}
                         onToggle={togglePayment}
+                    />
+                    <ToggleCard
+                        icon="🌙"
+                        title="عروض الموسم"
+                        subtitle={
+                            seasonalVisible
+                                ? 'ظاهرة لجميع المستخدمين في القائمة الجانبية'
+                                : 'مخفية — لن تظهر لأي مستخدم'
+                        }
+                        enabled={seasonalVisible}
+                        onToggle={toggleSeasonal}
+                        color="purple"
                     />
                 </div>
             </section>

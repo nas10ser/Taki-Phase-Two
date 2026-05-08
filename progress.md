@@ -1,3 +1,68 @@
+# TAKI — تقرير التقدم v9.18 (تحكم بعروض الموسم + تشديد admin gating) 🌙🛡️
+
+## الإصدار v9.18 — Seasonal toggle + admin-only UI + sw cache bump
+
+**التاريخ:** ٨ مايو ٢٠٢٦
+**الفرع:** `claude/elated-grothendieck-7aabb3` → دُمج في `main`
+
+### 🌙 1. تحكم كامل بعروض الموسم من مركز الإدارة
+
+**المشكلة:** قسم "عروض الموسم" كان يظهر دائماً للجميع بدون تحكم.
+
+**الإصلاح:**
+- إعداد جديد في `platform_settings.seasonal_offers_visible` (قيمة افتراضية `false` — مخفي).
+- **Toggle جديد** في AdminTools ضمن "⚙️ الإعدادات العامة" — أرجواني اللون 🌙 — ظاهر/مخفي بضغطة زر.
+- **Realtime listener** في AppContext يقرأ الإعداد ويستمع لأي تغيير فيه. حالما يضغط الأدمن، كل المستخدمين المفتوح عندهم التطبيق يُحدّث UI لديهم فوراً.
+- في [Sidebar.tsx](src/components/Sidebar.tsx): البند يُضاف إلى قائمة `menuItems` فقط لو `platformSettings.seasonalOffersVisible === true`.
+- في [App.tsx](src/App.tsx): مسار `/seasonal` لُف بـ `<SeasonalGate>` — إذا الإعداد off، يُعاد التوجيه لـ `/` (الروابط القديمة لا تُسرّب الصفحة).
+
+### 🛡️ 2. تشديد admin gating
+
+**المشكلة:** UI خاص بالأدمن (مركز الإدارة + وضع المعاينة) كان يعتمد فقط على `user?.userType === 'admin'`. مع وجود JWT-vs-DB mismatch قديم (مكتشف في v9.17)، الـ flash المؤقت ممكن يُظهر هذه العناصر باختصار قبل أن DB تعيد تحميل المستخدم الحقيقي.
+
+**الإصلاح في [Sidebar.tsx](src/components/Sidebar.tsx):**
+```tsx
+const isRealAdmin = isAuthReady && user?.userType === 'admin';
+```
+- "مركز الإدارة" + "وضع المعاينة (للإدارة)": مرتبطان الآن بـ `isRealAdmin` (لا يظهر قبل ما `isAuthReady=true`).
+- "لوحة التاجر": `isAuthReady && (seller || admin)` — لا يظهر قبل التحقق.
+- ملاحظة: الـ DB-loaded `user.userType` هو الحاكم؛ JWT meta لم يعد يكفي لتفعيل أي UI أدمن.
+
+### 🔄 3. تحديث Service Worker إلى v9.17
+
+[sw.js:7](sw.js): رفع `CACHE_NAME` من `taki-cache-v9.8` إلى `taki-cache-v9.17`. كل مستخدم سيُحمّل JS/CSS الجديد عند أول زيارة (الـ activate يمسح القديم تلقائياً) — يحل مشكلة "ChunkLoadError" بعد البناء.
+
+### 📌 ملاحظة عن خطأ Parcel على dev server
+
+شُوهد `ENOENT: no such file or directory, open '.../.parcel-cache/...AssetGraph'` بعد تسجيل خروج. هذا **خطأ بيئة التطوير المحلية**، ليس bug في الكود:
+
+> Parcel كان يبني incrementally وقت ما تغيّر شيء على disk. الحل: أوقف الـ dev server (Ctrl+C) ثم `npm run clean && npm run dev`.
+
+تم تنظيف `.parcel-cache` و`dist/` في هذا الفرع كجزء من البناء.
+
+---
+
+### ✅ التحقق
+
+| الفحص | النتيجة |
+|---|---|
+| TypeScript typecheck | **0 أخطاء** |
+| Parcel production build | ✅ |
+| Migration على Production (إعداد جديد) | ✅ مطبَّق عبر MCP |
+| Realtime listener | ✅ مفعّل |
+
+---
+
+### 📊 ملخص v9.18
+
+```
+ملفات معدّلة:           5  (AppContext, AdminTools, Sidebar, App.tsx, sw.js)
+DB أُضيف:                seasonal_offers_visible (platform_settings)
+سطور مضافة:              ~95
+```
+
+---
+
 # TAKI — تقرير التقدم v9.17 (نظام التعليقات الكامل + Soft Delete + Smooth UX) 💬🗑️✨
 
 ## الإصدار v9.17 — نظام التعليقات + استرجاع الحساب 30 يوم + تجربة لمسية سلسة

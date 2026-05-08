@@ -104,6 +104,9 @@ interface AppContextType {
     effectiveUserType: 'buyer' | 'seller' | 'admin';
     incrementDealView: (dealId: string) => Promise<void>;
     incrementDealClick: (dealId: string) => Promise<void>;
+    /** Platform-wide feature flags driven by `platform_settings`. Each flag
+     *  is admin-controlled; updates propagate via realtime. */
+    platformSettings: { seasonalOffersVisible: boolean };
 }
 
 
@@ -209,6 +212,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [smartAlerts, setSmartAlerts] = useState<SmartAlertRule[]>([]);
 
     const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>({});
+
+    // Platform-wide feature flags read from `platform_settings`. Defaults are
+    // conservative (off) so the UI never accidentally exposes a section before
+    // the admin opts in. Realtime listener below keeps every client in sync
+    // the instant the admin flips a toggle.
+    const [platformSettings, setPlatformSettings] = useState<{
+        seasonalOffersVisible: boolean;
+    }>({ seasonalOffersVisible: false });
+
+    // Load platform settings + subscribe to realtime updates so admin toggles
+    // propagate to every open tab without requiring a refresh.
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (key: string, value: any) => {
+            if (cancelled) return;
+            if (key === 'seasonal_offers_visible') {
+                setPlatformSettings(prev => ({ ...prev, seasonalOffersVisible: value === true }));
+            }
+        };
+        (async () => {
+            try {
+                const { data } = await supabase
+                    .from('platform_settings')
+                    .select('key, value')
+                    .in('key', ['seasonal_offers_visible']);
+                (data || []).forEach((r: any) => apply(r.key, r.value));
+            } catch (e) {
+                console.warn('Platform settings fetch failed:', e);
+            }
+        })();
+        const channel = supabase
+            .channel('platform-settings-sync')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'platform_settings' },
+                (payload: any) => {
+                    const row = payload.new || payload.old;
+                    if (row?.key) apply(row.key, payload.new?.value ?? row.value);
+                }
+            )
+            .subscribe();
+        return () => {
+            cancelled = true;
+            try { supabase.removeChannel(channel); } catch {}
+        };
+    }, []);
 
     const [darkMode, setDarkMode] = useState<boolean>(() => {
         try {
@@ -1472,6 +1520,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customAlert, customConfirm, customPrompt,
         viewAs, setViewAs, effectiveUserType,
         incrementDealView, incrementDealClick,
+        platformSettings,
     }), [
         language, setLanguage,
         deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
@@ -1488,7 +1537,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         viewAs, setViewAs, effectiveUserType,
-        incrementDealView, incrementDealClick
+        incrementDealView, incrementDealClick,
+        platformSettings,
     ]);
 
     return (

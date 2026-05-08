@@ -1,10 +1,10 @@
-// TAKI service worker — v9.8 (instant-load tier)
+// TAKI service worker — v9.17 (reviews + soft delete + smooth UX)
 // Strategy:
 //  • Navigations  → cache-first (instant paint) + background revalidate
 //  • JS / CSS     → cache-first (assets are content-hashed, immutable)
 //  • API / data   → network-first with cache fallback (freshness wins)
 //  • Other GETs   → stale-while-revalidate
-const CACHE_NAME = 'taki-cache-v9.8';
+const CACHE_NAME = 'taki-cache-v9.17';
 const urlsToCache = [
   '/',
   '/index.html',
