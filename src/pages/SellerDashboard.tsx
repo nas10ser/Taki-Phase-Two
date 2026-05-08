@@ -1103,9 +1103,27 @@ const SellerDashboard: React.FC = () => {
             </div>
 
             {loading && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--body-bg)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.95 }}>
-                    <div className="spinner" style={{ width: 40, height: 40, border: '4px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ marginTop: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{isRTL ? 'جاري التحميل...' : 'Loading...'}</p>
+                <div
+                    aria-live="polite"
+                    style={{
+                        position: 'fixed',
+                        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 88px)',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 1000,
+                        background: 'var(--card-bg)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 999,
+                        padding: '8px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        boxShadow: '0 6px 20px rgba(0,0,0,0.15)',
+                        pointerEvents: 'none'
+                    }}
+                >
+                    <div className="spinner" style={{ width: 16, height: 16, border: '2px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{isRTL ? 'جاري التحميل...' : 'Loading...'}</span>
                 </div>
             )}
 
