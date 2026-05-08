@@ -329,8 +329,8 @@ const DealDetails: React.FC = () => {
 
     const history = useHistory();
     const {
-        deals, user, addRating, addReply, updateDeal, language, toggleFollowMerchant, followedMerchants,
-        customAlert, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
+        deals, user, addRating, addReply, toggleRatingLike, removeRating, updateDeal, language, toggleFollowMerchant, followedMerchants,
+        customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
         storeProfiles
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
@@ -794,61 +794,124 @@ const DealDetails: React.FC = () => {
                         </div>
                     )}
 
-                    {deal.ratings.length > 0 ? deal.ratings.slice(0, 5).map((r, i) => (
-                        <div key={i} style={{ padding: '16px 0', borderBottom: i < deal.ratings.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                    {deal.ratings.length > 0 ? deal.ratings.slice(0, 5).map((r, i) => {
+                        const ratingKey = r.id || `${r.userId}-${i}`;
+                        const liked = !!(user && r.likedBy && r.likedBy.includes(user.id));
+                        const canDelete = !!user && (user.id === r.userId || user.userType === 'admin');
+                        const canReply = isOwner && !!r.id;
+                        return (
+                        <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < deal.ratings.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                                 <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{r.userName}</span>
                                 <span style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</span>
                             </div>
                             <p style={{ color: 'var(--text-primary)', fontSize: '0.85rem', lineHeight: 1.6, fontWeight: 500 }}>{r.comment}</p>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', marginTop: 4, fontWeight: 600 }}>{r.date}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 600 }}>{r.date}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {user && r.id && (
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleRatingLike(deal.id, r.id!)}
+                                            aria-pressed={liked}
+                                            aria-label={liked ? (isRTL ? 'إلغاء الإعجاب' : 'Unlike') : (isRTL ? 'إعجاب' : 'Like')}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                padding: '4px 10px', borderRadius: 999,
+                                                border: 'none',
+                                                background: liked ? 'rgba(239,68,68,0.12)' : 'var(--body-bg)',
+                                                color: liked ? '#ef4444' : 'var(--text-secondary)',
+                                                fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
+                                                transition: 'transform 0.12s ease, background 0.2s'
+                                            }}
+                                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
+                                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                        >
+                                            <span style={{ fontSize: '0.95rem' }}>{liked ? '❤️' : '🤍'}</span>
+                                            <span>{r.likeCount ?? 0}</span>
+                                        </button>
+                                    )}
+                                    {canDelete && (
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                if (!r.id) return;
+                                                const ok = await customConfirm(isRTL ? 'حذف هذا التعليق نهائياً؟' : 'Delete this review permanently?');
+                                                if (ok) await removeRating(deal.id, r.id);
+                                            }}
+                                            style={{
+                                                padding: '4px 10px', borderRadius: 999, border: 'none',
+                                                background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                                                fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
+                                                transition: 'transform 0.12s ease'
+                                            }}
+                                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.92)'; }}
+                                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                                            aria-label={isRTL ? 'حذف التعليق' : 'Delete review'}
+                                        >
+                                            🗑 {isRTL ? 'حذف' : 'Delete'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
 
                             {r.reply && (
                                 <div style={{ marginTop: 12, padding: '12px', background: 'var(--body-bg)', borderRadius: 14, borderRight: isRTL ? '3px solid var(--primary)' : 'none', borderLeft: !isRTL ? '3px solid var(--primary)' : 'none' }}>
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4 }}>
-                                        💬 {isRTL ? 'رد المتجر:' : 'Store Reply:'}
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                        <span>💬 {isRTL ? 'رد المتجر:' : 'Store Reply:'}</span>
+                                        {isOwner && r.id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => addReply(deal.id, r.id!, '')}
+                                                style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
+                                            >
+                                                ✕ {isRTL ? 'حذف الرد' : 'Remove'}
+                                            </button>
+                                        )}
                                     </div>
                                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>{r.reply}</p>
                                 </div>
                             )}
 
-                            {/* Seller reply form — only the deal owner sees this, only on
-                                comments that don't already have a reply. */}
-                            {isOwner && !r.reply && (
-                                activeReplyId === r.userId ? (
+                            {canReply && !r.reply && (
+                                activeReplyId === r.id ? (
                                     <div style={{ marginTop: 12 }}>
                                         <textarea
-                                            value={replyDrafts[r.userId] || ''}
-                                            onChange={e => setReplyDrafts({ ...replyDrafts, [r.userId]: e.target.value })}
+                                            value={replyDrafts[r.id!] || ''}
+                                            onChange={e => setReplyDrafts({ ...replyDrafts, [r.id!]: e.target.value })}
                                             placeholder={isRTL ? 'اكتب ردك على هذا التعليق...' : 'Write your reply...'}
                                             style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid var(--gray-200)', minHeight: 60, outline: 'none', resize: 'vertical', fontSize: '0.85rem' }}
                                         />
                                         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                             <button onClick={async () => {
-                                                const text = (replyDrafts[r.userId] || '').trim();
-                                                if (!text) return;
-                                                await addReply(deal.id, r.userId, text);
-                                                setReplyDrafts(prev => { const n = { ...prev }; delete n[r.userId]; return n; });
+                                                const text = (replyDrafts[r.id!] || '').trim();
+                                                if (!text || !r.id) return;
+                                                await addReply(deal.id, r.id, text);
+                                                setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; });
                                                 setActiveReplyId(null);
                                             }}
                                                 style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
                                                 {isRTL ? '💬 إرسال الرد' : '💬 Send Reply'}
                                             </button>
-                                            <button onClick={() => { setActiveReplyId(null); setReplyDrafts(prev => { const n = { ...prev }; delete n[r.userId]; return n; }); }}
+                                            <button onClick={() => { setActiveReplyId(null); setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; }); }}
                                                 style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
                                                 {isRTL ? 'إلغاء' : 'Cancel'}
                                             </button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <button onClick={() => setActiveReplyId(r.userId)}
+                                    <button onClick={() => setActiveReplyId(r.id!)}
                                         style={{ marginTop: 8, padding: '6px 14px', borderRadius: 10, background: 'var(--body-bg)', border: '1px solid var(--gray-200)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer' }}>
                                         💬 {isRTL ? 'الرد على هذا التعليق' : 'Reply to this review'}
                                     </button>
                                 )
                             )}
                         </div>
-                    )) : (
+                        );
+                    }) : (
                         <div style={{ textAlign: 'center', padding: '20px', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.85rem' }}>
                             {isRTL ? 'لا توجد تقييمات بعد - كن أول من يقيّم!' : 'No reviews yet - be the first!'}
                         </div>

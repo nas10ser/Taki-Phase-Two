@@ -105,8 +105,16 @@ const StoreDetails: React.FC = () => {
     }, [id, deals, user, isRTL]);
 
     const handleSaveProfile = () => {
-        updateStoreProfile(id, { phone: editPhone, email: profile.email, avatar: profile.avatar, bio: editBio, address: editAddress });
+        updateStoreProfile(id, {
+            phone: editPhone,
+            contactPhone: editPhone,
+            email: profile.email,
+            avatar_url: profile.avatar_url,
+            bio: editBio,
+            address: editAddress,
+        });
         setIsEditingStore(false);
+        customAlert(isRTL ? '✅ تم حفظ التعديلات' : '✅ Changes saved');
     };
 
     const reActivateDeal = async (deal: any) => {
@@ -152,24 +160,23 @@ const StoreDetails: React.FC = () => {
 
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setIsUploading(true);
-            try {
-                const { storageService } = await import('../services/storageService');
-                const url = await storageService.uploadImage(file);
-                if (url) {
-                    updateStoreProfile(id, { ...profile, avatar: url });
-                } else {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        const newAvatar = ev.target?.result as string;
-                        updateStoreProfile(id, { ...profile, avatar: newAvatar });
-                    };
-                    reader.readAsDataURL(file);
-                }
-            } finally {
-                setIsUploading(false);
+        if (!file) return;
+        setIsUploading(true);
+        try {
+            const { storageService } = await import('../services/storageService');
+            const url = await storageService.uploadImage(file);
+            if (url) {
+                updateStoreProfile(id, { ...profile, avatar_url: url });
+            } else {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const newAvatar = ev.target?.result as string;
+                    updateStoreProfile(id, { ...profile, avatar_url: newAvatar });
+                };
+                reader.readAsDataURL(file);
             }
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -266,8 +273,8 @@ const StoreDetails: React.FC = () => {
                 {/* Main Profile Info (Centered) */}
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
                     <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto 16px' }}>
-                        <div style={{ width: '100%', height: '100%', borderRadius: 28, background: profile.avatar ? 'transparent' : 'rgba(80, 80, 90, 0.3)', border: '3px solid rgba(80, 80, 95, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', overflow: 'hidden', textTransform: 'uppercase' }}>
-                            {profile.avatar ? <img src={profile.avatar} loading="lazy" alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : store.name.charAt(0)}
+                        <div style={{ width: '100%', height: '100%', borderRadius: 28, background: ((profile as any).avatar_url || (profile as any).avatar) ? 'transparent' : 'rgba(80, 80, 90, 0.3)', border: '3px solid rgba(80, 80, 95, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', overflow: 'hidden', textTransform: 'uppercase' }}>
+                            {((profile as any).avatar_url || (profile as any).avatar) ? <img src={(profile as any).avatar_url || (profile as any).avatar} loading="lazy" alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : store.name.charAt(0)}
                         </div>
                         {user?.id === store.id && isEditingStore && (
                             <div onClick={() => document.getElementById('store-avatar-upload')?.click()} style={{ position: 'absolute', bottom: -5, right: -5, background: 'var(--primary)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}>

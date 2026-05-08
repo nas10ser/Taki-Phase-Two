@@ -9,6 +9,38 @@ export const dealRepository = {
             if (error) throw error;
             if (data) {
                 const mappedData: Deal[] = data.map(dealRepository.mapRowToDeal);
+                // Hydrate ratings from the dedicated table in one round trip.
+                // Empty deal list → skip the second query entirely.
+                if (mappedData.length > 0) {
+                    const ids = mappedData.map(d => d.id);
+                    const { data: ratingRows } = await supabase
+                        .from('ratings')
+                        .select('*')
+                        .in('deal_id', ids)
+                        .is('deleted_at', null)
+                        .order('created_at', { ascending: false });
+                    if (Array.isArray(ratingRows) && ratingRows.length > 0) {
+                        const byDeal: Record<string, any[]> = {};
+                        for (const r of ratingRows) {
+                            (byDeal[r.deal_id] ||= []).push({
+                                id: r.id,
+                                userId: r.user_id,
+                                userName: r.user_name,
+                                score: Number(r.score) || 0,
+                                comment: r.comment ?? '',
+                                date: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '',
+                                reply: r.reply ?? undefined,
+                                repliedBy: r.replied_by ?? undefined,
+                                repliedAt: r.replied_at ?? undefined,
+                                likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
+                                likeCount: Number(r.like_count) || 0,
+                            });
+                        }
+                        for (const d of mappedData) {
+                            d.ratings = byDeal[d.id] || [];
+                        }
+                    }
+                }
                 logger.log('📡 Fetched deals from remote:', mappedData.length);
                 return mappedData;
             }

@@ -111,19 +111,23 @@ const SellerDashboard: React.FC = () => {
         checkSub();
     }, [user, storeProfiles]);
 
-    // Sync view with URL tab parameter
+    // Sync view with URL tab parameter. An `edit=` param always means form
+    // view, even if deals haven't loaded yet — guarantees the form tab is
+    // active the instant the deal arrives so the user never lands on scanner.
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const tab = params.get('tab');
-        if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights'] as const).includes(tab as any)) {
+        const editId = params.get('edit');
+        if (editId) {
+            setView('form');
+        } else if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights'] as const).includes(tab as any)) {
             setView(tab as any);
-        } else if (!tab && !params.get('edit')) {
-            // Default to form if no tab and not editing
+        } else if (!tab) {
             setView('form');
         }
     }, [location.search]);
 
-    // Handle Edit Mode from URL
+    // Handle Edit Mode from URL — fills form fields once deals arrive.
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const editId = params.get('edit');
@@ -132,9 +136,8 @@ const SellerDashboard: React.FC = () => {
             if (dealToEdit && editingDealId !== dealToEdit.id) {
                 const origin = params.get('origin') as 'active' | 'expired';
                 const source = params.get('source');
-                
+
                 handleEdit(dealToEdit, origin || undefined);
-                // Ensure we are in form view
                 setView('form');
                 if (source) (window as any).editSource = source;
             }
@@ -1043,7 +1046,10 @@ const SellerDashboard: React.FC = () => {
                         const badgeCount = tab === 'orders' ? unreadOrdersCount : 0;
 
                         return (
-                            <button key={tab} onClick={() => {
+                            <button key={tab} type="button" onClick={() => {
+                                // Flip view IMMEDIATELY so the tab feels instant —
+                                // not waiting for the URL effect to round-trip.
+                                setView(tab);
                                 history.push(`/seller?tab=${tab}`);
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                                 if (tab === 'orders') {
@@ -1053,10 +1059,15 @@ const SellerDashboard: React.FC = () => {
                                 flex: 1, minWidth: 85, padding: '12px 4px', borderRadius: 16, border: 'none',
                                 background: view === tab ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
                                 color: 'white',
-                                fontWeight: 900, fontSize: '0.85rem', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', cursor: 'pointer',
+                                fontWeight: 900, fontSize: '0.85rem', transition: 'transform 0.15s ease, background 0.2s, box-shadow 0.2s', cursor: 'pointer',
                                 display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', position: 'relative',
+                                transform: view === tab ? 'scale(1.02)' : 'scale(1)',
                                 boxShadow: view === tab ? '0 10px 20px rgba(0,0,0,0.2)' : 'none'
-                            }}>
+                            }}
+                            onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.96)'; }}
+                            onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = view === tab ? 'scale(1.02)' : 'scale(1)'; }}
+                            >
                                 <span style={{ fontSize: '1rem' }}>
                                     {tab === 'form' ? (editingDealId ? '✏️' : '➕') :
                                      tab === 'products' ? '📦' :

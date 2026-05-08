@@ -20,13 +20,19 @@ const ToggleCard = memo<{
     title: string;
     subtitle: string;
     enabled: boolean;
-    onToggle: () => void;
+    onToggle: () => void | Promise<void>;
     color?: 'green' | 'blue' | 'purple';
 }>(({ icon, title, subtitle, enabled, onToggle, color = 'green' }) => {
+    const [busy, setBusy] = useState(false);
     const colors = {
         green: enabled ? 'bg-emerald-500' : 'bg-[var(--gray-300)]',
         blue: enabled ? 'bg-blue-500' : 'bg-[var(--gray-300)]',
         purple: enabled ? 'bg-purple-500' : 'bg-[var(--gray-300)]',
+    };
+    const handleClick = async () => {
+        if (busy) return;
+        setBusy(true);
+        try { await onToggle(); } finally { setBusy(false); }
     };
     return (
         <div className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm flex items-center gap-4">
@@ -36,11 +42,14 @@ const ToggleCard = memo<{
                 <div className="text-xs text-[var(--text-secondary)] mt-0.5">{subtitle}</div>
             </div>
             <button
-                onClick={onToggle}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${colors[color]}`}
+                onClick={handleClick}
+                disabled={busy}
+                aria-busy={busy}
+                aria-pressed={enabled}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ease-out ${colors[color]} active:scale-95 ${busy ? 'opacity-70 cursor-wait' : 'cursor-pointer hover:brightness-110'}`}
             >
                 <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-[var(--card-bg)] shadow transition-transform ${
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ease-out ${
                         enabled ? 'translate-x-6' : 'translate-x-1'
                     }`}
                 />
@@ -49,6 +58,45 @@ const ToggleCard = memo<{
     );
 });
 ToggleCard.displayName = 'ToggleCard';
+
+// Reusable smooth toggle pill — used inline in lists where the row card
+// supplies its own layout. Optimistic by design: flips visually immediately
+// while the parent's onToggle reconciles with the server.
+const ToggleSwitch: React.FC<{
+    enabled: boolean;
+    onToggle: () => void | Promise<void>;
+    color?: 'green' | 'blue';
+    size?: 'sm' | 'md';
+    label?: string;
+}> = ({ enabled, onToggle, color = 'green', size = 'sm', label }) => {
+    const [busy, setBusy] = useState(false);
+    const handleClick = async () => {
+        if (busy) return;
+        setBusy(true);
+        try { await onToggle(); } finally { setBusy(false); }
+    };
+    const dims = size === 'md' ? 'h-7 w-12' : 'h-6 w-11';
+    const knob = size === 'md' ? 'h-5 w-5' : 'h-4 w-4';
+    const onColor = color === 'green' ? 'bg-emerald-500' : 'bg-blue-500';
+    return (
+        <button
+            onClick={handleClick}
+            disabled={busy}
+            aria-busy={busy}
+            aria-pressed={enabled}
+            aria-label={label}
+            className={`relative inline-flex ${dims} items-center rounded-full transition-all duration-300 ease-out ${enabled ? onColor : 'bg-[var(--gray-300)]'} active:scale-95 ${busy ? 'opacity-70 cursor-wait' : 'cursor-pointer hover:brightness-110'}`}
+        >
+            <span
+                className={`inline-block ${knob} transform rounded-full bg-white shadow-md transition-transform duration-300 ease-out ${
+                    size === 'md'
+                        ? (enabled ? 'translate-x-6' : 'translate-x-1')
+                        : (enabled ? 'translate-x-6' : 'translate-x-1')
+                }`}
+            />
+        </button>
+    );
+};
 
 // ============================================================
 // Banner Modal
@@ -264,6 +312,7 @@ const CampaignModal: React.FC<{
             await customAlert('⚠️ العنوان والمحتوى (عربي) مطلوبان');
             return;
         }
+        if (saving) return;
         setSaving(true);
         // The DB has NOT NULL on title_en/body_en. Mirror Arabic when missing
         // so admins can publish a single-language campaign without friction.
@@ -272,7 +321,7 @@ const CampaignModal: React.FC<{
             title_en: (form.title_en.trim() || form.title_ar.trim()),
             body_ar: form.body_ar.trim(),
             body_en: (form.body_en.trim() || form.body_ar.trim()),
-            target_audience: form.target_audience,
+            target_audience: form.target_audience || 'all',
             target_city: form.target_city.trim() || null,
             target_region: form.target_region.trim() || null,
             image_url: form.image_url.trim() || null,
@@ -284,13 +333,20 @@ const CampaignModal: React.FC<{
             priority: Number(form.priority) || 0,
             is_active: form.is_active,
         };
-        const q = isEdit
-            ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id)
-            : supabase.from('promotional_campaigns').insert([row]);
-        const { error } = await q;
+
+        // 15s timeout so a stalled network call never leaves the button
+        // stuck on "جاري الحفظ...". The user sees a clear error and can retry.
+        const networkCall = isEdit
+            ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id).select().maybeSingle()
+            : supabase.from('promotional_campaigns').insert([row]).select().maybeSingle();
+        const timeout = new Promise<{ error: any }>(resolve =>
+            setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 15000)
+        );
+        const result = await Promise.race([networkCall as any, timeout]);
         setSaving(false);
-        if (error) {
-            await customAlert('❌ ' + error.message);
+        if (result?.error) {
+            console.error('Campaign save failed:', result.error);
+            await customAlert('❌ ' + (result.error.message || 'فشل الحفظ — تحقق من الاتصال'));
             return;
         }
         await customAlert(isEdit ? '✅ تم تعديل الحملة' : '✅ تم نشر الحملة');
@@ -609,29 +665,47 @@ const AdminTools: React.FC = () => {
     const deleteBanner = async (id: string) => {
         const ok = await customConfirm('هل تريد حذف هذا البانر نهائياً؟');
         if (!ok) return;
-        await supabase.from('banners').delete().eq('id', id);
-        fetchAll();
+        // Optimistic remove — UI reacts instantly; rollback on failure.
+        const previous = banners;
+        setBanners(prev => prev.filter(b => b.id !== id));
+        const { error } = await supabase.from('banners').delete().eq('id', id);
+        if (error) {
+            setBanners(previous);
+            await customAlert('❌ ' + error.message);
+        }
     };
 
     const toggleBanner = async (b: any) => {
-        await supabase.from('banners').update({ is_active: !b.is_active }).eq('id', b.id);
-        fetchAll();
+        const next = !b.is_active;
+        // Flip locally first — toggle pill snaps instantly.
+        setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: next } : x));
+        const { error } = await supabase.from('banners').update({ is_active: next }).eq('id', b.id);
+        if (error) {
+            setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: !next } : x));
+            await customAlert('❌ ' + error.message);
+        }
     };
 
     const toggleCampaign = async (c: any) => {
-        await supabase.from('promotional_campaigns').update({ is_active: !c.is_active }).eq('id', c.id);
-        fetchAll();
+        const next = !c.is_active;
+        setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: next } : x));
+        const { error } = await supabase.from('promotional_campaigns').update({ is_active: next }).eq('id', c.id);
+        if (error) {
+            setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: !next } : x));
+            await customAlert('❌ ' + error.message);
+        }
     };
 
     const deleteCampaign = async (c: any) => {
         const ok = await customConfirm(`حذف حملة "${c.title_ar}" نهائياً؟`);
         if (!ok) return;
+        const previous = campaigns;
+        setCampaigns(prev => prev.filter(x => x.id !== c.id));
         const { error } = await supabase.from('promotional_campaigns').delete().eq('id', c.id);
         if (error) {
+            setCampaigns(previous);
             await customAlert('❌ ' + error.message);
-            return;
         }
-        fetchAll();
     };
 
     return (
@@ -715,16 +789,20 @@ const AdminTools: React.FC = () => {
                                         {b.title_ar || 'بدون عنوان'}
                                     </div>
                                     <div className="text-xs text-[var(--text-secondary)] mt-0.5">{b.position}</div>
-                                    <div className="flex gap-2 mt-3">
+                                    <div className="flex gap-2 mt-3 items-center">
+                                        <ToggleSwitch
+                                            enabled={b.is_active}
+                                            onToggle={() => toggleBanner(b)}
+                                            label={b.is_active ? 'إيقاف' : 'تفعيل'}
+                                        />
+                                        <span className="text-[10px] font-bold text-[var(--text-secondary)]">
+                                            {b.is_active ? 'نشط' : 'متوقف'}
+                                        </span>
+                                        <div className="flex-1" />
                                         <button
-                                            onClick={() => toggleBanner(b)}
-                                            className="flex-1 py-1.5 text-xs font-bold bg-[var(--body-bg)] hover:bg-[var(--gray-100)] rounded-lg"
-                                        >
-                                            {b.is_active ? 'إيقاف' : 'تفعيل'}
-                                        </button>
-                                        <button
+                                            type="button"
                                             onClick={() => deleteBanner(b.id)}
-                                            className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg"
+                                            className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 active:scale-90"
                                         >
                                             🗑
                                         </button>
@@ -783,29 +861,23 @@ const AdminTools: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 flex-shrink-0">
+                                        <ToggleSwitch
+                                            enabled={c.is_active}
+                                            onToggle={() => toggleCampaign(c)}
+                                            label={c.is_active ? 'إيقاف' : 'تفعيل'}
+                                        />
                                         <button
-                                            onClick={() => toggleCampaign(c)}
-                                            aria-label={c.is_active ? 'إيقاف' : 'تفعيل'}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                                c.is_active ? 'bg-emerald-500' : 'bg-[var(--gray-300)]'
-                                            }`}
-                                        >
-                                            <span
-                                                className={`inline-block h-4 w-4 transform rounded-full bg-[var(--card-bg)] transition-transform ${
-                                                    c.is_active ? 'translate-x-6' : 'translate-x-1'
-                                                }`}
-                                            />
-                                        </button>
-                                        <button
+                                            type="button"
                                             onClick={() => setCampaignModal({ open: true, initial: c })}
-                                            className="w-8 h-8 rounded-lg bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-secondary)] flex items-center justify-center"
+                                            className="w-8 h-8 rounded-lg bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-secondary)] flex items-center justify-center transition-all duration-200 active:scale-90"
                                             aria-label="تعديل"
                                         >
                                             ✏️
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => deleteCampaign(c)}
-                                            className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center"
+                                            className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-all duration-200 active:scale-90"
                                             aria-label="حذف"
                                         >
                                             🗑

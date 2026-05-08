@@ -61,12 +61,18 @@ export interface Store {
 }
 
 export interface Rating {
+    /** DB row id (uuid). Optional for legacy in-memory ratings. */
+    id?: string;
     userId: string;
     userName: string;
     score: number;
     comment: string;
     date: string;
     reply?: string;
+    repliedBy?: string;
+    repliedAt?: string;
+    likedBy?: string[];
+    likeCount?: number;
 }
 
 export interface Booking {

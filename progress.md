@@ -1,4 +1,198 @@
-# TAKI — تقرير التقدم v9.7 (المرحلة الثامنة - Premium Admin Dashboard) 👑⚡
+# TAKI — تقرير التقدم v9.17 (نظام التعليقات الكامل + Soft Delete + Smooth UX) 💬🗑️✨
+
+## الإصدار v9.17 — نظام التعليقات + استرجاع الحساب 30 يوم + تجربة لمسية سلسة
+
+**التاريخ:** ٨ مايو ٢٠٢٦
+**الفرع:** `claude/elated-grothendieck-7aabb3` → دُمج في `main`
+**Migration:** `v9_17_reviews_likes_and_soft_delete` (مطبَّق على Production عبر MCP)
+
+ترقية شاملة لتجربة المستخدم: نظام تعليقات كامل في DB (إعجاب/رد/حذف)، حذف حساب بفترة سماح 30 يوم، وإصلاح كل الأزرار والتوغلات لتكون لحظية مع feedback لمسي.
+
+---
+
+### 🔴 1. إصلاح خلل تكرار الإشعارات الترويجية (Throttle Bug)
+
+**المشكلة:** زر `📈 زد مبيعاتك الآن!` كان يظهر في كل refresh. اكتُشف 53 إشعاراً مكرراً للأدمن خلال 4 أيام رغم أن throttle مفترض = 6 ساعات.
+
+**ثلاث طبقات للسبب:**
+| الطبقة | المشكلة |
+|---|---|
+| JWT قديم | الحساب رُقّي من seller→admin في users لكن `auth.users.raw_user_meta_data` بقي 'seller' |
+| Race condition | `optimisticProfile.userType = meta.user_type` (seller). لو DB بطيء، `checkMarketingAlerts` يرى seller |
+| Throttle ضعيف | stamp يُكتب **بعد** الإشعار. آخر تحديث في DB كان May 3 رغم 53 إشعار جديد |
+
+**الإصلاح:**
+1. **استبعاد admin** صراحةً: `if (user.userType === 'admin') return;` في [AppContext.tsx:614](src/context/AppContext.tsx).
+2. **localStorage primary throttle (24h)**: لا يفشل أبداً. Stamp **قبل** إنشاء الإشعار.
+3. **DB stamp backup**: للمزامنة عبر الأجهزة.
+4. **Cleanup**: حذف 53 إشعاراً مكرراً + تحديث JWT meta لمطابقة DB.
+
+### 🔴 2. تعليق "جاري الحفظ" في الحملات الترويجية
+
+**المشكلة:** عند تعديل campaign، الزر يبقى معلّقاً على "جاري الحفظ..." بلا انتهاء.
+
+**الإصلاح في [AdminTools.tsx](src/pages/admin/AdminTools.tsx) `handleSave`:**
+- `Promise.race([networkCall, timeout 15s])` → لا يعلق أكثر من 15 ثانية.
+- خطأ واضح "❌ انتهت مهلة الاتصال — تحقق من الإنترنت" مع `console.error`.
+- `if (saving) return;` لمنع double-click.
+- `target_audience: form.target_audience || 'all'` لتفادي خطأ NOT NULL.
+
+### 🔴 3. تعديل ملف المتجر لا يُحفظ (StoreDetails)
+
+**المشكلة:** `updateStoreProfile` كان يحدّث local state فقط رغم تعليق "server is the source of truth". + `profile.avatar` بدل `profile.avatar_url` (الحقل الفعلي في DB).
+
+**الإصلاح:**
+- [AppContext.tsx:582](src/context/AppContext.tsx) `updateStoreProfile`: اختياري optimistic + إذا `storeId === user.id` يستدعي `userRepository.saveProfile()`. RLS يحمي ضد تعديل ملفات الآخرين.
+- [StoreDetails.tsx](src/pages/StoreDetails.tsx): إصلاح `profile.avatar` → `profile.avatar_url` في 4 مواضع (عرض، رفع، حفظ، AppContext).
+- StoreProfile interface: إضافة `avatar_url?` ليطابق `getAllSellers`.
+
+---
+
+### 💬 4. نظام التعليقات الكامل (Reviews System Overhaul)
+
+**Migration v9.17 على جدول `ratings`:**
+```sql
+ALTER TABLE ratings
+  ADD COLUMN liked_by    text[] DEFAULT '{}',
+  ADD COLUMN like_count  integer DEFAULT 0,
+  ADD COLUMN replied_at  timestamptz,
+  ADD COLUMN replied_by  text,
+  ADD COLUMN deleted_at  timestamptz,
+  ADD COLUMN updated_at  timestamptz DEFAULT now();
+-- + index، realtime، RLS صارم
+```
+
+**3 RPCs آمنة:**
+| RPC | الوظيفة | الحماية |
+|---|---|---|
+| `toggle_rating_like(rating_id)` | إعجاب/إلغاء إعجاب atomic (round-trip واحد) | يتطلب auth |
+| `set_rating_reply(rating_id, reply)` | رد المتجر على تعليق | فقط مالك deal أو admin |
+| `delete_rating(rating_id)` | حذف soft (deleted_at=now()) | فقط المؤلف أو admin |
+
+**Repository جديد** [src/repositories/ratingRepository.ts](src/repositories/ratingRepository.ts):
+- `listForDeal(dealId)`، `listForStore(storeId)`، `create()`، `toggleLike()`، `setReply()`، `remove()`.
+
+**AppContext الجديد:**
+- `addRating` يكتب لجدول `ratings` (سابقاً كان يُحفظ داخل deal JSON ويضيع لأن `dealRepository.save()` لا يضمّن ratings).
+- `addReply(dealId, ratingId, reply)` — تواقيع مُصلَحة (كانت `userId` خطأ).
+- `toggleRatingLike(dealId, ratingId)` — جديد، optimistic + rollback.
+- `removeRating(dealId, ratingId)` — جديد، optimistic + rollback.
+
+**dealRepository.getAll**: يحمّل التعليقات الآن مع العروض في round-trip ثاني (`IN (...)`).
+
+**UI في [DealDetails.tsx](src/pages/DealDetails.tsx):**
+- زر إعجاب 🤍/❤️ بعدّ الإعجابات (لكل مستخدم مسجّل).
+- زر حذف 🗑 (للمؤلف أو admin فقط).
+- زر "حذف الرد ✕" داخل بلوك رد المتجر (لمالك المتجر).
+- المفتاح الآن `r.id` بدل `r.userId` (أصلح حالة بائع له تعليقان من نفس مستخدم).
+
+---
+
+### 🗑️ 5. حذف الحساب — فترة سماح 30 يوم (مثل Apple/Google)
+
+**Migration v9.17 على `users`:**
+```sql
+ALTER TABLE users
+  ADD COLUMN deleted_at  timestamptz,
+  ADD COLUMN purge_after timestamptz;
+-- + index، RLS يخفي الحسابات المحذوفة عن العموم
+```
+
+**4 RPCs:**
+| RPC | الوظيفة |
+|---|---|
+| `soft_delete_my_account()` | يضع `deleted_at=NOW`, `purge_after=NOW+30d`، يوقف العروض النشطة (paused) |
+| `restore_my_account()` | يصفي الحقول، يُرجع false لو الفترة انتهت |
+| `get_my_account_status()` | يُرجع المهلة المتبقية بالأيام |
+| `purge_expired_accounts()` | للنداء من cron؛ تحذف نهائياً الحسابات المنتهية صلاحيتها |
+
+**RLS Policy جديد على users:**
+```
+USING (deleted_at IS NULL OR auth.uid()::text = id OR is_admin())
+```
+المالك يرى نفسه دائماً، الآخرون لا يرونه أبداً.
+
+**في AppContext:**
+- `deleteAccount` ينادي الآن `soft_delete_my_account` ثم signOut.
+- عند تسجيل دخول لاحق ضمن 30 يوم: `customConfirm` يقول "حسابك محذوف وسيُمحى نهائياً خلال X يوم. هل تريد استرجاعه؟" — استرجاع تلقائي عند الموافقة، signOut نهائي عند الرفض.
+- `customAlertRef`/`customConfirmRef` لتفادي stale closures في auth listener.
+
+**في [Profile.tsx](src/pages/Profile.tsx):** نص التأكيد الجديد:
+> "سيتم تعطيل حسابك مؤقتاً. لديك ٣٠ يوماً لاسترجاعه بإعادة تسجيل الدخول، وبعدها سيُحذف نهائياً مع جميع بياناتك."
+
+---
+
+### ✨ 6. تجربة لمسية سلسة (Smooth UX) — كل الأزرار
+
+**مشكلة:** التوغل الأخضر يستجيب فقط بعد network round-trip — ينقلب بعد ثوانٍ، يبدو معلَّق. + تكرار logic toggle بـ 3+ نسخ.
+
+**الحل:**
+1. **Optimistic everywhere في [AdminTools.tsx](src/pages/admin/AdminTools.tsx):** `toggleCampaign`/`toggleBanner`/`deleteCampaign`/`deleteBanner` تنقلب فورياً، rollback عند الفشل.
+2. **مكونان جديدان قابلان للإعادة:**
+   - `ToggleCard` (للإعدادات) — مع `busy` state، `aria-busy`, `aria-pressed`.
+   - `ToggleSwitch` (inline pill) — مع نفس الميزات.
+3. **Tactile feedback:** `active:scale-95`، `transition-all duration-300 ease-out`، `cursor-wait` عند busy، hover `brightness-110`.
+4. **في [SellerDashboard.tsx](src/pages/SellerDashboard.tsx) tab nav:**
+   - `setView(tab)` فوري قبل `history.push` — التبويب يستجيب لحظياً.
+   - `transform: scale(0.96)` عند `onMouseDown` لإحساس لمسي.
+   - `transform: scale(1.02)` عند الـ active tab.
+
+### 🐛 7. Bug تنقل التبويب → السكانر
+
+**المشكلة:** عند الضغط على "+" أو "تعديل" يفتح صفحة سكانر بدل صفحة الإضافة/التعديل.
+
+**السبب:** URL effect كان لا يضمن `view='form'` عند وجود `edit=` في الـ URL إذا لم تُحمَّل العروض بعد.
+
+**الإصلاح في [SellerDashboard.tsx:115](src/pages/SellerDashboard.tsx):**
+```js
+if (editId) setView('form');  // قبل أي شيء آخر
+else if (tab && validTabs.includes(tab)) setView(tab);
+else setView('form');
+```
+
+---
+
+### 🔍 8. تدقيق شامل لكل أزرار الموقع
+
+أُجري بـ 3 وكلاء استكشاف بالتوازي (Admin / Seller / Buyer):
+- **~50 زر admin**: كلها مربوطة بـ DB عبر RPC أو `.from()` مباشر.
+- **15+ زر seller**: كلها مربوطة. اكتُشفت مشكلة StoreDetails (مُصلحة).
+- **30+ زر buyer**: كلها مربوطة. اللغة تُحفظ بالفعل عبر `setLanguage→saveProfile`.
+
+---
+
+### ✅ التحقق النهائي
+
+| الفحص | النتيجة |
+|---|---|
+| TypeScript typecheck | **0 أخطاء** |
+| Parcel production build | **8.4s، نجح** |
+| Migration على Production | ✅ مطبَّق عبر MCP |
+| Supabase advisor: ERRORs | **0** |
+| RLS coverage | كل الجداول الجديدة + الموجودة |
+| Realtime على ratings | ✅ مفعّل |
+| Cleanup duplicate notifications | ✅ 53 إشعار محذوف |
+| JWT meta سُنكرن مع DB | ✅ |
+
+---
+
+### 📊 ملخص v9.17
+
+```
+ملفات جديدة:              1  (ratingRepository.ts)
+ملفات معدّلة:             8  (AppContext, AdminTools, SellerDashboard,
+                              DealDetails, StoreDetails, Profile,
+                              dealRepository, mock.ts)
+Migrations مطبّقة:        1  (v9_17_reviews_likes_and_soft_delete)
+RPCs جديدة:               7  (toggle_rating_like, set_rating_reply,
+                              delete_rating, soft_delete_my_account,
+                              restore_my_account, get_my_account_status,
+                              purge_expired_accounts)
+سطور مضافة:               ~700
+حالة Production:          ✅ Migration مطبّق، الكود جاهز للدمج
+```
+
+---
 
 ## الإصدار v9.7 — لوحة إدارة احترافية بمعايير 2026
 

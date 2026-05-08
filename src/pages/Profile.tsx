@@ -258,9 +258,17 @@ const Profile: React.FC = () => {
                             <button onClick={() => { logout(); history.push('/register'); }} style={{ width: '100%', padding: '16px', borderRadius: 15, background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800, border: 'none', marginBottom: 10 }}>
                                 {isRTL ? 'تسجيل الخروج' : 'Logout'}
                             </button>
-                            <button onClick={async () => { if (await customConfirm(isRTL ? 'هل أنت متأكد؟ سيتم حذف جميع بياناتك.' : 'Are you sure? All your data will be deleted.')) { deleteAccount(); history.push('/register'); } }}
-                                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--gray-400)', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline' }}>
-                                {isRTL ? 'حذف الحساب نهائياً' : 'Permanently Delete Account'}
+                            <button onClick={async () => {
+                                const confirmMsg = isRTL
+                                    ? 'سيتم تعطيل حسابك مؤقتاً. لديك ٣٠ يوماً لاسترجاعه بإعادة تسجيل الدخول، وبعدها سيُحذف نهائياً مع جميع بياناتك. هل تريد المتابعة؟'
+                                    : 'Your account will be deactivated. You have 30 days to restore it by logging in again — after that, it and all data will be permanently deleted. Continue?';
+                                if (await customConfirm(confirmMsg)) {
+                                    await deleteAccount();
+                                    history.push('/register');
+                                }
+                            }}
+                                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--gray-400)', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>
+                                {isRTL ? 'حذف الحساب' : 'Delete Account'}
                             </button>
                         </div>
                     </div>

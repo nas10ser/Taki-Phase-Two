@@ -20,6 +20,7 @@ interface StoreProfile {
     contactPhone?: string;
     email?: string;
     avatar?: string;
+    avatar_url?: string;
     bio?: string;
     address?: string;
     subscription_plan?: string;
@@ -69,7 +70,9 @@ interface AppContextType {
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
     addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<void>;
-    addReply: (dealId: string, userId: string, reply: string) => Promise<void>;
+    addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
+    toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
+    removeRating: (dealId: string, ratingId: string) => Promise<void>;
     topLocation: TopLocation;
     setTopLocation: (loc: TopLocation) => void;
     notifKeywords: string[];
@@ -190,6 +193,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setDialogConfig({ type: 'confirm', message, resolve });
         });
     }, []);
+
+    // Refs that always point at the latest dialog callbacks. Used by code paths
+    // (e.g. the auth listener) that capture stale closures otherwise.
+    const customAlertRef = useRef(customAlert);
+    const customConfirmRef = useRef(customConfirm);
+    useEffect(() => { customAlertRef.current = customAlert; }, [customAlert]);
+    useEffect(() => { customConfirmRef.current = customConfirm; }, [customConfirm]);
 
     const [loading, setLoading] = useState(true);
 
@@ -408,6 +418,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 setFollowedMerchants(existingProfile.followedMerchants || []);
                             }
 
+                            // 30-day soft-delete recovery: if the user signs in while
+                            // their account is in the grace window, prompt them to
+                            // restore it. (migration v9.17 / soft_delete_my_account)
+                            try {
+                                const { data: status } = await supabase.rpc('get_my_account_status');
+                                const row = Array.isArray(status) ? status[0] : status;
+                                if (row?.deleted_at) {
+                                    const daysLeft = Number(row.days_left) || 0;
+                                    const wantsRestore = await customConfirmRef.current(
+                                        `هذا الحساب محذوف وسيُمحى نهائياً خلال ${daysLeft} يوم. هل تريد استرجاعه الآن؟`
+                                    );
+                                    if (wantsRestore) {
+                                        const { data: restored, error: restoreErr } = await supabase.rpc('restore_my_account');
+                                        if (!restoreErr && restored) {
+                                            await customAlertRef.current('✅ تم استرجاع حسابك بنجاح');
+                                        } else {
+                                            await customAlertRef.current('❌ تعذّر استرجاع الحساب — انتهت فترة السماح');
+                                        }
+                                    } else {
+                                        // User declined — sign them back out so the deletion stands.
+                                        try { await supabase.auth.signOut(); } catch {}
+                                        setUser(null);
+                                        return;
+                                    }
+                                }
+                            } catch {}
+
                             // Background hydration — never await. Each call updates state
                             // independently as it resolves, so the UI renders the new user
                             // immediately and progressively fills in.
@@ -580,12 +617,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [favorites, deals, followedMerchants, toggleFollowMerchant]);
 
     const updateStoreProfile = useCallback((storeId: string, profile: StoreProfile) => {
-        setStoreProfiles(prev => {
-            const updated = { ...prev, [storeId]: profile };
-            // No localStorage — server is the source of truth for profiles
-            return updated;
+        // Optimistic local update — UI reacts immediately.
+        setStoreProfiles(prev => ({ ...prev, [storeId]: { ...prev[storeId], ...profile } }));
+
+        // Persist to DB. Only the seller themselves can write their own row
+        // (RLS), so skip the network call for stores owned by someone else.
+        if (!user || user.id !== storeId) return;
+
+        const merged: any = {
+            ...user,
+            contactPhone: profile.contactPhone ?? profile.phone ?? user.contactPhone,
+            phone: profile.phone ?? user.phone,
+            email: profile.email ?? user.email,
+            avatar_url: (profile as any).avatar_url ?? (profile as any).avatar ?? user.avatar_url,
+            bio: profile.bio ?? user.bio,
+            address: profile.address ?? user.address,
+        };
+        setUser(merged);
+        authService.setUser(merged);
+        userRepository.saveProfile(merged).catch(err => {
+            console.error('Failed to persist store profile to DB:', err);
         });
-    }, []);
+    }, [user]);
 
     const updateProfile = useCallback(async (data: Partial<UserProfile>) => {
         if (!user) return;
@@ -597,11 +650,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const checkMarketingAlerts = useCallback(async (lat?: number, lng?: number) => {
         if (!user) return;
 
-        // Server-side throttle: users.last_promo_check_at gates re-checks
-        // to once per 6 hours. Falls back to in-memory ref if the column
-        // is missing (older databases).
+        // Skip admin users entirely — pep-talks for sellers should not fire
+        // for an admin even when their JWT user_metadata still says 'seller'
+        // (legacy from registration). This was the root cause of "زد مبيعاتك"
+        // showing on every refresh for admins.
+        if (user.userType === 'admin') return;
+
+        // Throttle: once per 24h. Primary throttle is localStorage (per-device,
+        // never fails) — the DB column is a backup so different devices stay
+        // mostly in sync. Stamp BEFORE creating the notification so a slow
+        // network or RLS hiccup can't bypass the gate.
         const now = Date.now();
-        const sixHours = 6 * 60 * 60 * 1000;
+        const dayMs = 24 * 60 * 60 * 1000;
+        const lsKey = `TAKI_LAST_PROMO_${user.id}`;
+        try {
+            const lsLast = Number(localStorage.getItem(lsKey)) || 0;
+            if (lsLast && now - lsLast < dayMs) return;
+        } catch {}
+
         try {
             const { supabase } = await import('../services/supabaseClient');
             const { data: throttleRow } = await supabase
@@ -611,9 +677,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .maybeSingle();
             if (throttleRow?.last_promo_check_at) {
                 const last = new Date(throttleRow.last_promo_check_at).getTime();
-                if (now - last < sixHours) return;
+                if (now - last < dayMs) {
+                    try { localStorage.setItem(lsKey, String(last)); } catch {}
+                    return;
+                }
             }
         } catch {}
+
+        // Stamp throttle FIRST. If the user closes the tab mid-fetch, we
+        // still won't show the notification on the next visit within 24h.
+        try { localStorage.setItem(lsKey, String(now)); } catch {}
+        const stampDb = async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                await supabase.from('users')
+                    .update({ last_promo_check_at: new Date(now).toISOString() })
+                    .eq('id', user.id);
+            } catch {}
+        };
+        stampDb();
 
         try {
             // Fetch active campaigns from Supabase for this user type
@@ -625,8 +707,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             );
 
             if (campaigns.length > 0) {
-                // Show campaigns the user hasn't seen yet
-                let shownAny = false;
                 for (const campaign of campaigns) {
                     const hasSeen = await promoRepository.hasSeenCampaign(campaign.id, user.id);
                     if (!hasSeen) {
@@ -644,19 +724,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             }
                         );
                         promoRepository.markAsSeen(campaign.id, user.id);
-                        shownAny = true;
-                        break; // Show one campaign at a time to avoid flooding
+                        return; // Show one campaign at a time to avoid flooding
                     }
-                }
-                if (shownAny) {
-                    try {
-                        const { supabase } = await import('../services/supabaseClient');
-                        await supabase
-                            .from('users')
-                            .update({ last_promo_check_at: new Date().toISOString() })
-                            .eq('id', user.id);
-                    } catch {}
-                    return;
                 }
             }
         } catch (e) {
@@ -664,16 +733,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         // ── Fallback: proximity-based alerts if no Supabase campaigns ──
-        // Throttle is shared with the campaign branch via users.last_promo_check_at.
-        const stampThrottle = async () => {
-            try {
-                const { supabase } = await import('../services/supabaseClient');
-                await supabase.from('users')
-                    .update({ last_promo_check_at: new Date().toISOString() })
-                    .eq('id', user.id);
-            } catch {}
-        };
-
         if (user.userType === 'buyer' && lat && lng) {
             const hasNearby = deals.some(d => {
                 const dLoc = getLocation(d.locationId);
@@ -689,7 +748,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     { ar: 'هناك عروض حصرية قريبة منك جداً، اكتشفها الآن ووفر أكثر! 🛍️', en: 'There are exclusive deals very close to you, explore them now and save more! 🛍️' },
                     'marketing'
                 );
-                stampThrottle();
             }
         } else if (user.userType === 'seller') {
             addNotification(
@@ -698,7 +756,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 { ar: 'العملاء يبحثون عن عروض جديدة في منطقتك! أضف عرضاً الآن لجذبهم. 🏬', en: 'Customers are looking for new deals in your area! Post a deal now to attract them. 🏬' },
                 'marketing'
             );
-            stampThrottle();
         }
     }, [user, deals, addNotification, topLocation]);
 
@@ -739,13 +796,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const deleteAccount = useCallback(async () => {
+        // 30-day soft delete with grace period (migration v9.17). The user's
+        // row is marked `deleted_at`/`purge_after`; their deals are paused.
+        // A subsequent login within 30 days offers recovery.
+        try {
+            const { supabase } = await import('../services/supabaseClient');
+            const { error } = await supabase.rpc('soft_delete_my_account');
+            if (error) throw error;
+        } catch (e) {
+            console.error('Soft delete failed, falling back to hard delete:', e);
+            await authService.deleteAccount();
+        }
+        // Sign out locally so the next visit forces a fresh login (which is
+        // the trigger for the recovery prompt).
+        try { await authService.logout(); } catch {}
         setUser(null);
         setFavorites([]);
         setFollowedMerchants([]);
         setNotifications([]);
         setBookings([]);
-        await authService.deleteAccount();
-        // No localStorage to clear — server is source of truth
     }, []);
 
     const addDeal = useCallback(async (deal: Deal) => {
@@ -865,51 +934,146 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }) => {
         const dealToUpdate = deals.find(d => d.id === dealId);
-        if (dealToUpdate) {
-            const newRating = {
-                id: Date.now().toString(),
-                userId: user?.id || 'anon',
-                userName: user?.name || 'Anonymous',
-                score: ratingData.score,
-                comment: ratingData.comment,
-                date: new Date().toISOString().split('T')[0]
-            };
-            const updatedDeal = { ...dealToUpdate, ratings: [...(dealToUpdate.ratings || []), newRating] };
-            setDeals(prev => prev.map(d => d.id === dealId ? updatedDeal : d));
-            await dealRepository.save(updatedDeal);
+        if (!dealToUpdate || !user) return;
 
-            // NOTIFY SELLER
+        // Persist to the dedicated `ratings` table (migration v9.17). Old code
+        // stored reviews inside the deal row, which never made the round-trip
+        // because dealRepository.save() doesn't include ratings — they were
+        // silently lost on every page reload.
+        const { ratingRepository } = await import('../repositories/ratingRepository');
+        const created = await ratingRepository.create({
+            dealId,
+            userId: user.id,
+            userName: user.name || 'مستخدم',
+            score: ratingData.score,
+            comment: ratingData.comment,
+        });
+        if (!created) return;
+
+        const local = {
+            id: created.id,
+            userId: created.userId,
+            userName: created.userName,
+            score: created.score,
+            comment: created.comment,
+            date: new Date(created.createdAt).toISOString().split('T')[0],
+            reply: created.reply || undefined,
+            repliedBy: created.repliedBy || undefined,
+            repliedAt: created.repliedAt || undefined,
+            likedBy: created.likedBy,
+            likeCount: created.likeCount,
+        };
+        setDeals(prev => prev.map(d => d.id === dealId
+            ? { ...d, ratings: [...(d.ratings || []), local] }
+            : d));
+
+        addNotification(
+            dealToUpdate.storeId,
+            { ar: '⭐ تقييم جديد!', en: '⭐ New Rating!' },
+            { ar: `قام العميل ${user.name || 'مجهول'} بتقييم منتجك ${dealToUpdate.itemName} بـ ${ratingData.score} نجوم`, en: `Customer ${user.name || 'Anon'} rated ${dealToUpdate.itemName} with ${ratingData.score} stars` },
+            'system',
+            { dealId }
+        );
+    }, [deals, user, addNotification]);
+
+    const addReply = useCallback(async (dealId: string, ratingId: string, reply: string) => {
+        const { ratingRepository } = await import('../repositories/ratingRepository');
+        // Optimistic — the reply lands in the UI before the server round-trip.
+        const trimmed = reply.trim();
+        let buyerId: string | undefined;
+        setDeals(prev => prev.map(d => {
+            if (d.id !== dealId) return d;
+            return {
+                ...d,
+                ratings: d.ratings?.map(r => {
+                    if (r.id !== ratingId) return r;
+                    buyerId = r.userId;
+                    return { ...r, reply: trimmed || undefined, repliedBy: user?.id, repliedAt: new Date().toISOString() };
+                })
+            };
+        }));
+        const ok = await ratingRepository.setReply(ratingId, trimmed);
+        if (!ok) {
+            // Rollback by removing the optimistic reply on failure
+            setDeals(prev => prev.map(d => {
+                if (d.id !== dealId) return d;
+                return {
+                    ...d,
+                    ratings: d.ratings?.map(r => r.id === ratingId ? { ...r, reply: undefined, repliedBy: undefined, repliedAt: undefined } : r)
+                };
+            }));
+            console.warn('Reply persistence failed; rolled back optimistic update');
+            return;
+        }
+        if (buyerId && trimmed) {
+            const itemName = deals.find(d => d.id === dealId)?.itemName || '';
             addNotification(
-                dealToUpdate.storeId,
-                { ar: '⭐ تقييم جديد!', en: '⭐ New Rating!' },
-                { ar: `قام العميل ${user?.name || 'مجهول'} بتقييم منتجك ${dealToUpdate.itemName} بـ ${ratingData.score} نجوم`, en: `Customer ${user?.name || 'Anon'} rated ${dealToUpdate.itemName} with ${ratingData.score} stars` },
+                buyerId,
+                { ar: '💬 رد جديد على تعليقك', en: '💬 New reply to your review' },
+                { ar: `قام صاحب المحل بالرد على تقييمك لمنتج ${itemName}`, en: `The shop owner replied to your review of ${itemName}` },
                 'system',
-                { dealId }
+                { dealId, ratingId }
             );
         }
     }, [deals, user, addNotification]);
 
-    const addReply = useCallback(async (dealId: string, userId: string, reply: string) => {
-        const updatedDeals = deals.map(d => {
-            if (d.id === dealId) {
-                return {
-                    ...d,
-                    ratings: d.ratings?.map(r => r.userId === userId ? { ...r, reply } : r)
-                };
+    const toggleRatingLike = useCallback(async (dealId: string, ratingId: string) => {
+        if (!user) return;
+        const { ratingRepository } = await import('../repositories/ratingRepository');
+        const me = user.id;
+        // Optimistic flip
+        let prevState: { liked: boolean; count: number } | null = null;
+        setDeals(prev => prev.map(d => {
+            if (d.id !== dealId) return d;
+            return {
+                ...d,
+                ratings: d.ratings?.map(r => {
+                    if (r.id !== ratingId) return r;
+                    const likedBy = r.likedBy || [];
+                    const wasLiked = likedBy.includes(me);
+                    prevState = { liked: wasLiked, count: r.likeCount ?? 0 };
+                    return {
+                        ...r,
+                        likedBy: wasLiked ? likedBy.filter(x => x !== me) : [...likedBy, me],
+                        likeCount: Math.max(0, (r.likeCount ?? 0) + (wasLiked ? -1 : 1)),
+                    };
+                })
+            };
+        }));
+        const result = await ratingRepository.toggleLike(ratingId);
+        if (!result) {
+            // Rollback
+            if (prevState) {
+                setDeals(prev => prev.map(d => {
+                    if (d.id !== dealId) return d;
+                    return {
+                        ...d,
+                        ratings: d.ratings?.map(r => {
+                            if (r.id !== ratingId) return r;
+                            const likedBy = r.likedBy || [];
+                            const restored = prevState!.liked ? (likedBy.includes(me) ? likedBy : [...likedBy, me]) : likedBy.filter(x => x !== me);
+                            return { ...r, likedBy: restored, likeCount: prevState!.count };
+                        })
+                    };
+                }));
             }
-            return d;
-        });
-        setDeals(updatedDeals);
+        }
+    }, [user]);
 
-        // NOTIFY BUYER
-        addNotification(
-            userId,
-            { ar: '💬 رد جديد على تعليقك', en: '💬 New reply to your review' },
-            { ar: `قام صاحب المحل بالرد على تقييمك لمنتج ${deals.find(d => d.id === dealId)?.itemName}`, en: `The shop owner replied to your review of ${deals.find(d => d.id === dealId)?.itemName}` },
-            'system',
-            { dealId }
-        );
-    }, [deals, addNotification]);
+    const removeRating = useCallback(async (dealId: string, ratingId: string) => {
+        const { ratingRepository } = await import('../repositories/ratingRepository');
+        let snapshot: any[] = [];
+        setDeals(prev => prev.map(d => {
+            if (d.id !== dealId) return d;
+            snapshot = d.ratings || [];
+            return { ...d, ratings: (d.ratings || []).filter(r => r.id !== ratingId) };
+        }));
+        const ok = await ratingRepository.remove(ratingId);
+        if (!ok) {
+            const restore = snapshot;
+            setDeals(prev => prev.map(d => d.id === dealId ? { ...d, ratings: restore } : d));
+        }
+    }, []);
 
     const addNotifKeyword = useCallback((kw: string) => {
         if (!notifKeywords.includes(kw)) {
@@ -1299,7 +1463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         followedMerchants, toggleFollowMerchant,
         notifications, addNotification, markNotifRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking, refreshBookings, refreshDeals,
-        addRating, addReply,
+        addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
@@ -1316,7 +1480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         followedMerchants, toggleFollowMerchant,
         notifications, addNotification, markNotifRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking, refreshBookings, refreshDeals,
-        addRating, addReply,
+        addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
