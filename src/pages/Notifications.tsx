@@ -6,17 +6,22 @@ import BottomNav from '../components/BottomNav';
 
 const Notifications: React.FC = () => {
     const history = useHistory();
-    const { 
-        notifications, 
-        markNotifRead, 
-        language, 
-        user, 
-        loading 
+    const {
+        notifications,
+        markNotifRead,
+        language,
+        user,
+        loading,
+        isAuthReady
     } = useApp();
 
     const isRTL = language === 'ar';
 
-    if (loading) {
+    // Wait for the auth gate before deciding the visitor is a guest.
+    // Without this check, a refresh on /notifications briefly shows the
+    // "Please sign in" screen for ~1-2s while Supabase rehydrates the
+    // session — even for fully-logged-in users.
+    if (!isAuthReady || loading) {
         return (
             <div style={{ padding: 20, textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
                 {isRTL ? 'جاري التحميل...' : 'Loading...'}
