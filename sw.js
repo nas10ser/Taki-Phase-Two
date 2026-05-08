@@ -1,10 +1,10 @@
-// TAKI service worker — v9.22 (transparent-overlay file inputs — Chrome 147 fix)
+// TAKI service worker — v9.23 (drag-drop + clipboard paste fallbacks)
 // Strategy:
 //  • Navigations  → cache-first (instant paint) + background revalidate
 //  • JS / CSS     → cache-first (assets are content-hashed, immutable)
 //  • API / data   → network-first with cache fallback (freshness wins)
 //  • Other GETs   → stale-while-revalidate
-const CACHE_NAME = 'taki-cache-v9.22';
+const CACHE_NAME = 'taki-cache-v9.23';
 const urlsToCache = [
   '/',
   '/index.html',

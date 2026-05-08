@@ -516,27 +516,26 @@ const SellerDashboard: React.FC = () => {
     // Removed auto-centering effect to prevent overwriting manual map pin placement
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
+    const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
+    // Accepts files from any source: <input>, drag-drop, or clipboard paste.
+    // Centralized so all three entry points share validation + storage upload.
+    const ingestFiles = async (files: File[] | FileList | null | undefined) => {
         if (!files || files.length === 0) return;
         setUploadingImages(true);
         const results = await Promise.all(
             Array.from(files).map(async (file) => {
-                // Reject obviously broken inputs early so the user gets a clear msg.
                 if (!file.type.startsWith('image/')) {
                     return { ok: false, reason: 'type', name: file.name } as const;
                 }
                 if (file.size > 8 * 1024 * 1024) {
                     return { ok: false, reason: 'size', name: file.name } as const;
                 }
-                // Try Supabase storage first.
                 const url = await storageService.uploadImage(file);
                 if (url) {
                     setImages(prev => [...prev, url].slice(0, 4));
                     return { ok: true, via: 'remote' } as const;
                 }
-                // Fallback: base64 — works offline / when storage RLS rejects.
                 try {
                     const dataUrl = await new Promise<string>((resolve, reject) => {
                         const reader = new FileReader();
@@ -568,6 +567,60 @@ const SellerDashboard: React.FC = () => {
             customAlert(lines.join('\n'));
         }
     };
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        ingestFiles(e.target.files);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+        if (uploadingImages) return;
+        const dropped = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/'));
+        if (dropped.length === 0) return;
+        ingestFiles(dropped);
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!uploadingImages && !isDraggingOver) setIsDraggingOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    };
+
+    // Clipboard paste — listens at document level only while seller form is mounted
+    // and the active view is the form. Lets users Cmd+V an image directly from
+    // their clipboard (screenshot, copied image, etc.) without ever opening the
+    // file picker.
+    useEffect(() => {
+        if (view !== 'form') return;
+        const onPaste = (e: ClipboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const pastedFiles: File[] = [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) pastedFiles.push(file);
+                }
+            }
+            if (pastedFiles.length > 0) {
+                e.preventDefault();
+                ingestFiles(pastedFiles);
+            }
+        };
+        document.addEventListener('paste', onPaste);
+        return () => document.removeEventListener('paste', onPaste);
+    }, [view, uploadingImages]);
 
     const autoUpdateLocation = (lat: number, lng: number) => {
         setMapPos([lat, lng]);
@@ -1341,12 +1394,19 @@ const SellerDashboard: React.FC = () => {
                                 ))}
                                 {images.length < 4 && (
                                     <div
+                                        onDrop={handleDrop}
+                                        onDragOver={handleDragOver}
+                                        onDragEnter={handleDragOver}
+                                        onDragLeave={handleDragLeave}
                                         style={{
                                             position: 'relative',
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                            height: 130, borderRadius: 12, border: '2px dashed var(--primary)',
-                                            cursor: uploadingImages ? 'default' : 'pointer', background: 'var(--notif-unread-bg)', color: 'var(--primary)',
-                                            transition: 'background 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                            height: 130, borderRadius: 12,
+                                            border: isDraggingOver ? '2px solid var(--primary)' : '2px dashed var(--primary)',
+                                            cursor: uploadingImages ? 'default' : 'pointer',
+                                            background: isDraggingOver ? 'var(--primary-light)' : 'var(--notif-unread-bg)',
+                                            color: 'var(--primary)',
+                                            transition: 'background 0.2s ease, border-color 0.2s ease', WebkitTapHighlightColor: 'transparent',
                                             opacity: uploadingImages ? 0.6 : 1,
                                             userSelect: 'none', overflow: 'hidden'
                                         }}
@@ -1373,9 +1433,12 @@ const SellerDashboard: React.FC = () => {
                                         {uploadingImages ? (
                                             <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
                                         ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
                                                 <span style={{ fontSize: '1.5rem', marginBottom: 4 }}>📸</span>
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صورة' : 'Add Image'}</span>
+                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.7, marginTop: 4 }}>
+                                                    {isRTL ? 'أو اسحب الصورة هنا • أو الصق (Cmd+V)' : 'or drag • or paste (Cmd+V)'}
+                                                </span>
                                             </div>
                                         )}
                                     </div>
