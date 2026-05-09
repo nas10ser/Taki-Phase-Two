@@ -30,14 +30,24 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then(cacheNames =>
-        Promise.all(cacheNames.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
-      )
-    ])
-  );
+  event.waitUntil((async () => {
+    // 1) Take control of any open clients immediately so new fetches go through us.
+    await self.clients.claim();
+
+    // 2) Purge every cache that doesn't match the current name. This is what
+    //    actually frees the user from the v9.x cache that was sticking the page
+    //    on the old build.
+    const names = await caches.keys();
+    await Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+
+    // 3) Tell every open tab to reload itself once. The first time a phone
+    //    upgrades from v9.x → v10.x this is the kick that finally shows the
+    //    new build without the user having to clear cache manually.
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clients) {
+      try { client.postMessage({ type: 'TAKI_SW_UPDATED', version: CACHE_NAME }); } catch (_) {}
+    }
+  })());
 });
 
 self.addEventListener('fetch', event => {
