@@ -1,3 +1,268 @@
+# TAKI — تقرير التقدم v10.1 (تجاوب جوال شامل + DealsList + Bot v7 + كسر دائرة كاش الـSW) 📱🛍️🤖
+
+## الإصدار v10.1 — Mobile responsiveness overhaul + DealsList page + Bot v7 + cache-loop fix
+
+**التاريخ:** ٩ مايو ٢٠٢٦
+**الفرع المُدمج إلى main:** `claude/charming-goldwasser-6ea6f0`
+**Commits:**
+- `316d87c` v10.0: mobile responsiveness overhaul + Trendyol-style DealsList + bot v7
+- `088c1d0` v10.1: break the SW cache loop — auto-reload on update + no-cache headers
+
+---
+
+### 📱 1. تجاوب جوال احترافي على جميع الأجهزة (mobile-first)
+
+**الهدف:** تطبيق يشتغل على كل أنواع الجوالات (iPhone SE → Pro Max، Galaxy، Foldables، Pixel) ومتصفحات الجوال (Safari iOS، Chrome Android، Samsung Internet، Firefox، Edge)، مع الحفاظ على الديسكتوب كما هو.
+
+**في [index.html](index.html):**
+```diff
+- <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
++ <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
++ <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
++ <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: light)">
++ <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
++ <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
++ <meta name="mobile-web-app-capable" content="yes">
+```
+- `viewport-fit=cover` — يسمح للتطبيق بالرسم تحت الـnotch / Dynamic Island.
+- `interactive-widget=resizes-content` — لما تظهر لوحة المفاتيح في Android، النوافذ السفلية ما تنضغط.
+- `theme-color` ديناميكي يطابق ستاتس بار iOS / Android في الوضعين الفاتح والليلي.
+
+**في [manifest.webmanifest](manifest.webmanifest):**
+- إضافة `dir: "rtl"`، `display_override: ["window-controls-overlay", "standalone", "minimal-ui"]`، `categories: ["shopping", "lifestyle", "business"]`، و **shortcuts** للـ"حولي" و"حجوزاتي" تظهر بالضغط المطوّل على أيقونة التطبيق.
+
+**في [src/styles.css](src/styles.css) — ٧ طبقات breakpoints:**
+
+| المستوى | المدى | الجوال المرجعي |
+|---|---|---|
+| Tier 0 | < 320px | Galaxy Fold الداخلي (280px) — عمود واحد |
+| Tier 1 | 320–380px | iPhone SE، iPhone 12 mini، Pixel 4a — عمود واحد بصور أطول |
+| Tier 2 | 381–480px | iPhone 12-15، Galaxy S22-S24 — عمودان قياسي |
+| Tier 3 | 481–600px | iPhone Pro Max، Galaxy Ultra |
+| Tier 4 | 601–767px | جوال أفقي / Foldable مفتوح |
+| Tier 5 | 768–1023px | Tablet (iPad mini فأكبر) — ٣ أعمدة |
+| Tier 6 | ≥ 1024px | Desktop — ٤ أعمدة (لم يُمَس) |
+
+**تحسينات إضافية:**
+- `100dvh` بثلاث طبقات fallback: `100vh` → `-webkit-fill-available` → `100dvh` (يصلح زلزلة شريط Safari عند التمرير).
+- `safe-area-inset-*` على ٤ جهات (notch + Dynamic Island + home indicator + landscape edges).
+- `overflow-x: clip` و `max-width: 100vw` على `.app-container` و `body` لمنع scroll أفقي على Galaxy Fold.
+- `font-size: max(16px, 1em)` على inputs لمنع iOS auto-zoom عند التركيز.
+- Touch targets 44×44 (Apple HIG / WCAG 2.5.5) عبر `min-height/width: 44px`.
+- Landscape mode على الجوالات: تقليص `.premium-bar` و `.profile-header` للحفاظ على المحتوى مرئياً.
+- Cross-browser scrollbars: مخفية على الجوالات، ظاهرة فقط على الأجهزة بـ`(hover: hover) and (pointer: fine)`.
+
+**في [src/pages/Register.tsx](src/pages/Register.tsx):**
+- العناصر الزخرفية (orbs) كانت `width: 400px` ثابتة — تسبب scroll أفقي على Galaxy Fold. الآن:
+```diff
++ <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
++   <div style={{ width: 'clamp(220px, 60vw, 400px)', ... }} />
++   <div style={{ width: 'clamp(200px, 55vw, 350px)', ... }} />
++ </div>
+```
+
+**في [src/components/SmartHijriDatePicker.tsx](src/components/SmartHijriDatePicker.tsx):**
+- `maxWidth: 360` → `maxWidth: 'min(360px, calc(100vw - 24px))'`، `maxHeight: 'calc(100dvh - 24px)'`.
+- أزرار الشهر السابق/التالي من 32×32 → 44×44 مع `aria-label`.
+
+**في [src/components/Navbar.tsx](src/components/Navbar.tsx):**
+- زرّا القائمة (☰) والملف الشخصي (👤) من 40×40/42×42 → 44×44 مع `aria-label`.
+- input البحث: `fontSize: '0.9rem'` → `'16px'` لمنع zoom iOS، `inputMode="search"`، `autoComplete="off"`، `autoCorrect="off"`.
+
+**في [src/components/Sidebar.tsx](src/components/Sidebar.tsx):**
+- زر الإغلاق (✕) من 36×36 → 44×44.
+
+**في [src/components/ErrorBoundary.tsx](src/components/ErrorBoundary.tsx):**
+- `width: 600` ثابت → `width: '100%', maxWidth: 'min(600px, calc(100vw - 24px))'`.
+
+**في [src/pages/DealDetails.tsx](src/pages/DealDetails.tsx):**
+- صورة الـzoom modal صارت تستخدم class `.taki-zoom-image` مع `max-height: 85dvh` ليعمل صح على iOS Safari.
+
+---
+
+### 🛍️ 2. صفحة DealsList الجديدة على شكل Trendyol
+
+**الهدف:** عند الضغط على "الأكثر تداولاً" أو "أقوى الخصومات" أو "كل العروض" في الصفحة الرئيسية، تنفتح صفحة كاملة بشكل Trendyol (شبكة عمودين عمودية بصور ٤:٥).
+
+**في [src/pages/Home.tsx](src/pages/Home.tsx):**
+- إضافة زر "عرض المزيد ›" بجانب كل عنوان قسم:
+```tsx
+<button onClick={() => history.push('/deals?type=trending')}>
+    {isRTL ? 'عرض المزيد' : 'View more'} ›
+</button>
+```
+
+**ملف جديد [src/pages/DealsList.tsx](src/pages/DealsList.tsx) (288 سطر):**
+- يستقبل `?type=trending|discount|all` من الـquery string.
+- هيدر مضغوط: زر رجوع 44×44 + عنوان + عداد المنتجات + زر فرز.
+- شريحتا فلترة قابلتان للتمرير الأفقي (الجنس + الفئة).
+- بحث داخلي مع `inputMode="search"` و `font-size: 16px`.
+- شبكة عمودين تتكيف:
+  - عمود واحد على Galaxy Fold
+  - عمودان قياسي على الجوالات
+  - ٣ أعمدة على Tablet (601–899px)
+  - ٤ أعمدة على Desktop (≥900px) مع `max-width: 1200px`
+- يحترم فلتر الموقع المختار من Home.
+- Skeleton placeholders أثناء التحميل، حالة فارغة بزر "إعادة ضبط الفلاتر".
+
+**في [src/App.tsx](src/App.tsx):**
+- إضافة Route `/deals` مع `lazy()` import — code splitting (ما يحمّل JS الصفحة إلا عند فتحها).
+
+**في [src/components/DealCard.tsx](src/components/DealCard.tsx):**
+- الصور من `height: 200px` ثابت → `aspectRatio: '4 / 5'، height: 'auto'` — تتمدد حسب عرض الكرت كما في Trendyol.
+- زر القلب من 34×34 → 36×36 مرئي مع hit area 44×44 (عبر `min-height/width` العام).
+
+---
+
+### 🎨 3. الشريط العلوي في وضع PWA standalone
+
+**في [src/styles.css](src/styles.css):**
+```css
+@media (display-mode: standalone) {
+  .premium-bar {
+    padding-top: calc(env(safe-area-inset-top, 44px) + 20px) !important;
+    padding-bottom: 22px;
+  }
+  .navbar { padding-top: calc(env(safe-area-inset-top, 0px) + 18px) !important; }
+}
+
+@supports (-webkit-touch-callout: none) {
+  @media all and (display-mode: standalone) {
+    .premium-bar { padding-top: calc(env(safe-area-inset-top, 50px) + 24px) !important; }
+  }
+}
+```
+- مسافة إضافية فوق الـsafe-area (+18 إلى +24px) لما يكون التطبيق مثبّتاً (Add to Home Screen) — يطابق إحساس Trendyol/Noon.
+
+---
+
+### 🤖 4. Bot v7.0 — Telegram + WhatsApp Cloud API
+
+**في [server/bot.js](server/bot.js) — إعادة كتابة شاملة (٦٠٩ سطر، +٣٤٧ من v6):**
+
+**Telegram (Telegraf):**
+- Inline keyboards + callback queries (`Markup.inlineKeyboard`).
+- `setMyCommands` يُنشر تلقائياً على أيقونة "/" في Telegram عند الإقلاع.
+- ثنائي اللغة (عربي/إنجليزي) — يكتشف لغة المستخدم من `ctx.from.language_code`.
+- MarkdownV2 escaping (دالة `escapeMd`) لكل النصوص الديناميكية.
+- روابط deep-link لكل عرض: `${APP_URL}/#/deal/${dealId}`.
+- أوامر: `/start`, `/menu`, `/deals`, `/bookings`, `/verify`, `/profile`, `/lang`, `/help`, `/register`.
+- Error handler عام (`bot.catch`).
+
+**WhatsApp Cloud API v22.0:**
+- معالج كامل للرسائل الواردة (text + interactive button replies + list replies).
+- `sendWhatsAppMessage()` يستخدم Graph API v22.0.
+- HMAC verification (`X-Hub-Signature-256`) مع `crypto.timingSafeEqual`.
+- استجابة فورية بـ200 ثم معالجة async (Meta يعيد المحاولة بعد 20s).
+- Interactive buttons: 🔥 العروض، 🎟️ حجوزاتي، 🆘 مساعدة.
+
+**Realtime → بائع:**
+- عند ورود حجز جديد، يبحث عن `telegram_chat_id` للبائع ويُرسل إشعار فوري.
+
+**Health endpoint (`/health`):**
+- يكشف حالة الخدمات الثلاث (Telegram, Supabase, WhatsApp) + uptime.
+
+**Graceful shutdown** على SIGTERM/SIGINT.
+
+---
+
+### 🔄 5. كسر دائرة كاش الـService Worker (v10.1)
+
+**المشكلة:** بعد نشر v10.0، الجوالات بقيت تعرض النسخة القديمة لأن:
+1. الـSW القديم (v9.x) كان `cache-first` — يعطي HTML قديم من الكاش قبل ما يجيب الجديد.
+2. HTML القديم يحمّل JS قديم فيه `sw-cleanup` قديم يلغي SW لكن **ما يمسح الكاش**.
+3. متصفحات الجوال قد تتأخر يومًا في فحص `sw.js` للتحديث.
+
+**في [vercel.json](vercel.json) و [_headers](_headers):**
+```
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+/manifest.webmanifest
+  Cache-Control: no-cache, must-revalidate
+```
+يضمن أن المتصفحات تجلب هذه الملفات الحرجة من الشبكة دائماً.
+
+**في [sw.js](sw.js) — `CACHE_NAME = 'taki-cache-v10.0'` (bump):**
+```diff
+- // Cache-first navigations (was freezing users on old build)
++ // NETWORK-FIRST navigations: always try network first, fallback to cache only when offline
+  if (isNavigation(req)) {
+    event.respondWith((async () => {
++     try {
++       const fresh = await fetch(req, { cache: 'no-store' });
++       if (fresh && fresh.status === 200) cache.put('/index.html', fresh.clone());
++       return fresh;
++     } catch {
++       return (await cache.match('/index.html')) || new Response('Offline', { status: 503 });
++     }
+    })());
+  }
+```
+
+**Activate handler الآن يبثّ رسالة لكل التبويبات:**
+```js
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    await self.clients.claim();
+    const names = await caches.keys();
+    await Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+    // Tell every open tab to reload itself once
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clients) {
+      client.postMessage({ type: 'TAKI_SW_UPDATED', version: CACHE_NAME });
+    }
+  })());
+});
+```
+
+**في [src/sw-cleanup.ts](src/sw-cleanup.ts) — كنس شامل:**
+1. يستمع لـ`TAKI_SW_UPDATED` → reload تلقائي مرة واحدة عبر `sessionStorage` sentinel.
+2. يلغي تسجيل أي SW قديم (يحمي الـSW الجديد من الإلغاء).
+3. يمسح كل CacheStorage entries القديمة (`!key.includes('v10')`).
+4. لو شي اتمسح، يعمل `location.replace()` لمرة واحدة (مع sentinel ضد reload loops).
+
+---
+
+### 🔧 6. مزامنة بيئة التطوير المحلية
+
+**المشكلة:** المستخدم كان يشغّل `npm start` من `/Users/nasser/Desktop/TAKI` (المجلد الرئيسي) بينما تعديلاتي كانت في worktree منفصل. الموقع يعرض النسخة القديمة لأن المجلد الرئيسي ما تحدّث.
+
+**الحل:**
+1. `git -C /Users/nasser/Desktop/TAKI stash push -u -m "WIP-before-v10-sync"` — حفظ تعديلات المستخدم غير المحفوظة (`formatRemaining` helper + `<label htmlFor>` file picker pattern).
+2. `git -C /Users/nasser/Desktop/TAKI pull origin main` — fast-forward من 1297975 → 088c1d0.
+3. تأكيد: `DealsList.tsx` موجود، `100dvh` في styles.css، أزرار "عرض المزيد" في Home.tsx.
+
+---
+
+### 📊 إحصائيات الجلسة
+
+| البند | القيمة |
+|---|---|
+| Commits | 2 (v10.0, v10.1) |
+| ملفات مُعدّلة | 18 |
+| ملف جديد | `src/pages/DealsList.tsx` (288 سطر) |
+| إضافات | +1,319 سطر |
+| حذف | -296 سطر |
+| TypeScript errors | 0 |
+| Service Worker version | v9.23 → v10.0 |
+| Bot version | v6.0 → v7.0 |
+| Breakpoints جديدة | 7 طبقات (Galaxy Fold → Desktop) |
+
+---
+
+### ✅ ما يلاحظه المستخدم
+
+- شكل Trendyol للكروت في الصفحة الرئيسية (صور عمودية ٤:٥).
+- زر "عرض المزيد ›" يفتح صفحة كاملة بنفس الشكل (`/deals?type=...`).
+- الشريط العلوي مرفوع بشكل احترافي في وضع PWA standalone.
+- التطبيق يعمل بسلاسة على Galaxy Fold (280px) وكذلك iPhone Pro Max (430px).
+- تحديثات المستقبل ستظهر تلقائياً خلال ~30 ثانية بدون مسح كاش يدوي.
+
+---
+
 # TAKI — تقرير التقدم v9.19 (إصلاح جذري لـ auth + مزامنة فورية شاملة + إشعارات admin) 🔐⚡️🔔
 
 ## الإصدار v9.19 — Auth root-fix + Realtime everywhere + Admin notifications
