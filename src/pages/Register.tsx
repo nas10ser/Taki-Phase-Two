@@ -605,9 +605,14 @@ const Register: React.FC = () => {
                     .auth-btn-secondary:hover { background:rgba(100, 100, 100, 0.15) !important; border-color:rgba(80, 80, 95, 0.3) !important; }
                 `}</style>
                 <TopHeader />
-                <div style={{ position: 'absolute', top: -120, right: -80, width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(15,23,42,0.12) 0%, transparent 70%)', filter: 'blur(40px)', animation: 'floatOrb 12s ease-in-out infinite' }} />
-                <div style={{ position: 'absolute', bottom: -80, left: -60, width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(14,165,233,0.1) 0%, transparent 70%)', filter: 'blur(40px)', animation: 'floatOrb 15s ease-in-out infinite reverse' }} />
-                <div style={{ position: 'absolute', top: '40%', left: '50%', width: 250, height: 250, borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%)', filter: 'blur(50px)', animation: 'floatOrb 18s ease-in-out infinite 3s' }} />
+                {/* Decorative orbs — wrapped in an absolutely-positioned, overflow-clipping div so the
+                    400px orb can never push horizontal scroll on a 280px Galaxy Fold or 320px iPhone SE.
+                    Sizes downscale via clamp() so they stay proportional on every phone. */}
+                <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+                    <div style={{ position: 'absolute', top: '-15%', right: '-15%', width: 'clamp(220px, 60vw, 400px)', height: 'clamp(220px, 60vw, 400px)', borderRadius: '50%', background: 'radial-gradient(circle, rgba(15,23,42,0.12) 0%, transparent 70%)', filter: 'blur(40px)', animation: 'floatOrb 12s ease-in-out infinite' }} />
+                    <div style={{ position: 'absolute', bottom: '-10%', left: '-12%', width: 'clamp(200px, 55vw, 350px)', height: 'clamp(200px, 55vw, 350px)', borderRadius: '50%', background: 'radial-gradient(circle, rgba(14,165,233,0.1) 0%, transparent 70%)', filter: 'blur(40px)', animation: 'floatOrb 15s ease-in-out infinite reverse' }} />
+                    <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translateX(-50%)', width: 'clamp(160px, 45vw, 250px)', height: 'clamp(160px, 45vw, 250px)', borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%)', filter: 'blur(50px)', animation: 'floatOrb 18s ease-in-out infinite 3s' }} />
+                </div>
 
                 <div style={{ marginBottom: 48, textAlign: 'center', marginTop: 120, animation: 'fadeUp 0.8s ease-out' }}>
                     <div style={{ fontSize: '5rem', fontWeight: 900, marginBottom: 4, letterSpacing: -3, background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 50%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 2px 10px var(--primary-glow))' }}>TAKI</div>

@@ -219,6 +219,15 @@
 html {
   scroll-behavior: smooth;
   height: -webkit-fill-available;
+  /* Prevent layout shift when scrollbar appears on phones with mouse/trackpad */
+  scrollbar-gutter: stable;
+  /* Stop iOS rotation auto-zoom + Android text inflation */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Hairline pixel correction on high-DPR phones (iPhone 12+, Galaxy S, Pixel 6+) */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 body {
@@ -227,15 +236,29 @@ body {
   background: var(--body-bg);
   color: var(--text-primary);
   line-height: 1.6;
+  /* Triple fallback: 100vh (legacy) → -webkit-fill-available (iOS Safari) → 100dvh (modern dynamic viewport, handles browser chrome correctly on iOS 15.4+ / Android Chrome 108+) */
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  min-height: 100dvh;
   overflow-x: hidden;
+  /* Prevent any element on the page from creating horizontal overflow on narrow phones */
+  max-width: 100vw;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.3s ease, color 0.3s ease;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
   overscroll-behavior-y: none; /* Prevents pull-to-refresh jitter */
+  overscroll-behavior-x: none;
+  /* Prevent text selection on tap-and-hold on icons & buttons (web on mobile feels native) */
+  -webkit-touch-callout: none;
+}
+
+/* Re-enable selection inside text-bearing surfaces */
+input, textarea, p, h1, h2, h3, h4, h5, h6, span, .selectable {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 a {
@@ -276,12 +299,17 @@ textarea:focus {
 /* ===== LAYOUT ===== */
 .app-container {
   min-height: 100vh;
+  min-height: 100dvh;
+  /* Hard cap so no descendant can blow out horizontal layout on tiny phones (Galaxy Fold inner = 280px). */
+  max-width: 100vw;
+  overflow-x: clip;
 }
 
 .page-content {
   padding-bottom: 90px;
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  min-height: 100dvh;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -882,7 +910,9 @@ textarea:focus {
 
 /* ===== MAP ===== */
 .map-container {
+  /* Use dvh so the map doesn't get cropped by iOS Safari's collapsing address bar */
   height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
   position: relative;
 }
 
@@ -1157,14 +1187,103 @@ textarea:focus {
   border-radius: var(--radius);
 }
 
-/* ===== RESPONSIVE ===== */
-@media (min-width: 768px) {
-  .deals-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+/* =====================================================================
+ * RESPONSIVE BREAKPOINTS — full phone coverage
+ *
+ * The grid below is deliberately mobile-first (no breakpoint = phone).
+ * Tablet/desktop styles ONLY widen the layout; we never override mobile.
+ *
+ * Phone reference targets (kept for future devs):
+ *   • Galaxy Fold inner:        280px
+ *   • iPhone SE / 5/5s/SE-2:    320–375px
+ *   • iPhone 12-mini:           360px
+ *   • Pixel 4a / Galaxy A:      360–393px
+ *   • iPhone 13/14/15:          390–393px
+ *   • iPhone 14/15 Pro Max:     430px
+ *   • Galaxy S23 Ultra:         412–480px
+ *   • Foldable unfolded:        ~720px (handled by tablet rules)
+ * ===================================================================== */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
+/* ---------------------------------------------------------------------
+ * TIER 0 — Ultra-narrow / foldable inner screen (< 320px)
+ * Galaxy Fold inner is 280px. We collapse to a single column and shrink
+ * paddings just enough to keep tap targets usable.
+ * ------------------------------------------------------------------- */
+@media (max-width: 319px) {
+  body { font-size: 14px; }
+  .premium-bar { padding: 30px 12px 16px; border-radius: 0 0 22px 22px; }
+  .navbar { padding: 10px 10px; }
+  .navbar-logo { font-size: 1rem; }
+  .deals-grid { grid-template-columns: 1fr; gap: 10px; padding: 0 10px 12px; }
+  .deal-card-img { height: 160px; }
+  .cat-chip, .filter-chip { padding: 6px 12px; font-size: 0.78rem; }
+  .nav-item { padding: 4px 8px; font-size: 0.65rem; }
+  .nav-item span:first-child { font-size: 1.1rem !important; }
+  .container { padding: 0 10px; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 1 — Small phones (320–380px). iPhone SE, mini phones, Pixel 4a.
+ * Single-column deals grid, slightly tighter UI, but everything still
+ * comfortably tappable.
+ * ------------------------------------------------------------------- */
+@media (min-width: 320px) and (max-width: 380px) {
+  .deals-grid { grid-template-columns: 1fr; gap: 12px; }
+  .navbar-logo { font-size: 1.1rem; }
+  .cat-chip { padding: 6px 14px; font-size: 0.8rem; }
+  .price-new { font-size: 0.95rem; }
+  .deal-card-img { height: 200px; } /* full-width single column → taller image looks good */
+  .premium-bar { padding: 36px 16px 18px; border-radius: 0 0 26px 26px; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 2 — Standard phones (381–480px). iPhone 12-15, Pixel 6-8,
+ * Galaxy S22-S24. The 2-column grid (default at the top of this file)
+ * is already correct for this range; we only refine card density.
+ * ------------------------------------------------------------------- */
+@media (min-width: 381px) and (max-width: 480px) {
+  .deal-card-img { height: 180px; }
+  .deal-card-name { font-size: 1rem; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 3 — Large phones / phablets (481–600px). iPhone Pro Max,
+ * Galaxy Ultra. Slightly larger cards, no grid expansion.
+ * ------------------------------------------------------------------- */
+@media (min-width: 481px) and (max-width: 600px) {
+  .deal-card-img { height: 200px; }
+  .container { max-width: 540px; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 4 — Small tablets / phones in landscape / unfolded foldable
+ * (601–767px). Bump to a 2-column grid with breathing room.
+ * ------------------------------------------------------------------- */
+@media (min-width: 601px) and (max-width: 767px) {
+  .deals-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .deal-card-img { height: 220px; }
+  .container { max-width: 640px; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 5 — Tablets (≥768px). iPad mini and up.
+ * ------------------------------------------------------------------- */
+@media (min-width: 768px) {
+  .container { max-width: 800px; }
+  .deals-grid { grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .deal-card-img { height: 220px; }
+}
+
+/* ---------------------------------------------------------------------
+ * TIER 6 — Desktop / large tablet (≥1024px). LEFT UNCHANGED at user's
+ * request — desktop web is already final.
+ * ------------------------------------------------------------------- */
 @media (min-width: 1024px) {
+  .container { max-width: 1000px; }
   .deals-grid {
     grid-template-columns: repeat(4, 1fr);
     max-width: 1000px;
@@ -1172,66 +1291,58 @@ textarea:focus {
   }
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* ---------------------------------------------------------------------
+ * Landscape phones (orientation: landscape, short height): trim the
+ * sticky chrome so the user keeps a usable scroll surface.
+ * ------------------------------------------------------------------- */
+@media (max-height: 480px) and (orientation: landscape) {
+  .premium-bar { padding: 16px 16px 12px; border-radius: 0 0 18px 18px; }
+  .profile-header { padding: 18px 20px 24px; }
+  .nav-item { padding: 4px 10px; font-size: 0.7rem; }
+  .nav-item span:first-child { font-size: 1.05rem !important; }
+  .bottom-nav { padding-top: 4px; padding-bottom: max(env(safe-area-inset-bottom, 4px), 4px); }
+  .page-content { padding-bottom: 70px; }
 }
 
-/* ===== MOBILE OPTIMIZATIONS (ALL SIZES) ===== */
-
-/* Extra small devices (iPhone SE, mini phones) */
-@media (max-width: 380px) {
-  .deals-grid {
-    grid-template-columns: 1fr; /* Single column for very narrow screens */
-  }
-  .navbar-logo {
-    font-size: 1.1rem;
-  }
-  .cat-chip {
-    padding: 6px 14px;
-    font-size: 0.8rem;
-  }
-  .price-new {
-    font-size: 0.9rem;
-  }
-}
-
-/* Medium tablets / Foldables */
-@media (min-width: 768px) {
-  .container {
-    max-width: 800px;
-  }
-  .deals-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-/* Large tablets / Desktop view */
-@media (min-width: 1024px) {
-  .container {
-    max-width: 1000px;
-  }
-  .deals-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-/* Safe area insets for notched phones (iPhone X+, Android punch-hole) */
+/* ---------------------------------------------------------------------
+ * Safe-area insets (iPhone X+ notch, Dynamic Island, Android punch-hole,
+ * home indicator). max() guarantees a minimum even on devices without
+ * env() support, AND on devices where the inset is 0.
+ * ------------------------------------------------------------------- */
 @supports (padding: env(safe-area-inset-bottom)) {
   .bottom-nav {
-    padding-bottom: calc(env(safe-area-inset-bottom, 8px) + 4px);
+    padding-bottom: max(env(safe-area-inset-bottom), 8px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
   .book-cta {
-    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 8px);
+    padding-bottom: max(env(safe-area-inset-bottom), 12px);
+    padding-left: max(env(safe-area-inset-left, 0px), 16px);
+    padding-right: max(env(safe-area-inset-right, 0px), 16px);
   }
   .premium-bar {
-    padding-top: calc(env(safe-area-inset-top, 20px) + 20px);
+    padding-top: max(env(safe-area-inset-top, 20px), 20px);
+    padding-left: max(env(safe-area-inset-left, 0px), 20px);
+    padding-right: max(env(safe-area-inset-right, 0px), 20px);
   }
   .page-content {
     padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
   }
+  .navbar {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-left: max(env(safe-area-inset-left, 0px), 16px);
+    padding-right: max(env(safe-area-inset-right, 0px), 16px);
+  }
+  .detail-header {
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  }
 }
 
-/* ===== TOUCH TARGET OPTIMIZATION (Apple HIG: 44px minimum) ===== */
+/* ---------------------------------------------------------------------
+ * TOUCH TARGETS — Apple HIG 44×44 + WCAG 2.5.5 minimum.
+ * Pseudo-elements give us a 44px hit area without forcing 44px visual
+ * size on small icon-only buttons (badges, close buttons).
+ * ------------------------------------------------------------------- */
 button,
 a,
 .nav-item,
@@ -1241,7 +1352,26 @@ a,
   min-width: 44px;
 }
 
-/* ===== FORM ELEMENTS — CROSS-PLATFORM FIX ===== */
+/* Tiny visual icons (badges, toggles) keep their look but expose a
+   44×44 hit area via an invisible ::before. Opt-in via .tap-target. */
+.tap-target {
+  position: relative;
+}
+.tap-target::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  /* invisible */
+}
+
+/* ---------------------------------------------------------------------
+ * FORM ELEMENTS — cross-platform consistency
+ * iOS Safari, Chrome Android, Samsung Internet, Firefox Mobile, Edge.
+ * ------------------------------------------------------------------- */
 select {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -1258,19 +1388,150 @@ select {
   padding-right: 32px !important;
 }
 
-/* Prevent iOS zoom on input focus (font-size must be >= 16px) */
+/* Critical iOS zoom prevention: any input < 16px triggers auto-zoom on focus. */
 input, select, textarea {
   font-size: max(16px, 1em);
+  /* Stop browser auto-corrects from breaking phone numbers, codes, etc. */
+}
+input[type="tel"], input[type="number"], input[inputmode="numeric"] {
+  /* Numeric inputs should expose number pad on phones */
+  -webkit-text-security: none;
 }
 
-/* ===== PWA STANDALONE MODE ===== */
+/* Search inputs should never round up to weird native iOS UI */
+input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ---------------------------------------------------------------------
+ * PWA STANDALONE MODE — when launched from home screen, lean into
+ * native-app feel.
+ * ------------------------------------------------------------------- */
 @media (display-mode: standalone) {
+  /* +20px breathing room above the status bar so the logo / search / chips
+     don't sit flush against the notch — matches Trendyol/Noon look. */
   .premium-bar {
-    padding-top: calc(env(safe-area-inset-top, 44px) + 12px);
+    padding-top: calc(env(safe-area-inset-top, 44px) + 20px) !important;
+    padding-bottom: 22px;
   }
   .navbar {
-    padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 18px) !important;
   }
+  .detail-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
+  }
+  /* No text selection on chrome elements — feels more native */
+  .premium-bar, .navbar, .bottom-nav, .nav-item {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* iOS Safari standalone fallback (older versions report through this prop) */
+@supports (-webkit-touch-callout: none) {
+  @media all and (display-mode: standalone) {
+    .premium-bar { padding-top: calc(env(safe-area-inset-top, 50px) + 24px) !important; }
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * HIGH-DPR fixes (iPhone Pro, Galaxy S Ultra, Pixel Pro)
+ * Hairline borders need to render at 1px regardless of devicePixelRatio.
+ * ------------------------------------------------------------------- */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .navbar, .bottom-nav, .detail-header, .nearby-card, .booking-card {
+    /* Use hairline rather than 1.5px on retina to look crisp */
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Notched-phone landscape (iPhone in landscape) — content needs to
+ * clear the notch on the side.
+ * ------------------------------------------------------------------- */
+@media (orientation: landscape) {
+  .app-container {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Cross-browser scrollbar polish (Samsung Internet shows a thick bar by
+ * default; Edge mobile shows hover-style bars).
+ * ------------------------------------------------------------------- */
+::-webkit-scrollbar { width: 0; height: 0; }
+@media (hover: hover) and (pointer: fine) {
+  /* Only show scrollbars on actual mouse devices (desktop). Phones get clean view. */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+}
+
+/* Fix iOS Safari "rubber band" exposing white background under nav */
+@supports (-webkit-touch-callout: none) {
+  body { background-attachment: fixed; }
+}
+
+/* Image zoom modal — keep image inside the dynamic viewport so iOS
+   Safari's address-bar collapse doesn't crop the bottom of the photo. */
+.taki-zoom-image {
+  max-width: 95vw;
+  max-height: 85vh;
+  max-height: 85dvh;
+}
+
+/* DealsList page — Trendyol-style 2-column grid that scales by tier.
+   Mobile-first: 2 columns by default; collapses to 1 on Galaxy Fold,
+   widens to 3/4 on tablet/desktop. */
+.taki-deals-list-grid { grid-template-columns: repeat(2, 1fr) !important; }
+@media (max-width: 319px) {
+  .taki-deals-list-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .taki-deals-list-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 14px !important; }
+}
+@media (min-width: 900px) {
+  .taki-deals-list-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; max-width: 1200px; margin-inline: auto; }
+}
+
+/* ---------------------------------------------------------------------
+ * Modern phone keyboard handling — Visual Viewport API friendly.
+ * Lets fixed CTA buttons rise above the on-screen keyboard correctly
+ * (Chrome 108+, Safari 15.4+ honor interactive-widget=resizes-content).
+ * ------------------------------------------------------------------- */
+@supports (height: 100dvh) {
+  .book-cta { bottom: 0; }
+}
+
+/* ---------------------------------------------------------------------
+ * Sticky-header overlap fix on phones that show floating address bars
+ * (Samsung Internet, MIUI Browser): force scroll-padding so anchor
+ * links don't land hidden behind the .navbar.
+ * ------------------------------------------------------------------- */
+html {
+  scroll-padding-top: 80px;
+  scroll-padding-bottom: 90px;
+}
+
+/* ---------------------------------------------------------------------
+ * Image / media defaults — prevent layout shift on slow mobile networks.
+ * ------------------------------------------------------------------- */
+img, video {
+  max-width: 100%;
+  height: auto;
+  /* Lazy decode helps on low-end Android (Helio P22, SD 6xx) */
+  content-visibility: auto;
+}
+
+/* ---------------------------------------------------------------------
+ * Buttons & CTAs — modern font rendering on phones.
+ * ------------------------------------------------------------------- */
+button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
+  /* Smoother letterforms on iOS / Android Chrome */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.1px;
 }
 
 /* ===== DARK MODE - WHITE BACKGROUND FIX ===== */

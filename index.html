@@ -4,14 +4,25 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org https://nominatim.openstreetmap.org https://r.jina.ai https://api.allorigins.win https://corsproxy.io https://api.codetabs.com https://thingproxy.freeboard.io; worker-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- viewport-fit=cover lets us paint into the safe-area (notch / Dynamic Island / home indicator). interactive-widget=resizes-content stops Android keyboard from squashing fixed bottom nav. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+  <meta name="HandheldFriendly" content="true">
+  <meta name="MobileOptimized" content="320">
   <title>TAKI — حجز التخفيضات</title>
   <meta name="description" content="TAKI - منصة حجوزات التخفيضات الذكية في المملكة العربية السعودية. احجز أفضل العروض في المولات والأسواق قبل الجميع.">
-  <meta name="theme-color" content="#00897b">
+  <!-- Light/dark theme-color so the iOS / Android status bar matches the app chrome in either mode -->
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: light)">
+  <meta name="color-scheme" content="light dark">
+  <!-- iOS PWA / Add-to-Home-Screen -->
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TAKI">
+  <meta name="application-name" content="TAKI">
+  <meta name="msapplication-TileColor" content="#0f172a">
   <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1041/1041888.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/1041/1041888.png">

@@ -272,9 +272,9 @@ const ImageZoomViewer: React.FC<{
                         if (scale > 1) reset();
                         else setScale(2.2);
                     }}
+                    className="taki-zoom-image"
                     style={{
                         display: 'block',
-                        maxWidth: '95vw', maxHeight: '85vh',
                         width: 'auto', height: 'auto',
                         objectFit: 'contain',
                         transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,

@@ -61,7 +61,7 @@ class ErrorBoundary extends Component<Props, State> {
               ? 'الموقع تم تحديثه أثناء استخدامك. اضغط "إعادة التحميل" لمتابعة العمل بأحدث نسخة.'
               : 'نأسف على ذلك. يمكنك المتابعة من حيث توقفت أو إعادة تحميل الصفحة بالكامل.'}
           </p>
-          <details style={{ background: 'var(--card-bg)', padding: 14, borderRadius: 12, maxWidth: '90%', width: 600, textAlign: 'right', border: '1px solid var(--border-color)', marginBottom: 16 }}>
+          <details style={{ background: 'var(--card-bg)', padding: 14, borderRadius: 12, width: '100%', maxWidth: 'min(600px, calc(100vw - 24px))', textAlign: 'right', border: '1px solid var(--border-color)', marginBottom: 16 }}>
             <summary style={{ cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
               🔍 تفاصيل تقنية (للنسخ)
             </summary>

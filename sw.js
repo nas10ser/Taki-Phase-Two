@@ -1,10 +1,17 @@
-// TAKI service worker — v9.23 (drag-drop + clipboard paste fallbacks)
+// TAKI service worker — v10.0 (network-first navigations to fix stale-page bug)
 // Strategy:
-//  • Navigations  → cache-first (instant paint) + background revalidate
-//  • JS / CSS     → cache-first (assets are content-hashed, immutable)
+//  • Navigations  → NETWORK-FIRST so a phone always sees the latest HTML
+//                   (cache fallback only when the network is unreachable).
+//                   The previous cache-first flow froze users on old builds
+//                   because the bundled HTML referenced old JS hashes that
+//                   the SW also kept serving.
+//  • JS / CSS     → cache-first (Parcel content-hashes filenames already)
 //  • API / data   → network-first with cache fallback (freshness wins)
 //  • Other GETs   → stale-while-revalidate
-const CACHE_NAME = 'taki-cache-v9.23';
+//
+// Bumping CACHE_NAME on every release triggers the activate handler which
+// deletes every prior 'taki-cache-*' entry — guaranteeing a clean slate.
+const CACHE_NAME = 'taki-cache-v10.0';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -46,19 +53,22 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // 1) Navigations: cache-first → instant paint, refresh in background.
+  // 1) Navigations: NETWORK-FIRST. Always try the network first so the
+  //    phone sees the latest deploy as soon as it ships. Fall back to the
+  //    cached HTML only when the device is genuinely offline.
   if (isNavigation(req)) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match('/index.html') || await cache.match(req);
-      const networkPromise = fetch(req).then(res => {
-        if (res && res.status === 200) {
-          cache.put('/index.html', res.clone()).catch(() => {});
+      try {
+        const fresh = await fetch(req, { cache: 'no-store' });
+        if (fresh && fresh.status === 200) {
+          cache.put('/index.html', fresh.clone()).catch(() => {});
         }
-        return res;
-      }).catch(() => null);
-      // Return cached HTML instantly if we have it; otherwise wait for network.
-      return cached || (await networkPromise) || new Response('Offline', { status: 503 });
+        return fresh;
+      } catch {
+        const cached = (await cache.match('/index.html')) || (await cache.match(req));
+        return cached || new Response('Offline', { status: 503 });
+      }
     })());
     return;
   }

@@ -2,23 +2,58 @@
   "name": "TAKI - عروض وحصريات",
   "short_name": "TAKI",
   "description": "منصة تكي للعروض والخصومات الحصرية في منطقتك",
+  "lang": "ar",
+  "dir": "rtl",
   "start_url": "./index.html",
+  "scope": "./",
+  "id": "/?source=pwa",
   "display": "standalone",
-  "background_color": "#00897b",
-  "theme_color": "#00897b",
-  "orientation": "portrait",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "categories": ["shopping", "lifestyle", "business"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "العروض القريبة",
+      "short_name": "حولي",
+      "description": "اكتشف أقرب التخفيضات حولك",
+      "url": "./index.html#/nearby",
+      "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "حجوزاتي",
+      "short_name": "حجوزاتي",
+      "description": "إدارة حجوزاتك النشطة",
+      "url": "./index.html#/bookings",
+      "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png", "sizes": "192x192" }]
     }
   ]
 }

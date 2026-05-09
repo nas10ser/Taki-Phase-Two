@@ -153,8 +153,8 @@ const SmartHijriDatePicker: React.FC<SmartHijriDatePickerProps> = ({
     };
 
     return (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div style={{ background: 'var(--body-bg)', width: '100%', maxWidth: 360, borderRadius: 24, padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.3)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', direction: isRTL ? 'rtl' : 'ltr' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'max(env(safe-area-inset-top, 12px), 12px) 12px max(env(safe-area-inset-bottom, 12px), 12px)' }}>
+            <div style={{ background: 'var(--body-bg)', width: '100%', maxWidth: 'min(360px, calc(100vw - 24px))', maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto', borderRadius: 24, padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.3)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', direction: isRTL ? 'rtl' : 'ltr' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -164,8 +164,8 @@ const SmartHijriDatePicker: React.FC<SmartHijriDatePickerProps> = ({
                         <span style={{ fontSize: '0.8rem', opacity: 0.5 }}>▼</span>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => changeMonth(-1)} style={{ background: 'var(--gray-100)', border: 'none', width: 32, height: 32, borderRadius: 10, fontWeight: 900 }}>{isRTL ? '←' : '←'}</button>
-                        <button onClick={() => changeMonth(1)} style={{ background: 'var(--gray-100)', border: 'none', width: 32, height: 32, borderRadius: 10, fontWeight: 900 }}>{isRTL ? '→' : '→'}</button>
+                        <button aria-label={isRTL ? 'الشهر السابق' : 'Previous month'} onClick={() => changeMonth(-1)} style={{ background: 'var(--gray-100)', border: 'none', minWidth: 44, minHeight: 44, width: 44, height: 44, borderRadius: 12, fontWeight: 900, fontSize: '1rem' }}>{isRTL ? '←' : '←'}</button>
+                        <button aria-label={isRTL ? 'الشهر التالي' : 'Next month'} onClick={() => changeMonth(1)} style={{ background: 'var(--gray-100)', border: 'none', minWidth: 44, minHeight: 44, width: 44, height: 44, borderRadius: 12, fontWeight: 900, fontSize: '1rem' }}>{isRTL ? '→' : '→'}</button>
                     </div>
                 </div>
 

@@ -12,6 +12,7 @@ const Home            = lazy(() => import('./pages/Home'));
 const Bookings        = lazy(() => import('./pages/Bookings'));
 const Nearby          = lazy(() => import('./pages/Nearby'));
 const DealDetails     = lazy(() => import('./pages/DealDetails'));
+const DealsList       = lazy(() => import('./pages/DealsList'));
 const Profile         = lazy(() => import('./pages/Profile'));
 const Register        = lazy(() => import('./pages/Register'));
 const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
@@ -145,6 +146,7 @@ const App = () => {
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />
                         <Route path="/bookings" component={Bookings} />
+                        <Route path="/deals" component={DealsList} />
                         <Route path="/deal/:id" component={DealDetails} />
                         <Route path="/profile" component={Profile} />
                         <Route path="/notifications" component={Notifications} />

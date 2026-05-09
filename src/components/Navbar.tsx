@@ -27,8 +27,8 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                 {/* Top Row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <button onClick={() => setSidebarOpen(true)}
-                            style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', fontSize: '1.3rem', width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>☰</button>
+                        <button aria-label={isRTL ? 'فتح القائمة' : 'Open menu'} onClick={() => setSidebarOpen(true)}
+                            style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', fontSize: '1.3rem', width: 44, height: 44, minWidth: 44, minHeight: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>☰</button>
                         <div>
                             <div className="navbar-logo" style={{ color: 'white', fontSize: '1.4rem', letterSpacing: '1px' }}>TAKI</div>
                             <div style={{ fontSize: '0.75rem', color: 'rgba(200, 200, 200, 0.9)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -44,8 +44,8 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                                 {isRTL ? 'تسجيل' : 'Login'}
                             </button>
                         ) : (
-                            <button onClick={() => history.push('/profile')}
-                                style={{ width: 42, height: 42, borderRadius: 14, background: 'rgba(80, 80, 95, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', border: '2px solid rgba(80, 80, 95, 0.3)' }}>
+                            <button aria-label={isRTL ? 'الملف الشخصي' : 'Profile'} onClick={() => history.push('/profile')}
+                                style={{ width: 44, height: 44, minWidth: 44, minHeight: 44, borderRadius: 14, background: 'rgba(80, 80, 95, 0.2)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', border: '2px solid rgba(80, 80, 95, 0.3)' }}>
                                 👤
                             </button>
                         )}
@@ -61,17 +61,24 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                             placeholder={isRTL ? 'ابحث عن منتج أو محل...' : 'Search for product or store...'}
                             value={searchQuery || ''}
                             onChange={e => onSearchChange(e.target.value)}
-                            style={{ 
-                                direction: isRTL ? 'rtl' : 'ltr', 
-                                color: 'white', 
-                                flex: 1, 
-                                fontWeight: 600, 
-                                border: 'none', 
-                                background: 'transparent', 
+                            style={{
+                                direction: isRTL ? 'rtl' : 'ltr',
+                                color: 'white',
+                                flex: 1,
+                                fontWeight: 600,
+                                border: 'none',
+                                background: 'transparent',
                                 padding: '0 16px',
                                 outline: 'none',
-                                fontSize: '0.9rem'
+                                /* 16px+ stops iOS Safari from auto-zooming on focus. */
+                                fontSize: '16px',
+                                minWidth: 0
                             }}
+                            inputMode="search"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
                         />
                         <div style={{ 
                             display: 'flex', 

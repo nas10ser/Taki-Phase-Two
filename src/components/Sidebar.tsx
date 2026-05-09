@@ -127,7 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     <button
                         onClick={onClose}
                         aria-label={isRTL ? 'إغلاق' : 'Close'}
-                        style={{ width: 36, height: 36, borderRadius: 12, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary, #0f172a)', fontSize: '1.1rem', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        style={{ width: 44, height: 44, minWidth: 44, minHeight: 44, borderRadius: 12, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary, #0f172a)', fontSize: '1.15rem', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         ✕
                     </button>
                 </div>

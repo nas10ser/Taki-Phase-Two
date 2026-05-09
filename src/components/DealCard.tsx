@@ -87,37 +87,44 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                     {isRTL ? 'برعاية' : 'Sponsored'}
                 </div>
             )}
-            <div style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
+            <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
                 <img
                     src={imageUrl}
                     loading="lazy"
                     decoding="async"
                     width={400}
-                    height={200}
+                    height={520}
                     alt={deal.itemName}
-                    style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+                    /* Trendyol-style portrait card: image dominates the card with
+                       4:5 aspect ratio. height auto-scales to width via aspect-ratio. */
+                    style={{ width: '100%', aspectRatio: '4 / 5', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
                     onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=600';
                     }}
                 />
                 <button
                     onClick={handleFollowClick}
+                    aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
                     style={{
                         position: 'absolute',
-                        top: 10,
-                        [isRTL ? 'left' : 'right']: 10,
-                        background: 'rgba(200, 200, 200, 1)',
+                        top: 8,
+                        [isRTL ? 'left' : 'right']: 8,
+                        background: 'rgba(255, 255, 255, 0.95)',
                         backdropFilter: 'blur(8px)',
                         border: 'none',
-                        width: 34,
-                        height: 34,
+                        /* 36×36 visible — keeps the deal card visually clean — but the global
+                           `min-height: 44px` rule from styles.css gives it a real 44px hit area. */
+                        width: 36,
+                        height: 36,
+                        minWidth: 0,
+                        minHeight: 0,
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.12)',
                         color: isFollowed ? '#ef4444' : '#94a3b8',
-                        fontSize: '0.9rem',
+                        fontSize: '0.95rem',
                         transition: 'all 0.2s ease'
                     }}
                 >

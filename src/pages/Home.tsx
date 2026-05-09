@@ -222,10 +222,17 @@ const Home: React.FC = () => {
 
             </div>
 
-            {/* Trending Section */}
+            {/* Trending Section — header is a button so the user can drill into a
+                full-grid view (the Trendyol-style page at /deals?type=trending). */}
             <div style={{ padding: '20px 0 10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>{isRTL ? 'الأكثر تداولاً 🔥' : 'Most Trending 🔥'}</h2>
+                    <button
+                        onClick={() => history.push('/deals?type=trending')}
+                        aria-label={isRTL ? 'عرض كل الأكثر تداولاً' : 'View all trending'}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                    </button>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
                     {trendingDeals.map(deal => {
@@ -243,6 +250,12 @@ const Home: React.FC = () => {
             <div style={{ padding: '10px 0 20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>{isRTL ? 'أقوى الخصومات 💸' : 'Highest Discount 💸'}</h2>
+                    <button
+                        onClick={() => history.push('/deals?type=discount')}
+                        aria-label={isRTL ? 'عرض كل أقوى الخصومات' : 'View all top discounts'}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                    </button>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
                     {bestDiscounts.map(deal => {
@@ -287,10 +300,18 @@ const Home: React.FC = () => {
                 </div>
             )}
 
-            <div style={{ padding: '0 16px 10px' }}>
+            <div style={{ padding: '0 16px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>
                     {searchQuery.trim() ? (isRTL ? 'العروض 🛍️' : 'Deals 🛍️') : (isRTL ? 'كل العروض' : 'All Deals')}
                 </h2>
+                {!searchQuery.trim() && (
+                    <button
+                        onClick={() => history.push('/deals?type=all')}
+                        aria-label={isRTL ? 'عرض كل العروض' : 'View all deals'}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                    </button>
+                )}
             </div>
 
             {/* Deals Grid */}
