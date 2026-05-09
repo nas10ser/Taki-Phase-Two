@@ -321,6 +321,25 @@ const ImageZoomViewer: React.FC<{
     return typeof document !== 'undefined' ? createPortal(node, document.body) : node;
 };
 
+// Same compact countdown badge used on the home-feed card. Format: "364ي 23س".
+const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boolean): { text: string; urgent: boolean; expired: boolean } => {
+    const lifespan = (expiresInMinutes || 0) * 60 * 1000;
+    const expiry = (createdAt || 0) + lifespan;
+    const diff = expiry - Date.now();
+    if (diff <= 0) return { text: isRTL ? 'منتهي' : 'Expired', urgent: false, expired: true };
+
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff / 3600000) % 24);
+    const mins = Math.floor((diff / 60000) % 60);
+    const secs = Math.floor((diff / 1000) % 60);
+    const urgent = diff < 3600000;
+
+    if (days > 0) return { text: isRTL ? `${days}ي ${hours}س` : `${days}d ${hours}h`, urgent: false, expired: false };
+    if (hours > 0) return { text: isRTL ? `${hours}س ${mins}د` : `${hours}h ${mins}m`, urgent, expired: false };
+    if (mins > 0) return { text: isRTL ? `${mins}د ${secs.toString().padStart(2, '0')}ث` : `${mins}m ${secs}s`, urgent: true, expired: false };
+    return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, expired: false };
+};
+
 const DealDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const location = useLocation();
@@ -348,11 +367,18 @@ const DealDetails: React.FC = () => {
     const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
     const [zoomOpen, setZoomOpen] = useState(false);
     const [ticketCollapsed, setTicketCollapsed] = useState(false);
+    const [, setNowTick] = useState(0);
 
     // prepTimeOptions removed, dynamically typed now
 
     const isRTL = language === 'ar';
     const deal = deals.find(d => d.id === id);
+
+    // Tick once a second so the on-image countdown badge updates live.
+    React.useEffect(() => {
+        const id = setInterval(() => setNowTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+    }, []);
     const isSeller = user?.userType === 'seller';
     const isOwner = isSeller && user?.id === deal?.storeId;
     const isFollowed = deal ? followedMerchants.includes(deal.storeId) : false;
@@ -537,6 +563,34 @@ const DealDetails: React.FC = () => {
                 <div style={{ position: 'absolute', top: 12, right: 12, background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', padding: '6px 14px', borderRadius: 12, fontWeight: 900, fontSize: '1rem', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>
                     -{deal.discountPercentage}%
                 </div>
+                {/* Live countdown — same compact badge as the home-feed card. */}
+                {(() => {
+                    const remaining = formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL);
+                    return (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: 12,
+                            [isRTL ? 'right' : 'left']: 12,
+                            background: remaining.expired
+                                ? 'rgba(100,116,139,0.92)'
+                                : remaining.urgent
+                                    ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
+                                    : 'rgba(15,23,42,0.78)',
+                            color: 'white',
+                            padding: '6px 12px',
+                            borderRadius: 10,
+                            fontSize: '0.85rem',
+                            fontWeight: 900,
+                            backdropFilter: 'blur(8px)',
+                            boxShadow: remaining.urgent ? '0 2px 10px rgba(239,68,68,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
+                            animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',
+                            display: 'flex', alignItems: 'center', gap: 6
+                        } as React.CSSProperties}>
+                            <span>{remaining.expired ? '⏹' : '⏱'}</span>
+                            <span>{remaining.text}</span>
+                        </div>
+                    );
+                })()}
             </div>
 
             {zoomOpen && (

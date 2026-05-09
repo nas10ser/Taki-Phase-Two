@@ -572,7 +572,9 @@ const SellerDashboard: React.FC = () => {
         ingestFiles(e.target.files);
     };
 
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    // Generic over HTMLElement so the same handlers work whether the
+    // dropzone is rendered as <div> or <label> (label htmlFor pattern).
+    const handleDrop = (e: React.DragEvent<HTMLElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDraggingOver(false);
@@ -582,13 +584,13 @@ const SellerDashboard: React.FC = () => {
         ingestFiles(dropped);
     };
 
-    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    const handleDragOver = (e: React.DragEvent<HTMLElement>) => {
         e.preventDefault();
         e.stopPropagation();
         if (!uploadingImages && !isDraggingOver) setIsDraggingOver(true);
     };
 
-    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    const handleDragLeave = (e: React.DragEvent<HTMLElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDraggingOver(false);
@@ -1393,7 +1395,8 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {images.length < 4 && (
-                                    <div
+                                    <label
+                                        htmlFor="seller-image-upload"
                                         onDrop={handleDrop}
                                         onDragOver={handleDragOver}
                                         onDragEnter={handleDragOver}
@@ -1411,6 +1414,9 @@ const SellerDashboard: React.FC = () => {
                                             userSelect: 'none', overflow: 'hidden'
                                         }}
                                     >
+                                        {/* Native <label htmlFor> pattern — opens the OS file picker on any
+                                            browser without needing a programmatic .click(). The input itself
+                                            is visually hidden but stays in the DOM for keyboard/AT users. */}
                                         <input
                                             id="seller-image-upload"
                                             ref={fileInputRef}
@@ -1422,12 +1428,13 @@ const SellerDashboard: React.FC = () => {
                                             onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                                             aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
                                             style={{
-                                                position: 'absolute', inset: 0,
-                                                width: '100%', height: '100%',
-                                                opacity: 0,
-                                                cursor: uploadingImages ? 'default' : 'pointer',
-                                                fontSize: 0,
-                                                zIndex: 2
+                                                position: 'absolute',
+                                                width: 1, height: 1,
+                                                padding: 0, margin: -1,
+                                                overflow: 'hidden',
+                                                clip: 'rect(0,0,0,0)',
+                                                whiteSpace: 'nowrap',
+                                                border: 0
                                             }}
                                         />
                                         {uploadingImages ? (
@@ -1441,7 +1448,7 @@ const SellerDashboard: React.FC = () => {
                                                 </span>
                                             </div>
                                         )}
-                                    </div>
+                                    </label>
                                 )}
                             </div>
                         </div>
