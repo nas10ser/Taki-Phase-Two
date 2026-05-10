@@ -17,7 +17,8 @@ export interface Booking {
     userName?: string;
     userPhone?: string;
     prepTime?: string;
-    notes?: string;
+    notes?: string;          // Buyer's note attached at booking time
+    merchantNote?: string;   // Seller's note left when acknowledging the order
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
 }
 
@@ -59,6 +60,7 @@ export const bookingRepository = {
                     bookedQuantity: b.booked_quantity,
                     prepTime: b.prep_time,
                     notes: b.notes,
+                    merchantNote: b.merchant_note,
                     status: b.status as Booking['status'],
                     bookedAt: b.booked_at,
                     expiryTime: b.expiry_time
@@ -90,6 +92,7 @@ export const bookingRepository = {
                     bookedQuantity: data.booked_quantity,
                     prepTime: data.prep_time,
                     notes: data.notes,
+                    merchantNote: data.merchant_note,
                     status: data.status as Booking['status'],
                     bookedAt: data.booked_at,
                     expiryTime: data.expiry_time
@@ -125,11 +128,13 @@ export const bookingRepository = {
         }
     },
 
-    updateStatus: async (barcode: string, status: Booking['status'], note?: string): Promise<void> => {
-        // Direct remote update
+    updateStatus: async (barcode: string, status: Booking['status'], merchantNote?: string): Promise<void> => {
+        // Direct remote update. The optional `merchantNote` is the seller's
+        // note attached when acknowledging an order — written to the
+        // `merchant_note` column so the buyer's `notes` is preserved.
         try {
             const updatePayload: any = { status };
-            if (note !== undefined) updatePayload.notes = note;
+            if (merchantNote !== undefined) updatePayload.merchant_note = merchantNote;
 
             const { error, data } = await supabase.from('bookings').update(updatePayload).eq('barcode', barcode).select();
             if (error) throw error;

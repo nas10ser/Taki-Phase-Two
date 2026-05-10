@@ -672,6 +672,29 @@ const DealDetails: React.FC = () => {
 
                         <StatusTracker status={activeBooking.status} isRTL={isRTL} />
 
+                        {/* Merchant note — shown to buyer after seller acknowledges
+                            with a note. Buyer's own note is intentionally NOT shown
+                            here to avoid confusion (they wrote it themselves). */}
+                        {!isOwner && activeBooking.merchantNote && activeBooking.status !== 'completed' && (
+                            <div style={{
+                                marginTop: 12,
+                                marginBottom: 12,
+                                padding: '12px 16px',
+                                background: 'rgba(245, 158, 11, 0.12)',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                borderRadius: 14,
+                                borderRight: isRTL ? '4px solid var(--secondary)' : '1px solid rgba(245, 158, 11, 0.35)',
+                                borderLeft: !isRTL ? '4px solid var(--secondary)' : '1px solid rgba(245, 158, 11, 0.35)',
+                            }}>
+                                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+                                    💬 {isRTL ? 'رسالة من التاجر:' : 'Note from merchant:'}
+                                </div>
+                                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                    {activeBooking.merchantNote}
+                                </div>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <div style={{ background: 'var(--card-bg)', color: 'var(--text-primary)', padding: '10px 20px', borderRadius: 12, border: '1.5px solid var(--border-color)', fontFamily: 'monospace', fontWeight: 900, fontSize: '1.2rem', letterSpacing: 2, boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)' }}>

@@ -77,6 +77,7 @@ const SellerDashboard: React.FC = () => {
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
+    const [highlightedBarcode, setHighlightedBarcode] = useState<string | null>(null);
     const [scannerOpen, setScannerOpen] = useState(false);
     const [showDualPicker, setShowDualPicker] = useState(false);
     // Stores selected dates from DualCalendarPicker
@@ -126,6 +127,25 @@ const SellerDashboard: React.FC = () => {
             setView('form');
         }
     }, [location.search]);
+
+    // Notification deep-link: when a "📦 طلب حجز جديد!" alert is tapped,
+    // it routes here as /seller?tab=orders&barcode=XXX. Once the orders
+    // tab is rendered AND the booking has loaded, scroll the matching
+    // card into view and flash a highlight ring so the seller sees which
+    // order the alert was about. The highlight clears after 3s so it
+    // doesn't permanently mark the row.
+    React.useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const barcode = params.get('barcode');
+        if (!barcode || view !== 'orders') return;
+        setHighlightedBarcode(barcode);
+        const scrollTimer = window.setTimeout(() => {
+            const el = document.getElementById(`order-${barcode}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 250);
+        const clearTimer = window.setTimeout(() => setHighlightedBarcode(null), 3000);
+        return () => { window.clearTimeout(scrollTimer); window.clearTimeout(clearTimer); };
+    }, [location.search, view, bookings.length]);
 
     // Handle Edit Mode from URL — fills form fields once deals arrive.
     React.useEffect(() => {
@@ -1831,7 +1851,12 @@ const SellerDashboard: React.FC = () => {
                 ) : view === 'orders' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         {activeOrders.length > 0 ? activeOrders.map(order => (
-                            <div key={order.barcode} className="animate-fade-in" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(10px)', borderRadius: 24, padding: 20, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow)' }}>
+                            <div
+                                key={order.barcode}
+                                id={`order-${order.barcode}`}
+                                className={`animate-fade-in${highlightedBarcode === order.barcode ? ' taki-order-highlight' : ''}`}
+                                style={{ background: 'var(--card-bg)', backdropFilter: 'blur(10px)', borderRadius: 24, padding: 20, border: highlightedBarcode === order.barcode ? '2px solid var(--secondary)' : '1px solid var(--border-color)', boxShadow: highlightedBarcode === order.barcode ? '0 0 0 4px rgba(245,158,11,0.18), var(--shadow)' : 'var(--shadow)', transition: 'all 0.3s ease' }}
+                            >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                                     <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{order.deal.itemName}</div>
                                     <div style={{ color: 'var(--primary)', fontWeight: 900, background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>{order.bookedQuantity} {isRTL ? 'قطع' : 'pcs'}</div>
@@ -1856,12 +1881,22 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 )}
                                 {order.notes && (
+                                    <div style={{ marginBottom: 12, padding: '12px 16px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: 12, borderRight: isRTL ? '4px solid #3b82f6' : 'none', borderLeft: !isRTL ? '4px solid #3b82f6' : 'none' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>
+                                            📝 {isRTL ? 'ملاحظات المشتري:' : 'Buyer Notes:'}
+                                        </div>
+                                        <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                            {order.notes}
+                                        </div>
+                                    </div>
+                                )}
+                                {order.merchantNote && (
                                     <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(245, 158, 11, 0.2)', borderRadius: 12, borderRight: isRTL ? '4px solid #f59e0b' : 'none', borderLeft: !isRTL ? '4px solid #f59e0b' : 'none' }}>
                                         <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#d97706', marginBottom: 4 }}>
-                                            {isRTL ? 'ملاحظات المشتري:' : 'Buyer Notes:'}
+                                            💬 {isRTL ? 'ملاحظتك للمشتري:' : 'Your note to buyer:'}
                                         </div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--secondary)', lineHeight: 1.5 }}>
-                                            {order.notes}
+                                        <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                            {order.merchantNote}
                                         </div>
                                     </div>
                                 )}
@@ -1876,7 +1911,7 @@ const SellerDashboard: React.FC = () => {
                                         </button>
                                     )}
                                     {order.status === 'acknowledged' && (
-                                        <div style={{ width: '100%', padding: '10px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--primary)', fontWeight: 800, textAlign: 'center', marginBottom: 8, fontSize: '0.85rem' }}>
+                                        <div style={{ width: '100%', padding: '10px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800, textAlign: 'center', marginBottom: 8, fontSize: '0.85rem' }}>
                                             ✅ {isRTL ? 'تم تأكيد الاستلام - بانتظار الكود' : 'Receipt Confirmed - Awaiting Code'}
                                         </div>
                                     )}

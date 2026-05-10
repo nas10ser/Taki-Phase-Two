@@ -1307,16 +1307,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // completion does NOT deduct again.
     }, [bookings, language, customAlert]);
 
-    const acknowledgeBooking = useCallback(async (barcode: string, note?: string) => {
+    const acknowledgeBooking = useCallback(async (barcode: string, merchantNote?: string) => {
         const target = bookings.find(b => b.barcode === barcode);
         if (!target || target.status !== 'pending') return;
 
+        // Save merchantNote on its own field so the buyer's `notes` is
+        // preserved. Buyer's note (e.g. "extra ketchup") and seller's note
+        // (e.g. "ready in 10 min, side door") are independent messages.
         setBookings(prev => {
-            const updated = prev.map(b => b.barcode === barcode ? { ...b, status: 'acknowledged' as const, notes: note || b.notes } : b);
+            const updated = prev.map(b => b.barcode === barcode
+                ? { ...b, status: 'acknowledged' as const, merchantNote: merchantNote || b.merchantNote }
+                : b);
             return updated;
         });
 
-        bookingRepository.updateStatus(barcode, 'acknowledged', note).catch(e => {
+        bookingRepository.updateStatus(barcode, 'acknowledged', merchantNote).catch(e => {
             console.warn('Booking status sync deferred:', e?.message || e);
             customAlert(language === 'ar'
                 ? `⚠️ لم يتم مزامنة التحديث: ${e?.message || 'خطأ غير معروف'}`

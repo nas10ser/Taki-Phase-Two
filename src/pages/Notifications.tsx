@@ -69,18 +69,31 @@ const Notifications: React.FC = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {myNotifications.map(n => {
                                 const dealId = n.metadata?.dealId;
+                                const barcode = n.metadata?.barcode;
                                 const followerId = n.metadata?.followerId;
-                                const dest = dealId
-                                    ? `/deal/${dealId}${n.metadata?.barcode ? `?barcode=${n.metadata.barcode}` : ''}`
-                                    : n.type === 'booking' && user.userType === 'seller'
-                                        ? '/seller?tab=orders'
-                                        : n.type === 'booking'
-                                            ? '/bookings'
-                                            : n.type === 'follow' || followerId
-                                                ? '/profile'
-                                                : n.type === 'marketing'
-                                                    ? '/'
-                                                    : null;
+                                // Booking notifications carry both `dealId` and `barcode` — but where to
+                                // open them depends on who's reading. A seller wants their order in
+                                // the dashboard's orders tab (with the confirm-receipt button); a buyer
+                                // wants the deal page with the booking ticket expanded. Admin booking
+                                // notifications stay on a general overview.
+                                const isBookingNotif = n.type === 'booking';
+                                const dest = isBookingNotif && user.userType === 'seller' && barcode
+                                    ? `/seller?tab=orders&barcode=${barcode}`
+                                    : isBookingNotif && user.userType === 'buyer' && dealId
+                                        ? `/deal/${dealId}?barcode=${barcode}`
+                                        : isBookingNotif && user.userType === 'admin'
+                                            ? '/admin?tab=overview'
+                                            : dealId
+                                                ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                                : isBookingNotif && user.userType === 'seller'
+                                                    ? '/seller?tab=orders'
+                                                    : isBookingNotif
+                                                        ? '/bookings'
+                                                        : n.type === 'follow' || followerId
+                                                            ? '/profile'
+                                                            : n.type === 'marketing'
+                                                                ? '/'
+                                                                : null;
 
                                 const isHighPriority = !n.isRead && (
                                     n.type === 'follow' || 

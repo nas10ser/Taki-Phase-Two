@@ -216,9 +216,17 @@ const Bookings: React.FC = () => {
                                                             <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
                                                         </div>
                                                     </div>
-                                                    {booking.notes && (
+                                                    {/* Note from seller after acknowledging — distinct field
+                                                        from the buyer's own notes attached at booking time. */}
+                                                    {booking.merchantNote && (
                                                         <div style={{ marginTop: 16, padding: 12, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 12, borderRight: isRTL ? '3px solid #f59e0b' : 'none', borderLeft: !isRTL ? '3px solid #f59e0b' : 'none' }}>
                                                             <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>💬 {isRTL ? 'ملاحظة التاجر:' : 'Seller Note:'}</div>
+                                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.merchantNote}</div>
+                                                        </div>
+                                                    )}
+                                                    {booking.notes && (
+                                                        <div style={{ marginTop: booking.merchantNote ? 8 : 16, padding: 12, background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, borderRight: isRTL ? '3px solid #3b82f6' : 'none', borderLeft: !isRTL ? '3px solid #3b82f6' : 'none' }}>
+                                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>📝 {isRTL ? 'ملاحظتك:' : 'Your note:'}</div>
                                                             <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.notes}</div>
                                                         </div>
                                                     )}
