@@ -1,3 +1,41 @@
+# TAKI — تقرير التقدم v10.11 📊
+
+## v10.11 — تتبع المشاهدات (DB-only fix)
+**التاريخ:** ١٠ مايو ٢٠٢٦
+
+### المشكلة
+لوحة "أداء العروض" تعرض `المشاهدات: 0 | الحجوزات: 3` لكل العروض. الحجوزات
+موجودة لكن المشاهدات صفر — مستحيل منطقياً.
+
+### السبب الجذري
+الكلاينت يستدعي `supabase.rpc('increment_deal_view', ...)` عند فتح أي
+صفحة عرض، لكن:
+- العمودين `views` و `clicks` غير موجودين في جدول `deals`
+- الـRPC functions `increment_deal_view` / `increment_deal_click` غير
+  معرّفة في PostgreSQL
+
+النتيجة: كل استدعاء يفشل صامتاً (`logger.error` فقط، بدون UI feedback)
+ولا يتحدّث أي عداد.
+
+### الإصلاح (migration `add_views_clicks_tracking_to_deals`)
+1. `ALTER TABLE deals ADD COLUMN views integer DEFAULT 0`
+2. `ALTER TABLE deals ADD COLUMN clicks integer DEFAULT 0`
+3. `CREATE FUNCTION increment_deal_view(target_deal_id text)` — UPDATE +1
+4. `CREATE FUNCTION increment_deal_click(target_deal_id text)` — UPDATE +1
+5. `GRANT EXECUTE … TO anon, authenticated`
+6. **Backfill:** لكل عرض، `views = MAX(views, COUNT(bookings))` — كل حجز
+   يفترض على الأقل مشاهدة واحدة، فلا تظهر اللوحة "0 مشاهدات / 3 حجوزات"
+   من اليوم الأول.
+
+### التحقق
+بعد الـbackfill:
+- لاههقفا (3 حجوزات) → 3 مشاهدات ✓
+- منظف عفن (1 حجز) → 2 مشاهدات ✓ (1 حجز + 1 mock view من الاختبار)
+
+لا حاجة لتغيير في الكود — الكلاينت كان جاهزاً، الـDB فقط كانت ناقصة.
+
+---
+
 # TAKI — تقرير التقدم v10.4 🩹
 
 ## الإصدار v10.4 — إصلاحات لوحة الإدارة + الدارك مود + كرت أصغر
