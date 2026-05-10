@@ -1,530 +1,1018 @@
-import React, { useEffect, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../services/supabaseClient';
+import {
+  OverviewStats, TimeseriesPoint, CityRow, TopStoreRow,
+  AdminStoreRow, AdminUserRow, AdminDealRow, AdminBanner,
+  getOverviewStats, getTimeseries, getCityBreakdown, getTopStores,
+  getAllStores, getAllUsers, getAllDeals, getAllBanners,
+  startHeartbeat, stopHeartbeat,
+  suspendUser, unsuspendUser, adminDeleteDeal, logActivity
+} from '../services/adminService';
+import {
+  KPICard, AreaChart, Donut, BarList, SectionCard,
+  TabPill, EmptyState, Sparkline
+} from '../components/admin/AdminUI';
+import LiveActivityFeed from '../components/admin/LiveActivityFeed';
+import StoreActionsModal from '../components/admin/StoreActionsModal';
 
-interface StoreData {
-  id: string;
-  name: string;
-  shop: string;
-  phone: string;
-  address: string;
-  created_at: string;
-  store_profiles: {
-    subscription_plan: string;
-    subscription_expires_at: string;
-    discount_percentage: number;
-    is_pinned: boolean;
-    max_branches: number;
-  } | null;
-}
+type TabId = 'overview' | 'stores' | 'products' | 'users' | 'banners' | 'live' | 'settings';
+
+const TABS: { id: TabId; icon: string; label: string }[] = [
+  { id: 'overview', icon: '📊', label: 'النظرة العامة' },
+  { id: 'stores',   icon: '🏪', label: 'المتاجر' },
+  { id: 'products', icon: '📦', label: 'العروض' },
+  { id: 'users',    icon: '👥', label: 'المستخدمون' },
+  { id: 'banners',  icon: '🖼️', label: 'البانرات' },
+  { id: 'live',     icon: '⚡', label: 'النشاط الحي' },
+  { id: 'settings', icon: '⚙️', label: 'الإعدادات' },
+];
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useApp();
-  const [stores, setStores] = useState<StoreData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStores, setSelectedStores] = useState<Set<string>>(new Set());
-  const [isPaymentEnabled, setIsPaymentEnabled] = useState(false);
-  
-  // Grant Modal state
-  const [isGrantModalOpen, setIsGrantModalOpen] = useState(false);
-  const [grantType, setGrantType] = useState<'discount' | 'free'>('discount');
-  const [grantDiscount, setGrantDiscount] = useState(50);
-  const [grantDuration, setGrantDuration] = useState<'week' | 'month' | '3months' | 'custom'>('month');
-  const [customDays, setCustomDays] = useState(30);
-  const [activeTab, setActiveTab] = useState<'stores' | 'banners'>('stores');
-  
-  // Banner state
-  const [banners, setBanners] = useState<any[]>([]);
-  const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
-  const [newBanner, setNewBanner] = useState({
-    title_ar: '', title_en: '', image_url: '', target_url: '', deal_id: '', store_id: '', position: 'home_top', is_active: true
-  });
+  const { user, customAlert, customConfirm, language } = useApp();
+  const [tab, setTab] = useState<TabId>('overview');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey(k => k + 1);
 
-  useEffect(() => {
-    if (user?.user_type === 'admin') {
-      fetchStores();
-      fetchSettings();
-      fetchBanners();
-    }
-  }, [user]);
+  useEffect(() => { startHeartbeat(); return () => stopHeartbeat(); }, []);
 
-  const fetchBanners = async () => {
-    const { data, error } = await supabase.from('banners').select('*').order('display_order', { ascending: true });
-    if (error) console.error('Error fetching banners:', error);
-    else setBanners(data || []);
-  };
-
-  const fetchSettings = async () => {
-    const { data } = await supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single();
-    if (data) {
-      setIsPaymentEnabled(data.value === 'true');
-    }
-  };
-
-  const togglePaymentGateway = async () => {
-    const newValue = !isPaymentEnabled;
-    setIsPaymentEnabled(newValue);
-    await supabase.from('global_settings').upsert({ key: 'is_payment_gateway_enabled', value: newValue.toString(), updated_at: new Date().toISOString() });
-    alert(newValue ? 'تم تفعيل بوابة الدفع. يجب على التجار الاشتراك لإضافة عروض.' : 'تم تعطيل بوابة الدفع وإخفاؤها. التطبيق الآن مجاني بالكامل.');
-  };
-
-  const fetchStores = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          id, name, shop, phone, address, created_at,
-          store_profiles (
-            subscription_plan,
-            subscription_expires_at,
-            discount_percentage,
-            is_pinned,
-            max_branches
-          )
-        `)
-        .eq('user_type', 'seller');
-
-      if (error) throw error;
-      
-      // Some users might not have a store_profile yet
-      setStores(data as any || []);
-    } catch (err) {
-      console.error("Error fetching stores:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredStores = stores.filter(store => 
-    store.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    store.shop?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    store.phone?.includes(searchTerm) ||
-    store.address?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedStores(new Set(filteredStores.map(s => s.id)));
-    } else {
-      setSelectedStores(new Set());
-    }
-  };
-
-  const handleSelectStore = (id: string) => {
-    const newSet = new Set(selectedStores);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedStores(newSet);
-  };
-
-  const handleApplyGrant = async () => {
-    if (selectedStores.size === 0) return;
-    
-    let daysToAdd = 0;
-    if (grantDuration === 'week') daysToAdd = 7;
-    else if (grantDuration === 'month') daysToAdd = 30;
-    else if (grantDuration === '3months') daysToAdd = 90;
-    else daysToAdd = customDays;
-
-    const updates = Array.from(selectedStores).map(storeId => {
-      // UPSERT logic: if store_profile doesn't exist, we should ideally create it.
-      // For now, we update existing ones. A proper backend RPC would be better for upserting safely.
-      return supabase
-        .from('store_profiles')
-        .upsert({
-          store_id: storeId,
-          subscription_plan: grantType === 'free' ? 'premium' : 'free', // 'premium' means active sub
-          discount_percentage: grantType === 'discount' ? grantDiscount : 0,
-          // We set expiry date to current date + daysToAdd
-          subscription_expires_at: new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date().toISOString()
-        });
-    });
-
-    try {
-      await Promise.all(updates);
-      alert('تم تطبيق المنحة بنجاح!');
-      setIsGrantModalOpen(false);
-      setSelectedStores(new Set());
-      fetchStores();
-    } catch (err) {
-      console.error("Error applying grants", err);
-    }
-  };
-
-  if (user?.userType !== 'admin' && user?.user_type !== 'admin') {
-    return <div className="p-8 text-center text-red-500">غير مصرح لك بالدخول لهذه الصفحة. (نوع حسابك الحالي: {user?.userType || user?.user_type || 'غير معروف'})</div>;
+  const isAdmin = user?.userType === 'admin' || user?.user_type === 'admin';
+  if (!isAdmin) {
+    return (
+      <div dir="rtl" style={{ padding: 32, textAlign: 'center', fontFamily: 'Tajawal, sans-serif' }}>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444' }}>غير مصرح بالدخول</div>
+        <div style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>هذه الصفحة مخصصة للمشرفين فقط.</div>
+      </div>
+    );
   }
 
   return (
-    <div className="pb-24 pt-4 px-4 max-w-6xl mx-auto font-tajawal animate-fade-in" dir="rtl">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">🛠️ مركز تحكم الإدارة (Admin)</h1>
-
-      {/* Tabs */}
-      <div className="flex gap-4 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-        <button 
-          onClick={() => setActiveTab('stores')}
-          className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'stores' ? 'bg-white shadow text-taki-green' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          🏪 المتاجر والاشتراكات
-        </button>
-        <button 
-          onClick={() => setActiveTab('banners')}
-          className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'banners' ? 'bg-white shadow text-taki-green' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          🖼️ البانرات الإعلانية
-        </button>
-      </div>
-
-      
-      {/* Stores Management View */}
-      {activeTab === 'stores' && (
-        <>
-          {/* Search and Filters */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
-            {/* Toggle Payment Gateway */}
-            <div className="w-full md:w-auto bg-gray-50 p-3 rounded-lg flex items-center justify-between gap-4 border border-gray-200">
-              <div className="flex flex-col">
-                <span className="font-bold text-sm text-gray-800">بوابة الدفع (SaaS)</span>
-                <span className="text-xs text-gray-500">{isPaymentEnabled ? 'مفعلة (التطبيق مدفوع)' : 'معطلة ومخفية (التطبيق مجاني)'}</span>
+    <div dir="rtl" style={{
+      minHeight: '100vh', background: 'var(--bg, #f8fafc)',
+      fontFamily: 'Tajawal, sans-serif', paddingBottom: 40
+    }}>
+      {/* Top Bar */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border-color, #f1f5f9)',
+        padding: '14px 18px'
+      }}>
+        <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 18, fontWeight: 900
+            }}>🛠️</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary, #0f172a)' }}>مركز تحكم المشرف</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', fontWeight: 600 }}>
+                مرحباً {user?.name} • {new Date().toLocaleDateString('ar-SA')}
               </div>
-              <button 
-                onClick={togglePaymentGateway}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isPaymentEnabled ? 'bg-taki-green' : 'bg-gray-300'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isPaymentEnabled ? '-translate-x-6' : '-translate-x-1'}`} />
-              </button>
-            </div>
-            <div className="relative w-full md:w-1/2">
-              <span className="absolute right-3 top-3 text-gray-400">🔍</span>
-              <input 
-                type="text" 
-                placeholder="البحث باسم المتجر، السجل، أو المدينة..." 
-                className="w-full pr-10 pl-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-taki-green focus:border-transparent transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="w-full md:w-auto flex gap-2">
-              <button 
-                disabled={selectedStores.size === 0}
-                onClick={() => setIsGrantModalOpen(true)}
-                className="flex-1 md:flex-none px-6 py-2 bg-taki-green text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-600 transition-colors shadow-sm"
-              >
-                🎁 المنح السريع ({selectedStores.size})
-              </button>
             </div>
           </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="p-4 w-12 text-center">
-                  <input 
-                    type="checkbox" 
-                    className="w-4 h-4 rounded text-taki-green focus:ring-taki-green border-gray-300"
-                    checked={filteredStores.length > 0 && selectedStores.size === filteredStores.length}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-                <th className="p-4 text-gray-600 font-semibold text-sm">المتجر</th>
-                <th className="p-4 text-gray-600 font-semibold text-sm hidden md:table-cell">المدينة/العنوان</th>
-                <th className="p-4 text-gray-600 font-semibold text-sm">الباقة الحالية</th>
-                <th className="p-4 text-gray-600 font-semibold text-sm">الخصم الممنوح</th>
-                <th className="p-4 text-gray-600 font-semibold text-sm">تاريخ الانتهاء</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-400">جاري التحميل...</td>
-                </tr>
-              ) : filteredStores.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-400">لا توجد متاجر مطابقة للبحث</td>
-                </tr>
-              ) : (
-                filteredStores.map((store) => {
-                  const sp = store.store_profiles;
-                  const isSelected = selectedStores.has(store.id);
-                  const expiryDate = sp?.subscription_expires_at ? new Date(sp.subscription_expires_at) : null;
-                  const isExpired = expiryDate ? expiryDate.getTime() < Date.now() : true;
-
-                  return (
-                    <tr key={store.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-green-50' : ''}`}>
-                      <td className="p-4 text-center">
-                        <input 
-                          type="checkbox" 
-                          className="w-4 h-4 rounded text-taki-green focus:ring-taki-green border-gray-300"
-                          checked={isSelected}
-                          onChange={() => handleSelectStore(store.id)}
-                        />
-                      </td>
-                      <td className="p-4">
-                        <div className="font-bold text-gray-800">{store.shop || store.name}</div>
-                        <div className="text-xs text-gray-500 mt-1" dir="ltr">{store.phone}</div>
-                      </td>
-                      <td className="p-4 text-gray-600 text-sm hidden md:table-cell">{store.address || 'غير محدد'}</td>
-                      <td className="p-4">
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-bold ${
-                          sp?.subscription_plan === 'premium' ? 'bg-yellow-100 text-yellow-800' : 
-                          sp?.subscription_plan === 'trial' ? 'bg-blue-100 text-blue-800' : 
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {sp?.subscription_plan === 'premium' ? 'ممتاز ⭐' : 
-                           sp?.subscription_plan === 'trial' ? 'تجريبي' : 'مجاني'}
-                        </span>
-                        {sp?.is_pinned && <span className="mr-2 inline-block px-2 py-1 rounded text-xs font-bold bg-purple-100 text-purple-800">📌 مثبت</span>}
-                      </td>
-                      <td className="p-4 font-medium text-taki-green">
-                        {sp?.discount_percentage ? `${sp.discount_percentage}%` : '-'}
-                      </td>
-                      <td className="p-4">
-                        {expiryDate ? (
-                          <div className={`text-sm font-medium ${isExpired ? 'text-red-500' : 'text-gray-700'}`}>
-                            {expiryDate.toLocaleDateString('ar-SA')}
-                            {isExpired && <span className="block text-xs">منتهي</span>}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">غير محدد</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {TABS.map(t => (
+              <TabPill key={t.id} active={tab === t.id} icon={t.icon} label={t.label} onClick={() => setTab(t.id)} />
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Grant Modal */}
-      {isGrantModalOpen && (
-        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">🎁 المنح السريع لـ {selectedStores.size} متجر</h3>
-              <button onClick={() => setIsGrantModalOpen(false)} className="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors">✕</button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto">
-              <div className="space-y-5">
-                {/* Type */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">نوع المنحة</label>
-                  <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button 
-                      onClick={() => setGrantType('discount')}
-                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${grantType === 'discount' ? 'bg-white shadow text-taki-green' : 'text-gray-500 hover:bg-gray-200'}`}
-                    >
-                      خصم نسبة %
-                    </button>
-                    <button 
-                      onClick={() => setGrantType('free')}
-                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${grantType === 'free' ? 'bg-white shadow text-taki-green' : 'text-gray-500 hover:bg-gray-200'}`}
-                    >
-                      اشتراك مجاني
-                    </button>
-                  </div>
-                </div>
-
-                {/* Value */}
-                {grantType === 'discount' && (
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">نسبة الخصم</label>
-                    <div className="relative">
-                      <input 
-                        type="number" min="1" max="100" 
-                        value={grantDiscount} onChange={(e) => setGrantDiscount(Number(e.target.value))}
-                        className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-taki-green"
-                      />
-                      <span className="absolute left-3 top-2 text-gray-500">%</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Duration */}
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">المدة (سريان المنحة)</label>
-                  <select 
-                    value={grantDuration} 
-                    onChange={(e) => setGrantDuration(e.target.value as any)}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-taki-green bg-white"
-                  >
-                    <option value="week">أسبوع واحد</option>
-                    <option value="month">شهر واحد</option>
-                    <option value="3months">3 أشهر</option>
-                    <option value="custom">مخصص (أيام)</option>
-                  </select>
-                </div>
-
-                {grantDuration === 'custom' && (
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">عدد الأيام</label>
-                    <input 
-                      type="number" min="1" 
-                      value={customDays} onChange={(e) => setCustomDays(Number(e.target.value))}
-                      className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-taki-green"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3">
-              <button 
-                onClick={handleApplyGrant}
-                className="flex-1 bg-taki-green text-white font-bold py-2.5 rounded-lg hover:bg-green-600 transition-colors shadow-sm"
-              >
-                تطبيق فوري
-              </button>
-              <button 
-                onClick={() => setIsGrantModalOpen(false)}
-                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 font-bold rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-        </>
-      )}
-
-      {/* Banner Management View */}
-      {activeTab === 'banners' && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-800">🖼️ إدارة البانرات النشطة</h2>
-            <button 
-              onClick={() => setIsBannerModalOpen(true)}
-              className="px-6 py-2 bg-taki-green text-white font-bold rounded-lg hover:bg-green-600 transition-all shadow-md"
-            >
-              ➕ إضافة بانر جديد
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {banners.length === 0 ? (
-              <div className="col-span-full p-12 text-center text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
-                لا توجد بانرات حالياً. أضف أول بانر لظهوره في الصفحة الرئيسية.
-              </div>
-            ) : (
-              banners.map((banner) => (
-                <div key={banner.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 group">
-                  <div className="relative h-40">
-                    <img src={banner.image_url} alt="" className="w-full h-full object-cover" />
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      <span className={`px-2 py-1 rounded-md text-[10px] font-bold text-white ${banner.is_active ? 'bg-green-500' : 'bg-red-500'}`}>
-                        {banner.is_active ? 'نشط' : 'متوقف'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-bold text-gray-800 truncate">{banner.title_ar || 'بدون عنوان'}</h3>
-                    <p className="text-xs text-gray-500 mt-1">{banner.position}</p>
-                    <div className="flex gap-2 mt-4">
-                      <button 
-                        onClick={async () => {
-                          await supabase.from('banners').update({ is_active: !banner.is_active }).eq('id', banner.id);
-                          fetchBanners();
-                        }}
-                        className="flex-1 py-2 text-xs font-bold rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-all"
-                      >
-                        {banner.is_active ? 'إيقاف' : 'تفعيل'}
-                      </button>
-                      <button 
-                        onClick={async () => {
-                          if (confirm('هل أنت متأكد من حذف هذا البانر؟')) {
-                            await supabase.from('banners').delete().eq('id', banner.id);
-                            fetchBanners();
-                          }
-                        }}
-                        className="flex-1 py-2 text-xs font-bold rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all"
-                      >
-                        حذف
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Banner Modal */}
-      {isBannerModalOpen && (
-        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">➕ إضافة بانر إعلاني جديد</h3>
-              <button onClick={() => setIsBannerModalOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-            <div className="p-6 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">العنوان (عربي)</label>
-                  <input className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.title_ar} onChange={e => setNewBanner({...newBanner, title_ar: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">العنوان (En)</label>
-                  <input className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.title_en} onChange={e => setNewBanner({...newBanner, title_en: e.target.value})} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">رابط الصورة (URL)</label>
-                <input className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.image_url} onChange={e => setNewBanner({...newBanner, image_url: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">ID العرض (اختياري)</label>
-                  <input className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.deal_id} onChange={e => setNewBanner({...newBanner, deal_id: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">ID المتجر (اختياري)</label>
-                  <input className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.store_id} onChange={e => setNewBanner({...newBanner, store_id: e.target.value})} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">المكان</label>
-                <select className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newBanner.position} onChange={e => setNewBanner({...newBanner, position: e.target.value})}>
-                  <option value="home_top">أعلى الصفحة الرئيسية</option>
-                  <option value="category_top">أعلى التصنيفات</option>
-                </select>
-              </div>
-            </div>
-            <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3">
-              <button 
-                onClick={async () => {
-                  if (!newBanner.image_url) return alert('يرجى إضافة رابط الصورة');
-                  const { error } = await supabase.from('banners').insert([newBanner]);
-                  if (error) alert(error.message);
-                  else {
-                    setIsBannerModalOpen(false);
-                    setNewBanner({ title_ar: '', title_en: '', image_url: '', target_url: '', deal_id: '', store_id: '', position: 'home_top', is_active: true });
-                    fetchBanners();
-                  }
-                }}
-                className="flex-1 bg-taki-green text-white font-bold py-2.5 rounded-lg"
-              >
-                حفظ ونشر
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Body */}
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '20px 18px' }}>
+        {tab === 'overview' && <OverviewTab key={refreshKey} />}
+        {tab === 'stores'   && <StoresTab key={refreshKey} onChanged={refresh} />}
+        {tab === 'products' && <ProductsTab key={refreshKey} onChanged={refresh} customConfirm={customConfirm} customAlert={customAlert} />}
+        {tab === 'users'    && <UsersTab key={refreshKey} onChanged={refresh} customConfirm={customConfirm} customAlert={customAlert} />}
+        {tab === 'banners'  && <BannersTab key={refreshKey} onChanged={refresh} customAlert={customAlert} customConfirm={customConfirm} />}
+        {tab === 'live'     && <LiveTab />}
+        {tab === 'settings' && <SettingsTab customAlert={customAlert} />}
+      </div>
     </div>
-
   );
 };
+
+// ============================================================
+// OVERVIEW TAB
+// ============================================================
+const OverviewTab: React.FC = () => {
+  const [stats, setStats] = useState<OverviewStats | null>(null);
+  const [series, setSeries] = useState<TimeseriesPoint[]>([]);
+  const [cities, setCities] = useState<CityRow[]>([]);
+  const [topStores, setTopStores] = useState<TopStoreRow[]>([]);
+  const [days, setDays] = useState<7 | 30 | 90>(30);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    Promise.all([
+      getOverviewStats(),
+      getTimeseries(days),
+      getCityBreakdown(),
+      getTopStores(8),
+    ]).then(([s, ts, c, tops]) => {
+      if (!alive) return;
+      setStats(s); setSeries(ts); setCities(c); setTopStores(tops);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [days]);
+
+  const labels = useMemo(() =>
+    series.map(p => new Date(p.day).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })), [series]);
+
+  const t = stats?.totals;
+  const today = stats?.today;
+  const yesterday = stats?.yesterday;
+
+  // Delta vs yesterday
+  const userDelta = today && yesterday && yesterday.new_users > 0
+    ? ((today.new_users - yesterday.new_users) / yesterday.new_users) * 100 : 0;
+  const bookingDelta = today && yesterday && yesterday.new_bookings > 0
+    ? ((today.new_bookings - yesterday.new_bookings) / yesterday.new_bookings) * 100 : 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Hero "Live Pulse" strip */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+        borderRadius: 18, padding: 20, color: '#fff',
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16,
+        position: 'relative', overflow: 'hidden'
+      }}>
+        <div style={{ position: 'absolute', top: -40, insetInlineEnd: -40, width: 200, height: 200, background: 'radial-gradient(circle, rgba(16,185,129,0.3), transparent)', borderRadius: '50%' }} />
+        <PulseStat icon="🟢" label="نشطون الآن" value={t?.active_now ?? 0} hint="آخر 5 دقائق" pulse />
+        <PulseStat icon="📅" label="نشطون اليوم" value={t?.active_today ?? 0} hint={`من أصل ${t?.users ?? 0}`} />
+        <PulseStat icon="🛒" label="حجوزات اليوم" value={today?.new_bookings ?? 0} hint={`الإجمالي ${t?.bookings_total ?? 0}`} />
+        <PulseStat icon="✨" label="تسجيلات اليوم" value={today?.new_users ?? 0} hint={`+${today?.new_sellers ?? 0} تاجر`} />
+        <PulseStat icon="⏳" label="حجوزات معلقة" value={t?.bookings_pending ?? 0} hint="بانتظار التاجر" />
+      </div>
+
+      {/* Primary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <KPICard label="إجمالي المستخدمين" value={t?.users.toLocaleString('ar-SA') ?? 0} icon="👥" accent="#3b82f6"
+                 hint={`${t?.buyers ?? 0} مشتري + ${t?.sellers ?? 0} تاجر`}
+                 delta={userDelta} loading={loading} />
+        <KPICard label="حجوزات إجمالية" value={t?.bookings_total.toLocaleString('ar-SA') ?? 0} icon="🎟️" accent="#10b981"
+                 hint={`${t?.bookings_completed ?? 0} مكتمل`}
+                 delta={bookingDelta} loading={loading} />
+        <KPICard label="عروض نشطة" value={t?.deals_active.toLocaleString('ar-SA') ?? 0} icon="🛍️" accent="#8b5cf6"
+                 hint={`${t?.deals_total ?? 0} إجمالي`} loading={loading} />
+        <KPICard label="مشاهدات إجمالية" value={(t?.total_views ?? 0).toLocaleString('ar-SA')} icon="👁️" accent="#06b6d4"
+                 hint={`${t?.total_clicks ?? 0} نقرة`} loading={loading} />
+        <KPICard label="اشتراكات نشطة" value={t?.subs_active ?? 0} icon="⭐" accent="#f59e0b"
+                 hint={`${t?.subs_premium ?? 0} ممتاز • ${t?.subs_expired ?? 0} منتهي`} loading={loading} />
+        <KPICard label="متوسط التقييم" value={t?.avg_rating || '—'} icon="🌟" accent="#ec4899"
+                 hint={`${t?.ratings_count ?? 0} تقييم`} loading={loading} />
+      </div>
+
+      {/* Time-series chart */}
+      <SectionCard
+        title="نمو المنصة على مدار الزمن"
+        subtitle="تسجيلات • عروض • حجوزات • مستخدمون نشطون"
+        action={
+          <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--gray-50, #f1f5f9)', borderRadius: 10 }}>
+            {([7, 30, 90] as const).map(d => (
+              <button key={d} onClick={() => setDays(d)} style={{
+                padding: '4px 10px', borderRadius: 8, border: 'none',
+                background: days === d ? '#fff' : 'transparent',
+                fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                color: days === d ? 'var(--text-primary)' : 'var(--text-secondary)'
+              }}>{d} يوم</button>
+            ))}
+          </div>
+        }
+      >
+        {labels.length > 0 ? (
+          <AreaChart
+            labels={labels}
+            series={[
+              { label: 'مستخدمون نشطون', data: series.map(s => s.active_users), color: '#10b981' },
+              { label: 'حجوزات',          data: series.map(s => s.new_bookings), color: '#3b82f6' },
+              { label: 'تسجيلات',         data: series.map(s => s.new_users),    color: '#8b5cf6' },
+              { label: 'عروض جديدة',      data: series.map(s => s.new_deals),    color: '#f59e0b' },
+            ]}
+            height={260}
+          />
+        ) : (
+          <EmptyState icon="📈" title="لا توجد بيانات للفترة المحددة" />
+        )}
+      </SectionCard>
+
+      {/* Two-column: Donut + Top stores */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+        <SectionCard title="توزيع المستخدمين" subtitle="حسب النوع">
+          {t && (
+            <Donut
+              centerLabel="مستخدم"
+              centerValue={t.users}
+              segments={[
+                { label: 'مشترون', value: t.buyers,  color: '#3b82f6' },
+                { label: 'تجار',    value: t.sellers, color: '#10b981' },
+                { label: 'موقوف',  value: t.suspended, color: '#ef4444' },
+              ]}
+            />
+          )}
+        </SectionCard>
+        <SectionCard title="حالة الحجوزات">
+          {t && (
+            <Donut
+              centerLabel="حجز"
+              centerValue={t.bookings_total}
+              segments={[
+                { label: 'مكتمل', value: t.bookings_completed, color: '#10b981' },
+                { label: 'معلق',  value: t.bookings_pending,   color: '#f59e0b' },
+                { label: 'أخرى',  value: Math.max(0, t.bookings_total - t.bookings_completed - t.bookings_pending), color: '#94a3b8' },
+              ]}
+            />
+          )}
+        </SectionCard>
+        <SectionCard title="الاشتراكات" subtitle="الباقات الحالية">
+          {t && (
+            <Donut
+              centerLabel="تاجر"
+              centerValue={t.sellers}
+              segments={[
+                { label: 'ممتاز',  value: t.subs_premium, color: '#f59e0b' },
+                { label: 'نشط',    value: Math.max(0, t.subs_active - t.subs_premium), color: '#10b981' },
+                { label: 'منتهي',  value: t.subs_expired, color: '#ef4444' },
+              ]}
+            />
+          )}
+        </SectionCard>
+      </div>
+
+      {/* Top stores + Cities */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+        <SectionCard title="🏆 أفضل المتاجر أداءً" subtitle="مرتبة حسب المشاهدات">
+          {topStores.length === 0 ? <EmptyState icon="🏪" title="لا توجد بيانات" /> : (
+            <BarList
+              color="#10b981"
+              rows={topStores.map(s => ({
+                label: s.shop || '—',
+                value: s.total_views,
+                sub: `${s.deal_count} عرض • ${s.total_bookings} حجز • ${s.avg_rating || 0}⭐`
+              }))}
+              formatValue={n => `${n.toLocaleString('ar-SA')} 👁️`}
+            />
+          )}
+        </SectionCard>
+        <SectionCard title="🗺️ التوزيع الجغرافي" subtitle="المستخدمون حسب المدينة">
+          {cities.length === 0 ? <EmptyState icon="🌍" title="لا توجد بيانات" /> : (
+            <BarList
+              color="#3b82f6"
+              rows={cities.slice(0, 8).map(c => ({
+                label: c.city,
+                value: c.users,
+                sub: `${c.sellers} تاجر • ${c.buyers} مشتري`
+              }))}
+            />
+          )}
+        </SectionCard>
+      </div>
+    </div>
+  );
+};
+
+const PulseStat: React.FC<{ icon: string; label: string; value: number | string; hint?: string; pulse?: boolean }> = ({ icon, label, value, hint, pulse }) => (
+  <div style={{ position: 'relative' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: 0.85, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+      <span style={{ fontSize: 14 }}>{icon}</span>
+      {label}
+      {pulse && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', animation: 'taki-pulse2 1.6s ease-in-out infinite' }} />}
+    </div>
+    <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1 }}>{typeof value === 'number' ? value.toLocaleString('ar-SA') : value}</div>
+    {hint && <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4, fontWeight: 600 }}>{hint}</div>}
+    <style>{`@keyframes taki-pulse2 { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(1.6); } }`}</style>
+  </div>
+);
+
+// ============================================================
+// STORES TAB
+// ============================================================
+const StoresTab: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
+  const [stores, setStores] = useState<AdminStoreRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'expired' | 'suspended'>('all');
+  const [selected, setSelected] = useState<AdminStoreRow | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [grantOpen, setGrantOpen] = useState(false);
+  const { customAlert } = useApp();
+
+  const reload = () => {
+    setLoading(true);
+    getAllStores().then(d => { setStores(d); setLoading(false); });
+  };
+  useEffect(reload, []);
+
+  const filtered = useMemo(() => {
+    return stores.filter(s => {
+      if (filter === 'suspended' && s.is_active !== false) return false;
+      if (filter === 'active') {
+        const exp = s.store_profiles?.subscription_expires_at;
+        if (!exp || new Date(exp) < new Date()) return false;
+      }
+      if (filter === 'expired') {
+        const exp = s.store_profiles?.subscription_expires_at;
+        if (exp && new Date(exp) >= new Date()) return false;
+      }
+      const q = search.toLowerCase().trim();
+      if (!q) return true;
+      return (s.shop || '').toLowerCase().includes(q)
+          || (s.name || '').toLowerCase().includes(q)
+          || (s.address || '').toLowerCase().includes(q)
+          || (s.phone || '').includes(q);
+    });
+  }, [stores, search, filter]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Toolbar */}
+      <div style={{
+        background: 'var(--card-bg, #fff)', borderRadius: 14, padding: 12,
+        border: '1px solid var(--border-color, #f1f5f9)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center'
+      }}>
+        <input placeholder="🔍 ابحث باسم المتجر، الجوال، أو المدينة..." value={search} onChange={e => setSearch(e.target.value)}
+               style={{ flex: 1, minWidth: 220, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color, #e2e8f0)', fontSize: 13, fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--gray-50, #f1f5f9)', borderRadius: 10 }}>
+          {([['all','الكل'],['active','نشط'],['expired','منتهي'],['suspended','معلّق']] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setFilter(v as any)} style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: filter === v ? '#fff' : 'transparent',
+              fontSize: 12, fontWeight: 800, cursor: 'pointer',
+              color: filter === v ? 'var(--text-primary)' : 'var(--text-secondary)'
+            }}>{l}</button>
+          ))}
+        </div>
+        <button onClick={() => setGrantOpen(true)} disabled={picked.size === 0} style={{
+          padding: '9px 16px', borderRadius: 10, background: picked.size === 0 ? '#94a3b8' : '#10b981',
+          color: '#fff', border: 'none', fontWeight: 800, fontSize: 12,
+          cursor: picked.size === 0 ? 'not-allowed' : 'pointer', opacity: picked.size === 0 ? 0.6 : 1
+        }}>🎁 منح ({picked.size})</button>
+      </div>
+
+      {/* Table */}
+      <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color, #f1f5f9)' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>جاري التحميل...</div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="🏪" title="لا توجد متاجر مطابقة" />
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50, #f8fafc)', textAlign: 'right' }}>
+                <th style={tableHead}><input type="checkbox" checked={picked.size === filtered.length && filtered.length > 0}
+                       onChange={e => setPicked(e.target.checked ? new Set(filtered.map(s => s.id)) : new Set())} /></th>
+                <th style={tableHead}>المتجر</th>
+                <th style={tableHead}>المدينة</th>
+                <th style={tableHead}>الباقة</th>
+                <th style={tableHead}>الانتهاء</th>
+                <th style={tableHead}>الحالة</th>
+                <th style={tableHead}>آخر دخول</th>
+                <th style={tableHead}>إجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(s => {
+                const sp = s.store_profiles;
+                const exp = sp?.subscription_expires_at ? new Date(sp.subscription_expires_at) : null;
+                const isExpired = exp ? exp < new Date() : true;
+                return (
+                  <tr key={s.id} style={{ borderTop: '1px solid var(--border-color, #f1f5f9)' }}>
+                    <td style={tableCell}>
+                      <input type="checkbox" checked={picked.has(s.id)} onChange={() => {
+                        const next = new Set(picked);
+                        next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                        setPicked(next);
+                      }} />
+                    </td>
+                    <td style={tableCell}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {s.avatar_url ? (
+                          <img src={s.avatar_url} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#10b98115', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🏪</div>
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 800 }}>{s.shop || s.name}</div>
+                          <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }} dir="ltr">{s.phone}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={tableCell}>{s.address || '—'}</td>
+                    <td style={tableCell}>
+                      <PlanBadge plan={sp?.subscription_plan} />
+                      {sp?.discount_percentage ? <span style={{ marginInlineStart: 4, fontSize: 10, color: '#10b981', fontWeight: 800 }}>{sp.discount_percentage}%</span> : null}
+                    </td>
+                    <td style={tableCell}>
+                      {exp ? (
+                        <span style={{ color: isExpired ? '#ef4444' : 'var(--text-primary)', fontWeight: 700 }}>
+                          {exp.toLocaleDateString('ar-SA')}
+                        </span>
+                      ) : <span style={{ color: '#94a3b8' }}>—</span>}
+                    </td>
+                    <td style={tableCell}>
+                      {s.is_active === false ? (
+                        <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: '#fee2e2', color: '#991b1b' }}>معلّق</span>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: '#dcfce7', color: '#166534' }}>نشط</span>
+                      )}
+                    </td>
+                    <td style={tableCell}>{s.last_seen_at ? new Date(s.last_seen_at).toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+                    <td style={tableCell}>
+                      <button onClick={() => setSelected(s)} style={{
+                        padding: '6px 12px', borderRadius: 8, background: '#10b981', color: '#fff',
+                        border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer'
+                      }}>إدارة</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {selected && (
+        <StoreActionsModal store={selected} onClose={() => setSelected(null)} onChanged={() => { reload(); onChanged(); }} />
+      )}
+      {grantOpen && (
+        <GrantModal storeIds={Array.from(picked)} onClose={() => setGrantOpen(false)}
+                    onDone={() => { setGrantOpen(false); setPicked(new Set()); reload(); onChanged(); customAlert('تم تطبيق المنحة'); }} />
+      )}
+    </div>
+  );
+};
+
+const PlanBadge: React.FC<{ plan: string | null | undefined }> = ({ plan }) => {
+  const map: Record<string, { color: string; bg: string; label: string }> = {
+    premium: { color: '#854d0e', bg: '#fef3c7', label: '⭐ ممتاز' },
+    trial:   { color: '#1e40af', bg: '#dbeafe', label: 'تجريبي' },
+    basic:   { color: '#166534', bg: '#dcfce7', label: 'أساسي' },
+    free:    { color: '#475569', bg: '#e2e8f0', label: 'مجاني' },
+  };
+  const m = map[plan || 'free'] || map.free;
+  return <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: m.bg, color: m.color }}>{m.label}</span>;
+};
+
+// ============================================================
+// GRANT MODAL (bulk subscription/discount grants)
+// ============================================================
+const GrantModal: React.FC<{ storeIds: string[]; onClose: () => void; onDone: () => void }> = ({ storeIds, onClose, onDone }) => {
+  const [type, setType] = useState<'discount' | 'free'>('free');
+  const [discount, setDiscount] = useState(50);
+  const [duration, setDuration] = useState<'week' | 'month' | '3months' | 'year' | 'custom'>('month');
+  const [customDays, setCustomDays] = useState(30);
+
+  const apply = async () => {
+    const days = duration === 'week' ? 7 : duration === 'month' ? 30 : duration === '3months' ? 90 : duration === 'year' ? 365 : customDays;
+    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+    const updates = storeIds.map(id => supabase.from('store_profiles').upsert({
+      store_id: id,
+      subscription_plan: type === 'free' ? 'premium' : 'basic',
+      discount_percentage: type === 'discount' ? discount : 0,
+      subscription_expires_at: expiresAt,
+      updated_at: new Date().toISOString()
+    }));
+    await Promise.all(updates);
+    await logActivity('admin_grant_subscription', {
+      severity: 'success',
+      metadata: { count: storeIds.length, type, duration, days, discount: type === 'discount' ? discount : 0 }
+    });
+    onDone();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} dir="rtl" style={{ background: 'var(--card-bg, #fff)', borderRadius: 16, padding: 22, width: '100%', maxWidth: 460 }}>
+        <h3 style={{ margin: 0, marginBottom: 16, fontSize: 16, fontWeight: 900 }}>🎁 منح اشتراك / خصم لـ {storeIds.length} متجر</h3>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div>
+            <div style={fieldLabel2}>نوع المنحة</div>
+            <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--gray-50, #f1f5f9)', borderRadius: 10 }}>
+              <button onClick={() => setType('free')}     style={pill(type === 'free')}>🎁 اشتراك ممتاز مجاني</button>
+              <button onClick={() => setType('discount')} style={pill(type === 'discount')}>📉 خصم نسبة</button>
+            </div>
+          </div>
+          {type === 'discount' && (
+            <div>
+              <div style={fieldLabel2}>نسبة الخصم: {discount}%</div>
+              <input type="range" min={5} max={100} step={5} value={discount} onChange={e => setDiscount(+e.target.value)} style={{ width: '100%' }} />
+            </div>
+          )}
+          <div>
+            <div style={fieldLabel2}>المدة</div>
+            <select value={duration} onChange={e => setDuration(e.target.value as any)} style={fieldInput2}>
+              <option value="week">أسبوع</option>
+              <option value="month">شهر</option>
+              <option value="3months">3 أشهر</option>
+              <option value="year">سنة كاملة</option>
+              <option value="custom">مخصص (أيام)</option>
+            </select>
+          </div>
+          {duration === 'custom' && (
+            <div>
+              <div style={fieldLabel2}>عدد الأيام</div>
+              <input type="number" min={1} value={customDays} onChange={e => setCustomDays(+e.target.value)} style={fieldInput2} />
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+          <button onClick={apply} style={{ flex: 1, padding: 11, borderRadius: 10, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}>تطبيق فوري</button>
+          <button onClick={onClose} style={{ padding: '11px 18px', borderRadius: 10, background: 'var(--gray-50, #f1f5f9)', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// PRODUCTS TAB (cross-store)
+// ============================================================
+const ProductsTab: React.FC<{ onChanged: () => void; customConfirm: (m: string) => Promise<boolean>; customAlert: (m: string) => Promise<void> }> = ({ onChanged, customConfirm, customAlert }) => {
+  const [deals, setDeals] = useState<AdminDealRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'expired' | 'deleted'>('active');
+
+  const reload = () => {
+    setLoading(true);
+    getAllDeals().then(d => { setDeals(d); setLoading(false); });
+  };
+  useEffect(reload, []);
+
+  const filtered = deals.filter(d => {
+    if (statusFilter !== 'all' && d.status !== statusFilter) return false;
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return d.item_name?.toLowerCase().includes(q) || d.shop_name?.toLowerCase().includes(q) || d.category?.toLowerCase().includes(q);
+  });
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!await customConfirm(`حذف "${name}"؟`)) return;
+    const { error } = await adminDeleteDeal(id);
+    if (error) { customAlert('فشل: ' + error.message); return; }
+    customAlert('تم الحذف');
+    reload(); onChanged();
+  };
+
+  const togglePause = async (d: AdminDealRow) => {
+    const newStatus = d.status === 'paused' ? 'active' : 'paused';
+    const { error } = await supabase.from('deals').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', d.id);
+    if (error) { customAlert('فشل: ' + error.message); return; }
+    reload(); onChanged();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, padding: 12, border: '1px solid var(--border-color, #f1f5f9)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input placeholder="🔍 ابحث في كل العروض..." value={search} onChange={e => setSearch(e.target.value)}
+               style={{ flex: 1, minWidth: 220, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color, #e2e8f0)', fontSize: 13, fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--gray-50, #f1f5f9)', borderRadius: 10 }}>
+          {([['all','الكل'],['active','نشط'],['paused','موقوف'],['expired','منتهي'],['deleted','محذوف']] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setStatusFilter(v as any)} style={pill(statusFilter === v)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color, #f1f5f9)' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>جاري التحميل...</div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="📦" title="لا توجد عروض" />
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50, #f8fafc)', textAlign: 'right' }}>
+                <th style={tableHead}>العرض</th>
+                <th style={tableHead}>المتجر</th>
+                <th style={tableHead}>السعر</th>
+                <th style={tableHead}>أداء</th>
+                <th style={tableHead}>الحالة</th>
+                <th style={tableHead}>إجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(d => (
+                <tr key={d.id} style={{ borderTop: '1px solid var(--border-color, #f1f5f9)' }}>
+                  <td style={tableCell}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {d.images?.[0] && <img src={d.images[0]} style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} />}
+                      <div>
+                        <div style={{ fontWeight: 800 }}>{d.item_name}</div>
+                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>{d.category}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={tableCell}>{d.shop_name}</td>
+                  <td style={tableCell}>
+                    <div style={{ fontWeight: 800 }}>{d.discounted_price} ر.س</div>
+                    <div style={{ fontSize: 10, textDecoration: 'line-through', color: '#94a3b8' }}>{d.original_price}</div>
+                  </td>
+                  <td style={tableCell}>
+                    <div style={{ fontSize: 11 }}>👁️ {d.views ?? 0}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>🖱️ {d.clicks ?? 0}</div>
+                  </td>
+                  <td style={tableCell}>
+                    <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6,
+                                   background: d.status === 'active' ? '#dcfce7' : d.status === 'paused' ? '#fef3c7' : d.status === 'expired' ? '#fee2e2' : '#e2e8f0',
+                                   color: d.status === 'active' ? '#166534' : d.status === 'paused' ? '#854d0e' : d.status === 'expired' ? '#991b1b' : '#475569' }}>
+                      {d.status === 'active' ? 'نشط' : d.status === 'paused' ? 'موقوف' : d.status === 'expired' ? 'منتهي' : 'محذوف'}
+                    </span>
+                  </td>
+                  <td style={tableCell}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {d.status !== 'deleted' && (
+                        <button onClick={() => togglePause(d)} style={{ padding: '5px 9px', borderRadius: 7, background: 'var(--gray-50, #f1f5f9)', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                          {d.status === 'paused' ? '▶' : '⏸'}
+                        </button>
+                      )}
+                      <button onClick={() => handleDelete(d.id, d.item_name)} style={{ padding: '5px 9px', borderRadius: 7, background: '#fee2e2', color: '#991b1b', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// USERS TAB
+// ============================================================
+const UsersTab: React.FC<{ onChanged: () => void; customConfirm: (m: string) => Promise<boolean>; customAlert: (m: string) => Promise<void> }> = ({ onChanged, customConfirm, customAlert }) => {
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'buyer' | 'seller' | 'admin'>('all');
+
+  const reload = () => {
+    setLoading(true);
+    getAllUsers(typeFilter === 'all' ? undefined : typeFilter).then(d => { setUsers(d); setLoading(false); });
+  };
+  useEffect(reload, [typeFilter]);
+
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return u.name?.toLowerCase().includes(q) || u.phone?.includes(q) || u.email?.toLowerCase().includes(q) || u.address?.toLowerCase().includes(q);
+  });
+
+  const toggle = async (u: AdminUserRow) => {
+    if (u.is_active === false) {
+      const { error } = await unsuspendUser(u.id);
+      if (error) { customAlert('فشل: ' + error.message); return; }
+    } else {
+      if (!await customConfirm(`تعليق ${u.name}؟`)) return;
+      const { error } = await suspendUser(u.id, 'admin action');
+      if (error) { customAlert('فشل: ' + error.message); return; }
+    }
+    reload(); onChanged();
+  };
+
+  const isOnline = (u: AdminUserRow) => u.last_seen_at && (Date.now() - new Date(u.last_seen_at).getTime() < 5 * 60_000);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, padding: 12, border: '1px solid var(--border-color, #f1f5f9)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input placeholder="🔍 ابحث بالاسم، الجوال، البريد، أو المدينة..." value={search} onChange={e => setSearch(e.target.value)}
+               style={{ flex: 1, minWidth: 240, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color, #e2e8f0)', fontSize: 13, fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--gray-50, #f1f5f9)', borderRadius: 10 }}>
+          {([['all','الكل'],['buyer','مشتري'],['seller','تاجر'],['admin','مشرف']] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setTypeFilter(v as any)} style={pill(typeFilter === v)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color, #f1f5f9)' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>جاري التحميل...</div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="👥" title="لا يوجد مستخدمون" />
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-50, #f8fafc)', textAlign: 'right' }}>
+                <th style={tableHead}>المستخدم</th>
+                <th style={tableHead}>النوع</th>
+                <th style={tableHead}>المدينة</th>
+                <th style={tableHead}>حجوزات</th>
+                <th style={tableHead}>وفّر</th>
+                <th style={tableHead}>آخر نشاط</th>
+                <th style={tableHead}>الحالة</th>
+                <th style={tableHead}>إجراء</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(u => (
+                <tr key={u.id} style={{ borderTop: '1px solid var(--border-color, #f1f5f9)' }}>
+                  <td style={tableCell}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: 900, fontSize: 12
+                        }}>{(u.name || '?').charAt(0)}</div>
+                        {isOnline(u) && (
+                          <span style={{ position: 'absolute', bottom: -1, insetInlineEnd: -1, width: 10, height: 10, borderRadius: '50%', background: '#10b981', border: '2px solid #fff' }} />
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800 }}>{u.name}</div>
+                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }} dir="ltr">{u.phone || u.email || '—'}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={tableCell}>
+                    <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6,
+                                   background: u.user_type === 'admin' ? '#fee2e2' : u.user_type === 'seller' ? '#dcfce7' : '#dbeafe',
+                                   color: u.user_type === 'admin' ? '#991b1b' : u.user_type === 'seller' ? '#166534' : '#1e40af' }}>
+                      {u.user_type === 'admin' ? 'مشرف' : u.user_type === 'seller' ? 'تاجر' : 'مشتري'}
+                    </span>
+                  </td>
+                  <td style={tableCell}>{u.address || '—'}</td>
+                  <td style={tableCell}>{u.bookings_count ?? 0}</td>
+                  <td style={tableCell}>{(u.savings ?? 0).toLocaleString('ar-SA')} ر.س</td>
+                  <td style={tableCell}>{u.last_seen_at ? new Date(u.last_seen_at).toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+                  <td style={tableCell}>
+                    {u.is_active === false ? (
+                      <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: '#fee2e2', color: '#991b1b' }}>معلّق</span>
+                    ) : (
+                      <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: '#dcfce7', color: '#166534' }}>نشط</span>
+                    )}
+                  </td>
+                  <td style={tableCell}>
+                    {u.user_type !== 'admin' && (
+                      <button onClick={() => toggle(u)} style={{
+                        padding: '5px 10px', borderRadius: 7,
+                        background: u.is_active === false ? '#10b981' : '#fef3c7',
+                        color: u.is_active === false ? '#fff' : '#854d0e',
+                        border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer'
+                      }}>{u.is_active === false ? 'إعادة تفعيل' : 'تعليق'}</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// BANNERS TAB
+// ============================================================
+const BannersTab: React.FC<{ onChanged: () => void; customAlert: (m: string) => Promise<void>; customConfirm: (m: string) => Promise<boolean> }> = ({ onChanged, customAlert, customConfirm }) => {
+  const [banners, setBanners] = useState<AdminBanner[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<AdminBanner | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const reload = () => {
+    setLoading(true);
+    getAllBanners().then(d => { setBanners(d); setLoading(false); });
+  };
+  useEffect(reload, []);
+
+  const remove = async (id: string) => {
+    if (!await customConfirm('حذف هذا البانر؟')) return;
+    const { error } = await supabase.from('banners').delete().eq('id', id);
+    if (error) { customAlert('فشل: ' + error.message); return; }
+    reload(); onChanged();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 900 }}>🖼️ إدارة البانرات الإعلانية</h2>
+        <button onClick={() => setCreating(true)} style={{ padding: '9px 16px', borderRadius: 10, background: '#10b981', color: '#fff', border: 'none', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+          ➕ بانر جديد
+        </button>
+      </div>
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>جاري التحميل...</div>
+      ) : banners.length === 0 ? (
+        <EmptyState icon="🖼️" title="لا توجد بانرات" subtitle="أضف أول بانر ليظهر في الصفحة الرئيسية" />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+          {banners.map(b => (
+            <div key={b.id} style={{ background: 'var(--card-bg, #fff)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color, #f1f5f9)' }}>
+              <div style={{ position: 'relative', height: 130, background: b.background_color || '#f1f5f9' }}>
+                {b.image_url && <img src={b.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                <div style={{ position: 'absolute', top: 8, insetInlineStart: 8, display: 'flex', gap: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: b.is_active ? '#10b981' : '#94a3b8', color: '#fff' }}>
+                    {b.is_active ? '🟢 نشط' : 'موقوف'}
+                  </span>
+                  {b.discount_percentage ? (
+                    <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 6, background: '#ef4444', color: '#fff' }}>{b.discount_percentage}%</span>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ padding: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 900 }}>{b.title_ar || '—'}</div>
+                {b.subtitle_ar && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, fontWeight: 600 }}>{b.subtitle_ar}</div>}
+                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, fontWeight: 700 }}>
+                  <span>👁️ {b.view_count ?? 0}</span>
+                  <span>🖱️ {b.click_count ?? 0}</span>
+                  <span>📍 {b.position}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+                  <button onClick={() => setEditing(b)} style={{ flex: 1, padding: 7, borderRadius: 8, background: 'var(--gray-50, #f1f5f9)', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>✏️ تعديل</button>
+                  <button onClick={async () => {
+                    await supabase.from('banners').update({ is_active: !b.is_active }).eq('id', b.id);
+                    reload();
+                  }} style={{ flex: 1, padding: 7, borderRadius: 8, background: b.is_active ? '#fef3c7' : '#dcfce7', color: b.is_active ? '#854d0e' : '#166534', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                    {b.is_active ? '⏸ إيقاف' : '▶ تفعيل'}
+                  </button>
+                  <button onClick={() => remove(b.id)} style={{ padding: '7px 12px', borderRadius: 8, background: '#fee2e2', color: '#991b1b', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>🗑️</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {(creating || editing) && (
+        <BannerEditor banner={editing} onClose={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); reload(); onChanged(); }} />
+      )}
+    </div>
+  );
+};
+
+const BannerEditor: React.FC<{ banner: AdminBanner | null; onClose: () => void; onSaved: () => void }> = ({ banner, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    title_ar: banner?.title_ar || '',
+    title_en: banner?.title_en || '',
+    subtitle_ar: banner?.subtitle_ar || '',
+    subtitle_en: banner?.subtitle_en || '',
+    image_url: banner?.image_url || '',
+    target_url: banner?.target_url || '',
+    deal_id: banner?.deal_id || '',
+    store_id: banner?.store_id || '',
+    position: banner?.position || 'home_top',
+    is_active: banner?.is_active ?? true,
+    discount_percentage: banner?.discount_percentage ?? null as number | null,
+    amount: banner?.amount ?? null as number | null,
+    target_city: banner?.target_city || '',
+    starts_at: banner?.starts_at ? banner.starts_at.slice(0, 10) : '',
+    expires_at: banner?.expires_at ? banner.expires_at.slice(0, 10) : '',
+    priority: banner?.priority ?? 0,
+    cta_label_ar: banner?.cta_label_ar || '',
+    cta_label_en: banner?.cta_label_en || '',
+    background_color: banner?.background_color || '',
+  });
+
+  const save = async () => {
+    if (!form.image_url) { alert('رابط الصورة مطلوب'); return; }
+    const payload = {
+      ...form,
+      starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
+      expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+      deal_id: form.deal_id || null,
+      store_id: form.store_id || null,
+      target_city: form.target_city || null,
+      cta_label_ar: form.cta_label_ar || null,
+      cta_label_en: form.cta_label_en || null,
+      background_color: form.background_color || null,
+      target_url: form.target_url || null,
+    };
+    const { error } = banner
+      ? await supabase.from('banners').update(payload).eq('id', banner.id)
+      : await supabase.from('banners').insert([payload]);
+    if (error) { alert(error.message); return; }
+    onSaved();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} dir="rtl" style={{ background: 'var(--card-bg, #fff)', borderRadius: 16, padding: 22, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: 0, marginBottom: 16, fontSize: 16, fontWeight: 900 }}>{banner ? '✏️ تعديل البانر' : '➕ بانر جديد'}</h3>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FieldX label="العنوان (عربي)" value={form.title_ar} onChange={v => setForm({ ...form, title_ar: v })} />
+            <FieldX label="العنوان (English)" value={form.title_en} onChange={v => setForm({ ...form, title_en: v })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FieldX label="نص فرعي (عربي)" value={form.subtitle_ar} onChange={v => setForm({ ...form, subtitle_ar: v })} />
+            <FieldX label="نص فرعي (English)" value={form.subtitle_en} onChange={v => setForm({ ...form, subtitle_en: v })} />
+          </div>
+          <FieldX label="🖼️ رابط الصورة *" value={form.image_url} onChange={v => setForm({ ...form, image_url: v })} placeholder="https://..." />
+          <FieldX label="🔗 رابط التوجيه (اختياري)" value={form.target_url} onChange={v => setForm({ ...form, target_url: v })} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <FieldX type="number" label="نسبة الخصم %" value={form.discount_percentage?.toString() || ''} onChange={v => setForm({ ...form, discount_percentage: v ? +v : null })} />
+            <FieldX type="number" label="المبلغ (ر.س)" value={form.amount?.toString() || ''} onChange={v => setForm({ ...form, amount: v ? +v : null })} />
+            <FieldX type="number" label="الأولوية" value={String(form.priority)} onChange={v => setForm({ ...form, priority: +v })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FieldX type="date" label="📅 تاريخ البدء" value={form.starts_at} onChange={v => setForm({ ...form, starts_at: v })} />
+            <FieldX type="date" label="📅 تاريخ الانتهاء" value={form.expires_at} onChange={v => setForm({ ...form, expires_at: v })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FieldX label="مدينة مستهدفة (اختياري)" value={form.target_city} onChange={v => setForm({ ...form, target_city: v })} />
+            <div>
+              <label style={fieldLabel2}>📍 المكان</label>
+              <select value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} style={fieldInput2}>
+                <option value="home_top">أعلى الصفحة الرئيسية</option>
+                <option value="category_top">أعلى التصنيفات</option>
+                <option value="nearby">صفحة القريب</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FieldX label="نص زر الإجراء (عربي)" value={form.cta_label_ar} onChange={v => setForm({ ...form, cta_label_ar: v })} placeholder="تسوّق الآن" />
+            <FieldX label="ID العرض/المتجر (اختياري)" value={form.deal_id || form.store_id} onChange={v => setForm({ ...form, deal_id: v })} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+            <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} />
+            تفعيل البانر فوراً
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+          <button onClick={save} style={{ flex: 1, padding: 11, borderRadius: 10, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}>💾 {banner ? 'حفظ التعديلات' : 'نشر البانر'}</button>
+          <button onClick={onClose} style={{ padding: '11px 18px', borderRadius: 10, background: 'var(--gray-50, #f1f5f9)', border: 'none', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// LIVE TAB
+// ============================================================
+const LiveTab: React.FC = () => (
+  <SectionCard title="⚡ النشاط الحي" subtitle="جميع الأحداث على المنصة تصل إليك فوراً">
+    <LiveActivityFeed limit={100} />
+  </SectionCard>
+);
+
+// ============================================================
+// SETTINGS TAB
+// ============================================================
+const SettingsTab: React.FC<{ customAlert: (m: string) => Promise<void> }> = ({ customAlert }) => {
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  useEffect(() => {
+    supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single()
+      .then(({ data }) => { if (data) setPaymentEnabled(data.value === 'true'); });
+  }, []);
+
+  const togglePayment = async () => {
+    const v = !paymentEnabled;
+    setPaymentEnabled(v);
+    await supabase.from('global_settings').upsert({ key: 'is_payment_gateway_enabled', value: String(v), updated_at: new Date().toISOString() });
+    await logActivity('admin_toggle_payment_gateway', { severity: 'warning', metadata: { enabled: v } });
+    customAlert(v ? 'تم تفعيل بوابة الدفع' : 'تم تعطيل بوابة الدفع');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionCard title="بوابة الدفع (SaaS)" subtitle={paymentEnabled ? 'مفعلة — التطبيق مدفوع' : 'معطلة ومخفية — التطبيق مجاني'}>
+        <button onClick={togglePayment} style={{
+          padding: '10px 20px', borderRadius: 10,
+          background: paymentEnabled ? '#fee2e2' : '#10b981',
+          color: paymentEnabled ? '#991b1b' : '#fff',
+          border: 'none', fontWeight: 900, fontSize: 13, cursor: 'pointer'
+        }}>{paymentEnabled ? '⛔ تعطيل البوابة' : '✅ تفعيل البوابة'}</button>
+      </SectionCard>
+      <SectionCard title="حول النظام" subtitle="معلومات تشغيلية">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8 }}>
+          <div>• قاعدة البيانات: Supabase (RLS مفعّل)</div>
+          <div>• المصادقة: Supabase Auth</div>
+          <div>• الإصدار: 7.2.0 — Admin Center v2 (migration v15)</div>
+          <div>• كل عملية إدارية يتم تسجيلها في activity_log للمراجعة</div>
+        </div>
+      </SectionCard>
+    </div>
+  );
+};
+
+// ============== shared inline styles ==============
+const tableHead: React.CSSProperties = { padding: '12px 14px', fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textAlign: 'right' };
+const tableCell: React.CSSProperties = { padding: '12px 14px', fontSize: 12, color: 'var(--text-primary)', verticalAlign: 'middle' };
+const fieldLabel2: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 };
+const fieldInput2: React.CSSProperties = { width: '100%', padding: 9, borderRadius: 8, border: '1px solid var(--border-color, #e2e8f0)', fontSize: 13, background: '#fff', fontFamily: 'inherit' };
+const pill = (active: boolean): React.CSSProperties => ({
+  padding: '6px 12px', borderRadius: 8, border: 'none',
+  background: active ? '#fff' : 'transparent',
+  fontSize: 12, fontWeight: 800, cursor: 'pointer',
+  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+  boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
+});
+
+const FieldX: React.FC<{ label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }> = ({ label, value, onChange, type = 'text', placeholder }) => (
+  <div>
+    <label style={fieldLabel2}>{label}</label>
+    <input type={type} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} style={fieldInput2} />
+  </div>
+);
 
 export default AdminDashboard;
