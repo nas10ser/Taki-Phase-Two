@@ -1393,7 +1393,8 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {images.length < 4 && (
-                                    <div
+                                    <label
+                                        htmlFor="seller-image-upload"
                                         onDrop={handleDrop}
                                         onDragOver={handleDragOver}
                                         onDragEnter={handleDragOver}
@@ -1411,6 +1412,9 @@ const SellerDashboard: React.FC = () => {
                                             userSelect: 'none', overflow: 'hidden'
                                         }}
                                     >
+                                        {/* Native <label htmlFor> pattern — opens the OS file picker on any
+                                            browser without needing a programmatic .click(). The input itself
+                                            is visually hidden but stays in the DOM for keyboard/AT users. */}
                                         <input
                                             id="seller-image-upload"
                                             ref={fileInputRef}
@@ -1422,12 +1426,13 @@ const SellerDashboard: React.FC = () => {
                                             onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                                             aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
                                             style={{
-                                                position: 'absolute', inset: 0,
-                                                width: '100%', height: '100%',
-                                                opacity: 0,
-                                                cursor: uploadingImages ? 'default' : 'pointer',
-                                                fontSize: 0,
-                                                zIndex: 2
+                                                position: 'absolute',
+                                                width: 1, height: 1,
+                                                padding: 0, margin: -1,
+                                                overflow: 'hidden',
+                                                clip: 'rect(0,0,0,0)',
+                                                whiteSpace: 'nowrap',
+                                                border: 0
                                             }}
                                         />
                                         {uploadingImages ? (
@@ -1441,7 +1446,7 @@ const SellerDashboard: React.FC = () => {
                                                 </span>
                                             </div>
                                         )}
-                                    </div>
+                                    </label>
                                 )}
                             </div>
                         </div>
