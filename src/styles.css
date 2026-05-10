@@ -269,6 +269,13 @@ a {
 button {
   cursor: pointer;
   border: none;
+  /* Hard reset background. Without this, native browser styling on iOS
+     Safari + Android Chrome paints a default light/dark grey on buttons
+     that don't set their own background — most painfully when the system
+     is in dark mode and the page is light, the inactive admin tabs and
+     similar transparent buttons render as opaque grey pills. */
+  background: transparent;
+  color: inherit;
   font-family: inherit;
   transition: var(--transition-fast);
 }
@@ -1572,23 +1579,22 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   letter-spacing: 0.1px;
 }
 
-/* ===== DARK MODE - WHITE BACKGROUND FIX ===== */
+/* ===== DARK MODE color-scheme hint =====
+ * Keep `color-scheme` on inputs/textarea so the native UA paints the
+ * caret + autofill background dark. Excluding `button` deliberately —
+ * applying color-scheme: dark to buttons makes any button without an
+ * explicit background fall back to the UA's default dark-grey pill,
+ * which is what made admin tabs render as opaque grey on light pages
+ * when the system was in dark mode. */
 @media (prefers-color-scheme: dark) {
   :root:not(.light-mode) input,
-  :root:not(.light-mode) textarea,
-  :root:not(.light-mode) button,
-  :root:not(.light-mode) div,
-  :root:not(.light-mode) span {
-    /* تغيير الخلفيات البيضاء الشفافة إلى رمادية داكنة */
+  :root:not(.light-mode) textarea {
     color-scheme: dark;
   }
 }
 
 .dark-mode input,
-.dark-mode textarea,
-.dark-mode button,
-.dark-mode div,
-.dark-mode span {
+.dark-mode textarea {
   color-scheme: dark;
 }
 
