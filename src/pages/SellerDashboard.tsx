@@ -482,15 +482,24 @@ const SellerDashboard: React.FC = () => {
 
 
     React.useEffect(() => {
-        if (user?.shop && !shopName) setShopName(user.shop);
-        // Sync map position with remote profile if available
-        if (user?.lat && user?.lng && mapPos[0] === 24.7136 && mapPos[1] === 46.6753) {
-            setMapPos([user.lat, user.lng]);
+        if (!user) return;
+        // Use functional updates so we don't need shopName/mapPos/googleMapsLink
+        // in the dependency array — that combination caused an infinite render loop
+        // because setMapPos([lat, lng]) creates a new array reference each call.
+        if (user.shop) {
+            setShopName(prev => prev || user.shop || prev);
         }
-        if (user?.googleMapsLink && !googleMapsLink) {
-            setGoogleMapsLink(user.googleMapsLink);
+        if (user.lat && user.lng) {
+            setMapPos(prev =>
+                prev[0] === 24.7136 && prev[1] === 46.6753
+                    ? [user.lat as number, user.lng as number]
+                    : prev
+            );
         }
-    }, [user, shopName, mapPos]);
+        if (user.googleMapsLink) {
+            setGoogleMapsLink(prev => prev || user.googleMapsLink || prev);
+        }
+    }, [user]);
 
     const saveShopLocation = async () => {
         if (!user) return;
