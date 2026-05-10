@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -8,6 +8,8 @@ import { getLocation } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals } from '../utils/helpers';
+import BannerSlider from '../components/BannerSlider';
+import { bannerRepository, Banner } from '../repositories/bannerRepository';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -385,6 +387,12 @@ const DealDetails: React.FC = () => {
         }
     }, [id]);
 
+    // Banners shown above the deal hero — admin-controlled via 'deal_top' slot.
+    const [dealBanners, setDealBanners] = useState<Banner[]>([]);
+    useEffect(() => {
+        bannerRepository.getActive('deal_top').then(setDealBanners);
+    }, [id]);
+
     if (!deal) {
         return (
             <div className="empty-state animate-fade-in">
@@ -487,6 +495,13 @@ const DealDetails: React.FC = () => {
                 </div>
                 <SellerTopBar storeId={deal.storeId} />
             </div>
+
+            {/* Banner Slider (deal_top slot) */}
+            {dealBanners.length > 0 && (
+                <div style={{ padding: '12px 16px 0' }}>
+                    <BannerSlider banners={dealBanners} isRTL={isRTL} height={140} />
+                </div>
+            )}
 
             {/* Notification Highlight Label */}
             {linkedBarcode && activeBooking && (
