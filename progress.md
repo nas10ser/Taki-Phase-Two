@@ -1,3 +1,53 @@
+# TAKI — تقرير التقدم v10.4 🩹
+
+## الإصدار v10.4 — إصلاحات لوحة الإدارة + الدارك مود + كرت أصغر
+
+**التاريخ:** ١٠ مايو ٢٠٢٦
+**الجلسة:** فرع worktree `claude/ecstatic-shockley-a9238a`
+
+### ١. رفع صورة بانر إعلاني من الجهاز
+قبل: حقل URL فقط في "بانر إعلاني جديد" → التاجر/الإدمن يحتاج صورة مرفوعة على
+استضافة خارجية ليلصق رابطها. الآن: زر "📤 رفع صورة من الجهاز" يستخدم
+`storageService.uploadImage` (Supabase Storage bucket `deals`) مع معاينة
+وحذف، ولا يزال حقل URL متاحاً كبديل. حد أقصى 5MB.
+
+### ٢. الفترة التجريبية على المسجلين الجدد فقط
+زر "🎁 تجريبي ثم إلزامي" كان يطبّق التجربة على **كل البائعين النشطين**.
+الآن: يفعّل بوابة الدفع + يحفظ `trial_days` و `basic_plan_price_sar` فقط؛
+الـDB trigger `tr_new_seller_trial` يطبّقها تلقائياً على كل **تاجر جديد**
+يسجّل من الآن. التجار الحاليون لا يتأثرون. تسمية الزر:
+"{N} يوم تجريبي للجدد فقط".
+
+### ٣. بحث المشترين/البائعين في لوحة الإدارة
+كان يرجع 0 نتائج حتى لو كان المستخدم مسجّلاً. السبب: الدالة
+`admin_search_users` فيها `SELECT user_type INTO …` بدون
+qualifier، وكلمة `user_type` تطابق العمود في `users` والعمود في
+`RETURNS TABLE`، PostgreSQL يرفع `column reference is ambiguous`.
+الإصلاح migration `fix_admin_search_users_cast_discount`:
+qualify بـ `u.user_type` و cast `discount_percentage::numeric`
+لتطابق نوع `RETURNS TABLE`. أضفت أيضاً فلتر `deleted_at IS NULL`.
+
+### ٤. تخفيف الدارك مود
+`--body-bg: #0f1219` (شبه أسود) → `#18222e` (سليت أنعم).
+`--header-gradient` في الدارك مود من `#0f172a→#1e293b` إلى
+`#1e293b→#334155` (أوضح وأقل غرقاً). الـnav-bg و bg-card-glass
+مماثل.
+
+### ٥. النص الأبيض على خلفية بيضاء (الوضع الفاتح)
+حقل إدخال الكود (UVQHHY28) لم يكن لديه `color` صريح فكان يرث
+من السياق ويظهر شبه شفاف. أضفت:
+- `color: var(--text-primary)` في `fieldInputStyle` بـSellerDashboard
+- `color: var(--text-primary)` في input التواصل بـProfile
+- قاعدة CSS عامة: `input, select, textarea { color: var(--text-primary); }`
+- placeholder بـ `var(--text-secondary)` opacity 0.7
+
+### ٦. تصغير الكروت
+- DealCard: aspect-ratio من `5/6` إلى `1/1` (مربع — يقلّل الطول ~17%)
+- في الديسكتوب (≥1024px): `.page-content` و `.premium-bar` بحد
+  أقصى عرض 1080px وتمركز، فلا تمتد على شاشات كبيرة (1920px+).
+
+---
+
 # TAKI — تقرير التقدم v10.1 (تجاوب جوال شامل + DealsList + Bot v7 + كسر دائرة كاش الـSW) 📱🛍️🤖
 
 ## الإصدار v10.1 — Mobile responsiveness overhaul + DealsList page + Bot v7 + cache-loop fix

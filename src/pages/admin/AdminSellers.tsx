@@ -518,12 +518,12 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
     };
 
     const handleTrialThenPaid = async () => {
-        const trialEndsAt = new Date(Date.now() + trialDays * 86400000);
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• منح كل البائعين النشطين فترة تجريبية مجانية لمدة ${trialDays} يوم (تنتهي ${trialEndsAt.toLocaleDateString('ar-SA')})\n` +
-            `• بعد انتهاء التجربة → الزام الكل بـ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n\n` +
+            `• كل تاجر يسجّل حساب جديد من الآن يحصل على ${trialDays} يوم تجريبي مجاناً\n` +
+            `• بعد انتهاء التجربة → اشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n` +
+            '• التجار الحاليون لن يتأثروا (يبقون على باقتهم الحالية)\n\n' +
             'متابعة؟'
         );
         if (!ok) return;
@@ -537,21 +537,17 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         }
         setGatewayEnabled(true);
 
-        // Trial plan with the global amount baked in. When the trial expires
-        // (auto-handled by migration_v12_trial_automation), the seller will
-        // need to subscribe — and the amount they're billed is `globalAmount`.
-        const r = await adminService.bulkSetAllActiveSellers({
-            plan: 'trial',
-            amount: globalAmount,
-            discount: 0,
-            expiresAt: trialEndsAt,
-            notes: `Platform mode: ${trialDays}-day trial → mandatory ${globalAmount} SAR/mo`,
-        });
+        // Persist trial config so the DB trigger `tr_new_seller_trial` reads
+        // the latest values when a new seller signs up. We only update the
+        // platform-wide settings — existing sellers keep their current plan.
+        await Promise.allSettled([
+            adminService.setPlatformSetting('trial_days', trialDays),
+            adminService.setPlatformSetting('basic_plan_price_sar', globalAmount),
+        ]);
+
         setBusyMode(null);
         await customAlert(
-            r.failed === 0
-                ? `🎁 تم تطبيق الوضع.\n${r.ok} متجر بدأ تجربة ${trialDays} يوم. بعدها يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
-                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+            `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${trialDays} يوم تجربة، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
         );
         onApplied();
     };
@@ -623,9 +619,9 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                     className="p-4 bg-gradient-to-br from-amber-500 to-orange-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
                 >
                     <div className="text-2xl mb-1">🎁</div>
-                    <div className="text-sm font-extrabold">{trialDays} يوم تجريبي ثم إلزامي</div>
+                    <div className="text-sm font-extrabold">{trialDays} يوم تجريبي للجدد فقط</div>
                     <div className="text-[11px] opacity-90 mt-0.5">
-                        تجربة مجانية ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر إلزامي
+                        التجار الجدد يجرّبون مجاناً ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر
                     </div>
                     {busyMode === 'trial-paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
                 </button>

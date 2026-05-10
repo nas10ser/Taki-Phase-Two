@@ -8,8 +8,9 @@
  *  - الإعدادات العامة
  */
 
-import React, { useEffect, useState, useCallback, memo } from 'react';
+import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
 
 // ============================================================
@@ -117,10 +118,33 @@ const BannerModal: React.FC<{
         is_active: true,
     });
     const [saving, setSaving] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            await customAlert('⚠️ يرجى اختيار صورة');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            await customAlert('⚠️ حجم الصورة أكبر من 5MB');
+            return;
+        }
+        setUploading(true);
+        const url = await storageService.uploadImage(file);
+        setUploading(false);
+        if (!url) {
+            await customAlert('❌ فشل رفع الصورة. تأكد من الإنترنت أو ألصق رابطاً جاهزاً.');
+            return;
+        }
+        setForm((prev) => ({ ...prev, image_url: url }));
+    };
 
     const handleSave = async () => {
         if (!form.image_url.trim()) {
-            await customAlert('⚠️ يرجى إضافة رابط الصورة');
+            await customAlert('⚠️ يرجى رفع صورة أو لصق رابط');
             return;
         }
         setSaving(true);
@@ -150,13 +174,21 @@ const BannerModal: React.FC<{
 
                 <div className="p-5 space-y-4">
                     {form.image_url && (
-                        <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]">
+                        <div className="rounded-2xl overflow-hidden border border-[var(--border-color)] relative">
                             <img
                                 src={form.image_url}
                                 alt=""
                                 className="w-full h-32 object-cover"
                                 onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
                             />
+                            <button
+                                type="button"
+                                onClick={() => setForm({ ...form, image_url: '' })}
+                                className="absolute top-2 left-2 bg-red-500/90 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shadow-md"
+                                aria-label="إزالة الصورة"
+                            >
+                                ✕
+                            </button>
                         </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">
@@ -171,12 +203,36 @@ const BannerModal: React.FC<{
                             onChange={(v) => setForm({ ...form, title_en: v })}
                         />
                     </div>
-                    <Field
-                        label="رابط الصورة (URL)"
-                        value={form.image_url}
-                        onChange={(v) => setForm({ ...form, image_url: v })}
-                        placeholder="https://..."
-                    />
+
+                    {/* Image: upload OR paste URL */}
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
+                            صورة البانر <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleFilePick}
+                            className="hidden"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="w-full px-3 py-3 bg-orange-50 hover:bg-orange-100 border-2 border-dashed border-orange-300 text-orange-700 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
+                        >
+                            {uploading ? '⏳ جاري الرفع...' : '📤 رفع صورة من الجهاز'}
+                        </button>
+                        <div className="text-[11px] text-[var(--text-secondary)] text-center my-1.5">— أو —</div>
+                        <input
+                            type="text"
+                            placeholder="ألصق رابط الصورة (https://...)"
+                            value={form.image_url}
+                            onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 focus:bg-[var(--card-bg)] outline-none"
+                        />
+                    </div>
                     <Field
                         label="رابط الوجهة (اختياري)"
                         value={form.target_url}

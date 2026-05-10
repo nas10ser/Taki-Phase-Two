@@ -1078,7 +1078,8 @@ const SellerDashboard: React.FC = () => {
 
     const fieldInputStyle: React.CSSProperties = {
         width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--gray-200)',
-        fontSize: '0.9rem', outline: 'none', transition: 'all 0.2s ease', background: 'var(--body-bg)', fontWeight: 500
+        fontSize: '0.9rem', outline: 'none', transition: 'all 0.2s ease',
+        background: 'var(--body-bg)', color: 'var(--text-primary)', fontWeight: 500
     };
 
     return (

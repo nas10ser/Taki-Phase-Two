@@ -132,11 +132,11 @@
     --gray-50: #1a1a1a;
     --white: #1a1a1a;
     --card-bg: #1e293b;
-    --body-bg: #0f1219;
+    --body-bg: #18222e;
     --text-primary: #ffffff;
     --text-secondary: #d8d8d8;
     --border-color: #454545;
-    --nav-bg: rgba(15, 18, 25, 0.98);
+    --nav-bg: rgba(24, 34, 46, 0.98);
     --nav-border: rgba(70, 70, 70, 0.6);
     --danger: #ef4444;
     --danger-light: #5c1f1f;
@@ -151,7 +151,7 @@
     --shadow-xl: 0 20px 40px -10px rgba(0, 0, 0, 0.8);
     --accent-glow: rgba(30, 41, 59, 0.5);
     --notif-unread-bg: rgba(30, 41, 59, 0.4);
-    --header-gradient: linear-gradient(135deg, #0f172a, #1e293b);
+    --header-gradient: linear-gradient(135deg, #1e293b, #334155);
     --primary: #0f172a;
     --primary-dark: #1e293b;
     --primary-light: #334155;
@@ -178,11 +178,11 @@
   --gray-50: #1a1a1a;
   --white: #1a1a1a;
   --card-bg: #1e293b;
-  --body-bg: #0f1219;
+  --body-bg: #18222e;
   --text-primary: #ffffff;
   --text-secondary: #d8d8d8;
   --border-color: #454545;
-  --nav-bg: rgba(15, 18, 25, 0.98);
+  --nav-bg: rgba(24, 34, 46, 0.98);
   --nav-border: rgba(70, 70, 70, 0.6);
   --danger: #ef4444;
   --danger-light: #5c1f1f;
@@ -197,7 +197,7 @@
   --shadow-xl: 0 20px 40px -10px rgba(0, 0, 0, 0.8);
   --accent-glow: rgba(30, 41, 59, 0.5);
   --notif-unread-bg: rgba(30, 41, 59, 0.4);
-  --header-gradient: linear-gradient(135deg, #0f172a, #1e293b);
+  --header-gradient: linear-gradient(135deg, #1e293b, #334155);
   --primary: #0f172a;
   --primary-dark: #1e293b;
   --primary-light: #334155;
@@ -285,7 +285,14 @@ input,
 select,
 textarea {
   font-family: inherit;
+  color: var(--text-primary);
   transition: var(--transition-fast);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 
 input:focus,
@@ -1280,8 +1287,7 @@ textarea:focus {
 }
 
 /* ---------------------------------------------------------------------
- * TIER 6 — Desktop / large tablet (≥1024px). LEFT UNCHANGED at user's
- * request — desktop web is already final.
+ * TIER 6 — Desktop / large tablet (≥1024px).
  * ------------------------------------------------------------------- */
 @media (min-width: 1024px) {
   .container { max-width: 1000px; }
@@ -1289,6 +1295,24 @@ textarea:focus {
     grid-template-columns: repeat(4, 1fr);
     max-width: 1000px;
     margin: 0 auto;
+  }
+  /* Constrain page width so content doesn't stretch edge-to-edge on
+     wide monitors. The phone-first layout assumes phone proportions —
+     on desktop we cap to 1080px and center. */
+  .page-content {
+    max-width: 1080px;
+    margin-inline: auto;
+  }
+  /* Keep the orange/navy banner the same width as the page content. */
+  .premium-bar {
+    max-width: 1080px;
+    margin-inline: auto;
+    border-radius: 0 0 32px 32px;
+  }
+  /* Avatar / hero images on Profile feel oversized when stretched —
+     keep the in-page elements at phone scale even on a 1920px monitor. */
+  .deal-card-media img {
+    max-height: 420px;
   }
 }
 
@@ -1577,11 +1601,11 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
 }
 .dark-mode .bg-card-glass,
 :root:not(.light-mode) .bg-card-glass {
-  background-color: rgba(15, 18, 25, 0.82);
+  background-color: rgba(24, 34, 46, 0.82);
 }
 @media (prefers-color-scheme: dark) {
   :root:not(.light-mode) .bg-card-glass {
-    background-color: rgba(15, 18, 25, 0.82);
+    background-color: rgba(24, 34, 46, 0.82);
   }
 }
 

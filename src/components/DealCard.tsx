@@ -95,11 +95,9 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                     width={400}
                     height={400}
                     alt={deal.itemName}
-                    /* Slightly portrait (1:1 on small screens, 5:6 on larger).
-                       Less tall than the previous 4:5 — feels closer to SHEIN /
-                       Noon density and stops the LinkedIn-style giant blur on
-                       low-resolution images. */
-                    style={{ width: '100%', aspectRatio: '5 / 6', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+                    /* Square 1:1 — Noon-style density. Shortest aspect that still
+                       reads as a photo, keeps cards scannable on phone & desktop. */
+                    style={{ width: '100%', aspectRatio: '1 / 1', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
                     onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=600';
                     }}
