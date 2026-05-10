@@ -1,5 +1,279 @@
 # TAKI — تقرير التقدم v10.11 📊
 
+## 🗓 ملخص جلسة ١٠ مايو ٢٠٢٦ (v10.4 → v10.11 + Vercel Production)
+
+| الإصدار | الموضوع |
+|--------|---------|
+| **v10.4** | إصلاحات لوحة الإدارة (٦ مشاكل) |
+| **v10.5** | كرت تخفيض ١:١ + ٢ أعمدة على الجوال / ٤-٥ على الديسكتوب |
+| **v10.6** | تخفيف الأسود الباقي + زر تأكيد أخضر + إطار تذكرة برتقالي |
+| **v10.7** | deep-link الإشعار + عمود `merchant_note` منفصل + contrast الدارك مود |
+| **v10.8** | تثبيت `background: transparent` على الأزرار (إصلاح UA grey paint) |
+| **v10.9** | routing الإشعارات يقرأ `meta_data.audience` (مو `user.userType`) |
+| **v10.10** | فتح بطاقة الطلب من إشعار الإدمن + توسيع التذكرة تلقائياً للمشتري |
+| **v10.11** | تتبع المشاهدات (DB columns + RPCs ناقصة) |
+| **🚀 Deploy** | https://taki-test-eight.vercel.app على Vercel Hobby |
+
+---
+
+## v10.4 — إصلاحات لوحة الإدارة الشاملة 🩹
+
+### ١. رفع صورة بانر إعلاني من الجهاز
+نموذج "بانر إعلاني جديد" في `AdminTools.tsx` كان يطلب URL فقط. أضفت
+زر **📤 رفع صورة من الجهاز** يستخدم `storageService.uploadImage`
+(Supabase Storage bucket `deals`) مع معاينة + زر حذف. حقل URL متاح
+كبديل. حد ٥MB + image-mime gate.
+
+### ٢. الفترة التجريبية للجدد فقط
+زر "🎁 تجريبي ثم إلزامي" في `AdminSellers.tsx` كان يطبّق التجربة على
+**كل البائعين النشطين**. الآن يفعّل بوابة الدفع + يحفظ
+`trial_days` و `basic_plan_price_sar` فقط؛ الـDB trigger
+`tr_new_seller_trial` يطبّقها تلقائياً على كل **تاجر جديد** يسجّل من
+الآن. التجار الحاليون لا يتأثرون. تسمية الزر: "{N} يوم تجريبي للجدد فقط".
+
+### ٣. بحث المشترين/البائعين في لوحة الإدارة
+كان يرجع 0 نتائج حتى لو كان المستخدم مسجّلاً. السبب: الدالة
+`admin_search_users` فيها `SELECT user_type INTO …` بدون qualifier،
+وكلمة `user_type` تطابق العمود في `users` والعمود في `RETURNS TABLE`،
+PostgreSQL يرفع `column reference is ambiguous`.
+
+**Migrations:**
+- `fix_admin_search_users_ambiguous_user_type` — qualify بـ `u.user_type`
+- `fix_admin_search_users_cast_discount` — cast `discount_percentage::numeric` لتطابق نوع `RETURNS TABLE`
+- أضفت فلتر `deleted_at IS NULL` لمنع المستخدمين المحذوفين من الظهور
+
+### ٤. تخفيف الدارك مود (الجزء الأول)
+- `--body-bg` في الداكن من `#0f1219` (شبه أسود) إلى `#18222e` (سليت أنعم)
+- `--header-gradient` في الدارك مود من `#0f172a→#1e293b` إلى `#1e293b→#334155` (أوضح وأقل غرقاً)
+- الـnav-bg و bg-card-glass تحديث مماثل
+
+### ٥. النص الأبيض على خلفية بيضاء (الوضع الفاتح)
+حقل إدخال الكود (UVQHHY28) لم يكن لديه `color` صريح. الإصلاحات:
+- `color: var(--text-primary)` في `fieldInputStyle` بـ`SellerDashboard.tsx`
+- نفس الشي على input التواصل في `Profile.tsx`
+- قاعدة CSS عامة: `input, select, textarea { color: var(--text-primary); }`
+- placeholder بـ `var(--text-secondary)` opacity 0.7
+
+### ٦. تصغير الكروت (الجزء الأول)
+- DealCard: aspect-ratio من `5/6` إلى `1/1` (مربع — يقلّل الطول ~17%)
+- في الديسكتوب (≥1024px): `.page-content` و `.premium-bar` بحد أقصى عرض 1080px وتمركز
+
+---
+
+## v10.5 — تخطيط شبكي موحّد للكروت 📐
+
+**المشكلة:** الجوال 363px كان يعرض **عمود واحد** فقط في "كل العروض" (السبب: `minmax(170px, 1fr)` يحسب → 1 عمود لو الشاشة < 372px). والسيلر داشبورد ثابت `1fr 1fr` فعمودين دايماً حتى على الديسكتوب الواسع.
+
+**الحل:** كلاس مشترك `.taki-deals-grid` على Home + SellerDashboard + StoreDetails:
+
+| الشاشة | عدد الأعمدة |
+|--------|-------------|
+| <320px | 1 (Galaxy Fold) |
+| الجوال العادي | **٢** |
+| 600-899px (تابلت) | 3 |
+| 900-1199px (ديسكتوب) | 4 |
+| ≥1200px (ديسكتوب واسع) | **٥** |
+
+نفس كثافة Noon/Trendyol/SHEIN.
+
+---
+
+## v10.6 — كسر العناصر اللي لسا تبيّن سوداء 🌑→💙
+
+### تشخيص: العناصر اللي تبيّن "أسود" في الفاتح
+الـbrand كانت `--primary: #0f172a` (slate-900) — على خلفية بيضاء يبان أسود.
+رفعتها لـ `#1e293b` (slate-800)، خطوة واحدة أوضح:
+
+**في الفاتح:**
+- `--primary` و `--dark` و `--chip-active-bg`: `#0f172a → #1e293b`
+
+**في الداكن:**
+- نفسها: `#0f172a → #334155` (slate-700 — **أوضح من** card-bg `#1e293b`)
+- يعني الأزرار في الداكن مود تطلع من الكارد بدل ما تنغمس فيه
+
+### إصلاحات نقطية
+- **`color: 'black'`** ثابت في StoreDetails upload overlay → `var(--text-primary)`
+- **التذكرة (booking ticket) في `DealDetails.tsx`** الإطار المتقطع
+  من `var(--primary)` إلى `var(--secondary)` (#f59e0b برتقالي) —
+  تصير شكل قسيمة تخفيض حقيقية
+- **زر "تأكيد استلام الطلب"** من `var(--dark)` إلى **emerald gradient**
+  (`#059669 → #047857`) مع glow — اللون الدلالي لـ"تأكيد"
+
+---
+
+## v10.7 — Notification deep-link + merchant_note منفصل 🔗📝
+
+### ١. التنقل الذكي من الإشعار
+
+**Migration `add_merchant_note_to_bookings`:**
+عمود جديد `merchant_note text` على `bookings` — كان عمود `notes`
+واحد للاثنين، فلما التاجر يكتب ملاحظة تنمسخ ملاحظة المشتري.
+
+**`Notifications.tsx` — routing لكل audience:**
+- التاجر `📦 طلب حجز جديد!` → `/seller?tab=orders&barcode=X` (بطاقة الطلب)
+- المشتري `✅ تم الحجز` → `/deal/Y?barcode=X` (التذكرة)
+- الإدمن `🛒 حجز جديد على المنصة` → `/admin?tab=overview`
+
+**`SellerDashboard.tsx` — scroll + flash للطلب المختار:**
+- `id={`order-${order.barcode}`}` على كل بطاقة طلب
+- effect على `?barcode=X` يعمل `scrollIntoView({ behavior: 'smooth' })`
+- إطار `2px solid var(--secondary)` + glow `rgba(245,158,11,0.18)` لـ٣ ثواني
+
+### ٢. عرض ملاحظتين منفصلتين
+- **SellerDashboard:** `notes` (المشتري، أزرق) + `merchantNote` (التاجر، أصفر)
+- **Bookings.tsx:** عكسها — التاجر أصفر، المشتري أزرق
+- **DealDetails.tsx:** ملاحظة التاجر تظهر تحت StatusTracker مباشرة
+
+### ٣. contrast الدارك مود
+"✅ تم تأكيد الاستلام - بانتظار الكود" badge — كان `color: var(--primary)` =
+`#334155` على `var(--gray-100)` = `#323232` (نسبة ١.٤:١ غير قابلة للقراءة).
+صار `var(--text-primary)` = أبيض في الداكن، أسود-سليت في الفاتح.
+
+---
+
+## v10.8 — إزالة UA grey paint من الأزرار 🩶→⬜
+
+### المشكلة
+تابات `المشترون / البائعون / التحليلات / الأدوات` تظهر برمادي صلب
+على صفحة فاتحة لما الـOS في الدارك مود. السبب:
+
+```css
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode) button { color-scheme: dark; }
+}
+```
+
+`color-scheme: dark` على الـ`<button>` يخلي المتصفح يرسم default
+dark grey للأزرار اللي ما عندها bg صريح. تابات الإدمن
+`text-[var(--text-secondary)]` فقط، فما في bg يحجب الـUA paint.
+
+### الحل
+- `button { background: transparent; color: inherit; }` كـreset عام
+- شلت `button` من `color-scheme: dark` block (خليتها فقط على input + textarea)
+- الأزرار اللي **لها** bg صريح (Tailwind `bg-emerald-500`، gradients) ما تتأثر — specificity أعلى
+
+---
+
+## v10.9 — routing الإشعارات يعتمد على audience 🎯
+
+**المشكلة:** v10.7 كان يفرّع على `user.userType` — إذا حساب واحد له
+دورين (admin + seller، حالة Nass) الـrouting يخطئ. كل إشعار يكون
+admin → يطلع admin overview.
+
+**الحل: DB tagging:**
+
+`Migration tag_booking_notifications_with_audience` — حدّث الـtrigger
+`handle_booking_notification` يضيف `meta_data.audience` لكل إشعار:
+- 'seller' لإشعارات التاجر
+- 'buyer' لإشعارات المشتري
+- 'admin' لإشعارات الإدمن
+
+**Backfill SQL** للسجلات الموجودة:
+- `meta_data.admin === true` → 'admin'
+- `notifications.user_id = bookings.store_id` → 'seller'
+- `notifications.user_id = bookings.user_id` → 'buyer'
+
+**`Notifications.tsx`** يقرأ `meta_data.audience` ويغفل `user.userType`.
+
+---
+
+## v10.10 — admin notif يفتح بطاقة الطلب + التذكرة موسّعة 📂
+
+### ١. admin booking → seller order view (لو نفس الشخص)
+
+```
+audience='admin' AND meta_data.storeId === user.id  → /seller?tab=orders&barcode=X
+audience='admin' AND dealId                         → /deal/Y?barcode=X
+audience='admin' (fallback)                         → /admin?tab=overview
+```
+
+**حالة Nass:** هو admin **و** storeId للـbooking. اللوجيك يكتشف هذا
+ويوديه لبطاقة الطلب مباشرة (مع scroll + إطار برتقالي).
+
+### ٢. توسيع التذكرة تلقائياً عند الوصول من إشعار
+
+`DealDetails.tsx` — effect جديد:
+```ts
+if (linkedBarcode && activeBooking && status !== 'completed') {
+  setTicketCollapsed(false);
+}
+```
+
+المشتري يفتح الإشعار → التذكرة موسّعة فوراً مع:
+- StatusTracker
+- 💬 رسالة التاجر (لو رد)
+- الكود + الباركود
+
+---
+
+## v10.11 — تتبع المشاهدات (DB-only fix) 👁
+
+### المشكلة
+لوحة "أداء العروض" تعرض `المشاهدات: 0 | الحجوزات: 3` لكل العروض.
+الحجوزات موجودة لكن المشاهدات صفر — مستحيل منطقياً.
+
+### السبب الجذري
+الكلاينت يستدعي `supabase.rpc('increment_deal_view', ...)` عند فتح
+أي صفحة عرض، لكن:
+- العمودين `views` و `clicks` غير موجودين في جدول `deals`
+- الـRPC functions `increment_deal_view` / `increment_deal_click` غير معرّفة
+
+النتيجة: كل استدعاء يفشل صامتاً (`logger.error` فقط).
+
+### الإصلاح (`migration add_views_clicks_tracking_to_deals`)
+1. `ALTER TABLE deals ADD COLUMN views integer DEFAULT 0`
+2. `ALTER TABLE deals ADD COLUMN clicks integer DEFAULT 0`
+3. `CREATE FUNCTION increment_deal_view(target_deal_id text)` — UPDATE +1
+4. `CREATE FUNCTION increment_deal_click(target_deal_id text)`
+5. `GRANT EXECUTE … TO anon, authenticated`
+6. **Backfill:** لكل عرض، `views = MAX(views, COUNT(bookings))` — كل حجز
+   يفترض على الأقل مشاهدة، فلا تظهر اللوحة "0 / 3" من اليوم الأول
+
+### التحقق
+- لاههقفا (3 حجوزات) → 3 مشاهدات ✓
+- مغسلة سيارات (2 حجز) → 2 مشاهدات ✓
+
+لا تغيير في الكود — الكلاينت كان جاهزاً، الـDB فقط كانت ناقصة.
+
+---
+
+## 🚀 Vercel Production Deployment
+
+### الرابط
+**https://taki-test-eight.vercel.app**
+
+### الخطوات (من Mac Terminal، بدون UI)
+1. `npx vercel link --yes --project taki-test` — أنشأ مشروع تحت `nasser-projects1`
+2. `npx vercel env add SUPABASE_URL` × 3 environments (production, preview, development)
+3. `npx vercel env add SUPABASE_ANON_KEY` × 3
+4. `npx vercel deploy --prod --yes --archive=tgz`
+
+### مشكلة + حل
+المحاولة الأولى رفعت node_modules + .parcel-cache + .git ضمن الـ5000 ملف/يوم quota
+وفشلت بـ`api-upload-free`. الحل:
+- أنشأت `.vercelignore` (node_modules / dist / .parcel-cache / .git / .claude / *.log / .env)
+- استخدمت `--archive=tgz` (يضغط كل الملفات tarball واحد قبل الرفع)
+- النشر الثاني نجح في **38 ثانية**
+
+### Vercel CLI auth (محفوظ على Mac)
+الحساب: `nalaumari-8916` — `npx vercel whoami` يرجعه. أي نشر مستقبلي
+يعمل من Terminal بدون تسجيل دخول جديد.
+
+### الـenv vars
+محفوظة مشفّرة على Vercel:
+- `SUPABASE_URL`: `https://kbmqzxcjdankdgiovctm.supabase.co`
+- `SUPABASE_ANON_KEY`: (legacy anon JWT)
+
+### النشر مستقبلاً
+```bash
+cd ~/Desktop/TAKI && npx vercel deploy --prod --archive=tgz
+```
+يستغرق ~٤٠ ثانية، يحدّث الموقع تلقائياً.
+
+أو ربط GitHub بـVercel (لاحقاً) → كل push على main = نشر تلقائي.
+
+---
+
 ## v10.11 — تتبع المشاهدات (DB-only fix)
 **التاريخ:** ١٠ مايو ٢٠٢٦
 

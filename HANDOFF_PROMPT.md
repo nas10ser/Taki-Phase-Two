@@ -18,13 +18,23 @@
 • المشروع: React 18 + Parcel 2 + Supabase + TypeScript
 • المسار الرئيسي: /Users/nasser/Desktop/TAKI
 • الـrepo: https://github.com/nas10ser/Taki-Phase-Two (فرع main)
-• الإصدار الحالي: v10.3 (2026-05-10)
+• الإصدار الحالي: v10.11 (2026-05-10)
 • اللغة: العربية RTL (الواجهة) + إنجليزي اختياري
 • قاعدة البيانات: Supabase production (فيها MCP متصل: supabase__*)
+  - Project ID: kbmqzxcjdankdgiovctm
+  - URL: https://kbmqzxcjdankdgiovctm.supabase.co
 
-⚠️ مهم: لا يوجد Vercel أو Netlify منشور — التطبيق يعمل **محلياً فقط**
-على جهاز ناصر عبر `npm start`. كل GitHub deployments = 0. 
-ما لم تفعّل CI/CD، التغييرات تشتغل عندي محلياً فقط.
+✅ النشر: التطبيق منشور على Vercel
+  https://taki-test-eight.vercel.app (production)
+  Vercel project: nasser-projects1/taki-test
+  CLI authenticated as: nalaumari-8916 (npx vercel whoami)
+  Env vars (مشفّرة على Vercel): SUPABASE_URL + SUPABASE_ANON_KEY
+
+  لإعادة النشر بعد أي تعديل:
+    cd ~/Desktop/TAKI && npx vercel deploy --prod --archive=tgz
+  
+  ⚠️ لازم --archive=tgz لتجنب 5000-files/day quota على الـHobby plan.
+     .vercelignore يستثني node_modules/.parcel-cache/.git/.claude.
 
 ═══════════════════════════════════════════════════════════
 كيف أشغّل التطبيق وأفتحه على الجوال
@@ -95,6 +105,22 @@
 ✗ الـIP المحلي يتغيّر مع الواي فاي:
   لا تفترض أن http://192.168... ثابت. اجلبه من ipconfig.
 
+✗ Vercel deploy فشل بـapi-upload-free:
+  أول نشر بدون .vercelignore رفع 297MB (node_modules + cache + .git)
+  وتجاوز 5000-files/day quota → lockout 24h. الحل دائماً:
+  - تأكد .vercelignore موجود في root
+  - استخدم --archive=tgz في كل deploy
+
+✗ admin_search_users column ambiguous:
+  دالة admin_search_users بترجع TABLE فيها user_type. لو سويت
+  SELECT user_type INTO … بدون qualifier يطلق "column reference is
+  ambiguous". دائماً استخدم u.user_type أو table aliases.
+
+✗ notifications routing عبر user.userType غلط:
+  مستخدم واحد قد يكون admin + seller (نفس الحساب). routing
+  Notifications.tsx يقرأ meta_data.audience (مكتوبة بـDB trigger
+  handle_booking_notification منذ migration tag_booking_notifications_with_audience).
+
 ═══════════════════════════════════════════════════════════
 الملفات الأكثر استخداماً
 ═══════════════════════════════════════════════════════════
@@ -137,10 +163,23 @@ git -C /Users/nasser/Desktop/TAKI pull origin main
 ipconfig getifaddr en0
 # → http://<IP>:3000/
 
+# 5. نشر إنتاج على Vercel (بعد تغييرات معتمدة)
+cd ~/Desktop/TAKI
+npx vercel deploy --prod --archive=tgz
+# → https://taki-test-eight.vercel.app
+
 ═══════════════════════════════════════════════════════════
 سجل الإصدارات الأخيرة (للسياق)
 ═══════════════════════════════════════════════════════════
 
+v10.11 — تتبع المشاهدات (DB columns + RPCs ناقصة) + 🚀 Vercel deploy
+v10.10 — admin notif يفتح بطاقة الطلب + توسيع التذكرة للمشتري
+v10.9 — routing الإشعارات يعتمد على meta_data.audience (مو userType)
+v10.8 — إزالة UA grey paint من الأزرار (color-scheme: dark كان يفسد التابات)
+v10.7 — notification deep-link + merchant_note عمود منفصل + dark contrast
+v10.6 — تخفيف العناصر السوداء + زر تأكيد أخضر + إطار التذكرة برتقالي
+v10.5 — كرت 1:1 + .taki-deals-grid (2 جوال / 4-5 ديسكتوب)
+v10.4 — ٦ إصلاحات لوحة الإدارة (بانر upload، trial-new-only، search RPC)
 v10.0 — تجاوب جوال شامل + DealsList + Bot v7
 v10.1 — كسر cache loop للـSW
 v10.2 — استعادة WIP (live countdown + label htmlFor)
