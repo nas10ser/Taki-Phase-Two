@@ -1745,7 +1745,7 @@ const SellerDashboard: React.FC = () => {
                             </button>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
+                        <div className="taki-deals-grid" style={{ display: 'grid', gap: 12 }}>
                             {(productsTab === 'active' ? activeDeals : expiredDeals).map(deal => {
                                 const isActiveDeal = activeDeals.some(d => d.id === deal.id);
                                 const isOutOfStock = deal.quantity !== 'unlimited' && typeof deal.quantity === 'number' && deal.quantity <= 0;

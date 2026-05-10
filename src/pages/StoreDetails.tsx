@@ -429,7 +429,7 @@ const StoreDetails: React.FC = () => {
             <div style={{ padding: 16, paddingBottom: 100 }}>
                 {viewTab === 'active' && (
                     <div className="animate-fade-in">
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
                             {storeDeals.length > 0 ? storeDeals.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column' }}>
                                     <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
@@ -453,7 +453,7 @@ const StoreDetails: React.FC = () => {
 
                 {viewTab === 'past' && (
                     <div className="animate-fade-in">
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
                             {pastStoreDeals.length > 0 ? pastStoreDeals.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column', opacity: 0.85 }}>
                                     <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />

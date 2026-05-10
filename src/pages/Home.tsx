@@ -343,7 +343,7 @@ const Home: React.FC = () => {
             </div>
 
             {/* Deals Grid */}
-            <div style={{ padding: '0 16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+            <div className="taki-deals-grid" style={{ padding: '0 16px 20px', display: 'grid', gap: 10 }}>
                 {filteredDeals.length > 0 ? (
                     filteredDeals.map(deal => {
                         const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;

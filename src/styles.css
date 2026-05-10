@@ -1309,11 +1309,6 @@ textarea:focus {
     margin-inline: auto;
     border-radius: 0 0 32px 32px;
   }
-  /* Avatar / hero images on Profile feel oversized when stretched —
-     keep the in-page elements at phone scale even on a 1920px monitor. */
-  .deal-card-media img {
-    max-height: 420px;
-  }
 }
 
 /* ---------------------------------------------------------------------
@@ -1518,6 +1513,24 @@ input[type="search"] {
 }
 @media (min-width: 900px) {
   .taki-deals-list-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; max-width: 1200px; margin-inline: auto; }
+}
+
+/* Shared deal grid used on Home "كل العروض", Seller Dashboard products,
+   StoreDetails active/past tabs. Same density tiers so the catalog feels
+   consistent everywhere — Noon/Trendyol/SHEIN style: 2 cols on phone,
+   3 on tablet, 4-5 on desktop. Fold-class phones drop to 1 only. */
+.taki-deals-grid { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 319px) {
+  .taki-deals-grid { grid-template-columns: 1fr; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .taki-deals-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+}
+@media (min-width: 900px) and (max-width: 1199px) {
+  .taki-deals-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+}
+@media (min-width: 1200px) {
+  .taki-deals-grid { grid-template-columns: repeat(5, 1fr); gap: 14px; }
 }
 
 /* ---------------------------------------------------------------------
