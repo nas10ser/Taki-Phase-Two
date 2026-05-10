@@ -277,38 +277,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 logger.info('📡 Fetching state from remote...');
                 setLoading(true);
 
-                // Initial fetch
-                await Promise.allSettled([
-                    dealRepository.getAll().then(fetchedDeals => {
-                        if (fetchedDeals) setDeals(fetchedDeals);
-                    }),
-                    userRepository.getCurrentUser().then(async currentUser => {
-                        if (currentUser) {
-                            logger.info(`👤 Session found: ${currentUser.name}`);
-                            setUser(currentUser);
-                            
-                            // Background hydration
-                            await Promise.allSettled([
-                                userRepository.getFavorites().then(setFavorites),
-                                notificationRepository.fetchByUserId(currentUser.id).then(setNotifications),
-                                import('../repositories/bookingRepository').then(({ bookingRepository }) => 
-                                    bookingRepository.getByUser(currentUser.id).then(setBookings)
-                                )
-                            ]);
-                        }
-                    }),
-                    userRepository.getAllSellers().then(sellers => {
-                        if (sellers) {
-                            const profiles: Record<string, any> = {};
-                            sellers.forEach(s => { profiles[s.id] = s; });
-                            setStoreProfiles(profiles);
-                        }
-                    })
-                ]);
+                // Unblock the UI as soon as deals (the primary home-page content)
+                // arrive. Everything else hydrates in the background — the user
+                // sees the storefront immediately instead of waiting on user
+                // profile, sellers, favorites, and bookings to all complete.
+                dealRepository.getAll()
+                    .then(fetchedDeals => { if (fetchedDeals) setDeals(fetchedDeals); })
+                    .catch(err => console.error('Deals fetch failed:', err))
+                    .finally(() => setLoading(false));
+
+                userRepository.getCurrentUser().then(async currentUser => {
+                    if (currentUser) {
+                        logger.info(`👤 Session found: ${currentUser.name}`);
+                        setUser(currentUser);
+                        userRepository.getFavorites().then(setFavorites).catch(() => {});
+                        notificationRepository.fetchByUserId(currentUser.id).then(setNotifications).catch(() => {});
+                        import('../repositories/bookingRepository').then(({ bookingRepository }) =>
+                            bookingRepository.getByUser(currentUser.id).then(setBookings).catch(() => {})
+                        );
+                    }
+                }).catch(() => {});
+
+                userRepository.getAllSellers().then(sellers => {
+                    if (sellers) {
+                        const profiles: Record<string, any> = {};
+                        sellers.forEach(s => { profiles[s.id] = s; });
+                        setStoreProfiles(profiles);
+                    }
+                }).catch(() => {});
             } catch (error) {
                 console.error('❌ Failed to initialize app data:', error);
-            } finally {
                 setLoading(false);
+            } finally {
                 isInitializing = false;
             }
         };
@@ -559,10 +559,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!user) return;
 
         // Server-side throttle: users.last_promo_check_at gates re-checks
-        // to once per 6 hours. Falls back to in-memory ref if the column
+        // to once per 24 hours. Falls back to in-memory ref if the column
         // is missing (older databases).
         const now = Date.now();
-        const sixHours = 6 * 60 * 60 * 1000;
+        const oneDay = 24 * 60 * 60 * 1000;
         try {
             const { supabase } = await import('../services/supabaseClient');
             const { data: throttleRow } = await supabase
@@ -572,7 +572,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .maybeSingle();
             if (throttleRow?.last_promo_check_at) {
                 const last = new Date(throttleRow.last_promo_check_at).getTime();
-                if (now - last < sixHours) return;
+                if (now - last < oneDay) return;
             }
         } catch {}
 
@@ -609,16 +609,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         break; // Show one campaign at a time to avoid flooding
                     }
                 }
-                if (shownAny) {
-                    try {
-                        const { supabase } = await import('../services/supabaseClient');
-                        await supabase
-                            .from('users')
-                            .update({ last_promo_check_at: new Date().toISOString() })
-                            .eq('id', user.id);
-                    } catch {}
-                    return;
-                }
+                // Stamp the throttle whether or not we showed something:
+                // if the user has already seen every active campaign there's
+                // no reason to fall through to the generic fallback alert
+                // (the source of "زد مبيعاتك" firing on every reload).
+                try {
+                    const { supabase } = await import('../services/supabaseClient');
+                    await supabase
+                        .from('users')
+                        .update({ last_promo_check_at: new Date().toISOString() })
+                        .eq('id', user.id);
+                } catch {}
+                return;
             }
         } catch (e) {
             console.warn('Promo campaign fetch failed, falling back to local alerts:', e);
@@ -664,7 +666,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [user, deals, addNotification, topLocation]);
 
     // Fire promotional alerts shortly after the user signs in, regardless
-    // of whether they ever visit the Nearby page. Uses the 6-hour throttle
+    // of whether they ever visit the Nearby page. Uses the 24-hour throttle
     // already inside checkMarketingAlerts so the user is not spammed.
     useEffect(() => {
         if (!user) return;
@@ -1062,6 +1064,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [user]);
 
     // 🌍 CENTRAL REALTIME SYNC (Handles visibility, online/offline, etc.)
+    // Mirror live callbacks into refs so the realtime subscription is rebuilt
+    // ONLY when user.id changes — not on every render when an unrelated piece
+    // of state recreates a useCallback identity.
+    const realtimeCbRef = React.useRef({ showRealTimeAlert, reconcileStatus, addNotification });
+    realtimeCbRef.current = { showRealTimeAlert, reconcileStatus, addNotification };
     useEffect(() => {
         const disconnect = realtimeService.connect({
             userId: user?.id || null,
@@ -1081,7 +1088,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     if (prev.find(p => p.id === mapped.id)) return prev;
                     return [mapped, ...prev];
                 });
-                if (user?.id === n.user_id) showRealTimeAlert(mapped.title, mapped.body);
+                if (user?.id === n.user_id) realtimeCbRef.current.showRealTimeAlert(mapped.title, mapped.body);
             },
             onNotificationUpdate: (payload) => {
                 if (payload.eventType === 'DELETE') {
@@ -1118,7 +1125,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         const known = prev.find(b => b.barcode === updated.barcode);
                         if (known) {
                             return prev.map(b => b.barcode === updated.barcode
-                                ? { ...b, status: reconcileStatus(b.status, updated.status), notes: updated.notes || b.notes }
+                                ? { ...b, status: realtimeCbRef.current.reconcileStatus(b.status, updated.status), notes: updated.notes || b.notes }
                                 : b);
                         }
                         return prev;
@@ -1144,7 +1151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 const priceDropped = before?.discounted_price != null && updated.discounted_price != null && updated.discounted_price < before.discounted_price;
                                 const restocked = before?.quantity === 0 && updated.quantity && updated.quantity > 0;
                                 if (priceDropped) {
-                                    addNotification(
+                                    realtimeCbRef.current.addNotification(
                                         user.id,
                                         { ar: '💸 انخفض سعر منتج في مفضلتك!', en: '💸 Price drop on a favorite!' },
                                         { ar: `${updated.item_name}: ${updated.discounted_price} ر.س (كان ${before.discounted_price} ر.س)`, en: `${updated.item_name}: ${updated.discounted_price} SAR (was ${before.discounted_price} SAR)` },
@@ -1152,7 +1159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         { dealId: updated.id }
                                     );
                                 } else if (restocked) {
-                                    addNotification(
+                                    realtimeCbRef.current.addNotification(
                                         user.id,
                                         { ar: '📦 منتجك المفضل عاد للتوفر!', en: '📦 Favorite restocked!' },
                                         { ar: `${updated.item_name} في ${updated.shop_name} أصبح متاحاً مجدداً.`, en: `${updated.item_name} at ${updated.shop_name} is available again.` },
@@ -1228,7 +1235,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         return () => disconnect();
-    }, [user?.id, showRealTimeAlert, reconcileStatus, addNotification]);
+    }, [user?.id]);
 
     // Effective user-type for rendering. Admins can flip into buyer/seller
     // preview mode via setViewAs; non-admins always see their real role.

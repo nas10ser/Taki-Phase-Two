@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Deal, getLocation } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
+import { subscribeTicker } from '../hooks/useTicker';
 
 interface Props {
     deal: Deal;
@@ -46,13 +47,25 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
     const imageUrl = Array.isArray(deal.images) ? deal.images[0] : (deal as unknown as { image?: string }).image || '';
     const isRTL = language === 'ar';
 
-    // Tick the countdown every second so the urgency indicator stays live.
+    // Subscribe to one shared interval (instead of 50+ private ones). Only
+    // commit state when the rendered text or urgency actually changes, so
+    // most ticks bail out without re-rendering.
     const [remaining, setRemaining] = useState(() => formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL));
     useEffect(() => {
-        const tick = () => setRemaining(formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL));
-        tick();
-        const id = setInterval(tick, 1000);
-        return () => clearInterval(id);
+        const next = formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL);
+        setRemaining(prev =>
+            prev.text === next.text && prev.urgent === next.urgent && prev.expired === next.expired
+                ? prev
+                : next
+        );
+        return subscribeTicker(() => {
+            const fresh = formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL);
+            setRemaining(prev =>
+                prev.text === fresh.text && prev.urgent === fresh.urgent && prev.expired === fresh.expired
+                    ? prev
+                    : fresh
+            );
+        });
     }, [deal.createdAt, deal.expiresInMinutes, isRTL]);
 
     const handleFollowClick = (e: React.MouseEvent) => {

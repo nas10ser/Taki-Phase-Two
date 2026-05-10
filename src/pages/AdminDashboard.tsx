@@ -56,16 +56,27 @@ const AdminDashboard: React.FC = () => {
   };
 
   const fetchSettings = async () => {
-    const { data } = await supabase.from('global_settings').select('value').eq('key', 'is_payment_gateway_enabled').single();
+    const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
     if (data) {
-      setIsPaymentEnabled(data.value === 'true');
+      // value is JSONB — could be true/false (boolean) or "true"/"false" (string)
+      setIsPaymentEnabled(data.value === true || data.value === 'true');
     }
   };
 
   const togglePaymentGateway = async () => {
     const newValue = !isPaymentEnabled;
     setIsPaymentEnabled(newValue);
-    await supabase.from('global_settings').upsert({ key: 'is_payment_gateway_enabled', value: newValue.toString(), updated_at: new Date().toISOString() });
+    const { error } = await supabase.from('platform_settings').upsert({
+      key: 'payment_gateway_enabled',
+      value: newValue,
+      updated_by: user?.id,
+      updated_at: new Date().toISOString()
+    });
+    if (error) {
+      setIsPaymentEnabled(!newValue);
+      alert('تعذّر حفظ الإعداد: ' + error.message);
+      return;
+    }
     alert(newValue ? 'تم تفعيل بوابة الدفع. يجب على التجار الاشتراك لإضافة عروض.' : 'تم تعطيل بوابة الدفع وإخفاؤها. التطبيق الآن مجاني بالكامل.');
   };
 
@@ -131,29 +142,29 @@ const AdminDashboard: React.FC = () => {
     else if (grantDuration === '3months') daysToAdd = 90;
     else daysToAdd = customDays;
 
-    const updates = Array.from(selectedStores).map(storeId => {
-      // UPSERT logic: if store_profile doesn't exist, we should ideally create it.
-      // For now, we update existing ones. A proper backend RPC would be better for upserting safely.
-      return supabase
+    const updates = Array.from(selectedStores).map(storeId =>
+      supabase
         .from('store_profiles')
         .upsert({
           store_id: storeId,
-          subscription_plan: grantType === 'free' ? 'premium' : 'free', // 'premium' means active sub
+          subscription_plan: grantType === 'free' ? 'premium' : 'free',
           discount_percentage: grantType === 'discount' ? grantDiscount : 0,
-          // We set expiry date to current date + daysToAdd
           subscription_expires_at: new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000).toISOString(),
           updated_at: new Date().toISOString()
-        });
-    });
+        }, { onConflict: 'store_id' })
+    );
 
     try {
-      await Promise.all(updates);
+      const results = await Promise.all(updates);
+      const firstErr = results.find(r => r.error)?.error;
+      if (firstErr) throw firstErr;
       alert('تم تطبيق المنحة بنجاح!');
       setIsGrantModalOpen(false);
       setSelectedStores(new Set());
       fetchStores();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error applying grants", err);
+      alert('تعذّر تطبيق المنحة: ' + (err?.message || 'خطأ غير معروف'));
     }
   };
 
