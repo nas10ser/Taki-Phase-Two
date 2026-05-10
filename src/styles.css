@@ -1228,26 +1228,27 @@ textarea:focus {
 
 /* ---------------------------------------------------------------------
  * TIER 1 — Small phones (320–380px). iPhone SE, mini phones, Pixel 4a.
- * Single-column deals grid, slightly tighter UI, but everything still
- * comfortably tappable.
+ * Stays at 2 columns (matches SHEIN / Noon / Trendyol density) but
+ * tightens gap + chip padding so things still fit.
  * ------------------------------------------------------------------- */
 @media (min-width: 320px) and (max-width: 380px) {
-  .deals-grid { grid-template-columns: 1fr; gap: 12px; }
+  .deals-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 10px 12px; }
   .navbar-logo { font-size: 1.1rem; }
   .cat-chip { padding: 6px 14px; font-size: 0.8rem; }
   .price-new { font-size: 0.95rem; }
-  .deal-card-img { height: 200px; } /* full-width single column → taller image looks good */
+  .deal-card-name { font-size: 0.9rem; }
+  .deal-card-body { padding: 8px 10px; }
   .premium-bar { padding: 36px 16px 18px; border-radius: 0 0 26px 26px; }
 }
 
 /* ---------------------------------------------------------------------
  * TIER 2 — Standard phones (381–480px). iPhone 12-15, Pixel 6-8,
- * Galaxy S22-S24. The 2-column grid (default at the top of this file)
- * is already correct for this range; we only refine card density.
+ * Galaxy S22-S24. 2-column grid; tighter gap.
  * ------------------------------------------------------------------- */
 @media (min-width: 381px) and (max-width: 480px) {
-  .deal-card-img { height: 180px; }
-  .deal-card-name { font-size: 1rem; }
+  .deals-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 12px 14px; }
+  .deal-card-name { font-size: 0.95rem; }
+  .deal-card-body { padding: 10px 12px; }
 }
 
 /* ---------------------------------------------------------------------

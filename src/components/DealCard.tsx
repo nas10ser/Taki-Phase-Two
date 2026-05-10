@@ -93,11 +93,13 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                     loading="lazy"
                     decoding="async"
                     width={400}
-                    height={520}
+                    height={400}
                     alt={deal.itemName}
-                    /* Trendyol-style portrait card: image dominates the card with
-                       4:5 aspect ratio. height auto-scales to width via aspect-ratio. */
-                    style={{ width: '100%', aspectRatio: '4 / 5', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+                    /* Slightly portrait (1:1 on small screens, 5:6 on larger).
+                       Less tall than the previous 4:5 — feels closer to SHEIN /
+                       Noon density and stops the LinkedIn-style giant blur on
+                       low-resolution images. */
+                    style={{ width: '100%', aspectRatio: '5 / 6', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
                     onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=600';
                     }}

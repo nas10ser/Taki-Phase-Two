@@ -72,13 +72,41 @@ const Home: React.FC = () => {
         return !hasCap;
     };
 
+    /**
+     * Apply the same region/city/mall filter that "كل العروض" uses, so
+     * Trending + Top Discounts only show deals from where the user is.
+     * Distance-based filtering is intentionally NOT used here — that's the
+     * "حولي / Nearby" page's job. This is a city-level cut.
+     */
+    const applyLocationFilter = (list: Deal[]) => {
+        if (topLocation.mall) {
+            return list.filter(d => d.locationId === topLocation.mall);
+        }
+        if (topLocation.city) {
+            const cityLocs = LOCATIONS.filter(l => l.cityId === topLocation.city).map(l => l.id);
+            return list.filter(d => cityLocs.includes(d.locationId));
+        }
+        if (topLocation.region) {
+            const regionCities = CITIES.filter(c => c.regionId === topLocation.region).map(c => c.id);
+            const regionLocs = LOCATIONS.filter(l => regionCities.includes(l.cityId)).map(l => l.id);
+            return list.filter(d => regionLocs.includes(d.locationId));
+        }
+        return list;
+    };
+
     const trendingDeals = useMemo(() => {
-        return deals.filter(d => d.status === 'active' && hasStock(d)).sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0)).slice(0, 8);
-    }, [deals]);
+        const base = deals.filter(d => d.status === 'active' && hasStock(d));
+        return applyLocationFilter(base)
+            .sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0))
+            .slice(0, 8);
+    }, [deals, topLocation]);
 
     const bestDiscounts = useMemo(() => {
-        return deals.filter(d => d.status === 'active' && hasStock(d)).sort((a, b) => b.discountPercentage - a.discountPercentage).slice(0, 8);
-    }, [deals]);
+        const base = deals.filter(d => d.status === 'active' && hasStock(d));
+        return applyLocationFilter(base)
+            .sort((a, b) => b.discountPercentage - a.discountPercentage)
+            .slice(0, 8);
+    }, [deals, topLocation]);
 
     const filteredDeals = useMemo(() => {
         let list = deals.filter(d => d.status === 'active' && hasStock(d));

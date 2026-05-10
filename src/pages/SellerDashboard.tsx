@@ -1157,6 +1157,48 @@ const SellerDashboard: React.FC = () => {
                 </div>
             </div>
 
+            {/* Pending-orders banner — appears no matter which tab the seller
+                is on, so they never miss a booking that's waiting for receipt
+                confirmation. Tap = jumps to the Orders tab where the
+                "تأكيد استلام الطلب" button is rendered per-order. */}
+            {(() => {
+                const pendingCount = myOrders.filter(b => b.status === 'pending').length;
+                if (pendingCount === 0 || view === 'orders') return null;
+                return (
+                    <button
+                        type="button"
+                        onClick={() => { setView('orders'); history.push('/seller?tab=orders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            margin: '12px 16px 0',
+                            padding: '14px 16px',
+                            borderRadius: 16,
+                            background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+                            color: 'white',
+                            border: 'none',
+                            cursor: 'pointer',
+                            boxShadow: '0 6px 18px rgba(239, 68, 68, 0.35)',
+                            width: 'calc(100% - 32px)',
+                            textAlign: isRTL ? 'right' : 'left',
+                            fontFamily: 'inherit'
+                        }}
+                    >
+                        <span style={{ fontSize: '1.6rem', flexShrink: 0 }}>🔔</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
+                                {isRTL
+                                    ? `لديك ${pendingCount} ${pendingCount === 1 ? 'طلب جديد' : pendingCount === 2 ? 'طلبان جديدان' : 'طلبات جديدة'} بانتظار تأكيدك`
+                                    : `${pendingCount} new ${pendingCount === 1 ? 'order' : 'orders'} waiting for your confirmation`}
+                            </div>
+                            <div style={{ fontSize: '0.78rem', opacity: 0.95, fontWeight: 600, marginTop: 2 }}>
+                                {isRTL ? 'اضغط لفتح قائمة الطلبات وتأكيد الاستلام' : 'Tap to open the orders list and confirm receipt'}
+                            </div>
+                        </div>
+                        <span style={{ fontSize: '1.4rem', fontWeight: 900, flexShrink: 0 }}>{isRTL ? '‹' : '›'}</span>
+                    </button>
+                );
+            })()}
+
             {loading && (
                 <div
                     aria-live="polite"

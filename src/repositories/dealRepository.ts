@@ -114,6 +114,27 @@ export const dealRepository = {
     },
 
     /**
+     * Partial update for stock-only changes (e.g. a buyer booking decrements
+     * quantity by N). Crucially this does NOT touch the `status` column, which
+     * means the `tr_guard_deal_publish` trigger (BEFORE UPDATE OF status) does
+     * NOT fire. Fixes the bug where buyers got SUBSCRIPTION_REQUIRED if the
+     * merchant's subscription happened to be expired at booking time —
+     * already-published deals must remain bookable.
+     */
+    updateQuantity: async (dealId: string, newQuantity: number | 'unlimited'): Promise<void> => {
+        const payload: Record<string, any> = {
+            quantity: newQuantity === 'unlimited' ? null : newQuantity,
+            is_unlimited: newQuantity === 'unlimited',
+        };
+        const { error } = await supabase.from('deals').update(payload).eq('id', dealId);
+        if (error) {
+            console.error('❌ Remote deal quantity update failed:', error.message);
+            throw error;
+        }
+        logger.log('✅ Deal quantity updated remotely:', dealId, '→', newQuantity);
+    },
+
+    /**
      * Save an entire deals array (bulk update).
      */
     saveDeals: async (deals: Deal[]): Promise<void> => {

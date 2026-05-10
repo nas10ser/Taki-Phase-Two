@@ -348,7 +348,7 @@ const DealDetails: React.FC = () => {
 
     const history = useHistory();
     const {
-        deals, user, addRating, addReply, toggleRatingLike, removeRating, updateDeal, language, toggleFollowMerchant, followedMerchants,
+        deals, user, addRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
         storeProfiles
     } = useApp();
@@ -449,8 +449,12 @@ const DealDetails: React.FC = () => {
 
         // Reserve quantity only when the seller set a real stock cap.
         // Time-based offers stay infinitely bookable until the timer ends.
+        // Use updateDealStock (partial UPDATE on quantity only) so we don't
+        // re-write the `status` column — the v9.1 trigger blocks any
+        // implicit-status write when the merchant's subscription isn't
+        // active, and that previously took booking down with it.
         if (hasStockCap && deal.quantity !== 'unlimited') {
-            updateDeal({ ...deal, quantity: (deal.quantity as number) - selectedQuantity });
+            updateDealStock(deal.id, (deal.quantity as number) - selectedQuantity);
         }
 
         customAlert(isRTL ? "✅ تم تأكيد الحجز بنجاح وسيتم تحويلك لصفحة حجوزاتي" : "✅ Booking confirmed. Redirecting to My Bookings");

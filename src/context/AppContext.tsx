@@ -58,6 +58,7 @@ interface AppContextType {
     isAuthReady: boolean;
     addDeal: (deal: Deal) => Promise<void>;
     updateDeal: (deal: Deal) => Promise<void>;
+    updateDealStock: (dealId: string, newQuantity: number | 'unlimited') => Promise<void>;
     deleteDeal: (id: string) => Promise<void>;
     user: any;
     logout: () => void;
@@ -980,6 +981,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [customAlert, language]);
 
+    /**
+     * Stock-only update used by the booking flow when a buyer reserves N
+     * units. Crucially this calls `dealRepository.updateQuantity` which does
+     * a partial UPDATE that does NOT touch the `status` column — so the
+     * `tr_guard_deal_publish` trigger never fires for buyers, and the
+     * SUBSCRIPTION_REQUIRED block can't accidentally cancel a booking.
+     */
+    const updateDealStock = useCallback(async (dealId: string, newQuantity: number | 'unlimited') => {
+        setDeals(prev => prev.map(d => d.id === dealId ? { ...d, quantity: newQuantity } : d));
+        try {
+            await dealRepository.updateQuantity(dealId, newQuantity);
+        } catch (error: any) {
+            console.error('Failed to update deal stock:', error);
+            // Roll back the optimistic update so the UI reflects reality
+            try {
+                const original = await dealRepository.getById(dealId);
+                if (original) {
+                    setDeals(prev => prev.map(d => d.id === original.id ? original : d));
+                }
+            } catch { /* best-effort rollback */ }
+            const msg: string = error?.message || '';
+            customAlert(language === 'ar'
+                ? `⚠️ تعذّر تحديث الكمية.${msg ? `\n(${msg})` : ''}`
+                : `⚠️ Could not update stock.${msg ? `\n(${msg})` : ''}`);
+        }
+    }, [customAlert, language]);
+
     const deleteDeal = useCallback(async (id: string) => {
         // Optimistic local removal — stash the deal for potential restoration
         let removedDeal: Deal | undefined;
@@ -1238,14 +1266,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.warn('Booking status sync deferred:', e?.message || e)
         );
 
-        // Restore reserved quantity to the deal stock.
+        // Restore reserved quantity to the deal stock. Same partial-update
+        // path as booking — never touch `status` so the subscription guard
+        // trigger can't block a cancellation either.
         if (target.deal && target.deal.quantity !== 'unlimited') {
             setDeals(prev => {
                 const currentDeal = prev.find(d => d.id === target.deal.id);
                 if (!currentDeal || currentDeal.quantity === 'unlimited') return prev;
                 const restored = (currentDeal.quantity as number) + (target.bookedQuantity || 1);
                 const next = prev.map(d => d.id === currentDeal.id ? { ...d, quantity: restored } : d);
-                dealRepository.save({ ...currentDeal, quantity: restored }).catch(e =>
+                dealRepository.updateQuantity(currentDeal.id, restored).catch(e =>
                     console.warn('Deal qty restore sync deferred:', e?.message || e)
                 );
                 return next;
@@ -1526,7 +1556,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Memoize the context value to prevent unnecessary re-renders
     const contextValue = useMemo(() => ({
         language, setLanguage,
-        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
@@ -1544,7 +1574,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         platformSettings,
     }), [
         language, setLanguage,
-        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
