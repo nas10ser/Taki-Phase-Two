@@ -71,29 +71,31 @@ const Notifications: React.FC = () => {
                                 const dealId = n.metadata?.dealId;
                                 const barcode = n.metadata?.barcode;
                                 const followerId = n.metadata?.followerId;
-                                // Booking notifications carry both `dealId` and `barcode` — but where to
-                                // open them depends on who's reading. A seller wants their order in
-                                // the dashboard's orders tab (with the confirm-receipt button); a buyer
-                                // wants the deal page with the booking ticket expanded. Admin booking
-                                // notifications stay on a general overview.
+                                // Booking notifications are tagged at write time with
+                                // meta_data.audience = 'seller' | 'buyer' | 'admin'
+                                // (set by the DB trigger handle_booking_notification).
+                                // The audience — NOT the current user's role — decides
+                                // the destination, because one user can be a seller AND
+                                // an admin at the same time. A "📦 طلب حجز جديد!" addressed
+                                // to the seller must land on the seller dashboard order
+                                // card, even when the recipient is also an admin.
                                 const isBookingNotif = n.type === 'booking';
-                                const dest = isBookingNotif && user.userType === 'seller' && barcode
+                                const audience = (n.metadata as any)?.audience as 'seller' | 'buyer' | 'admin' | undefined;
+                                const dest = isBookingNotif && audience === 'seller' && barcode
                                     ? `/seller?tab=orders&barcode=${barcode}`
-                                    : isBookingNotif && user.userType === 'buyer' && dealId
-                                        ? `/deal/${dealId}?barcode=${barcode}`
-                                        : isBookingNotif && user.userType === 'admin'
+                                    : isBookingNotif && audience === 'buyer' && dealId
+                                        ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                        : isBookingNotif && audience === 'admin'
                                             ? '/admin?tab=overview'
                                             : dealId
                                                 ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
-                                                : isBookingNotif && user.userType === 'seller'
-                                                    ? '/seller?tab=orders'
-                                                    : isBookingNotif
-                                                        ? '/bookings'
-                                                        : n.type === 'follow' || followerId
-                                                            ? '/profile'
-                                                            : n.type === 'marketing'
-                                                                ? '/'
-                                                                : null;
+                                                : isBookingNotif
+                                                    ? '/bookings'
+                                                    : n.type === 'follow' || followerId
+                                                        ? '/profile'
+                                                        : n.type === 'marketing'
+                                                            ? '/'
+                                                            : null;
 
                                 const isHighPriority = !n.isRead && (
                                     n.type === 'follow' || 
