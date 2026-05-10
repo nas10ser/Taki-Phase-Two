@@ -12,3 +12,4 @@ everything-claude-code/
 node16/
 npm-cache/
 *.tgz
+.vercel

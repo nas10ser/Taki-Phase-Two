@@ -1,0 +1,11 @@
+node_modules
+.parcel-cache
+dist
+.git
+.claude
+.claude-worktree-staging
+*.log
+.DS_Store
+.env
+.env.local
+*.tsbuildinfo
