@@ -1871,7 +1871,7 @@ const SellerDashboard: React.FC = () => {
                                             const note = await customPrompt(isRTL ? 'اكتب ملاحظة للمشتري (اختياري):' : 'Write a note to the buyer (optional):');
                                             acknowledgeBooking(order.barcode, note || undefined);
                                         }}
-                                            style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--dark)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', marginBottom: 8 }}>
+                                            style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'linear-gradient(135deg, #059669, #047857)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', marginBottom: 8, boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)' }}>
                                             {isRTL ? 'تأكيد استلام الطلب 📦' : 'Confirm Receipt of Order 📦'}
                                         </button>
                                     )}

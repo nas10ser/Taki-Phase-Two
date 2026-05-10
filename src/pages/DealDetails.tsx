@@ -653,8 +653,8 @@ const DealDetails: React.FC = () => {
                     </button>
                 )}
                 {activeBooking && !ticketCollapsed && (
-                    <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, marginBottom: 12, border: '2px dashed var(--primary)', position: 'relative', overflow: 'hidden' }}>
-                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'var(--primary)' }} />
+                    <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, marginBottom: 12, border: '2px dashed var(--secondary)', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'var(--secondary)' }} />
 
                         <button
                             onClick={() => setTicketCollapsed(true)}

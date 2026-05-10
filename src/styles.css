@@ -66,20 +66,20 @@
 }
 
 :root {
-  --primary: #0f172a; /* Midnight Navy */
-  --primary-dark: #1e293b; /* Dark Slate Blue */
+  --primary: #1e293b; /* Slate-800 — was slate-900 (#0f172a) which looked pure-black on white */
+  --primary-dark: #0f172a; /* Slate-900 — kept for shadows/glows where extra depth helps */
   --primary-light: #334155;
-  --primary-glow: rgba(15, 23, 42, 0.2);
+  --primary-glow: rgba(30, 41, 59, 0.25);
   --secondary: #f59e0b;
   /* Chip / Filter Button tokens */
   --chip-inactive-bg: #e2e8f0;
   --chip-inactive-text: #334155;
-  --chip-active-bg: #0f172a;
+  --chip-active-bg: #1e293b;
   --chip-active-text: #ffffff;
-  --chip-active-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+  --chip-active-shadow: 0 4px 14px rgba(30, 41, 59, 0.3);
   --secondary-light: #fef3c7;
   --accent: #1e293b;
-  --dark: #0f172a;
+  --dark: #1e293b;
   --gray-900: #1e293b;
   --gray-700: #334155;
   --gray-500: #64748b;
@@ -118,7 +118,7 @@
 /* === DARK MODE === */
 @media (prefers-color-scheme: dark) {
   :root:not(.light-mode) {
-    --dark: #0f172a;
+    --dark: #334155;
     --accent: #1e293b;
     --primary-glow: rgba(30, 41, 59, 0.3);
     --shadow-glow: 0 0 15px rgba(30, 41, 59, 0.2);
@@ -152,19 +152,19 @@
     --accent-glow: rgba(30, 41, 59, 0.5);
     --notif-unread-bg: rgba(30, 41, 59, 0.4);
     --header-gradient: linear-gradient(135deg, #1e293b, #334155);
-    --primary: #0f172a;
+    --primary: #334155;
     --primary-dark: #1e293b;
-    --primary-light: #334155;
+    --primary-light: #475569;
     --chip-inactive-bg: #2c2d3f;
     --chip-inactive-text: #e8e8f8;
-    --chip-active-bg: #0f172a;
+    --chip-active-bg: #334155;
     --chip-active-text: #ffffff;
     --chip-active-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
 }
 
 .dark-mode {
-  --dark: #0f172a;
+  --dark: #334155;
   --accent: #1e293b;
   --primary-glow: rgba(30, 41, 59, 0.3);
   --shadow-glow: 0 0 15px rgba(30, 41, 59, 0.2);
@@ -198,12 +198,12 @@
   --accent-glow: rgba(30, 41, 59, 0.5);
   --notif-unread-bg: rgba(30, 41, 59, 0.4);
   --header-gradient: linear-gradient(135deg, #1e293b, #334155);
-  --primary: #0f172a;
+  --primary: #334155;
   --primary-dark: #1e293b;
-  --primary-light: #334155;
+  --primary-light: #475569;
   --chip-inactive-bg: #2c2d3f;
   --chip-inactive-text: #e8e8f8;
-  --chip-active-bg: #0f172a;
+  --chip-active-bg: #334155;
   --chip-active-text: #ffffff;
   --chip-active-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
