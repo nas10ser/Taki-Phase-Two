@@ -1,3 +1,183 @@
+# TAKI — تقرير التقدم v9.0 (المرحلة الثانية: محرك الاشتراكات، الرعاة، التثبيت، تحليلات المتاجر) 💎📊⭐
+
+## الإصدار v9.0 — المرحلة الثانية الكاملة (Phase 2: Monetization, Sponsors & Analytics)
+
+> **التاريخ:** 2026-05-06
+> **الفلسفة:** **سيرفر سوبابيس هو المصدر الوحيد للحقيقة.** كل بيانات المرحلة 2 (الاشتراكات، الفروع، الرعاية، التحليلات، الإعدادات) تُكتب وتُقرأ من Supabase مباشرة. لا أي اعتماد على `localStorage`. كل العمليات الحساسة محمية بـ RLS و SECURITY DEFINER RPCs تفحص دور المتصل.
+
+---
+
+### 🗄️ 1. أربع هجرات SQL جديدة (الأساس السيرفري الكامل)
+
+| الملف | يضيف |
+| :--- | :--- |
+| [supabase/migration_v9_1_phase2_subscriptions.sql](supabase/migration_v9_1_phase2_subscriptions.sql) | جداول: `platform_settings`, `subscription_plans`, `merchant_subscriptions`, `subscription_payments` + RPCs: `start_trial_for_merchant`, `ensure_active_subscription`, `compute_subscription_price`, `grant_subscription_bulk`, `revoke_subscription`, `confirm_subscription_payment`, `expire_trials`, `send_trial_warnings`, `get_setting` + Triggers: `tr_guard_deal_publish` (يمنع نشر العروض من حساب مجمّد) و `tr_auto_start_trial` (يُولّد تجربة 14 يوماً تلقائياً عند تسجيل تاجر) + Backfill: ملء التجارب لكل التجار الموجودين. |
+| [supabase/migration_v9_2_phase2_branches.sql](supabase/migration_v9_2_phase2_branches.sql) | جدول `store_branches` + Trigger `sync_branch_count` يحدّث `merchant_subscriptions.branches_count` تلقائياً + RLS: التاجر يدير فروعه فقط، الأدمن يمتلك صلاحيات كاملة. |
+| [supabase/migration_v9_3_phase2_sponsorships.sql](supabase/migration_v9_3_phase2_sponsorships.sql) | جدولا `sponsorships` و `pinned_stores` + RPC `increment_sponsorship_metric` (عداد ذرّي للظهور والنقر يعمل حتى للزوار غير المسجلين) + RPC `get_pinned_store_ids` لترتيب نتائج البحث + RLS: قراءة عامة، الكتابة محصورة بالأدمن. |
+| [supabase/migration_v9_4_phase2_analytics.sql](supabase/migration_v9_4_phase2_analytics.sql) | جدول `store_analytics_events` (12 نوع حدث مرحلي) + RPCs: `record_analytics_events` (إدراج دفعي عبر JSONB)، `get_store_funnel`، `get_deal_funnel`، `get_store_daily`، `prune_analytics_events` + RLS: الإدراج عام، القراءة محصورة بصاحب المتجر أو الأدمن. |
+
+كل الجداول تستخدم `REPLICA IDENTITY FULL` و مضافة لـ `supabase_realtime` لتدفق التحديثات لحظياً.
+
+---
+
+### 🧠 2. سبعة Repositories TypeScript جديدة على نمط الـ "Server-Only"
+
+| الملف | الدور |
+| :--- | :--- |
+| [src/repositories/subscriptionRepository.ts](src/repositories/subscriptionRepository.ts) | `getMine`, `listPlans`, `listAllMerchantsWithSubscription`, `quotePrice` (عبر RPC)، `grantBulk`, `revoke`, `confirmPayment`, `listMyPayments`, `subscribeToOwn` (Realtime) |
+| [src/repositories/branchRepository.ts](src/repositories/branchRepository.ts) | CRUD كامل لفروع التاجر |
+| [src/repositories/sponsorshipRepository.ts](src/repositories/sponsorshipRepository.ts) | `listActive`, `listAll`, `create/update/delete`, `trackImpression`, `trackClick` + `pinnedStoreRepository` (`pinIds` يستدعي RPC) |
+| [src/repositories/analyticsRepository.ts](src/repositories/analyticsRepository.ts) | بافر داخلي يُفرّغ مرة كل 1.5 ث (وعند `visibilitychange`/`beforeunload`) عبر RPC الدفعي. إجمالاتٍ عبر `getStoreFunnel`, `getDealFunnel`, `getDaily` |
+| [src/repositories/platformSettingsRepository.ts](src/repositories/platformSettingsRepository.ts) | `fetchAll` (مع defaults آمنة)، `set`, `setPaymentGatewayEnabled`, `subscribe` (Realtime) |
+| [src/services/paymentService.ts](src/services/paymentService.ts) | تجريد على Moyasar/PayTabs. لا يحتوي مفاتيح سرية في المتصفح — يُقصّر المكالمة على Edge Function. عند `paymentGatewayEnabled = false` يرجع `gatewayHidden: true` فيتحول التطبيق لمجاني تلقائياً. |
+
+---
+
+### 🧩 3. تكامل AppContext
+
+[src/context/AppContext.tsx](src/context/AppContext.tsx) أضاف:
+
+- `mySubscription` + `refreshSubscription()` + استماع Realtime على صف اشتراك التاجر
+- `platformSettings` + Realtime: تبديل مفتاح "إخفاء الدفع" يَسري لحظياً على كل الأجهزة
+- `sponsoredFeedItems`, `inlineBanners`, `topSliderItems` لتغذية صفحة المشترين بالعروض المدفوعة
+- `pinnedStoreIds` يُحدّث تلقائياً عند تغيير المدينة/المول
+- `trackEvent(storeId, type)` كاختصار يضيف `userId` تلقائياً
+- صرف زر "إضافة عرض" مع رسالة عربية واضحة عند رفض السيرفر بسبب `SUBSCRIPTION_REQUIRED` + تراجع تلقائي عن الإدراج التفاؤلي
+
+---
+
+### 🛡️ 4. لوحة الأدمن — تبويبات جديدة كلياً ([Admin.tsx](src/pages/Admin.tsx))
+
+#### 4.1 🏪 المتاجر (Stores Management)
+- جدول لكل التجار مع حالة الاشتراك (تجريبي / نشط / مجمّد / منحة)
+- شريط بحث فوري بالاسم/الهاتف/المدينة/الإيميل/المعرّف
+- فلتر بالحالة
+- صناديق اختيار `Checkbox` بجانب كل صف مع زر "تحديد الجميع" على الصفحة
+- زر **🎁 منح سريع (N)** يفتح مودال:
+  - نوع المنحة: مجاني (gifted) أو خصم نسبة مئوية
+  - شريط تمرير لتحديد الخصم 5%–100%
+  - مدة العرض: شريط أزرار سريعة (أسبوع/شهر/3 أشهر/6 أشهر/سنة) + حقل مخصص
+  - حقل سبب المنحة
+  - زر "تطبيق فوري" يستدعي `grant_subscription_bulk` RPC ويحدّث الجدول لحظياً
+- زر تجميد فردي لكل تاجر (`revoke_subscription` RPC)
+
+#### 4.2 ⭐ الرعاة (Sponsorships)
+- إنشاء/تعديل/حذف لخمسة أنواع: شريط علوي، بنر بيني، عرض راعٍ، إعلان مدمج، شارة توثيق
+- لكل عنصر: عناوين عربي/إنجليزي، صورة، رابط، توقيت بداية/نهاية، أولوية، تكرار الحقن (Insert every N items)
+- عداد مشاهدات ونقرات يظهر فوراً
+- زر تفعيل/إيقاف فوري
+
+#### 4.3 📌 التثبيت (Pinned Stores)
+- تثبيت أي متجر في صدارة بحث مدينة أو مول معين
+- **بدون حد أقصى** (حسب المتطلب)
+- ترتيب يدوي عبر حقل "Rank"
+- ملاحظات + رقم عقد
+- يُستهلك من Home عبر `pinnedStoreIds` فيتقدّم المثبّتون في الفرز
+
+#### 4.4 📢 الحملات (موجودة من v8.7) — تبقى كما هي
+
+#### 4.5 ⚙️ الإعدادات (Settings)
+- **مفتاح إخفاء بوابة الدفع**: تبديل واحد يخفي كل واجهات الدفع تطبيقياً ويحوّل المنصة لمجانية بالكامل
+- اختيار البوابة: Moyasar / PayTabs
+- المفتاح العام (Publishable Key)
+- سعر الباقة الشهرية
+- عدد الفروع المشمولة
+- سعر الفرع الإضافي
+- عدد أيام التجربة
+- عدد أيام الإنذار قبل نهاية التجربة
+
+---
+
+### 🏬 5. لوحة التاجر — تبويبات جديدة ([SellerDashboard.tsx](src/pages/SellerDashboard.tsx))
+
+- **شريط `TrialBanner`** فوق الصفحة كلها يعرض الحالة (تجريبي/نشط/مجمّد) مع عدّاد الأيام المتبقية وزر "إدارة الاشتراك"
+- تبويب **📊 تحليلات**: قمع كامل (مشاهدات → نقرات → بدأ الحجز → ترك الحجز → أكمل الحجز) + رسم بياني يومي + جدول لكل عرض + شرح "كيف نقيس؟"
+- تبويب **🏬 الفروع**: إضافة/تعديل/حذف فروع. عند تجاوز 3 فروع: تحذير ذهبي يحسب الرسوم الإضافية تلقائياً ويعرضها قبل الفوترة
+- تبويب **💎 الاشتراك**: نقطة دخول مدمجة تُحوّل لصفحة `/subscription` المخصصة (مصدر واحد للحقيقة)
+- صفحة `/subscription` كاملة: قائمة الباقات، حساب فوري للسعر بناءً على عدد الفروع والخصم النشط، سجل الفواتير (مدفوعة/بانتظار/مرتجعة/منحة)، زر اشتراك يستدعي `paymentService.createCheckoutSession` (يحوّل لـ Edge Function سرّية الـ keys)
+
+---
+
+### 🛍️ 6. صفحة المشترين الرئيسية — حقن سلس وغير مزعج ([Home.tsx](src/pages/Home.tsx))
+
+- **`TopSlider` فوق قسم "الأكثر تداولاً"**: يعرض الإعلانات النشطة من نوع `top_slider` بتدوير 5 ثوانٍ، يتتبع المشاهدة عند العرض والنقر عند الضغط
+- **`InlineBanner` بين الأقسام**: بنر أفقي بألوان ذهبية يظهر بين قسمي "الأكثر تداولاً" و"أقوى الخصومات"
+- **حقن العروض الراعية في الشبكة**: كل (4 أو ما يحدده الأدمن) عرض عادي، يُدرج عرض راعٍ بإطار ذهبي + شارة "برعاية" بدون كسر التصميم
+- **خوارزمية التثبيت**: المتاجر المثبّتة تُسبق دائماً في النتائج لمدينتها/مولها، وتُعلَّم بإطار أزرق + شارة "موثّق ✓"
+- **التصميم الشبكي بقي محافظاً على التركيز على الصور ووضوح نسبة الخصم** (Phase 2.6)
+
+---
+
+### 🤖 7. بوت Telegram + WhatsApp ([server/bot.js](server/bot.js))
+
+أوامر جديدة:
+- `/login <رقم>` — يربط جلسة الـ Telegram بحساب TAKI
+- `/subscription` — حالة الاشتراك ومدته المتبقية وأي خصم نشط
+- `/trial` — متبقي من فترة التجربة المجانية
+- `/branches` — قائمة الفروع المسجلة
+- `/analytics` — قمع التحويل لآخر 30 يوماً (مشاهدات/نقرات/بدأ/تخلي/أكمل + نسبة التحويل)
+- `/sponsor` — الرعايات النشطة لمتجرك مع عدّاد المشاهدات والنقرات
+
+تحسينات إضافية:
+- مستمع Realtime للاشتراكات: عند تغيّر الحالة (تفعيل/تجميد/منحة) يُرسل إشعار فوري للتاجر على Telegram
+- مستمع Realtime للحجوزات: عند حجز جديد يصل إشعار فوري للتاجر مباشرة
+- بنية WhatsApp Cloud API كاملة مع: تحقق التوقيع HMAC-SHA256، معالج رسائل واردة للأوامر العربية والإنجليزية، إرسال نصوص عبر `graph.facebook.com/v18.0`
+- صحة `/health` تظهر `phase: phase_2` و حالة كل الخدمات
+
+---
+
+### 🔐 8. الأمان — كل خط دفاعي مُغطّى
+
+| الطبقة | الحماية |
+| :--- | :--- |
+| **RLS** | كل الجداول الجديدة عليها سياسات صارمة. `merchant_subscriptions` و `subscription_payments` يقرأهما صاحبهما والأدمن فقط؛ الكتابة محصورة بـ RPCs |
+| **SECURITY DEFINER** | كل RPCs الحرجة (المنح، التعليق، تأكيد الدفع، إنشاء التجربة، الإحصائيات) تفحص `auth.uid()` ضد `users.user_type = 'admin'` قبل أي تعديل |
+| **Trigger Guard** | `tr_guard_deal_publish` يرفض إدراج/إعادة تفعيل عرض من تاجر مجمّد بكود `SUBSCRIPTION_REQUIRED`. الواجهة تترجمه لرسالة عربية ودودة وتتراجع عن الإدراج التفاؤلي |
+| **عدم تسريب أسرار** | `paymentService` لا يحمل المفاتيح السرية في المتصفح — يُكلَّف Edge Function منفصل بإنشاء جلسة الدفع. المفتاح العام فقط هو الذي يُجلب من `platform_settings` |
+| **Webhook Verification** | بوت Telegram يفحص `x-telegram-bot-api-secret-token`. WhatsApp يفحص `x-hub-signature-256` بـ `crypto.timingSafeEqual` |
+| **Rate Limiting** | حد 30 طلب/دقيقة لكل chat على البوت + تنظيف دوري للذاكرة |
+| **Idempotent Backfill** | تشغيل الهجرة على قاعدة فيها بيانات لا يكسر شيئاً — `INSERT ... ON CONFLICT DO NOTHING` و `IF NOT EXISTS` |
+
+---
+
+### ✅ التحقق النهائي
+
+| الفحص | النتيجة |
+| :--- | :--- |
+| `npm run typecheck` | ✅ 0 أخطاء جديدة (1 خطأ سابق في StoreDetails.tsx غير متعلق بالمرحلة 2) |
+| `npm run build` (Production) | ✅ نجح في 9.44s. الحجم: `Subscription.js = 18.89 KB`، `Admin.js = 43.18 KB`، `SellerDashboard.js = 101.67 KB` |
+| الكود مقسّم (code-splitting) | ✅ كل صفحة Phase 2 lazy-loaded |
+| RLS لكل جدول | ✅ 4 جداول × 4-6 سياسات لكل جدول |
+| Realtime مفعّل | ✅ على 6 جداول جديدة (`merchant_subscriptions`, `subscription_payments`, `platform_settings`, `store_branches`, `sponsorships`, `pinned_stores`) |
+| لا اعتماد على localStorage للبيانات الجديدة | ✅ مؤكد |
+
+> **ملاحظة عن المعاينة:** بيئة preview المعزولة لم تستطع تشغيل Parcel من داخل الـ worktree (`EPERM` على ملفات `node_modules`)، لذا الاعتماد كان على البناء الإنتاجي الناجح + فحص TypeScript الكامل. ستظهر كل الميزات لحظياً بمجرد فتح dev server محلياً عبر `npm run dev`.
+
+---
+
+### 📋 خطوات النشر للأدمن
+
+1. **شغّل الهجرات بالترتيب** في Supabase SQL Editor:
+   ```sql
+   -- 1
+   \i supabase/migration_v9_1_phase2_subscriptions.sql
+   -- 2
+   \i supabase/migration_v9_2_phase2_branches.sql
+   -- 3
+   \i supabase/migration_v9_3_phase2_sponsorships.sql
+   -- 4
+   \i supabase/migration_v9_4_phase2_analytics.sql
+   ```
+2. **اختياري — جدوّل تنبيهات نهاية التجربة بـ pg_cron** (يومياً 9 صباحاً بتوقيت الرياض):
+   ```sql
+   SELECT cron.schedule('trial-warnings','0 6 * * *',$$SELECT public.send_trial_warnings();$$);
+   SELECT cron.schedule('expire-trials','5 6 * * *',$$SELECT public.expire_trials();$$);
+   ```
+3. **اضبط متغيرات بيئة بوابة الدفع** (لاحقاً عند الإطلاق التجاري) كـ Edge Function منفصلة، لا تكشف الـ Secret Key للمتصفح.
+4. **افتح لوحة الأدمن → الإعدادات** وفعّل/أوقف بوابة الدفع. عند الإيقاف، التطبيق يعمل مجاناً بالكامل بضغطة واحدة.
+
+---
+
 # TAKI — تقرير التقدم v8.15 (المزامنة اللحظية الشاملة - Zero-Latency Realtime Sync) ⚡🔄
 
 ## الإصدار v8.15 — القضاء على الحاجة لتحديث الصفحة وتحقيق التزامن الفوري

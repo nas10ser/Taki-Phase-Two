@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Deal, getLocation } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
+import SponsoredBadge from './SponsoredBadge';
 
 interface Props {
     deal: Deal;
     onClick: (id: string) => void;
+    /** Phase 2.4: gold frame + Sponsored badge for paid placements. */
+    sponsored?: { badgeAr?: string; badgeEn?: string; verified?: boolean };
 }
 
 const GENDER_EMOJI: { [key: string]: string } = {
@@ -36,9 +39,9 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
     return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, expired: false };
 };
 
-const DealCard: React.FC<Props> = ({ deal, onClick }) => {
+const DealCard: React.FC<Props> = ({ deal, onClick, sponsored }) => {
     const { toggleFollowMerchant, followedMerchants, language } = useApp();
-    const { average, count } = dealService.calculateRating(deal.ratings);
+    const { average } = dealService.calculateRating(deal.ratings);
     const loc = getLocation(deal.locationId);
     const isFollowed = followedMerchants.includes(deal.storeId);
 
@@ -59,12 +62,45 @@ const DealCard: React.FC<Props> = ({ deal, onClick }) => {
         toggleFollowMerchant(deal.storeId);
     };
 
+    const sponsorFrameStyle: React.CSSProperties | undefined = sponsored
+        ? sponsored.verified
+            ? {
+                outline: '2px solid #3b82f6',
+                outlineOffset: -2,
+                boxShadow: '0 0 0 4px rgba(59,130,246,0.18), 0 10px 24px rgba(59,130,246,0.18)',
+                borderRadius: 16
+            }
+            : {
+                outline: '2px solid #f59e0b',
+                outlineOffset: -2,
+                boxShadow: '0 0 0 4px rgba(245,158,11,0.18), 0 10px 24px rgba(217,119,6,0.18)',
+                borderRadius: 16
+            }
+        : undefined;
+
     return (
         <div
             className="deal-card animate-fade-in"
             onClick={() => onClick(deal.id)}
+            style={sponsorFrameStyle}
         >
             <div style={{ position: 'relative', overflow: 'hidden' }}>
+                {sponsored && (
+                    <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        [isRTL ? 'left' : 'right']: 50,
+                        zIndex: 2
+                    }}>
+                        <SponsoredBadge
+                            isRTL={isRTL}
+                            labelAr={sponsored.badgeAr}
+                            labelEn={sponsored.badgeEn}
+                            variant={sponsored.verified ? 'verified' : 'sponsored'}
+                            size="sm"
+                        />
+                    </div>
+                )}
                 <img
                     src={imageUrl}
                     loading="lazy"

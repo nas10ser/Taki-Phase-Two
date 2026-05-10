@@ -3,6 +3,10 @@ import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import BarcodeScanner from '../components/BarcodeScanner';
 import DualCalendarPicker from '../components/DualCalendarPicker';
+import TrialBanner from '../components/TrialBanner';
+import SellerAnalytics from '../components/SellerAnalytics';
+import SellerBranches from '../components/SellerBranches';
+import SellerSubscription from '../components/SellerSubscription';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -73,10 +77,10 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, mySubscription, trackEvent } = useApp();
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
-    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications'>('form');
+    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'analytics' | 'subscription' | 'branches'>('form');
     const [scannerOpen, setScannerOpen] = useState(false);
     const [showDualPicker, setShowDualPicker] = useState(false);
     // Stores selected dates from DualCalendarPicker
@@ -90,7 +94,7 @@ const SellerDashboard: React.FC = () => {
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const tab = params.get('tab');
-        if (tab && (['form', 'products', 'orders', 'notifications', 'scanner'] as const).includes(tab as any)) {
+        if (tab && (['form', 'products', 'orders', 'notifications', 'scanner', 'analytics', 'subscription', 'branches'] as const).includes(tab as any)) {
             setView(tab as any);
         } else if (!tab && !params.get('edit')) {
             // Default to form if no tab and not editing
@@ -974,6 +978,7 @@ const SellerDashboard: React.FC = () => {
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', paddingBottom: 80, direction: isRTL ? 'rtl' : 'ltr' }}>
+            <TrialBanner subscription={mySubscription} isRTL={isRTL} />
             <div className="premium-bar" style={{ paddingBottom: 24, background: 'var(--header-gradient)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                     <div>
@@ -987,7 +992,7 @@ const SellerDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(10px)', borderRadius: 16, padding: 6, overflowX: 'auto', gap: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                    {(['form', 'products', 'orders', 'scanner'] as const).map(tab => {
+                    {(['form', 'products', 'orders', 'scanner', 'analytics', 'branches', 'subscription'] as const).map(tab => {
                         const unreadOrdersCount = notifications.filter(n => n.userId === user?.id && !n.isRead && n.type === 'booking').length;
                         const badgeCount = tab === 'orders' ? unreadOrdersCount : 0;
 
@@ -1010,13 +1015,19 @@ const SellerDashboard: React.FC = () => {
                                     {tab === 'form' ? (editingDealId ? '✏️' : '➕') :
                                      tab === 'products' ? '📦' :
                                      tab === 'orders' ? '🔔' :
-                                     '📷'}
+                                     tab === 'scanner' ? '📷' :
+                                     tab === 'analytics' ? '📊' :
+                                     tab === 'branches' ? '🏬' :
+                                     '💎'}
                                 </span>
                                 <span style={{ whiteSpace: 'nowrap' }}>
-                                    {tab === 'form' ? (isRTL ? (editingDealId ? 'تعديل' : 'إضافة') : (editingDealId ? 'Edit' : 'Add')) : 
+                                    {tab === 'form' ? (isRTL ? (editingDealId ? 'تعديل' : 'إضافة') : (editingDealId ? 'Edit' : 'Add')) :
                                      tab === 'products' ? (isRTL ? 'عروضي' : 'Deals') :
                                      tab === 'orders' ? (isRTL ? 'الطلبات' : 'Orders') :
-                                     (isRTL ? 'سكانر' : 'Scanner')}
+                                     tab === 'scanner' ? (isRTL ? 'سكانر' : 'Scanner') :
+                                     tab === 'analytics' ? (isRTL ? 'تحليلات' : 'Analytics') :
+                                     tab === 'branches' ? (isRTL ? 'الفروع' : 'Branches') :
+                                     (isRTL ? 'الاشتراك' : 'Subscription')}
                                 </span>
 
                                 {badgeCount > 0 && (
@@ -1827,6 +1838,18 @@ const SellerDashboard: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                )}
+
+                {view === 'analytics' && user && (
+                    <SellerAnalytics storeId={user.id} isRTL={isRTL} />
+                )}
+
+                {view === 'branches' && user && (
+                    <SellerBranches merchantId={user.id} isRTL={isRTL} customAlert={customAlert} customConfirm={customConfirm} />
+                )}
+
+                {view === 'subscription' && user && (
+                    <SellerSubscription isRTL={isRTL} />
                 )}
             </div>
 

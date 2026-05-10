@@ -2,17 +2,22 @@ import React, { useState, useMemo } from 'react';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, Deal } from '../data/mock';
+import TopSlider from '../components/TopSlider';
+import InlineBanner from '../components/InlineBanner';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, CATEGORIES, GENDERS, Deal } from '../data/mock';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, storeProfiles, refreshDeals } = useApp();
+    const {
+        deals, language, topLocation, setTopLocation, loading,
+        followedMerchants, toggleFollowMerchant, storeProfiles, refreshDeals,
+        sponsoredFeedItems, inlineBanners, topSliderItems, pinnedStoreIds
+    } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState<Category | 'all'>('all');
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
@@ -113,8 +118,49 @@ const Home: React.FC = () => {
         if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
         if (sortBy === 'reliability') list.sort((a, b) => b.reliabilityScore - a.reliabilityScore);
 
+        // Phase 2.6: pinned stores always rank first within the active scope.
+        if (pinnedStoreIds.length > 0) {
+            const pinSet = new Set(pinnedStoreIds);
+            list.sort((a, b) => {
+                const ap = pinSet.has(a.storeId) ? 0 : 1;
+                const bp = pinSet.has(b.storeId) ? 0 : 1;
+                return ap - bp;
+            });
+        }
+
         return list;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, pinnedStoreIds]);
+
+    // Phase 2.4: a sponsored deal must be a real deal owned by the sponsoring
+    // merchant. Resolve sponsorship.dealId → live Deal once.
+    const sponsoredDeals = useMemo(() => {
+        return sponsoredFeedItems
+            .filter(s => s.type === 'sponsored_deal' && !!s.dealId)
+            .map(s => {
+                const d = deals.find(x => x.id === s.dealId && x.status === 'active');
+                return d ? { sponsorship: s, deal: d } : null;
+            })
+            .filter(Boolean) as Array<{ sponsorship: typeof sponsoredFeedItems[number]; deal: Deal }>;
+    }, [sponsoredFeedItems, deals]);
+
+    // Phase 2.4: weave sponsored cards into the filtered grid every N items.
+    const weavedFeed = useMemo(() => {
+        if (sponsoredDeals.length === 0) return filteredDeals.map(d => ({ kind: 'deal' as const, deal: d }));
+        const interval = Math.max(2, sponsoredDeals[0]?.sponsorship?.insertionInterval || 4);
+        const woven: Array<{ kind: 'deal'; deal: Deal } | { kind: 'sponsored'; deal: Deal; sponsorship: any }> = [];
+        let sponsoredCursor = 0;
+        filteredDeals.forEach((d, idx) => {
+            woven.push({ kind: 'deal', deal: d });
+            if ((idx + 1) % interval === 0 && sponsoredCursor < sponsoredDeals.length) {
+                const s = sponsoredDeals[sponsoredCursor++];
+                // Avoid duplicating a sponsored deal that's already in the regular feed.
+                if (!filteredDeals.some(x => x.id === s.deal.id)) {
+                    woven.push({ kind: 'sponsored', deal: s.deal, sponsorship: s.sponsorship });
+                }
+            }
+        });
+        return woven;
+    }, [filteredDeals, sponsoredDeals]);
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -194,6 +240,9 @@ const Home: React.FC = () => {
 
             </div>
 
+            {/* Phase 2.5.1 — Top sponsor slider */}
+            {topSliderItems.length > 0 && <TopSlider items={topSliderItems} />}
+
             {/* Trending Section */}
             <div style={{ padding: '20px 0 10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
@@ -207,6 +256,11 @@ const Home: React.FC = () => {
                     ))}
                 </div>
             </div>
+
+            {/* Phase 2.5.2 — Inline ad banner between sections */}
+            {inlineBanners[0] && (
+                <InlineBanner item={inlineBanners[0]} isRTL={isRTL} />
+            )}
 
             {/* High Discount Section */}
             <div style={{ padding: '10px 0 20px' }}>
@@ -251,10 +305,27 @@ const Home: React.FC = () => {
                 </h2>
             </div>
 
-            {/* Deals Grid */}
+            {/* Phase 2.6 — Grid focused on product images and clear discount % */}
             <div style={{ padding: '0 16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-                {filteredDeals.length > 0 ? filteredDeals.map(deal => (
-                    <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                {weavedFeed.length > 0 ? weavedFeed.map((item, i) => (
+                    item.kind === 'sponsored' ? (
+                        <DealCard
+                            key={`spn-${item.deal.id}-${i}`}
+                            deal={item.deal}
+                            onClick={(id) => history.push(`/deal/${id}`)}
+                            sponsored={{
+                                badgeAr: item.sponsorship?.badgeLabelAr,
+                                badgeEn: item.sponsorship?.badgeLabelEn
+                            }}
+                        />
+                    ) : (
+                        <DealCard
+                            key={item.deal.id}
+                            deal={item.deal}
+                            onClick={(id) => history.push(`/deal/${id}`)}
+                            sponsored={pinnedStoreIds.includes(item.deal.storeId) ? { verified: true } : undefined}
+                        />
+                    )
                 )) : (
                     <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
                         <div style={{ fontSize: '3rem', marginBottom: 15 }}>🔍</div>

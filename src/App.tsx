@@ -19,6 +19,7 @@ const StoreDetails    = lazy(() => import('./pages/StoreDetails'));
 const Notifications   = lazy(() => import('./pages/Notifications'));
 const SeasonalOffers  = lazy(() => import('./pages/SeasonalOffers'));
 const Admin           = lazy(() => import('./pages/Admin'));
+const Subscription    = lazy(() => import('./pages/Subscription'));
 
 const RouteFallback = () => (
     <div style={{
@@ -125,6 +126,7 @@ const App = () => {
                         <Route path="/register" component={Register} />
                         <Route path="/seller" component={SellerDashboard} />
                         <Route path="/admin" component={Admin} />
+                        <Route path="/subscription" component={Subscription} />
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />
                         <Route path="/bookings" component={Bookings} />

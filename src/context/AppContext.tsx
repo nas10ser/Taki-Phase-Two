@@ -14,6 +14,10 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { subscriptionRepository, MerchantSubscription } from '../repositories/subscriptionRepository';
+import { platformSettingsRepository, PlatformSettings } from '../repositories/platformSettingsRepository';
+import { sponsorshipRepository, Sponsorship } from '../repositories/sponsorshipRepository';
+import { analyticsRepository, AnalyticsEvent } from '../repositories/analyticsRepository';
 
 interface StoreProfile {
     phone?: string;
@@ -90,6 +94,19 @@ interface AppContextType {
     viewAs: 'buyer' | 'seller' | null;
     setViewAs: (role: 'buyer' | 'seller' | null) => void;
     effectiveUserType: 'buyer' | 'seller' | 'admin';
+    // ── Phase 2 ──
+    /** The signed-in seller's subscription, or null for non-sellers / loading. */
+    mySubscription: MerchantSubscription | null;
+    refreshSubscription: () => Promise<void>;
+    /** Platform-wide flags (most importantly: payment gateway visibility). */
+    platformSettings: PlatformSettings;
+    /** Active sponsorships used by the buyer feed (sponsored deals + native ads). */
+    sponsoredFeedItems: Sponsorship[];
+    inlineBanners: Sponsorship[];
+    topSliderItems: Sponsorship[];
+    pinnedStoreIds: string[];
+    /** Track a funnel event server-side. Cheap & fire-and-forget. */
+    trackEvent: (storeId: string, type: AnalyticsEvent, opts?: { dealId?: string; durationMs?: number; metadata?: Record<string, any> }) => void;
 }
 
 
@@ -185,6 +202,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>({});
 
     const [darkMode, setDarkMode] = useState<boolean>(false);
+
+    // ── Phase 2 state ──
+    const [mySubscription, setMySubscription] = useState<MerchantSubscription | null>(null);
+    const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
+        paymentGatewayEnabled: false,
+        paymentGatewayProvider: 'moyasar',
+        paymentPublishableKey: '',
+        basicPlanPriceSar: 99,
+        extraBranchFeeSar: 25,
+        includedBranches: 3,
+        trialDays: 14,
+        trialWarningDaysBefore: 3
+    });
+    const [sponsoredFeedItems, setSponsoredFeedItems] = useState<Sponsorship[]>([]);
+    const [inlineBanners, setInlineBanners] = useState<Sponsorship[]>([]);
+    const [topSliderItems, setTopSliderItems] = useState<Sponsorship[]>([]);
+    const [pinnedStoreIds, setPinnedStoreIds] = useState<string[]>([]);
+
+    const refreshSubscription = useCallback(async () => {
+        if (!user || user.userType !== 'seller') {
+            setMySubscription(null);
+            return;
+        }
+        try {
+            const sub = await subscriptionRepository.getMine(user.id);
+            setMySubscription(sub);
+        } catch (e) {
+            console.warn('refreshSubscription failed:', e);
+        }
+    }, [user]);
+
+    const trackEvent = useCallback((
+        storeId: string,
+        type: AnalyticsEvent,
+        opts?: { dealId?: string; durationMs?: number; metadata?: Record<string, any> }
+    ) => {
+        analyticsRepository.track(storeId, type, {
+            dealId: opts?.dealId,
+            userId: user?.id,
+            durationMs: opts?.durationMs,
+            metadata: opts?.metadata
+        });
+    }, [user?.id]);
+
+    // Hydrate Phase 2 state once on user change.
+    useEffect(() => {
+        let alive = true;
+        const hydrate = async () => {
+            try {
+                const [settings, sponsored, banners, slider] = await Promise.all([
+                    platformSettingsRepository.fetchAll(),
+                    sponsorshipRepository.listActive({ type: ['sponsored_deal', 'native_ad'] }),
+                    sponsorshipRepository.listActive({ type: 'inline_banner' }),
+                    sponsorshipRepository.listActive({ type: 'top_slider' })
+                ]);
+                if (!alive) return;
+                setPlatformSettings(settings);
+                setSponsoredFeedItems(sponsored);
+                setInlineBanners(banners);
+                setTopSliderItems(slider);
+            } catch (e) {
+                console.warn('Phase 2 hydrate failed:', e);
+            }
+        };
+        hydrate();
+        return () => { alive = false; };
+    }, [user?.id]);
+
+    // Realtime: settings & subscription changes for the current seller.
+    useEffect(() => {
+        const stop = platformSettingsRepository.subscribe(setPlatformSettings);
+        return () => { stop(); };
+    }, []);
+
+    useEffect(() => {
+        if (!user || user.userType !== 'seller') {
+            setMySubscription(null);
+            return;
+        }
+        // Initial fetch + realtime subscription for the seller's own row.
+        refreshSubscription();
+        const stop = subscriptionRepository.subscribeToOwn(user.id, setMySubscription);
+        return () => { stop(); };
+    }, [user?.id, user?.userType, refreshSubscription]);
+
+    // Pinned-store ids re-fetch when the buyer changes scope.
+    useEffect(() => {
+        let alive = true;
+        import('../repositories/sponsorshipRepository').then(({ pinnedStoreRepository }) =>
+            pinnedStoreRepository.pinIds(topLocation.city || undefined, topLocation.mall || undefined).then(ids => {
+                if (alive) setPinnedStoreIds(ids);
+            })
+        );
+        return () => { alive = false; };
+    }, [topLocation.city, topLocation.mall]);
 
     // Admin "view as" — lets an admin preview the app as a buyer or
     // seller without changing their actual role. Only meaningful when
@@ -736,15 +848,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (error: any) {
             console.error('❌ Failed to save deal to database:', error);
             const msg: string = error?.message || '';
-            // Auth-token lock contention is a transient browser-tab race, not
-            // a sync failure — the next refresh will pick up the deal. Don't
-            // alarm the user.
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
-            if (!isTransientLock) {
+            // Phase 2: subscription guard rejects the insert when trial is
+            // expired or admin froze the merchant. Surface a friendly nudge.
+            const isSubscriptionRequired = /SUBSCRIPTION_REQUIRED/i.test(msg);
+            // Roll back the optimistic insert so the seller doesn't see a
+            // ghost row that won't sync.
+            setDeals(prev => prev.filter(d => d.id !== dealWithTime.id));
+            if (isSubscriptionRequired) {
+                customAlert(language === 'ar'
+                    ? '🔒 لإضافة عرض جديد تحتاج لاشتراك مفعّل. افتح "الاشتراك" من قائمة لوحتك لتجديد أو طلب منحة.'
+                    : '🔒 An active subscription is required to publish new deals. Open the "Subscription" tab on your dashboard to renew or request a grant.');
+            } else if (!isTransientLock) {
                 customAlert(
                     language === 'ar'
-                        ? `⚠️ تم الحفظ محلياً لكن المزامنة مع السيرفر فشلت. سيتم المحاولة مجدداً عند الاتصال.${msg ? `\n(${msg})` : ''}`
-                        : `⚠️ Saved locally but server sync failed. Will retry when reconnected.${msg ? `\n(${msg})` : ''}`
+                        ? `⚠️ تعذّرت المزامنة مع السيرفر.${msg ? `\n(${msg})` : ''}`
+                        : `⚠️ Server sync failed.${msg ? `\n(${msg})` : ''}`
                 );
             }
         }
@@ -1244,7 +1363,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
-        viewAs, setViewAs, effectiveUserType
+        viewAs, setViewAs, effectiveUserType,
+        mySubscription, refreshSubscription, platformSettings,
+        sponsoredFeedItems, inlineBanners, topSliderItems, pinnedStoreIds, trackEvent
     }), [
         language, setLanguage,
         deals, loading, addDeal, updateDeal, deleteDeal,
@@ -1260,7 +1381,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
-        viewAs, setViewAs, effectiveUserType
+        viewAs, setViewAs, effectiveUserType,
+        mySubscription, refreshSubscription, platformSettings,
+        sponsoredFeedItems, inlineBanners, topSliderItems, pinnedStoreIds, trackEvent
     ]);
 
     return (
