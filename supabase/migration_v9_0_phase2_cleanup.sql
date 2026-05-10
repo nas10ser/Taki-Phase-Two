@@ -44,18 +44,27 @@ DROP FUNCTION IF EXISTS public.can_seller_add_deal(TEXT);
 --    the same start date. This INSERT is also a no-op when v9_1
 --    has already filled the row.
 --    SAFE: ON CONFLICT DO NOTHING — runs only when nothing is there.
-INSERT INTO public.merchant_subscriptions
-    (merchant_id, plan_id, status, trial_starts_at, trial_ends_at, branches_count)
-SELECT sp.store_id,
-       (SELECT id FROM public.subscription_plans WHERE code='basic' LIMIT 1),
-       CASE WHEN sp.subscription_expires_at > NOW() THEN 'trial' ELSE 'frozen' END,
-       sp.subscription_expires_at - INTERVAL '14 days',
-       sp.subscription_expires_at,
-       1
-FROM public.store_profiles sp
-JOIN public.users u ON u.id = sp.store_id
-WHERE u.user_type = 'seller'
-  AND sp.subscription_expires_at IS NOT NULL
-ON CONFLICT (merchant_id) DO NOTHING;
--- (This block silently no-ops if subscription_plans/merchant_subscriptions
---  don't exist yet — run it AFTER v9_1.)
+DO $cleanup$
+BEGIN
+    -- Only attempt the backfill if v9_1 has already run.
+    IF to_regclass('public.merchant_subscriptions') IS NOT NULL
+       AND to_regclass('public.subscription_plans') IS NOT NULL
+       AND to_regclass('public.store_profiles') IS NOT NULL THEN
+        EXECUTE $sql$
+            INSERT INTO public.merchant_subscriptions
+                (merchant_id, plan_id, status, trial_starts_at, trial_ends_at, branches_count)
+            SELECT sp.store_id,
+                   (SELECT id FROM public.subscription_plans WHERE code='basic' LIMIT 1),
+                   CASE WHEN sp.subscription_expires_at > NOW() THEN 'trial' ELSE 'frozen' END,
+                   sp.subscription_expires_at - INTERVAL '14 days',
+                   sp.subscription_expires_at,
+                   1
+            FROM public.store_profiles sp
+            JOIN public.users u ON u.id = sp.store_id
+            WHERE u.user_type = 'seller'
+              AND sp.subscription_expires_at IS NOT NULL
+            ON CONFLICT (merchant_id) DO NOTHING;
+        $sql$;
+    END IF;
+END
+$cleanup$;

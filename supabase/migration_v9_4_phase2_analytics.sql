@@ -124,24 +124,24 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    WITH e AS (
+    WITH ev AS (
         SELECT * FROM store_analytics_events
          WHERE store_id = p_store_id
            AND created_at BETWEEN p_start AND p_end
     ),
-    v   AS (SELECT COUNT(*)::bigint AS c FROM e WHERE event_type IN ('deal_view','page_view')),
-    c   AS (SELECT COUNT(*)::bigint AS c FROM e WHERE event_type = 'deal_click'),
-    bs  AS (SELECT COUNT(*)::bigint AS c FROM e WHERE event_type = 'booking_started'),
-    ba  AS (SELECT COUNT(*)::bigint AS c FROM e WHERE event_type = 'booking_abandoned'),
-    bc  AS (SELECT COUNT(*)::bigint AS c FROM e WHERE event_type = 'booking_completed'),
-    s   AS (SELECT COUNT(DISTINCT session_id)::bigint AS c FROM e WHERE session_id IS NOT NULL),
-    t   AS (SELECT COALESCE(AVG(duration_ms)::numeric,0) AS a FROM e WHERE event_type = 'time_on_page')
+    cnt_v   AS (SELECT COUNT(*)::bigint AS n FROM ev WHERE event_type IN ('deal_view','page_view')),
+    cnt_c   AS (SELECT COUNT(*)::bigint AS n FROM ev WHERE event_type = 'deal_click'),
+    cnt_bs  AS (SELECT COUNT(*)::bigint AS n FROM ev WHERE event_type = 'booking_started'),
+    cnt_ba  AS (SELECT COUNT(*)::bigint AS n FROM ev WHERE event_type = 'booking_abandoned'),
+    cnt_bc  AS (SELECT COUNT(*)::bigint AS n FROM ev WHERE event_type = 'booking_completed'),
+    cnt_s   AS (SELECT COUNT(DISTINCT session_id)::bigint AS n FROM ev WHERE session_id IS NOT NULL),
+    cnt_t   AS (SELECT COALESCE(AVG(duration_ms)::numeric,0) AS n FROM ev WHERE event_type = 'time_on_page')
     SELECT
-        v.c, c.c, bs.c, ba.c, bc.c,
-        CASE WHEN bs.c = 0 THEN 0 ELSE ROUND((ba.c::numeric / bs.c::numeric) * 100, 1) END,
-        CASE WHEN c.c  = 0 THEN 0 ELSE ROUND((bc.c::numeric / c.c::numeric) * 100, 1) END,
-        s.c, t.a
-    FROM v, c, bs, ba, bc, s, t;
+        cnt_v.n, cnt_c.n, cnt_bs.n, cnt_ba.n, cnt_bc.n,
+        CASE WHEN cnt_bs.n = 0 THEN 0 ELSE ROUND((cnt_ba.n::numeric / cnt_bs.n::numeric) * 100, 1) END,
+        CASE WHEN cnt_c.n  = 0 THEN 0 ELSE ROUND((cnt_bc.n::numeric / cnt_c.n::numeric) * 100, 1) END,
+        cnt_s.n, cnt_t.n
+    FROM cnt_v, cnt_c, cnt_bs, cnt_ba, cnt_bc, cnt_s, cnt_t;
 END;
 $$;
 
@@ -175,19 +175,19 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    WITH e AS (
+    WITH ev AS (
         SELECT * FROM store_analytics_events
          WHERE deal_id = p_deal_id
            AND created_at BETWEEN p_start AND p_end
     )
     SELECT
-        (SELECT COUNT(*) FROM e WHERE event_type = 'deal_view')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'deal_click')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'booking_started')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'booking_abandoned')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'booking_completed')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'click_favorite')::bigint,
-        (SELECT COUNT(*) FROM e WHERE event_type = 'click_share')::bigint;
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'deal_view')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'deal_click')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'booking_started')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'booking_abandoned')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'booking_completed')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'click_favorite')::bigint,
+        (SELECT COUNT(*) FROM ev WHERE event_type = 'click_share')::bigint;
 END;
 $$;
 

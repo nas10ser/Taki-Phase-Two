@@ -37,6 +37,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- ====================== 2. Tighten promo RLS ======================
 DROP POLICY IF EXISTS "promo_select_active" ON promotional_campaigns;
+DROP POLICY IF EXISTS "promo_select_all" ON promotional_campaigns;
 DROP POLICY IF EXISTS "promo_insert_admin" ON promotional_campaigns;
 DROP POLICY IF EXISTS "promo_update_admin" ON promotional_campaigns;
 DROP POLICY IF EXISTS "promo_delete_admin" ON promotional_campaigns;
@@ -61,63 +62,62 @@ CREATE POLICY "promo_delete_admin" ON promotional_campaigns
 -- SECURITY DEFINER so the admin can write notifications for users
 -- they don't own; we still gate on is_admin() inside.
 CREATE OR REPLACE FUNCTION public.broadcast_campaign(p_campaign_id TEXT)
-RETURNS INTEGER AS $$
+RETURNS INTEGER AS $BODY$
 DECLARE
-    c RECORD;
     affected INTEGER := 0;
+    campaign_exists BOOLEAN;
 BEGIN
     IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Only admins can broadcast campaigns';
     END IF;
 
-    SELECT * INTO c FROM public.promotional_campaigns WHERE id = p_campaign_id;
-    IF NOT FOUND THEN
+    SELECT EXISTS(SELECT 1 FROM public.promotional_campaigns WHERE id = p_campaign_id)
+        INTO campaign_exists;
+    IF NOT campaign_exists THEN
         RAISE EXCEPTION 'Campaign % not found', p_campaign_id;
     END IF;
 
-    -- Insert one notification row per targeted user. Skip users
-    -- who already saw this campaign so a re-broadcast doesn't spam.
     INSERT INTO public.notifications (
         user_id, title_ar, title_en, body_ar, body_en, type, meta_data, created_at
     )
     SELECT
         u.id,
-        c.title_ar, c.title_en, c.body_ar, c.body_en,
+        pc.title_ar, pc.title_en, pc.body_ar, pc.body_en,
         'marketing',
         jsonb_build_object(
-            'campaignId', c.id,
-            'imageUrl', c.image_url,
-            'actionUrl', c.action_url,
-            'actionLabelAr', c.action_label_ar,
-            'actionLabelEn', c.action_label_en
+            'campaignId', pc.id,
+            'imageUrl', pc.image_url,
+            'actionUrl', pc.action_url,
+            'actionLabelAr', pc.action_label_ar,
+            'actionLabelEn', pc.action_label_en
         ),
         NOW()
-    FROM public.users u
-    WHERE
-        (c.target_audience = 'all' OR u.user_type = c.target_audience)
-        AND NOT EXISTS (
-            SELECT 1 FROM public.promo_impressions p
-            WHERE p.campaign_id = c.id AND p.user_id = u.id
-        );
+    FROM public.promotional_campaigns pc
+    CROSS JOIN public.users u
+    WHERE pc.id = p_campaign_id
+      AND (pc.target_audience = 'all' OR u.user_type = pc.target_audience)
+      AND NOT EXISTS (
+          SELECT 1 FROM public.promo_impressions pi
+          WHERE pi.campaign_id = pc.id AND pi.user_id = u.id
+      );
 
     GET DIAGNOSTICS affected = ROW_COUNT;
 
-    -- Mark all those users as having seen the campaign so they
-    -- don't get a duplicate via the regular polling delivery loop.
     INSERT INTO public.promo_impressions (campaign_id, user_id, seen_at, clicked)
-    SELECT c.id, u.id, NOW(), FALSE
-    FROM public.users u
-    WHERE
-        (c.target_audience = 'all' OR u.user_type = c.target_audience)
+    SELECT pc.id, u.id, NOW(), FALSE
+    FROM public.promotional_campaigns pc
+    CROSS JOIN public.users u
+    WHERE pc.id = p_campaign_id
+      AND (pc.target_audience = 'all' OR u.user_type = pc.target_audience)
     ON CONFLICT (campaign_id, user_id) DO NOTHING;
 
     UPDATE public.promotional_campaigns
        SET current_impressions = COALESCE(current_impressions, 0) + affected
-     WHERE id = c.id;
+     WHERE id = p_campaign_id;
 
     RETURN affected;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$BODY$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.broadcast_campaign(TEXT) TO authenticated;
 

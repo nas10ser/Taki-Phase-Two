@@ -468,13 +468,13 @@ AS $$
 DECLARE
     v_warning_days INTEGER;
     v_count INTEGER := 0;
-    r RECORD;
+    rec RECORD;
     v_views INTEGER;
     v_bookings INTEGER;
 BEGIN
     v_warning_days := COALESCE((get_setting('trial_warning_days_before', '3'::jsonb))::int, 3);
 
-    FOR r IN
+    FOR rec IN
         SELECT s.merchant_id, s.id AS sub_id, s.trial_ends_at
           FROM merchant_subscriptions s
          WHERE s.status = 'trial'
@@ -486,18 +486,18 @@ BEGIN
         -- Personalised stats for the warning notification.
         SELECT
             COALESCE((SELECT COUNT(*) FROM store_analytics_events
-                       WHERE store_id = r.merchant_id
+                       WHERE store_id = rec.merchant_id
                          AND event_type IN ('deal_view','page_view')
-                         AND created_at >= (SELECT trial_starts_at FROM merchant_subscriptions WHERE id = r.sub_id)
+                         AND created_at >= (SELECT trial_starts_at FROM merchant_subscriptions WHERE id = rec.sub_id)
                      ),0),
             COALESCE((SELECT COUNT(*) FROM bookings
-                       WHERE store_id = r.merchant_id
-                         AND created_at >= (SELECT trial_starts_at FROM merchant_subscriptions WHERE id = r.sub_id)
+                       WHERE store_id = rec.merchant_id
+                         AND created_at >= (SELECT trial_starts_at FROM merchant_subscriptions WHERE id = rec.sub_id)
                      ),0)
         INTO v_views, v_bookings;
 
         INSERT INTO notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
-        VALUES (r.merchant_id,
+        VALUES (rec.merchant_id,
             '🔥 لا تخسر زخم متجرك!', '🔥 Don''t lose your store''s momentum!',
             'حقّقت عروضك ' || v_views || ' مشاهدة و ' || v_bookings ||
               ' عملية حجز خلال الفترة المجانية. تنتهي تجربتك خلال أيام — اشترك الآن لتستمر بالنمو 🚀',
@@ -506,7 +506,7 @@ BEGIN
             'marketing',
             jsonb_build_object('cta_url','/seller?tab=subscription','views',v_views,'bookings',v_bookings));
 
-        UPDATE merchant_subscriptions SET last_warning_sent_at = NOW() WHERE id = r.sub_id;
+        UPDATE merchant_subscriptions SET last_warning_sent_at = NOW() WHERE id = rec.sub_id;
         v_count := v_count + 1;
     END LOOP;
 
