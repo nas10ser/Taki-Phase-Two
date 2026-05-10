@@ -404,6 +404,16 @@ const DealDetails: React.FC = () => {
         }
     }, [activeBooking?.status]);
 
+    // Notification deep-link: when the buyer taps an alert that points here
+    // with `?barcode=X`, force the ticket open so the receipt + merchant
+    // reply are the first thing they see — overrides any prior collapse
+    // toggle the user might have set on a previous visit.
+    React.useEffect(() => {
+        if (linkedBarcode && activeBooking && activeBooking.status !== 'completed') {
+            setTicketCollapsed(false);
+        }
+    }, [linkedBarcode, activeBooking?.status]);
+
     const { incrementDealView } = useApp();
     React.useEffect(() => {
         if (id) {

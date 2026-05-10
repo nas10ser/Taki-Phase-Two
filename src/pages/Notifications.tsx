@@ -70,6 +70,7 @@ const Notifications: React.FC = () => {
                             {myNotifications.map(n => {
                                 const dealId = n.metadata?.dealId;
                                 const barcode = n.metadata?.barcode;
+                                const storeId = (n.metadata as any)?.storeId as string | undefined;
                                 const followerId = n.metadata?.followerId;
                                 // Booking notifications are tagged at write time with
                                 // meta_data.audience = 'seller' | 'buyer' | 'admin'
@@ -79,23 +80,33 @@ const Notifications: React.FC = () => {
                                 // an admin at the same time. A "📦 طلب حجز جديد!" addressed
                                 // to the seller must land on the seller dashboard order
                                 // card, even when the recipient is also an admin.
+                                //
+                                // Admin booking notifications: if the same person is also
+                                // the seller (storeId === user.id), open the order card
+                                // directly — that's almost always what they want to see.
+                                // Otherwise fall back to the deal page (still informative)
+                                // before /admin?tab=overview.
                                 const isBookingNotif = n.type === 'booking';
                                 const audience = (n.metadata as any)?.audience as 'seller' | 'buyer' | 'admin' | undefined;
                                 const dest = isBookingNotif && audience === 'seller' && barcode
                                     ? `/seller?tab=orders&barcode=${barcode}`
                                     : isBookingNotif && audience === 'buyer' && dealId
                                         ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
-                                        : isBookingNotif && audience === 'admin'
-                                            ? '/admin?tab=overview'
-                                            : dealId
+                                        : isBookingNotif && audience === 'admin' && storeId === user.id && barcode
+                                            ? `/seller?tab=orders&barcode=${barcode}`
+                                            : isBookingNotif && audience === 'admin' && dealId
                                                 ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
-                                                : isBookingNotif
-                                                    ? '/bookings'
-                                                    : n.type === 'follow' || followerId
-                                                        ? '/profile'
-                                                        : n.type === 'marketing'
-                                                            ? '/'
-                                                            : null;
+                                                : isBookingNotif && audience === 'admin'
+                                                    ? '/admin?tab=overview'
+                                                    : dealId
+                                                        ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                                        : isBookingNotif
+                                                            ? '/bookings'
+                                                            : n.type === 'follow' || followerId
+                                                                ? '/profile'
+                                                                : n.type === 'marketing'
+                                                                    ? '/'
+                                                                    : null;
 
                                 const isHighPriority = !n.isRead && (
                                     n.type === 'follow' || 
