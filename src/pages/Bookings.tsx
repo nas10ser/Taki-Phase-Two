@@ -6,7 +6,6 @@ import Sidebar from '../components/Sidebar';
 import { Booking } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
-import { realtimeService } from '../services/realtimeService';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -96,8 +95,11 @@ const Bookings: React.FC = () => {
     };
 
     return (
-        <PullToRefresh isRTL={isRTL} onRefresh={async () => {
-            await Promise.allSettled([refreshBookings(), realtimeService.forceRefresh()]);
+        <PullToRefresh isRTL={isRTL} onRefresh={() => {
+            // Only the bookings table — the rest of the data on this page
+            // (notifications, deals) doesn't need to round-trip on a swipe.
+            refreshBookings();
+            return Promise.resolve();
         }}>
         <div style={{ minHeight: '100vh', background: 'var(--bg-color)', direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* Header */}

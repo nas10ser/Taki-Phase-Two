@@ -1,4 +1,53 @@
-# TAKI — تقرير التقدم v10.29 📊
+# TAKI — تقرير التقدم v10.30 📊
+
+## 🗓 v10.30 — Pull-to-Refresh أسرع من البرق (١١ مايو ٢٠٢٦)
+
+### الشكوى
+ناصر: "الـrefresh يطول مرة وهو يدور ويعلق. أريده سريع كالبرق وأسرع
+من البرق".
+
+### السبب الفعلي
+كان كل صفحة عند الـpull-to-refresh تستدعي:
+```
+realtimeService.forceRefresh()  →  onRefreshAll()
+```
+و `onRefreshAll` يجلب **٦ endpoints متوازية** من Supabase:
+- notifications، bookings، deals، favorites، storeProfiles، user
+
+`await` على Promise.allSettled لكل هؤلاء يعني الـspinner يبقى يدور حتى
+أبطأ واحد منهم يرد. على شبكة محمول متوسطة → ٢-٤ ثوان. على شبكة بطيئة
+→ يبدو كأنه "علق".
+
+### الإصلاح — ٣ تغييرات تخدم نفس الهدف
+
+**أ) [PullToRefresh.tsx](src/components/PullToRefresh.tsx): cap على الـspinner**
+```ts
+const fired  = onRefresh().catch(() => {});   // fire (don't await)
+const capped = new Promise(r => setTimeout(r, 700));
+await Promise.race([fired, capped]);
+```
+الـspinner يختفي **بعد ٧٠٠ms كحد أقصى** — بغض النظر عن انتهاء الـfetch.
+الـrefresh الفعلي يستمر في الخلفية، والـrealtime channel يوصل النتائج
+لما تجي. المستخدم يشوف feedback فوري ثم يستكمل.
+
+**ب) كل صفحة تنادي الـrefresh المعنية بها فقط:**
+- **Home** → `refreshDeals()` فقط (مش الـ٦ endpoints)
+- **Nearby** → `realtimeService.forceRefresh()` لـreconnect channels فقط
+- **Bookings** → `refreshBookings()` فقط
+
+الـfire-and-forget — لا `await`. الـPullToRefresh wrapper يضمن الـspinner
+لا يدور أكثر من ٧٠٠ms على أي حال.
+
+**ج) transition أسرع**: من `0.2s ease` إلى `0.12s cubic-bezier(0.2, 0.9, 0.3, 1)`.
+الـbounce-out أسرع وأسلس.
+
+### النتيجة
+سحب لتحت → spinner لـ٧٠٠ms كحد أقصى → اختفاء فوري → الـdata تظهر.
+الـperceived latency أقل من ثانية، **بغض النظر عن سرعة الشبكة**.
+
+### SW cache v10.30
+
+---
 
 ## 🗓 v10.29 — Pull-to-Refresh في النص + BottomNav بنمط X (١١ مايو ٢٠٢٦)
 

@@ -87,9 +87,14 @@ const PullToRefresh: React.FC<Props> = ({
             if (distance >= triggerDistance) {
                 setRefreshing(true);
                 setPullDistance(triggerDistance);
-                try {
-                    await onRefresh();
-                } catch { /* swallow — the page will still be there */ }
+                // Cap the visible spinner at 700 ms so it ALWAYS feels
+                // instant. Kick off the actual refresh in the background
+                // and don't block the UI on it — on a slow link the data
+                // will still update via the realtime channels seconds
+                // later, no need to keep spinning at the user.
+                const fired = Promise.resolve(onRefresh()).catch(() => {});
+                const capped = new Promise(r => setTimeout(r, 700));
+                await Promise.race([fired, capped]);
                 setRefreshing(false);
                 setPullDistance(0);
             } else {
@@ -174,7 +179,7 @@ const PullToRefresh: React.FC<Props> = ({
             <style>{`
                 @keyframes taki-ptr-spin { to { transform: rotate(360deg); } }
             `}</style>
-            <div style={{ transform: `translateY(${Math.min(pullDistance, maxDistance)}px)`, transition: refreshing || pullDistance === 0 ? 'transform 0.2s ease' : 'none' }}>
+            <div style={{ transform: `translateY(${Math.min(pullDistance, maxDistance)}px)`, transition: refreshing || pullDistance === 0 ? 'transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none' }}>
                 {children}
             </div>
         </>

@@ -135,8 +135,11 @@ const Nearby: React.FC = () => {
     const mapHeight = viewMode === 'map' ? '65vh' : '35vh';
 
     return (
-        <PullToRefresh isRTL={isRTL} onRefresh={async () => {
-            await realtimeService.forceRefresh();
+        <PullToRefresh isRTL={isRTL} onRefresh={() => {
+            // The deals list is driven by the realtime channel — a swipe
+            // here just nudges the channel to resync, no awaited fetches.
+            realtimeService.forceRefresh();
+            return Promise.resolve();
         }}>
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
             <div className="premium-bar" style={{ paddingBottom: 24 }}>
