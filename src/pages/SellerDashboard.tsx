@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import BarcodeScanner from '../components/BarcodeScanner';
+import BookingThread from '../components/BookingThread';
 import DualCalendarPicker from '../components/DualCalendarPicker';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
@@ -1973,6 +1974,10 @@ const SellerDashboard: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
+                                {/* Seller↔Buyer chat thread (3+3). Lives at the bottom of
+                                    each active order card so the seller sees buyer messages
+                                    and can reply without leaving the dashboard. */}
+                                <BookingThread barcode={order.barcode} myRole="seller" />
                             </div>
                         )) : (
                             <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders'}</div>

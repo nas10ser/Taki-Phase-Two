@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import { Booking } from '../repositories/bookingRepository';
+import BookingThread from '../components/BookingThread';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -252,6 +253,13 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
+
+                                                {/* Buyer↔Seller chat thread (3+3 cap). Hidden once the
+                                                    booking is closed-out so old completed orders don't
+                                                    surface chat boxes. */}
+                                                {booking.status !== 'cancelled' && (
+                                                    <BookingThread barcode={booking.barcode} myRole="buyer" />
+                                                )}
 
                                                 {/* Code & QR */}
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>

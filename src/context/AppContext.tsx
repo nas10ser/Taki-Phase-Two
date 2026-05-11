@@ -87,6 +87,9 @@ interface AppContextType {
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
     acknowledgeBooking: (barcode: string, note?: string) => void;
+    sendBookingMessage: (barcode: string, body: string) => Promise<void>;
+    fetchBookingMessages: (barcode: string) => Promise<void>;
+    markBookingMessagesRead: (barcode: string) => Promise<void>;
     customPrompt: (message: string) => Promise<string | null>;
     refreshBookings: () => Promise<void>;
     refreshDeals: () => Promise<void>;
@@ -1349,9 +1352,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!user?.id) return;
         try {
             const fresh = await bookingRepository.getByUser(user.id);
-            setBookings(fresh);
+            setBookings(prev => {
+                // Preserve any messages we already fetched per booking — the
+                // bookings select doesn't include them.
+                const byBarcode: Record<string, any> = {};
+                prev.forEach(b => { byBarcode[b.barcode] = b; });
+                return fresh.map((b: any) => ({
+                    ...b,
+                    messages: byBarcode[b.barcode]?.messages,
+                }));
+            });
         } catch (e) {
             console.warn('refreshBookings failed:', e);
+        }
+    }, [user?.id]);
+
+    // ── Booking messages thread (buyer ↔ seller, 3+3 cap) ──
+    const fetchBookingMessages = useCallback(async (barcode: string) => {
+        try {
+            const messages = await bookingRepository.getMessages(barcode);
+            setBookings(prev => prev.map(b => b.barcode === barcode ? { ...b, messages } : b));
+        } catch (e: any) {
+            console.warn('fetchBookingMessages failed:', e?.message || e);
+        }
+    }, []);
+
+    const sendBookingMessage = useCallback(async (barcode: string, body: string) => {
+        const text = (body || '').trim();
+        if (!text) return;
+        try {
+            const inserted = await bookingRepository.sendMessage(barcode, text);
+            setBookings(prev => prev.map(b => {
+                if (b.barcode !== barcode) return b;
+                const existing = b.messages || [];
+                if (existing.find((m: any) => m.id === inserted.id)) return b;
+                return { ...b, messages: [...existing, inserted] };
+            }));
+        } catch (e: any) {
+            customAlert(language === 'ar'
+                ? `⚠️ ${e?.message || 'تعذّر إرسال الرسالة'}`
+                : `⚠️ ${e?.message || 'Could not send message'}`);
+            throw e;
+        }
+    }, [customAlert, language]);
+
+    const markBookingMessagesRead = useCallback(async (barcode: string) => {
+        try {
+            await bookingRepository.markMessagesRead(barcode);
+            // Optimistic local update so the unread-dot disappears immediately
+            setBookings(prev => prev.map(b => {
+                if (b.barcode !== barcode || !b.messages) return b;
+                const now = Date.now();
+                const myRole: 'buyer' | 'seller' | null =
+                    b.userId === user?.id ? 'buyer' :
+                    (b.deal?.storeId === user?.id ? 'seller' : null);
+                if (!myRole) return b;
+                return {
+                    ...b,
+                    messages: b.messages.map((m: any) =>
+                        m.senderRole !== myRole && !m.readAt ? { ...m, readAt: now } : m
+                    ),
+                };
+            }));
+        } catch (e: any) {
+            console.warn('markBookingMessagesRead failed:', e?.message || e);
         }
     }, [user?.id]);
 
@@ -1406,6 +1470,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     setNotifications(prev => prev.filter(n => n.id !== payload.old.id));
                 } else if (payload.eventType === 'UPDATE' && payload.new) {
                     setNotifications(prev => prev.map(n => n.id === payload.new.id ? { ...n, isRead: !!payload.new.is_read } : n));
+                }
+            },
+            onBookingMessage: (payload) => {
+                // Live thread updates. INSERT = new message → append.
+                // UPDATE = read-receipt (only field that changes is read_at).
+                if (payload.eventType === 'INSERT' && payload.new) {
+                    const row = payload.new as any;
+                    const mapped = {
+                        id: row.id,
+                        barcode: row.barcode,
+                        senderId: row.sender_id,
+                        senderRole: row.sender_role,
+                        body: row.body,
+                        createdAt: new Date(row.created_at).getTime(),
+                        readAt: row.read_at ? new Date(row.read_at).getTime() : null,
+                    };
+                    setBookings(prev => prev.map(b => {
+                        if (b.barcode !== mapped.barcode) return b;
+                        const existing = b.messages || [];
+                        if (existing.find((m: any) => m.id === mapped.id)) return b;
+                        return { ...b, messages: [...existing, mapped] };
+                    }));
+                } else if (payload.eventType === 'UPDATE' && payload.new) {
+                    const row = payload.new as any;
+                    setBookings(prev => prev.map(b => {
+                        if (b.barcode !== row.barcode || !b.messages) return b;
+                        return {
+                            ...b,
+                            messages: b.messages.map((m: any) =>
+                                m.id === row.id ? { ...m, readAt: row.read_at ? new Date(row.read_at).getTime() : null } : m
+                            ),
+                        };
+                    }));
                 }
             },
             onBookingChange: (payload) => {
@@ -1577,7 +1674,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         notifications, addNotification, markNotifRead,
-        bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking, refreshBookings, refreshDeals,
+        bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
+        sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
+        refreshBookings, refreshDeals,
         addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
@@ -1595,7 +1694,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         notifications, addNotification, markNotifRead,
-        bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking, refreshBookings, refreshDeals,
+        bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
+        sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
+        refreshBookings, refreshDeals,
         addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         notifKeywords, addNotifKeyword, removeNotifKeyword,

@@ -6,6 +6,16 @@ import { supabase } from '../services/supabaseClient';
 import { dealRepository } from './dealRepository';
 import { logger } from '../utils/logger';
 
+export interface BookingMessage {
+    id: string;
+    barcode: string;
+    senderId: string;
+    senderRole: 'buyer' | 'seller';
+    body: string;
+    createdAt: number;
+    readAt: number | null;
+}
+
 export interface Booking {
     deal: any;
     barcode: string;
@@ -20,7 +30,20 @@ export interface Booking {
     notes?: string;          // Buyer's note attached at booking time
     merchantNote?: string;   // Seller's note left when acknowledging the order
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
+    /** Messages exchanged on this booking. Up to 3 from each side
+     *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
+    messages?: BookingMessage[];
 }
+
+const mapMessage = (m: any): BookingMessage => ({
+    id: m.id,
+    barcode: m.barcode,
+    senderId: m.sender_id,
+    senderRole: m.sender_role,
+    body: m.body,
+    createdAt: new Date(m.created_at).getTime(),
+    readAt: m.read_at ? new Date(m.read_at).getTime() : null,
+});
 
 // Status progression rank — higher = more advanced. When local and remote
 // disagree on the same barcode (e.g. seller acknowledged offline, remote
@@ -169,6 +192,41 @@ export const bookingRepository = {
         } catch (e) {
             console.error('Remote delete failed:', e);
         }
+    },
+
+    // ── Messages thread ──────────────────────────────────────────
+    getMessages: async (barcode: string): Promise<BookingMessage[]> => {
+        const { data, error } = await supabase
+            .from('booking_messages')
+            .select('*')
+            .eq('barcode', barcode)
+            .order('created_at', { ascending: true });
+        if (error) {
+            console.warn('Fetch booking messages failed:', error.message);
+            return [];
+        }
+        return (data || []).map(mapMessage);
+    },
+
+    sendMessage: async (barcode: string, body: string): Promise<BookingMessage> => {
+        const { data, error } = await supabase.rpc('send_booking_message', {
+            p_barcode: barcode,
+            p_body: body,
+        });
+        if (error) throw error;
+        if (!data) throw new Error('RPC returned no row');
+        return mapMessage(data);
+    },
+
+    markMessagesRead: async (barcode: string): Promise<number> => {
+        const { data, error } = await supabase.rpc('mark_booking_messages_read', {
+            p_barcode: barcode,
+        });
+        if (error) {
+            console.warn('Mark-read failed:', error.message);
+            return 0;
+        }
+        return Number(data) || 0;
     },
 
     clearAll: async (): Promise<void> => {

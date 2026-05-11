@@ -1,4 +1,83 @@
-# TAKI — تقرير التقدم v10.20 📊
+# TAKI — تقرير التقدم v10.21 📊
+
+## 🗓 v10.21 — محادثة المشتري ↔ التاجر (٣+٣ رسائل) ١١ مايو ٢٠٢٦
+
+### الميزة
+محادثة ثنائية بين المشتري والتاجر على نفس بطاقة الحجز، مع حد أقصى ٣
+رسائل من كل طرف (٦ مجموع). كل رسالة تطلق إشعاراً فورياً للطرف الآخر،
+ومن المتصل به يقدر يرد بدون مغادرة الصفحة.
+
+### قاعدة البيانات
+**جدول جديد `booking_messages`:**
+- `barcode` FK → bookings (ON DELETE CASCADE)
+- `sender_id` + `sender_role` ('buyer' | 'seller')
+- `body` بين ١-٥٠٠ حرف (CHECK constraint)
+- `read_at` للـtwo-checkmark
+- RLS: الطرفين يقرؤون، الـbuyer/seller يكتب رسالة بدوره، الـrecipient
+  يحدّث `read_at` فقط
+- مضاف لـ`supabase_realtime` publication ليصل عبر WebSocket
+
+**RPCs (atomic, SECURITY DEFINER):**
+- `send_booking_message(barcode, body)`:
+  - يفحص الـauth + هل المُرسل طرف في الحجز
+  - يرفض لو الحجز ملغى
+  - يعدّ الرسائل السابقة من نفس الـrole، يرفض لو ≥ ٣
+  - يدخل + يرجع الـrow
+- `mark_booking_messages_read(barcode)`: للـrecipient فقط، يحدّث `read_at`
+  لكل رسائل الطرف الآخر غير المقروءة
+
+**Trigger `tr_booking_message_notification`** على INSERT:
+- يستخرج اسم المرسل (name → shop fallback)
+- يأخذ ٧٧ حرف معاينة من النص
+- يدخل notification للطرف الآخر:
+  - title: "💬 رسالة جديدة من المشتري/التاجر"
+  - body: "اسم المرسل — اسم المنتج: معاينة"
+  - meta_data.isMessage = true → الـclient يفتح البطاقة على الـthread
+
+### الـClient
+**[bookingRepository.ts](src/repositories/bookingRepository.ts)** — إضافة:
+- type `BookingMessage`
+- `Booking.messages?: BookingMessage[]` (lazy)
+- `getMessages(barcode)`, `sendMessage(barcode, body)`, `markMessagesRead(barcode)`
+
+**[realtimeService.ts](src/services/realtimeService.ts)** — اشتراك جديد:
+- `userChannel.on('postgres_changes', ..., 'booking_messages', ...)` على نفس
+  الـchannel (الـRLS يقصر الـpayload على الحجوزات اللي المستخدم طرف فيها)
+- INSERT → يضيف رسالة جديدة للـlocal state
+- UPDATE → يحدّث `readAt` على الرسالة الموجودة
+
+**[AppContext.tsx](src/context/AppContext.tsx)** — API جديد:
+- `fetchBookingMessages(barcode)` — lazy load عند فتح بطاقة لأول مرة
+- `sendBookingMessage(barcode, body)` — يستدعي الـRPC، يدمج الـrow في الـlocal
+  state، يعرض رسالة الخطأ العربية لو فشل (الحد، الإلغاء، إلخ)
+- `markBookingMessagesRead(barcode)` — optimistic + RPC
+
+**Component جديد [BookingThread.tsx](src/components/BookingThread.tsx):**
+- يعرض الـthread بـbubbles: المرسل يميناً (primary)، المستقبل يساراً
+- عداد "أنت: X/٣ — الطرف الآخر: Y/٣" في الأعلى
+- `auto-scroll` للأسفل عند رسالة جديدة
+- Enter يرسل، Shift+Enter سطر جديد
+- input عداد متبقي + max 500 حرف
+- بعد ٣ رسائل من جانبي: input يختفي + رسالة "اتصل بالطرف الآخر مباشرة"
+- ✓ مرسل، ✓✓ مقروء
+
+**أماكن الإدراج:**
+- [Bookings.tsx:255](src/pages/Bookings.tsx) — داخل البطاقة الموسّعة، بعد
+  tracker، قبل QR. يختفي لو الحجز `cancelled`
+- [SellerDashboard.tsx:1976](src/pages/SellerDashboard.tsx) — أسفل بطاقة
+  كل طلب نشط
+
+### تجربة المستخدم
+1. المشتري يحجز → يفتح "حجوزاتي" → يوسّع البطاقة → يكتب "هل المقاس متوفر؟"
+2. الـRPC يدخل الـrow → الـtrigger يبعث إشعار للتاجر فوراً
+3. التاجر يستلم الإشعار → يفتح لوحته → بطاقة الطلب فيها الرسالة الجديدة
+4. التاجر يرد "نعم، جاهز خلال ١٠ دقائق" → نفس السلسلة بالاتجاه المعاكس
+5. الـrealtime channel ينقل كل رسالة لأجهزة الطرفين خلال ثوانٍ
+6. بعد ٣ رسائل من كل جانب، الـinput يتعطّل مع تنبيه للاتصال المباشر
+
+### SW cache v10.21
+
+---
 
 ## 🗓 v10.20 — إصلاح "الحجز يرجع لقيد التجهيز" + أمن المعاملات (١١ مايو ٢٠٢٦)
 

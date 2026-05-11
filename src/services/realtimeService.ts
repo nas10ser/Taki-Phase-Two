@@ -25,6 +25,7 @@ interface RealtimeConfig {
     onNotificationInsert: EventCallback;
     onNotificationUpdate: EventCallback;
     onBookingChange: EventCallback;
+    onBookingMessage?: EventCallback;
     onDealChange: EventCallback;
     onUserChange: EventCallback;
     onFavoriteChange: EventCallback;
@@ -214,6 +215,18 @@ function setupChannels(config: RealtimeConfig) {
         lastActivityAt = Date.now();
         lastSyncAt.bookings = Date.now();
         config.onBookingChange(payload);
+    });
+
+    // Booking messages: live thread updates (INSERT for new, UPDATE for read-receipts).
+    // RLS already restricts visibility to either party of the booking, so the
+    // client receives only messages for bookings it actually has access to.
+    userChannel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'booking_messages'
+    }, (payload) => {
+        lastActivityAt = Date.now();
+        config.onBookingMessage?.(payload);
     });
 
     // User profile changes (for this user — settings, keywords, etc.)
