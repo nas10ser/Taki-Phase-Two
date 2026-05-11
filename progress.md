@@ -1,4 +1,45 @@
-# TAKI — تقرير التقدم v10.15 📊
+# TAKI — تقرير التقدم v10.16 📊
+
+## 🗓 v10.16 — كاميرا الباركود + كم badge overflow (١١ مايو ٢٠٢٦)
+
+### ١. الكاميرا ما تفتح في سكانر الباركود
+**السبب الجذري:** [vercel.json:63](vercel.json:63) كان فيه
+`Permissions-Policy: camera=()` — قائمة سماح **فاضية تماماً**.
+يعني صفر مواقع تستطيع استخدام الكاميرا، حتى الموقع نفسه.
+المتصفح يرفض `navigator.mediaDevices.getUserMedia()` قبل أن
+يصل الطلب أصلاً لمنطق التطبيق.
+
+`BarcodeScanner.tsx` نفسه صحيح: HTTPS check، facingMode: environment،
+معالجة `NotAllowedError`. كل شي تمام إلا أن الـPolicy header كان
+يقفل الباب من المصدر.
+
+**الإصلاح:** `camera=(self)` — الموقع الحالي فقط يقدر يطلب الكاميرا
+(لا أي iframe خارجي). آمن وكافي.
+
+### ٢. كلمة "كم" تطلع خارج بطاقة "تنبيهات ذكية فورية"
+**السبب:** [Profile.tsx:491](src/pages/Profile.tsx:491) — حقل KM
+كان عنده `flex: 1, minWidth: 110` بينما حقل keyword جاره `flex: 2,
+minWidth: 140`. مجموع الـmin = ٢٥٨px + gap ٨px + padding الـcard ٤٠px
+= ~٣٠٦px. على iPhone 12 mini أو شاشات ضيقة (≤ ٣٧٥px من الـviewport
+بعد الـsafe areas)، الـ`flex-wrap` ينقل عنصر، لكن الـmin-width يجبر
+الـ`<div>` على البقاء أعرض من الـcontainer فيـoverflow ينزّل الـ"كم"
+بره الإطار.
+
+**الإصلاح:**
+- بدّلت `flex: 2, minWidth: 140` بـ `flex: '2 1 160px', minWidth: 0`
+  (يسمح بالـshrink أقل من القاعدة لو الـcontainer ضيق)
+- نفس الشي للـKM: `flex: '1 1 110px', minWidth: 0`
+- أضفت `boxSizing: 'border-box'` و `overflow: 'hidden'` على الـwrapper
+  ليُقص الـ"كم" بدل ما يطلع
+- `flexShrink: 0` على الـ"كم" span و على زر "موقعي" — تظل القياسات
+  الـintrinsic
+- صغّرت padding `0 12px` → `0 10px` و font-size الـlabel `0.85rem` → `0.8rem`
+
+### ٣. SW cache bump إلى v10.16
+كالمعتاد — تطبيق القاعدة الجديدة. بدون هذا، إصلاح الكاميرا
+والـoverflow ما يصلوا للجوال.
+
+---
 
 ## 🗓 v10.15 — رفع SW cache + وقت الوصول مشي/سيارة (١١ مايو ٢٠٢٦)
 

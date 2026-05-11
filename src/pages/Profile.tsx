@@ -487,13 +487,13 @@ const SmartAlertsCard: React.FC<{
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                 <input value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
                     placeholder={isRTL ? 'كلمة مفتاحية (اختياري)' : 'Keyword (Opt)'}
-                    style={{ flex: 2, minWidth: 140, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.9rem', outline: 'none' }} />
-                <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 110, background: 'var(--card-bg)', borderRadius: 12, border: '1.5px solid var(--border-color)', padding: '0 12px' }}>
+                    style={{ flex: '2 1 160px', minWidth: 0, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', alignItems: 'center', flex: '1 1 110px', minWidth: 0, background: 'var(--card-bg)', borderRadius: 12, border: '1.5px solid var(--border-color)', padding: '0 10px', boxSizing: 'border-box', overflow: 'hidden' }}>
                     <input type="tel" value={filterKm}
                         onChange={e => setFilterKm(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
                         placeholder={isRTL ? 'مثال: 5' : 'e.g. 5'}
-                        style={{ flex: 1, padding: '12px 0', border: 'none', background: 'transparent', fontSize: '0.9rem', outline: 'none', textAlign: isRTL ? 'right' : 'left' }} />
-                    <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.85rem', marginInlineStart: 8 }}>{isRTL ? 'كم' : 'KM'}</span>
+                        style={{ flex: 1, minWidth: 0, width: '100%', padding: '12px 0', border: 'none', background: 'transparent', fontSize: '0.9rem', outline: 'none', textAlign: isRTL ? 'right' : 'left' }} />
+                    <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.8rem', marginInlineStart: 6, flexShrink: 0 }}>{isRTL ? 'كم' : 'KM'}</span>
                 </div>
                 {filterKm && (
                     <button onClick={handleCaptureLocation} disabled={gettingLocation}
@@ -502,7 +502,7 @@ const SmartAlertsCard: React.FC<{
                             border: preciseCoords ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
                             background: preciseCoords ? 'var(--primary)' : 'var(--card-bg)',
                             color: preciseCoords ? 'white' : 'var(--text-primary)', fontWeight: 800, fontSize: '0.78rem',
-                            whiteSpace: 'nowrap', cursor: 'pointer'
+                            whiteSpace: 'nowrap', cursor: 'pointer', minHeight: 44, flexShrink: 0
                         }}>
                         {gettingLocation ? '⌛' : preciseCoords ? '✅' : (isRTL ? '📍 موقعي' : '📍 Capture')}
                     </button>
