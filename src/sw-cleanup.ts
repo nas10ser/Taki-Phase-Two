@@ -38,8 +38,62 @@ function dispatchUpdateAvailable() {
     }
 }
 
+const VERSION_KEY = 'TAKI_SW_VERSION_SEEN';
+const AUTO_APPLIED_KEY = 'TAKI_SW_AUTO_APPLIED_AT';
+
+/**
+ * Compare the CACHE_NAME baked into the live /sw.js against the last one
+ * we observed on this device. If the server advanced (new deploy) and we
+ * haven't auto-applied within the last 60 seconds, just nuke the cache
+ * and reload — no banner, no waiting on iOS Safari's lazy SW-update
+ * scheduling. This is the path that makes "I deployed but the user is
+ * still on the old version" stop happening.
+ */
+async function autoCheckServerVersion(): Promise<void> {
+    try {
+        // Force a network fetch — we have to bypass the SW for THIS one
+        // request, otherwise the stale SW happily returns its cached
+        // copy of /sw.js and we never detect the drift.
+        const res = await fetch('/sw.js?_v=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const text = await res.text();
+        const match = /taki-cache-v[\d.]+/.exec(text);
+        if (!match) return;
+        const serverVersion = match[0];
+
+        let lastSeen: string | null = null;
+        try { lastSeen = localStorage.getItem(VERSION_KEY); } catch {}
+
+        if (!lastSeen) {
+            try { localStorage.setItem(VERSION_KEY, serverVersion); } catch {}
+            return;
+        }
+        if (lastSeen === serverVersion) return;
+
+        // Different version on the server. Throttle to one auto-apply per
+        // 60 s so a momentary glitch can't loop us.
+        let appliedAt = 0;
+        try { appliedAt = Number(localStorage.getItem(AUTO_APPLIED_KEY) || '0'); } catch {}
+        if (Date.now() - appliedAt < 60_000) return;
+
+        try {
+            localStorage.setItem(VERSION_KEY, serverVersion);
+            localStorage.setItem(AUTO_APPLIED_KEY, String(Date.now()));
+        } catch {}
+
+        // Apply without any UI — by the time the user notices the page
+        // already came back with the new build. The banner stays as a
+        // fallback path for cases where this fetch fails.
+        applySwUpdate();
+    } catch { /* offline / blocked — leave it; the banner will catch up */ }
+}
+
 (async () => {
     if (typeof window === 'undefined') return;
+
+    // Kick the version probe immediately. It runs in parallel with the
+    // rest of the SW wiring below.
+    autoCheckServerVersion();
 
     if ('serviceWorker' in navigator) {
         // Reload exactly once when the new worker takes control. This is the
@@ -66,6 +120,11 @@ function dispatchUpdateAvailable() {
         try {
             const reg = await navigator.serviceWorker.getRegistration('/');
             if (reg) {
+                // Immediate update probe on mount — iOS Safari otherwise
+                // waits up to 24 h before checking sw.js on its own. This
+                // is a no-op if the worker is already current.
+                reg.update().catch(() => {});
+
                 if (reg.waiting) {
                     dispatchUpdateAvailable();
                 }

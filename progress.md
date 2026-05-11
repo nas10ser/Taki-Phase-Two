@@ -18,6 +18,7 @@
 
 | إصدار | الموضوع |
 |--------|---------|
+| **v10.34** | auto-version-check على كل page load: يقارن CACHE_NAME الـserver مع الـcached محلياً ويـapply تلقائياً إذا اختلف |
 | **v10.33** | BottomNav على DealDetails + رفع زر الحجز فوقه + خريطة حولي بـ120 px clearance + Sidebar بدون flex:1 |
 | **v10.32** | تثبيت BottomNav (إزالة auto-hide) + فراغ تحت خريطة "حولي" في وضع map-only |
 | **v10.31** | إزالة Pull-to-Refresh من حولي + BottomNav يكشف على أي scroll-up (مثل X) |
