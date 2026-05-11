@@ -981,6 +981,20 @@ const SellerDashboard: React.FC = () => {
             images,
             description: validationService.sanitizeText(description, 1000),
             locationId: locationId === 'other' ? `custom_${Date.now()}` : locationId,
+            // Always denormalize region/city. Prefer the seller's explicit
+            // selection; if they used "other" with a map pin and didn't pick
+            // a city, derive from coords via findNearestCity. This is what
+            // makes filter-by-region work for custom locations.
+            region: (() => {
+                if (selectedRegion) return selectedRegion;
+                const nearest = findNearestCity(finalLat, finalLng);
+                return nearest?.regionId;
+            })(),
+            city: (() => {
+                if (selectedCity) return selectedCity;
+                const nearest = findNearestCity(finalLat, finalLng);
+                return nearest?.id;
+            })(),
             googleMapsLink,
             mapLocation: { lat: finalLat, lng: finalLng },
             reliabilityScore: existingDeal ? existingDeal.reliabilityScore : 100,

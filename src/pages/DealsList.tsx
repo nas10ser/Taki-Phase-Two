@@ -5,6 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
+import { dealMatchesLocation } from '../utils/helpers';
 
 type DealsType = 'trending' | 'discount' | 'all';
 
@@ -71,16 +72,7 @@ const DealsList: React.FC = () => {
 
         // Honor the user's location filter from Home so they don't get
         // out-of-region offers when drilling in.
-        if (topLocation.mall) {
-            list = list.filter(d => d.locationId === topLocation.mall);
-        } else if (topLocation.city) {
-            const cityLocs = LOCATIONS.filter(l => l.cityId === topLocation.city).map(l => l.id);
-            list = list.filter(d => cityLocs.includes(d.locationId));
-        } else if (topLocation.region) {
-            const regionCities = CITIES.filter(c => c.regionId === topLocation.region).map(c => c.id);
-            const regionLocs = LOCATIONS.filter(l => regionCities.includes(l.cityId)).map(l => l.id);
-            list = list.filter(d => regionLocs.includes(d.locationId));
-        }
+        list = list.filter(d => dealMatchesLocation(d, topLocation));
 
         if (searchQuery.trim()) {
             list = list.filter(d => {

@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { getDistance } from '../utils/helpers';
+import { getDistance, resolveDealLocation } from '../utils/helpers';
 
 const MapUpdater = ({ center }: { center: [number, number] }) => {
     const map = useMap();
@@ -78,11 +78,12 @@ const Nearby: React.FC = () => {
             const matchesSearch = dealService.advancedSearchMatch(searchQuery, textToSearch);
             const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory || (d.category as string) === 'all';
             
-            // Proximity is the main filter, but we also respect strict selections if they exist
-            const dLoc = getLocation(d.locationId);
-            const dCity = dLoc ? CITIES.find(c => c.id === dLoc.cityId) : null;
-            const matchesRegion = !selectedRegion || (dCity?.regionId === selectedRegion);
-            const matchesCity = !selectedCity || (dLoc?.cityId === selectedCity);
+            // Proximity is the main filter, but we also respect strict selections if they exist.
+            // resolveDealLocation handles both the (loc → city) chain and the
+            // denormalized region/city + map-coord fallback in one call.
+            const { regionId: dRegion, cityId: dCity } = resolveDealLocation(d);
+            const matchesRegion = !selectedRegion || (dRegion === selectedRegion);
+            const matchesCity = !selectedCity || (dCity === selectedCity);
             const matchesLocation = !selectedLocationId || (d.locationId === selectedLocationId);
             
             // Time-based offers (no stock cap) stay visible until the timer

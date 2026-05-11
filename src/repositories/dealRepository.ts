@@ -84,6 +84,10 @@ export const dealRepository = {
             google_maps_link: deal.googleMapsLink || null,
             map_lat: deal.mapLocation?.lat ?? null,
             map_lng: deal.mapLocation?.lng ?? null,
+            // Denormalized region/city so the filter chain works for
+            // deals whose location_id is a `custom_<ts>` (not in LOCATIONS).
+            region: deal.region || null,
+            city: deal.city || null,
             reliability_score: deal.reliabilityScore ?? 100,
             expires_in_minutes: deal.expiresInMinutes ?? 525600,
             expiry_type: deal.expiryType || null,
@@ -104,6 +108,12 @@ export const dealRepository = {
         if (error && /expiry_(type|date)/i.test(error.message || '')) {
             const { expiry_type, expiry_date, ...legacyDeal } = dbDeal;
             const retry = await supabase.from('deals').upsert(legacyDeal);
+            error = retry.error;
+        }
+        // Same tolerance if the region/city columns don't exist yet.
+        if (error && /column "(region|city)"/i.test(error.message || '')) {
+            const { region, city, ...noGeo } = dbDeal;
+            const retry = await supabase.from('deals').upsert(noGeo);
             error = retry.error;
         }
         if (error) {
@@ -156,6 +166,8 @@ export const dealRepository = {
                 google_maps_link: deal.googleMapsLink || null,
                 map_lat: deal.mapLocation?.lat || null,
                 map_lng: deal.mapLocation?.lng || null,
+                region: deal.region || null,
+                city: deal.city || null,
                 reliability_score: deal.reliabilityScore || 100,
                 expires_in_minutes: deal.expiresInMinutes || 525600,
                 quantity: deal.quantity === 'unlimited' ? null : deal.quantity,
@@ -232,6 +244,8 @@ export const dealRepository = {
         if ('map_lat' in d && 'map_lng' in d) {
             deal.mapLocation = { lat: Number(d.map_lat), lng: Number(d.map_lng) };
         }
+        if ('region' in d) deal.region = d.region || undefined;
+        if ('city' in d) deal.city = d.city || undefined;
         if ('expiry_type' in d && d.expiry_type) deal.expiryType = d.expiry_type;
         if ('expiry_date' in d && d.expiry_date) deal.expiryDate = d.expiry_date;
 

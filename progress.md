@@ -1,4 +1,63 @@
-# TAKI — تقرير التقدم v10.18 📊
+# TAKI — تقرير التقدم v10.19 📊
+
+## 🗓 v10.19 — إصلاح فلتر المنطقة/المدينة (bug في الـtrigger و الـclient) ١١ مايو ٢٠٢٦
+
+### المشكلة (التي بلّغ عنها ناصر)
+"عند تحديد موقعي عند إضافة المنتج في الشرقية/الدمام ولم يظهر عند
+الفلترة بـالمنطقة الشرقية". تتبّعت السبب الجذري إلى ٣ طبقات:
+
+1. **DB schema:** جدول `deals` فيه عمودا `region` و `city` لكن
+   `dealRepository.upsert()` لم يكن يكتب فيهم — كلاهما NULL لكل صف.
+2. **DB trigger:** `handle_deal_smart_notifications` كان يحل region/city
+   عبر `locations + cities` فقط. لما الـlocation_id = `custom_<ts>`
+   (التاجر حدد موقع مخصص على الخريطة)، الـSELECT يرجع NOT FOUND
+   ويضع `deal_region_id = NULL`. كل قواعد التنبيهات الذكية التي
+   عندها فلتر "regions/cities" كانت تفشل لهذي الـdeals.
+3. **Client filter chain:** Home + DealsList + Nearby كان يفلتر
+   عبر `LOCATIONS.find(id === d.locationId)` → ما يلقى custom IDs،
+   فالـdeal محجوب من النتائج.
+
+نتيجة هذا الـbug: ٦ rows في DB كلها مرئية عند "كل المناطق" لكن
+تختفي عند فلتر "الشرقية" أو أي منطقة محددة. التنبيهات الذكية
+أيضاً ما تطلق لهذي الـdeals.
+
+### الإصلاح
+**أ) قاعدة البيانات:**
+- جدول جديد `sa_cities_geo` فيه ٧٢ مدينة سعودية بإحداثياتها
+  (مرآة لـCITIES في mock.ts).
+- function `find_nearest_sa_city(lat, lng)` تحسب أقرب مدينة بـhaversine.
+- backfill SQL يحدّث كل deal بـmap_lat/lng موجود ولكن region/city = NULL
+  → يضع الـnearest. هذا أصلح الـ٦ rows الموجودة (٤ دمام، خبر، رأس
+  تنورة، رياض).
+- `handle_deal_smart_notifications` trigger الآن:
+  1. يقرأ `NEW.region` و `NEW.city` أولاً (الأعمدة المنوّمة)
+  2. يـfallback إلى `locations + cities` للـrows القديمة
+  3. يـfallback أخيراً إلى `find_nearest_sa_city(map_lat, map_lng)`
+
+**ب) الـclient:**
+- إضافة `region?: string` و `city?: string` إلى Deal type
+  ([mock.ts:104](src/data/mock.ts:104)).
+- `dealRepository.upsert/saveDeals` يكتب الـحقلين الآن، مع
+  retry-without لو الـschema قديم.
+- `dealRepository.mapRowToDeal` يقرأ الـحقلين عند الـfetch.
+- `SellerDashboard.tsx` عند إنشاء deal: يستخدم `selectedRegion`/
+  `selectedCity` كأولوية، ثم `findNearestCity(finalLat, finalLng)`
+  للـcustom pins.
+- helper جديد في [helpers.ts](src/utils/helpers.ts):
+  - `resolveDealLocation(deal)` يعيد {regionId, cityId} بأولوية
+    عمود → locations chain → map coords
+  - `dealMatchesLocation(deal, filter)` يستبدل كل الـ inline filter
+    logic في Home/DealsList/Nearby (٣ نسخ متكررة من نفس الكود)
+
+### تأثير على فلاتر أخرى
+- **التنبيهات الذكية (smart_alerts)**: مصلّحة (الـtrigger أعلاه).
+- **المتابعات (follow)**: لا تعتمد على المنطقة — لا تأثر.
+- **التعليقات/الردود**: تعتمد على deal_id/store_id — لا تأثر.
+- **العروض الموسمية**: تظهر للجميع — لا تأثر.
+
+### v10.19 SW bump كالعادة
+
+---
 
 ## 🗓 v10.18 — رسالة التاجر تظهر دائماً في صفحة حجوزاتي (١١ مايو ٢٠٢٦)
 

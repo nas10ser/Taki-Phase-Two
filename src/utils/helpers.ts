@@ -3,6 +3,55 @@
  * Centralized helpers to eliminate code duplication across the app.
  */
 
+import { Deal, LOCATIONS, CITIES, findNearestCity } from '../data/mock';
+
+/**
+ * Returns { region, city } for a deal. Priority:
+ *   1. Denormalized columns on the deal (deal.region, deal.city) — set
+ *      at create-time for new deals.
+ *   2. LOCATIONS → CITIES chain — works for legacy deals whose
+ *      locationId is a valid mall/market entry.
+ *   3. Map coords + findNearestCity — last-resort geo lookup so that
+ *      old `custom_<ts>` rows still get classified.
+ *
+ * Centralized so every filter call site agrees on what region a deal
+ * belongs to. Without this, filters disagreed and deals with custom
+ * locations silently vanished from region/city cuts.
+ */
+export const resolveDealLocation = (deal: Deal): { regionId?: string; cityId?: string } => {
+    if (deal.region || deal.city) {
+        return { regionId: deal.region, cityId: deal.city };
+    }
+    const loc = LOCATIONS.find(l => l.id === deal.locationId);
+    if (loc) {
+        const city = CITIES.find(c => c.id === loc.cityId);
+        return { regionId: city?.regionId, cityId: loc.cityId };
+    }
+    if (deal.mapLocation) {
+        const nearest = findNearestCity(deal.mapLocation.lat, deal.mapLocation.lng);
+        if (nearest) return { regionId: nearest.regionId, cityId: nearest.id };
+    }
+    return {};
+};
+
+/**
+ * True if `deal` matches the location filter (region/city/mall). Falsy
+ * filter values mean "no constraint". Mall is checked against
+ * deal.locationId directly since malls are concrete LOCATIONS entries.
+ */
+export const dealMatchesLocation = (
+    deal: Deal,
+    filter: { region?: string; city?: string; mall?: string }
+): boolean => {
+    if (filter.mall && deal.locationId !== filter.mall) return false;
+    if (filter.city || filter.region) {
+        const { regionId, cityId } = resolveDealLocation(deal);
+        if (filter.city && cityId !== filter.city) return false;
+        if (filter.region && regionId !== filter.region) return false;
+    }
+    return true;
+};
+
 /**
  * Normalizes Arabic/Eastern numerals (٠١٢٣٤٥٦٧٨٩) to Western (0123456789).
  * Essential for Saudi users typing on Arabic keyboards.

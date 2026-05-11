@@ -6,6 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
+import { dealMatchesLocation } from '../utils/helpers';
 import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
@@ -78,21 +79,8 @@ const Home: React.FC = () => {
      * Distance-based filtering is intentionally NOT used here — that's the
      * "حولي / Nearby" page's job. This is a city-level cut.
      */
-    const applyLocationFilter = (list: Deal[]) => {
-        if (topLocation.mall) {
-            return list.filter(d => d.locationId === topLocation.mall);
-        }
-        if (topLocation.city) {
-            const cityLocs = LOCATIONS.filter(l => l.cityId === topLocation.city).map(l => l.id);
-            return list.filter(d => cityLocs.includes(d.locationId));
-        }
-        if (topLocation.region) {
-            const regionCities = CITIES.filter(c => c.regionId === topLocation.region).map(c => c.id);
-            const regionLocs = LOCATIONS.filter(l => regionCities.includes(l.cityId)).map(l => l.id);
-            return list.filter(d => regionLocs.includes(d.locationId));
-        }
-        return list;
-    };
+    const applyLocationFilter = (list: Deal[]) =>
+        list.filter(d => dealMatchesLocation(d, topLocation));
 
     const trendingDeals = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && hasStock(d));
@@ -114,17 +102,7 @@ const Home: React.FC = () => {
         if (activeCategory !== 'all') list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
         if (activeGender !== 'all') list = list.filter(d => d.gender === activeGender || d.gender === 'all');
 
-        // Filter by location
-        if (topLocation.mall) {
-            list = list.filter(d => d.locationId === topLocation.mall);
-        } else if (topLocation.city) {
-            const cityLocs = LOCATIONS.filter(l => l.cityId === topLocation.city).map(l => l.id);
-            list = list.filter(d => cityLocs.includes(d.locationId));
-        } else if (topLocation.region) {
-            const regionCities = CITIES.filter(c => c.regionId === topLocation.region).map(c => c.id);
-            const regionLocs = LOCATIONS.filter(l => regionCities.includes(l.cityId)).map(l => l.id);
-            list = list.filter(d => regionLocs.includes(d.locationId));
-        }
+        list = list.filter(d => dealMatchesLocation(d, topLocation));
 
         if (searchQuery.trim()) {
             list = list.filter(d => {

@@ -102,6 +102,12 @@ export interface Deal {
     images: string[];
     description: string;
     locationId: string;
+    /** City/region keys denormalized onto the deal so filtering doesn't
+     *  rely on locationId being a known LOCATIONS entry. Custom locations
+     *  (locationId = `custom_<ts>`) used to break region filters because
+     *  the chain LOCATIONS → CITIES → REGIONS dead-ended at step 1. */
+    region?: string;
+    city?: string;
     mapLocation?: { lat: number; lng: number };
     googleMapsLink?: string;
     reliabilityScore: number;
