@@ -64,15 +64,33 @@ function handleVisibilityChange() {
         const now = Date.now();
         const elapsed = now - lastActivityAt;
 
-        // If we've been away for more than 10 seconds, do a full refresh
-        if (elapsed > 10_000 && currentConfig) {
+        // Always re-sync on any return to foreground. iOS Safari pauses the
+        // realtime websocket as soon as the tab loses focus, so even a 2-second
+        // dip behind another app means we missed packets. The user noticed
+        // the previous 10-second floor as "I have to leave and come back
+        // before bookings update".
+        if (currentConfig && elapsed > 1_000) {
             logger.info(`⏰ Away for ${Math.round(elapsed / 1000)}s — full re-sync`);
             currentConfig.onRefreshAll();
         }
 
-        // Also verify channels are still connected
         verifyAndReconnect();
         lastActivityAt = now;
+    }
+}
+
+// iOS Safari restores the page from the back-forward cache (bfcache) on
+// swipe-back / "rerun previous tab" — visibilitychange does NOT fire in
+// that path. `pageshow` does, and the `persisted` flag distinguishes a
+// bfcache restore (where the websocket is definitely dead) from a normal
+// first load.
+function handlePageShow(e: PageTransitionEvent) {
+    if (e.persisted && currentConfig) {
+        logger.info('♻️ Restored from bfcache — full reconnect + re-sync');
+        teardownChannels();
+        setupChannels(currentConfig);
+        currentConfig.onRefreshAll();
+        lastActivityAt = Date.now();
     }
 }
 
@@ -93,11 +111,13 @@ function handleOffline() {
     isConnected = false;
 }
 
-// Handle page focus (works on mobile browsers better than visibilitychange)
+// Handle page focus (works on mobile browsers better than visibilitychange).
+// Threshold dropped from 5s to 1s for the same reason as visibilitychange —
+// users were seeing stale data on any quick app switch.
 function handleFocus() {
     const now = Date.now();
     const elapsed = now - lastActivityAt;
-    if (elapsed > 5_000 && currentConfig) {
+    if (elapsed > 1_000 && currentConfig) {
         logger.info(`🔄 Window focused after ${Math.round(elapsed / 1000)}s — quick sync`);
         currentConfig.onRefreshAll();
         verifyAndReconnect();
@@ -363,6 +383,7 @@ export const realtimeService = {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
         window.addEventListener('focus', handleFocus);
+        window.addEventListener('pageshow', handlePageShow);
 
         // Do an initial full sync to catch anything missed while disconnected
         setTimeout(() => {
@@ -392,6 +413,7 @@ export const realtimeService = {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
         window.removeEventListener('focus', handleFocus);
+        window.removeEventListener('pageshow', handlePageShow);
     },
 
     /**

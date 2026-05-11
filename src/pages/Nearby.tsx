@@ -49,21 +49,50 @@ const Nearby: React.FC = () => {
     const isRTL = language === 'ar';
     const locName = topLocation.mall ? (LOCATIONS.find(l => l.id === topLocation.mall)?.name || topLocation.mall) : topLocation.city || topLocation.region || (isRTL ? 'كل المناطق' : 'All Regions');
 
+    // Live geolocation tracking. watchPosition keeps the user marker and
+    // distance/ETA pills updating while the user drives. The browser
+    // throttles to whatever the OS allows, but we ask for high accuracy
+    // and only react if the new fix moved by ≥ 30 m so we don't redraw
+    // the list on every GPS jitter.
     useEffect(() => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                pos => { 
-                    const lat = pos.coords.latitude;
-                    const lng = pos.coords.longitude;
-                    setUserLat(lat); 
-                    setUserLng(lng);
-                    // Trigger marketing alert check
-                    checkMarketingAlerts(lat, lng);
-                },
-                () => { /* Use default */ }
-            );
+        if (!navigator.geolocation || !navigator.geolocation.watchPosition) {
+            return;
         }
-    }, [checkMarketingAlerts]);
+
+        let lastLat = userLat;
+        let lastLng = userLng;
+        let alertChecked = false;
+
+        const watchId = navigator.geolocation.watchPosition(
+            pos => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                // Skip near-duplicate readings: GPS jitter would otherwise
+                // re-sort the list every second while parked.
+                const moved = getDistance(lastLat, lastLng, lat, lng) * 1000; // meters
+                if (moved < 30 && alertChecked) return;
+                lastLat = lat;
+                lastLng = lng;
+                setUserLat(lat);
+                setUserLng(lng);
+                if (!alertChecked) {
+                    alertChecked = true;
+                    checkMarketingAlerts(lat, lng);
+                }
+            },
+            () => { /* permission denied / unavailable — keep default coords */ },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,    // accept fixes up to 5s old (battery friendly)
+                timeout: 15000
+            }
+        );
+
+        return () => {
+            try { navigator.geolocation.clearWatch(watchId); } catch {}
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const nearbyDeals = useMemo(() => {
         return deals.map(deal => {
@@ -311,7 +340,7 @@ const Nearby: React.FC = () => {
                                     >
                                         <strong>{deal.itemName}</strong><br />
                                         <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{deal.discountedPrice} {isRTL ? 'ر.س' : 'SAR'}</span><br />
-                                        <small>📍 {distStr} · 🚗 {driveM} {isRTL ? 'د' : 'min'}{d <= 3 ? ` · 🚶 ${walkM} ${isRTL ? 'د' : 'min'}` : ''}</small>
+                                        <small>📍 {distStr} · 🚗 {driveM} {isRTL ? 'د' : 'min'}{d <= 1 ? ` · 🚶 ${walkM} ${isRTL ? 'د' : 'min'}` : ''}</small>
                                     </div>
                                 </Popup>
                             </Marker>
@@ -339,7 +368,7 @@ const Nearby: React.FC = () => {
                     // so we never render "0 د".
                     const walkMin = Math.max(1, Math.round((dist / 5) * 60));
                     const driveMin = Math.max(1, Math.round((dist / 35) * 60));
-                    const showWalk = dist <= 3; // beyond 3 km walking is impractical
+                    const showWalk = dist <= 1; // beyond 1 km walking is impractical — car-only badge
                     const walkLabel = isRTL ? `${walkMin} د` : `${walkMin} min`;
                     const driveLabel = isRTL ? `${driveMin} د` : `${driveMin} min`;
                     return (

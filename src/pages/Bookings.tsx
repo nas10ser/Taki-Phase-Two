@@ -84,17 +84,21 @@ const Bookings: React.FC = () => {
             {/* Header */}
             <div style={{
                 background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
-                padding: '24px 20px 40px',
-                borderBottomLeftRadius: 32,
-                borderBottomRightRadius: 32,
+                // Use the safe-area inset so the header sits BELOW the notch /
+                // status bar instead of riding up under it. Previously the
+                // inline padding was 24px top, which on iPhone with notch
+                // landed the menu icon right next to the camera cutout.
+                padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 24px',
+                borderBottomLeftRadius: 24,
+                borderBottomRightRadius: 24,
                 position: 'sticky',
                 top: 0,
                 zIndex: 100,
                 boxShadow: '0 4px 20px rgba(var(--primary-rgb), 0.2)'
             }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <button onClick={() => setSidebarOpen(true)} style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', color: 'white', fontSize: '1.4rem', padding: 8, borderRadius: 12, cursor: 'pointer' }}>☰</button>
-                    <h1 style={{ color: 'white', fontSize: '1.3rem', fontWeight: 900, margin: 0 }}>{isRTL ? 'حجوزاتي 🎟️' : 'My Bookings 🎟️'}</h1>
+                    <h1 style={{ color: 'white', fontSize: '1.25rem', fontWeight: 900, margin: 0 }}>{isRTL ? 'حجوزاتي 🎟️' : 'My Bookings 🎟️'}</h1>
                     <div style={{ width: 40 }} />
                 </div>
                 <div style={{ 

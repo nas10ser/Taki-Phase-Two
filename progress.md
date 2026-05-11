@@ -1,4 +1,66 @@
-# TAKI — تقرير التقدم v10.21 📊
+# TAKI — تقرير التقدم v10.22 📊
+
+## 🗓 v10.22 — مزامنة برق + GPS مباشر + header حجوزاتي (١١ مايو ٢٠٢٦)
+
+### ١. الـrealtime يستجيب فوراً عند أي فتح للتطبيق
+**شكوى ناصر:** "عند الدخول، لازم أدخل مرة ثانية حتى تتحدّث البيانات".
+
+**السبب:** [realtimeService.ts:60](src/services/realtimeService.ts) كان عنده
+threshold ١٠ ثوانٍ على `visibilitychange` و ٥ ثوانٍ على `focus` — يعني
+أي رجوع للتطبيق أقل من ١٠ثوان كان يتجاهل refresh كاملاً ويعتمد على
+الـrealtime websocket. لكن iOS Safari يقفل الـwebsocket فور فقدان الـtab
+الـvisibility، فأول فتح بعد background يكون **بدون** بيانات حديثة.
+
+**الإصلاح:**
+- Threshold للـvisibility و focus ← **١ ثانية** فقط (كان ١٠ و ٥)
+- إضافة handler لـ`pageshow` event مع `persisted=true` — يطلق على
+  iOS Safari لما الـtab يرجع من الـbfcache (swipe-back، رجوع من قائمة
+  التطبيقات). يعمل tear-down للقنوات + setup جديد + refresh شامل
+- النتيجة: أي رجوع للتطبيق يطلق full re-sync + websocket reconnect
+  في ميلي ثوانٍ بدلاً من ثوانٍ
+
+### ٢. تتبع GPS مباشر في صفحة "حولي" (للسيارة)
+**شكوى ناصر:** "أريده يتحرك معي حتى لو أسوق السيارة".
+
+**السبب:** [Nearby.tsx:52](src/pages/Nearby.tsx) كان يستخدم `getCurrentPosition`
+— تجلب الموقع مرة واحدة عند الـmount ثم تتجمد.
+
+**الإصلاح:**
+- استبدلت بـ`watchPosition` مع `enableHighAccuracy: true`
+- iOS/Android يبعث تحديث موقع كل ما يتحرك المستخدم
+- **filter ٣٠ متر**: نتجاهل التحديثات الصغيرة (GPS jitter) ليتم
+  re-sort القائمة فقط على حركة فعلية
+- cleanup صحيح: `clearWatch` عند unmount
+
+### ٣. شارة المشي تختفي بعد ١ كم (كان ٣ كم)
+**شكوى ناصر:** "إذا كان بعده أكثر من كيلو لا تظهر علامة المشي".
+
+**الإصلاح:** [Nearby.tsx:328](src/pages/Nearby.tsx) — `showWalk = dist <= 1`
+بدلاً من `<= 3`. شارة 🚶 X د تظهر فقط للعروض ≤ ١ كم. الأبعد منها
+تظهر 🚗 السيارة فقط — أنسب لتجربة قيادة في السعودية.
+
+### ٤. header صفحة "حجوزاتي" نزل تحت الـnotch
+**شكوى ناصر:** "اعلقاها بأعلى الشاشة جداً، الثلاث شرطات تظهر عند علامة
+الشاحن، نزّلها".
+
+**السبب:** [Bookings.tsx:85](src/pages/Bookings.tsx) كان `padding: '24px 20px 40px'`
+ثابت — على iPhone مع notch، الـ24px من فوق غير كافية، فيلامس الـcamera
+cutout.
+
+**الإصلاح:**
+- `paddingTop: calc(env(safe-area-inset-top, 12px) + 14px)` — يحترم
+  الـnotch تلقائياً عبر CSS env() variable
+- قللت `padding-bottom` من 40 إلى 24 (header كان عالي زيادة)
+- قللت `marginBottom` بين الـmenu icon والـtitle من 24 إلى 16
+- `borderRadius` من 32 إلى 24 (أكثر اعتدالاً)
+- `font-size` للعنوان من 1.3rem إلى 1.25rem
+
+النتيجة: الـheader يشبه باقي صفحات التطبيق (Home, Nearby) بدون
+لمس notch.
+
+### SW cache v10.22
+
+---
 
 ## 🗓 v10.21 — محادثة المشتري ↔ التاجر (٣+٣ رسائل) ١١ مايو ٢٠٢٦
 
