@@ -58,15 +58,15 @@ const BottomNav: React.FC = () => {
                                 height: 18,
                                 padding: '0 4px',
                                 background: '#ef4444',
-                                color: 'white',
+                                color: '#ffffff',
                                 borderRadius: 9,
                                 fontSize: '0.65rem',
                                 fontWeight: 900,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                border: '2px solid white',
-                                boxShadow: '0 2px 6px rgba(239,68,68,0.4)'
+                                border: '2px solid var(--card-bg)',
+                                boxShadow: '0 0 0 1px rgba(239,68,68,0.55), 0 2px 6px rgba(239,68,68,0.45)'
                             }}>
                                 {count > 9 ? '9+' : count}
                             </span>

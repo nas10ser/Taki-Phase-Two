@@ -213,26 +213,31 @@ const Nearby: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 6 }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 800, opacity: 0.8, whiteSpace: 'nowrap' }}>{isRTL ? 'نطاق البحث:' : 'Radius:'}</label>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--primary)', whiteSpace: 'nowrap' }}>
+                        🎯 {isRTL ? 'في حدود:' : 'Within:'}
+                    </label>
                     <select value={radius} onChange={e => setRadius(Number(e.target.value))}
-                        style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
+                        style={{ background: 'var(--primary-light, rgba(16,185,129,0.12))', border: '1.5px solid var(--primary)', color: 'var(--primary)', padding: '6px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900, minHeight: 32 }}>
                         <option value={0}>{isRTL ? 'الكل 🌍' : 'All 🌍'}</option>
+                        <option value={1}>1 {isRTL ? 'كم' : 'km'}</option>
                         <option value={2}>2 {isRTL ? 'كم' : 'km'}</option>
                         <option value={5}>5 {isRTL ? 'كم' : 'km'}</option>
                         <option value={10}>10 {isRTL ? 'كم' : 'km'}</option>
-                        <option value={25}>25 {isRTL ? 'كم' : 'km'}</option>
+                        <option value={20}>20 {isRTL ? 'كم' : 'km'}</option>
                         <option value={30}>30 {isRTL ? 'كم' : 'km'}</option>
                         <option value={50}>50 {isRTL ? 'كم' : 'km'}</option>
                         <option value={100}>100 {isRTL ? 'كم' : 'km'}</option>
                     </select>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, whiteSpace: 'nowrap' }}>{nearbyDeals.length} {isRTL ? 'عرض' : 'deals'}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))', whiteSpace: 'nowrap' }}>
+                        {nearbyDeals.length} {isRTL ? 'عرض' : 'deals'}
+                    </span>
                     <div style={{ flex: 1, minWidth: 10 }} />
                     <button onClick={() => {
                         if (navigator.geolocation) {
                             navigator.geolocation.getCurrentPosition(
-                                pos => { 
-                                    setUserLat(pos.coords.latitude); 
-                                    setUserLng(pos.coords.longitude); 
+                                pos => {
+                                    setUserLat(pos.coords.latitude);
+                                    setUserLng(pos.coords.longitude);
                                     customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
                                 },
                                 () => { customAlert(isRTL ? "لا يمكن الوصول للموقع" : "Cannot access location"); }
@@ -317,6 +322,11 @@ const Nearby: React.FC = () => {
                 </h2>
                 {nearbyDeals.length > 0 ? nearbyDeals.map(deal => {
                     const dLoc = getLocation(deal.locationId);
+                    const dist = Number.isFinite(deal.distance) ? deal.distance : 0;
+                    const distLabel = dist < 1
+                        ? (isRTL ? `${Math.round(dist * 1000)} م` : `${Math.round(dist * 1000)} m`)
+                        : (isRTL ? `${dist.toFixed(1)} كم` : `${dist.toFixed(1)} km`);
+                    const isVeryClose = dist <= 2;
                     return (
                         <div
                             key={deal.id}
@@ -326,21 +336,35 @@ const Nearby: React.FC = () => {
                             className="nearby-card animate-fade-in"
                             onClick={() => history.push(`/deal/${deal.id}`)}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
-                            style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent' }}
+                            style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent', position: 'relative' }}
                         >
                             <img src={deal.images[0]} loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
                                 onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300'; }} />
-                             <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 800 }}>{deal.shopName}</div>
-                                <div style={{ fontWeight: 900, fontSize: '0.95rem', marginBottom: 4, color: 'var(--text-primary)' }}>{deal.itemName}</div>
+                             <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.shopName}</span>
+                                    <span style={{
+                                        marginInlineStart: 'auto',
+                                        background: isVeryClose ? '#10b981' : 'var(--primary)',
+                                        color: '#ffffff',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 900,
+                                        padding: '3px 9px',
+                                        borderRadius: 999,
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.18)'
+                                    }}>📍 {distLabel}</span>
+                                </div>
+                                <div style={{ fontWeight: 900, fontSize: '0.95rem', marginBottom: 4, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.itemName}</div>
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                                     <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>{deal.discountedPrice} ر.س</span>
                                     <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
                                 </div>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                    <span style={{ fontSize: '0.7rem', color: 'var(--accent)', fontWeight: 800 }}>📍 {deal.distance.toFixed(1)} km</span>
-                                    {dLoc && <span style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700 }}>{dLoc.name}</span>}
-                                </div>
+                                {dLoc && (
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        🏷️ {dLoc.name}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     );

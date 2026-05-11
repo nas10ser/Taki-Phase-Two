@@ -1,4 +1,52 @@
-# TAKI — تقرير التقدم v10.12 📊
+# TAKI — تقرير التقدم v10.13 📊
+
+## 🗓 v10.13 — ٣ إصلاحات UX من ملاحظات المستخدم (١١ مايو ٢٠٢٦)
+
+### ١. زر "✅ تم الحجز — انتقل لحجوزاتي" ما يستجيب
+**المكان:** [DealDetails.tsx:1049](src/pages/DealDetails.tsx:1049)
+
+**السبب:** الزر كان عنده `disabled={booked || isSoldOut}` — يعني بعد ما
+ينحجز يصير معطّل ولا ينقر. وحتى الـ`onClick` كان فقط `setShowBookingModal(true)`
+وما فيه فرع للحالة المحجوزة.
+
+**الإصلاح:**
+- `disabled={isSoldOut && !booked}` — فقط لو نفذ ومش محجوز
+- `onClick` يفحص `if (booked) history.push('/bookings')` قبل الـmodal
+- `cursor: 'pointer'` لما `booked=true`
+
+### ٢. شارة الإشعارات (🔔) خفية في الدارك مود
+**المكان:** [BottomNav.tsx:52](src/components/BottomNav.tsx:52)
+
+**السبب:** الـbadge كان عنده `border: '2px solid white'` ثابت. في الفاتح
+الأبيض يندمج مع الـnav-bg، لكن في الدارك (nav-bg = `rgba(24,34,46,0.98)`)
+الـborder الأبيض كان يصير شبه شفاف بسبب الـbackdrop-filter.
+
+**الإصلاح:**
+- `border: '2px solid var(--card-bg)'` — يتبدّل تلقائياً (`#ffffff` فاتح / `#1e293b` داكن)
+- إضافة `box-shadow` بهالة حمراء `rgba(239,68,68,0.55)` للبروز في الوضعين
+
+### ٣. صفحة "حولي" — تحديد المسافة + النطاق
+**المكان:** [Nearby.tsx:215](src/pages/Nearby.tsx:215) + [Nearby.tsx:318](src/pages/Nearby.tsx:318)
+
+**التحسينات:**
+- **Radius selector** أبرز: لون primary (أخضر)، أكبر، label "🎯 في حدود:"
+- **Distance badge** في كل بطاقة: pill ملوّن (أخضر `#10b981` لو ≤2 كم،
+  primary للأبعد) بدل النص الرفيع. يعرض "📍 X كم" أو "📍 X م" لو أقل من 1 كم
+- Guard `Number.isFinite(deal.distance)` لمنع `NaN km`
+- إضافة خيارات `1, 20` كم للـradius
+- اسم الموقع بسطر منفصل مع emoji 🏷️ ليتجنّب تكدّس النصوص
+
+### ٤. تأكيد أمان /admin و /seller للزوّار
+**التحقق:** فتح `/admin` كزائر يحوّل تلقائياً للرئيسية عن طريق
+`AuthRedirector` ([App.tsx:109](src/App.tsx:109)). `/deals` تفتح
+DealsList للجميع بدون تسجيل — هذا حسب التصميم (تصفّح حر).
+
+### ٥. عن "إغلاق اللاب توب يقفل الموقع"
+لا — Vercel يستضيف على سيرفراتها السحابية، الـrunner مستقل تماماً عن
+اللاب. اللاب يحتاج فقط لـدفع كود جديد (`vercel deploy`). الموقع يضل
+شغّال ٢٤/٧.
+
+---
 
 ## 🗓 v10.12 — إصلاح 404 على Vercel لأي رابط مباشر (١١ مايو ٢٠٢٦)
 

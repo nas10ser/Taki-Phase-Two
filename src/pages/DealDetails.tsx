@@ -1052,11 +1052,15 @@ const DealDetails: React.FC = () => {
                                     history.push('/register');
                                     return;
                                 }
+                                if (booked) {
+                                    history.push('/bookings');
+                                    return;
+                                }
                                 setShowBookingModal(true);
                             }}
-                            disabled={booked || isSoldOut}
+                            disabled={isSoldOut && !booked}
                             className={`book-btn ${booked ? 'booked' : ''}`}
-                            style={{ opacity: isSoldOut ? 0.5 : 1 }}
+                            style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
                         >
                             {booked
                                 ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
