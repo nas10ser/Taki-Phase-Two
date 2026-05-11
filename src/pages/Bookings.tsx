@@ -216,16 +216,37 @@ const Bookings: React.FC = () => {
                                                             <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
                                                         </div>
                                                     </div>
-                                                    {/* Note from seller after acknowledging — distinct field
-                                                        from the buyer's own notes attached at booking time. */}
-                                                    {booking.merchantNote && (
-                                                        <div style={{ marginTop: 16, padding: 12, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 12, borderRight: isRTL ? '3px solid #f59e0b' : 'none', borderLeft: !isRTL ? '3px solid #f59e0b' : 'none' }}>
-                                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>💬 {isRTL ? 'ملاحظة التاجر:' : 'Seller Note:'}</div>
-                                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.merchantNote}</div>
-                                                        </div>
-                                                    )}
+                                                    {/* Seller message — always present so the buyer never wonders
+                                                        whether the seller saw the order. If the seller wrote a real
+                                                        note we show it; otherwise we narrate the order status.
+                                                        The italic + lower-opacity style cues "this is auto-generated". */}
+                                                    {(() => {
+                                                        const realNote = booking.merchantNote;
+                                                        let fallback = '';
+                                                        if (!realNote) {
+                                                            if (booking.status === 'completed') {
+                                                                fallback = isRTL ? '✅ تم تسليم طلبك — شكراً لاستخدامك تاكي 💚' : '✅ Order delivered — thanks for using TAKI 💚';
+                                                            } else if (booking.status === 'acknowledged') {
+                                                                fallback = isRTL ? '📦 التاجر استلم طلبك وهو قيد التجهيز الآن.' : '📦 The seller received your order and is preparing it now.';
+                                                            } else {
+                                                                fallback = isRTL ? '⏳ بانتظار التاجر يؤكد استلام طلبك…' : '⏳ Waiting for the seller to acknowledge your order…';
+                                                            }
+                                                        }
+                                                        const noteText = realNote || fallback;
+                                                        const isAuto = !realNote;
+                                                        return (
+                                                            <div style={{ marginTop: 16, padding: 12, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 12, borderRight: isRTL ? '3px solid #f59e0b' : 'none', borderLeft: !isRTL ? '3px solid #f59e0b' : 'none' }}>
+                                                                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+                                                                    💬 {isRTL ? 'رسالة التاجر:' : 'Seller Message:'}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, fontStyle: isAuto ? 'italic' : 'normal', opacity: isAuto ? 0.85 : 1 }}>
+                                                                    {noteText}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                     {booking.notes && (
-                                                        <div style={{ marginTop: booking.merchantNote ? 8 : 16, padding: 12, background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, borderRight: isRTL ? '3px solid #3b82f6' : 'none', borderLeft: !isRTL ? '3px solid #3b82f6' : 'none' }}>
+                                                        <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, borderRight: isRTL ? '3px solid #3b82f6' : 'none', borderLeft: !isRTL ? '3px solid #3b82f6' : 'none' }}>
                                                             <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>📝 {isRTL ? 'ملاحظتك:' : 'Your note:'}</div>
                                                             <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.notes}</div>
                                                         </div>
