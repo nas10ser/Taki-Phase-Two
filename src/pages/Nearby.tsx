@@ -268,6 +268,18 @@ const Nearby: React.FC = () => {
                                 pos => {
                                     setUserLat(pos.coords.latitude);
                                     setUserLng(pos.coords.longitude);
+                                    // Reset the upper region/city/mall filters too.
+                                    // Otherwise users who'd picked "Makkah → Jeddah" earlier
+                                    // would get 0 results after recentering on their actual
+                                    // location (Dammam), because the region filter was still
+                                    // restricting to Makkah. Tapping "My Location" implies
+                                    // "show me what's around ME" — drop the manual location
+                                    // selection so the radius does the work.
+                                    setSelectedRegion('');
+                                    setSelectedCity('');
+                                    setSelectedLocationId('');
+                                    setLocationType('');
+                                    setRadius(30);
                                     customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
                                 },
                                 () => { customAlert(isRTL ? "لا يمكن الوصول للموقع" : "Cannot access location"); }
