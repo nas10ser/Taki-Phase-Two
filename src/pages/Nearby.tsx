@@ -292,24 +292,30 @@ const Nearby: React.FC = () => {
                     <Marker position={[userLat, userLng]}>
                         <Popup>{isRTL ? '📍 موقعك الحالي' : '📍 Your Location'}</Popup>
                     </Marker>
-                    {nearbyDeals.map(deal => (
-                        <Marker key={deal.id} position={[deal.lat, deal.lng]}>
-                            <Popup>
-                                <div
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-label={deal.itemName}
-                                    onClick={() => history.push(`/deal/${deal.id}`)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
-                                    style={{ cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-                                >
-                                    <strong>{deal.itemName}</strong><br />
-                                    <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{deal.discountedPrice} SAR</span><br />
-                                    <small>📍 {deal.distance.toFixed(1)} km</small>
-                                </div>
-                            </Popup>
-                        </Marker>
-                    ))}
+                    {nearbyDeals.map(deal => {
+                        const d = Number.isFinite(deal.distance) ? deal.distance : 0;
+                        const distStr = d < 1 ? `${Math.round(d * 1000)} ${isRTL ? 'م' : 'm'}` : `${d.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;
+                        const driveM = Math.max(1, Math.round((d / 35) * 60));
+                        const walkM = Math.max(1, Math.round((d / 5) * 60));
+                        return (
+                            <Marker key={deal.id} position={[deal.lat, deal.lng]}>
+                                <Popup>
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label={deal.itemName}
+                                        onClick={() => history.push(`/deal/${deal.id}`)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
+                                        style={{ cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                                    >
+                                        <strong>{deal.itemName}</strong><br />
+                                        <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{deal.discountedPrice} {isRTL ? 'ر.س' : 'SAR'}</span><br />
+                                        <small>📍 {distStr} · 🚗 {driveM} {isRTL ? 'د' : 'min'}{d <= 3 ? ` · 🚶 ${walkM} ${isRTL ? 'د' : 'min'}` : ''}</small>
+                                    </div>
+                                </Popup>
+                            </Marker>
+                        );
+                    })}
                 </MapContainer>
             </div>
             )}
@@ -327,6 +333,14 @@ const Nearby: React.FC = () => {
                         ? (isRTL ? `${Math.round(dist * 1000)} م` : `${Math.round(dist * 1000)} m`)
                         : (isRTL ? `${dist.toFixed(1)} كم` : `${dist.toFixed(1)} km`);
                     const isVeryClose = dist <= 2;
+                    // Travel time estimates. Walking: 5 km/h (1.4 m/s). Driving in a
+                    // Saudi city with signals/traffic: ~35 km/h average. Floor at 1 min
+                    // so we never render "0 د".
+                    const walkMin = Math.max(1, Math.round((dist / 5) * 60));
+                    const driveMin = Math.max(1, Math.round((dist / 35) * 60));
+                    const showWalk = dist <= 3; // beyond 3 km walking is impractical
+                    const walkLabel = isRTL ? `${walkMin} د` : `${walkMin} min`;
+                    const driveLabel = isRTL ? `${driveMin} د` : `${driveMin} min`;
                     return (
                         <div
                             key={deal.id}
@@ -359,6 +373,30 @@ const Nearby: React.FC = () => {
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                                     <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>{deal.discountedPrice} ر.س</span>
                                     <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: dLoc ? 4 : 0 }}>
+                                    <span style={{
+                                        background: 'var(--body-bg)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--border-color)',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 800,
+                                        padding: '2px 7px',
+                                        borderRadius: 999,
+                                        whiteSpace: 'nowrap'
+                                    }}>🚗 {driveLabel}</span>
+                                    {showWalk && (
+                                        <span style={{
+                                            background: 'var(--body-bg)',
+                                            color: 'var(--text-primary)',
+                                            border: '1px solid var(--border-color)',
+                                            fontSize: '0.68rem',
+                                            fontWeight: 800,
+                                            padding: '2px 7px',
+                                            borderRadius: 999,
+                                            whiteSpace: 'nowrap'
+                                        }}>🚶 {walkLabel}</span>
+                                    )}
                                 </div>
                                 {dLoc && (
                                     <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
