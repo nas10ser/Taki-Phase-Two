@@ -4,10 +4,10 @@ import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { dealService } from '../services/dealService';
-import { getLocation } from '../data/mock';
+import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation } from '../utils/helpers';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -829,14 +829,27 @@ const DealDetails: React.FC = () => {
                 </div>
 
                 {/* Location */}
-                {(loc || deal.mapLocation) && (
+                {(loc || deal.mapLocation) && (() => {
+                    // Resolve the deal's region + city via the shared helper so
+                    // custom-pin deals (no LOCATIONS entry) still show the
+                    // correct Saudi region/city via map-coord fallback.
+                    const resolved = resolveDealLocation(deal);
+                    const regionName = resolved.regionId ? REGIONS.find(r => r.id === resolved.regionId)?.name : null;
+                    const cityName = resolved.cityId ? CITIES.find(c => c.id === resolved.cityId)?.name : null;
+                    return (
                     <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
                         <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>{isRTL ? 'الموقع' : 'Location'}</h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--body-bg)', padding: '12px 16px', borderRadius: 14, marginBottom: 12 }}>
                             <span style={{ fontSize: '1.5rem' }}>📍</span>
-                            <div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{loc?.name || (isRTL ? 'موقع مخصص للتاجر' : 'Seller Custom Location')}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600 }}>{loc?.type === 'mall' ? '🛍️' : '🏛️'} {loc?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600, marginTop: 2 }}>{loc?.type === 'mall' ? '🛍️' : '🏛️'} {loc?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
+                                {(regionName || cityName) && (
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 800, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <span>🗺️</span>
+                                        <span>{[regionName, cityName].filter(Boolean).join(isRTL ? ' • ' : ' • ')}</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <button type="button" onClick={() => {
@@ -849,7 +862,8 @@ const DealDetails: React.FC = () => {
                             🗺️ {isRTL ? 'الاتجاهات عبر خرائط جوجل' : 'Directions on Google Maps'}
                         </button>
                     </div>
-                )}
+                    );
+                })()}
 
 
                 {/* Reviews */}
