@@ -1,4 +1,32 @@
-# TAKI — تقرير التقدم v10.25 📊
+# TAKI — تقرير التقدم v10.26 📊
+
+## 🗓 v10.26 — header الملف الشخصي يرتفع مع الـscroll (١١ مايو ٢٠٢٦)
+
+### الشكوى
+ناصر: "عند سحب الصفحة لأسفل في حسابي، الكارت الأسود (الاسم +
+الإحصائيات) يبقى عالق ويأخذ نصف الشاشة. أريده يرتفع مع الـscroll".
+
+### السبب
+`<div className="premium-bar">` في [Profile.tsx:113](src/pages/Profile.tsx)
+يرث CSS من `.premium-bar` في [styles.css:338](src/styles.css):
+```css
+position: sticky; top: 0; z-index: 1100;
+```
+
+هذا السلوك مقصود في Home و Nearby (الـsearch bar مفيد يبقى)، لكن
+في Profile الـbanner معلوماتي فقط — لما يبقى sticky يأكل ٥٠٪ من الـviewport
+عند الـscroll لإيجاد قسم "تنبيهات ذكية فورية".
+
+### الإصلاح
+override بـinline style: `position: 'static'` على الـheader في Profile
+فقط. هذا يلغي الـsticky لهذي الصفحة دون التأثير على باقي الصفحات.
+
+النتيجة: الـheader يـscroll مع الصفحة طبيعياً → يختفي عند الـscroll-down
+→ الـcategories والنماذج تأخذ كامل الشاشة → تجربة أنظف.
+
+### SW cache v10.26
+
+---
 
 ## 🗓 v10.25 — متابعة محفوظة + header المتجر + banner تحديث داخل التطبيق (١١ مايو ٢٠٢٦)
 

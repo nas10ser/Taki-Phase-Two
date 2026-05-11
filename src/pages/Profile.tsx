@@ -110,7 +110,13 @@ const Profile: React.FC = () => {
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* Profile Header */}
-            <div className="premium-bar" style={{ textAlign: 'center', padding: '0 20px 32px', paddingTop: 'calc(env(safe-area-inset-top, 12px) + 12px)' }}>
+            {/* `position: 'static'` overrides the sticky default from
+                .premium-bar. On Home and Nearby the sticky search bar is
+                useful, but on Profile the avatar/stats banner is purely
+                informational — leaving it pinned ate half the viewport
+                whenever the user scrolled down to find the smart-alerts
+                form. Static means it scrolls away cleanly. */}
+            <div className="premium-bar" style={{ textAlign: 'center', padding: '0 20px 32px', paddingTop: 'calc(env(safe-area-inset-top, 12px) + 12px)', position: 'static' }}>
                 {/* Top Actions Bar — No overlap */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingTop: 8 }}>
                     <button onClick={() => history.push('/')}
