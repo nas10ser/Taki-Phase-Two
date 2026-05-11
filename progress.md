@@ -1,4 +1,32 @@
-# TAKI — تقرير التقدم v10.31 📊
+# TAKI — تقرير التقدم v10.32 📊
+
+## 🗓 v10.32 — تثبيت البار السفلي + فراغ تحت خريطة "حولي" (١١ مايو ٢٠٢٦)
+
+### ١. البار السفلي مثبّت بشكل دائم
+ناصر: "خلاص انسى السابق، اجعله ثابت لا يختفي".
+
+في [BottomNav.tsx](src/components/BottomNav.tsx):
+- شلت كل الـscroll-tracking state (`hidden`, `lastYRef`)
+- شلت الـuseEffect اللي كان يستمع لـ`window.scroll`
+- شلت الـinline `transform: translateY` style
+- الـBar الآن `position: fixed` بشكل ثابت (من الـCSS class الأصلية) وما يتحرك
+
+### ٢. الخريطة في "حولي" تترك فراغ للبار في وضع "الخريطة فقط"
+[Nearby.tsx:303](src/pages/Nearby.tsx) — لما الـviewMode = `'map'` (الخريطة
+هي آخر عنصر بالصفحة، بدون قائمة بعدها):
+```ts
+marginBottom: viewMode === 'map'
+    ? 'calc(env(safe-area-inset-bottom, 0px) + 96px)'
+    : 24
+```
+
+- في `'map only'`: ~96 بكسل فراغ + safe-area للـiPhone home indicator → الخريطة لا تنزلق تحت البار
+- في `'map + list'` أو `'list only'`: الـ24 بكسل القديمة كافية لأن
+  الـlist تحتها فيها padding-bottom 100 بكسل خاص بها
+
+### SW cache v10.32
+
+---
 
 ## 🗓 v10.31 — إزالة PTR من حولي + BottomNav reveal على أي scroll-up (١١ مايو ٢٠٢٦)
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
@@ -8,42 +8,6 @@ const BottomNav: React.FC = () => {
     const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType } = useApp();
 
     const isRTL = language === 'ar';
-
-    // X-style auto-hide: drop the bar off-screen on any meaningful
-    // scroll DOWN, and snap it back the very instant the user reverses
-    // direction — even a 1-pixel scroll-up reveals it again. That's the
-    // pattern Twitter / X uses, and it makes the nav feel "always there
-    // when you want it". Always visible at the very top of the page too,
-    // so a fresh load lands with the nav in view.
-    const [hidden, setHidden] = useState(false);
-    const lastYRef = useRef(0);
-
-    useEffect(() => {
-        const onScroll = () => {
-            const y = window.scrollY || window.pageYOffset || 0;
-            const dy = y - lastYRef.current;
-            if (y <= 8) {
-                // At the very top — bar always visible.
-                setHidden(false);
-            } else if (dy < 0) {
-                // ANY scroll up reveals immediately. No threshold here —
-                // user wanted Twitter/X parity.
-                setHidden(false);
-            } else if (dy > 6) {
-                // Scroll down past a small dead-zone hides. The 6 px
-                // floor still prevents toggle-flicker on fingertip jitter.
-                setHidden(true);
-            }
-            lastYRef.current = y;
-        };
-        lastYRef.current = window.scrollY || 0;
-        window.addEventListener('scroll', onScroll, { passive: true });
-        return () => window.removeEventListener('scroll', onScroll);
-    }, []);
-
-    // Whenever the route changes, snap the bar back into view so the user
-    // never lands on a new page with the nav still tucked away.
-    useEffect(() => { setHidden(false); }, [location.pathname]);
 
     // Honour admin "view-as" impersonation so the bottom nav matches what
     // the buyer/seller actually sees in preview mode.
@@ -72,14 +36,7 @@ const BottomNav: React.FC = () => {
     }
 
     return (
-        <div
-            className="bottom-nav"
-            style={{
-                transform: hidden ? 'translateY(110%)' : 'translateY(0)',
-                transition: 'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-                willChange: 'transform',
-            }}
-        >
+        <div className="bottom-nav">
             {items.map(item => {
                 const isActive = location.pathname === item.path ||
                     (item.path === '/' && location.pathname === '/');

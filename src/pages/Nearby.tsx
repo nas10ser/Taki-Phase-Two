@@ -300,7 +300,23 @@ const Nearby: React.FC = () => {
 
             {/* Hybrid Map View */}
             {viewMode !== 'list' && (
-            <div className="animate-fade-in" style={{ height: mapHeight, margin: '0 16px', borderRadius: 24, overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.1)', marginBottom: 24, transition: 'height 0.3s ease' }}>
+            <div
+                className="animate-fade-in"
+                style={{
+                    height: mapHeight,
+                    margin: '0 16px',
+                    borderRadius: 24,
+                    overflow: 'hidden',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
+                    // When the list isn't rendered below, the map is the last
+                    // element on the page — leave enough room for the fixed
+                    // BottomNav (≈ 64 px + safe-area). Otherwise a 24 px
+                    // breather is plenty since the list provides its own
+                    // bottom padding.
+                    marginBottom: viewMode === 'map' ? 'calc(env(safe-area-inset-bottom, 0px) + 96px)' : 24,
+                    transition: 'height 0.3s ease',
+                }}
+            >
                 <MapContainer center={[userLat, userLng]} zoom={12} style={{ height: '100%', width: '100%' }}>
                     <MapUpdater center={[userLat, userLng]} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
