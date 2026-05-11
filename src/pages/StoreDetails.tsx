@@ -256,11 +256,16 @@ const StoreDetails: React.FC = () => {
             <div className="animate-fade-in" style={{
                 position: 'relative',
                 background: 'var(--header-gradient)',
-                color: 'white', padding: '24px 20px 30px', borderRadius: '0 0 28px 28px',
+                color: 'white',
+                // Same safe-area pattern as Bookings.tsx (v10.22): the back
+                // button used to land beside the camera cutout on iPhones
+                // with a notch. env() resolves to 0 on devices without one.
+                padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 24px',
+                borderRadius: '0 0 24px 24px',
                 boxShadow: '0 8px 30px rgba(15,23,42,0.15)'
             }}>
                 {/* Back Button & Top Action */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <button onClick={() => history.goBack()} style={{ background: 'rgba(80, 80, 90, 0.3)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: 12, fontSize: '0.85rem', fontWeight: 800 }}>
                         {isRTL ? '→ رجوع' : '← Back'}
                     </button>

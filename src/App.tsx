@@ -131,10 +131,15 @@ const SeasonalGate: React.FC = () => {
     return <SeasonalOffers />;
 };
 
+const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
+
 const App = () => {
     return (
         <Router>
             <AuthRedirector />
+            <Suspense fallback={null}>
+                <UpdateBanner />
+            </Suspense>
             <div className="app-container">
                 <Suspense fallback={<RouteFallback />}>
                     <Switch>

@@ -49,40 +49,53 @@ export const userRepository = {
     saveProfile: async (profile: UserProfile): Promise<void> => {
         authService.setUser(profile);
         try {
-            // Map camelCase → snake_case for Postgres. Trust whatever userType the
-            // caller provides; defaulting silently to 'seller' caused buyers to be
-            // mis-flagged in the DB.
-            const dbData: Record<string, any> = {
-                id: profile.id,
-                name: profile.name || 'مستخدم',
-                phone: profile.phone || null,
-                email: profile.email || null,
-                user_type: profile.userType || 'buyer',
-                shop: profile.shop || null,
-                contact_phone: profile.contactPhone || profile.phone || null,
-                address: profile.address || null,
-                avatar_url: profile.avatar_url || null,
-                bio: profile.bio || null,
-                savings: profile.savings ?? 0,
-                bookings_count: profile.bookingsCount ?? 0,
-                notif_keywords: profile.notifKeywords || [],
-                smart_alerts: profile.smartAlerts || [],
-                preferred_lang: profile.preferredLang || 'ar',
-                followed_merchants: profile.followedMerchants || [],
-                lat: profile.lat || null,
-                lng: profile.lng || null,
-                google_maps_link: profile.googleMapsLink || null
+            // PARTIAL-AWARE upsert. The previous version wrote every field with
+            // `profile.X || default`, which silently NULLed out columns the
+            // caller didn't include in its partial. The reported "follow
+            // disappeared after an update" came from this — a saveProfile
+            // call after toggling a notif keyword carried no followedMerchants
+            // on the cached `user`, so `|| []` wiped the DB array.
+            //
+            // Rule: only include a column when the corresponding profile field
+            // is explicitly set (i.e. not `undefined`). `null` is preserved as
+            // an intentional clear; missing means "leave it alone".
+            const p: any = profile;
+            const dbData: Record<string, any> = { id: profile.id };
+            const set = (col: string, val: any, fallback?: any) => {
+                if (val !== undefined) dbData[col] = val;
+                else if (fallback !== undefined) dbData[col] = fallback;
             };
 
-            const { error } = await supabase.from('users').upsert(dbData);
+            set('name', p.name, 'مستخدم');
+            set('phone', p.phone ?? null);
+            set('email', p.email ?? null);
+            // user_type only when present — never silently downgrade.
+            if (p.userType !== undefined) dbData.user_type = p.userType;
+            set('shop', p.shop ?? null);
+            set('contact_phone', p.contactPhone ?? p.phone ?? null);
+            set('address', p.address ?? null);
+            set('avatar_url', p.avatar_url ?? null);
+            set('bio', p.bio ?? null);
+            if (p.savings !== undefined) dbData.savings = p.savings;
+            if (p.bookingsCount !== undefined) dbData.bookings_count = p.bookingsCount;
+            // Array fields — only write when the caller really intends to
+            // replace them. This is the followed-merchants protection.
+            if (Array.isArray(p.notifKeywords)) dbData.notif_keywords = p.notifKeywords;
+            if (Array.isArray(p.smartAlerts)) dbData.smart_alerts = p.smartAlerts;
+            if (Array.isArray(p.followedMerchants)) dbData.followed_merchants = p.followedMerchants;
+            if (p.preferredLang !== undefined) dbData.preferred_lang = p.preferredLang;
+            if (p.lat !== undefined) dbData.lat = p.lat;
+            if (p.lng !== undefined) dbData.lng = p.lng;
+            if (p.googleMapsLink !== undefined) dbData.google_maps_link = p.googleMapsLink;
+
+            // upsert needs the conflict column when the row already exists.
+            const { error } = await supabase.from('users').upsert(dbData, { onConflict: 'id' });
             if (!error) {
                 logger.log('✅ Profile saved to remote successfully:', profile.id);
                 return;
             }
-            
+
             logger.error('❌ Remote profile sync failed:', error.message, error.details, error.hint);
-            // We no longer fallback to 'minimal' because that silently loses important data like location.
-            // If this fails, the user needs to know so they can run migrations.
             throw error;
         } catch (error: any) {
             console.error('❌ Remote profile sync exception:', error.message || error);

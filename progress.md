@@ -1,4 +1,81 @@
-# TAKI — تقرير التقدم v10.24 📊
+# TAKI — تقرير التقدم v10.25 📊
+
+## 🗓 v10.25 — متابعة محفوظة + header المتجر + banner تحديث داخل التطبيق (١١ مايو ٢٠٢٦)
+
+### ١. الـbug: متابعة تاكي انحذفت بعد التحديث
+
+**السبب الجذري:** `userRepository.saveProfile()` كان يبني `dbData` بنمط:
+```ts
+followed_merchants: profile.followedMerchants || []
+notif_keywords: profile.notifKeywords || []
+smart_alerts: profile.smartAlerts || []
+```
+
+أي `saveProfile` يستدعى بـ`{ ...user, notifKeywords: kw }` (مثلاً من
+`addNotifKeyword`) — لو الـcached `user` من `authService.getUser()`
+ما عنده `followedMerchants` (الحقل ليس في JWT)، القيمة تصير `undefined`،
+ثم `|| []` يدوسها على DB. النتيجة: المتابعة تنحذف صامتاً عند أي
+حفظ profile لاحق.
+
+**الإصلاح في [userRepository.ts:49](src/repositories/userRepository.ts):**
+- أعدت كتابة `saveProfile` ليكون **partial-aware**: فقط الحقول
+  المُمرّرة صراحة تُكتب لـDB.
+- مثلاً، `Array.isArray(p.followedMerchants)` — لو الـcaller مرّر array
+  (حتى لو فاضي صراحة)، نكتب. لو undefined، نتجاهل.
+- نفس الحماية لـ`notifKeywords`, `smartAlerts`, `lat`, `lng`, `googleMapsLink`.
+- `userType` لا يُكتب إلا إذا حُدد صراحة (السابق كان يـdefault لـ`'buyer'` بصمت).
+- `upsert(dbData, { onConflict: 'id' })` بدلاً من upsert بسيط للاتساق.
+
+**التأكد من البيانات:** فحصت DB لناصر — `followed_merchants` حالياً
+يحتوي تاكي (المتابعة موجودة). الإصلاح يحمي مستقبلاً.
+
+### ٢. header صفحة المتجر (StoreDetails) يلامس الـnotch
+**السبب:** [StoreDetails.tsx:259](src/pages/StoreDetails.tsx) كان `padding: '24px 20px 30px'`
+ثابت — نفس problem اللي صار في Bookings قبل v10.22.
+
+**الإصلاح:** `padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 24px'`
++ تقليل `marginBottom` من 20 إلى 16، و `borderRadius` من 28 إلى 24
+ليكون متناسق مع باقي صفحات التطبيق.
+
+**التحقق من باقي الصفحات:** `DealDetails`, `Home`, `Nearby` يستخدمون
+class `.premium-bar` اللي فيها safe-area-inset-top محسوبة في CSS.
+`Bookings` تم إصلاحها في v10.22. `StoreDetails` كانت الفجوة الأخيرة.
+
+### ٣. Banner تحديث داخل التطبيق — لا تحتاج الخروج من Safari
+**شكوى ناصر:** "عندما أنشر تحديث، المستخدم يضطر يطلع ويدخل ثاني،
+هذا يشتت المشتري".
+
+**الحل الجذري:** أعدت كتابة [sw-cleanup.ts](src/sw-cleanup.ts) +
+component جديد [UpdateBanner.tsx](src/components/UpdateBanner.tsx):
+
+**سلوك جديد:**
+1. عند فتح الصفحة، تسجّل listener على `controllerchange` — هذا الـcanonical
+   signal من المتصفح بأن الـSW الجديد سيطر.
+2. تستعلم عن `registration.waiting` — لو فيه SW جديد ينتظر، تطلق
+   custom event `taki:sw-update-available` فوراً.
+3. تنصت لـ`updatefound` — أي installing → installed، يطلق نفس الـevent.
+4. **polling كل ٦٠ ثانية** بينما الـtab visible — `registration.update()`
+   لـiOS Safari الذي قد يكسل في الفحص التلقائي.
+5. على `visibilitychange` (ارجاع للـtab)، يـprobe فوراً.
+
+**`UpdateBanner` component:**
+- يستلم الـcustom event ويظهر banner ثابت في أعلى الشاشة
+- gradient أخضر TAKI + emoji 🆕 + رسالة عربية واضحة
+- زر "تحديث الآن" يستدعي `applySwUpdate()`:
+  - يرسل `{ type: 'SKIP_WAITING' }` للـwaiting worker
+  - الـbrowser يطلق `controllerchange`
+  - يـreload **داخل نفس الـtab** بدون خروج
+- fallback timer 2.5s: لو ما فعّل `controllerchange`، reload يدوي
+- يحترم safe-area-inset-top
+- مُحمّل عبر `lazy()` ليُحجز بـ0 وزن للبناء الأولي
+
+**النتيجة:** المستخدم يرى banner أخضر، يضغط مرة، الصفحة تحدّث محلياً
+داخل التطبيق. لا قائمة تطبيقات، لا force-quit، لا فقدان scroll position
+على الصفحات الأخرى.
+
+### SW cache v10.25
+
+---
 
 ## 🗓 v10.24 — عرض المنطقة والمدينة في صفحة المنتج (١١ مايو ٢٠٢٦)
 
