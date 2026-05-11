@@ -462,19 +462,21 @@ const SmartAlertsCard: React.FC<{
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 8 }}>
                     {isRTL ? 'تصنيفات (اختر واحد أو أكثر):' : 'Categories (pick one or more):'}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 140, overflowY: 'auto', padding: '4px 2px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 2px' }}>
                     {CATEGORIES.filter(c => c.id !== 'all').map(c => {
                         const active = filterCategories.includes(c.id as string);
                         return (
                             <button key={c.id} onClick={() => toggleCategory(c.id as string)}
                                 style={{
-                                    padding: '6px 12px',
+                                    padding: '7px 13px',
                                     borderRadius: 999,
                                     border: active ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
                                     background: active ? 'var(--primary)' : 'var(--card-bg)',
                                     color: active ? 'white' : 'var(--text-primary)',
                                     fontWeight: 800, fontSize: '0.78rem',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    minHeight: 36
                                 }}>
                                 {c.emoji} {isRTL ? c.ar : c.en}
                             </button>
