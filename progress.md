@@ -1,4 +1,48 @@
-# TAKI — تقرير التقدم v10.11 📊
+# TAKI — تقرير التقدم v10.12 📊
+
+## 🗓 v10.12 — إصلاح 404 على Vercel لأي رابط مباشر (١١ مايو ٢٠٢٦)
+
+### المشكلة
+لما المشتري (أو أي زائر) يفتح رابط مباشرة مثل
+`https://taki-test-eight.vercel.app/admin` أو يعمل refresh على
+`/seller`، كانت تطلع صفحة **Vercel 404** السوداء مع كود مثل:
+```
+404: NOT_FOUND
+Code: NOT_FOUND
+ID: bom1::bpmzd-1778415462629-a4ebd293d4b3
+```
+
+### السبب الجذري
+`vercel.json` كان فيه `headers` فقط بدون `rewrites`. لكن React Router
+عميل-جانبي (`BrowserRouter`)؛ كل المسارات (`/admin`, `/seller`,
+`/deal/:id`...) ما لها ملفات فيزيائية على Vercel، فالـEdge كانت
+ترد بصفحتها الافتراضية.
+
+### الإصلاح
+إضافة قاعدة rewrite واحدة:
+```json
+"rewrites": [
+  { "source": "/((?!.*\\.[a-zA-Z0-9]+$).*)", "destination": "/index.html" }
+]
+```
+- المسارات بدون امتداد (`/admin`) → تخدم `index.html` و React Router يتعامل
+- الـassets (`*.js`, `*.css`, `/sw.js`, `*.png`) تظل تخدم من الـfilesystem
+- محاولة أولى استخدمت `(?!.*\\.)` بدون anchor — `path-to-regexp` لـVercel ما طبقتها (نشر 1)
+- محاولة ثانية أضافت `$` anchor + character class — اشتغلت (نشر 2)
+
+### الأمان — هل كان معرّف 404 يكشف شي حساس؟
+**لا.** `bom1` = منطقة سيرفر Vercel (Mumbai)، الباقي = request-trace
+ID للـlogs الداخلية. لا يكشف user data ولا DB ولا env vars.
+
+### دفاع متعدد الطبقات للأدمن
+حتى لو دخل المشتري `/admin` مباشرة، فيه ٣ طبقات حماية:
+1. `AuthRedirector` ([App.tsx:109](src/App.tsx:109)) يطرد الـguest فوراً
+2. `AdminDashboard` ([AdminDashboard.tsx:166](src/pages/AdminDashboard.tsx:166)) يعرض "Access denied"
+3. كل admin RPCs في Supabase تفحص `user_type='admin'` server-side
+
+الإصلاح UX بحت — مفيش تسرب بيانات قبل أو بعد.
+
+---
 
 ## 🗓 ملخص جلسة ١٠ مايو ٢٠٢٦ (v10.4 → v10.11 + Vercel Production)
 
