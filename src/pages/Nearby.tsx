@@ -217,7 +217,7 @@ const Nearby: React.FC = () => {
                         🎯 {isRTL ? 'في حدود:' : 'Within:'}
                     </label>
                     <select value={radius} onChange={e => setRadius(Number(e.target.value))}
-                        style={{ background: 'var(--primary-light, rgba(16,185,129,0.12))', border: '1.5px solid var(--primary)', color: 'var(--primary)', padding: '6px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900, minHeight: 32 }}>
+                        style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid var(--primary)', color: 'var(--primary)', padding: '6px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900, minHeight: 32 }}>
                         <option value={0}>{isRTL ? 'الكل 🌍' : 'All 🌍'}</option>
                         <option value={1}>1 {isRTL ? 'كم' : 'km'}</option>
                         <option value={2}>2 {isRTL ? 'كم' : 'km'}</option>

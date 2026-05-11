@@ -1506,7 +1506,7 @@ const SellerDashboard: React.FC = () => {
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
                                                 <span style={{ fontSize: '1.5rem', marginBottom: 4 }}>📸</span>
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صورة' : 'Add Image'}</span>
-                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.7, marginTop: 4 }}>
+                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
                                                     {isRTL ? 'أو اسحب الصورة هنا • أو الصق (Cmd+V)' : 'or drag • or paste (Cmd+V)'}
                                                 </span>
                                             </div>

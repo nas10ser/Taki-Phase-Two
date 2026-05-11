@@ -120,8 +120,8 @@
   :root:not(.light-mode) {
     --dark: #334155;
     --accent: #1e293b;
-    --primary-glow: rgba(30, 41, 59, 0.3);
-    --shadow-glow: 0 0 15px rgba(30, 41, 59, 0.2);
+    --primary-glow: rgba(16, 185, 129, 0.35);
+    --shadow-glow: 0 0 15px rgba(16, 185, 129, 0.22);
     --gray-900: #ffffff;
     --gray-700: #e8e8e8;
     --gray-500: #c8c8c8;
@@ -150,24 +150,28 @@
     --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
     --shadow-xl: 0 20px 40px -10px rgba(0, 0, 0, 0.8);
     --accent-glow: rgba(30, 41, 59, 0.5);
-    --notif-unread-bg: rgba(30, 41, 59, 0.4);
+    --notif-unread-bg: rgba(16, 185, 129, 0.12);
     --header-gradient: linear-gradient(135deg, #1e293b, #334155);
-    --primary: #334155;
-    --primary-dark: #1e293b;
-    --primary-light: #475569;
+    /* Brand accent: vivid emerald in dark mode so links, prices,
+       "view more" chips, and dashed upload borders pop against the
+       near-black body. Was slate-700 (#334155) — same hue as the bg,
+       which made every primary-colored label invisible. */
+    --primary: #10b981;
+    --primary-dark: #047857;
+    --primary-light: rgba(16, 185, 129, 0.18);
     --chip-inactive-bg: #2c2d3f;
     --chip-inactive-text: #e8e8f8;
-    --chip-active-bg: #334155;
+    --chip-active-bg: #10b981;
     --chip-active-text: #ffffff;
-    --chip-active-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    --chip-active-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
   }
 }
 
 .dark-mode {
   --dark: #334155;
   --accent: #1e293b;
-  --primary-glow: rgba(30, 41, 59, 0.3);
-  --shadow-glow: 0 0 15px rgba(30, 41, 59, 0.2);
+  --primary-glow: rgba(16, 185, 129, 0.35);
+  --shadow-glow: 0 0 15px rgba(16, 185, 129, 0.22);
   --gray-900: #ffffff;
   --gray-700: #e8e8e8;
   --gray-500: #c8c8c8;
@@ -196,16 +200,20 @@
   --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
   --shadow-xl: 0 20px 40px -10px rgba(0, 0, 0, 0.8);
   --accent-glow: rgba(30, 41, 59, 0.5);
-  --notif-unread-bg: rgba(30, 41, 59, 0.4);
+  --notif-unread-bg: rgba(16, 185, 129, 0.12);
   --header-gradient: linear-gradient(135deg, #1e293b, #334155);
-  --primary: #334155;
-  --primary-dark: #1e293b;
-  --primary-light: #475569;
+  /* Brand accent: vivid emerald in dark mode so links, prices,
+     "view more" chips, and dashed upload borders pop against the
+     near-black body. Was slate-700 (#334155) — same hue as the bg,
+     which made every primary-colored label invisible. */
+  --primary: #10b981;
+  --primary-dark: #047857;
+  --primary-light: rgba(16, 185, 129, 0.18);
   --chip-inactive-bg: #2c2d3f;
   --chip-inactive-text: #e8e8f8;
-  --chip-active-bg: #334155;
+  --chip-active-bg: #10b981;
   --chip-active-text: #ffffff;
-  --chip-active-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --chip-active-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
 }
 
 
