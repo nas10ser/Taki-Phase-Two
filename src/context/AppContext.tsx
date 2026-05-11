@@ -1249,87 +1249,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return booking;
     }, [user]);
 
-    const cancelBooking = useCallback((barcode: string) => {
-        // Atomic transition: read + flip status inside the updater so rapid
-        // double-clicks can't restore quantity twice or fire two notifications.
+    // In-flight tracker: prevents double-tap from a barcode scanner firing
+    // two simultaneous status transitions for the same booking. Each entry
+    // is cleared as soon as the RPC settles (success or failure).
+    const bookingsInFlightRef = useRef<Set<string>>(new Set());
+
+    const cancelBooking = useCallback(async (barcode: string) => {
         const target = bookings.find(b => b.barcode === barcode);
         if (!target || target.status === 'cancelled' || target.status === 'completed') return;
+        if (bookingsInFlightRef.current.has(barcode)) return;
 
-        setBookings(prev => {
-            const updated = prev.map(b => b.barcode === barcode ? { ...b, status: 'cancelled' } : b);
-            return updated;
-        });
+        bookingsInFlightRef.current.add(barcode);
+        const previousStatus = target.status;
+        // Optimistic update — feels instant.
+        setBookings(prev => prev.map(b => b.barcode === barcode ? { ...b, status: 'cancelled' } : b));
 
-        if (!target) return;
-
-        bookingRepository.updateStatus(barcode, 'cancelled').catch(e =>
-            console.warn('Booking status sync deferred:', e?.message || e)
-        );
-
-        // Restore reserved quantity to the deal stock. Same partial-update
-        // path as booking — never touch `status` so the subscription guard
-        // trigger can't block a cancellation either.
-        if (target.deal && target.deal.quantity !== 'unlimited') {
-            setDeals(prev => {
-                const currentDeal = prev.find(d => d.id === target.deal.id);
-                if (!currentDeal || currentDeal.quantity === 'unlimited') return prev;
-                const restored = (currentDeal.quantity as number) + (target.bookedQuantity || 1);
-                const next = prev.map(d => d.id === currentDeal.id ? { ...d, quantity: restored } : d);
-                dealRepository.updateQuantity(currentDeal.id, restored).catch(e =>
-                    console.warn('Deal qty restore sync deferred:', e?.message || e)
-                );
-                return next;
-            });
+        try {
+            await bookingRepository.updateStatus(barcode, 'cancelled');
+            // Restore reserved quantity AFTER the cancel actually committed.
+            if (target.deal && target.deal.quantity !== 'unlimited') {
+                const currentDeal = dealsRef.current.find(d => d.id === target.deal.id);
+                if (currentDeal && currentDeal.quantity !== 'unlimited') {
+                    const restored = (currentDeal.quantity as number) + (target.bookedQuantity || 1);
+                    setDeals(prev => prev.map(d => d.id === currentDeal.id ? { ...d, quantity: restored } : d));
+                    dealRepository.updateQuantity(currentDeal.id, restored).catch(e =>
+                        console.warn('Deal qty restore sync deferred:', e?.message || e)
+                    );
+                }
+            }
+        } catch (e: any) {
+            // RPC rejected the transition (already completed, RLS, etc.).
+            // Roll the local row back so the UI matches the DB instead of
+            // showing a status that doesn't exist server-side.
+            setBookings(prev => prev.map(b => b.barcode === barcode ? { ...b, status: previousStatus } : b));
+            customAlert(language === 'ar'
+                ? `⚠️ فشل إلغاء الحجز: ${e?.message || 'خطأ غير معروف'}`
+                : `⚠️ Cancel failed: ${e?.message || 'Unknown error'}`);
+        } finally {
+            bookingsInFlightRef.current.delete(barcode);
         }
+    }, [bookings, language, customAlert]);
 
-        // Notification rows for both buyer and seller are emitted by the
-        // server trigger `tr_booking_notification` on the status change.
-    }, [user, bookings]);
-
-    const completeBooking = useCallback((barcode: string) => {
+    const completeBooking = useCallback(async (barcode: string) => {
         const target = bookings.find(b => b.barcode === barcode);
         if (!target || target.status === 'completed' || target.status === 'cancelled') return;
+        if (bookingsInFlightRef.current.has(barcode)) return;
 
-        setBookings(prev => {
-            const updated = prev.map(b => b.barcode === barcode ? { ...b, status: 'completed' } : b);
-            return updated;
-        });
+        bookingsInFlightRef.current.add(barcode);
+        const previousStatus = target.status;
+        setBookings(prev => prev.map(b => b.barcode === barcode ? { ...b, status: 'completed' } : b));
 
-        bookingRepository.updateStatus(barcode, 'completed').catch(e => {
-            console.warn('Booking status sync deferred:', e?.message || e);
+        try {
+            await bookingRepository.updateStatus(barcode, 'completed');
+            // Success — server trigger emits buyer + seller + admin notifs.
+        } catch (e: any) {
+            // The "completion silently reverts" bug lived here: previously
+            // we left the optimistic 'completed' in place even on failure,
+            // and on the next realtime sync the row reverted to acknowledged
+            // because DB never accepted the change. Roll back + tell the
+            // user so they can retry.
+            setBookings(prev => prev.map(b => b.barcode === barcode ? { ...b, status: previousStatus } : b));
             customAlert(language === 'ar'
-                ? `⚠️ لم يتم مزامنة التحديث: ${e?.message || 'خطأ غير معروف'}`
-                : `⚠️ Sync failed: ${e?.message || 'Unknown error'}`);
-        });
-
-        // Notifications for both parties are emitted by the server trigger
-        // on this status change. Quantity was reserved at booking time so
-        // completion does NOT deduct again.
+                ? `⚠️ فشل تأكيد التسليم: ${e?.message || 'خطأ غير معروف'}. حاول مرة أخرى.`
+                : `⚠️ Completion failed: ${e?.message || 'Unknown error'}. Please retry.`);
+        } finally {
+            bookingsInFlightRef.current.delete(barcode);
+        }
     }, [bookings, language, customAlert]);
 
     const acknowledgeBooking = useCallback(async (barcode: string, merchantNote?: string) => {
         const target = bookings.find(b => b.barcode === barcode);
         if (!target || target.status !== 'pending') return;
+        if (bookingsInFlightRef.current.has(barcode)) return;
 
-        // Save merchantNote on its own field so the buyer's `notes` is
-        // preserved. Buyer's note (e.g. "extra ketchup") and seller's note
-        // (e.g. "ready in 10 min, side door") are independent messages.
-        setBookings(prev => {
-            const updated = prev.map(b => b.barcode === barcode
-                ? { ...b, status: 'acknowledged' as const, merchantNote: merchantNote || b.merchantNote }
-                : b);
-            return updated;
-        });
+        bookingsInFlightRef.current.add(barcode);
+        const previousStatus = target.status;
+        const previousNote = target.merchantNote;
+        setBookings(prev => prev.map(b => b.barcode === barcode
+            ? { ...b, status: 'acknowledged' as const, merchantNote: merchantNote || b.merchantNote }
+            : b));
 
-        bookingRepository.updateStatus(barcode, 'acknowledged', merchantNote).catch(e => {
-            console.warn('Booking status sync deferred:', e?.message || e);
+        try {
+            await bookingRepository.updateStatus(barcode, 'acknowledged', merchantNote);
+        } catch (e: any) {
+            setBookings(prev => prev.map(b => b.barcode === barcode
+                ? { ...b, status: previousStatus, merchantNote: previousNote }
+                : b));
             customAlert(language === 'ar'
-                ? `⚠️ لم يتم مزامنة التحديث: ${e?.message || 'خطأ غير معروف'}`
-                : `⚠️ Sync failed: ${e?.message || 'Unknown error'}`);
-        });
-
-        // Buyer notification is emitted by the server trigger on this status
-        // change.
+                ? `⚠️ فشل تأكيد استلام الطلب: ${e?.message || 'خطأ غير معروف'}. حاول مرة أخرى.`
+                : `⚠️ Acknowledge failed: ${e?.message || 'Unknown error'}. Please retry.`);
+        } finally {
+            bookingsInFlightRef.current.delete(barcode);
+        }
     }, [bookings, language, customAlert]);
 
     // Public refresh — for pages that mount after a booking event and want to

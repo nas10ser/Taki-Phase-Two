@@ -1,4 +1,75 @@
-# TAKI — تقرير التقدم v10.19 📊
+# TAKI — تقرير التقدم v10.20 📊
+
+## 🗓 v10.20 — إصلاح "الحجز يرجع لقيد التجهيز" + أمن المعاملات (١١ مايو ٢٠٢٦)
+
+### المشكلة (التي بلّغ عنها ناصر)
+"تم ٤ مرات في ٤ أيام تقفيل الحجز بالباركود ولكن عندما يحدث شي في
+الموقع يرجع كأنه لم يتسلم". تأكدت من DB: ٤ حجوزات لمنتج "لاهعهقفا"
+كلها كان التاجر يحاول completion، لكن فقط ٢ منهم استقروا
+(`completed` مع `completed_at`). الـ٢ الباقيين عالقين في `acknowledged`
+رغم أن التاجر ضغط الزر.
+
+### السبب الجذري
+`completeBooking`, `acknowledgeBooking`, `cancelBooking` في
+[AppContext.tsx](src/context/AppContext.tsx) كانت كلها على نمط:
+```
+setBookings(prev => ...);          // optimistic
+repository.updateStatus(...).catch(...);  // fire-and-forget
+```
+
+لو الـDB update فشل لأي سبب (network blip، RLS edge، timeout،
+trigger conflict)، الـlocal state يبقى `completed` لكن الـDB يبقى
+`acknowledged`. عند الـrealtime sync التالي أو الـrefresh، الـlocal
+يستبدل من DB → الحجز "يرجع" بصرياً.
+
+### الإصلاح (متعدد الطبقات)
+
+**أ) ٣ RPCs atomic في قاعدة البيانات** ([migration](booking_status_rpcs_atomic)):
+- `complete_booking(p_barcode)` — يحدّث `pending|acknowledged` إلى `completed`
+- `acknowledge_booking(p_barcode, p_merchant_note)` — `pending` إلى `acknowledged`
+- `cancel_booking(p_barcode)` — `pending|acknowledged` إلى `cancelled`
+
+كل RPC:
+- يفحص `auth.uid()` يطابق `store_id` أو `user_id`
+- يضمن الـprecondition (لا يقبل complete مرتين)
+- يرفع خطأ عربي واضح إذا فشل الشرط
+- يرجع الـrow كاملة عند النجاح
+
+**ب) إعادة كتابة 3 callbacks في [AppContext.tsx:1252](src/context/AppContext.tsx:1252)**:
+- `await` repository call قبل تأكيد الـUI
+- `in-flight Set` يمنع double-tap من الـscanner
+- **rollback** للحالة السابقة لو فشل الـRPC
+- رسالة خطأ واضحة بالعربي تخبر التاجر يحاول مرة أخرى
+- restore quantity في الـcancel **بعد** التأكد من النجاح فقط
+
+**ج) [bookingRepository.ts:131](src/repositories/bookingRepository.ts:131)**:
+استبدلت `.update().eq().select()` بـ `supabase.rpc()` للحالات الـ٣
+— واحد API منظم بدل ٣ scenarios.
+
+**د) تنظيف البيانات**: الـ٢ rows العالقة (AYRT5T6R + 6SVSBLG9)
+تم نقلها إلى `completed` بـ`completed_at` صحيح.
+
+### تحقق المزامنة الفورية
+راجعت [realtimeService.ts](src/services/realtimeService.ts) — السلسلة كاملة:
+- ٣ قنوات Realtime: user-specific (notifications + bookings + own user)،
+  global (deals + seller profiles)، favorites
+- heartbeat كل ١٥ ثانية + reconnect exponential backoff (max 30s)
+- handlers للـvisibility / online / focus / offline — كل واحد يطلق
+  full re-sync بعد الانقطاع
+- DB triggers تبعث إشعارات للـ٣ أطراف عند كل تغيير حالة:
+  - INSERT booking: التاجر + المشتري + كل الـadmins
+  - UPDATE → acknowledged: المشتري
+  - UPDATE → completed: المشتري + التاجر + كل الـadmins
+  - UPDATE → cancelled: المشتري + التاجر + كل الـadmins
+
+أي إشعار على DB → realtime ينقله للأجهزة المعنية في ثوانٍ.
+
+### SW cache v10.20
+
+### قادم في v10.21
+محادثة ٣+٣ رسائل بين المشتري والتاجر مع إشعارات (طلب ناصر #3).
+
+---
 
 ## 🗓 v10.19 — إصلاح فلتر المنطقة/المدينة (bug في الـtrigger و الـclient) ١١ مايو ٢٠٢٦
 

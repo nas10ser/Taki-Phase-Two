@@ -129,19 +129,34 @@ export const bookingRepository = {
     },
 
     updateStatus: async (barcode: string, status: Booking['status'], merchantNote?: string): Promise<void> => {
-        // Direct remote update. The optional `merchantNote` is the seller's
-        // note attached when acknowledging an order — written to the
-        // `merchant_note` column so the buyer's `notes` is preserved.
+        // Atomic, awaited status transition via server-side RPC.
+        // The RPC guards the precondition (status was pending/acknowledged),
+        // checks auth, and raises a clear error if anything is off. This is
+        // the v10.20 fix for the "completion silently reverts" bug — the
+        // previous fire-and-forget `.update()` could fail without the
+        // optimistic UI ever noticing.
         try {
-            const updatePayload: any = { status };
-            if (merchantNote !== undefined) updatePayload.merchant_note = merchantNote;
-
-            const { error, data } = await supabase.from('bookings').update(updatePayload).eq('barcode', barcode).select();
-            if (error) throw error;
-            if (!data || data.length === 0) {
-                throw new Error('لم يتم العثور على الحجز أو أنك لا تملك صلاحية التعديل (RLS).');
+            let rpcName: string;
+            let args: Record<string, any>;
+            if (status === 'completed') {
+                rpcName = 'complete_booking';
+                args = { p_barcode: barcode };
+            } else if (status === 'acknowledged') {
+                rpcName = 'acknowledge_booking';
+                args = { p_barcode: barcode, p_merchant_note: merchantNote ?? null };
+            } else if (status === 'cancelled') {
+                rpcName = 'cancel_booking';
+                args = { p_barcode: barcode };
+            } else {
+                throw new Error(`Unsupported status transition: ${status}`);
             }
-            logger.log('✅ Booking status updated in remote');
+
+            const { data, error } = await supabase.rpc(rpcName, args);
+            if (error) throw error;
+            if (!data) {
+                throw new Error('RPC returned no row');
+            }
+            logger.log('✅ Booking status updated via RPC:', barcode, '→', status);
         } catch (e) {
             console.error('Remote status sync failed:', e);
             throw e;
