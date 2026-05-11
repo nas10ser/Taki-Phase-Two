@@ -414,7 +414,17 @@ textarea:focus {
   color: var(--gray-400);
 }
 
-/* ===== BOTTOM NAV ===== */
+/* ===== BOTTOM NAV =====
+ * z-index 1100 sits above Leaflet's internal panes (tile 200, overlay 400,
+ * shadow 500, marker 600, popup 700, control 800, controls-corner 1000)
+ * so the map can never paint over the nav. Also above the top progress bar
+ * (1100 — fine, they don't overlap vertically). `isolation: isolate` makes
+ * sure backdrop-filter never leaks weirdly over fixed siblings.
+ *
+ * IMPORTANT: any ancestor that uses `transform`, `filter`, or `perspective`
+ * creates a new containing block for fixed children, breaking pinning. So
+ * BottomNav MUST be a sibling of PullToRefresh (NOT a child), or the
+ * translateY() on the pull wrapper would re-anchor it. */
 .bottom-nav {
   position: fixed;
   bottom: 0;
@@ -424,11 +434,23 @@ textarea:focus {
   backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid var(--nav-border);
   padding: 6px 0 env(safe-area-inset-bottom, 8px);
-  z-index: 50;
+  z-index: 1100;
+  isolation: isolate;
   display: flex;
   justify-content: space-around;
   align-items: center;
   transition: background 0.3s ease;
+}
+
+/* Leaflet's panes ship with z-index up to 1000 (controls corners). Without
+ * a stacking context on the container itself, those numbers compete with
+ * elements OUTSIDE the map at the document root — that's why a z-index of
+ * 50 on the bottom nav was getting beaten by tile/marker layers. Isolating
+ * the leaflet-container into its own stacking context keeps its internal
+ * z-indexes scoped to itself. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
 }
 
 .nav-item {

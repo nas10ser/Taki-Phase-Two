@@ -95,6 +95,7 @@ const Bookings: React.FC = () => {
     };
 
     return (
+        <>
         <PullToRefresh isRTL={isRTL} onRefresh={() => {
             // Only the bookings table — the rest of the data on this page
             // (notifications, deals) doesn't need to round-trip on a swipe.
@@ -488,9 +489,12 @@ const Bookings: React.FC = () => {
                     </div>
                 )}
             </div>
-            <BottomNav />
         </div>
         </PullToRefresh>
+        {/* Sibling, not child — PullToRefresh's translateY() would otherwise
+            re-anchor `position: fixed` to the wrapper instead of the viewport. */}
+        <BottomNav />
+        </>
     );
 };
 

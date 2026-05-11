@@ -147,6 +147,7 @@ const Home: React.FC = () => {
     }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles]);
 
     return (
+        <>
         <PullToRefresh isRTL={isRTL} onRefresh={() => {
             // Fire-and-forget: PullToRefresh caps the spinner regardless,
             // and the realtime channels will deliver any updates we miss.
@@ -348,9 +349,15 @@ const Home: React.FC = () => {
                 )}
             </div>
 
-            <BottomNav />
         </div>
         </PullToRefresh>
+        {/* BottomNav lives OUTSIDE the pull-to-refresh wrapper. The wrapper
+            uses transform: translateY() while pulling, and any ancestor with
+            a transform breaks `position: fixed` for descendants — the nav
+            would scroll along with the page instead of pinning to the
+            bottom. Keeping it as a sibling preserves true viewport pinning. */}
+        <BottomNav />
+        </>
     );
 };
 
