@@ -37,6 +37,9 @@ const Bookings: React.FC = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    // Default to newest-first so the most recently booked order is visible
+    // without scrolling — matches what users expect from inbox-style screens.
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
     // Safety net — refetch on mount in case a realtime packet was dropped
     // between the booking commit and this page rendering. The optimistic
@@ -55,16 +58,27 @@ const Bookings: React.FC = () => {
         return name.includes(searchTerm.toLowerCase());
     };
 
+    const sortBookings = (list: any[]) => {
+        const sign = sortOrder === 'newest' ? -1 : 1;
+        return [...list].sort((a, b) => sign * ((a.bookedAt || 0) - (b.bookedAt || 0)));
+    };
+
     const filteredActive = useMemo(() =>
-        bookings.filter(b => b.userId === user?.id && b.status !== 'completed' && b.status !== 'cancelled')
-                .filter(matchesSearch),
-        [bookings, user?.id, searchTerm]
+        sortBookings(
+            bookings.filter(b => b.userId === user?.id && b.status !== 'completed' && b.status !== 'cancelled')
+                    .filter(matchesSearch)
+        ),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [bookings, user?.id, searchTerm, sortOrder]
     );
 
     const filteredPast = useMemo(() =>
-        bookings.filter(b => b.userId === user?.id && (b.status === 'completed' || b.status === 'cancelled'))
-                .filter(matchesSearch),
-        [bookings, user?.id, searchTerm]
+        sortBookings(
+            bookings.filter(b => b.userId === user?.id && (b.status === 'completed' || b.status === 'cancelled'))
+                    .filter(matchesSearch)
+        ),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [bookings, user?.id, searchTerm, sortOrder]
     );
 
     // Auto-expand if only one active booking
@@ -132,6 +146,76 @@ const Bookings: React.FC = () => {
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
             <div style={{ padding: '24px 16px 120px' }}>
+                {/* Sort toggle — applies to both Active and Past sections.
+                    Default is newest-first because a buyer's latest order is
+                    almost always what they came to check. */}
+                {(filteredActive.length > 0 || filteredPast.length > 0) && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        marginBottom: 18,
+                        background: 'var(--card-bg)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 14,
+                        padding: '8px 12px',
+                        boxShadow: 'var(--shadow-sm)',
+                    }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))' }}>
+                            {isRTL ? 'الترتيب:' : 'Sort:'}
+                        </span>
+                        <div style={{
+                            display: 'flex',
+                            gap: 4,
+                            background: 'var(--body-bg)',
+                            borderRadius: 999,
+                            padding: 3,
+                            flex: 1,
+                        }}>
+                            <button
+                                onClick={() => setSortOrder('newest')}
+                                aria-pressed={sortOrder === 'newest'}
+                                style={{
+                                    flex: 1,
+                                    padding: '7px 10px',
+                                    borderRadius: 999,
+                                    border: 'none',
+                                    background: sortOrder === 'newest' ? 'var(--primary)' : 'transparent',
+                                    color: sortOrder === 'newest' ? '#ffffff' : 'var(--text-primary)',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    minHeight: 36,
+                                    transition: 'background 0.18s ease',
+                                }}
+                            >
+                                ⬇️ {isRTL ? 'الأحدث أولاً' : 'Newest first'}
+                            </button>
+                            <button
+                                onClick={() => setSortOrder('oldest')}
+                                aria-pressed={sortOrder === 'oldest'}
+                                style={{
+                                    flex: 1,
+                                    padding: '7px 10px',
+                                    borderRadius: 999,
+                                    border: 'none',
+                                    background: sortOrder === 'oldest' ? 'var(--primary)' : 'transparent',
+                                    color: sortOrder === 'oldest' ? '#ffffff' : 'var(--text-primary)',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    minHeight: 36,
+                                    transition: 'background 0.18s ease',
+                                }}
+                            >
+                                ⬆️ {isRTL ? 'الأقدم أولاً' : 'Oldest first'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Active Bookings Section */}
                 {filteredActive.length > 0 && (
                     <div style={{ marginBottom: 40 }}>
