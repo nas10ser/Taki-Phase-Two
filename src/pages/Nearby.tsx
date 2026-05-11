@@ -313,7 +313,9 @@ const Nearby: React.FC = () => {
                     // BottomNav (≈ 64 px + safe-area). Otherwise a 24 px
                     // breather is plenty since the list provides its own
                     // bottom padding.
-                    marginBottom: viewMode === 'map' ? 'calc(env(safe-area-inset-bottom, 0px) + 96px)' : 24,
+                    // Bigger floor for map-only since nothing sits under it; in
+                    // hybrid mode the list provides its own padding-bottom.
+                    marginBottom: viewMode === 'map' ? 'calc(env(safe-area-inset-bottom, 0px) + 120px)' : 24,
                     transition: 'height 0.3s ease',
                 }}
             >
@@ -380,7 +382,7 @@ const Nearby: React.FC = () => {
             
             {/* List View Below Map */}
             {viewMode !== 'map' && (
-            <div style={{ padding: '0 16px 100px' }}>
+            <div style={{ padding: '0 16px calc(env(safe-area-inset-bottom, 0px) + 120px)' }}>
                 <h2 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16, color: 'var(--text-primary)' }}>
                     {isRTL ? `النتائج القريبة (${nearbyDeals.length})` : `Nearby Results (${nearbyDeals.length})`}
                 </h2>

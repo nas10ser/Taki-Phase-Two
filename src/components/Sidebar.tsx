@@ -132,8 +132,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     </button>
                 </div>
 
-                {/* Navigation */}
-                <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* Navigation. `flex: 1` used to push the settings block all
+                    the way to the bottom of the viewport, leaving a big empty
+                    column on phones with only 4 menu items. Plain flex-column
+                    keeps the items + settings stacked naturally with their
+                    intrinsic spacing. */}
+                <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {menuItems.map(item => (
                         <button
                             key={item.id}

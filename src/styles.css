@@ -760,12 +760,14 @@ textarea:focus {
 }
 
 /* ===== BOOKING CTA ===== */
+/* Sits ABOVE the BottomNav (~64 px tall + safe-area). The previous
+   `bottom: 0` overlapped the nav when BottomNav was added to DealDetails. */
 .book-cta {
   position: fixed;
-  bottom: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
   left: 0;
   right: 0;
-  padding: 12px 16px env(safe-area-inset-bottom, 12px);
+  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border-top: 1px solid var(--gray-100);

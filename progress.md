@@ -18,6 +18,7 @@
 
 | إصدار | الموضوع |
 |--------|---------|
+| **v10.33** | BottomNav على DealDetails + رفع زر الحجز فوقه + خريطة حولي بـ120 px clearance + Sidebar بدون flex:1 |
 | **v10.32** | تثبيت BottomNav (إزالة auto-hide) + فراغ تحت خريطة "حولي" في وضع map-only |
 | **v10.31** | إزالة Pull-to-Refresh من حولي + BottomNav يكشف على أي scroll-up (مثل X) |
 | **v10.30** | Pull-to-Refresh spinner ≤ 700ms cap + fire-and-forget refresh per page |

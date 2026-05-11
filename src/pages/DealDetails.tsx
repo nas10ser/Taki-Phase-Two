@@ -6,6 +6,7 @@ import { useBooking } from '../hooks/useBooking';
 import { dealService } from '../services/dealService';
 import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
+import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation } from '../utils/helpers';
 
@@ -1162,6 +1163,7 @@ const DealDetails: React.FC = () => {
                     </div>
                 </div>
             )}
+            <BottomNav />
         </div>
     );
 };
