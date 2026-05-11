@@ -1,4 +1,26 @@
-# TAKI — تقرير التقدم v10.30 📊
+# TAKI — تقرير التقدم v10.31 📊
+
+## 🗓 v10.31 — إزالة PTR من حولي + BottomNav reveal على أي scroll-up (١١ مايو ٢٠٢٦)
+
+### ١. إزالة Pull-to-Refresh من صفحة "حولي"
+[Nearby.tsx](src/pages/Nearby.tsx) — حذفت الـwrapper والـimports. الصفحة
+تعتمد على `watchPosition` للموقع المباشر + الـrealtime channels للعروض،
+ما يحتاج للسحب الـmanual.
+
+### ٢. BottomNav يكشف على أي scroll-up (مثل X)
+في [BottomNav.tsx:30](src/components/BottomNav.tsx):
+- كان الـthreshold للـscroll-up = `dy < -6 px` → كان يحتاج سحبة واضحة
+  ليطلع، لا يطابق الـfeel السلس لـTwitter/X
+- الآن: `dy < 0` فقط — **أي scroll-up مهما كان صغيراً** يظهر الـnav
+  فوراً
+- الـscroll-down يبقى `dy > 6 px` (الـdead-zone يمنع flicker من جيتر الإصبع)
+
+النتيجة: المستخدم يبدأ بسحبة صغيرة فوق → الـnav يظهر بنفس الإصبع، بدون
+انتظار أو threshold.
+
+### SW cache v10.31
+
+---
 
 ## 🗓 v10.30 — Pull-to-Refresh أسرع من البرق (١١ مايو ٢٠٢٦)
 

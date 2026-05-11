@@ -9,11 +9,12 @@ const BottomNav: React.FC = () => {
 
     const isRTL = language === 'ar';
 
-    // X-style auto-hide: drop the bar off-screen when the user scrolls
-    // DOWN past a small dead-zone, snap it back the instant they scroll
-    // UP. Always visible at the very top of the page so the user can
-    // still navigate from a fresh load. Threshold (6 px) is deliberately
-    // tiny so a casual flick doesn't toggle it.
+    // X-style auto-hide: drop the bar off-screen on any meaningful
+    // scroll DOWN, and snap it back the very instant the user reverses
+    // direction — even a 1-pixel scroll-up reveals it again. That's the
+    // pattern Twitter / X uses, and it makes the nav feel "always there
+    // when you want it". Always visible at the very top of the page too,
+    // so a fresh load lands with the nav in view.
     const [hidden, setHidden] = useState(false);
     const lastYRef = useRef(0);
 
@@ -22,11 +23,16 @@ const BottomNav: React.FC = () => {
             const y = window.scrollY || window.pageYOffset || 0;
             const dy = y - lastYRef.current;
             if (y <= 8) {
+                // At the very top — bar always visible.
+                setHidden(false);
+            } else if (dy < 0) {
+                // ANY scroll up reveals immediately. No threshold here —
+                // user wanted Twitter/X parity.
                 setHidden(false);
             } else if (dy > 6) {
+                // Scroll down past a small dead-zone hides. The 6 px
+                // floor still prevents toggle-flicker on fingertip jitter.
                 setHidden(true);
-            } else if (dy < -6) {
-                setHidden(false);
             }
             lastYRef.current = y;
         };

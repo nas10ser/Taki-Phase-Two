@@ -8,8 +8,6 @@ import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
 import { getDistance, resolveDealLocation } from '../utils/helpers';
-import PullToRefresh from '../components/PullToRefresh';
-import { realtimeService } from '../services/realtimeService';
 
 const MapUpdater = ({ center }: { center: [number, number] }) => {
     const map = useMap();
@@ -135,12 +133,6 @@ const Nearby: React.FC = () => {
     const mapHeight = viewMode === 'map' ? '65vh' : '35vh';
 
     return (
-        <PullToRefresh isRTL={isRTL} onRefresh={() => {
-            // The deals list is driven by the realtime channel — a swipe
-            // here just nudges the channel to resync, no awaited fetches.
-            realtimeService.forceRefresh();
-            return Promise.resolve();
-        }}>
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
             <div className="premium-bar" style={{ paddingBottom: 24 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -467,7 +459,6 @@ const Nearby: React.FC = () => {
 
             <BottomNav />
         </div>
-        </PullToRefresh>
     );
 };
 
