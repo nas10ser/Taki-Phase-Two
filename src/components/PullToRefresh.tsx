@@ -123,7 +123,13 @@ const PullToRefresh: React.FC<Props> = ({
                     style={{
                         position: 'fixed',
                         top: `calc(env(safe-area-inset-top, 0px) + ${Math.max(4, pullDistance - 38)}px)`,
-                        insetInlineStart: '50%',
+                        // `left: 50%` + translateX is the only reliably-
+                        // centered combo across RTL/LTR. insetInlineStart
+                        // flipped to the right edge in RTL, then the
+                        // negative translate pushed the spinner toward the
+                        // start of the line — visually it landed left of
+                        // center on iPhone, not in the middle.
+                        left: '50%',
                         transform: 'translateX(-50%)',
                         zIndex: 99998,
                         width: 44,

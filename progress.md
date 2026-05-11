@@ -1,4 +1,44 @@
-# TAKI — تقرير التقدم v10.28 📊
+# TAKI — تقرير التقدم v10.29 📊
+
+## 🗓 v10.29 — Pull-to-Refresh في النص + BottomNav بنمط X (١١ مايو ٢٠٢٦)
+
+### ١. مؤشر pull-to-refresh كان يطلع على الجانب الأيسر
+**السبب:** [PullToRefresh.tsx](src/components/PullToRefresh.tsx) كان يستخدم:
+```ts
+insetInlineStart: '50%',
+transform: 'translateX(-50%)'
+```
+في RTL، `insetInlineStart` يـmap إلى `right`، فالـelement يبدأ من حد يمين
+الشاشة بإزاحة 50%. ثم `translateX(-50%)` يحرّك العنصر شمالاً physical
+دائماً (الـtransforms لا تـflip في RTL). النتيجة على iPhone كانت
+indicator مزاح شمال النص بـ22 بكسل.
+
+**الإصلاح:** استبدلت بـ`left: '50%'` ثابت — الـCSS `left` لا يتأثر
+بـRTL، فيوفّر centering موثوق في الـbreakpoints كلها.
+
+### ٢. BottomNav بنمط X (تويتر سابقاً)
+**الطلب:** "اجعله مثل تطبيق X — يختفي عند الـscroll-down، يظهر عند الـscroll-up".
+
+**التطبيق في [BottomNav.tsx:11](src/components/BottomNav.tsx):**
+- state `hidden` مع `lastYRef` للمقارنة
+- listener على `window.scroll` (passive):
+  - `scrollY ≤ 8` → دائماً مرئي (بداية الصفحة)
+  - الـdelta > 6 px لتحت → `hidden = true`
+  - الـdelta < -6 px لفوق → `hidden = false`
+- threshold الـ6 بكسل يمنع الـjitter من اللمسات الخفيفة
+- `useEffect` ثانٍ يـsnap الـnav للظهور عند تغيير الـroute
+  (يمنع المستخدم من الوصول لصفحة جديدة والـnav مخفي)
+
+**Transform** بدلاً من `display: none` لـperformance + smooth slide:
+```css
+transform: translateY(110%);
+transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+```
+110% يضمن الـnav يختفي بالكامل حتى مع الـshadow وiPhone safe-area inset.
+
+### SW cache v10.29
+
+---
 
 ## 🗓 v10.28 — Pull-to-Refresh + تحديث فوري بدون تعليق (١١ مايو ٢٠٢٦)
 
