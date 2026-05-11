@@ -123,29 +123,46 @@ function dispatchUpdateAvailable() {
 })();
 
 /**
- * Called by the UpdateBanner when the user taps "Update now". Posts the
- * SKIP_WAITING message to whichever worker is in `waiting` state; the
- * SW will then activate, the browser will fire `controllerchange`, and
- * our listener above will reload the page exactly once.
+ * Aggressive in-app update. Previous version posted SKIP_WAITING and
+ * relied on `controllerchange` to fire the reload. On iOS Safari that
+ * sometimes never arrives in a reasonable window — the user reported
+ * "the update hangs and I have to leave the app". So this version:
  *
- * Falls back to a plain reload if no waiting worker exists (e.g. the
- * UPDATE_EVENT fired from a TAKI_SW_UPDATED message but no `waiting`
- * has materialised) — that still gets the user onto fresh code.
+ *   1. Nudge the waiting SW to take over (best-effort).
+ *   2. Wipe every CacheStorage entry so the next request has to hit
+ *      the network. That alone guarantees fresh JS/CSS even if the SW
+ *      handoff lags.
+ *   3. Hard-reload the page immediately. Don't wait for any handshake.
+ *
+ * The controllerchange listener in this file still fires on cold-load
+ * paths (e.g. first install of a new SW); we just no longer block the
+ * UI on it.
  */
 export async function applySwUpdate(): Promise<void> {
-    if (!('serviceWorker' in navigator)) {
-        window.location.reload();
-        return;
-    }
     try {
-        const reg = await navigator.serviceWorker.getRegistration('/');
-        if (reg?.waiting) {
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-            // controllerchange listener handles the reload.
-            return;
+        if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.getRegistration('/');
+            if (reg?.waiting) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
         }
-    } catch { /* fall through */ }
-    // No waiting worker — reload directly. The current SW will fetch the
-    // new sw.js on next navigation.
-    window.location.reload();
+    } catch { /* ignore — we'll still purge + reload below */ }
+
+    if ('caches' in window) {
+        try {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k).catch(() => false)));
+        } catch { /* ignore */ }
+    }
+
+    // Bypass the bfcache so the next paint actually hits the network.
+    // Some iOS Safari versions still serve from cache on reload() — using
+    // location.replace with a cache-busted URL is the strongest signal.
+    try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('_taki_r', String(Date.now()));
+        window.location.replace(u.toString());
+    } catch {
+        window.location.reload();
+    }
 }

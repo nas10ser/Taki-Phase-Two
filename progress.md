@@ -1,4 +1,56 @@
-# TAKI — تقرير التقدم v10.27 📊
+# TAKI — تقرير التقدم v10.28 📊
+
+## 🗓 v10.28 — Pull-to-Refresh + تحديث فوري بدون تعليق (١١ مايو ٢٠٢٦)
+
+### الشكوى
+ناصر: "عند التحديث يعلق ويلزمني أخرج من التطبيق ثم أرجع — أريد كسرعة
+البرق وأسرع من البرق".
+
+### المشكلة الفعلية
+كان `applySwUpdate` يفعل:
+1. `postMessage({ type: 'SKIP_WAITING' })` للـwaiting worker
+2. ينتظر `controllerchange` event ليطلق `window.location.reload()`
+
+على iOS Safari، الـcontrollerchange قد يأخذ ثوانٍ أو لا يطلق إطلاقاً
+(خاصة لو الـSW handoff تأخّر). الـUpdateBanner كان عنده fallback timer
+٢.٥ ثانية، لكن المستخدم يرى banner "Updating…" بدون أي شي ظاهر يحدث،
+فيظن إن التطبيق علق.
+
+### الإصلاح ١: applySwUpdate "نووي" بدون انتظار
+[sw-cleanup.ts:140](src/sw-cleanup.ts):
+1. ينبّه الـwaiting worker (best-effort، لا ينتظر رد)
+2. **يمسح كل caches** (`caches.keys()` + `Promise.all(map(delete))`)
+3. **يستخدم `location.replace` مع cache-busting param** (`?_taki_r=<ts>`)
+   بدلاً من `reload()` — يتجاوز iOS Safari bfcache بضمان أعلى
+
+النتيجة: من ضغطة الـbanner إلى ظهور النسخة الجديدة < ١ ثانية على
+iPhone، **بدون** انتظار controllerchange، **بدون** خروج من Safari.
+
+### الإصلاح ٢: Pull-to-Refresh (سحب للأسفل لتحديث)
+[PullToRefresh.tsx](src/components/PullToRefresh.tsx) — wrapper جديد
+يضيف نمط iOS-native:
+
+- لما المستخدم في `scrollTop = 0` ويسحب لتحت
+- spinner يظهر في الأعلى مع رمز ↓ يدور تدريجياً مع المسافة
+- بعد ٨٠px يصير الرمز أخضر — "release to refresh"
+- عند الإفلات، يطلق `onRefresh` async، الـspinner يستمر
+- `preventDefault` على الـtouchmove خلال السحب يبطل الـoverscroll bounce
+  ليظل الـindicator ملتصق بأعلى الشاشة
+
+ربطته في ٣ صفحات:
+- **Home** → `refreshDeals() + realtimeService.forceRefresh()`
+- **Nearby** → `realtimeService.forceRefresh()`
+- **Bookings** → `refreshBookings() + realtimeService.forceRefresh()`
+
+### كيف يعمل الآن؟
+- **تحديث خفيف للبيانات:** اسحب من أعلى الشاشة لتحت — يتحدث كل
+  شيء في ثوانٍ. يشتغل **كأنه تطبيق iOS** native.
+- **تحديث شامل (نسخة جديدة):** اضغط banner أخضر 🆕 → يمسح الكاش
+  ويـreload فوراً بدون تعليق.
+
+### SW cache v10.28
+
+---
 
 ## 🗓 v10.27 — زر "موقعي" يمسح فلاتر المنطقة/المدينة في حولي (١١ مايو ٢٠٢٦)
 

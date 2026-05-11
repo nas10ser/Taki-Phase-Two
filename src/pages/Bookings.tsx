@@ -5,6 +5,8 @@ import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import { Booking } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
+import PullToRefresh from '../components/PullToRefresh';
+import { realtimeService } from '../services/realtimeService';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -94,6 +96,9 @@ const Bookings: React.FC = () => {
     };
 
     return (
+        <PullToRefresh isRTL={isRTL} onRefresh={async () => {
+            await Promise.allSettled([refreshBookings(), realtimeService.forceRefresh()]);
+        }}>
         <div style={{ minHeight: '100vh', background: 'var(--bg-color)', direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* Header */}
             <div style={{
@@ -483,6 +488,7 @@ const Bookings: React.FC = () => {
             </div>
             <BottomNav />
         </div>
+        </PullToRefresh>
     );
 };
 

@@ -7,6 +7,8 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { dealMatchesLocation } from '../utils/helpers';
+import PullToRefresh from '../components/PullToRefresh';
+import { realtimeService } from '../services/realtimeService';
 import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
@@ -146,6 +148,9 @@ const Home: React.FC = () => {
     }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles]);
 
     return (
+        <PullToRefresh isRTL={isRTL} onRefresh={async () => {
+            await Promise.allSettled([refreshDeals(), realtimeService.forceRefresh()]);
+        }}>
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* No more full-screen blocker — modern apps show content shells while
                 data hydrates in the background. A thin top progress bar gives a
@@ -343,6 +348,7 @@ const Home: React.FC = () => {
 
             <BottomNav />
         </div>
+        </PullToRefresh>
     );
 };
 
