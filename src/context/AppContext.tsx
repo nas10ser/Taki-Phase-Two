@@ -729,17 +729,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // showing on every refresh for admins.
         if (user.userType === 'admin') return;
 
-        // Throttle: once per 24h. Primary throttle is localStorage (per-device,
-        // never fails) — the DB column is a backup so different devices stay
-        // mostly in sync. Stamp BEFORE creating the notification so a slow
-        // network or RLS hiccup can't bypass the gate.
+        // Throttle: once per 24h. DB column `users.last_promo_check_at` is
+        // the authoritative source — no local cache (would split-brain across
+        // devices and let the same user see the same promo twice).
         const now = Date.now();
         const dayMs = 24 * 60 * 60 * 1000;
-        const lsKey = `TAKI_LAST_PROMO_${user.id}`;
-        try {
-            const lsLast = Number(localStorage.getItem(lsKey)) || 0;
-            if (lsLast && now - lsLast < dayMs) return;
-        } catch {}
 
         try {
             const { supabase } = await import('../services/supabaseClient');
@@ -750,25 +744,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .maybeSingle();
             if (throttleRow?.last_promo_check_at) {
                 const last = new Date(throttleRow.last_promo_check_at).getTime();
-                if (now - last < dayMs) {
-                    try { localStorage.setItem(lsKey, String(last)); } catch {}
-                    return;
-                }
+                if (now - last < dayMs) return;
             }
         } catch {}
 
-        // Stamp throttle FIRST. If the user closes the tab mid-fetch, we
-        // still won't show the notification on the next visit within 24h.
-        try { localStorage.setItem(lsKey, String(now)); } catch {}
-        const stampDb = async () => {
-            try {
-                const { supabase } = await import('../services/supabaseClient');
-                await supabase.from('users')
-                    .update({ last_promo_check_at: new Date(now).toISOString() })
-                    .eq('id', user.id);
-            } catch {}
-        };
-        stampDb();
+        // Stamp BEFORE creating the notification so a slow network can't
+        // bypass the gate. Awaited so the gate is in place before we move on.
+        try {
+            const { supabase } = await import('../services/supabaseClient');
+            await supabase.from('users')
+                .update({ last_promo_check_at: new Date(now).toISOString() })
+                .eq('id', user.id);
+        } catch {}
 
         try {
             // Fetch active campaigns from Supabase for this user type
@@ -899,43 +886,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ratings: deal.ratings || []
         };
 
-        // 1. Optimistic local update first — UI is instant.
-        // Functional update + dedup-by-id so a rapid double-click or a
-        // realtime INSERT race never produces two rows for the same deal.
-        setDeals(prev => {
-            const filtered = prev.filter(d => d.id !== dealWithTime.id);
-            const next = [dealWithTime, ...filtered];
-            return next;
-        });
-
-        // 2. Ensure FK target exists in users(id) before deal insert.
+        // 1. Ensure FK target exists in users(id) before deal insert.
+        //    Saving the user row first means the deal upsert can't fail
+        //    on a missing parent. If THIS fails, surface it now — better
+        //    than silently masking it behind a deal-save error later.
         if (user) {
             try {
                 await userRepository.saveProfile(user);
-            } catch (e) {
-                console.warn('Profile sync before deal failed (continuing):', e);
+            } catch (e: any) {
+                console.error('Profile sync before deal failed:', e);
+                customAlert(
+                    language === 'ar'
+                        ? '⚠️ تعذّر تحديث بيانات المتجر. حاول مرة أخرى.'
+                        : '⚠️ Could not sync store profile. Try again.'
+                );
+                return;
             }
         }
 
-        // 3. Remote upsert. If this fails, surface a clear message but keep local copy.
-        try {
+        // 2. DB-first save — no "saved locally" lie. The UI only reflects
+        //    the deal AFTER the database has accepted it. If the DB rejects
+        //    (location cap, validation, RLS) the user sees a specific error
+        //    and nothing appears in their list. If a transient auth-lock
+        //    fires we retry once silently.
+        const trySave = async () => {
             await dealRepository.save(dealWithTime);
-            logger.log('✅ Deal saved successfully');
-        } catch (error: any) {
-            console.error('❌ Failed to save deal to database:', error);
-            const msg: string = error?.message || '';
-            // Auth-token lock contention is a transient browser-tab race, not
-            // a sync failure — the next refresh will pick up the deal. Don't
-            // alarm the user.
-            const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
+        };
 
-            // Server-side location-cap rejection (v10.46 trigger). Roll back
-            // the optimistic local insert so the UI stays consistent with
-            // the DB, and show the cap-specific Arabic message instead of
-            // the generic "saved locally but sync failed" wording.
+        try {
+            await trySave();
+        } catch (error: any) {
+            const msg: string = error?.message || '';
+            const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
             const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
+
             if (isLocationCap) {
-                setDeals(prev => prev.filter(d => d.id !== dealWithTime.id));
                 customAlert(
                     language === 'ar'
                         ? '⚠️ باقتك تسمح بـ3 مواقع مختلفة فقط للعروض النشطة.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل إضافة موقع جديد.'
@@ -944,51 +929,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 return;
             }
 
-            if (!isTransientLock) {
+            if (isTransientLock) {
+                try {
+                    await new Promise(r => setTimeout(r, 500));
+                    await trySave();
+                } catch (retryErr: any) {
+                    console.error('❌ Deal save retry failed:', retryErr);
+                    customAlert(
+                        language === 'ar'
+                            ? '⚠️ تعذّر حفظ العرض في قاعدة البيانات. حاول مرة أخرى بعد قليل.'
+                            : '⚠️ Could not save deal to database. Try again shortly.'
+                    );
+                    return;
+                }
+            } else {
+                console.error('❌ Failed to save deal to database:', error);
                 customAlert(
                     language === 'ar'
-                        ? `⚠️ تم الحفظ محلياً لكن المزامنة مع السيرفر فشلت. سيتم المحاولة مجدداً عند الاتصال.${msg ? `\n(${msg})` : ''}`
-                        : `⚠️ Saved locally but server sync failed. Will retry when reconnected.${msg ? `\n(${msg})` : ''}`
+                        ? `⚠️ تعذّر حفظ العرض في قاعدة البيانات.${msg ? `\n${msg}` : ''}`
+                        : `⚠️ Could not save deal to database.${msg ? `\n${msg}` : ''}`
                 );
+                return;
             }
         }
 
-        // Note: Follower and Smart Alert notifications are handled 100%
-        // server-side by the tr_deal_smart_notifications trigger (migration v8.11).
-        // The server fires instantly when the deal row is inserted — no client needed.
-    }, [deals, user, language, customAlert]);
+        // 3. DB save succeeded — mirror to local state now. Functional update
+        //    + dedup-by-id so a rapid double-click or a realtime INSERT race
+        //    can't produce two rows for the same deal.
+        setDeals(prev => {
+            const filtered = prev.filter(d => d.id !== dealWithTime.id);
+            return [dealWithTime, ...filtered];
+        });
+        logger.log('✅ Deal saved to database');
+
+        // Follower / Smart Alert notifications are fanned out 100% server-side
+        // by tr_deal_smart_notifications. The server fires on INSERT — no
+        // client work needed.
+    }, [user, language, customAlert]);
 
     const updateDeal = useCallback(async (deal: Deal) => {
-        // Optimistic local update
-        setDeals(prev => {
-            const next = prev.map(d => d.id === deal.id ? deal : d);
-            return next;
-        });
+        // DB-first: never show an "optimistic" version of a deal that the
+        // database might reject. The UI only updates AFTER the DB confirms.
         try {
             await dealRepository.save(deal);
-            // Re-fetch the row to confirm persistence — guards against the
-            // realtime listener missing the UPDATE packet (a recurring issue
-            // when the user pauses a deal: the local state showed paused,
-            // but a stale realtime echo or a missed packet flipped it back
-            // to active until the user manually refreshed several times).
-            const fresh = await dealRepository.getById(deal.id).catch(() => null);
-            if (fresh) {
-                setDeals(prev => prev.map(d => d.id === fresh.id ? fresh : d));
-            }
         } catch (error: any) {
-            console.error('Failed to update deal in database:', error);
-            // Roll back the optimistic update so the UI doesn't lie about
-            // what's persisted. The user sees the alert and the deal
-            // visibly reverts, instead of appearing to succeed.
-            try {
-                const original = await dealRepository.getById(deal.id);
-                if (original) {
-                    setDeals(prev => prev.map(d => d.id === original.id ? original : d));
-                }
-            } catch { /* best-effort rollback */ }
             const msg: string = error?.message || '';
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
             const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
+            console.error('Failed to update deal in database:', error);
             customAlert(
                 language === 'ar'
                     ? (isLocationCap
@@ -997,11 +985,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
                     : (isLocationCap
-                        ? '⚠️ Your plan allows 3 distinct active locations only. Pick an existing one or empty a slot first.'
+                        ? '⚠️ Your plan allows 3 distinct active locations only.'
                         : isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
             );
+            return;
+        }
+
+        // Re-read the row from DB and apply it to local state. This is the
+        // canonical version — any trigger-derived field (region/city
+        // backfill, timestamps, etc.) is reflected.
+        try {
+            const fresh = await dealRepository.getById(deal.id);
+            if (fresh) {
+                setDeals(prev => prev.map(d => d.id === fresh.id ? fresh : d));
+            } else {
+                // Row vanished between save and re-read — extremely rare.
+                // Fall back to the version we just wrote.
+                setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
+            }
+        } catch {
+            // Read-back failed but write succeeded. Use the version we wrote.
+            setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
         }
     }, [customAlert, language]);
 

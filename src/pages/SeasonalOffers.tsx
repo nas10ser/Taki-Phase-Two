@@ -14,8 +14,11 @@ const SeasonalOffers: React.FC = () => {
         if (notifyState !== 'idle') return;
         setNotifyState('subscribing');
         try {
+            // pushService stores the subscription endpoint in Supabase
+            // (push_subscriptions row keyed by user_id) — that's the
+            // record we use to fire the seasonal alert. No local flag
+            // needed; the DB row IS the opt-in.
             await pushService.ensurePermissionAndSubscribe();
-            try { localStorage.setItem('TAKI_SEASONAL_NOTIFY', '1'); } catch { /* ignore */ }
             setNotifyState('done');
             await customAlert(isRTL ? '✅ سنخبرك أول من يعلم بانطلاق الموسم!' : '✅ We will notify you the moment the season launches!');
         } catch (err: any) {

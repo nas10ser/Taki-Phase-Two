@@ -66,9 +66,12 @@ const AuthRedirector = () => {
                 timer = setTimeout(async () => {
                     const uType = await getUserType();
                     logger.info('🔄 Redirecting based on hash auth to:', uType);
-                    // Save current path before redirect
-                    const savedPath = localStorage.getItem('TAKI_LAST_PATH') || '/';
-                    history.replace(uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : savedPath);
+                    // After magic-link / signup auth, buyers land on the
+                    // home feed. Admins/sellers go to their dashboards.
+                    // (Previously this restored TAKI_LAST_PATH from
+                    // localStorage — removed so the only source of truth
+                    // for routing is the DB-driven user_type.)
+                    history.replace(uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : '/');
                 }, 1000);
             }
 
@@ -110,10 +113,6 @@ const AuthRedirector = () => {
                 logger.info('🚪 AuthRedirector: Guest on protected route, redirecting to home');
                 history.replace('/');
             }
-        }
-        // Save current path to localStorage
-        if (location.pathname && location.pathname !== '/register') {
-            localStorage.setItem('TAKI_LAST_PATH', location.pathname + location.search);
         }
     }, [user, isAuthReady, location.pathname, location.search, history]);
 
