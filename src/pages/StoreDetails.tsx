@@ -181,36 +181,41 @@ const StoreDetails: React.FC = () => {
         }
     };
 
-    const storeDeals = useMemo(() => {
-        return deals.filter(d => {
-            if (d.storeId !== id || d.status !== 'active') return false;
-            
-            // Time-based check
-            const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
-            const isTimedOut = Date.now() > (d.createdAt + lifespanMs);
-            if (isTimedOut) return false;
+    // Mirror SellerDashboard's predicates so a deal is in EXACTLY one bucket.
+    // The previous past-filter said "quantity <= 0 → past" without checking
+    // whether the seller actually capped stock. A time-based deal (no
+    // initialQuantity set) can sit at quantity=0 while still being active —
+    // the countdown is what gates visibility, not the number. That made the
+    // deal show up in both "Active" and "Past" tabs at the same time.
+    const isTimedOut = (d: any) => {
+        const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
+        return Date.now() > (d.createdAt + lifespanMs);
+    };
 
-            if (d.quantity === 'unlimited') return true;
-            if (typeof d.quantity === 'number' && d.quantity > 0) return true;
-            
-            // No stock cap → time-based; let the countdown gate visibility.
-            const hasCap = typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
-            return !hasCap;
-        });
+    // Sold-out requires a real stock cap. Without initialQuantity > 0 the
+    // deal is time-based, so quantity=0 is meaningless — don't treat it
+    // as sold-out.
+    const isSoldOut = (d: any) => d.quantity !== 'unlimited'
+        && typeof d.quantity === 'number' && d.quantity <= 0
+        && typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
+
+    const storeDeals = useMemo(() => {
+        return deals.filter(d =>
+            d.storeId === id &&
+            d.status === 'active' &&
+            !isSoldOut(d) &&
+            !isTimedOut(d)
+        );
     }, [deals, id]);
 
     const pastStoreDeals = useMemo(() => {
-        return deals.filter(d => {
-            if (d.storeId !== id) return false;
-            
-            const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
-            const isTimedOut = Date.now() > (d.createdAt + lifespanMs);
-            
-            return d.status === 'expired' || 
-                   d.status === 'paused' || 
-                   isTimedOut ||
-                   (typeof d.quantity === 'number' && d.quantity <= 0);
-        });
+        return deals.filter(d =>
+            d.storeId === id && (
+                d.status === 'expired' ||
+                d.status === 'paused' ||
+                (d.status === 'active' && (isSoldOut(d) || isTimedOut(d)))
+            )
+        );
     }, [deals, id]);
 
     const allStoreReviews = useMemo(() => {

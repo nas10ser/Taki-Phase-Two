@@ -18,6 +18,7 @@
 
 | إصدار | الموضوع |
 |--------|---------|
+| **v10.36** | StoreDetails: العرض الزمني (بدون stock cap) كان يظهر في تبويبَي "نشطة" و"سابقة" معاً لأن `quantity<=0` كان يُعتبر sold-out حتى بدون initialQuantity. الفلترة الآن متطابقة مع SellerDashboard: العرض في "سابقة" فقط إذا status=expired/paused أو (active && sold-out-with-cap) أو (active && timed-out). |
 | **v10.35** | BottomNav ثابت فعلياً في كل الصفحات — رفع z-index من 50 إلى 1100 (فوق Leaflet) + `isolation: isolate` على `.leaflet-container` + نقل BottomNav خارج PullToRefresh في Home و Bookings (translateY كان يكسر `position: fixed`) |
 | **v10.34** | auto-version-check على كل page load: يقارن CACHE_NAME الـserver مع الـcached محلياً ويـapply تلقائياً إذا اختلف |
 | **v10.33** | BottomNav على DealDetails + رفع زر الحجز فوقه + خريطة حولي بـ120 px clearance + Sidebar بدون flex:1 |
