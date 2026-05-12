@@ -12,8 +12,17 @@ import { getDistance, resolveDealLocation } from '../utils/helpers';
 const MapUpdater = ({ center }: { center: [number, number] }) => {
     const map = useMap();
     useEffect(() => {
-        map.flyTo(center, 12);
-    }, [center, map]);
+        if (!center[0] || !center[1]) return;
+        // invalidateSize() handles the common case where the map container
+        // got laid out at zero height (e.g. while a parent was animating in)
+        // and Leaflet cached the wrong tile grid. Without it, flyTo silently
+        // moves the camera off-screen.
+        const t = setTimeout(() => {
+            map.invalidateSize();
+            map.flyTo(center, 12);
+        }, 0);
+        return () => clearTimeout(t);
+    }, [center[0], center[1], map]);
     return null;
 };
 
@@ -319,7 +328,7 @@ const Nearby: React.FC = () => {
                     transition: 'height 0.3s ease',
                 }}
             >
-                <MapContainer center={[userLat, userLng]} zoom={12} style={{ height: '100%', width: '100%' }}>
+                <MapContainer center={[userLat, userLng]} zoom={12} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                     <MapUpdater center={[userLat, userLng]} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     

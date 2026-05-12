@@ -36,9 +36,17 @@ const LocationMarker = ({ position, autoUpdate }: { position: [number, number], 
 const MapCenterUpdater = ({ center }: { center: [number, number] }) => {
     const map = useMap();
     React.useEffect(() => {
-        if (center[0] && center[1]) {
-            map.flyTo(center, 15, { duration: 0.8 }); // 15 zoom for better mall focus
-        }
+        if (!center[0] || !center[1]) return;
+        // invalidateSize() tells Leaflet the container may have resized
+        // (it commonly does when this form section gets scrolled into
+        // view or the keyboard closes). Without it, flyTo() runs against
+        // a stale tile grid and the pin lands off-screen — exactly the
+        // "map didn't move" symptom the seller was hitting.
+        const t = setTimeout(() => {
+            map.invalidateSize();
+            map.setView(center, 15, { animate: true, duration: 0.4 });
+        }, 0);
+        return () => clearTimeout(t);
     }, [center[0], center[1], map]);
     return null;
 };
@@ -1796,7 +1804,12 @@ const SellerDashboard: React.FC = () => {
                                     : "If the Google Maps link doesn't resolve, tap the map directly to drop a pin (you can drag it too)."}
                             </div>
                             <div style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
-                                <MapContainer center={mapPos} zoom={13} style={{ height: '100%', width: '100%' }}>
+                                {/* attributionControl=false drops the default Leaflet
+                                    badge, which includes a Ukraine flag glyph baked
+                                    into the library's prefix string. We don't need
+                                    the badge here — the map is a picker, not a
+                                    publishing surface. */}
+                                <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                     <MapCenterUpdater center={mapPos} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
