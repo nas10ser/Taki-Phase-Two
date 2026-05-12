@@ -661,8 +661,11 @@ const SellerDashboard: React.FC = () => {
         mapLocation: { lat: mapPos[0], lng: mapPos[1] }
     });
     const locationIsExisting = activeLocationKeys.has(currentCandidateKey);
-    const wouldExceedLimit = !editingDealId
-        && !locationIsExisting
+    // The cap applies on edits too: moving an existing deal to a brand-new
+    // location is blocked if the seller is already at 3 distinct locations.
+    // (If they kept the same location, locationIsExisting is true and the
+    // edit goes through unimpeded.) Admin still bypasses.
+    const wouldExceedLimit = !locationIsExisting
         && activeLocationKeys.size >= MAX_LOCATIONS
         && user?.userType !== 'admin';
 
@@ -1089,11 +1092,13 @@ const SellerDashboard: React.FC = () => {
             // Distinct = unique catalogued mall/store ID, or unique rounded
             // coords (~110m) for custom pins. Two custom pins inside the same
             // building therefore don't split into two "locations".
-            // Editing a deal is exempt — the seller can move existing products
-            // anywhere, even if that bumps their distinct count to 4. The limit
-            // only blocks *adding* new product in a 4th location.
+            //
+            // Applies to BOTH new deals AND edits — the cap is on the seller's
+            // set of distinct locations, not on the operation. If they want to
+            // move a deal to a 4th location they have to free a slot first
+            // (delete every deal in one of their existing locations).
             // Admins bypass entirely.
-            if (!editingDealId && user?.userType !== 'admin') {
+            if (user?.userType !== 'admin') {
                 const MAX_LOCATIONS = 3;
 
                 const locKeyOf = (d: { locationId?: string | null; mapLocation?: { lat?: number; lng?: number } }): string => {
@@ -1106,6 +1111,10 @@ const SellerDashboard: React.FC = () => {
                     return `geo:${lat},${lng}`;
                 };
 
+                // Active set INCLUDES the deal being edited (so saving an edit
+                // that keeps the same location is always allowed — the deal's
+                // existing key is in the set). The block fires only when the
+                // *new* key isn't in the set AND the set is already full.
                 const myActive = deals.filter(d => d.storeId === user?.id && d.status === 'active');
                 const activeKeys = new Set(myActive.map(locKeyOf));
 
@@ -1116,8 +1125,8 @@ const SellerDashboard: React.FC = () => {
 
                 if (!activeKeys.has(candidateKey) && activeKeys.size >= MAX_LOCATIONS) {
                     await customAlert(isRTL
-                        ? `⚠️ وصلت لحد الباقة الأساسية: ${MAX_LOCATIONS} مواقع مختلفة (${activeKeys.size}/${MAX_LOCATIONS}).\n\nيمكنك:\n• إضافة المنتج في أحد مواقعك الحالية\n• تعديل منتج موجود لنقله\n• الترقية لباقة أعلى (قريباً) لإضافة مواقع جديدة`
-                        : `⚠️ Base plan limit reached: ${MAX_LOCATIONS} distinct locations (${activeKeys.size}/${MAX_LOCATIONS}).\n\nYou can:\n• Add this deal in an existing location\n• Edit a deal to move it\n• Upgrade (coming soon) for more locations`);
+                        ? `⚠️ باقتك تسمح بـ${MAX_LOCATIONS} مواقع مختلفة فقط (${activeKeys.size}/${MAX_LOCATIONS}).\n\nاختر موقعاً من مواقعك الـ${MAX_LOCATIONS} الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل إضافة موقع جديد.`
+                        : `⚠️ Your plan allows ${MAX_LOCATIONS} distinct locations only (${activeKeys.size}/${MAX_LOCATIONS}).\n\nPick one of your existing ${MAX_LOCATIONS} locations, or delete every deal in one of them to free a slot.`);
                     return;
                 }
             }
@@ -1771,10 +1780,9 @@ const SellerDashboard: React.FC = () => {
 
                             {/* Location-limit hint. Computed from the seller's active
                                 deals (rounded coords / location IDs). Turns amber on
-                                3/3 with a new pin and red when blocked. Editing an
-                                existing deal hides it entirely — the limit doesn't
-                                apply to moves. */}
-                            {!editingDealId && user?.userType !== 'admin' && (
+                                3/3 with a new pin and red when blocked. Visible during
+                                edits too — the cap applies to both create and edit. */}
+                            {user?.userType !== 'admin' && (
                                 <div
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: 8,
@@ -1795,18 +1803,22 @@ const SellerDashboard: React.FC = () => {
                                     <span style={{ fontSize: '1rem' }}>📍</span>
                                     <span style={{ flex: 1 }}>
                                         {isRTL
-                                            ? `المواقع المستخدمة: ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
-                                            : `Locations used: ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
+                                            ? `الباقة تسمح بـ${MAX_LOCATIONS} مواقع مختلفة — المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
+                                            : `Plan allows ${MAX_LOCATIONS} distinct locations — currently using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
                                         {wouldExceedLimit && (
                                             <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
                                                 {isRTL
-                                                    ? '⚠️ هذا موقع جديد — وصلت لحد الباقة. اختر أحد مواقعك الحالية أو عدّل منتجاً موجوداً.'
-                                                    : '⚠️ This is a new location — limit reached. Pick an existing one or edit a deal.'}
+                                                    ? (editingDealId
+                                                        ? '⚠️ نقل المنتج لموقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.'
+                                                        : '⚠️ موقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.')
+                                                    : (editingDealId
+                                                        ? '⚠️ Moving this deal to a new location is blocked — pick an existing one or empty a slot first.'
+                                                        : '⚠️ This is a new location — limit reached. Pick an existing one or free a slot.')}
                                             </span>
                                         )}
                                         {!wouldExceedLimit && locationIsExisting && activeLocationKeys.size > 0 && (
                                             <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3, color: 'var(--primary)' }}>
-                                                {isRTL ? '✓ هذا موقع مستخدم من قبل — لن يُحسب كموقع جديد.' : '✓ Existing location — no new slot used.'}
+                                                {isRTL ? '✓ موقع مستخدم من قبل — لن يُحسب كخانة جديدة.' : '✓ Existing location — no new slot used.'}
                                             </span>
                                         )}
                                     </span>
@@ -2007,12 +2019,12 @@ const SellerDashboard: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => { setSubmitMode('saveOnly'); submitAction(false, false); }}
-                                            disabled={isSaving || priceInvalid}
+                                            disabled={isSaving || priceInvalid || wouldExceedLimit}
                                             style={{
                                                 flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
                                                 background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
-                                                cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
-                                                opacity: priceInvalid ? 0.6 : 1,
+                                                cursor: (isSaving || priceInvalid || wouldExceedLimit) ? 'not-allowed' : 'pointer',
+                                                opacity: (priceInvalid || wouldExceedLimit) ? 0.6 : 1,
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                             }}
                                         >
