@@ -280,6 +280,16 @@ const SellerDashboard: React.FC = () => {
     const [lastResolvedLink, setLastResolvedLink] = useState('');
     const [resolvingLink, setResolvingLink] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    // Tracks WHICH save button the seller clicked so we only spin THAT
+    // button, not every save button on the form. Without this, clicking
+    // "Save & Add Deal" makes "Add Another" also spin (both read isSaving),
+    // which looks like the form has frozen.
+    const [submitMode, setSubmitMode] = useState<'publish' | 'addAnother' | 'saveOnly' | null>(null);
+    // Re-entrance guard for handleMapLinkUpdate. The auto-resolve effect
+    // and a manual Save click can both call it within the same render
+    // window, kicking off two parallel proxy cascades. Ref instead of
+    // state so it's immediately visible to the concurrent caller.
+    const resolutionInFlightRef = useRef(false);
     const [mapPos, setMapPos] = useState<[number, number]>([24.7136, 46.6753]);
     const [submitted, setSubmitted] = useState(false);
 
@@ -296,6 +306,11 @@ const SellerDashboard: React.FC = () => {
     const handleMapLinkUpdate = async (force: boolean = false) => {
         if (!googleMapsLink) return;
         if (!force && googleMapsLink === lastResolvedLink) return;
+        // Prevent parallel resolutions. Otherwise the debounced auto-resolve
+        // and a Save click both spin up proxy cascades, doubling network
+        // traffic and (worse) racing each other into setLastResolvedLink.
+        if (resolutionInFlightRef.current) return;
+        resolutionInFlightRef.current = true;
         setResolvingLink(true);
 
         try {
@@ -493,14 +508,29 @@ const SellerDashboard: React.FC = () => {
                 }
             }
 
-            customAlert(isRTL
-                ? '❌ تعذّر فتح الرابط المختصر. جرّب نسخ الرابط الطويل من المتصفح، أو الصق الإحداثيات مباشرة بصيغة: 24.7136, 46.6753'
-                : '❌ Could not resolve the short link. Try the full URL from your browser, or paste coordinates directly as: 24.7136, 46.6753'
-            );
+            // Mark this link as attempted (even on failure) so we don't
+            // hammer the proxies on every subsequent submit / save click.
+            // Without this, the user pastes a link that can't be resolved,
+            // then every "Save" button waits another 3s on the same failed
+            // resolution. Now: try once, remember the attempt, move on.
+            setLastResolvedLink(googleMapsLink);
+
+            // Only nag the user with the error toast on explicit attempts
+            // ("Set" button or Enter key). Silent failures from the debounced
+            // auto-resolve would otherwise pop up unprompted while typing.
+            if (force) {
+                customAlert(isRTL
+                    ? '❌ تعذّر فتح الرابط المختصر. جرّب نسخ الرابط الطويل من المتصفح، أو الصق الإحداثيات مباشرة بصيغة: 24.7136, 46.6753'
+                    : '❌ Could not resolve the short link. Try the full URL from your browser, or paste coordinates directly as: 24.7136, 46.6753'
+                );
+            }
         } catch (err) {
             console.error('Resolution error:', err);
+            // Same belt-and-braces: don't retry on the next click.
+            setLastResolvedLink(googleMapsLink);
         } finally {
             setResolvingLink(false);
+            resolutionInFlightRef.current = false;
         }
     };
 
@@ -516,33 +546,40 @@ const SellerDashboard: React.FC = () => {
         }
     }, [user, shopName, mapPos]);
 
+    const [savingShopLocation, setSavingShopLocation] = useState(false);
+
     const saveShopLocation = async () => {
-        if (!user) return;
-        let lat = mapPos[0];
-        let lng = mapPos[1];
-
-        // If the seller pasted a link but hasn't tapped "Set" yet, the
-        // map pin is still on the default Riyadh coords. Tapping "Save
-        // Permanent" before the link resolves would store the wrong
-        // location. Resolve now (with a 3s cap so we don't hang) and
-        // use the fresh coords if the link is valid.
-        if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
-            const resolved = await Promise.race([
-                handleMapLinkUpdate(),
-                new Promise<null>(r => setTimeout(() => r(null), 3000))
-            ]);
-            if (resolved && Array.isArray(resolved)) {
-                lat = resolved[0];
-                lng = resolved[1];
-            }
-        }
-
+        if (!user || savingShopLocation) return;
+        setSavingShopLocation(true);
         try {
-            await updateProfile({ lat, lng, googleMapsLink });
-            customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
-        } catch (e: any) {
-            console.error('Save shop location error:', e);
-            customAlert(isRTL ? '❌ فشل حفظ الموقع. حاول مرة أخرى.' : '❌ Failed to save location. Try again.');
+            let lat = mapPos[0];
+            let lng = mapPos[1];
+
+            // Only try resolving if we genuinely haven't tried THIS link yet.
+            // handleMapLinkUpdate now stamps lastResolvedLink on every attempt
+            // (success OR failure), so a second click on a broken link won't
+            // re-burn 3 seconds chasing the same dead proxies. Cap at 2s so
+            // even the first attempt feels instant on a slow link.
+            if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
+                const resolved = await Promise.race([
+                    handleMapLinkUpdate(),
+                    new Promise<null>(r => setTimeout(() => r(null), 2000))
+                ]);
+                if (resolved && Array.isArray(resolved)) {
+                    lat = resolved[0];
+                    lng = resolved[1];
+                }
+            }
+
+            try {
+                await updateProfile({ lat, lng, googleMapsLink });
+                customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
+            } catch (e: any) {
+                console.error('Save shop location error:', e);
+                customAlert(isRTL ? '❌ فشل حفظ الموقع. حاول مرة أخرى.' : '❌ Failed to save location. Try again.');
+            }
+        } finally {
+            setSavingShopLocation(false);
         }
     };
 
@@ -959,6 +996,8 @@ const SellerDashboard: React.FC = () => {
         }
 
         // === Validation passed — NOW start the spinner and do async work ===
+        // submitMode tells the render which button to spin. The button
+        // callbacks set this before calling submitAction.
         setIsSaving(true);
         try {
             // Auto-resolve link if changed and not resolved yet. 3s cap (was
@@ -969,8 +1008,12 @@ const SellerDashboard: React.FC = () => {
             let finalLng = mapPos[1];
 
             if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
+                // 2s cap (was 3s). The proxy cascade either resolves in
+                // under a second or fails — there's no middle case worth
+                // waiting for. If it times out the seller's current map
+                // pin is what we save.
                 const resolutionPromise = handleMapLinkUpdate();
-                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
 
                 const resolved = await Promise.race([resolutionPromise, timeoutPromise]);
                 if (resolved && Array.isArray(resolved)) {
@@ -1083,6 +1126,7 @@ const SellerDashboard: React.FC = () => {
 
         } finally {
             setIsSaving(false);
+            setSubmitMode(null);
         }
     };
 
@@ -1758,22 +1802,27 @@ const SellerDashboard: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={saveShopLocation}
+                                    disabled={savingShopLocation}
                                     style={{
                                         flex: 1.5,
                                         padding: '12px',
                                         borderRadius: 12,
-                                        background: 'var(--primary)',
+                                        background: savingShopLocation ? 'var(--gray-300)' : 'var(--primary)',
                                         color: '#ffffff',
                                         fontWeight: 900,
-                                        border: '2px solid var(--primary)',
+                                        border: '2px solid ' + (savingShopLocation ? 'var(--gray-300)' : 'var(--primary)'),
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         gap: 8,
-                                        cursor: 'pointer'
+                                        cursor: savingShopLocation ? 'default' : 'pointer'
                                     }}
                                 >
-                                    ⭐ {isRTL ? 'حفظ كموقع دائم للمتجر' : 'Set Permanent Shop Loc'}
+                                    {savingShopLocation ? (
+                                        <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                                    ) : (
+                                        <>⭐ {isRTL ? 'حفظ كموقع دائم للمتجر' : 'Set Permanent Shop Loc'}</>
+                                    )}
                                 </button>
                             </div>
                             <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--gray-400)', textAlign: 'center', fontWeight: 600 }}>
@@ -1786,7 +1835,7 @@ const SellerDashboard: React.FC = () => {
                                 <div style={{ display: 'flex', gap: 10 }}>
                                     <button
                                         type="button"
-                                        onClick={() => submitAction(false, true)}
+                                        onClick={() => { setSubmitMode('publish'); submitAction(false, true); }}
                                         disabled={isSaving || resolvingLink || priceInvalid}
                                         style={{
                                             flex: 2, padding: '16px', borderRadius: 16,
@@ -1798,7 +1847,7 @@ const SellerDashboard: React.FC = () => {
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
                                         }}
                                     >
-                                        {isSaving ? (
+                                        {submitMode === 'publish' ? (
                                             <div className="spinner" style={{ width: 20, height: 20, border: '3px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                         ) : (
                                             isRTL ? (editingDealId ? 'حفظ التعديلات والنشر' : 'حفظ وإضافة العرض') : (editingDealId ? 'Save & Publish' : 'Save & Add Deal')
@@ -1808,16 +1857,21 @@ const SellerDashboard: React.FC = () => {
                                     {editingDealId && (
                                         <button
                                             type="button"
-                                            onClick={() => submitAction(false, false)}
+                                            onClick={() => { setSubmitMode('saveOnly'); submitAction(false, false); }}
                                             disabled={isSaving || priceInvalid}
                                             style={{
                                                 flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
                                                 background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
                                                 cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
-                                                opacity: priceInvalid ? 0.6 : 1
+                                                opacity: priceInvalid ? 0.6 : 1,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                             }}
                                         >
-                                            💾 {isRTL ? 'حفظ التعديل فقط' : 'Save Only'}
+                                            {submitMode === 'saveOnly' ? (
+                                                <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                                            ) : (
+                                                <>💾 {isRTL ? 'حفظ التعديل فقط' : 'Save Only'}</>
+                                            )}
                                         </button>
                                     )}
                                 </div>
@@ -1846,17 +1900,18 @@ const SellerDashboard: React.FC = () => {
                                 {!editingDealId && (
                                     <button
                                         type="button"
-                                        onClick={() => submitAction(true)}
+                                        onClick={() => { setSubmitMode('addAnother'); submitAction(true); }}
                                         disabled={isSaving || resolvingLink || priceInvalid}
                                         style={{
                                             flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
                                             background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
                                             cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
-                                            opacity: priceInvalid ? 0.6 : 1
+                                            opacity: priceInvalid ? 0.6 : 1,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >
-                                        {isSaving ? (
-                                            <div className="spinner" style={{ width: 18, height: 18, border: '3px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite', margin: '0 auto' }} />
+                                        {submitMode === 'addAnother' ? (
+                                            <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                         ) : (
                                             isRTL ? 'إضافة وتكرار' : 'Add Another'
                                         )}
