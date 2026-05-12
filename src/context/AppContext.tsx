@@ -928,6 +928,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // a sync failure — the next refresh will pick up the deal. Don't
             // alarm the user.
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
+
+            // Server-side location-cap rejection (v10.46 trigger). Roll back
+            // the optimistic local insert so the UI stays consistent with
+            // the DB, and show the cap-specific Arabic message instead of
+            // the generic "saved locally but sync failed" wording.
+            const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
+            if (isLocationCap) {
+                setDeals(prev => prev.filter(d => d.id !== dealWithTime.id));
+                customAlert(
+                    language === 'ar'
+                        ? '⚠️ باقتك تسمح بـ3 مواقع مختلفة فقط للعروض النشطة.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل إضافة موقع جديد.'
+                        : '⚠️ Your plan allows 3 distinct active locations only.\n\nPick one of your existing locations or empty a slot first.'
+                );
+                return;
+            }
+
             if (!isTransientLock) {
                 customAlert(
                     language === 'ar'
@@ -936,7 +952,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 );
             }
         }
-        
+
         // Note: Follower and Smart Alert notifications are handled 100%
         // server-side by the tr_deal_smart_notifications trigger (migration v8.11).
         // The server fires instantly when the deal row is inserted — no client needed.
@@ -972,12 +988,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } catch { /* best-effort rollback */ }
             const msg: string = error?.message || '';
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
+            const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
             customAlert(
                 language === 'ar'
-                    ? (isTransientLock
+                    ? (isLocationCap
+                        ? '⚠️ باقتك تسمح بـ3 مواقع مختلفة فقط للعروض النشطة.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل نقل العرض لموقع جديد.'
+                        : isTransientLock
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
-                    : (isTransientLock
+                    : (isLocationCap
+                        ? '⚠️ Your plan allows 3 distinct active locations only. Pick an existing one or empty a slot first.'
+                        : isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
             );
