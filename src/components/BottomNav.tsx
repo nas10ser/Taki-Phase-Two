@@ -10,9 +10,12 @@ const BottomNav: React.FC = () => {
     const isRTL = language === 'ar';
 
     // Honour admin "view-as" impersonation so the bottom nav matches what
-    // the buyer/seller actually sees in preview mode.
-    const isSeller = effectiveUserType === 'seller';
-    const isAdmin = user?.userType === 'admin';
+    // the buyer/seller actually sees in preview mode. Read ONLY from
+    // effectiveUserType — checking `user.userType === 'admin'` as a
+    // separate condition was the bug: an admin in "preview as buyer" mode
+    // (effectiveUserType='buyer') was still falling into the seller nav
+    // because their real userType is admin.
+    const showSellerNav = effectiveUserType === 'seller' || effectiveUserType === 'admin';
 
     const unreadCount = notifications.filter(n => !n.isRead && n.userId === user?.id).length;
 
@@ -25,7 +28,7 @@ const BottomNav: React.FC = () => {
         { id: 'profile', icon: '👤', ar: 'حسابي', en: 'Profile', path: '/profile' },
     ];
 
-    if (isSeller || isAdmin) {
+    if (showSellerNav) {
         items = [
             { id: 'home', icon: '🏠', ar: 'الرئيسية', en: 'Home', path: '/' },
             { id: 'seller', icon: '➕', ar: 'لوحتي', en: 'Dashboard', path: '/seller' },

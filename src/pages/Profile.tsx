@@ -13,8 +13,15 @@ const Profile: React.FC = () => {
         smartAlerts, addSmartAlert, removeSmartAlert,
         notifications, markNotifRead, bookings,
         storeProfiles, updateStoreProfile, updateProfile, customAlert, customConfirm,
-        isAuthReady
+        isAuthReady, effectiveUserType
     } = useApp();
+
+    // Honour admin "view-as" impersonation. When an admin previews as
+    // buyer, every display branch below must read effectiveUserType so the
+    // page renders the buyer's UI (no shop banner, "Buyer" badge, buyer
+    // stats, no seller-only contact section). The real user.userType
+    // stays 'admin' — only the rendered surface flips.
+    const displayUserType = effectiveUserType;
 
     const myNotifications = useMemo(
         () => notifications.filter(n => n.userId === user?.id).slice().sort((a, b) => b.createdAt - a.createdAt),
@@ -133,18 +140,18 @@ const Profile: React.FC = () => {
                 <div style={{ width: 100, height: 100, borderRadius: 50, background: 'rgba(80, 80, 95, 0.2)', backdropFilter: 'blur(10px)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', border: '4px solid rgba(80, 80, 95, 0.3)', boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}>
                     👤
                 </div>
-                <h1 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'white', marginBottom: 4 }}>{user.userType === 'seller' && user.shop ? user.shop : user.name}</h1>
-                {user.userType === 'seller' && user.shop && user.name && (
+                <h1 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'white', marginBottom: 4 }}>{displayUserType === 'seller' && user.shop ? user.shop : user.name}</h1>
+                {displayUserType === 'seller' && user.shop && user.name && (
                     <div style={{ color: 'rgba(150, 150, 150, 0.8)', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>{user.name}</div>
                 )}
                 <div style={{ color: 'rgba(200, 200, 200, 0.9)', fontSize: '0.85rem', fontWeight: 700, marginBottom: 20 }}>
-                    {user.userType === 'seller' ? (isRTL ? 'بائع مميز ⭐' : 'Premium Seller ⭐') :
-                     user.userType === 'admin' ? (isRTL ? 'مدير النظام 👑' : 'Admin 👑') :
+                    {displayUserType === 'seller' ? (isRTL ? 'بائع مميز ⭐' : 'Premium Seller ⭐') :
+                     displayUserType === 'admin' ? (isRTL ? 'مدير النظام 👑' : 'Admin 👑') :
                      (isRTL ? 'مشتري ⭐' : 'Buyer ⭐')}
                 </div>
 
                 <div style={{ display: 'flex', gap: 15, justifyContent: 'center' }}>
-                    {user.userType === 'seller' ? (
+                    {displayUserType === 'seller' ? (
                         <>
                             <div style={{ background: 'rgba(80, 80, 90, 0.3)', padding: '12px 20px', borderRadius: 16, minWidth: 100, textAlign: 'center' }}>
                                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>{sellerStats.soldQty}</div>
@@ -251,7 +258,7 @@ const Profile: React.FC = () => {
 
                 {activeTab === 'settings' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {user.userType === 'seller' && (
+                        {displayUserType === 'seller' && (
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
                                 <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 15 }}>{isRTL ? 'معلومات التواصل للمتجر 🏪' : 'Store Contact Info 🏪'}</h3>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
