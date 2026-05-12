@@ -10,7 +10,7 @@ import { useBooking } from '../hooks/useBooking';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
-import { normalizeArabicNumerals, toHijri } from '../utils/helpers';
+import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
@@ -37,15 +37,33 @@ const MapCenterUpdater = ({ center }: { center: [number, number] }) => {
     const map = useMap();
     React.useEffect(() => {
         if (!center[0] || !center[1]) return;
-        // invalidateSize() tells Leaflet the container may have resized
-        // (it commonly does when this form section gets scrolled into
-        // view or the keyboard closes). Without it, flyTo() runs against
-        // a stale tile grid and the pin lands off-screen — exactly the
-        // "map didn't move" symptom the seller was hitting.
+        // Three-phase pan. Earlier versions did a single setTimeout(0)
+        // pan-with-animation which silently failed on iOS Safari when the
+        // success modal opened over the map: the alert's enter-animation
+        // briefly redrew the layer above the map, Leaflet's `invalidateSize`
+        // measured the wrong tile grid, and `setView` with `animate: true`
+        // never finished. The pin moved in state but the map stayed at
+        // Riyadh — exactly what Nasser saw with the Sakaka link.
+        //
+        // Fix:
+        //   1. Pan IMMEDIATELY with `animate: false` so the camera is
+        //      already on-target before any modal can interfere.
+        //   2. Re-issue `invalidateSize + setView` after 300ms so that if
+        //      the container was 0-height during phase 1 (e.g. parent
+        //      animating in, modal closing), the second pass lands on the
+        //      correct tile grid.
+        //   3. Use try/catch — Leaflet throws if the map was just torn
+        //      down (rare, but happens during fast view switches).
+        try {
+            map.setView(center, 15, { animate: false });
+        } catch { /* map may be mid-teardown; phase 2 covers it */ }
+
         const t = setTimeout(() => {
-            map.invalidateSize();
-            map.setView(center, 15, { animate: true, duration: 0.4 });
-        }, 0);
+            try {
+                map.invalidateSize();
+                map.setView(center, 15, { animate: false });
+            } catch { /* swallow — best-effort */ }
+        }, 300);
         return () => clearTimeout(t);
     }, [center[0], center[1], map]);
     return null;
@@ -605,11 +623,24 @@ const SellerDashboard: React.FC = () => {
             }
 
             try {
-                await updateProfile({ lat, lng, googleMapsLink });
+                // 15s ceiling. Earlier versions awaited `updateProfile` with
+                // no timeout — a stalled Supabase auth refresh (queued behind
+                // the inTabLock) would leave this spinner running until the
+                // user gave up and force-quit Safari. Now: if 15s passes
+                // without the DB acknowledging, we throw, the user gets a
+                // clear retry toast, and the button becomes pressable again.
+                await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 15000);
                 customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
             } catch (e: any) {
                 console.error('Save shop location error:', e);
-                customAlert(isRTL ? '❌ فشل حفظ الموقع. حاول مرة أخرى.' : '❌ Failed to save location. Try again.');
+                const isTimeout = e instanceof TimeoutError;
+                customAlert(isRTL
+                    ? (isTimeout
+                        ? '⏱️ تأخر الحفظ. تأكد من اتصال الإنترنت ثم حاول مرة أخرى.'
+                        : '❌ فشل حفظ الموقع. حاول مرة أخرى.')
+                    : (isTimeout
+                        ? '⏱️ Save timed out. Check your connection and try again.'
+                        : '❌ Failed to save location. Try again.'));
             }
         } finally {
             setSavingShopLocation(false);
@@ -1266,15 +1297,30 @@ const SellerDashboard: React.FC = () => {
             status: forcePublish ? 'active' : (existingDeal?.status || 'active') as any
         };
 
-            if (editingDealId) {
-                await updateDeal(newDeal);
-                if (!stayOnForm) {
-                    setEditingDealId(null);
+            // 20s ceiling per DB write. Without this, a stalled Supabase
+            // call (auth refresh hung in the inTabLock, or a flaky mobile
+            // network) leaves "حفظ وإضافة العرض" / "إضافة وتكرار" spinning
+            // forever — the exact symptom Nasser hit. On timeout we surface
+            // a retry toast and reset the spinner so the form is usable.
+            try {
+                if (editingDealId) {
+                    await withTimeout(updateDeal(newDeal), 20000);
+                    if (!stayOnForm) {
+                        setEditingDealId(null);
+                    }
+                } else {
+                    await withTimeout(addDeal(newDeal), 20000);
                 }
-            } else {
-                await addDeal(newDeal);
+            } catch (e: any) {
+                if (e instanceof TimeoutError) {
+                    await customAlert(isRTL
+                        ? '⏱️ تأخر الحفظ. تأكد من اتصال الإنترنت ثم حاول مرة أخرى.'
+                        : '⏱️ Save timed out. Check your connection and try again.');
+                    return;
+                }
+                throw e;
             }
-            
+
             setSubmitted(true);
             setTimeout(() => {
                 setSubmitted(false);

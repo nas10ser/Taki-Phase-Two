@@ -137,3 +137,25 @@ export const openExternalUrl = (url: string): void => {
         window.location.href = url;
     }
 };
+
+// Promise wrapper that rejects after `ms` if the inner promise hasn't settled.
+// Used to put a ceiling on DB writes so a flaky mobile network or a hung
+// Supabase auth refresh can't leave a save button spinning forever — the
+// spinner stops, the user sees a clear "try again" toast, and the form
+// becomes interactive again.
+export class TimeoutError extends Error {
+    constructor(ms: number) {
+        super(`Operation exceeded ${ms}ms timeout`);
+        this.name = 'TimeoutError';
+    }
+}
+
+export const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new TimeoutError(ms)), ms);
+        promise.then(
+            (v) => { clearTimeout(timer); resolve(v); },
+            (e) => { clearTimeout(timer); reject(e); }
+        );
+    });
+};
