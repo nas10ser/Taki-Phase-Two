@@ -90,7 +90,13 @@ const SellerDashboard: React.FC = () => {
     const [isPaymentEnabled, setIsPaymentEnabled] = useState(false);
     const [isSubscriptionValid, setIsSubscriptionValid] = useState(true);
 
-    // Fetch payment settings
+    // Fetch payment settings + check subscription status.
+    // Source of truth is `merchant_subscriptions` (status + trial/period dates) —
+    // the old path read `storeProfiles[user.id].subscription_expires_at`, which
+    // is a denormalized column that never gets populated for trial sellers or
+    // for admins. When `payment_gateway_enabled=true`, that path made every
+    // user without an explicit `subscription_expires_at` look "expired" — so
+    // clicking the Add (form) tab fell through to the Scanner fallback.
     React.useEffect(() => {
         const checkSub = async () => {
             const { supabase } = await import('../services/supabaseClient');
@@ -98,20 +104,39 @@ const SellerDashboard: React.FC = () => {
             const enabled = data?.value === true;
             setIsPaymentEnabled(enabled);
 
-            if (enabled && user?.id) {
-                const profile = storeProfiles[user.id];
-                if (!profile || !profile.subscription_expires_at) {
-                    setIsSubscriptionValid(false);
-                } else {
-                    const expiry = new Date(profile.subscription_expires_at).getTime();
-                    setIsSubscriptionValid(expiry > Date.now());
-                }
-            } else {
+            // Admins are not paying merchants — they always pass.
+            if (user?.userType === 'admin') {
                 setIsSubscriptionValid(true);
+                return;
             }
+
+            if (!enabled || !user?.id) {
+                setIsSubscriptionValid(true);
+                return;
+            }
+
+            const { data: sub } = await supabase
+                .from('merchant_subscriptions')
+                .select('status, trial_ends_at, current_period_end')
+                .eq('merchant_id', user.id)
+                .maybeSingle();
+
+            if (!sub) {
+                setIsSubscriptionValid(false);
+                return;
+            }
+
+            const now = Date.now();
+            const trialOk = sub.status === 'trial'
+                && sub.trial_ends_at
+                && new Date(sub.trial_ends_at).getTime() > now;
+            const activeOk = (sub.status === 'active' || sub.status === 'gifted')
+                && (!sub.current_period_end || new Date(sub.current_period_end).getTime() > now);
+
+            setIsSubscriptionValid(Boolean(trialOk || activeOk));
         };
         checkSub();
-    }, [user, storeProfiles]);
+    }, [user]);
 
     // Sync view with URL tab parameter. An `edit=` param always means form
     // view, even if deals haven't loaded yet — guarantees the form tab is
@@ -2210,6 +2235,34 @@ const SellerDashboard: React.FC = () => {
                                     );
                                 })}
                             </div>
+                        </div>
+                    </div>
+                ) : view === 'form' ? (
+                    // Form tab is active but the seller's subscription isn't.
+                    // Previously this fell through to the Scanner panel below,
+                    // which made tapping "إضافة" look like it opened Scanner.
+                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: 30, boxShadow: 'var(--shadow)' }}>
+                            <div style={{ fontSize: '4rem', marginBottom: 16 }}>🔒</div>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8 }}>
+                                {isRTL ? 'الاشتراك مطلوب لإضافة عروض' : 'Subscription Required'}
+                            </h3>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, marginBottom: 24, lineHeight: 1.6 }}>
+                                {isRTL
+                                    ? 'لم نجد اشتراكاً نشطاً لمتجرك. فعّل اشتراكك أو تواصل مع الإدارة لتفعيل تجربتك المجانية.'
+                                    : 'No active subscription found for your store. Activate your plan or contact admin to enable a free trial.'}
+                            </p>
+                            <button
+                                onClick={() => history.push('/subscription')}
+                                style={{
+                                    width: '100%', padding: '16px', borderRadius: 16,
+                                    background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
+                                    color: 'white', fontWeight: 900, border: 'none', fontSize: '1rem',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
+                                }}
+                            >
+                                <span>💳</span> {isRTL ? 'إدارة الاشتراك' : 'Manage Subscription'}
+                            </button>
                         </div>
                     </div>
                 ) : (
