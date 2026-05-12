@@ -656,6 +656,22 @@ const SellerDashboard: React.FC = () => {
             deals.filter(d => d.storeId === user.id && d.status === 'active').map(locKeyOf)
         );
     }, [deals, user?.id]);
+    // Pick one sample deal per active location so we can render selectable
+    // chips ("📍 الراشد مول") elsewhere in the form — used for the renewal
+    // banner when a seller's expired deal points to a now-deleted slot.
+    const activeLocationsList = React.useMemo(() => {
+        if (!user?.id) return [] as Array<{ key: string; deal: Deal }>;
+        const seen = new Set<string>();
+        const list: Array<{ key: string; deal: Deal }> = [];
+        for (const d of deals) {
+            if (d.storeId !== user.id || d.status !== 'active') continue;
+            const k = locKeyOf(d);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            list.push({ key: k, deal: d });
+        }
+        return list;
+    }, [deals, user?.id]);
     const currentCandidateKey = locKeyOf({
         locationId: locationId === 'other' ? null : locationId,
         mapLocation: { lat: mapPos[0], lng: mapPos[1] }
@@ -668,6 +684,52 @@ const SellerDashboard: React.FC = () => {
     const wouldExceedLimit = !locationIsExisting
         && activeLocationKeys.size >= MAX_LOCATIONS
         && user?.userType !== 'admin';
+
+    // Renewal-of-deleted-location case: the seller hit "Renew" on an
+    // expired deal whose original location slot got freed because every
+    // other deal in that location also expired. The form opens pre-filled
+    // with the old (now-orphan) location, the cap stops them from saving,
+    // and the seller has no idea why. Detect this exact shape so we can
+    // show a specific banner with the 3 current location chips for
+    // one-tap reassignment.
+    const editingDealRef = editingDealId ? deals.find(d => d.id === editingDealId) : null;
+    const editingFromDeletedLocation = !!(
+        editingDealRef
+        && editingDealRef.status !== 'active'
+        && !activeLocationKeys.has(currentCandidateKey)
+        && activeLocationKeys.size >= MAX_LOCATIONS
+        && user?.userType !== 'admin'
+    );
+
+    // Human-readable label for a deal's location, used in the chip text.
+    const locNameOf = (d: Deal): string => {
+        if (d.locationId && typeof d.locationId === 'string'
+            && !d.locationId.startsWith('custom_') && d.locationId !== 'other') {
+            const loc = LOCATIONS.find(l => l.id === d.locationId);
+            if (loc) return loc.name;
+        }
+        if (d.city) {
+            const city = CITIES.find(c => c.id === d.city);
+            if (city) return city.name;
+        }
+        if (d.mapLocation?.lat && d.mapLocation?.lng) {
+            return `${d.mapLocation.lat.toFixed(3)}, ${d.mapLocation.lng.toFixed(3)}`;
+        }
+        return isRTL ? 'موقع مخصص' : 'Custom location';
+    };
+
+    // One-tap "adopt this active deal's location" used by the renewal banner.
+    const adoptLocationFromDeal = (d: Deal) => {
+        if (d.locationId) setLocationId(d.locationId);
+        if (d.region) setSelectedRegion(d.region);
+        if (d.city) setSelectedCity(d.city);
+        if (d.mapLocation?.lat && d.mapLocation?.lng) {
+            setMapPos([d.mapLocation.lat, d.mapLocation.lng]);
+        }
+        // Clear any pasted Google Maps link so it doesn't fight the new pin.
+        setGoogleMapsLink('');
+        setLastResolvedLink('');
+    };
 
     // Removed auto-centering effect to prevent overwriting manual map pin placement
 
@@ -1822,6 +1884,56 @@ const SellerDashboard: React.FC = () => {
                                             </span>
                                         )}
                                     </span>
+                                </div>
+                            )}
+
+                            {/* Renewal banner: the seller hit "تجديد" on an expired
+                                deal that used a now-deleted location slot. Show the
+                                3 current locations as one-tap chips so they can
+                                reassign without navigating away. */}
+                            {editingFromDeletedLocation && (
+                                <div
+                                    style={{
+                                        padding: '12px 14px', borderRadius: 14, marginBottom: 12,
+                                        background: 'rgba(245, 158, 11, 0.12)',
+                                        border: '1.5px solid rgba(245, 158, 11, 0.4)'
+                                    }}
+                                >
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--secondary)', marginBottom: 4 }}>
+                                        {isRTL
+                                            ? '⚠️ تم حذف لوكيشن العرض السابق'
+                                            : '⚠️ This deal\'s previous location was removed'}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 10 }}>
+                                        {isRTL
+                                            ? 'انتهت كل عروض موقعه السابق فحُذفت الخانة. اختر أحد مواقعك الحالية الـ3 لتجديد هذا العرض:'
+                                            : 'All deals in its old location expired, so the slot was freed. Pick one of your current 3 locations to renew this deal:'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {activeLocationsList.map(({ key, deal }) => (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                onClick={() => adoptLocationFromDeal(deal)}
+                                                style={{
+                                                    background: 'var(--card-bg)',
+                                                    color: 'var(--text-primary)',
+                                                    border: '1.5px solid var(--primary)',
+                                                    borderRadius: 999,
+                                                    padding: '8px 14px',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: 900,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    WebkitTapHighlightColor: 'transparent'
+                                                }}
+                                            >
+                                                📍 {locNameOf(deal)}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 
