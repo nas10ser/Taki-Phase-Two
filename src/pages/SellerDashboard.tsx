@@ -636,6 +636,36 @@ const SellerDashboard: React.FC = () => {
         return o > 0 && d > 0 && d >= o;
     })();
 
+    // === Location-limit accounting (base plan = 3 distinct locations) ===
+    // The actual block is enforced in submitAction; this block just computes
+    // the current state so the form can show a "2/3 مواقع مستخدمة" hint and
+    // turn it red/orange as the seller approaches the limit.
+    const MAX_LOCATIONS = 3;
+    const locKeyOf = (d: { locationId?: string | null; mapLocation?: { lat?: number; lng?: number } }): string => {
+        const lid = d.locationId;
+        if (lid && typeof lid === 'string' && !lid.startsWith('custom_') && lid !== 'other') {
+            return `loc:${lid}`;
+        }
+        const lat = Math.round((d.mapLocation?.lat ?? 0) * 1000) / 1000;
+        const lng = Math.round((d.mapLocation?.lng ?? 0) * 1000) / 1000;
+        return `geo:${lat},${lng}`;
+    };
+    const activeLocationKeys = React.useMemo(() => {
+        if (!user?.id) return new Set<string>();
+        return new Set(
+            deals.filter(d => d.storeId === user.id && d.status === 'active').map(locKeyOf)
+        );
+    }, [deals, user?.id]);
+    const currentCandidateKey = locKeyOf({
+        locationId: locationId === 'other' ? null : locationId,
+        mapLocation: { lat: mapPos[0], lng: mapPos[1] }
+    });
+    const locationIsExisting = activeLocationKeys.has(currentCandidateKey);
+    const wouldExceedLimit = !editingDealId
+        && !locationIsExisting
+        && activeLocationKeys.size >= MAX_LOCATIONS
+        && user?.userType !== 'admin';
+
     // Removed auto-centering effect to prevent overwriting manual map pin placement
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
@@ -1052,6 +1082,43 @@ const SellerDashboard: React.FC = () => {
                 if (resolved && Array.isArray(resolved)) {
                     finalLat = resolved[0];
                     finalLng = resolved[1];
+                }
+            }
+
+            // === LOCATION-LIMIT enforcement (base plan: 3 distinct locations) ===
+            // Distinct = unique catalogued mall/store ID, or unique rounded
+            // coords (~110m) for custom pins. Two custom pins inside the same
+            // building therefore don't split into two "locations".
+            // Editing a deal is exempt — the seller can move existing products
+            // anywhere, even if that bumps their distinct count to 4. The limit
+            // only blocks *adding* new product in a 4th location.
+            // Admins bypass entirely.
+            if (!editingDealId && user?.userType !== 'admin') {
+                const MAX_LOCATIONS = 3;
+
+                const locKeyOf = (d: { locationId?: string | null; mapLocation?: { lat?: number; lng?: number } }): string => {
+                    const lid = d.locationId;
+                    if (lid && typeof lid === 'string' && !lid.startsWith('custom_') && lid !== 'other') {
+                        return `loc:${lid}`;
+                    }
+                    const lat = Math.round((d.mapLocation?.lat ?? 0) * 1000) / 1000;
+                    const lng = Math.round((d.mapLocation?.lng ?? 0) * 1000) / 1000;
+                    return `geo:${lat},${lng}`;
+                };
+
+                const myActive = deals.filter(d => d.storeId === user?.id && d.status === 'active');
+                const activeKeys = new Set(myActive.map(locKeyOf));
+
+                const candidateKey = locKeyOf({
+                    locationId: locationId === 'other' ? null : locationId,
+                    mapLocation: { lat: finalLat, lng: finalLng }
+                });
+
+                if (!activeKeys.has(candidateKey) && activeKeys.size >= MAX_LOCATIONS) {
+                    await customAlert(isRTL
+                        ? `⚠️ وصلت لحد الباقة الأساسية: ${MAX_LOCATIONS} مواقع مختلفة (${activeKeys.size}/${MAX_LOCATIONS}).\n\nيمكنك:\n• إضافة المنتج في أحد مواقعك الحالية\n• تعديل منتج موجود لنقله\n• الترقية لباقة أعلى (قريباً) لإضافة مواقع جديدة`
+                        : `⚠️ Base plan limit reached: ${MAX_LOCATIONS} distinct locations (${activeKeys.size}/${MAX_LOCATIONS}).\n\nYou can:\n• Add this deal in an existing location\n• Edit a deal to move it\n• Upgrade (coming soon) for more locations`);
+                    return;
                 }
             }
 
@@ -1701,7 +1768,51 @@ const SellerDashboard: React.FC = () => {
 
                         <div style={{ marginBottom: 15 }}>
                             <label style={labelStyle}>{isRTL ? 'الموقع والمكان' : 'Location & Venue'}</label>
-                            
+
+                            {/* Location-limit hint. Computed from the seller's active
+                                deals (rounded coords / location IDs). Turns amber on
+                                3/3 with a new pin and red when blocked. Editing an
+                                existing deal hides it entirely — the limit doesn't
+                                apply to moves. */}
+                            {!editingDealId && user?.userType !== 'admin' && (
+                                <div
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                        padding: '8px 12px', borderRadius: 10, marginBottom: 10,
+                                        background: wouldExceedLimit
+                                            ? 'rgba(239, 68, 68, 0.12)'
+                                            : (activeLocationKeys.size >= MAX_LOCATIONS && !locationIsExisting
+                                                ? 'rgba(245, 158, 11, 0.12)'
+                                                : 'rgba(16, 185, 129, 0.10)'),
+                                        border: '1px solid ' + (wouldExceedLimit
+                                            ? 'rgba(239, 68, 68, 0.35)'
+                                            : 'rgba(16, 185, 129, 0.25)'),
+                                        fontSize: '0.78rem', fontWeight: 800,
+                                        color: wouldExceedLimit ? 'var(--danger)' : 'var(--text-primary)',
+                                        lineHeight: 1.5
+                                    }}
+                                >
+                                    <span style={{ fontSize: '1rem' }}>📍</span>
+                                    <span style={{ flex: 1 }}>
+                                        {isRTL
+                                            ? `المواقع المستخدمة: ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
+                                            : `Locations used: ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
+                                        {wouldExceedLimit && (
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
+                                                {isRTL
+                                                    ? '⚠️ هذا موقع جديد — وصلت لحد الباقة. اختر أحد مواقعك الحالية أو عدّل منتجاً موجوداً.'
+                                                    : '⚠️ This is a new location — limit reached. Pick an existing one or edit a deal.'}
+                                            </span>
+                                        )}
+                                        {!wouldExceedLimit && locationIsExisting && activeLocationKeys.size > 0 && (
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3, color: 'var(--primary)' }}>
+                                                {isRTL ? '✓ هذا موقع مستخدم من قبل — لن يُحسب كموقع جديد.' : '✓ Existing location — no new slot used.'}
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                                 <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedRegion} onChange={e => { setSelectedRegion(e.target.value); setSelectedCity(''); }}>
                                     <option value="">{isRTL ? 'اختر المنطقة' : 'Region'}</option>
@@ -1874,14 +1985,14 @@ const SellerDashboard: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => { setSubmitMode('publish'); submitAction(false, true); }}
-                                        disabled={isSaving || resolvingLink || priceInvalid}
+                                        disabled={isSaving || resolvingLink || priceInvalid || wouldExceedLimit}
                                         style={{
                                             flex: 2, padding: '16px', borderRadius: 16,
-                                            background: (isSaving || priceInvalid) ? 'var(--gray-300)' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
+                                            background: (isSaving || priceInvalid || wouldExceedLimit) ? 'var(--gray-300)' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
                                             color: 'white', fontWeight: 900, border: 'none', fontSize: '1rem',
-                                            boxShadow: (isSaving || priceInvalid) ? 'none' : '0 6px 20px var(--primary-glow)',
-                                            cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
-                                            opacity: priceInvalid ? 0.6 : 1,
+                                            boxShadow: (isSaving || priceInvalid || wouldExceedLimit) ? 'none' : '0 6px 20px var(--primary-glow)',
+                                            cursor: (isSaving || priceInvalid || wouldExceedLimit) ? 'not-allowed' : 'pointer',
+                                            opacity: (priceInvalid || wouldExceedLimit) ? 0.6 : 1,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
                                         }}
                                     >
@@ -1939,12 +2050,12 @@ const SellerDashboard: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => { setSubmitMode('addAnother'); submitAction(true); }}
-                                        disabled={isSaving || resolvingLink || priceInvalid}
+                                        disabled={isSaving || resolvingLink || priceInvalid || wouldExceedLimit}
                                         style={{
                                             flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
                                             background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
-                                            cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
-                                            opacity: priceInvalid ? 0.6 : 1,
+                                            cursor: (isSaving || priceInvalid || wouldExceedLimit) ? 'not-allowed' : 'pointer',
+                                            opacity: (priceInvalid || wouldExceedLimit) ? 0.6 : 1,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >

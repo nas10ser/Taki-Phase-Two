@@ -14,10 +14,17 @@
 
 ---
 
+## 🗂 backlog (مهام مؤجلة)
+
+- **آلية اشتراك "باقة أعلى" للسماح بأكثر من 3 لوكيشنات** (تم تحديد القاعدة في v10.42): الباقة الأساسية = 3 مواقع فريدة كحد أقصى للمنتجات النشطة. للمزيد لازم باقة مدفوعة. **ناصر سيحدد لاحقاً**: السعر، الفئات (5/10/∞)، نموذج الدفع، وكيف يُعرض الـupsell. الكود الحالي يرفض الإضافة في موقع 4+ مع رسالة "الترقية قريباً"، وزر "إدارة الاشتراك" يفتح `/subscription`.
+
+---
+
 ## 🗓 سجل v10.x
 
 | إصدار | الموضوع |
 |--------|---------|
+| **v10.42** | حد أقصى 3 لوكيشنات فريدة لمنتجات التاجر النشطة في الباقة الأساسية. الحساب: locationId مفهرس (مول/سوق) أو إحداثيات مدوّرة لـ3 منازل (~110م) للدبابيس المخصصة. **التعديل** على منتج موجود حر بالكامل (يقدر التاجر ينقل أي منتج لأي مكان حتى لو أنتج 4 لوكيشنات). **الإضافة** الجديدة في لوكيشن 4+ مرفوضة مع رسالة وزر "إدارة الاشتراك". counter مرئي في النموذج "X / 3 مواقع" مع تلوين أصفر/أحمر. admin يتجاوز القاعدة. آلية الـupgrade لباقة أعلى موجودة في backlog. |
 | **v10.41** | ثلاث مشاكل مترابطة: (١) **DB**: فشل مزامنة المنتج مع السيرفر `new row violates RLS for table notifications` — الـtrigger `handle_deal_smart_notifications` كان يحاول إدراج إشعارات للمتابعين بصلاحيات الـseller بدل صلاحيات النظام. الإصلاح: `SECURITY DEFINER` على الـfunction. ملف migration: `supabase/migration_v10_41_smart_notifications_security_definer.sql`. (٢) **علم أوكرانيا**: Leaflet 1.9+ يحقن العلم في الـattribution badge؛ أُضيف `attributionControl={false}` على كل MapContainer (SellerDashboard + Nearby). (٣) **الخريطة لا تتمركز** بعد حلّ الرابط/الفلتر: `MapCenterUpdater` يستدعي `flyTo` على tile-grid قديم. أُضيف `invalidateSize()` قبل `setView` ليُعيد Leaflet حساب الـviewport. |
 | **v10.40** | لوحة البائع: تبويب "إضافة +" كان يفتح صفحة "السكانر" بدل نموذج الإضافة. السبب: فحص الاشتراك كان يقرأ من `storeProfiles.subscription_expires_at` (حقل قديم لا يُحدّث للتجار في فترة التجربة ولا للـadmin) → `isSubscriptionValid=false` → الـform يسقط للـscanner fallback. الإصلاح: (١) admin يتجاوز فحص الاشتراك دائماً. (٢) المصدر الحقيقي للاشتراك صار `merchant_subscriptions` (status + trial_ends_at + current_period_end). (٣) لو فعلاً لا اشتراك للتاجر، تظهر لوحة "الاشتراك مطلوب" مع زر إدارة الاشتراك بدل صفحة السكانر. |
 | **v10.39** | **DB fix حرج** — سياستا RLS على جدول users (`users_select_all` و `users_update_admin`) كانتا تستخدمان `EXISTS (SELECT FROM users ...)` داخل تعريفهما → infinite recursion عند أي UPDATE/UPSERT على users. النتيجة: `saveProfile` يفشل بصمت → "حفظ كموقع دائم" + "إضافة وتكرار" + addDeal trigger smart_notifications كلها معطلة. الإصلاح: استبدال الـsubquery بـ `is_admin()` SECURITY DEFINER. ملف الـmigration: `supabase/migration_v10_38_fix_users_rls_infinite_recursion.sql`. |
