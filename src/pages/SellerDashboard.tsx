@@ -518,8 +518,27 @@ const SellerDashboard: React.FC = () => {
 
     const saveShopLocation = async () => {
         if (!user) return;
+        let lat = mapPos[0];
+        let lng = mapPos[1];
+
+        // If the seller pasted a link but hasn't tapped "Set" yet, the
+        // map pin is still on the default Riyadh coords. Tapping "Save
+        // Permanent" before the link resolves would store the wrong
+        // location. Resolve now (with a 3s cap so we don't hang) and
+        // use the fresh coords if the link is valid.
+        if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
+            const resolved = await Promise.race([
+                handleMapLinkUpdate(),
+                new Promise<null>(r => setTimeout(() => r(null), 3000))
+            ]);
+            if (resolved && Array.isArray(resolved)) {
+                lat = resolved[0];
+                lng = resolved[1];
+            }
+        }
+
         try {
-            await updateProfile({ lat: mapPos[0], lng: mapPos[1], googleMapsLink });
+            await updateProfile({ lat, lng, googleMapsLink });
             customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
         } catch (e: any) {
             console.error('Save shop location error:', e);
@@ -533,6 +552,19 @@ const SellerDashboard: React.FC = () => {
     const discount = normalizedOriginalPrice && normalizedDiscountedPrice
         ? Math.round(((Number(normalizedOriginalPrice) - Number(normalizedDiscountedPrice)) / Number(normalizedOriginalPrice)) * 100)
         : 0;
+
+    // Inline price-sanity check. Computed every render so the form gives
+    // instant red-border feedback the moment the seller mistypes — the
+    // pre-submit alert was firing only AFTER they hit save, by which point
+    // they'd already filled out the location/expiry sections for nothing.
+    // Save buttons read this to stay disabled until the discount is
+    // genuinely lower than the original price.
+    const priceInvalid = (() => {
+        if (!originalPrice || !discountedPrice) return false;
+        const o = Number(normalizedOriginalPrice) || 0;
+        const d = Number(normalizedDiscountedPrice) || 0;
+        return o > 0 && d > 0 && d >= o;
+    })();
 
     // Removed auto-centering effect to prevent overwriting manual map pin placement
 
@@ -856,27 +888,15 @@ const SellerDashboard: React.FC = () => {
 
     const submitAction = async (stayOnForm: boolean, forcePublish: boolean = true) => {
         if (isSaving) return;
-        setIsSaving(true);
-        try {
-            const existingDeal = editingDealId ? deals.find(d => d.id === editingDealId) : null;
-            
-            // Auto-resolve link if changed and not resolved yet
-            let finalLat = mapPos[0];
-            let finalLng = mapPos[1];
-            
-            if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
-                // Add a 5s timeout to link resolution to avoid hanging the entire form submission
-                const resolutionPromise = handleMapLinkUpdate();
-                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
-                
-                const resolved = await Promise.race([resolutionPromise, timeoutPromise]);
-                if (resolved) {
-                    finalLat = resolved[0];
-                    finalLng = resolved[1];
-                }
-            }
 
-        // Validation logic
+        // === SYNCHRONOUS VALIDATION FIRST — no spinner, no network ===
+        // The previous flow flipped isSaving=true, then waited up to 5s
+        // resolving the Maps link, THEN ran validation. So if any field
+        // was missing the user stared at a spinner for 5 seconds before
+        // seeing an alert. Validate everything cheap first — only enter
+        // the saving state once we know we're actually going to write.
+        const existingDeal = editingDealId ? deals.find(d => d.id === editingDealId) : null;
+
         const rawQuantity = isUnlimited ? 'unlimited' : (Number(normalizeArabicNumerals(quantity.toString())) || 0);
         // Time-based offers (hours/duration/date) without an explicit quantity
         // are treated as unlimited stock — the timer is what ends them, not a
@@ -925,7 +945,9 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
-        // Price validation: discount must be less than original
+        // Price validation: discount must be less than original. The inline
+        // priceInvalid flag also disables the save buttons, so this branch
+        // is the belt-and-braces fallback for keyboard submits.
         if (Number(normalizeArabicNumerals(discountedPrice)) >= Number(normalizeArabicNumerals(originalPrice))) {
             await customAlert(isRTL ? '⚠️ سعر الخصم يجب أن يكون أقل من السعر الأصلي!' : '⚠️ Discount price must be less than original price!');
             return;
@@ -935,6 +957,27 @@ const SellerDashboard: React.FC = () => {
             await customAlert(isRTL ? 'يرجى إضافة صورة واحدة على الأقل' : 'Please add at least one image');
             return;
         }
+
+        // === Validation passed — NOW start the spinner and do async work ===
+        setIsSaving(true);
+        try {
+            // Auto-resolve link if changed and not resolved yet. 3s cap (was
+            // 5s) — the cheaper proxies usually answer well inside this and
+            // we'd rather save with the user's current pin than make them
+            // stare at a spinner.
+            let finalLat = mapPos[0];
+            let finalLng = mapPos[1];
+
+            if (googleMapsLink && googleMapsLink !== lastResolvedLink) {
+                const resolutionPromise = handleMapLinkUpdate();
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+
+                const resolved = await Promise.race([resolutionPromise, timeoutPromise]);
+                if (resolved && Array.isArray(resolved)) {
+                    finalLat = resolved[0];
+                    finalLng = resolved[1];
+                }
+            }
 
         const parseHijriAndGetMinutes = (hijriDate: string) => {
             const [y, m, d] = hijriDate.split('-').map(Number);
@@ -1341,13 +1384,53 @@ const SellerDashboard: React.FC = () => {
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'السعر الأصلي' : 'Original Price'}</label>
-                                <input type="tel" style={fieldInputStyle} placeholder={isRTL ? 'مثال: 120' : 'e.g. 120'} value={originalPrice} onChange={e => setOriginalPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} />
+                                <input
+                                    type="tel"
+                                    style={{
+                                        ...fieldInputStyle,
+                                        borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
+                                        boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
+                                    }}
+                                    placeholder={isRTL ? 'مثال: 120' : 'e.g. 120'}
+                                    value={originalPrice}
+                                    onChange={e => setOriginalPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
+                                />
                             </div>
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'السعر بعد الخصم' : 'Final Price'}</label>
-                                <input type="tel" style={fieldInputStyle} placeholder={isRTL ? 'مثال: 80' : 'e.g. 80'} value={discountedPrice} onChange={e => setDiscountedPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} />
+                                <input
+                                    type="tel"
+                                    style={{
+                                        ...fieldInputStyle,
+                                        borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
+                                        boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
+                                    }}
+                                    placeholder={isRTL ? 'مثال: 80' : 'e.g. 80'}
+                                    value={discountedPrice}
+                                    onChange={e => setDiscountedPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
+                                />
                             </div>
                         </div>
+                        {priceInvalid && (
+                            <div
+                                role="alert"
+                                style={{
+                                    margin: '-12px 0 16px',
+                                    padding: '10px 14px',
+                                    borderRadius: 12,
+                                    background: 'rgba(239, 68, 68, 0.12)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: 'var(--danger)',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 800,
+                                    lineHeight: 1.5
+                                }}
+                            >
+                                ⚠️ {isRTL
+                                    ? 'سعر الخصم يجب أن يكون أقل من السعر الأصلي. تاكي للتخفيضات فقط.'
+                                    : 'Discount price must be lower than the original price. TAKI is a discounts-only platform.'}
+                            </div>
+                        )}
 
                         <div style={{ marginBottom: 20 }}>
                             <label style={labelStyle}>{isRTL ? 'نظام انتهاء العرض' : 'Offer Expiry System'}</label>
@@ -1701,16 +1784,17 @@ const SellerDashboard: React.FC = () => {
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
                                 <div style={{ display: 'flex', gap: 10 }}>
-                                    <button 
+                                    <button
                                         type="button"
                                         onClick={() => submitAction(false, true)}
-                                        disabled={isSaving || resolvingLink}
+                                        disabled={isSaving || resolvingLink || priceInvalid}
                                         style={{
                                             flex: 2, padding: '16px', borderRadius: 16,
-                                            background: isSaving ? 'var(--gray-300)' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
+                                            background: (isSaving || priceInvalid) ? 'var(--gray-300)' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
                                             color: 'white', fontWeight: 900, border: 'none', fontSize: '1rem',
-                                            boxShadow: isSaving ? 'none' : '0 6px 20px var(--primary-glow)', 
-                                            cursor: isSaving ? 'default' : 'pointer',
+                                            boxShadow: (isSaving || priceInvalid) ? 'none' : '0 6px 20px var(--primary-glow)',
+                                            cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
+                                            opacity: priceInvalid ? 0.6 : 1,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
                                         }}
                                     >
@@ -1720,12 +1804,19 @@ const SellerDashboard: React.FC = () => {
                                             isRTL ? (editingDealId ? 'حفظ التعديلات والنشر' : 'حفظ وإضافة العرض') : (editingDealId ? 'Save & Publish' : 'Save & Add Deal')
                                         )}
                                     </button>
-                                    
+
                                     {editingDealId && (
-                                        <button type="button" onClick={() => submitAction(false, false)} style={{
-                                            flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
-                                            background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer'
-                                        }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => submitAction(false, false)}
+                                            disabled={isSaving || priceInvalid}
+                                            style={{
+                                                flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
+                                                background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
+                                                cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
+                                                opacity: priceInvalid ? 0.6 : 1
+                                            }}
+                                        >
                                             💾 {isRTL ? 'حفظ التعديل فقط' : 'Save Only'}
                                         </button>
                                     )}
@@ -1753,11 +1844,22 @@ const SellerDashboard: React.FC = () => {
                                 )}
 
                                 {!editingDealId && (
-                                    <button type="button" onClick={() => submitAction(true)} style={{
-                                        flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
-                                        background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer'
-                                    }}>
-                                        {isRTL ? 'إضافة وتكرار' : 'Add Another'}
+                                    <button
+                                        type="button"
+                                        onClick={() => submitAction(true)}
+                                        disabled={isSaving || resolvingLink || priceInvalid}
+                                        style={{
+                                            flex: 1, padding: '16px', borderRadius: 16, border: '1.5px solid var(--border-color)',
+                                            background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.85rem',
+                                            cursor: (isSaving || priceInvalid) ? 'not-allowed' : 'pointer',
+                                            opacity: priceInvalid ? 0.6 : 1
+                                        }}
+                                    >
+                                        {isSaving ? (
+                                            <div className="spinner" style={{ width: 18, height: 18, border: '3px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite', margin: '0 auto' }} />
+                                        ) : (
+                                            isRTL ? 'إضافة وتكرار' : 'Add Another'
+                                        )}
                                     </button>
                                 )}
                             </div>
