@@ -1906,8 +1906,8 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 10 }}>
                                         {isRTL
-                                            ? 'انتهت كل عروض موقعه السابق فحُذفت الخانة. اختر أحد مواقعك الحالية الـ3 لتجديد هذا العرض:'
-                                            : 'All deals in its old location expired, so the slot was freed. Pick one of your current 3 locations to renew this deal:'}
+                                            ? 'انتهت كل عروض موقعه السابق فحُذفت الخانة. تم تغيير موقعك السابق — اختر أحد مواقعك الحالية الـ3 لتجديد هذا العرض:'
+                                            : 'All deals in its old location expired, so the slot was freed. Your previous location was reassigned — pick one of your current 3 locations to renew this deal:'}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                         {activeLocationsList.map(({ key, deal }) => (
