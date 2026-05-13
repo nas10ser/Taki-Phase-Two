@@ -468,31 +468,6 @@ export const STORES: Store[] = [
     { id: 'store_10', name: 'ملابس الصغار', rating: 4.7, lat: 18.2295, lng: 42.5020, address: 'أبها مول، أبها' },
 ];
 
-const LOREM_AR = "هذا النص هو مثال لنص يمكن أن يستبدل في نفس المساحة، لقد تم توليد هذا النص من مولد النص العربى.";
-
-export const MOCK_DEALS: Deal[] = [
-    {
-        id: '999',
-        storeId: 'm1',
-        shopName: 'محل الأناقة',
-        itemName: 'عرض التحديث الجديد (نود ٢٤)',
-        category: 'Fashion_Men',
-        gender: 'men',
-        originalPrice: 200,
-        discountedPrice: 100,
-        discountPercentage: 50,
-        images: ['https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=800'],
-        description: 'هذا عرض خاص بمناسبة تحديث بيئة العمل إلى Node 24.',
-        locationId: 'nakheel_riyadh',
-        reliabilityScore: 5,
-        expiresInMinutes: 60,
-        quantity: 10,
-        ratings: [],
-        createdAt: Date.now(),
-        status: 'active'
-    }
-];
-
 export const USER_LOCATION = { lat: 24.7136, lng: 46.6753 };
 
 export const getLocation = (id: string): Location | undefined => LOCATIONS.find(l => l.id === id);
