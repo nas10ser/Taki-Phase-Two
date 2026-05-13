@@ -28,7 +28,6 @@ const Register: React.FC = () => {
     const [emailSuccess, setEmailSuccess] = useState(false);
     const [phoneSuccess, setPhoneSuccess] = useState(false);
     const [resending, setResending] = useState(false);
-    const [sellerAddress, setSellerAddress] = useState('');
     const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const phoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -92,7 +91,6 @@ const Register: React.FC = () => {
             setName('');
             setPhone('');
             setShopName('');
-            setSellerAddress('');
             setCode('');
             setMode('landing');
         }, 10 * 60 * 1000);
@@ -273,7 +271,7 @@ const Register: React.FC = () => {
                 user_type: userType,
                 shop: userType === 'seller' ? shopName : null,
                 contact_phone: normalizedPhone,
-                address: userType === 'seller' ? sellerAddress : '',
+                address: '',
             };
 
             const response = await authService.signUpWithEmail(trimmedEmail, password, userData);
@@ -670,13 +668,17 @@ const Register: React.FC = () => {
     if (mode === 'login' || mode === 'form') {
         const isLogin = mode === 'login';
 
-        // Password Validation
-        let strengthColor = 'var(--gray-500)';
+        // Password Validation — explicit light colors (CSS var --accent
+        // resolves to near-black slate-800 which is invisible on the dark
+        // register gradient).
+        const STRONG_GREEN = '#10b981';
+        const CHECK_OFF = '#94a3b8';
+        let strengthColor = CHECK_OFF;
         let strengthLabel = '';
         if (password.length > 0) {
             if (strengthScore <= 2) { strengthColor = '#ef4444'; strengthLabel = t('ضعيفة', 'Weak'); }
             else if (strengthScore <= 4) { strengthColor = '#f59e0b'; strengthLabel = t('متوسطة', 'Fair'); }
-            else { strengthColor = 'var(--accent)'; strengthLabel = t('قوية', 'Strong'); }
+            else { strengthColor = STRONG_GREEN; strengthLabel = t('قوية', 'Strong'); }
         }
 
         // Email Validation
@@ -766,7 +768,7 @@ const Register: React.FC = () => {
                                     onChange={handleEmailChange}
                                     onBlur={handleEmailBlur}
                                     placeholder={isLogin ? t('05xxxxxxxx أو user@example.com', '05xxxxxxxx or user@email.com') : 'user@example.com'}
-                                    style={{ ...inputStyle, paddingLeft: isRTL ? 40 : 18, paddingRight: isRTL ? 18 : 40, borderColor: emailError ? (emailExistsError ? '#ef4444' : '#f59e0b') : (isEmailAvailableState ? 'var(--accent)' : 'rgba(80, 80, 90, 0.2)'), boxShadow: emailError ? (emailExistsError ? '0 0 0 2px rgba(239,68,68,0.15)' : '0 0 0 2px rgba(245,158,11,0.1)') : (isEmailAvailableState ? '0 0 0 2px var(--primary-glow)' : 'none') }}
+                                    style={{ ...inputStyle, paddingLeft: isRTL ? 40 : 18, paddingRight: isRTL ? 18 : 40, borderColor: emailError ? (emailExistsError ? '#ef4444' : '#f59e0b') : (isEmailAvailableState ? '#10b981' : 'rgba(148, 163, 184, 0.25)'), boxShadow: emailError ? (emailExistsError ? '0 0 0 2px rgba(239,68,68,0.15)' : '0 0 0 2px rgba(245,158,11,0.1)') : (isEmailAvailableState ? '0 0 0 2px rgba(16,185,129,0.18)' : 'none') }}
                                     type={isLogin ? "text" : "email"}
                                     dir="ltr"
                                     autoComplete="email"
@@ -774,12 +776,12 @@ const Register: React.FC = () => {
                                 {emailChecking && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#f59e0b' }}>⏳</span>}
                                 {/* Hide success ✅ during login — the actual sign-in is the
                                     source of truth and an early checkmark felt misleading. */}
-                                {!emailChecking && !isLogin && emailSuccess && !emailError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: 'var(--accent)' }}>✅</span>}
+                                {!emailChecking && !isLogin && emailSuccess && !emailError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#10b981' }}>✅</span>}
                                 {!emailChecking && !isLogin && emailExistsError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#ef4444' }}>❌</span>}
                             </div>
                             {emailError && <div className="inline-error">{emailError}</div>}
                             {!isLogin && emailChecking && <div style={{ marginTop: 6, fontSize: '0.78rem', color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>⏳ {t('جاري التحقق من التوفر...', 'Checking availability...')}</div>}
-                            {!isLogin && isEmailAvailableState && !emailError && <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>✅ {t('البريد متاح وصالح', 'Email is available')}</div>}
+                            {!isLogin && isEmailAvailableState && !emailError && <div style={{ marginTop: 6, fontSize: '0.78rem', color: '#10b981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✅ {t('البريد متاح وصالح', 'Email is available')}</div>}
                         </div>
 
                         {!isLogin && (
@@ -792,17 +794,17 @@ const Register: React.FC = () => {
                                         onChange={handlePhoneChange}
                                         onBlur={handlePhoneBlur}
                                         placeholder="05xxxxxxxx"
-                                        style={{ ...inputStyle, paddingLeft: isRTL ? 40 : 18, paddingRight: isRTL ? 18 : 40, borderColor: phoneError ? (phoneExistsError ? '#ef4444' : '#f59e0b') : (isPhoneAvailableState ? 'var(--accent)' : 'rgba(80, 80, 90, 0.2)'), boxShadow: phoneError ? (phoneExistsError ? '0 0 0 2px rgba(239,68,68,0.15)' : '0 0 0 2px rgba(245,158,11,0.1)') : (isPhoneAvailableState ? '0 0 0 2px var(--primary-glow)' : 'none') }}
+                                        style={{ ...inputStyle, paddingLeft: isRTL ? 40 : 18, paddingRight: isRTL ? 18 : 40, borderColor: phoneError ? (phoneExistsError ? '#ef4444' : '#f59e0b') : (isPhoneAvailableState ? '#10b981' : 'rgba(148, 163, 184, 0.25)'), boxShadow: phoneError ? (phoneExistsError ? '0 0 0 2px rgba(239,68,68,0.15)' : '0 0 0 2px rgba(245,158,11,0.1)') : (isPhoneAvailableState ? '0 0 0 2px rgba(16,185,129,0.18)' : 'none') }}
                                         dir="ltr"
                                         inputMode="numeric"
                                     />
                                     {phoneChecking && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#f59e0b' }}>⏳</span>}
-                                    {!phoneChecking && phoneSuccess && !phoneError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: 'var(--accent)' }}>✅</span>}
+                                    {!phoneChecking && phoneSuccess && !phoneError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#10b981' }}>✅</span>}
                                     {!phoneChecking && phoneExistsError && <span style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 14, fontSize: '0.85rem', color: '#ef4444' }}>❌</span>}
                                 </div>
                                 {phoneError && <div className="inline-error">{phoneError}</div>}
                                 {phoneChecking && <div style={{ marginTop: 6, fontSize: '0.78rem', color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>⏳ {t('جاري التحقق من التوفر...', 'Checking availability...')}</div>}
-                                {isPhoneAvailableState && !phoneError && <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>✅ {t('الرقم متاح وصالح', 'Phone is available')}</div>}
+                                {isPhoneAvailableState && !phoneError && <div style={{ marginTop: 6, fontSize: '0.78rem', color: '#10b981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✅ {t('الرقم متاح وصالح', 'Phone is available')}</div>}
                             </div>
                         )}
 
@@ -831,38 +833,35 @@ const Register: React.FC = () => {
                             )}
 
                             {!isLogin && (
-                                <div style={{ marginTop: 12, background: 'rgba(80, 80, 90, 0.2)', padding: 12, borderRadius: 12, border: `1px solid ${password.length > 0 ? strengthColor : 'rgba(80, 80, 90, 0.3)'}`, transition: 'border-color 0.3s' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: '0.8rem', fontWeight: 700 }}>
-                                        <span>{t('قوة الكلمة:', 'Strength:')}</span>
-                                        <span style={{ color: strengthColor }}>{strengthLabel}</span>
+                                <div style={{ marginTop: 12, background: 'rgba(15, 25, 45, 0.5)', padding: 12, borderRadius: 12, border: `1px solid ${password.length > 0 ? strengthColor : 'rgba(148, 163, 184, 0.3)'}`, transition: 'border-color 0.3s' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: '0.85rem', fontWeight: 700 }}>
+                                        <span style={{ color: '#e2e8f0' }}>{t('قوة الكلمة:', 'Strength:')}</span>
+                                        <span style={{ color: strengthColor, fontWeight: 800 }}>{strengthLabel}</span>
                                     </div>
                                     <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
                                         {[1, 2, 3, 4, 5].map(step => (
-                                            <div key={step} style={{ height: 4, flex: 1, borderRadius: 2, background: password.length > 0 && step <= strengthScore ? strengthColor : 'rgba(80, 80, 90, 0.3)', transition: 'background 0.3s ease' }} />
+                                            <div key={step} style={{ height: 4, flex: 1, borderRadius: 2, background: password.length > 0 && step <= strengthScore ? strengthColor : 'rgba(148, 163, 184, 0.25)', transition: 'background 0.3s ease' }} />
                                         ))}
                                     </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.75rem' }}>
-                                        <div style={{ color: pwCriteria.length ? 'var(--accent)' : 'var(--gray-400)' }}>{pwCriteria.length ? '✅' : '⚪'} {t('8 أحرف فما فوق', '8+ chars')}</div>
-                                        <div style={{ color: pwCriteria.uppercase ? 'var(--accent)' : 'var(--gray-400)' }}>{pwCriteria.uppercase ? '✅' : '⚪'} {t('حرف كبير', 'Uppercase')}</div>
-                                        <div style={{ color: pwCriteria.lowercase ? 'var(--accent)' : 'var(--gray-400)' }}>{pwCriteria.lowercase ? '✅' : '⚪'} {t('حرف صغير', 'Lowercase')}</div>
-                                        <div style={{ color: pwCriteria.number ? 'var(--accent)' : 'var(--gray-400)' }}>{pwCriteria.number ? '✅' : '⚪'} {t('رقم', 'Number')}</div>
-                                        <div style={{ color: pwCriteria.special ? 'var(--accent)' : 'var(--gray-400)', gridColumn: 'span 2' }}>{pwCriteria.special ? '✅' : '⚪'} {t('رمز خاص (@#$!)', 'Symbol (@#$!)')}</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.8rem', fontWeight: 600 }}>
+                                        <div style={{ color: pwCriteria.length ? STRONG_GREEN : CHECK_OFF }}>{pwCriteria.length ? '✅' : '⚪'} {t('8 أحرف فما فوق', '8+ chars')}</div>
+                                        <div style={{ color: pwCriteria.uppercase ? STRONG_GREEN : CHECK_OFF }}>{pwCriteria.uppercase ? '✅' : '⚪'} {t('حرف كبير', 'Uppercase')}</div>
+                                        <div style={{ color: pwCriteria.lowercase ? STRONG_GREEN : CHECK_OFF }}>{pwCriteria.lowercase ? '✅' : '⚪'} {t('حرف صغير', 'Lowercase')}</div>
+                                        <div style={{ color: pwCriteria.number ? STRONG_GREEN : CHECK_OFF }}>{pwCriteria.number ? '✅' : '⚪'} {t('رقم', 'Number')}</div>
+                                        <div style={{ color: pwCriteria.special ? STRONG_GREEN : CHECK_OFF, gridColumn: 'span 2' }}>{pwCriteria.special ? '✅' : '⚪'} {t('رمز خاص (@#$!)', 'Symbol (@#$!)')}</div>
                                     </div>
                                 </div>
                             )}
                         </div>
 
                         {!isLogin && userType === 'seller' && (
-                            <>
-                                <div>
-                                    <label style={labelStyle}>{t('اسم المحل', 'Shop Name')} <span style={{ color: '#ef4444' }}>*</span></label>
-                                    <input value={shopName} onChange={e => setShopName(e.target.value)} placeholder={t('بوتيك الأناقة', 'Elegance Boutique')} style={inputStyle} />
+                            <div>
+                                <label style={labelStyle}>{t('اسم المحل', 'Shop Name')} <span style={{ color: '#ef4444' }}>*</span></label>
+                                <input value={shopName} onChange={e => setShopName(e.target.value)} placeholder={t('بوتيك الأناقة', 'Elegance Boutique')} style={inputStyle} />
+                                <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'rgba(180, 195, 220, 0.6)', lineHeight: 1.5 }}>
+                                    {t('📍 سيتم تحديد موقع المتجر لاحقاً من داخل التطبيق', '📍 Store location will be set later from inside the app')}
                                 </div>
-                                <div>
-                                    <label style={labelStyle}>{t('موقع المتجر (المدينة/الحي)', 'Store Location (City/District)')} </label>
-                                    <input value={sellerAddress} onChange={e => setSellerAddress(e.target.value)} placeholder={t('الرياض - حي العليا', 'Riyadh - Olaya District')} style={inputStyle} />
-                                </div>
-                            </>
+                            </div>
                         )}
 
                         <button className="auth-submit" onClick={isLogin ? handleLoginSubmit : handleProceedToVerify} disabled={isSubmitDisabled} style={{ ...primaryButtonStyle, background: isSubmitDisabled ? 'rgba(15,23,42,0.2)' : activeBtnColor, opacity: buttonOpacity, marginTop: 16, cursor: isSubmitDisabled ? 'not-allowed' : 'pointer', boxShadow: isSubmitDisabled ? 'none' : activeBtnGlow, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
@@ -888,14 +887,14 @@ const Register: React.FC = () => {
                 <div style={{ marginTop: 80, textAlign: 'center', maxWidth: 420, width: '100%', padding: '0 20px', animation: 'fadeUp 0.6s ease-out' }}>
                     <div style={{ fontSize: '4rem', marginBottom: 20, animation: 'float 3s ease-in-out infinite' }}>✉️</div>
                     <h2 style={{ fontSize: '1.7rem', fontWeight: 900, marginBottom: 10, letterSpacing: -0.5 }}>{t('أكد حسابك', 'Confirm Your Account')}</h2>
-                    <p style={{ opacity: 0.55, lineHeight: 1.7, marginBottom: 16, fontSize: '0.9rem' }}>
+                    <p style={{ opacity: 0.8, lineHeight: 1.7, marginBottom: 16, fontSize: '0.9rem', color: '#cbd5e1' }}>
                         {t('لقد أرسلنا إليك رابط تحقق إلى:', 'We sent a verification link to:')}<br />
-                        <strong style={{ color: 'var(--accent)', fontSize: '1rem' }}>{email}</strong>
+                        <strong style={{ color: '#10b981', fontSize: '1rem' }}>{email}</strong>
                     </p>
 
                     {/* Bilingual waiting message */}
-                    <div style={{ background: 'rgba(15,23,42,0.15)', border: '1px solid var(--primary-glow)', borderRadius: 16, padding: '16px 20px', marginBottom: 28, animation: 'pulse2 3s ease-in-out infinite' }}>
-                        <p style={{ color: 'var(--accent)', fontWeight: 700, fontSize: '0.9rem', margin: 0, lineHeight: 1.6 }}>
+                    <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.35)', borderRadius: 16, padding: '16px 20px', marginBottom: 28, animation: 'pulse2 3s ease-in-out infinite' }}>
+                        <p style={{ color: '#10b981', fontWeight: 700, fontSize: '0.9rem', margin: 0, lineHeight: 1.6 }}>
                             {t('افتح بريدك الإلكتروني واضغط على الرابط للتأكيد', 'Open your email and click the verification link')}
                         </p>
                         <p style={{ color: 'rgba(100, 100, 115, 0.5)', fontSize: '0.78rem', marginTop: 8, lineHeight: 1.5 }}>
