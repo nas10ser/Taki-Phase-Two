@@ -118,6 +118,15 @@ export const authService = {
             email,
             password,
             options: {
+                // Pin the confirmation link's redirect target to the current
+                // origin (https://taki-test-eight.vercel.app in production,
+                // or whatever the user's browser shows). Without this, Supabase
+                // falls back to its configured Site URL — which defaults to
+                // localhost:3000 — and the email link sends the user to a
+                // dead "ERR_CONNECTION_REFUSED" page on their phone. The
+                // origin still has to be in the project's Redirect-URL
+                // allowlist; we document that step in progress.md for v10.55.
+                emailRedirectTo: window.location.origin,
                 data: {
                     name: userData.name,
                     phone: userData.phone,

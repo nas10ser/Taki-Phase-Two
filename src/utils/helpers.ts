@@ -159,3 +159,25 @@ export const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
         );
     });
 };
+
+// Allow only digits and at most one decimal point. Keeps the half-typed
+// "16." state so the user can finish typing "16.50" without the field
+// fighting them. The Saudi Halala is 1/100 of a Riyal — we never need
+// more than 2 fractional digits, but we don't truncate here; the final
+// price is stored in DB as NUMERIC which preserves whatever precision
+// was entered.
+export const sanitizeDecimalInput = (raw: string): string => {
+    let v = raw.replace(/[^\d.]/g, '');
+    // Collapse multiple dots to one (keep the first).
+    const firstDot = v.indexOf('.');
+    if (firstDot !== -1) {
+        v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
+    }
+    // Cap fractional digits at 2 (halalas), but only after at least one
+    // decimal digit is typed so "16." stays "16." while typing.
+    const m = v.match(/^(\d*)\.(\d*)$/);
+    if (m && m[2].length > 2) {
+        v = `${m[1]}.${m[2].slice(0, 2)}`;
+    }
+    return v;
+};

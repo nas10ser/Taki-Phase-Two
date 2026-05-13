@@ -10,7 +10,7 @@ import { useBooking } from '../hooks/useBooking';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
-import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError } from '../utils/helpers';
+import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
@@ -629,7 +629,12 @@ const SellerDashboard: React.FC = () => {
                 // user gave up and force-quit Safari. Now: if 15s passes
                 // without the DB acknowledging, we throw, the user gets a
                 // clear retry toast, and the button becomes pressable again.
-                await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 15000);
+                // 30s ceiling — the deal triggers (handle_deal_smart_notifications +
+                // tr_enforce_location_cap) plus AP-NE1 → KSA RTT can push profile
+                // writes past 15s on flaky 4G. 30s preserves the "don't hang
+                // forever" guarantee without firing spurious timeouts on slow
+                // connections that would have completed successfully.
+                await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 30000);
                 customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
             } catch (e: any) {
                 console.error('Save shop location error:', e);
@@ -1304,12 +1309,12 @@ const SellerDashboard: React.FC = () => {
             // a retry toast and reset the spinner so the form is usable.
             try {
                 if (editingDealId) {
-                    await withTimeout(updateDeal(newDeal), 20000);
+                    await withTimeout(updateDeal(newDeal), 40000);
                     if (!stayOnForm) {
                         setEditingDealId(null);
                     }
                 } else {
-                    await withTimeout(addDeal(newDeal), 20000);
+                    await withTimeout(addDeal(newDeal), 40000);
                 }
             } catch (e: any) {
                 if (e instanceof TimeoutError) {
@@ -1646,29 +1651,31 @@ const SellerDashboard: React.FC = () => {
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'السعر الأصلي' : 'Original Price'}</label>
                                 <input
-                                    type="tel"
+                                    type="text"
+                                    inputMode="decimal"
                                     style={{
                                         ...fieldInputStyle,
                                         borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
                                         boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
                                     }}
-                                    placeholder={isRTL ? 'مثال: 120' : 'e.g. 120'}
+                                    placeholder={isRTL ? 'مثال: 16.50' : 'e.g. 16.50'}
                                     value={originalPrice}
-                                    onChange={e => setOriginalPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
+                                    onChange={e => setOriginalPrice(sanitizeDecimalInput(normalizeArabicNumerals(e.target.value)))}
                                 />
                             </div>
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'السعر بعد الخصم' : 'Final Price'}</label>
                                 <input
-                                    type="tel"
+                                    type="text"
+                                    inputMode="decimal"
                                     style={{
                                         ...fieldInputStyle,
                                         borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
                                         boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
                                     }}
-                                    placeholder={isRTL ? 'مثال: 80' : 'e.g. 80'}
+                                    placeholder={isRTL ? 'مثال: 12.34' : 'e.g. 12.34'}
                                     value={discountedPrice}
-                                    onChange={e => setDiscountedPrice(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
+                                    onChange={e => setDiscountedPrice(sanitizeDecimalInput(normalizeArabicNumerals(e.target.value)))}
                                 />
                             </div>
                         </div>
