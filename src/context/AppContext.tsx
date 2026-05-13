@@ -892,25 +892,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ratings: deal.ratings || []
         };
 
-        // 1. Ensure FK target exists in users(id) before deal insert.
-        //    Saving the user row first means the deal upsert can't fail
-        //    on a missing parent. If THIS fails, surface it now — better
-        //    than silently masking it behind a deal-save error later.
-        if (user) {
-            try {
-                await userRepository.saveProfile(user);
-            } catch (e: any) {
-                console.error('Profile sync before deal failed:', e);
-                customAlert(
-                    language === 'ar'
-                        ? '⚠️ تعذّر تحديث بيانات المتجر. حاول مرة أخرى.'
-                        : '⚠️ Could not sync store profile. Try again.'
-                );
-                return;
-            }
-        }
+        // (Removed v10.57) Earlier versions called userRepository.saveProfile(user)
+        // here to "ensure FK target exists" before the deal insert. In practice
+        // the user row is already created by the handle_new_user trigger at
+        // signup, so this pre-write was redundant — and on a stalled auth-token
+        // lock it ate half the timeout budget, leaving the spinner stuck.
+        // Skipped. If the FK truly is missing (very rare), the deal upsert
+        // surfaces a clear "store_id violates foreign key constraint" error
+        // for the user to act on.
 
-        // 2. DB-first save — no "saved locally" lie. The UI only reflects
+        // DB-first save — no "saved locally" lie. The UI only reflects
         //    the deal AFTER the database has accepted it. If the DB rejects
         //    (location cap, validation, RLS) the user sees a specific error
         //    and nothing appears in their list. If a transient auth-lock

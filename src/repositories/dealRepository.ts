@@ -1,6 +1,7 @@
 import { Deal } from '../data/mock';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
+import { withTimeout } from '../utils/helpers';
 
 export const dealRepository = {
     getAll: async (): Promise<Deal[]> => {
@@ -99,7 +100,17 @@ export const dealRepository = {
             created_at: deal.createdAt || Date.now()
         };
 
-        let { error } = await supabase.from('deals').upsert(dbDeal);
+        // Internal 25s ceiling per attempt. The deal triggers
+        // (handle_deal_smart_notifications + tr_enforce_location_cap +
+        // tr_guard_deal_publish) plus AP-NE1 RTT can take a few seconds
+        // on healthy 4G, but anything past 25s means the request is hung
+        // (commonly: Supabase JS auth-refresh inTabLock on backgrounded
+        // iOS Safari). Surfacing fast lets the caller try again instead
+        // of holding the spinner against an outer 40s wall.
+        let { error } = await withTimeout(
+            supabase.from('deals').upsert(dbDeal) as unknown as Promise<{ error: any }>,
+            25000
+        );
         // Tolerate the case where the deals table is on an older schema that
         // hasn't yet picked up the expiry_type / expiry_date columns
         // (migration v8.16). Drop the new fields and retry once so the user
@@ -107,13 +118,19 @@ export const dealRepository = {
         // migration runs, without forcing a hard release coupling.
         if (error && /expiry_(type|date)/i.test(error.message || '')) {
             const { expiry_type, expiry_date, ...legacyDeal } = dbDeal;
-            const retry = await supabase.from('deals').upsert(legacyDeal);
+            const retry = await withTimeout(
+                supabase.from('deals').upsert(legacyDeal) as unknown as Promise<{ error: any }>,
+                25000
+            );
             error = retry.error;
         }
         // Same tolerance if the region/city columns don't exist yet.
         if (error && /column "(region|city)"/i.test(error.message || '')) {
             const { region, city, ...noGeo } = dbDeal;
-            const retry = await supabase.from('deals').upsert(noGeo);
+            const retry = await withTimeout(
+                supabase.from('deals').upsert(noGeo) as unknown as Promise<{ error: any }>,
+                25000
+            );
             error = retry.error;
         }
         if (error) {

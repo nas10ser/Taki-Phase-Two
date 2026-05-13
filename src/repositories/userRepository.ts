@@ -1,6 +1,7 @@
 import { UserProfile, authService } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
+import { withTimeout } from '../utils/helpers';
 
 export const userRepository = {
     getCurrentUser: async (): Promise<UserProfile | null> => {
@@ -89,7 +90,15 @@ export const userRepository = {
             if (p.googleMapsLink !== undefined) dbData.google_maps_link = p.googleMapsLink;
 
             // upsert needs the conflict column when the row already exists.
-            const { error } = await supabase.from('users').upsert(dbData, { onConflict: 'id' });
+            // Internal 15s ceiling — if the Supabase JS SDK's auth-refresh
+            // inTabLock is stuck (iOS Safari backgrounding hazard), the
+            // upsert promise never settles. Without this, the outer
+            // withTimeout in the caller has to wait its full 30s budget on
+            // top of any other awaits, producing a "spinner forever" UX.
+            const { error } = await withTimeout(
+                supabase.from('users').upsert(dbData, { onConflict: 'id' }) as unknown as Promise<{ error: any }>,
+                15000
+            );
             if (!error) {
                 logger.log('✅ Profile saved to remote successfully:', profile.id);
                 return;
