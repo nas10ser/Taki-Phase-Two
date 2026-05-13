@@ -39,6 +39,22 @@ const Register: React.FC = () => {
         }
     }, [user, mode, userType, history, language, customAlert]);
 
+    // Force the page background to match the register gradient. Otherwise
+    // iOS Safari's rubber-band overscroll exposes the light --body-bg
+    // (#f1f5f9) below the navy container, producing a jarring white strip
+    // on every pull. Restore on unmount so the rest of the app keeps its
+    // normal --body-bg.
+    React.useEffect(() => {
+        const prevHtmlBg = document.documentElement.style.background;
+        const prevBodyBg = document.body.style.background;
+        document.documentElement.style.background = '#050a18';
+        document.body.style.background = '#050a18';
+        return () => {
+            document.documentElement.style.background = prevHtmlBg;
+            document.body.style.background = prevBodyBg;
+        };
+    }, []);
+
     // 🌟 SMART POLLING (Cross-Device Auto-Login) 🌟
     React.useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -741,6 +757,16 @@ const Register: React.FC = () => {
                         <h2 style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: -0.5, marginBottom: 6 }}>{isLogin ? t('تسجيل الدخول', 'Sign In') : t('إنشاء حساب', 'Create Account')}</h2>
                         <p style={{ opacity: 0.4, fontSize: '0.88rem' }}>{isLogin ? t('أهلاً بعودتك! أدخل تفاصيلك للمتابعة', 'Welcome back! Enter your details to continue') : t('أدخل تفاصيل حسابك للبدء', 'Enter your account details to start')}</p>
                     </div>
+
+                    <button className="google-btn" onClick={authService.signInWithGoogle} style={{ ...methodButtonStyle, background: '#ffffff', color: '#1f1f1f', width: '100%', marginBottom: 10, borderRadius: 14, padding: '15px 20px', border: '1px solid rgba(60, 60, 70, 0.15)', boxShadow: '0 2px 12px rgba(0, 0, 0, 0.18)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
+                        <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+                            <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+                            <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+                            <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+                            <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571.001-.001.002-.001.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+                        </svg>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر Google', 'Continue with Google')}</span>
+                    </button>
 
                     <button className="apple-btn" onClick={authService.signInWithApple} style={{ ...methodButtonStyle, background: 'rgba(60, 60, 70, 0.95)', color: 'var(--text-primary)', width: '100%', marginBottom: 20, borderRadius: 14, padding: '15px 20px', border: 'none', boxShadow: '0 2px 12px rgba(80, 80, 90, 0.2)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                         <span style={{ fontSize: '1.2rem' }}>🍎</span><span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر أبل', 'Continue with Apple')}</span>

@@ -264,6 +264,19 @@ export const authService = {
         });
     },
 
+    signInWithGoogle: async () => {
+        return await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent'
+                }
+            }
+        });
+    },
+
     resetPassword: async (email: string) => {
         return await supabase.auth.resetPasswordForEmail(email, {
             redirectTo: `${window.location.origin}/register`

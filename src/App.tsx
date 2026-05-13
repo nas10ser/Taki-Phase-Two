@@ -15,6 +15,7 @@ const DealDetails     = lazy(() => import('./pages/DealDetails'));
 const DealsList       = lazy(() => import('./pages/DealsList'));
 const Profile         = lazy(() => import('./pages/Profile'));
 const Register        = lazy(() => import('./pages/Register'));
+const CompleteProfile = lazy(() => import('./pages/CompleteProfile'));
 const SellerDashboard = lazy(() => import('./pages/SellerDashboard'));
 const StoreDetails    = lazy(() => import('./pages/StoreDetails'));
 const Notifications   = lazy(() => import('./pages/Notifications'));
@@ -58,6 +59,29 @@ const AuthRedirector = () => {
         return 'buyer';
     };
 
+    // Helper: figure out where to send the user post-auth. OAuth users
+    // (Google/Apple) arrive with no phone/shop, so they must complete
+    // their profile before reaching the role-specific dashboard.
+    const getPostAuthDestination = async (uType: string): Promise<string> => {
+        // Direct DB lookup is safer than trusting user_metadata mirrors.
+        try {
+            const { data: sess } = await supabase.auth.getSession();
+            const uid = sess?.session?.user?.id;
+            if (uid) {
+                const { data: row } = await supabase
+                    .from('users')
+                    .select('phone, shop, user_type')
+                    .eq('id', uid)
+                    .maybeSingle();
+                const phoneMissing = !row?.phone || String(row.phone).length < 9;
+                const effectiveType = row?.user_type || uType;
+                const shopMissing = effectiveType === 'seller' && !row?.shop;
+                if (phoneMissing || shopMissing) return '/complete-profile';
+            }
+        } catch {}
+        return uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : '/';
+    };
+
     useEffect(() => {
         let timer: ReturnType<typeof setTimeout>;
         if (location.hash) {
@@ -65,13 +89,13 @@ const AuthRedirector = () => {
             if (location.hash.indexOf('access_token') !== -1 || location.hash.indexOf('type=signup') !== -1 || location.hash.indexOf('type=magiclink') !== -1) {
                 timer = setTimeout(async () => {
                     const uType = await getUserType();
-                    logger.info('🔄 Redirecting based on hash auth to:', uType);
+                    const dest = await getPostAuthDestination(uType);
+                    logger.info('🔄 Redirecting based on hash auth to:', dest);
                     // After magic-link / signup auth, buyers land on the
                     // home feed. Admins/sellers go to their dashboards.
-                    // (Previously this restored TAKI_LAST_PATH from
-                    // localStorage — removed so the only source of truth
-                    // for routing is the DB-driven user_type.)
-                    history.replace(uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : '/');
+                    // OAuth users with an incomplete profile are funneled
+                    // through /complete-profile first (see getPostAuthDestination).
+                    history.replace(dest);
                 }, 1000);
             }
 
@@ -89,8 +113,9 @@ const AuthRedirector = () => {
             logger.info('🔗 AuthRedirector: Query access_token detected');
             timer = setTimeout(async () => {
                 const uType = await getUserType();
-                logger.info('🔄 Redirecting based on query auth to:', uType);
-                history.replace(uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : '/');
+                const dest = await getPostAuthDestination(uType);
+                logger.info('🔄 Redirecting based on query auth to:', dest);
+                history.replace(dest);
             }, 1000);
         }
         return () => clearTimeout(timer);
@@ -98,7 +123,24 @@ const AuthRedirector = () => {
 
     useEffect(() => {
         if (user) {
-            if (location.pathname === '/register') {
+            // Detect OAuth users whose profile is missing required fields.
+            // Email/password signups never reach this branch with a missing
+            // phone — the Register form blocks that. OAuth providers
+            // (Google/Apple) hand us email+name but never the Saudi phone
+            // or the buyer/seller choice, so funnel them through
+            // /complete-profile before granting access to the rest of the
+            // app. Once they fill it in, CompleteProfile redirects to the
+            // correct landing page.
+            const phoneMissing = !user.phone || String(user.phone).length < 9;
+            const shopMissing = user.userType === 'seller' && !user.shop;
+            const profileIncomplete = phoneMissing || shopMissing;
+
+            if (profileIncomplete && location.pathname !== '/complete-profile') {
+                history.replace('/complete-profile');
+                return;
+            }
+
+            if (location.pathname === '/register' || (!profileIncomplete && location.pathname === '/complete-profile')) {
                 const dest = user.userType === 'admin' ? '/admin'
                            : user.userType === 'seller' ? '/seller'
                            : '/';
@@ -144,6 +186,7 @@ const App = () => {
                     <Switch>
                         <Route exact path="/" component={Home} />
                         <Route path="/register" component={Register} />
+                        <Route path="/complete-profile" component={CompleteProfile} />
                         <Route path="/seller" component={SellerDashboard} />
                         <Route path="/admin" component={AdminDashboard} />
                         <Route path="/subscription" component={Subscription} />
