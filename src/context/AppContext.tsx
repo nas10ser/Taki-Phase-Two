@@ -110,7 +110,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { seasonalOffersVisible: boolean };
+    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean };
 }
 
 
@@ -223,7 +223,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // the instant the admin flips a toggle.
     const [platformSettings, setPlatformSettings] = useState<{
         seasonalOffersVisible: boolean;
-    }>({ seasonalOffersVisible: false });
+        oauthGoogleEnabled: boolean;
+        oauthAppleEnabled: boolean;
+    }>({ seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false });
 
     // Load platform settings + subscribe to realtime updates so admin toggles
     // propagate to every open tab without requiring a refresh.
@@ -233,6 +235,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (cancelled) return;
             if (key === 'seasonal_offers_visible') {
                 setPlatformSettings(prev => ({ ...prev, seasonalOffersVisible: value === true }));
+            } else if (key === 'oauth_google_enabled') {
+                setPlatformSettings(prev => ({ ...prev, oauthGoogleEnabled: value === true }));
+            } else if (key === 'oauth_apple_enabled') {
+                setPlatformSettings(prev => ({ ...prev, oauthAppleEnabled: value === true }));
             }
         };
         (async () => {
@@ -240,7 +246,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['seasonal_offers_visible']);
+                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);

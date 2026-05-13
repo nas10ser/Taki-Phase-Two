@@ -7,7 +7,43 @@ import { normalizeArabicNumerals } from '../utils/helpers';
 
 const Register: React.FC = () => {
     const history = useHistory();
-    const { language, setLanguage, customAlert, user } = useApp();
+    const { language, setLanguage, customAlert, user, platformSettings } = useApp();
+    const oauthGoogleEnabled = platformSettings.oauthGoogleEnabled;
+    const oauthAppleEnabled = platformSettings.oauthAppleEnabled;
+    const anyOAuthEnabled = oauthGoogleEnabled || oauthAppleEnabled;
+
+    // Wrap the OAuth helpers so a "provider not enabled" or any other
+    // misconfiguration surfaces as a friendly Arabic dialog instead of
+    // navigating the user to the raw supabase.co JSON error page (which
+    // is what produced the "اختفى زر أبل بعد محاولة جوجل" complaint).
+    const handleOAuthClick = useCallback(async (provider: 'google' | 'apple') => {
+        try {
+            const fn = provider === 'google' ? authService.signInWithGoogle : authService.signInWithApple;
+            const result = await fn();
+            if (result?.error) {
+                const msg = String(result.error.message || result.error).toLowerCase();
+                if (msg.includes('not enabled') || msg.includes('unsupported')) {
+                    await customAlert(language === 'ar'
+                        ? `⚠️ تسجيل الدخول عبر ${provider === 'google' ? 'Google' : 'Apple'} غير مفعّل حالياً. استخدم البريد وكلمة المرور.`
+                        : `⚠️ Sign-in with ${provider === 'google' ? 'Google' : 'Apple'} is not enabled yet. Please use email + password.`
+                    );
+                } else {
+                    await customAlert(language === 'ar'
+                        ? `⚠️ تعذر تسجيل الدخول: ${result.error.message || 'حاول مرة أخرى'}`
+                        : `⚠️ Sign-in failed: ${result.error.message || 'try again'}`
+                    );
+                }
+            }
+            // No success branch — Supabase redirects the browser to the
+            // provider, then back to / with an access_token hash. The
+            // AuthRedirector handles the rest.
+        } catch (e: any) {
+            await customAlert(language === 'ar'
+                ? `⚠️ حدث خطأ: ${e?.message || 'حاول مرة أخرى'}`
+                : `⚠️ Error: ${e?.message || 'try again'}`
+            );
+        }
+    }, [customAlert, language]);
 
     // UI Flow States
     const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify'>('landing');
@@ -758,25 +794,31 @@ const Register: React.FC = () => {
                         <p style={{ opacity: 0.4, fontSize: '0.88rem' }}>{isLogin ? t('أهلاً بعودتك! أدخل تفاصيلك للمتابعة', 'Welcome back! Enter your details to continue') : t('أدخل تفاصيل حسابك للبدء', 'Enter your account details to start')}</p>
                     </div>
 
-                    <button className="google-btn" onClick={authService.signInWithGoogle} style={{ ...methodButtonStyle, background: '#ffffff', color: '#1f1f1f', width: '100%', marginBottom: 10, borderRadius: 14, padding: '15px 20px', border: '1px solid rgba(60, 60, 70, 0.15)', boxShadow: '0 2px 12px rgba(0, 0, 0, 0.18)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
-                        <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
-                            <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
-                            <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
-                            <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
-                            <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571.001-.001.002-.001.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
-                        </svg>
-                        <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر Google', 'Continue with Google')}</span>
-                    </button>
+                    {oauthGoogleEnabled && (
+                        <button className="google-btn" onClick={() => handleOAuthClick('google')} style={{ ...methodButtonStyle, background: '#ffffff', color: '#1f1f1f', width: '100%', marginBottom: 10, borderRadius: 14, padding: '15px 20px', border: '1px solid rgba(60, 60, 70, 0.15)', boxShadow: '0 2px 12px rgba(0, 0, 0, 0.18)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
+                            <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+                                <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+                                <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+                                <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+                                <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571.001-.001.002-.001.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+                            </svg>
+                            <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر Google', 'Continue with Google')}</span>
+                        </button>
+                    )}
 
-                    <button className="apple-btn" onClick={authService.signInWithApple} style={{ ...methodButtonStyle, background: 'rgba(60, 60, 70, 0.95)', color: 'var(--text-primary)', width: '100%', marginBottom: 20, borderRadius: 14, padding: '15px 20px', border: 'none', boxShadow: '0 2px 12px rgba(80, 80, 90, 0.2)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
-                        <span style={{ fontSize: '1.2rem' }}>🍎</span><span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر أبل', 'Continue with Apple')}</span>
-                    </button>
+                    {oauthAppleEnabled && (
+                        <button className="apple-btn" onClick={() => handleOAuthClick('apple')} style={{ ...methodButtonStyle, background: 'rgba(60, 60, 70, 0.95)', color: 'var(--text-primary)', width: '100%', marginBottom: 20, borderRadius: 14, padding: '15px 20px', border: 'none', boxShadow: '0 2px 12px rgba(80, 80, 90, 0.2)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
+                            <span style={{ fontSize: '1.2rem' }}>🍎</span><span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{t('المتابعة عبر أبل', 'Continue with Apple')}</span>
+                        </button>
+                    )}
 
-                    <div style={{ display: 'flex', alignItems: 'center', margin: '20px 0', opacity: 0.3 }}>
-                        <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(80, 80, 95, 0.4), transparent)' }}></div>
-                        <span style={{ margin: '0 16px', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600 }}>{t('أو', 'OR')}</span>
-                        <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(80, 80, 95, 0.4), transparent)' }}></div>
-                    </div>
+                    {anyOAuthEnabled && (
+                        <div style={{ display: 'flex', alignItems: 'center', margin: '20px 0', opacity: 0.3 }}>
+                            <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(80, 80, 95, 0.4), transparent)' }}></div>
+                            <span style={{ margin: '0 16px', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 600 }}>{t('أو', 'OR')}</span>
+                            <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(80, 80, 95, 0.4), transparent)' }}></div>
+                        </div>
+                    )}
 
                     <div style={{ display: 'grid', gap: 16 }}>
                         {!isLogin && (

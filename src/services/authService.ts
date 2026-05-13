@@ -255,26 +255,40 @@ export const authService = {
         }
     },
 
+    // OAuth helpers — both use skipBrowserRedirect so the caller can catch
+    // "provider is not enabled" / config errors and surface a friendly
+    // Arabic message instead of letting Supabase navigate the user away
+    // to a black JSON error page on supabase.co.
     signInWithApple: async () => {
-        return await supabase.auth.signInWithOAuth({
+        const result = await supabase.auth.signInWithOAuth({
             provider: 'apple',
             options: {
-                redirectTo: window.location.origin
+                redirectTo: window.location.origin,
+                skipBrowserRedirect: true,
             }
         });
+        if (!result.error && result.data?.url) {
+            window.location.href = result.data.url;
+        }
+        return result;
     },
 
     signInWithGoogle: async () => {
-        return await supabase.auth.signInWithOAuth({
+        const result = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
                 redirectTo: window.location.origin,
+                skipBrowserRedirect: true,
                 queryParams: {
                     access_type: 'offline',
                     prompt: 'consent'
                 }
             }
         });
+        if (!result.error && result.data?.url) {
+            window.location.href = result.data.url;
+        }
+        return result;
     },
 
     resetPassword: async (email: string) => {
