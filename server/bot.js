@@ -18,7 +18,44 @@ const { Telegraf, Markup } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
+
+// WhatsApp HMAC verification requires the EXACT raw bytes that Meta signed.
+// Re-stringifying req.body after express.json() reformats whitespace/key order
+// and breaks signature comparison, so capture the raw buffer for that route
+// before JSON parsing. Use raw parser only on /webhook/whatsapp; every other
+// route keeps the standard express.json() behavior.
+app.use('/webhook/whatsapp', express.raw({ type: 'application/json', limit: '1mb' }));
 app.use(express.json({ limit: '1mb' }));
+
+// Global rate-limit middleware — protects every endpoint from burst abuse,
+// independent of the per-chat rate limit applied inside bot handlers below.
+// 300 req / 5 min / IP is generous enough for legitimate Telegram + WhatsApp
+// webhook traffic while shedding flood attempts.
+const globalRateLimitMap = new Map();
+const GLOBAL_RL_WINDOW_MS = 5 * 60 * 1000;
+const GLOBAL_RL_MAX = 300;
+app.use((req, res, next) => {
+    // Skip the health check so monitoring probes don't get throttled.
+    if (req.path === '/health') return next();
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = globalRateLimitMap.get(ip);
+    if (!entry || now - entry.start > GLOBAL_RL_WINDOW_MS) {
+        globalRateLimitMap.set(ip, { start: now, count: 1 });
+        return next();
+    }
+    entry.count++;
+    if (entry.count > GLOBAL_RL_MAX) {
+        return res.status(429).json({ error: 'Too many requests' });
+    }
+    next();
+});
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of globalRateLimitMap) {
+        if (now - v.start > GLOBAL_RL_WINDOW_MS * 2) globalRateLimitMap.delete(k);
+    }
+}, 10 * 60 * 1000).unref?.();
 
 // ====================== CONFIG ======================
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -400,14 +437,19 @@ if (bot) {
         console.error(`Bot error for ${ctx.updateType}:`, err);
     });
 
-    // Telegram Webhook — with secret token verification
+    // Telegram Webhook — secret token verification REQUIRED.
+    // If TELEGRAM_WEBHOOK_SECRET isn't configured, we hard-reject every
+    // POST with 503 rather than silently accepting unsigned updates from
+    // any source on the internet.
     app.post('/webhook/telegram', (req, res) => {
-        if (TELEGRAM_WEBHOOK_SECRET) {
-            const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
-            if (secretHeader !== TELEGRAM_WEBHOOK_SECRET) {
-                console.warn('⚠️ Telegram webhook: invalid secret token');
-                return res.status(403).json({ error: 'Forbidden' });
-            }
+        if (!TELEGRAM_WEBHOOK_SECRET) {
+            console.warn('⚠️ Telegram webhook hit but TELEGRAM_WEBHOOK_SECRET is not set — rejecting.');
+            return res.status(503).json({ error: 'Webhook not configured' });
+        }
+        const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+        if (secretHeader !== TELEGRAM_WEBHOOK_SECRET) {
+            console.warn('⚠️ Telegram webhook: invalid secret token');
+            return res.status(403).json({ error: 'Forbidden' });
         }
         bot.handleUpdate(req.body, res);
     });
@@ -505,21 +547,51 @@ app.get('/webhook/whatsapp', (req, res) => {
     return res.status(403).send('Forbidden');
 });
 
-// WhatsApp incoming messages — verify HMAC, then route
+// WhatsApp incoming messages — verify HMAC, then route.
+//
+// Security posture:
+//   1. WHATSAPP_APP_SECRET MUST be set. If it isn't, we hard-reject all
+//      POSTs with 503 — silently skipping verification would let any
+//      attacker post forged events to /webhook/whatsapp.
+//   2. The HMAC is computed over the *raw* request bytes (captured by
+//      express.raw above), not over a re-serialized object.
+//   3. timingSafeEqual is wrapped in try/catch because it throws on
+//      length mismatch, which itself leaks no information.
 app.post('/webhook/whatsapp', async (req, res) => {
-    if (WHATSAPP_APP_SECRET) {
-        const signature = req.headers['x-hub-signature-256'];
-        if (!signature) return res.status(401).json({ error: 'Missing signature' });
-        const body = JSON.stringify(req.body);
-        const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(body).digest('hex');
-        try {
-            if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-                console.warn('⚠️ WhatsApp webhook: invalid signature');
-                return res.status(403).json({ error: 'Invalid signature' });
-            }
-        } catch {
-            return res.status(403).json({ error: 'Invalid signature' });
+    if (!WHATSAPP_APP_SECRET) {
+        console.warn('⚠️ WhatsApp webhook hit but WHATSAPP_APP_SECRET is not set — rejecting.');
+        return res.status(503).json({ error: 'Webhook not configured' });
+    }
+
+    const signature = req.headers['x-hub-signature-256'];
+    if (!signature || typeof signature !== 'string') {
+        return res.status(401).json({ error: 'Missing signature' });
+    }
+
+    // req.body is a Buffer here because of express.raw on this route.
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+    const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(rawBody).digest('hex');
+
+    let signatureValid = false;
+    try {
+        const sigBuf = Buffer.from(signature);
+        const expBuf = Buffer.from(expected);
+        if (sigBuf.length === expBuf.length) {
+            signatureValid = crypto.timingSafeEqual(sigBuf, expBuf);
         }
+    } catch { /* signatureValid stays false */ }
+
+    if (!signatureValid) {
+        console.warn('⚠️ WhatsApp webhook: invalid signature');
+        return res.status(403).json({ error: 'Invalid signature' });
+    }
+
+    // Parse the verified raw body into JSON now that we trust it.
+    let parsedBody;
+    try {
+        parsedBody = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+        return res.status(400).json({ error: 'Invalid JSON' });
     }
 
     // Acknowledge immediately — Meta retries if it doesn't get a 200 in 20s
@@ -527,7 +599,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
     // Process asynchronously
     try {
-        const entries = req.body?.entry || [];
+        const entries = parsedBody?.entry || [];
         for (const entry of entries) {
             const changes = entry.changes || [];
             for (const change of changes) {
