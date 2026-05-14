@@ -749,6 +749,27 @@ const SellerDashboard: React.FC = () => {
         return list;
     }, [deals, user?.id]);
 
+    // Human-readable label for a deal's location, used in the chip text.
+    // MUST be declared BEFORE `mergedLocationChips` — the useMemo factory
+    // runs on first render and dereferences `locNameOf`. v10.59 had it
+    // declared later and crashed the whole seller dashboard with a TDZ
+    // "Cannot access 'locNameOf' before initialization" on load.
+    const locNameOf = (d: Deal): string => {
+        if (d.locationId && typeof d.locationId === 'string'
+            && !d.locationId.startsWith('custom_') && d.locationId !== 'other') {
+            const loc = LOCATIONS.find(l => l.id === d.locationId);
+            if (loc) return loc.name;
+        }
+        if (d.city) {
+            const city = CITIES.find(c => c.id === d.city);
+            if (city) return city.name;
+        }
+        if (d.mapLocation?.lat && d.mapLocation?.lng) {
+            return `${d.mapLocation.lat.toFixed(3)}, ${d.mapLocation.lng.toFixed(3)}`;
+        }
+        return isRTL ? 'موقع مخصص' : 'Custom location';
+    };
+
     // Unified shape that drives the "📍 لوكيشن سابق" chip picker.
     // Two sources feed it:
     //   1. DB-saved branches (store_branches table) — these expose a `branchId`
@@ -835,23 +856,6 @@ const SellerDashboard: React.FC = () => {
         && activeLocationKeys.size >= MAX_LOCATIONS
         && user?.userType !== 'admin'
     );
-
-    // Human-readable label for a deal's location, used in the chip text.
-    const locNameOf = (d: Deal): string => {
-        if (d.locationId && typeof d.locationId === 'string'
-            && !d.locationId.startsWith('custom_') && d.locationId !== 'other') {
-            const loc = LOCATIONS.find(l => l.id === d.locationId);
-            if (loc) return loc.name;
-        }
-        if (d.city) {
-            const city = CITIES.find(c => c.id === d.city);
-            if (city) return city.name;
-        }
-        if (d.mapLocation?.lat && d.mapLocation?.lng) {
-            return `${d.mapLocation.lat.toFixed(3)}, ${d.mapLocation.lng.toFixed(3)}`;
-        }
-        return isRTL ? 'موقع مخصص' : 'Custom location';
-    };
 
     // Shared "adopt this location into the form" helper. Both the renewal
     // banner (Deal source) and the always-on chip picker (LocationChip
