@@ -4,6 +4,7 @@ import BottomNav from '../components/BottomNav';
 import BarcodeScanner from '../components/BarcodeScanner';
 import BookingThread from '../components/BookingThread';
 import DualCalendarPicker from '../components/DualCalendarPicker';
+import ImageCropEditor from '../components/ImageCropEditor';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -904,59 +905,96 @@ const SellerDashboard: React.FC = () => {
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+    // Crop pipeline state — every File that arrives through the picker /
+    // camera / drag-drop / clipboard goes through ImageCropEditor first so
+    // the seller can frame the product and downscale before upload.
+    const [cropQueue, setCropQueue] = useState<File[]>([]);
+    const [cropIndex, setCropIndex] = useState(0);
 
-    // Accepts files from any source: <input>, drag-drop, or clipboard paste.
-    // Centralized so all three entry points share validation + storage upload.
+    // Validates types/sizes up front, then queues the survivors for the
+    // crop editor. The actual upload happens in `uploadCroppedFile` once
+    // the user applies/skips each frame.
     const ingestFiles = async (files: File[] | FileList | null | undefined) => {
         if (!files || files.length === 0) return;
+        const accepted: File[] = [];
+        const rejected: Array<{ reason: 'type' | 'size'; name: string }> = [];
+        for (const f of Array.from(files)) {
+            if (!f.type.startsWith('image/')) {
+                rejected.push({ reason: 'type', name: f.name });
+                continue;
+            }
+            if (f.size > 8 * 1024 * 1024) {
+                rejected.push({ reason: 'size', name: f.name });
+                continue;
+            }
+            accepted.push(f);
+        }
+        if (rejected.length > 0) {
+            const sizeFails = rejected.filter((f) => f.reason === 'size').length;
+            const typeFails = rejected.filter((f) => f.reason === 'type').length;
+            const lines: string[] = [];
+            if (sizeFails) lines.push(isRTL ? `⚠️ ${sizeFails} صورة أكبر من 8MB` : `⚠️ ${sizeFails} image(s) exceed 8MB`);
+            if (typeFails) lines.push(isRTL ? `⚠️ ${typeFails} ملف ليس صورة` : `⚠️ ${typeFails} file(s) not an image`);
+            customAlert(lines.join('\n'));
+        }
+        if (accepted.length === 0) return;
+        // Respect the 4-image cap when queueing.
+        const remainingSlots = Math.max(0, 4 - images.length - cropQueue.length);
+        const toQueue = accepted.slice(0, remainingSlots);
+        if (toQueue.length === 0) {
+            customAlert(isRTL ? '⚠️ الحد الأقصى 4 صور' : '⚠️ Maximum 4 images');
+            return;
+        }
+        setCropQueue(prev => {
+            // Reset the displayed counter to 1 for a fresh batch (queue was
+            // empty) — without this, picking 2 photos after already having
+            // processed 3 would show "4/5" instead of "1/2".
+            if (prev.length === 0) setCropIndex(0);
+            return [...prev, ...toQueue];
+        });
+    };
+
+    // Upload one cropped/original File to storage, then advance the queue.
+    const uploadCroppedFile = async (cropped: File) => {
         setUploadingImages(true);
-        const results = await Promise.all(
-            Array.from(files).map(async (file) => {
-                if (!file.type.startsWith('image/')) {
-                    return { ok: false, reason: 'type', name: file.name } as const;
-                }
-                if (file.size > 8 * 1024 * 1024) {
-                    return { ok: false, reason: 'size', name: file.name } as const;
-                }
-                const url = await storageService.uploadImage(file);
-                if (url) {
-                    setImages(prev => [...prev, url].slice(0, 4));
-                    return { ok: true, via: 'remote' } as const;
-                }
+        try {
+            const url = await storageService.uploadImage(cropped);
+            if (url) {
+                setImages(prev => [...prev, url].slice(0, 4));
+            } else {
+                // Local fallback so the seller doesn't lose the photo if
+                // storage is flaky — same path as before the crop step.
                 try {
                     const dataUrl = await new Promise<string>((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = (ev) => resolve((ev.target?.result as string) || '');
                         reader.onerror = () => reject(reader.error);
-                        reader.readAsDataURL(file);
+                        reader.readAsDataURL(cropped);
                     });
                     if (dataUrl) {
                         setImages(prev => [...prev, dataUrl].slice(0, 4));
-                        return { ok: true, via: 'local' } as const;
+                    } else {
+                        customAlert(isRTL ? '❌ تعذّر رفع الصورة (تحقق من اتصال الإنترنت)' : '❌ Image upload failed (check connection)');
                     }
-                } catch (err) {
-                    console.error('Local image fallback failed:', err);
+                } catch {
+                    customAlert(isRTL ? '❌ تعذّر رفع الصورة' : '❌ Image upload failed');
                 }
-                return { ok: false, reason: 'upload', name: file.name } as const;
-            })
-        );
-        setUploadingImages(false);
-
-        const failed = results.filter((r) => !r.ok) as Array<{ ok: false; reason: 'type' | 'size' | 'upload'; name: string }>;
-        if (failed.length > 0) {
-            const sizeFails = failed.filter((f) => f.reason === 'size');
-            const typeFails = failed.filter((f) => f.reason === 'type');
-            const uploadFails = failed.filter((f) => f.reason === 'upload');
-            const lines: string[] = [];
-            if (sizeFails.length) lines.push(isRTL ? `⚠️ ${sizeFails.length} صورة أكبر من 8MB` : `⚠️ ${sizeFails.length} image(s) exceed 8MB`);
-            if (typeFails.length) lines.push(isRTL ? `⚠️ ${typeFails.length} ملف ليس صورة` : `⚠️ ${typeFails.length} file(s) not an image`);
-            if (uploadFails.length) lines.push(isRTL ? `❌ تعذّر رفع ${uploadFails.length} صورة (تحقق من اتصال الإنترنت)` : `❌ Failed to upload ${uploadFails.length} image(s) (check connection)`);
-            customAlert(lines.join('\n'));
+            }
+        } finally {
+            setUploadingImages(false);
         }
+    };
+
+    const advanceCropQueue = (dropCurrent: boolean = false) => {
+        setCropQueue(prev => prev.slice(1));
+        setCropIndex(i => i + (dropCurrent ? 0 : 1));
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         ingestFiles(e.target.files);
+        // Reset the input so picking the same file twice still fires onChange.
+        // Without this, "edit → re-select same photo" silently no-ops.
+        e.target.value = '';
     };
 
     // Generic over HTMLElement so the same handlers work whether the
@@ -2878,6 +2916,26 @@ const SellerDashboard: React.FC = () => {
                 currentHijri={expiryHijriDisplay}
                 currentGregorian={expiryGregorian}
             />
+            {cropQueue.length > 0 && (
+                <ImageCropEditor
+                    file={cropQueue[0]}
+                    queueIndex={cropIndex + 1}
+                    queueTotal={cropIndex + cropQueue.length}
+                    isRTL={isRTL}
+                    onApply={async (cropped) => {
+                        await uploadCroppedFile(cropped);
+                        advanceCropQueue(false);
+                    }}
+                    onSkip={async () => {
+                        // Upload the ORIGINAL file unchanged.
+                        await uploadCroppedFile(cropQueue[0]);
+                        advanceCropQueue(false);
+                    }}
+                    onCancel={() => {
+                        advanceCropQueue(true);
+                    }}
+                />
+            )}
             <BottomNav />
         </div>
     );

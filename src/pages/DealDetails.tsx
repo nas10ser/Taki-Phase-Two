@@ -104,6 +104,15 @@ const ImageZoomViewer: React.FC<{
     const [imgError, setImgError] = useState(false);
     const lastTouchDist = React.useRef<number | null>(null);
     const lastTouchPos = React.useRef<{ x: number; y: number } | null>(null);
+    // ===== Modern swipe-to-navigate (Instagram-style) =====
+    // When the image is at scale 1 (not zoomed), a horizontal drag should
+    // translate the whole image with the finger and snap to the next/prev
+    // image on release. Vertical drags fall through so the user can still
+    // dismiss with a downward fling (handled by clicking the backdrop).
+    const [swipeOffsetX, setSwipeOffsetX] = useState(0);
+    const [isSwiping, setIsSwiping] = useState(false);
+    const swipeStart = React.useRef<{ x: number; y: number; t: number } | null>(null);
+    const swipeAxis = React.useRef<'h' | 'v' | null>(null);
 
     React.useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -137,8 +146,20 @@ const ImageZoomViewer: React.FC<{
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             lastTouchDist.current = Math.hypot(dx, dy);
+            // Cancel any in-flight swipe — pinch takes priority.
+            swipeStart.current = null;
+            swipeAxis.current = null;
+            setIsSwiping(false);
+            setSwipeOffsetX(0);
         } else if (e.touches.length === 1) {
-            lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            const t = e.touches[0];
+            lastTouchPos.current = { x: t.clientX, y: t.clientY };
+            // Arm a potential swipe ONLY when not zoomed and there's somewhere
+            // to swipe to. While zoomed we still want single-finger pan.
+            if (scale <= 1.01 && images.length > 1) {
+                swipeStart.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+                swipeAxis.current = null;
+            }
         }
     };
 
@@ -155,6 +176,21 @@ const ImageZoomViewer: React.FC<{
             const dy = e.touches[0].clientY - lastTouchPos.current.y;
             setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
             lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        } else if (e.touches.length === 1 && swipeStart.current && scale <= 1.01) {
+            const t = e.touches[0];
+            const dx = t.clientX - swipeStart.current.x;
+            const dy = t.clientY - swipeStart.current.y;
+            // Lock the gesture axis after the first 8 px of movement so a
+            // vertical scroll doesn't accidentally trigger image navigation.
+            if (!swipeAxis.current) {
+                if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                    swipeAxis.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+                    if (swipeAxis.current === 'h') setIsSwiping(true);
+                }
+            }
+            if (swipeAxis.current === 'h') {
+                setSwipeOffsetX(dx);
+            }
         }
     };
 
@@ -162,6 +198,28 @@ const ImageZoomViewer: React.FC<{
         lastTouchDist.current = null;
         lastTouchPos.current = null;
         if (scale <= 1.05) { setScale(1); setOffset({ x: 0, y: 0 }); }
+        // Resolve a horizontal swipe — go next/prev if the user moved past the
+        // commit threshold OR flicked quickly. Otherwise spring back.
+        if (swipeAxis.current === 'h' && swipeStart.current && images.length > 1) {
+            const elapsed = Math.max(1, Date.now() - swipeStart.current.t);
+            const speed = Math.abs(swipeOffsetX) / elapsed; // px / ms
+            const widthGuess = typeof window !== 'undefined' ? window.innerWidth : 360;
+            const commitDistance = Math.max(60, widthGuess * 0.22);
+            const commit = Math.abs(swipeOffsetX) > commitDistance || speed > 0.6;
+            // Negative dx → finger moved leftward. In LTR that goes to NEXT,
+            // in RTL it goes to PREVIOUS — gallery direction follows reading
+            // direction, matching every Arabic photo viewer the user knows.
+            if (commit) {
+                const goNext = isRTL ? (swipeOffsetX > 0) : (swipeOffsetX < 0);
+                setIndex(i => goNext
+                    ? (i + 1) % images.length
+                    : (i - 1 + images.length) % images.length);
+            }
+        }
+        swipeStart.current = null;
+        swipeAxis.current = null;
+        setIsSwiping(false);
+        setSwipeOffsetX(0);
     };
 
     const node = (
@@ -278,9 +336,16 @@ const ImageZoomViewer: React.FC<{
                         display: 'block',
                         width: 'auto', height: 'auto',
                         objectFit: 'contain',
-                        transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                        // While swiping, follow the finger with a slight rubber-
+                        // band damping when there's no neighbor in that direction
+                        // (handled by the index wraparound on commit). Pan offset
+                        // and scale are independent — they only apply when zoomed.
+                        transform: `translate(${offset.x + swipeOffsetX}px, ${offset.y}px) scale(${scale})`,
                         transformOrigin: 'center center',
-                        transition: lastTouchDist.current ? 'none' : 'transform 0.18s cubic-bezier(0.4,0,0.2,1)',
+                        // No transition mid-swipe / mid-pinch — both must follow
+                        // the finger in real-time. Spring back on release uses
+                        // the same 0.18s cubic.
+                        transition: (lastTouchDist.current || isSwiping) ? 'none' : 'transform 0.18s cubic-bezier(0.4,0,0.2,1)',
                         cursor: scale > 1 ? 'grab' : 'zoom-in',
                         userSelect: 'none', touchAction: 'none',
                         boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
