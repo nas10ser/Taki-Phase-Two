@@ -2979,14 +2979,29 @@ const SellerDashboard: React.FC = () => {
                     queueIndex={cropIndex + 1}
                     queueTotal={cropIndex + cropQueue.length}
                     isRTL={isRTL}
-                    onApply={async (cropped) => {
-                        await uploadCroppedFile(cropped);
+                    onApply={(cropped) => {
+                        // v10.66 — advance the queue SYNCHRONOUSLY so the
+                        // editor unmounts (or swaps to the next photo)
+                        // immediately. The upload runs in the background;
+                        // if the seller is processing several photos in
+                        // a row they no longer have to wait for each
+                        // upload to complete before the next crop appears.
+                        // This also kills the duplicate-photo bug where
+                        // a slow upload kept the editor visible long
+                        // enough for an impatient seller to tap "Apply"
+                        // again.
                         advanceCropQueue(false);
+                        uploadCroppedFile(cropped);
                     }}
-                    onSkip={async () => {
-                        // Upload the ORIGINAL file unchanged.
-                        await uploadCroppedFile(cropQueue[0].file);
+                    onSkip={() => {
+                        // Capture the original File before advancing —
+                        // after advanceCropQueue() React has scheduled a
+                        // setCropQueue update, and even though the closure
+                        // here still sees the old array, capturing once
+                        // is clearer.
+                        const original = cropQueue[0].file;
                         advanceCropQueue(false);
+                        uploadCroppedFile(original);
                     }}
                     onCancel={() => {
                         advanceCropQueue(true);

@@ -52,6 +52,14 @@ export const ImageCropEditor: React.FC<Props> = ({
     const [crop, setCrop] = useState<Crop>({ x: 0, y: 0, w: 0, h: 0 });
     const [exporting, setExporting] = useState(false);
 
+    // Synchronously-readable re-entry guard. v10.66 — without this, tapping
+    // "تطبيق ومتابعة" (or "تخطّي القص") multiple times in quick succession
+    // before the parent's upload finished would call `onApply` / `onSkip`
+    // multiple times, queueing the same File N times → the same photo
+    // landed in the seller's image grid four times.
+    // useRef is read/written synchronously, so the second tap sees the
+    // guard already set even if React hasn't re-rendered yet.
+    const dispatchingRef = useRef(false);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const dragRef = useRef<
         | { mode: 'move'; sx: number; sy: number; start: Crop }
@@ -66,8 +74,13 @@ export const ImageCropEditor: React.FC<Props> = ({
         return () => { document.body.style.overflow = prev; };
     }, []);
 
-    // Reset rotation when the source file changes (queue advance).
-    useEffect(() => { setRotation(0); }, [file]);
+    // Reset rotation + dispatch guard when the source file changes
+    // (queue advance). dispatchingRef must clear here so the seller can
+    // act on the NEXT photo immediately after applying the previous one.
+    useEffect(() => {
+        setRotation(0);
+        dispatchingRef.current = false;
+    }, [file]);
 
     // Track stage size — initial synchronous measure via useLayoutEffect
     // (so the first paint already has correct geometry, no flicker) plus
@@ -216,6 +229,19 @@ export const ImageCropEditor: React.FC<Props> = ({
 
     const endDrag = () => { dragRef.current = null; };
 
+    // Wrap onSkip/onCancel with the same re-entry guard as apply() so any
+    // of the three terminal actions can only fire once per (queue item).
+    const handleSkip = () => {
+        if (dispatchingRef.current) return;
+        dispatchingRef.current = true;
+        onSkip();
+    };
+    const handleCancel = () => {
+        if (dispatchingRef.current) return;
+        dispatchingRef.current = true;
+        onCancel();
+    };
+
     const onTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length !== 1) return;
         const p = pointFromEvent(e.touches[0].clientX, e.touches[0].clientY);
@@ -239,7 +265,8 @@ export const ImageCropEditor: React.FC<Props> = ({
 
     // ===== Apply: render cropped output to canvas → File =====
     const apply = async () => {
-        if (exporting || !fitScale) return;
+        if (dispatchingRef.current || exporting || !fitScale) return;
+        dispatchingRef.current = true;
         setExporting(true);
         try {
             const img = new Image();
@@ -338,7 +365,7 @@ export const ImageCropEditor: React.FC<Props> = ({
                 position: 'relative', zIndex: 2,
             }}>
                 <button
-                    onClick={onCancel}
+                    onClick={handleCancel}
                     aria-label={isRTL ? 'إلغاء' : 'Cancel'}
                     style={{
                         background: 'rgba(255,255,255,0.08)', color: 'white',
@@ -448,7 +475,7 @@ export const ImageCropEditor: React.FC<Props> = ({
                 position: 'relative', zIndex: 2,
             }}>
                 <button
-                    onClick={onSkip}
+                    onClick={handleSkip}
                     disabled={exporting}
                     style={{
                         flex: 1, padding: '14px',

@@ -81,8 +81,8 @@ interface AppContextType {
     addNotifKeyword: (kw: string) => void;
     removeNotifKeyword: (kw: string) => void;
     smartAlerts: SmartAlertRule[];
-    addSmartAlert: (rule: SmartAlertRule) => void;
-    removeSmartAlert: (idx: number) => void;
+    addSmartAlert: (rule: SmartAlertRule) => Promise<boolean>;
+    removeSmartAlert: (idx: number) => Promise<boolean>;
     bookings: any[];
     bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string) => any;
     cancelBooking: (barcode: string) => void;
@@ -1242,16 +1242,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [notifKeywords, user]);
 
-    const addSmartAlert = useCallback((rule: SmartAlertRule) => {
+    // v10.66 — these were previously fire-and-forget. On iOS Safari the
+    // Supabase JS SDK's auth-refresh inTabLock can hang for tens of seconds
+    // after a backgrounded tab returns, causing saveProfile() to reject
+    // silently. The UI showed the rule "added" while the DB held nothing,
+    // and the seller would later wonder why no notification ever arrived.
+    // Now we await the round-trip, revert local state on failure, and let
+    // the caller (Profile.handleAdd) show a clear toast either way.
+    const addSmartAlert = useCallback(async (rule: SmartAlertRule): Promise<boolean> => {
+        if (!user) return false;
+        const previous = smartAlerts;
         const updated = [...smartAlerts, rule];
         setSmartAlerts(updated);
-        if (user) userRepository.saveProfile({ ...user, smartAlerts: updated });
+        try {
+            await userRepository.saveProfile({ ...user, smartAlerts: updated });
+            return true;
+        } catch (err) {
+            logger.error('Failed to save smart alert:', err);
+            setSmartAlerts(previous);
+            return false;
+        }
     }, [smartAlerts, user]);
 
-    const removeSmartAlert = useCallback((idx: number) => {
+    const removeSmartAlert = useCallback(async (idx: number): Promise<boolean> => {
+        if (!user) return false;
+        const previous = smartAlerts;
         const updated = smartAlerts.filter((_, i) => i !== idx);
         setSmartAlerts(updated);
-        if (user) userRepository.saveProfile({ ...user, smartAlerts: updated });
+        try {
+            await userRepository.saveProfile({ ...user, smartAlerts: updated });
+            return true;
+        } catch (err) {
+            logger.error('Failed to remove smart alert:', err);
+            setSmartAlerts(previous);
+            return false;
+        }
     }, [smartAlerts, user]);
 
     // Booking logic - uses generateBarcode from helpers

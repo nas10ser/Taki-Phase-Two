@@ -329,8 +329,8 @@ const Profile: React.FC = () => {
 const SmartAlertsCard: React.FC<{
     isRTL: boolean;
     smartAlerts: SmartAlertRule[];
-    addSmartAlert: (rule: SmartAlertRule) => void;
-    removeSmartAlert: (idx: number) => void;
+    addSmartAlert: (rule: SmartAlertRule) => Promise<boolean>;
+    removeSmartAlert: (idx: number) => Promise<boolean>;
     customAlert: (msg: string) => Promise<void>;
     filterRegion: string; setFilterRegion: (s: string) => void;
     filterCity: string; setFilterCity: (s: string) => void;
@@ -385,7 +385,9 @@ const SmartAlertsCard: React.FC<{
         );
     };
 
-    const handleAdd = () => {
+    const [adding, setAdding] = React.useState(false);
+    const handleAdd = async () => {
+        if (adding) return;
         if (ruleCount === 0) {
             customAlert(isRTL
                 ? 'أضف معياراً واحداً على الأقل (منطقة، مدينة، تصنيف، كلمة، أو موقع).'
@@ -410,11 +412,31 @@ const SmartAlertsCard: React.FC<{
             rule.radiusKm = Number(filterKm);
         }
 
-        addSmartAlert(rule);
+        setAdding(true);
+        const ok = await addSmartAlert(rule);
+        setAdding(false);
+        if (!ok) {
+            customAlert(isRTL
+                ? '❌ تعذّر حفظ التنبيه. تحقق من اتصال الإنترنت وحاول مجدداً.'
+                : '❌ Could not save the alert. Check your connection and try again.');
+            return;
+        }
         // Reset
         setFilterRegion(''); setFilterCity(''); setFilterMall('');
         setFilterCategories([]); setFilterKm(''); setNewKeyword('');
         setPreciseCoords(null);
+        customAlert(isRTL
+            ? '✅ تم حفظ التنبيه. سيصلك إشعار فور نزول عرض مطابق (أو أي عرض نشط من آخر ٧ أيام).'
+            : '✅ Alert saved. You will get a notification the moment a deal matches (or any active deal from the last 7 days).');
+    };
+
+    const handleRemove = async (idx: number) => {
+        const ok = await removeSmartAlert(idx);
+        if (!ok) {
+            customAlert(isRTL
+                ? '❌ تعذّر الحذف. تحقق من الاتصال وحاول مجدداً.'
+                : '❌ Could not remove. Check your connection and try again.');
+        }
     };
 
     const ruleLabel = (r: SmartAlertRule) => {
@@ -526,18 +548,22 @@ const SmartAlertsCard: React.FC<{
 
             {/* Add button */}
             <button onClick={handleAdd}
+                disabled={adding}
                 style={{
                     width: '100%', padding: '14px', borderRadius: 14,
                     background: ruleCount > 0 ? 'var(--primary)' : 'var(--card-bg)',
                     color: ruleCount > 0 ? '#ffffff' : 'var(--text-primary)',
                     border: ruleCount > 0 ? 'none' : '1.5px solid var(--border-color)',
-                    fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer',
+                    fontWeight: 900, fontSize: '0.95rem',
+                    cursor: adding ? 'default' : 'pointer',
                     transition: 'all .2s ease',
-                    opacity: ruleCount > 0 ? 1 : 0.7
+                    opacity: adding ? 0.6 : (ruleCount > 0 ? 1 : 0.7)
                 }}>
-                {isRTL
-                    ? `➕ إضافة قاعدة تنبيه${ruleCount > 1 ? ' (' + ruleCount + ' معايير)' : ''}`
-                    : `➕ Add Alert Rule${ruleCount > 1 ? ' (' + ruleCount + ' criteria)' : ''}`}
+                {adding
+                    ? (isRTL ? '⏳ جاري الحفظ...' : '⏳ Saving...')
+                    : (isRTL
+                        ? `➕ إضافة قاعدة تنبيه${ruleCount > 1 ? ' (' + ruleCount + ' معايير)' : ''}`
+                        : `➕ Add Alert Rule${ruleCount > 1 ? ' (' + ruleCount + ' criteria)' : ''}`)}
             </button>
 
             {/* Active rules */}
@@ -549,7 +575,7 @@ const SmartAlertsCard: React.FC<{
                 ) : smartAlerts.map((rule, i) => (
                     <div key={i} style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', padding: '12px 14px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{ruleLabel(rule)}</span>
-                        <button onClick={() => removeSmartAlert(i)}
+                        <button onClick={() => handleRemove(i)}
                             style={{ background: 'rgba(239, 68, 68, 0.15)', border: 'none', color: 'var(--danger)', borderRadius: 8, padding: '6px 10px', fontSize: '0.85rem', fontWeight: 900, cursor: 'pointer' }}>
                             ✕
                         </button>
