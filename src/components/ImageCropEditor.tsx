@@ -1,27 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
  * Free-form image crop editor.
  *
+ * v10.63 — caller pre-decodes the picked File and hands the editor a
+ * data URL + natural dimensions. The editor therefore opens with the
+ * image already visible (no "preparing image" state, no fade-in, no
+ * "couldn't display" fallback). From the seller's perspective the
+ * crop feels like a continuation of the iOS "Use Photo" screen
+ * instead of a second, slower page.
+ *
  * UX:
- *   • Image is rendered fit-to-stage (object-fit: contain semantics).
+ *   • Image renders fit-to-stage (object-fit: contain semantics).
  *   • The white crop frame is fully resizable from its 4 corner handles
  *     and movable by dragging anywhere inside it — no aspect lock.
  *   • Rotate button rotates the underlying image in 90° steps; the
  *     visible bounds and crop frame both reset to the new orientation.
- *
- * Why a full rewrite from v10.60:
- *   The previous pinch-zoom-over-fixed-frame model (Instagram-style) had
- *   two real bugs Nasser hit:
- *     - The image rendered at its natural pixel size for one frame
- *       before `onLoad` set the natural dimensions, blowing up the
- *       layout on iPhone captures (4032×3024) so the crop window was
- *       just a tiny black square with no visible image inside.
- *     - The aspect-ratio buttons were confusing and one of them
- *       (16:9) felt swapped on a portrait phone.
- *   The fit-to-stage + draggable-corners model is closer to iOS
- *   Photos and removes both classes of bug.
  *
  * Export:
  *   1. Rasterise the rotated image onto a temp canvas (upright frame).
@@ -34,6 +29,9 @@ type Crop = { x: number; y: number; w: number; h: number };
 
 type Props = {
     file: File;
+    dataUrl: string;
+    naturalW: number;
+    naturalH: number;
     queueIndex: number;
     queueTotal: number;
     isRTL: boolean;
@@ -45,14 +43,13 @@ type Props = {
 const MIN_FRAME_PX = 60;
 
 export const ImageCropEditor: React.FC<Props> = ({
-    file, queueIndex, queueTotal, isRTL, onApply, onSkip, onCancel,
+    file, dataUrl, naturalW, naturalH,
+    queueIndex, queueTotal, isRTL,
+    onApply, onSkip, onCancel,
 }) => {
-    const [imgUrl, setImgUrl] = useState('');
-    const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
     const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
     const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 360, h: 540 });
     const [crop, setCrop] = useState<Crop>({ x: 0, y: 0, w: 0, h: 0 });
-    const [loadFailed, setLoadFailed] = useState(false);
     const [exporting, setExporting] = useState(false);
 
     const stageRef = useRef<HTMLDivElement | null>(null);
@@ -69,23 +66,19 @@ export const ImageCropEditor: React.FC<Props> = ({
         return () => { document.body.style.overflow = prev; };
     }, []);
 
-    // Load the picked File → object URL. Reset everything when the file changes.
-    useEffect(() => {
-        setImgNatural(null);
-        setLoadFailed(false);
-        setRotation(0);
-        if (!file) {
-            setImgUrl('');
-            return;
-        }
-        const url = URL.createObjectURL(file);
-        setImgUrl(url);
-        return () => {
-            URL.revokeObjectURL(url);
-        };
-    }, [file]);
+    // Reset rotation when the source file changes (queue advance).
+    useEffect(() => { setRotation(0); }, [file]);
 
-    // Track stage size — both initial measure and live resize via ResizeObserver.
+    // Track stage size — initial synchronous measure via useLayoutEffect
+    // (so the first paint already has correct geometry, no flicker) plus
+    // ResizeObserver for orientation changes.
+    useLayoutEffect(() => {
+        if (!stageRef.current) return;
+        setStageSize({
+            w: stageRef.current.clientWidth,
+            h: stageRef.current.clientHeight,
+        });
+    }, []);
     useEffect(() => {
         const measure = () => {
             if (!stageRef.current) return;
@@ -94,7 +87,6 @@ export const ImageCropEditor: React.FC<Props> = ({
                 h: stageRef.current.clientHeight,
             });
         };
-        measure();
         let ro: ResizeObserver | null = null;
         if (typeof ResizeObserver !== 'undefined' && stageRef.current) {
             ro = new ResizeObserver(measure);
@@ -107,12 +99,10 @@ export const ImageCropEditor: React.FC<Props> = ({
         };
     }, []);
 
-    // Geometry of the displayed (rotated) image inside the stage. All four
-    // are derived from imgNatural + rotation + stageSize so there's no state
-    // to keep in sync.
+    // Geometry of the displayed (rotated) image inside the stage.
     const isRotated = rotation === 90 || rotation === 270;
-    const visualNW = imgNatural ? (isRotated ? imgNatural.h : imgNatural.w) : 0;
-    const visualNH = imgNatural ? (isRotated ? imgNatural.w : imgNatural.h) : 0;
+    const visualNW = isRotated ? naturalH : naturalW;
+    const visualNH = isRotated ? naturalW : naturalH;
     const fitScale = (visualNW && visualNH && stageSize.w && stageSize.h)
         ? Math.min(stageSize.w / visualNW, stageSize.h / visualNH)
         : 0;
@@ -122,8 +112,6 @@ export const ImageCropEditor: React.FC<Props> = ({
     const displayY = (stageSize.h - displayH) / 2;
 
     // (Re)initialise the crop frame whenever the displayed image's box changes.
-    // The frame starts at 90% of the image, centered — gives the seller an
-    // obvious target to grab without making them think.
     useEffect(() => {
         if (!displayW || !displayH) return;
         const margin = 0.05;
@@ -136,8 +124,6 @@ export const ImageCropEditor: React.FC<Props> = ({
     }, [displayW, displayH]);
 
     // ===== Touch + mouse drag handlers =====
-    // The stage receives all gestures. Hit-testing decides whether the user
-    // is grabbing a corner (resize) or the body of the frame (move).
     const pointFromEvent = (clientX: number, clientY: number) => {
         const rect = stageRef.current!.getBoundingClientRect();
         return { x: clientX - rect.left, y: clientY - rect.top };
@@ -193,9 +179,6 @@ export const ImageCropEditor: React.FC<Props> = ({
             });
             return;
         }
-        // resize — each corner pulls in its own direction. We clamp BOTH to
-        // the displayed image bounds AND to a minimum size, taking care to
-        // hold the opposite corner stationary.
         let nx = s.x, ny = s.y, nw = s.w, nh = s.h;
         const rightAnchorX = s.x + s.w;
         const bottomAnchorY = s.y + s.h;
@@ -256,20 +239,16 @@ export const ImageCropEditor: React.FC<Props> = ({
 
     // ===== Apply: render cropped output to canvas → File =====
     const apply = async () => {
-        if (!imgNatural || !imgUrl || exporting || !fitScale) return;
+        if (exporting || !fitScale) return;
         setExporting(true);
         try {
             const img = new Image();
-            img.crossOrigin = 'anonymous';
             await new Promise<void>((resolve, reject) => {
                 img.onload = () => resolve();
                 img.onerror = () => reject(new Error('decode_failed'));
-                img.src = imgUrl;
+                img.src = dataUrl;
             });
 
-            // Step 1 — rotate the source image into an upright temp canvas
-            // sized at the post-rotation natural pixel dimensions. After this
-            // we don't have to worry about rotation again.
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = visualNW;
             tempCanvas.height = visualNH;
@@ -277,17 +256,13 @@ export const ImageCropEditor: React.FC<Props> = ({
             if (!tCtx) throw new Error('no_ctx');
             tCtx.translate(visualNW / 2, visualNH / 2);
             tCtx.rotate((rotation * Math.PI) / 180);
-            tCtx.drawImage(img, -imgNatural.w / 2, -imgNatural.h / 2);
+            tCtx.drawImage(img, -naturalW / 2, -naturalH / 2);
 
-            // Step 2 — map the crop rect from display-px to image-natural-px
-            // by dividing by the fit scale.
             const sx = crop.x / fitScale;
             const sy = crop.y / fitScale;
             const sw = crop.w / fitScale;
             const sh = crop.h / fitScale;
 
-            // Step 3 — size the output canvas, capped at 1600 px on the
-            // longest side. Bigger doesn't add visible detail on a phone.
             const MAX = 1600;
             let outW = Math.round(sw);
             let outH = Math.round(sh);
@@ -404,100 +379,28 @@ export const ImageCropEditor: React.FC<Props> = ({
                     background: '#000',
                 }}
             >
-                {/* The image itself — sized to displayed dimensions and rotated
-                    around its center. Hidden until imgNatural is known so the
-                    user never sees a giant unscaled flash. */}
-                {imgUrl && !loadFailed && (
-                    <img
-                        src={imgUrl}
-                        alt=""
-                        draggable={false}
-                        onLoad={(e) => {
-                            const el = e.currentTarget;
-                            if (el.naturalWidth > 0 && el.naturalHeight > 0) {
-                                setImgNatural({ w: el.naturalWidth, h: el.naturalHeight });
-                            } else {
-                                setLoadFailed(true);
-                            }
-                        }}
-                        onError={() => setLoadFailed(true)}
-                        style={{
-                            position: 'absolute',
-                            left: '50%', top: '50%',
-                            width: imgNatural ? imgNatural.w * fitScale : 1,
-                            height: imgNatural ? imgNatural.h * fitScale : 1,
-                            transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-                            transformOrigin: 'center center',
-                            pointerEvents: 'none',
-                            opacity: imgNatural ? 1 : 0,
-                            transition: 'opacity 0.15s ease',
-                            maxWidth: 'none',
-                            maxHeight: 'none',
-                            display: 'block',
-                        }}
-                    />
-                )}
-
-                {/* Loading state */}
-                {imgUrl && !imgNatural && !loadFailed && (
-                    <div style={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'rgba(255,255,255,0.7)', fontWeight: 800, fontSize: '0.9rem',
+                {/* Image — dimensions known from props, so it renders at the
+                    correct fit-to-stage size on the very first paint. */}
+                <img
+                    src={dataUrl}
+                    alt=""
+                    draggable={false}
+                    style={{
+                        position: 'absolute',
+                        left: '50%', top: '50%',
+                        width: naturalW * fitScale,
+                        height: naturalH * fitScale,
+                        transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                        transformOrigin: 'center center',
                         pointerEvents: 'none',
-                    }}>
-                        {isRTL ? '⏳ جاري تحضير الصورة...' : '⏳ Preparing image...'}
-                    </div>
-                )}
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                        display: 'block',
+                    }}
+                />
 
-                {/* Decode-failed state — let the seller upload the original or skip. */}
-                {loadFailed && (
-                    <div style={{
-                        position: 'absolute', inset: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        padding: 24, textAlign: 'center',
-                    }}>
-                        <div style={{
-                            background: 'rgba(255,255,255,0.06)', borderRadius: 16,
-                            border: '1px solid rgba(255,255,255,0.12)',
-                            padding: 20, maxWidth: 320,
-                        }}>
-                            <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>🖼️</div>
-                            <div style={{ fontWeight: 900, fontSize: '1rem', marginBottom: 6 }}>
-                                {isRTL ? 'تعذّر عرض الصورة' : 'Failed to display image'}
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6, marginBottom: 14 }}>
-                                {isRTL
-                                    ? 'يمكنك رفعها بدون قص أو إلغاؤها.'
-                                    : 'You can upload it uncropped or cancel.'}
-                            </div>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <button
-                                    onClick={onCancel}
-                                    style={{
-                                        flex: 1, padding: '10px', borderRadius: 12,
-                                        background: 'rgba(255,255,255,0.08)', color: 'white',
-                                        border: '1px solid rgba(255,255,255,0.15)',
-                                        fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer'
-                                    }}
-                                >{isRTL ? 'إلغاء' : 'Cancel'}</button>
-                                <button
-                                    onClick={onSkip}
-                                    style={{
-                                        flex: 1, padding: '10px', borderRadius: 12,
-                                        background: 'var(--primary, #0284c7)', color: 'white',
-                                        border: 'none',
-                                        fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer'
-                                    }}
-                                >{isRTL ? 'رفع بدون قص' : 'Upload anyway'}</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Crop frame + dark outside-the-frame overlay. Rendered only
-                    once the image is loaded so corners line up with real pixels. */}
-                {imgNatural && (
+                {/* Crop frame + dark outside-the-frame overlay. */}
+                {displayW > 0 && displayH > 0 && (
                     <>
                         <div
                             aria-hidden="true"
@@ -522,8 +425,6 @@ export const ImageCropEditor: React.FC<Props> = ({
                                     'linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(255,255,255,0.35) calc(33.33% - 0.5px) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), rgba(255,255,255,0.35) calc(66.66% - 0.5px) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px))'
                             }} />
                         </div>
-                        {/* Corner handles — visual only; hit-testing is done in
-                            the stage handler using crop+displayBox geometry. */}
                         {([
                             { name: 'tl', x: displayX + crop.x - 11,           y: displayY + crop.y - 11 },
                             { name: 'tr', x: displayX + crop.x + crop.w - 11,  y: displayY + crop.y - 11 },
@@ -561,13 +462,13 @@ export const ImageCropEditor: React.FC<Props> = ({
                 </button>
                 <button
                     onClick={apply}
-                    disabled={exporting || !imgNatural || loadFailed}
+                    disabled={exporting}
                     style={{
                         flex: 2, padding: '14px',
-                        background: (exporting || !imgNatural || loadFailed) ? '#475569' : 'var(--primary, #0284c7)',
+                        background: exporting ? '#475569' : 'var(--primary, #0284c7)',
                         color: 'white', border: 'none',
                         borderRadius: 14, fontWeight: 900, fontSize: '0.95rem',
-                        cursor: (exporting || !imgNatural || loadFailed) ? 'default' : 'pointer',
+                        cursor: exporting ? 'default' : 'pointer',
                         boxShadow: '0 8px 24px rgba(2, 132, 199, 0.35)'
                     }}
                 >

@@ -909,15 +909,55 @@ const SellerDashboard: React.FC = () => {
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
-    // Crop pipeline state — every File that arrives through the picker /
-    // camera / drag-drop / clipboard goes through ImageCropEditor first so
-    // the seller can frame the product and downscale before upload.
-    const [cropQueue, setCropQueue] = useState<File[]>([]);
+    // Crop pipeline. Each item is the original File plus pre-decoded
+    // dimensions and a data URL. Pre-decoding here (instead of inside the
+    // editor) means the editor opens with the picture already visible —
+    // no "preparing image" state, no broken "couldn't display" fallback.
+    // From the seller's perspective the crop now feels like a continuation
+    // of the iOS "Use Photo" screen instead of a slow second page.
+    type CropQueueItem = {
+        file: File;
+        dataUrl: string;
+        naturalW: number;
+        naturalH: number;
+    };
+    const [cropQueue, setCropQueue] = useState<CropQueueItem[]>([]);
     const [cropIndex, setCropIndex] = useState(0);
 
-    // Validates types/sizes up front, then queues the survivors for the
-    // crop editor. The actual upload happens in `uploadCroppedFile` once
-    // the user applies/skips each frame.
+    // Decode a picked File into a data URL + intrinsic dimensions. Returns
+    // null when the browser refuses to decode the image (some HEIC variants
+    // on older iOS, files corrupted in transit, etc.).
+    const preDecodeFile = async (f: File): Promise<{ dataUrl: string; w: number; h: number } | null> => {
+        try {
+            const dataUrl: string = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(typeof fr.result === 'string' ? fr.result : '');
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(f);
+            });
+            if (!dataUrl) return null;
+            const dims = await new Promise<{ w: number; h: number } | null>((resolve) => {
+                const im = new Image();
+                im.onload = () => {
+                    if (im.naturalWidth > 0 && im.naturalHeight > 0) {
+                        resolve({ w: im.naturalWidth, h: im.naturalHeight });
+                    } else {
+                        resolve(null);
+                    }
+                };
+                im.onerror = () => resolve(null);
+                im.src = dataUrl;
+            });
+            if (!dims) return null;
+            return { dataUrl, w: dims.w, h: dims.h };
+        } catch {
+            return null;
+        }
+    };
+
+    // Validates types/sizes, pre-decodes each survivor, then queues for
+    // the crop editor. Files that won't decode are uploaded as-is so the
+    // seller never sees a broken crop page.
     const ingestFiles = async (files: File[] | FileList | null | undefined) => {
         if (!files || files.length === 0) return;
         const accepted: File[] = [];
@@ -944,18 +984,28 @@ const SellerDashboard: React.FC = () => {
         if (accepted.length === 0) return;
         // Respect the 4-image cap when queueing.
         const remainingSlots = Math.max(0, 4 - images.length - cropQueue.length);
-        const toQueue = accepted.slice(0, remainingSlots);
-        if (toQueue.length === 0) {
+        const toProcess = accepted.slice(0, remainingSlots);
+        if (toProcess.length === 0) {
             customAlert(isRTL ? '⚠️ الحد الأقصى 4 صور' : '⚠️ Maximum 4 images');
             return;
         }
-        setCropQueue(prev => {
-            // Reset the displayed counter to 1 for a fresh batch (queue was
-            // empty) — without this, picking 2 photos after already having
-            // processed 3 would show "4/5" instead of "1/2".
-            if (prev.length === 0) setCropIndex(0);
-            return [...prev, ...toQueue];
-        });
+        // Decode each file sequentially. Successful ones land in the crop
+        // queue (and the editor pops as soon as the first one is ready);
+        // decode failures get uploaded as-is.
+        for (const f of toProcess) {
+            const decoded = await preDecodeFile(f);
+            if (decoded) {
+                setCropQueue(prev => {
+                    // Reset the displayed counter to 1 for a fresh batch
+                    // (queue was empty) — without this, picking 2 photos
+                    // after already processing 3 would show "4/5" not "1/2".
+                    if (prev.length === 0) setCropIndex(0);
+                    return [...prev, { file: f, dataUrl: decoded.dataUrl, naturalW: decoded.w, naturalH: decoded.h }];
+                });
+            } else {
+                await uploadCroppedFile(f);
+            }
+        }
     };
 
     // Upload one cropped/original File to storage, then advance the queue.
@@ -2922,7 +2972,10 @@ const SellerDashboard: React.FC = () => {
             />
             {cropQueue.length > 0 && (
                 <ImageCropEditor
-                    file={cropQueue[0]}
+                    file={cropQueue[0].file}
+                    dataUrl={cropQueue[0].dataUrl}
+                    naturalW={cropQueue[0].naturalW}
+                    naturalH={cropQueue[0].naturalH}
                     queueIndex={cropIndex + 1}
                     queueTotal={cropIndex + cropQueue.length}
                     isRTL={isRTL}
@@ -2932,7 +2985,7 @@ const SellerDashboard: React.FC = () => {
                     }}
                     onSkip={async () => {
                         // Upload the ORIGINAL file unchanged.
-                        await uploadCroppedFile(cropQueue[0]);
+                        await uploadCroppedFile(cropQueue[0].file);
                         advanceCropQueue(false);
                     }}
                     onCancel={() => {
