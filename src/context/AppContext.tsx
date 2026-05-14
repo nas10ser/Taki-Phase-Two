@@ -71,7 +71,7 @@ interface AppContextType {
     notifications: Notification[];
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
-    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<void>;
+    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean>;
     addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
     toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
     removeRating: (dealId: string, ratingId: string) => Promise<void>;
@@ -1079,14 +1079,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [customAlert, language]);
 
-    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }) => {
+    // v10.67 — returns a boolean so the caller (DealDetails.handleReview)
+    // can distinguish "saved" from "silently dropped" and show the right
+    // toast. Previously this returned void and any RLS/network failure
+    // looked identical to success — the form closed, no error was raised,
+    // and the buyer wondered why their review never appeared.
+    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }): Promise<boolean> => {
         const dealToUpdate = deals.find(d => d.id === dealId);
-        if (!dealToUpdate || !user) return;
+        if (!dealToUpdate || !user) return false;
 
-        // Persist to the dedicated `ratings` table (migration v9.17). Old code
-        // stored reviews inside the deal row, which never made the round-trip
-        // because dealRepository.save() doesn't include ratings — they were
-        // silently lost on every page reload.
         const { ratingRepository } = await import('../repositories/ratingRepository');
         const created = await ratingRepository.create({
             dealId,
@@ -1095,7 +1096,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             score: ratingData.score,
             comment: ratingData.comment,
         });
-        if (!created) return;
+        if (!created) return false;
 
         const local = {
             id: created.id,
@@ -1121,6 +1122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'system',
             { dealId }
         );
+        return true;
     }, [deals, user, addNotification]);
 
     const addReply = useCallback(async (dealId: string, ratingId: string, reply: string) => {

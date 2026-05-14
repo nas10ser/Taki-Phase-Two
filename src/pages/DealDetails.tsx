@@ -557,14 +557,25 @@ const DealDetails: React.FC = () => {
         }
     };
 
-    const handleReview = () => {
+    const [submittingReview, setSubmittingReview] = useState(false);
+    const handleReview = async () => {
+        if (submittingReview) return;
         if (!user) {
             history.push('/register');
             return;
         }
-        addRating(deal.id, { score: reviewScore, comment: reviewComment });
+        setSubmittingReview(true);
+        const ok = await addRating(deal.id, { score: reviewScore, comment: reviewComment });
+        setSubmittingReview(false);
+        if (!ok) {
+            customAlert(isRTL
+                ? '❌ تعذّر إرسال التقييم. تحقق من الاتصال وحاول مرة أخرى.'
+                : '❌ Could not submit review. Check your connection and try again.');
+            return;
+        }
         setShowReviewForm(false);
         setReviewComment('');
+        customAlert(isRTL ? '✅ تم إرسال تقييمك — شكراً لمشاركتك!' : '✅ Review submitted — thanks for sharing!');
     };
 
     // isFavorite, isSeller, isOwner already defined above
@@ -964,10 +975,13 @@ const DealDetails: React.FC = () => {
                             </div>
                             <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)}
                                 placeholder={isRTL ? 'شاركنا تجربتك...' : 'Share your experience...'}
-                                style={{ width: '100%', padding: 14, borderRadius: 14, border: '1.5px solid var(--gray-200)', minHeight: 80, outline: 'none', resize: 'none', fontSize: '0.9rem' }} />
+                                style={{ width: '100%', padding: 14, borderRadius: 14, border: '1.5px solid var(--gray-200)', background: 'var(--card-bg)', color: 'var(--text-primary)', minHeight: 80, outline: 'none', resize: 'none', fontSize: '0.9rem' }} />
                             <button onClick={handleReview}
-                                style={{ marginTop: 10, width: '100%', padding: '12px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none' }}>
-                                {isRTL ? 'إرسال التقييم' : 'Submit Review'}
+                                disabled={submittingReview}
+                                style={{ marginTop: 10, width: '100%', padding: '12px', borderRadius: 12, background: submittingReview ? 'var(--gray-400)' : 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: submittingReview ? 'default' : 'pointer' }}>
+                                {submittingReview
+                                    ? (isRTL ? '⏳ جاري الإرسال...' : '⏳ Submitting...')
+                                    : (isRTL ? 'إرسال التقييم' : 'Submit Review')}
                             </button>
                         </div>
                     )}
@@ -1098,64 +1112,80 @@ const DealDetails: React.FC = () => {
                     )}
                 </div>
 
-                {/* Spacer for fixed CTA */}
-                <div style={{ height: 80 }} />
-            </div>
-
-            {/* Fixed Book CTA */}
-            <div className="book-cta" style={{ display: 'flex', flexDirection: 'column', background: 'var(--card-bg)', borderTop: '1px solid var(--border-color)', padding: '16px 20px', paddingBottom: 'max(16px, env(safe-area-inset-bottom))', transition: 'background 0.3s ease' }}>
-                {isSeller ? (
-                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 800, padding: '10px' }}>
-                        {isRTL ? '👁️ أنت تتصفح كبائع، لا يمكنك الحجز' : '👁️ Viewing as seller, booking disabled'}
-                    </div>
-                ) : (
-                    <>
-                        {!booked && canBook && (
-                            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                                <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{isRTL ? 'الكمية:' : 'Quantity:'}</span>
-                                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-100)', borderRadius: 12, overflow: 'hidden' }}>
-                                    <button onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>-</button>
-                                    <span style={{ padding: '0 12px', fontWeight: 900 }}>{selectedQuantity}</span>
-                                    <button onClick={() => {
-                                        if (deal.quantity === 'unlimited' || !hasStockCap) {
-                                            setSelectedQuantity(selectedQuantity + 1);
-                                        } else {
-                                            setSelectedQuantity(Math.min(deal.quantity as number, selectedQuantity + 1));
-                                        }
-                                    }} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>+</button>
+                {/* v10.67 — Book CTA is now part of the scrolling content
+                    (was position:fixed). Nasser wanted the seller "احجز الآن"
+                    section at the end of the page, scrolling along with the
+                    rest of the deal — not parked over the bottom of the
+                    screen. A wide bottom margin clears the fixed BottomNav. */}
+                <div style={{
+                    marginTop: 24,
+                    display: 'flex', flexDirection: 'column',
+                    background: 'var(--card-bg)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 20,
+                    padding: '20px 20px',
+                    marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
+                    transition: 'background 0.3s ease'
+                }}>
+                    {isSeller ? (
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 800, padding: '10px' }}>
+                            {isRTL ? '👁️ أنت تتصفح كبائع، لا يمكنك الحجز' : '👁️ Viewing as seller, booking disabled'}
+                        </div>
+                    ) : (
+                        <>
+                            {!booked && canBook && (
+                                <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                                    <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{isRTL ? 'الكمية:' : 'Quantity:'}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-100)', borderRadius: 12, overflow: 'hidden' }}>
+                                        <button onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>-</button>
+                                        <span style={{ padding: '0 12px', fontWeight: 900 }}>{selectedQuantity}</span>
+                                        <button onClick={() => {
+                                            if (deal.quantity === 'unlimited' || !hasStockCap) {
+                                                setSelectedQuantity(selectedQuantity + 1);
+                                            } else {
+                                                setSelectedQuantity(Math.min(deal.quantity as number, selectedQuantity + 1));
+                                            }
+                                        }} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>+</button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                        <button
-                            onClick={() => {
-                                if (!user) {
-                                    history.push('/register');
-                                    return;
-                                }
-                                if (booked) {
-                                    history.push('/bookings');
-                                    return;
-                                }
-                                setShowBookingModal(true);
-                            }}
-                            disabled={isSoldOut && !booked}
-                            className={`book-btn ${booked ? 'booked' : ''}`}
-                            style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
-                        >
-                            {booked
-                                ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
-                                : isSoldOut
-                                    ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                    : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
-                        </button>
-                    </>
-                )}
+                            )}
+                            <button
+                                onClick={() => {
+                                    if (!user) {
+                                        history.push('/register');
+                                        return;
+                                    }
+                                    if (booked) {
+                                        history.push('/bookings');
+                                        return;
+                                    }
+                                    setShowBookingModal(true);
+                                }}
+                                disabled={isSoldOut && !booked}
+                                className={`book-btn ${booked ? 'booked' : ''}`}
+                                style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
+                            >
+                                {booked
+                                    ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
+                                    : isSoldOut
+                                        ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
+                                        : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
-            {/* Booking Modal Overlay */}
+            {/* Booking Modal Overlay
+                v10.67 — z-index bumped to 1200 (BottomNav is 1100). Without
+                this the BottomNav painted on top of the modal's confirm
+                button, so the seller could see the total but never the
+                "تأكيد الحجز" button below it. Extra bottom padding on the
+                inner sheet leaves a comfortable margin even on phones with
+                a thicker home-bar safe area. */}
             {showBookingModal && !isSeller && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn 0.2s ease-out' }}>
-                    <div style={{ background: 'var(--body-bg)', padding: '24px 20px', borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ background: 'var(--body-bg)', padding: '24px 20px', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>{isRTL ? 'إتمام الحجز' : 'Complete Booking'}</h2>
                             <button onClick={() => setShowBookingModal(false)} style={{ background: 'var(--gray-200)', color: 'var(--text-primary)', border: 'none', width: 36, height: 36, borderRadius: 18, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>

@@ -97,7 +97,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     zIndex: 3000,
                     transform: `translateX(${translateX})`,
                     transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
-                    paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+                    // v10.67 — was env(...) + 16px, which on iPhone left
+                    // "🏠 الرئيسية" sitting right next to the status bar.
+                    // 36px gives the menu the same breathing room you'd
+                    // see in a native iOS drawer (sits roughly level with
+                    // the battery glyph instead of crowding the notch).
+                    paddingTop: 'calc(env(safe-area-inset-top, 0px) + 36px)',
                     paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
                     paddingInline: 18,
                     display: 'flex',
