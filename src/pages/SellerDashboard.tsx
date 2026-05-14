@@ -754,9 +754,23 @@ const SellerDashboard: React.FC = () => {
         return isRTL ? 'موقع مخصص' : 'Custom location';
     };
 
-    // One-tap "adopt this active deal's location" used by the renewal banner.
+    // One-tap "adopt this active deal's location" — used by the renewal
+    // banner AND the always-on "previous location" picker above the map.
+    // Also resolves locationType from LOCATIONS so the type dropdown
+    // ('mall' / 'market' / 'store' / 'other') reflects the adopted slot.
     const adoptLocationFromDeal = (d: Deal) => {
-        if (d.locationId) setLocationId(d.locationId);
+        const lid = d.locationId;
+        const isCustom = !lid || lid === 'other' || (typeof lid === 'string' && lid.startsWith('custom_'));
+        if (isCustom) {
+            setLocationType('other');
+            setLocationId('other');
+        } else {
+            const loc = LOCATIONS.find(l => l.id === lid);
+            if (loc) {
+                setLocationType(loc.type as any);
+            }
+            setLocationId(lid);
+        }
         if (d.region) setSelectedRegion(d.region);
         if (d.city) setSelectedCity(d.city);
         if (d.mapLocation?.lat && d.mapLocation?.lng) {
@@ -2078,6 +2092,62 @@ const SellerDashboard: React.FC = () => {
                                     {isRTL ? (resolvingLink ? 'جاري..' : 'تحديد') : (resolvingLink ? 'Wait..' : 'Set')}
                                 </button>
                             </div>
+                            {/* Always-on "previous location" picker — chips for every
+                                distinct location the seller is already using on active
+                                deals. One tap adopts region+city+type+pin so the map
+                                and the region/city filters update together. Hidden
+                                during the renewal-of-deleted-slot flow because that
+                                banner already shows the same chips above. */}
+                            {activeLocationsList.length > 0 && !editingFromDeletedLocation && (
+                                <div style={{
+                                    background: 'var(--card-bg)',
+                                    border: '1.5px solid var(--gray-200)',
+                                    borderRadius: 14,
+                                    padding: '10px 12px',
+                                    marginBottom: 8
+                                }}>
+                                    <div style={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 800,
+                                        color: 'var(--text-primary)',
+                                        marginBottom: 8,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6
+                                    }}>
+                                        📍 {isRTL ? 'لوكيشن سابق — اضغط لاستخدامه فوراً' : 'Previous location — tap to reuse'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {activeLocationsList.map(({ key, deal }) => {
+                                            const active = key === currentCandidateKey;
+                                            return (
+                                                <button
+                                                    key={key}
+                                                    type="button"
+                                                    onClick={() => adoptLocationFromDeal(deal)}
+                                                    style={{
+                                                        background: active ? 'var(--primary)' : 'var(--body-bg)',
+                                                        color: active ? '#fff' : 'var(--text-primary)',
+                                                        border: '1.5px solid ' + (active ? 'var(--primary)' : 'var(--gray-200)'),
+                                                        borderRadius: 999,
+                                                        padding: '7px 13px',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 800,
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 6,
+                                                        WebkitTapHighlightColor: 'transparent',
+                                                        transition: 'background 0.15s ease, color 0.15s ease'
+                                                    }}
+                                                >
+                                                    📍 {locNameOf(deal)}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                             <div style={{
                                 fontSize: '0.7rem',
                                 color: 'var(--text-secondary)',

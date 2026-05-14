@@ -1573,13 +1573,14 @@ input[type="search"] {
 }
 
 /* ---------------------------------------------------------------------
- * Modern phone keyboard handling — Visual Viewport API friendly.
- * Lets fixed CTA buttons rise above the on-screen keyboard correctly
- * (Chrome 108+, Safari 15.4+ honor interactive-widget=resizes-content).
+ * Note: a previous `@supports (height: 100dvh) { .book-cta { bottom: 0 } }`
+ * override was REMOVED — it overrode the BottomNav-aware offset above
+ * and parked `.book-cta` directly under the BottomNav, hiding the Book
+ * button (only the quantity row above it remained visible). The base
+ * rule already handles dynamic-viewport / keyboard cases correctly
+ * because `bottom` is anchored to the bottom edge of the visual
+ * viewport in every modern browser.
  * ------------------------------------------------------------------- */
-@supports (height: 100dvh) {
-  .book-cta { bottom: 0; }
-}
 
 /* ---------------------------------------------------------------------
  * Sticky-header overlap fix on phones that show floating address bars
