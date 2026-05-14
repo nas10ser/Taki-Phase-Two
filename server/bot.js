@@ -484,6 +484,68 @@ if (supabase && bot) {
     console.log('📡 Supabase Realtime listener active for bookings');
 }
 
+// ====================== Supabase Realtime — smart-alert notifications ======================
+// Prepared in v10.64 but inert by default: each user opts in by setting
+// `telegram_chat_id` (or `whatsapp_chat_id`) AND flipping `notify_via_telegram`
+// (or `notify_via_whatsapp`) to TRUE. Until then the listener fires and exits
+// immediately. The DB trigger pre-renders the pretty multi-line message in
+// `meta_data.bot_message_ar/_en` so we forward it verbatim — no formatting
+// happens in the bot, which avoids MarkdownV2 escape footguns on emoji-heavy
+// strings.
+const RECENT_BOT_SENDS = new Map(); // userId → epoch ms, used as a soft per-user rate-limit
+const BOT_PER_USER_DEBOUNCE_MS = 20 * 1000;
+
+if (supabase) {
+    supabase
+        .channel('bot-notifications')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async (payload) => {
+            const notif = payload.new;
+            // Only forward smart-alert / deal types — booking notifications are
+            // already handled by the dedicated bookings listener above.
+            if (notif.type !== 'deal' && notif.type !== 'marketing') return;
+            // Soft debounce so a backfill that produces many rows for one user
+            // doesn't fire a burst of Telegram messages in the same second.
+            const last = RECENT_BOT_SENDS.get(notif.user_id) || 0;
+            if (Date.now() - last < BOT_PER_USER_DEBOUNCE_MS) return;
+
+            try {
+                const { data: user } = await supabase
+                    .from('users')
+                    .select('telegram_chat_id, whatsapp_chat_id, notify_via_telegram, notify_via_whatsapp, language')
+                    .eq('id', notif.user_id)
+                    .maybeSingle();
+                if (!user) return;
+
+                const langIsEn = (user.language || '').toLowerCase().startsWith('en');
+                const message = langIsEn
+                    ? (notif.meta_data?.bot_message_en || `${notif.title_en}\n\n${notif.body_en}`)
+                    : (notif.meta_data?.bot_message_ar || `${notif.title_ar}\n\n${notif.body_ar}`);
+
+                let didSend = false;
+                if (bot && user.telegram_chat_id && user.notify_via_telegram) {
+                    try {
+                        await bot.telegram.sendMessage(user.telegram_chat_id, message);
+                        didSend = true;
+                    } catch (err) { console.warn('Telegram alert push failed:', err.message); }
+                }
+                if (user.whatsapp_chat_id && user.notify_via_whatsapp) {
+                    try {
+                        await sendWhatsAppMessage(user.whatsapp_chat_id, {
+                            type: 'text',
+                            text: { body: message }
+                        });
+                        didSend = true;
+                    } catch (err) { console.warn('WhatsApp alert push failed:', err.message); }
+                }
+                if (didSend) RECENT_BOT_SENDS.set(notif.user_id, Date.now());
+            } catch (err) {
+                console.warn('Alert dispatch failed:', err.message);
+            }
+        })
+        .subscribe();
+    console.log('📡 Supabase Realtime listener active for smart-alert notifications (inert until users opt in)');
+}
+
 // ====================== WhatsApp Cloud API ======================
 async function sendWhatsAppMessage(to, payload) {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
