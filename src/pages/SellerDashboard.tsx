@@ -100,7 +100,7 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, branches, saveBranch, removeBranch } = useApp();
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
@@ -635,6 +635,45 @@ const SellerDashboard: React.FC = () => {
                 // forever" guarantee without firing spurious timeouts on slow
                 // connections that would have completed successfully.
                 await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 30000);
+                // Mirror the saved shop location into store_branches as a
+                // pinned/primary branch so it shows up in the picker too.
+                // The user pressed "💾 حفظ موقع المتجر" explicitly — they
+                // want it persisted in BOTH places. Marked is_primary=true so
+                // we can tell it apart from per-deal branches later. Failures
+                // here are swallowed because the profile write already
+                // succeeded and the toast above already fired — branching is
+                // a convenience side-effect.
+                try {
+                    if (user?.id) {
+                        const primaryLabel = (shopName && shopName.trim().length > 0)
+                            ? shopName.trim()
+                            : (locationId && locationId !== 'other'
+                                ? (LOCATIONS.find(l => l.id === locationId)?.name || (isRTL ? 'متجري' : 'My store'))
+                                : (customLocationName || (isRTL ? 'متجري' : 'My store')));
+                        const persistedLocationId = (
+                            locationId
+                            && locationId !== 'other'
+                            && !locationId.startsWith('custom_')
+                        ) ? locationId : null;
+                        // Replace an existing primary row instead of creating
+                        // a second one each time the seller re-saves their
+                        // shop location.
+                        const existingPrimary = branches.find(b => b.merchantId === user.id && b.isPrimary);
+                        await saveBranch({
+                            ...(existingPrimary ? { id: existingPrimary.id } : {}),
+                            nameAr: primaryLabel,
+                            locationId: persistedLocationId,
+                            regionId: selectedRegion || null,
+                            cityId: selectedCity || null,
+                            mapLat: lat,
+                            mapLng: lng,
+                            googleMapsLink: googleMapsLink || null,
+                            isPrimary: true,
+                        });
+                    }
+                } catch (branchErr) {
+                    console.warn('Primary branch upsert non-fatal error:', branchErr);
+                }
                 customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
             } catch (e: any) {
                 console.error('Save shop location error:', e);
@@ -708,6 +747,65 @@ const SellerDashboard: React.FC = () => {
         }
         return list;
     }, [deals, user?.id]);
+
+    // Unified shape that drives the "📍 لوكيشن سابق" chip picker.
+    // Two sources feed it:
+    //   1. DB-saved branches (store_branches table) — these expose a `branchId`
+    //      so the chip can render an "✕" delete button that hits `removeBranch`.
+    //   2. Locations the seller is currently using on active deals (auto-derived
+    //      so the picker isn't empty for sellers who haven't explicitly saved
+    //      any branch yet). No delete button — you'd remove these by editing
+    //      or expiring the underlying deal.
+    // Branch entries shadow deal entries at the same location key, so a deal
+    // location that's also been saved as a branch appears once (with X).
+    type LocationChip = {
+        key: string;
+        label: string;
+        branchId?: string;
+        locationId?: string | null;
+        regionId?: string | null;
+        cityId?: string | null;
+        lat?: number;
+        lng?: number;
+    };
+    const mergedLocationChips: LocationChip[] = React.useMemo(() => {
+        const out: LocationChip[] = [];
+        const seen = new Set<string>();
+        // Branches first so their X delete button takes precedence on dupes.
+        for (const b of branches) {
+            if (b.merchantId !== user?.id || b.isActive === false) continue;
+            const key = locKeyOf({
+                locationId: b.locationId || null,
+                mapLocation: { lat: b.mapLat ?? 0, lng: b.mapLng ?? 0 }
+            });
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({
+                key,
+                label: b.nameAr || (isRTL ? 'موقع محفوظ' : 'Saved location'),
+                branchId: b.id,
+                locationId: b.locationId,
+                regionId: b.regionId,
+                cityId: b.cityId,
+                lat: b.mapLat ?? undefined,
+                lng: b.mapLng ?? undefined,
+            });
+        }
+        for (const { key, deal: d } of activeLocationsList) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({
+                key,
+                label: locNameOf(d),
+                locationId: d.locationId,
+                regionId: d.region,
+                cityId: d.city,
+                lat: d.mapLocation?.lat,
+                lng: d.mapLocation?.lng,
+            });
+        }
+        return out;
+    }, [branches, activeLocationsList, user?.id, isRTL]);
     const currentCandidateKey = locKeyOf({
         locationId: locationId === 'other' ? null : locationId,
         mapLocation: { lat: mapPos[0], lng: mapPos[1] }
@@ -754,12 +852,11 @@ const SellerDashboard: React.FC = () => {
         return isRTL ? 'موقع مخصص' : 'Custom location';
     };
 
-    // One-tap "adopt this active deal's location" — used by the renewal
-    // banner AND the always-on "previous location" picker above the map.
-    // Also resolves locationType from LOCATIONS so the type dropdown
-    // ('mall' / 'market' / 'store' / 'other') reflects the adopted slot.
-    const adoptLocationFromDeal = (d: Deal) => {
-        const lid = d.locationId;
+    // Shared "adopt this location into the form" helper. Both the renewal
+    // banner (Deal source) and the always-on chip picker (LocationChip
+    // source) funnel through here so they can't drift.
+    const adoptLocationChip = (c: { locationId?: string | null; regionId?: string | null; cityId?: string | null; lat?: number; lng?: number }) => {
+        const lid = c.locationId;
         const isCustom = !lid || lid === 'other' || (typeof lid === 'string' && lid.startsWith('custom_'));
         if (isCustom) {
             setLocationType('other');
@@ -771,14 +868,36 @@ const SellerDashboard: React.FC = () => {
             }
             setLocationId(lid);
         }
-        if (d.region) setSelectedRegion(d.region);
-        if (d.city) setSelectedCity(d.city);
-        if (d.mapLocation?.lat && d.mapLocation?.lng) {
-            setMapPos([d.mapLocation.lat, d.mapLocation.lng]);
+        if (c.regionId) setSelectedRegion(c.regionId);
+        if (c.cityId) setSelectedCity(c.cityId);
+        if (c.lat != null && c.lng != null) {
+            setMapPos([c.lat, c.lng]);
         }
         // Clear any pasted Google Maps link so it doesn't fight the new pin.
         setGoogleMapsLink('');
         setLastResolvedLink('');
+    };
+    const adoptLocationFromDeal = (d: Deal) => adoptLocationChip({
+        locationId: d.locationId,
+        regionId: d.region,
+        cityId: d.city,
+        lat: d.mapLocation?.lat,
+        lng: d.mapLocation?.lng,
+    });
+
+    // Delete confirmation for a saved branch (the X button on a chip).
+    // Optimistic — context drops it from `branches` immediately and rolls
+    // back if the DB delete fails.
+    const handleRemoveBranch = async (branchId: string, label: string) => {
+        const ok = await customConfirm(isRTL
+            ? `حذف "${label}" من اللوكيشنات المحفوظة؟ هذا يحذفه من الـDB ولا يؤثر على عروضك النشطة.`
+            : `Remove "${label}" from your saved locations? This deletes it from the DB and does not affect any active deal.`);
+        if (!ok) return;
+        try {
+            await removeBranch(branchId);
+        } catch {
+            await customAlert(isRTL ? '❌ فشل حذف اللوكيشن. حاول مرة أخرى.' : '❌ Failed to delete. Try again.');
+        }
     };
 
     // Removed auto-centering effect to prevent overwriting manual map pin placement
@@ -1330,6 +1449,54 @@ const SellerDashboard: React.FC = () => {
                 } else {
                     await withTimeout(addDeal(newDeal), 40000);
                 }
+                // Auto-save this deal's location as a re-usable branch so it
+                // shows up in the "📍 لوكيشن سابق" chip picker next time.
+                // Skipped if a branch already exists at the same locKey
+                // (locKeyOf normalizes to 'loc:<id>' or 'geo:<lat,lng>' so
+                // dupes from custom pins at the same spot collapse).
+                try {
+                    const newKey = locKeyOf({
+                        locationId: newDeal.locationId,
+                        mapLocation: newDeal.mapLocation
+                    });
+                    const already = branches.some(b => {
+                        if (b.merchantId !== user?.id) return false;
+                        const bk = locKeyOf({
+                            locationId: b.locationId || null,
+                            mapLocation: { lat: b.mapLat ?? 0, lng: b.mapLng ?? 0 }
+                        });
+                        return bk === newKey;
+                    });
+                    if (!already && user?.id) {
+                        const labelDeal: Deal = newDeal;
+                        const branchLabel = (() => {
+                            const direct = locNameOf(labelDeal);
+                            if (direct && direct.trim().length > 0) return direct;
+                            return customLocationName || (isRTL ? 'موقع مخصص' : 'Custom location');
+                        })();
+                        // Persist non-custom locationId so the saved row points
+                        // at a known LOCATIONS entry; custom pins keep null so
+                        // dedupe uses the geo: key.
+                        const persistedLocationId = (
+                            newDeal.locationId
+                            && typeof newDeal.locationId === 'string'
+                            && !newDeal.locationId.startsWith('custom_')
+                            && newDeal.locationId !== 'other'
+                        ) ? newDeal.locationId : null;
+                        // Fire-and-forget — a failed branch upsert MUST NOT
+                        // surface as a deal-save error. The deal already
+                        // landed; the branch is a convenience side-effect.
+                        saveBranch({
+                            nameAr: branchLabel,
+                            locationId: persistedLocationId,
+                            regionId: newDeal.region ?? null,
+                            cityId: newDeal.city ?? null,
+                            mapLat: newDeal.mapLocation?.lat ?? null,
+                            mapLng: newDeal.mapLocation?.lng ?? null,
+                            googleMapsLink: googleMapsLink || null,
+                        }).catch(() => {});
+                    }
+                } catch {}
             } catch (e: any) {
                 if (e instanceof TimeoutError) {
                     await customAlert(isRTL
@@ -2092,13 +2259,14 @@ const SellerDashboard: React.FC = () => {
                                     {isRTL ? (resolvingLink ? 'جاري..' : 'تحديد') : (resolvingLink ? 'Wait..' : 'Set')}
                                 </button>
                             </div>
-                            {/* Always-on "previous location" picker — chips for every
-                                distinct location the seller is already using on active
-                                deals. One tap adopts region+city+type+pin so the map
-                                and the region/city filters update together. Hidden
-                                during the renewal-of-deleted-slot flow because that
-                                banner already shows the same chips above. */}
-                            {activeLocationsList.length > 0 && !editingFromDeletedLocation && (
+                            {/* Always-on "previous location" picker — saved branches
+                                from store_branches (DB-backed, X to delete) merged
+                                with active-deal locations (auto-derived, no delete).
+                                One tap adopts region+city+type+pin so the map and
+                                filters update together. Hidden during the renewal-
+                                of-deleted-slot flow because that banner already
+                                shows the same chips above. */}
+                            {mergedLocationChips.length > 0 && !editingFromDeletedLocation && (
                                 <div style={{
                                     background: 'var(--card-bg)',
                                     border: '1.5px solid var(--gray-200)',
@@ -2118,31 +2286,67 @@ const SellerDashboard: React.FC = () => {
                                         📍 {isRTL ? 'لوكيشن سابق — اضغط لاستخدامه فوراً' : 'Previous location — tap to reuse'}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {activeLocationsList.map(({ key, deal }) => {
-                                            const active = key === currentCandidateKey;
+                                        {mergedLocationChips.map(chip => {
+                                            const active = chip.key === currentCandidateKey;
                                             return (
-                                                <button
-                                                    key={key}
-                                                    type="button"
-                                                    onClick={() => adoptLocationFromDeal(deal)}
+                                                <div
+                                                    key={chip.key}
                                                     style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'stretch',
                                                         background: active ? 'var(--primary)' : 'var(--body-bg)',
                                                         color: active ? '#fff' : 'var(--text-primary)',
                                                         border: '1.5px solid ' + (active ? 'var(--primary)' : 'var(--gray-200)'),
                                                         borderRadius: 999,
-                                                        padding: '7px 13px',
-                                                        fontSize: '0.8rem',
-                                                        fontWeight: 800,
-                                                        cursor: 'pointer',
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: 6,
-                                                        WebkitTapHighlightColor: 'transparent',
+                                                        overflow: 'hidden',
                                                         transition: 'background 0.15s ease, color 0.15s ease'
                                                     }}
                                                 >
-                                                    📍 {locNameOf(deal)}
-                                                </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adoptLocationChip(chip)}
+                                                        style={{
+                                                            background: 'transparent',
+                                                            color: 'inherit',
+                                                            border: 'none',
+                                                            padding: '7px 13px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 800,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            WebkitTapHighlightColor: 'transparent'
+                                                        }}
+                                                    >
+                                                        📍 {chip.label}
+                                                    </button>
+                                                    {chip.branchId && (
+                                                        <button
+                                                            type="button"
+                                                            aria-label={isRTL ? 'حذف اللوكيشن المحفوظ' : 'Delete saved location'}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRemoveBranch(chip.branchId!, chip.label);
+                                                            }}
+                                                            style={{
+                                                                background: active ? 'rgba(255,255,255,0.18)' : 'rgba(220,38,38,0.08)',
+                                                                color: active ? '#fff' : 'var(--danger)',
+                                                                border: 'none',
+                                                                borderInlineStart: '1px solid ' + (active ? 'rgba(255,255,255,0.35)' : 'var(--gray-200)'),
+                                                                padding: '0 11px',
+                                                                fontSize: '0.85rem',
+                                                                fontWeight: 900,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                WebkitTapHighlightColor: 'transparent'
+                                                            }}
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    )}
+                                                </div>
                                             );
                                         })}
                                     </div>

@@ -8,6 +8,7 @@ import { authService, UserProfile } from '../services/authService';
 import { dealService } from '../services/dealService';
 import { notificationRepository } from '../repositories/notificationRepository';
 import { bookingRepository } from '../repositories/bookingRepository';
+import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 import { SmartAlertRule } from '../services/authService';
@@ -111,6 +112,12 @@ interface AppContextType {
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
     platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean };
+    /** Seller's saved branches (store_branches table). Drives the
+     *  "📍 لوكيشن سابق" chip picker on Add Deal — each chip lets the
+     *  seller adopt that branch's region/city/pin in one tap. */
+    branches: StoreBranch[];
+    saveBranch: (input: Partial<StoreBranch> & { nameAr: string }) => Promise<StoreBranch | null>;
+    removeBranch: (id: string) => Promise<void>;
 }
 
 
@@ -163,6 +170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [followedMerchants, setFollowedMerchants] = useState<string[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [bookings, setBookings] = useState<any[]>([]);
+    const [branches, setBranches] = useState<StoreBranch[]>([]);
 
     // Status progression rank for reconciliation — higher = more advanced.
     // This prevents confirmed 'completed' or 'cancelled' states from being reverted
@@ -385,6 +393,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 import('../repositories/bookingRepository').then(({ bookingRepository }) =>
                                     bookingRepository.getByUser(currentUser.id).then(setBookings)
                                 ),
+                                // Sellers/admins use branches for the "📍 لوكيشن سابق"
+                                // chip picker. Buyers don't need them — skip the
+                                // round-trip for them.
+                                (currentUser.userType === 'seller' || currentUser.userType === 'admin')
+                                    ? branchRepository.listByMerchant(currentUser.id).then(setBranches)
+                                    : Promise.resolve(),
                             ]).catch(() => {});
                         }
                     })
@@ -438,6 +452,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             setNotifications([]);
                             setFavorites([]);
                             setFollowedMerchants([]);
+                            setBranches([]);
                             setIsAuthReady(true);
                             return;
                         }
@@ -472,6 +487,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     setBookings([]);
                                     setNotifications([]);
                                     setFavorites([]);
+                                    setBranches([]);
                                 }
                                 return prev && prev.id === optimisticProfile.id ? prev : optimisticProfile;
                             });
@@ -534,6 +550,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             );
                             userRepository.getFavorites().then(setFavorites).catch(() => {});
                             userRepository.getFollowedMerchants().then(setFollowedMerchants).catch(() => {});
+                            // Branches feed the "📍 لوكيشن سابق" chip picker;
+                            // only sellers/admins need them.
+                            if (profile.userType === 'seller' || profile.userType === 'admin') {
+                                branchRepository.listByMerchant(spUser.id).then(setBranches).catch(() => {});
+                            } else {
+                                setBranches([]);
+                            }
                             setNotifKeywords(profile.notifKeywords || []);
                             setSmartAlerts((profile as any).smartAlerts || []);
                             // Hydrate language from server preference
@@ -1690,6 +1713,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (err) { logger.error('Click inc error:', err); }
     };
 
+    const saveBranch = useCallback(async (input: Partial<StoreBranch> & { nameAr: string }): Promise<StoreBranch | null> => {
+        if (!user?.id) return null;
+        try {
+            const saved = await branchRepository.upsert({ ...input, merchantId: user.id });
+            if (saved) {
+                setBranches(prev => {
+                    const idx = prev.findIndex(b => b.id === saved.id);
+                    if (idx >= 0) {
+                        const next = [...prev];
+                        next[idx] = saved;
+                        return next;
+                    }
+                    return [...prev, saved];
+                });
+            }
+            return saved;
+        } catch (err) {
+            logger.error('saveBranch error:', err);
+            throw err;
+        }
+    }, [user?.id]);
+
+    const removeBranch = useCallback(async (id: string): Promise<void> => {
+        const prevList = branches;
+        // Optimistic — drop locally first so the chip vanishes instantly.
+        setBranches(prev => prev.filter(b => b.id !== id));
+        try {
+            await branchRepository.remove(id);
+        } catch (err) {
+            // Roll back on failure so the seller sees the chip again and
+            // knows the delete didn't actually land.
+            logger.error('removeBranch error:', err);
+            setBranches(prevList);
+            throw err;
+        }
+    }, [branches]);
+
     // Memoize the context value to prevent unnecessary re-renders
     const contextValue = useMemo(() => ({
         language, setLanguage,
@@ -1711,6 +1771,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         viewAs, setViewAs, effectiveUserType,
         incrementDealView, incrementDealClick,
         platformSettings,
+        branches, saveBranch, removeBranch,
     }), [
         language, setLanguage,
         deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
@@ -1731,6 +1792,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         viewAs, setViewAs, effectiveUserType,
         incrementDealView, incrementDealClick,
         platformSettings,
+        branches, saveBranch, removeBranch,
     ]);
 
     return (
