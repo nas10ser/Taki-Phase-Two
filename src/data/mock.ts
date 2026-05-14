@@ -6,14 +6,19 @@ export type Category =
     | 'Electronics'
     | 'Food'
     | 'Beauty'
+    | 'MensSalon'
+    | 'WomensSalon'
     | 'Sports'
     | 'Supermarket'
+    | 'Butcher'
     | 'Sanitary'
     | 'Cafe'
     | 'Home'
     | 'Hotels'
     | 'CarRentals'
     | 'Laundry'
+    | 'MensTailor'
+    | 'WomensTailor'
     | 'CarWash'
     | 'CarWorkshop'
     | 'Amusements'
@@ -21,6 +26,7 @@ export type Category =
     | 'Library'
     | 'Nursery'
     | 'Pharmacy'
+    | 'Clinics'
     | 'Online'
     | 'Other';
 
@@ -136,14 +142,19 @@ export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: 
     { id: 'Electronics', ar: 'إلكترونيات', en: 'Electronics', emoji: '📱' },
     { id: 'Food', ar: 'مطاعم', en: 'Food', emoji: '🍔' },
     { id: 'Beauty', ar: 'عطور وتجميل', en: 'Beauty', emoji: '💄' },
+    { id: 'MensSalon', ar: 'صالون رجالي', en: 'Barbershop', emoji: '💈' },
+    { id: 'WomensSalon', ar: 'صالون نسائي', en: "Women's Salon", emoji: '💇‍♀️' },
     { id: 'Sports', ar: 'رياضة', en: 'Sports', emoji: '⚽' },
     { id: 'Supermarket', ar: 'سوبرماركت', en: 'Supermarket', emoji: '🛒' },
+    { id: 'Butcher', ar: 'ملحمة', en: 'Butcher', emoji: '🥩' },
     { id: 'Sanitary', ar: 'أدوات صحية', en: 'Sanitary', emoji: '🚿' },
     { id: 'Cafe', ar: 'مقاهي', en: 'Cafes', emoji: '☕' },
     { id: 'Home', ar: 'منزل وديكور', en: 'Home', emoji: '🏠' },
     { id: 'Hotels', ar: 'فنادق', en: 'Hotels', emoji: '🏨' },
     { id: 'CarRentals', ar: 'تأجير سيارات', en: 'Car Rentals', emoji: '🚗' },
     { id: 'Laundry', ar: 'مغسلة ملابس', en: 'Laundromats', emoji: '🧺' },
+    { id: 'MensTailor', ar: 'خياطة رجالية', en: "Men's Tailor", emoji: '🧵' },
+    { id: 'WomensTailor', ar: 'مشغل نسائي', en: "Women's Tailor", emoji: '🪡' },
     { id: 'CarWash', ar: 'مغسلة سيارات', en: 'Car Wash', emoji: '🧽' },
     { id: 'CarWorkshop', ar: 'ورش سيارات', en: 'Car Workshops', emoji: '🔧' },
     { id: 'Amusements', ar: 'ملاهي ألعاب', en: 'Amusements', emoji: '🎡' },
@@ -151,6 +162,7 @@ export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: 
     { id: 'Library', ar: 'مكتبة', en: 'Library', emoji: '📚' },
     { id: 'Nursery', ar: 'مشاتل زراعية', en: 'Nurseries', emoji: '🌱' },
     { id: 'Pharmacy', ar: 'صيدلية', en: 'Pharmacy', emoji: '💊' },
+    { id: 'Clinics', ar: 'عيادات', en: 'Clinics', emoji: '🩺' },
     { id: 'Online', ar: 'أونلاين', en: 'Online', emoji: '🌐' },
     { id: 'Other', ar: 'أخرى', en: 'Other', emoji: '✨' },
 ];

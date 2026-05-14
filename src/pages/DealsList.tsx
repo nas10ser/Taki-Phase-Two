@@ -182,7 +182,7 @@ const DealsList: React.FC = () => {
                 background: 'var(--card-bg)',
                 borderBottom: '1px solid var(--border-color)',
             }} className="hide-scrollbar">
-                {CATEGORIES.slice(0, 12).map(cat => (
+                {CATEGORIES.map(cat => (
                     <button key={cat.id} onClick={() => setActiveCategory(cat.id)}
                         className={`filter-chip ${activeCategory === cat.id ? 'active' : ''}`}
                         style={{ flexShrink: 0 }}>
