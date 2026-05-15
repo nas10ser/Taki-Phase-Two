@@ -105,6 +105,7 @@ const SellerDashboard: React.FC = () => {
     const { completeBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
+    const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
     const [highlightedBarcode, setHighlightedBarcode] = useState<string | null>(null);
     const [scannerOpen, setScannerOpen] = useState(false);
     const [showDualPicker, setShowDualPicker] = useState(false);
@@ -2714,7 +2715,118 @@ const SellerDashboard: React.FC = () => {
                     </div>
                 ) : view === 'orders' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {activeOrders.length > 0 ? activeOrders.map(order => (
+                        {/* Sub-tabs: نشطة (active) / السجل (history). History lets the
+                            merchant scroll back through completed + cancelled orders. */}
+                        <div style={{ display: 'flex', gap: 8, padding: 6, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
+                            {(['active', 'history'] as const).map(f => {
+                                const count = f === 'active' ? activeOrders.length : pastOrders.length;
+                                const label = f === 'active'
+                                    ? (isRTL ? 'نشطة' : 'Active')
+                                    : (isRTL ? 'السجل' : 'History');
+                                const icon = f === 'active' ? '🔔' : '📜';
+                                const selected = ordersFilter === f;
+                                return (
+                                    <button
+                                        key={f}
+                                        type="button"
+                                        onClick={() => setOrdersFilter(f)}
+                                        style={{
+                                            flex: 1, padding: '10px 12px', borderRadius: 12, border: 'none',
+                                            background: selected ? 'var(--accent)' : 'transparent',
+                                            color: selected ? 'white' : 'var(--text-secondary)',
+                                            fontWeight: 900, fontSize: '0.85rem',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                            cursor: 'pointer', transition: 'all 0.2s ease',
+                                            boxShadow: selected ? '0 6px 14px rgba(0,0,0,0.15)' : 'none'
+                                        }}>
+                                        <span>{icon}</span>
+                                        <span>{label}</span>
+                                        <span style={{
+                                            background: selected ? 'rgba(255,255,255,0.25)' : 'var(--gray-100)',
+                                            color: selected ? 'white' : 'var(--text-primary)',
+                                            padding: '2px 8px', borderRadius: 10, fontSize: '0.72rem', fontWeight: 900
+                                        }}>{count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {ordersFilter === 'history' ? (
+                            pastOrders.length > 0 ? (
+                                [...pastOrders].sort((a, b) => (b.bookedAt || 0) - (a.bookedAt || 0)).map(order => {
+                                    const isCompleted = order.status === 'completed';
+                                    const statusLabel = isCompleted
+                                        ? (isRTL ? 'مكتمل' : 'Completed')
+                                        : (isRTL ? 'ملغي' : 'Cancelled');
+                                    const statusColor = isCompleted ? '#059669' : '#dc2626';
+                                    const statusBg = isCompleted ? 'rgba(5, 150, 105, 0.12)' : 'rgba(220, 38, 38, 0.12)';
+                                    const statusIcon = isCompleted ? '✅' : '❌';
+                                    const when = order.bookedAt
+                                        ? new Date(order.bookedAt).toLocaleString(isRTL ? 'ar-SA' : 'en-US', {
+                                            year: 'numeric', month: 'short', day: 'numeric',
+                                            hour: '2-digit', minute: '2-digit'
+                                          })
+                                        : '';
+                                    return (
+                                        <div
+                                            key={order.barcode}
+                                            className="animate-fade-in"
+                                            style={{
+                                                background: 'var(--card-bg)', backdropFilter: 'blur(10px)',
+                                                borderRadius: 24, padding: 18, border: '1px solid var(--border-color)',
+                                                boxShadow: 'var(--shadow-sm)', opacity: 0.95
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 10 }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {order.deal?.itemName || (isRTL ? 'عرض محذوف' : 'Deleted deal')}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                                                        🕒 {when}
+                                                    </div>
+                                                </div>
+                                                <div style={{
+                                                    background: statusBg, color: statusColor,
+                                                    padding: '6px 12px', borderRadius: 14, fontSize: '0.78rem',
+                                                    fontWeight: 900, whiteSpace: 'nowrap',
+                                                    display: 'flex', alignItems: 'center', gap: 4
+                                                }}>
+                                                    <span>{statusIcon}</span>
+                                                    <span>{statusLabel}</span>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                <div style={{ background: 'var(--gray-100)', padding: '5px 10px', borderRadius: 10 }}>
+                                                    {isRTL ? '👤 المشتري:' : '👤 Buyer:'}{' '}
+                                                    <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>
+                                                        {(order as any).userName || (order.userId ? order.userId.substring(0, 8) + '…' : '—')}
+                                                    </span>
+                                                </div>
+                                                <div style={{ background: 'var(--gray-100)', padding: '5px 10px', borderRadius: 10 }}>
+                                                    {isRTL ? '📦 الكمية:' : '📦 Qty:'}{' '}
+                                                    <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>{order.bookedQuantity}</span>
+                                                </div>
+                                                <div style={{ background: 'var(--gray-100)', padding: '5px 10px', borderRadius: 10, direction: 'ltr', fontFamily: 'monospace' }}>
+                                                    #{order.barcode}
+                                                </div>
+                                            </div>
+                                            {order.notes && (
+                                                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                                    📝 {order.notes}
+                                                </div>
+                                            )}
+                                            {order.merchantNote && (
+                                                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245, 158, 11, 0.12)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                                    💬 {order.merchantNote}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا يوجد سجل طلبات بعد' : 'No order history yet'}</div>
+                            )
+                        ) : activeOrders.length > 0 ? activeOrders.map(order => (
                             <div
                                 key={order.barcode}
                                 id={`order-${order.barcode}`}

@@ -620,7 +620,7 @@ const Register: React.FC = () => {
     };
 
     const TopHeader = () => (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50, direction: isRTL ? 'rtl' : 'ltr' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50, direction: isRTL ? 'rtl' : 'ltr' }}>
             {mode !== 'landing' ? (
                 <button onClick={() => setMode(mode === 'login' || mode === 'form' ? (mode === 'login' ? 'landing' : 'type') : 'landing')}
                     style={{ color: 'rgba(200, 200, 200, 1)', border: 'none', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(20px)', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, borderRadius: '50%', transition: 'all 0.3s' }}>
