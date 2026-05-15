@@ -48,6 +48,34 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [barcode]);
 
+    // Realtime-gap recovery. iOS Safari kills the realtime websocket whenever
+    // the tab backgrounds (incoming call, lock screen, app switch), and any
+    // booking_messages INSERT events that fire during that gap are gone for
+    // good — the channel re-subscribes but does NOT replay missed rows.
+    // Concrete repro that prompted this fix: buyer sent 3 messages, all 3
+    // were stored in the DB, but the seller's UI only showed 2/3 because the
+    // 3rd INSERT landed while his tab was in the background. Refetching on
+    // visibilitychange + window focus + pageshow closes that gap deterministically.
+    useEffect(() => {
+        const refetch = () => {
+            if (document.visibilityState !== 'visible') return;
+            fetchBookingMessages(barcode);
+            markBookingMessagesRead(barcode);
+        };
+        const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
+        const onFocus = () => refetch();
+        const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) refetch(); };
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('focus', onFocus);
+        window.addEventListener('pageshow', onPageShow as EventListener);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('focus', onFocus);
+            window.removeEventListener('pageshow', onPageShow as EventListener);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [barcode]);
+
     // Auto-scroll to the latest message whenever the count grows.
     useEffect(() => {
         if (listRef.current) {

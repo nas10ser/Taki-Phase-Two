@@ -1704,7 +1704,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 logger.info('🔄 Full Refresh Triggered');
                 await Promise.allSettled([
                     import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => fresh && setDeals(fresh))),
-                    user?.id ? import('../repositories/bookingRepository').then(({ bookingRepository: br }) => br.getByUser(user.id).then(setBookings)) : Promise.resolve(),
+                    // Preserve previously-fetched per-booking chat messages — the
+                    // bookings select doesn't include them, so a naive setBookings(fresh)
+                    // would wipe `messages` on every focus/visibility refresh and force
+                    // every open BookingThread to re-fetch from scratch.
+                    user?.id ? import('../repositories/bookingRepository').then(({ bookingRepository: br }) => br.getByUser(user.id).then(fresh => setBookings(prev => {
+                        const byBarcode: Record<string, any> = {};
+                        prev.forEach(b => { byBarcode[b.barcode] = b; });
+                        return fresh.map((b: any) => ({ ...b, messages: byBarcode[b.barcode]?.messages }));
+                    }))) : Promise.resolve(),
                     user?.id ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(user.id).then(setNotifications)) : Promise.resolve(),
                     user?.id ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(setFavorites)) : Promise.resolve(),
                     import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getAllSellers().then(sellers => {

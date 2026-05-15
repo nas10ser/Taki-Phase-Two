@@ -88,25 +88,36 @@ const Notifications: React.FC = () => {
                                 // before /admin?tab=overview.
                                 const isBookingNotif = n.type === 'booking';
                                 const audience = (n.metadata as any)?.audience as 'seller' | 'buyer' | 'admin' | undefined;
+                                // Booking-related notifications (creation confirmation, seller
+                                // acknowledgement, chat messages, completion, cancellation) must
+                                // land on the page where the booking + its chat thread lives:
+                                //   - buyer audience → /bookings?barcode=…   (auto-expands card + scrolls + highlights)
+                                //   - seller audience → /seller?tab=orders&barcode=…
+                                //   - admin audience → seller dash if same user, else admin overview
+                                // Before v10.69 the buyer flow opened /deal/{id} which sent the
+                                // user back to the product page even when they tapped "💬 رسالة
+                                // جديدة" — the chat is on Bookings, not on the deal page.
                                 const dest = isBookingNotif && audience === 'seller' && barcode
                                     ? `/seller?tab=orders&barcode=${barcode}`
-                                    : isBookingNotif && audience === 'buyer' && dealId
-                                        ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                    : isBookingNotif && audience === 'buyer' && barcode
+                                        ? `/bookings?barcode=${barcode}`
                                         : isBookingNotif && audience === 'admin' && storeId === user.id && barcode
                                             ? `/seller?tab=orders&barcode=${barcode}`
                                             : isBookingNotif && audience === 'admin' && dealId
                                                 ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
                                                 : isBookingNotif && audience === 'admin'
                                                     ? '/admin?tab=overview'
-                                                    : dealId
-                                                        ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                                    : isBookingNotif && barcode
+                                                        ? `/bookings?barcode=${barcode}`
                                                         : isBookingNotif
                                                             ? '/bookings'
-                                                            : n.type === 'follow' || followerId
-                                                                ? '/profile'
-                                                                : n.type === 'marketing'
-                                                                    ? '/'
-                                                                    : null;
+                                                            : dealId
+                                                                ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                                                : n.type === 'follow' || followerId
+                                                                    ? '/profile'
+                                                                    : n.type === 'marketing'
+                                                                        ? '/'
+                                                                        : null;
 
                                 const isHighPriority = !n.isRead && (
                                     n.type === 'follow' || 

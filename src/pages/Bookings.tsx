@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
@@ -34,10 +34,12 @@ const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expi
 const Bookings: React.FC = () => {
     const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings } = useApp();
     const history = useHistory();
+    const location = useLocation();
     const isRTL = language === 'ar';
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [highlightedBarcode, setHighlightedBarcode] = useState<string | null>(null);
     // Default to newest-first so the most recently booked order is visible
     // without scrolling — matches what users expect from inbox-style screens.
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -88,6 +90,25 @@ const Bookings: React.FC = () => {
             setExpandedId(filteredActive[0].barcode);
         }
     }, [filteredActive, expandedId]);
+
+    // When the user lands here from a booking notification (e.g. "✅ تم الحجز بنجاح"
+    // or "💬 رسالة جديدة"), the URL carries ?barcode=XXX. Auto-expand that
+    // booking, scroll it into view, and pulse a highlight so the chat thread
+    // is immediately visible — no manual searching through the list.
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const target = params.get('barcode');
+        if (!target) return;
+        if (!bookings.some(b => b.barcode === target && b.userId === user?.id)) return;
+        setExpandedId(target);
+        setHighlightedBarcode(target);
+        requestAnimationFrame(() => {
+            const el = document.getElementById(`booking-${target}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        const t = setTimeout(() => setHighlightedBarcode(null), 3500);
+        return () => clearTimeout(t);
+    }, [location.search, bookings, user?.id]);
 
     const copyCode = (code: string) => {
         navigator.clipboard.writeText(code);
@@ -234,17 +255,19 @@ const Bookings: React.FC = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {filteredActive.map((booking: any) => {
                                 const isExpanded = expandedId === booking.barcode;
+                                const isHighlighted = highlightedBarcode === booking.barcode;
                                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${booking.barcode}`;
-                                
+
                                 return (
-                                    <div key={booking.barcode} 
+                                    <div key={booking.barcode}
+                                        id={`booking-${booking.barcode}`}
                                         onClick={() => setExpandedId(isExpanded ? null : booking.barcode)}
                                         style={{
                                             background: 'var(--card-bg)',
                                             borderRadius: 24,
                                             padding: 20,
-                                            border: isExpanded ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                            boxShadow: isExpanded ? '0 10px 40px rgba(0,0,0,0.1)' : 'var(--shadow-sm)',
+                                            border: isHighlighted ? '2px solid var(--secondary)' : (isExpanded ? '2px solid var(--primary)' : '1px solid var(--border-color)'),
+                                            boxShadow: isHighlighted ? '0 0 0 4px rgba(245,158,11,0.18), var(--shadow)' : (isExpanded ? '0 10px 40px rgba(0,0,0,0.1)' : 'var(--shadow-sm)'),
                                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                             cursor: 'pointer',
                                             position: 'relative',
@@ -398,17 +421,20 @@ const Bookings: React.FC = () => {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {filteredPast.map((booking: any) => {
                                 const isExpanded = expandedId === booking.barcode;
+                                const isHighlighted = highlightedBarcode === booking.barcode;
                                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${booking.barcode}`;
-                                
+
                                 return (
-                                    <div key={booking.barcode} 
+                                    <div key={booking.barcode}
+                                        id={`booking-${booking.barcode}`}
                                         onClick={() => setExpandedId(isExpanded ? null : booking.barcode)}
                                         style={{
                                             background: 'var(--card-bg)',
                                             borderRadius: 24,
                                             padding: 20,
-                                            border: isExpanded ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                            opacity: isExpanded ? 1 : 0.75,
+                                            border: isHighlighted ? '2px solid var(--secondary)' : (isExpanded ? '2px solid var(--primary)' : '1px solid var(--border-color)'),
+                                            boxShadow: isHighlighted ? '0 0 0 4px rgba(245,158,11,0.18), var(--shadow)' : undefined,
+                                            opacity: isExpanded || isHighlighted ? 1 : 0.75,
                                             transition: 'all 0.3s ease',
                                             cursor: 'pointer'
                                         }}>
