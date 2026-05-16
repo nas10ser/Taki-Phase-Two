@@ -164,6 +164,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Without this, AuthRedirector kicks logged-in admins off /admin on
     // refresh because user is briefly null while the session loads.
     const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
+    // Tracks the user id we last fully hydrated on an explicit sign-in.
+    // Supabase JS can re-fire SIGNED_IN on tab focus / token reload; without
+    // this guard a single focus would re-pull every list (the refetch storm
+    // behind "الموقع ثقيل"). Cleared on sign-out so a re-login re-hydrates.
+    const lastSignInHydratedIdRef = useRef<string | null>(null);
     const [favorites, setFavorites] = useState<string[]>([]);
     const favoritesRef = useRef<string[]>([]);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
@@ -385,6 +390,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         if (currentUser) {
                             logger.info(`👤 Session found: ${currentUser.name}`);
                             setUser(currentUser);
+                            // initData is now the single owner of cold-load
+                            // hydration. The profile is already in hand, so
+                            // populate the follow/keyword/smart-alert/language
+                            // slices here with ZERO extra network calls. The
+                            // auth listener used to re-do all of this on
+                            // INITIAL_SESSION (every page open) — that duplicate
+                            // pass is now skipped (see onAuthStateChange).
+                            setFollowedMerchants(currentUser.followedMerchants || []);
+                            setNotifKeywords(currentUser.notifKeywords || []);
+                            setSmartAlerts((currentUser as any).smartAlerts || []);
+                            const cuLang = (currentUser as any).preferredLang;
+                            if (cuLang === 'ar' || cuLang === 'en') {
+                                setLanguageState(cuLang);
+                                document.dir = cuLang === 'ar' ? 'rtl' : 'ltr';
+                            }
+                            // Mark this id as hydrated so a SIGNED_IN that
+                            // Supabase re-fires on focus doesn't re-pull.
+                            lastSignInHydratedIdRef.current = currentUser.id;
                             // Background hydration of user-specific data — does
                             // not gate isAuthReady; pages render immediately.
                             Promise.allSettled([
@@ -454,6 +477,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             setFollowedMerchants([]);
                             setBranches([]);
                             setIsAuthReady(true);
+                            // Re-login (even same account) must re-hydrate.
+                            lastSignInHydratedIdRef.current = null;
                             return;
                         }
                         if (session?.user) {
@@ -499,6 +524,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             authService.setUser(optimisticProfile as any);
                             setIsAuthReady(true);
                             clearTimeout(safetyTimer);
+
+                            // ── Heavy hydration gate ───────────────────────
+                            // The lightweight optimistic profile above already
+                            // unlocks the UI correctly. The expensive part
+                            // (canonical findById + soft-delete recovery RPC +
+                            // re-pull of bookings/notifications/favorites/
+                            // followed/branches) must run ONLY on an explicit
+                            // sign-in, and only once per signed-in id:
+                            //  • INITIAL_SESSION  → initData() already owns the
+                            //    full cold-load hydration (no duplicate).
+                            //  • TOKEN_REFRESHED  → fires every ~50 min & on
+                            //    some focus events — must never refetch.
+                            //  • USER_UPDATED     → fires on every
+                            //    supabase.auth.updateUser (e.g. the favorites
+                            //    metadata mirror) — must never refetch.
+                            // This single gate removes the bulk of the
+                            // "الموقع ثقيل" duplicate-request storm. Realtime +
+                            // the focus/visibility re-sync keep data live.
+                            if (event !== 'SIGNED_IN' || lastSignInHydratedIdRef.current === spUser.id) {
+                                return;
+                            }
+                            lastSignInHydratedIdRef.current = spUser.id;
 
                             // Fetch the canonical profile in the background — never
                             // block the auth callback on it.
@@ -1517,6 +1564,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [user]);
 
+    // Stable refs for the realtime handlers. The central realtime effect
+    // below must NOT re-subscribe every time these callbacks change identity.
+    // `addNotification`/`showRealTimeAlert` are rebuilt whenever the `user`
+    // object is replaced — and that happens 3-4× during a single login
+    // (null → getCurrentUser → optimistic JWT profile → canonical DB row →
+    // language hydrate). Each re-subscribe tore down and rebuilt every
+    // Supabase channel mid-handshake, so notification/booking INSERTs were
+    // dropped until the user manually refreshed (the "لازم أحدّث 3 مرات"
+    // bug). Routing handlers through refs lets the effect depend on
+    // `user?.id` alone and keep channels stable for the whole session.
+    const showRealTimeAlertRef = useRef(showRealTimeAlert);
+    const addNotificationRef = useRef(addNotification);
+    const reconcileStatusRef = useRef(reconcileStatus);
+    useEffect(() => { showRealTimeAlertRef.current = showRealTimeAlert; }, [showRealTimeAlert]);
+    useEffect(() => { addNotificationRef.current = addNotification; }, [addNotification]);
+    useEffect(() => { reconcileStatusRef.current = reconcileStatus; }, [reconcileStatus]);
+
     // 🌍 CENTRAL REALTIME SYNC (Handles visibility, online/offline, etc.)
     useEffect(() => {
         const disconnect = realtimeService.connect({
@@ -1537,7 +1601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     if (prev.find(p => p.id === mapped.id)) return prev;
                     return [mapped, ...prev];
                 });
-                if (user?.id === n.user_id) showRealTimeAlert(mapped.title, mapped.body);
+                if (user?.id === n.user_id) showRealTimeAlertRef.current(mapped.title, mapped.body);
             },
             onNotificationUpdate: (payload) => {
                 if (payload.eventType === 'DELETE') {
@@ -1590,6 +1654,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         backupCode: n.backup_code,
                         deal: dealsRef.current.find(d => d.id === n.deal_id) || { id: n.deal_id, storeId: n.store_id, itemName: 'تخفيض' },
                         userId: n.user_id,
+                        userName: n.user_name || undefined,
+                        userPhone: n.user_phone || undefined,
                         bookedQuantity: n.booked_quantity,
                         prepTime: n.prep_time,
                         notes: n.notes,
@@ -1607,7 +1673,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         const known = prev.find(b => b.barcode === updated.barcode);
                         if (known) {
                             return prev.map(b => b.barcode === updated.barcode
-                                ? { ...b, status: reconcileStatus(b.status, updated.status), notes: updated.notes || b.notes }
+                                ? { ...b, status: reconcileStatusRef.current(b.status, updated.status), notes: updated.notes || b.notes }
                                 : b);
                         }
                         return prev;
@@ -1633,7 +1699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 const priceDropped = before?.discounted_price != null && updated.discounted_price != null && updated.discounted_price < before.discounted_price;
                                 const restocked = before?.quantity === 0 && updated.quantity && updated.quantity > 0;
                                 if (priceDropped) {
-                                    addNotification(
+                                    addNotificationRef.current(
                                         user.id,
                                         { ar: '💸 انخفض سعر منتج في مفضلتك!', en: '💸 Price drop on a favorite!' },
                                         { ar: `${updated.item_name}: ${updated.discounted_price} ر.س (كان ${before.discounted_price} ر.س)`, en: `${updated.item_name}: ${updated.discounted_price} SAR (was ${before.discounted_price} SAR)` },
@@ -1641,7 +1707,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         { dealId: updated.id }
                                     );
                                 } else if (restocked) {
-                                    addNotification(
+                                    addNotificationRef.current(
                                         user.id,
                                         { ar: '📦 منتجك المفضل عاد للتوفر!', en: '📦 Favorite restocked!' },
                                         { ar: `${updated.item_name} في ${updated.shop_name} أصبح متاحاً مجدداً.`, en: `${updated.item_name} at ${updated.shop_name} is available again.` },
@@ -1725,7 +1791,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         return () => disconnect();
-    }, [user?.id, showRealTimeAlert, reconcileStatus, addNotification]);
+        // Depend ONLY on the user id. The handlers above read the latest
+        // showRealTimeAlert/addNotification/reconcileStatus via refs, so the
+        // realtime channels are created once per signed-in user and stay
+        // subscribed for the whole session instead of being torn down and
+        // rebuilt every time an unrelated callback changes identity.
+    }, [user?.id]);
 
     // Effective user-type for rendering. Admins can flip into buyer/seller
     // preview mode via setViewAs; non-admins always see their real role.

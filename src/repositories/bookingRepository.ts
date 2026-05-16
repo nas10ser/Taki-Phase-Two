@@ -80,6 +80,8 @@ export const bookingRepository = {
                     backupCode: b.backup_code,
                     deal: deals.find(d => d.id === b.deal_id) || { id: b.deal_id, storeId: b.store_id, itemName: 'تخفيض' },
                     userId: b.user_id,
+                    userName: b.user_name || undefined,
+                    userPhone: b.user_phone || undefined,
                     bookedQuantity: b.booked_quantity,
                     prepTime: b.prep_time,
                     notes: b.notes,
@@ -112,6 +114,8 @@ export const bookingRepository = {
                     backupCode: data.backup_code,
                     deal: deal || { id: data.deal_id, storeId: data.store_id, itemName: 'تخفيض' },
                     userId: data.user_id,
+                    userName: data.user_name || undefined,
+                    userPhone: data.user_phone || undefined,
                     bookedQuantity: data.booked_quantity,
                     prepTime: data.prep_time,
                     notes: data.notes,
@@ -135,6 +139,13 @@ export const bookingRepository = {
                 backup_code: booking.backupCode,
                 deal_id: booking.deal?.id,
                 user_id: booking.userId,
+                // Denormalize the buyer's name + phone onto the booking row.
+                // The seller's order list is a single bookings query and RLS
+                // does not let a seller read the buyer's `users` row, so
+                // without this the seller only ever saw the raw UUID. Captured
+                // at booking time = correct even if the buyer renames later.
+                user_name: booking.userName ?? null,
+                user_phone: booking.userPhone ?? null,
                 store_id: booking.deal?.storeId || booking.deal?.store_id, // handle both casing if needed
                 booked_quantity: booking.bookedQuantity,
                 prep_time: booking.prepTime,

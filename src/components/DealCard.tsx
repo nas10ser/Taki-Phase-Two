@@ -190,8 +190,8 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
             </div>
 
             <div style={{ padding: '12px 14px' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{deal.shopName}</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--dark)', marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{deal.shopName}</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
                     {deal.itemName}
                 </div>
 

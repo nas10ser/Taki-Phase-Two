@@ -118,14 +118,19 @@ export const userRepository = {
      */
     getFavorites: async (): Promise<string[]> => {
         try {
-            const { data: authData } = await supabase.auth.getUser();
-            if (authData?.user) {
+            // getSession() reads the in-memory/localStorage session — no
+            // network. getUser() round-trips to the GoTrue /user endpoint
+            // every call; this runs on every cold load and every focus
+            // re-sync, so that round-trip was pure latency.
+            const { data: { session } } = await supabase.auth.getSession();
+            const sUser = session?.user;
+            if (sUser) {
                 // Try the dedicated favorites table first (skip if table doesn't exist)
                 try {
                     const { data: favRows, error } = await supabase
                         .from('favorites')
                         .select('deal_id')
-                        .eq('user_id', authData.user.id);
+                        .eq('user_id', sUser.id);
 
                     if (!error && favRows && favRows.length > 0) {
                         return favRows.map(r => r.deal_id);
@@ -135,8 +140,8 @@ export const userRepository = {
                 }
 
                 // Fallback to user_metadata
-                if (authData.user.user_metadata?.favorites) {
-                    return authData.user.user_metadata.favorites;
+                if (sUser.user_metadata?.favorites) {
+                    return sUser.user_metadata.favorites;
                 }
             }
         } catch (e) {
@@ -153,10 +158,9 @@ export const userRepository = {
         // Direct remote sync
 
         try {
-            const { data: authData } = await supabase.auth.getUser();
-            if (!authData?.user) return;
-
-            const userId = authData.user.id;
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id;
+            if (!userId) return;
 
             // Get current remote favorites
             try {
@@ -220,12 +224,12 @@ export const userRepository = {
      */
     getFollowedMerchants: async (): Promise<string[]> => {
         try {
-            const { data: authData } = await supabase.auth.getUser();
-            if (authData?.user) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
                 const { data, error } = await supabase
                     .from('users')
                     .select('followed_merchants')
-                    .eq('id', authData.user.id)
+                    .eq('id', session.user.id)
                     .maybeSingle();
                 if (data && !error && Array.isArray(data.followed_merchants)) {
                     return data.followed_merchants;

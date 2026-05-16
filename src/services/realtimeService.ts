@@ -56,6 +56,36 @@ const lastSyncAt: Record<string, number> = {
     user: 0,
 };
 
+// ─── Refresh coalescing ─────────────────────────────────────────
+// Multiple subsystems ask for a full re-sync near-simultaneously:
+// `visibilitychange` AND `focus` both fire when a tab is re-entered;
+// `online` / `pageshow` can pile on top. Without coalescing, returning
+// to the app fired onRefreshAll (5 heavy queries) 2-3× back-to-back —
+// a major contributor to "الموقع ثقيل". This collapses any burst into a
+// single refresh and enforces a minimum gap between full refreshes.
+// Explicit pull-to-refresh (forceRefresh) deliberately bypasses it.
+let lastRefreshAt = 0;
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const REFRESH_MIN_INTERVAL = 6_000; // ignore repeat refreshes within 6s
+const REFRESH_DEBOUNCE = 600;       // collapse a burst of triggers into one
+
+function requestRefresh(reason: string) {
+    if (!currentConfig) return;
+    if (refreshDebounceTimer) return; // a refresh is already queued
+    const since = Date.now() - lastRefreshAt;
+    if (since < REFRESH_MIN_INTERVAL) {
+        logger.info(`⏭️ Refresh (${reason}) skipped — ran ${Math.round(since / 1000)}s ago`);
+        return;
+    }
+    refreshDebounceTimer = setTimeout(() => {
+        refreshDebounceTimer = null;
+        if (!currentConfig) return;
+        lastRefreshAt = Date.now();
+        logger.info(`🔄 Coalesced refresh (${reason})`);
+        currentConfig.onRefreshAll();
+    }, REFRESH_DEBOUNCE);
+}
+
 // ─── Visibility & Online Handlers ───────────────────────────────
 
 function handleVisibilityChange() {
@@ -71,7 +101,7 @@ function handleVisibilityChange() {
         // before bookings update".
         if (currentConfig && elapsed > 1_000) {
             logger.info(`⏰ Away for ${Math.round(elapsed / 1000)}s — full re-sync`);
-            currentConfig.onRefreshAll();
+            requestRefresh('visibility');
         }
 
         verifyAndReconnect();
@@ -89,7 +119,7 @@ function handlePageShow(e: PageTransitionEvent) {
         logger.info('♻️ Restored from bfcache — full reconnect + re-sync');
         teardownChannels();
         setupChannels(currentConfig);
-        currentConfig.onRefreshAll();
+        requestRefresh('bfcache');
         lastActivityAt = Date.now();
     }
 }
@@ -99,9 +129,10 @@ function handleOnline() {
     if (currentConfig) {
         // Small delay to let the network stabilize
         setTimeout(() => {
+            if (!currentConfig) return;
             teardownChannels();
-            setupChannels(currentConfig!);
-            currentConfig!.onRefreshAll();
+            setupChannels(currentConfig);
+            requestRefresh('online');
         }, 1000);
     }
 }
@@ -119,7 +150,7 @@ function handleFocus() {
     const elapsed = now - lastActivityAt;
     if (elapsed > 1_000 && currentConfig) {
         logger.info(`🔄 Window focused after ${Math.round(elapsed / 1000)}s — quick sync`);
-        currentConfig.onRefreshAll();
+        requestRefresh('focus');
         verifyAndReconnect();
     }
     lastActivityAt = now;
@@ -385,10 +416,13 @@ export const realtimeService = {
         window.addEventListener('focus', handleFocus);
         window.addEventListener('pageshow', handlePageShow);
 
-        // Do an initial full sync to catch anything missed while disconnected
-        setTimeout(() => {
-            config.onRefreshAll();
-        }, 500);
+        // NOTE: no auto-refresh on connect. Cold load is owned by
+        // AppContext.initData(); a login re-connect is hydrated by the
+        // SIGNED_IN auth path; a genuine "was away → came back" reconnect
+        // goes through the visibility/focus/online/pageshow handlers, which
+        // all funnel into the coalesced requestRefresh(). The old
+        // unconditional 500 ms onRefreshAll here fired a 5-query refetch
+        // right on top of initData on every single page open.
 
         return () => this.disconnect();
     },
@@ -406,6 +440,12 @@ export const realtimeService = {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;
         }
+        if (refreshDebounceTimer) {
+            clearTimeout(refreshDebounceTimer);
+            refreshDebounceTimer = null;
+        }
+        // Reset so the first refresh after a genuine reconnect is honored.
+        lastRefreshAt = 0;
 
         teardownChannels();
 
@@ -421,7 +461,15 @@ export const realtimeService = {
      */
     async forceRefresh() {
         if (currentConfig) {
-            logger.info('🔄 Realtime Service: Force refresh');
+            logger.info('🔄 Realtime Service: Force refresh (explicit)');
+            // Explicit user intent (pull-to-refresh) — bypass the coalescer
+            // but still stamp the clock so an incidental focus/visibility
+            // event a second later doesn't immediately refetch again.
+            if (refreshDebounceTimer) {
+                clearTimeout(refreshDebounceTimer);
+                refreshDebounceTimer = null;
+            }
+            lastRefreshAt = Date.now();
             await currentConfig.onRefreshAll();
         }
     },
