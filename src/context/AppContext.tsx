@@ -15,6 +15,7 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 
 interface StoreProfile {
     phone?: string;
@@ -128,8 +129,13 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [language, setLanguageState] = useState<'ar' | 'en'>('ar');
 
-    const [deals, setDeals] = useState<Deal[]>([]);
-    const dealsRef = useRef<Deal[]>([]);
+    // Hydrate the public deal feed synchronously from the last snapshot so
+    // the home screen paints real content on the FIRST frame — before the
+    // ~300-500 ms (Tokyo ↔ KSA) network round-trip even starts. The live
+    // fetch in initData still runs and overwrites this; the snapshot is a
+    // render cache, never the source of truth.
+    const [deals, setDeals] = useState<Deal[]>(() => readSnapshot<Deal[]>('deals') || []);
+    const dealsRef = useRef<Deal[]>(deals);
     useEffect(() => { dealsRef.current = deals; }, [deals]);
 
 
@@ -221,14 +227,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     useEffect(() => { customAlertRef.current = customAlert; }, [customAlert]);
     useEffect(() => { customConfirmRef.current = customConfirm; }, [customConfirm]);
 
-    const [loading, setLoading] = useState(true);
+    // If we already have a cached deal feed, don't gate the UI behind the
+    // full-screen loader — show the cached content instantly and let the
+    // background fetch swap it in. Only a true cold start (no snapshot)
+    // shows the spinner.
+    const [loading, setLoading] = useState(() => !(readSnapshot<Deal[]>('deals') || []).length);
 
     const [topLocation, setTopLocationState] = useState<TopLocation>({ region: '', city: '', mall: '' });
 
     const [notifKeywords, setNotifKeywords] = useState<string[]>([]);
     const [smartAlerts, setSmartAlerts] = useState<SmartAlertRule[]>([]);
 
-    const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>({});
+    const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>(
+        () => readSnapshot<Record<string, StoreProfile>>('sellers') || {}
+    );
 
     // Platform-wide feature flags read from `platform_settings`. Defaults are
     // conservative (off) so the UI never accidentally exposes a section before
@@ -408,19 +420,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             // Mark this id as hydrated so a SIGNED_IN that
                             // Supabase re-fires on focus doesn't re-pull.
                             lastSignInHydratedIdRef.current = currentUser.id;
+                            const uid = currentUser.id;
+
+                            // Instant paint of the user's own lists from the
+                            // last snapshot (keyed by uid so a shared device
+                            // never shows the previous account). The live
+                            // fetch below overwrites these.
+                            const snapFav = readSnapshot<string[]>('fav_' + uid);
+                            if (snapFav) setFavorites(snapFav);
+                            const snapNotif = readSnapshot<Notification[]>('notif_' + uid);
+                            if (snapNotif) setNotifications(snapNotif);
+                            const snapBk = readSnapshot<any[]>('bk_' + uid);
+                            if (snapBk) setBookings(snapBk);
+
                             // Background hydration of user-specific data — does
                             // not gate isAuthReady; pages render immediately.
                             Promise.allSettled([
-                                userRepository.getFavorites().then(setFavorites),
-                                notificationRepository.fetchByUserId(currentUser.id).then(setNotifications),
+                                userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + uid, f); }),
+                                notificationRepository.fetchByUserId(uid).then(n => { setNotifications(n); writeSnapshot('notif_' + uid, n); }),
                                 import('../repositories/bookingRepository').then(({ bookingRepository }) =>
-                                    bookingRepository.getByUser(currentUser.id).then(setBookings)
+                                    // Pass the deals we already have so getByUser
+                                    // does NOT re-fetch the entire deals + ratings
+                                    // tables (a duplicate Tokyo round-trip on the
+                                    // critical path).
+                                    bookingRepository.getByUser(uid, dealsRef.current).then(b => { setBookings(b); writeSnapshot('bk_' + uid, b); })
                                 ),
                                 // Sellers/admins use branches for the "📍 لوكيشن سابق"
                                 // chip picker. Buyers don't need them — skip the
                                 // round-trip for them.
                                 (currentUser.userType === 'seller' || currentUser.userType === 'admin')
-                                    ? branchRepository.listByMerchant(currentUser.id).then(setBranches)
+                                    ? branchRepository.listByMerchant(uid).then(setBranches)
                                     : Promise.resolve(),
                             ]).catch(() => {});
                         }
@@ -434,13 +463,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // PARALLEL — global data fetch. Doesn't block auth gate.
                 Promise.allSettled([
                     dealRepository.getAll().then(fetchedDeals => {
-                        if (fetchedDeals) setDeals(fetchedDeals);
+                        if (fetchedDeals) {
+                            setDeals(fetchedDeals);
+                            writeSnapshot('deals', fetchedDeals);
+                        }
                     }),
                     userRepository.getAllSellers().then(sellers => {
                         if (sellers) {
                             const profiles: Record<string, any> = {};
                             sellers.forEach(s => { profiles[s.id] = s; });
                             setStoreProfiles(profiles);
+                            writeSnapshot('sellers', profiles);
                         }
                     }),
                 ]).finally(() => {
@@ -479,6 +512,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             setIsAuthReady(true);
                             // Re-login (even same account) must re-hydrate.
                             lastSignInHydratedIdRef.current = null;
+                            // Wipe every cached snapshot so a shared device
+                            // never paints the previous account's lists.
+                            clearSnapshots();
                             return;
                         }
                         if (session?.user) {
@@ -590,12 +626,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             // independently as it resolves, so the UI renders the new user
                             // immediately and progressively fills in.
                             import('../repositories/bookingRepository').then(({ bookingRepository: br }) =>
-                                br.getByUser(spUser.id).then(setBookings).catch(() => {})
+                                br.getByUser(spUser.id, dealsRef.current).then(b => { setBookings(b); writeSnapshot('bk_' + spUser.id, b); }).catch(() => {})
                             );
                             import('../repositories/notificationRepository').then(({ notificationRepository: nr }) =>
-                                nr.fetchByUserId(spUser.id).then(setNotifications).catch(() => {})
+                                nr.fetchByUserId(spUser.id).then(n => { setNotifications(n); writeSnapshot('notif_' + spUser.id, n); }).catch(() => {})
                             );
-                            userRepository.getFavorites().then(setFavorites).catch(() => {});
+                            userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + spUser.id, f); }).catch(() => {});
                             userRepository.getFollowedMerchants().then(setFollowedMerchants).catch(() => {});
                             // Branches feed the "📍 لوكيشن سابق" chip picker;
                             // only sellers/admins need them.
@@ -922,6 +958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNotifications([]);
         setBookings([]);
         setSmartAlerts([]);
+        clearSnapshots();
         // Drop the device's push subscription so the previous account
         // doesn't keep receiving alerts on this hardware.
         pushService.unsubscribe().catch(() => {});
@@ -946,6 +983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Sign out locally so the next visit forces a fresh login (which is
         // the trigger for the recovery prompt).
         try { await authService.logout(); } catch {}
+        clearSnapshots();
         setUser(null);
         setFavorites([]);
         setFollowedMerchants([]);
@@ -1472,7 +1510,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const refreshBookings = useCallback(async () => {
         if (!user?.id) return;
         try {
-            const fresh = await bookingRepository.getByUser(user.id);
+            const fresh = await bookingRepository.getByUser(user.id, dealsRef.current);
+            writeSnapshot('bk_' + user.id, fresh);
             setBookings(prev => {
                 // Preserve any messages we already fetched per booking — the
                 // bookings select doesn't include them.
@@ -1545,7 +1584,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const refreshDeals = useCallback(async () => {
         try {
             const fresh = await dealRepository.getAll();
-            if (fresh) setDeals(fresh);
+            if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); }
         } catch (e) {
             console.warn('refreshDeals failed:', e);
         }
@@ -1768,23 +1807,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             },
             onRefreshAll: async () => {
                 logger.info('🔄 Full Refresh Triggered');
+                const ruid = user?.id;
                 await Promise.allSettled([
-                    import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => fresh && setDeals(fresh))),
+                    import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => { if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } })),
                     // Preserve previously-fetched per-booking chat messages — the
                     // bookings select doesn't include them, so a naive setBookings(fresh)
                     // would wipe `messages` on every focus/visibility refresh and force
                     // every open BookingThread to re-fetch from scratch.
-                    user?.id ? import('../repositories/bookingRepository').then(({ bookingRepository: br }) => br.getByUser(user.id).then(fresh => setBookings(prev => {
-                        const byBarcode: Record<string, any> = {};
-                        prev.forEach(b => { byBarcode[b.barcode] = b; });
-                        return fresh.map((b: any) => ({ ...b, messages: byBarcode[b.barcode]?.messages }));
-                    }))) : Promise.resolve(),
-                    user?.id ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(user.id).then(setNotifications)) : Promise.resolve(),
-                    user?.id ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(setFavorites)) : Promise.resolve(),
+                    ruid ? import('../repositories/bookingRepository').then(({ bookingRepository: br }) => br.getByUser(ruid, dealsRef.current).then(fresh => {
+                        writeSnapshot('bk_' + ruid, fresh);
+                        setBookings(prev => {
+                            const byBarcode: Record<string, any> = {};
+                            prev.forEach(b => { byBarcode[b.barcode] = b; });
+                            return fresh.map((b: any) => ({ ...b, messages: byBarcode[b.barcode]?.messages }));
+                        });
+                    })) : Promise.resolve(),
+                    ruid ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(ruid).then(n => { setNotifications(n); writeSnapshot('notif_' + ruid, n); })) : Promise.resolve(),
+                    ruid ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + ruid, f); })) : Promise.resolve(),
                     import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getAllSellers().then(sellers => {
                         const profiles: Record<string, any> = {};
                         sellers.forEach(s => { profiles[s.id] = s; });
                         setStoreProfiles(profiles);
+                        writeSnapshot('sellers', profiles);
                     }))
                 ]);
             }

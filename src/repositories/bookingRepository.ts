@@ -65,7 +65,7 @@ export const bookingRepository = {
         return [];
     },
 
-    getByUser: async (userId: string): Promise<Booking[]> => {
+    getByUser: async (userId: string, knownDeals?: any[]): Promise<Booking[]> => {
         try {
             // Fetch bookings where user is buyer (user_id) OR seller (store_id),
             // so the same call hydrates both sides of the transaction.
@@ -74,7 +74,26 @@ export const bookingRepository = {
                 .select('*')
                 .or(`user_id.eq.${userId},store_id.eq.${userId}`);
             if (data && !error) {
-                const deals = await dealRepository.getAll();
+                // Resolve the deal object WITHOUT re-fetching the entire deals
+                // (+ ratings) tables. Before v10.71 this called
+                // dealRepository.getAll() — two extra heavy Tokyo round-trips
+                // on the critical path every time bookings loaded. Now: reuse
+                // the caller's already-loaded deals; if absent, fetch only the
+                // handful of deal rows these bookings actually reference.
+                let deals: any[] = Array.isArray(knownDeals) ? knownDeals : [];
+                const haveIds = new Set(deals.map(d => d.id));
+                const missingIds = Array.from(
+                    new Set(data.map(b => b.deal_id).filter(id => id && !haveIds.has(id)))
+                );
+                if (missingIds.length > 0) {
+                    const { data: dealRows } = await supabase
+                        .from('deals')
+                        .select('*')
+                        .in('id', missingIds);
+                    if (Array.isArray(dealRows)) {
+                        deals = deals.concat(dealRows.map(dealRepository.mapRowToDeal));
+                    }
+                }
                 const remoteBookings: Booking[] = data.map(b => ({
                     barcode: b.barcode,
                     backupCode: b.backup_code,

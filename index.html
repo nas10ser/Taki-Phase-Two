@@ -23,6 +23,14 @@
   <meta name="apple-mobile-web-app-title" content="TAKI">
   <meta name="application-name" content="TAKI">
   <meta name="msapplication-TileColor" content="#0f172a">
+  <!-- Open the TLS connection to Supabase (Tokyo region) DURING html parse
+       so the first REST/auth call doesn't pay the ~1 RTT DNS+TCP+TLS setup
+       — a meaningful saving from Saudi Arabia where each round-trip is
+       ~300-500 ms. Same for the Google Fonts origins. -->
+  <link rel="preconnect" href="https://kbmqzxcjdankdgiovctm.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://kbmqzxcjdankdgiovctm.supabase.co">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1041/1041888.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/1041/1041888.png">
