@@ -42,7 +42,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { deals, language, customAlert, topLocation, checkMarketingAlerts } = useApp();
+    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant } = useApp();
     const [userLat, setUserLat] = useState(USER_LOCATION.lat);
     const [userLng, setUserLng] = useState(USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
@@ -135,6 +135,14 @@ const Nearby: React.FC = () => {
             return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock;
         }).sort((a, b) => a.distance - b.distance);
     }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId]);
+
+    // Store-by-name results — same shared engine as Home/DealsList so search
+    // is consistent on every page (stores aren't geo-bound, so a name match
+    // shows regardless of radius).
+    const matchingStores = useMemo(
+        () => (searchQuery.trim() ? dealService.matchStores(searchQuery.trim(), storeProfiles, 12) : []),
+        [searchQuery, storeProfiles]
+    );
 
     const [viewMode, setViewMode] = useState<'both' | 'map' | 'list'>('both');
     
@@ -392,6 +400,33 @@ const Nearby: React.FC = () => {
             {/* List View Below Map */}
             {viewMode !== 'map' && (
             <div style={{ padding: '0 16px calc(env(safe-area-inset-bottom, 0px) + 120px)' }}>
+                {searchQuery.trim() && matchingStores.length > 0 && (
+                    <div style={{ marginBottom: 18 }}>
+                        <h2 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 12, color: 'var(--text-primary)' }}>{isRTL ? 'المتاجر 🏪' : 'Stores 🏪'}</h2>
+                        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }} className="hide-scrollbar">
+                            {matchingStores.map((store: any) => {
+                                const isFollowed = followedMerchants.includes(store.id);
+                                return (
+                                    <div
+                                        key={store.id}
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label={store.shop || store.name}
+                                        onClick={() => history.push(`/store/${store.id}`)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/store/${store.id}`); } }}
+                                        style={{ flexShrink: 0, width: 110, background: 'var(--card-bg)', borderRadius: 16, padding: '12px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', border: '1px solid var(--border-color)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                                    >
+                                        <img src={store.avatar_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150'} alt={store.shop || store.name} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', marginBottom: 10, border: '2px solid var(--gray-100)' }} />
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{store.shop || store.name}</div>
+                                        <button onClick={(e) => { e.stopPropagation(); toggleFollowMerchant(store.id); }} style={{ background: isFollowed ? 'var(--gray-100)' : 'var(--primary)', color: isFollowed ? 'var(--gray-600)' : 'white', border: 'none', borderRadius: 20, padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, width: '100%' }}>
+                                            {isFollowed ? (isRTL ? 'متابع' : 'Following') : (isRTL ? '+ متابعة' : '+ Follow')}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
                 <h2 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16, color: 'var(--text-primary)' }}>
                     {isRTL ? `النتائج القريبة (${nearbyDeals.length})` : `Nearby Results (${nearbyDeals.length})`}
                 </h2>

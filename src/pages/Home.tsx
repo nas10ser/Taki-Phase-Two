@@ -41,16 +41,10 @@ const Home: React.FC = () => {
             return;
         }
         
-        // Instant local search for stores
-        const query = searchQuery.trim();
-        const profiles = Object.values(storeProfiles);
-        const matches = profiles.filter(p => {
-            const sp = p as any;
-            const textToSearch = `${sp.shop || ''} ${sp.name || ''} ${sp.bio || ''}`;
-            return dealService.advancedSearchMatch(query, textToSearch);
-        }).slice(0, 15);
-        
-        setMatchingStores(matches as any);
+        // Instant local search for stores — shared, ranked matcher so the
+        // closest store name surfaces first and behaves identically on
+        // every page.
+        setMatchingStores(dealService.matchStores(searchQuery.trim(), storeProfiles, 15) as any);
     }, [searchQuery, storeProfiles]);
 
     const filteredCities = useMemo(() => {
@@ -106,10 +100,22 @@ const Home: React.FC = () => {
         list = list.filter(d => dealMatchesLocation(d, topLocation));
 
         if (searchQuery.trim()) {
-            list = list.filter(d => {
-                const textToSearch = `${d.itemName} ${d.shopName} ${d.category} ${d.description || ''}`;
-                return dealService.advancedSearchMatch(searchQuery, textToSearch);
-            });
+            // While the user is actively searching, RELEVANCE wins over the
+            // sort toggle and the sponsored interleave — they want what they
+            // typed, ranked best-match first (item name carries the most
+            // weight, then shop, then category/description).
+            const scored = list
+                .map(d => ({
+                    d,
+                    score: Math.max(
+                        dealService.searchScore(searchQuery, d.itemName) * 1.0,
+                        dealService.searchScore(searchQuery, d.shopName) * 0.9,
+                        dealService.searchScore(searchQuery, `${d.category} ${d.description || ''}`) * 0.5,
+                    ),
+                }))
+                .filter(x => x.score > 0)
+                .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0));
+            return scored.map(x => x.d);
         }
 
         if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);

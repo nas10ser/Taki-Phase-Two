@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import jsQR from 'jsqr';
 import { useApp } from '../context/AppContext';
 import { useBooking, Booking } from '../hooks/useBooking';
 
@@ -16,10 +17,40 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
     const [verified, setVerified] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const rafRef = useRef<number | null>(null);
+    const lastScanRef = useRef(0);
 
     const isRTL = language === 'ar';
 
+    const lookupBooking = useCallback((code: string): Booking | undefined => {
+        const c = code.trim();
+        const upper = c.toUpperCase();
+        return bookings.find(b =>
+            b.barcode === upper ||
+            b.backupCode === upper ||
+            b.barcode === c ||
+            b.backupCode === c
+        );
+    }, [bookings]);
+
+    const stopCamera = useCallback(() => {
+        if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setCameraActive(false);
+    }, []);
+
+    // Reset everything when the sheet is closed.
     useEffect(() => {
         if (!isOpen) {
             stopCamera();
@@ -28,62 +59,120 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
             setManualCode('');
             setVerified(false);
         }
-    }, [isOpen]);
+    }, [isOpen, stopCamera]);
 
-    const startCamera = async () => {
+    // Hard stop on unmount so the camera light never stays on.
+    useEffect(() => () => stopCamera(), [stopCamera]);
+
+    const handleDetected = useCallback((raw: string) => {
+        const code = (raw || '').trim();
+        if (!code) return;
+        const booking = lookupBooking(code);
+        if (booking) {
+            setScanResult(booking);
+            setScanError('');
+            stopCamera();
+        }
+        // Not found while live-scanning: stay silent and keep scanning so the
+        // merchant can just keep the QR in frame — no error spam.
+    }, [lookupBooking, stopCamera]);
+
+    // Per-frame QR decode. Throttled to ~180ms so we don't burn battery
+    // running jsQR on every animation frame; downscaled to 640px max side
+    // which is plenty for QR while keeping decode fast on phones.
+    const tick = useCallback(() => {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (!video || !canvas || video.readyState < 2) {
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+        }
+        const now = Date.now();
+        if (now - lastScanRef.current >= 180) {
+            lastScanRef.current = now;
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            if (vw && vh) {
+                const maxSide = 640;
+                const scale = Math.min(1, maxSide / Math.max(vw, vh));
+                const w = Math.round(vw * scale);
+                const h = Math.round(vh * scale);
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (ctx) {
+                    ctx.drawImage(video, 0, 0, w, h);
+                    try {
+                        const img = ctx.getImageData(0, 0, w, h);
+                        const result = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+                        if (result && result.data) {
+                            handleDetected(result.data);
+                            return; // handleDetected stops the loop on a hit
+                        }
+                    } catch {
+                        /* getImageData can throw mid-teardown — ignore and retry */
+                    }
+                }
+            }
+        }
+        rafRef.current = requestAnimationFrame(tick);
+    }, [handleDetected]);
+
+    const startCamera = useCallback(async () => {
         try {
             // On iOS/iPhone, getUserMedia ONLY works over HTTPS.
             if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                const secureMsg = isRTL 
-                    ? '⚠️ الكاميرا تتطلب اتصالاً آمناً (HTTPS) لتعمل على الايفون. يرجى استخدام رابط يبدأ بـ https://' 
-                    : '⚠️ Camera access requires a secure connection (HTTPS) on iPhone. Please use a link starting with https://';
-                setScanError(secureMsg);
+                setScanError(isRTL
+                    ? '⚠️ الكاميرا تتطلب اتصالاً آمناً (HTTPS) لتعمل على الايفون. يرجى استخدام رابط يبدأ بـ https://'
+                    : '⚠️ Camera access requires a secure connection (HTTPS) on iPhone. Please use a link starting with https://');
                 return;
             }
-
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('MediaDevices API not supported');
             }
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { 
+                video: {
                     facingMode: 'environment',
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                 }
             });
             streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                // Explicitly call play() for iOS Safari stability
-                await videoRef.current.play().catch(e => console.error('Video play error:', e));
-            }
-            setCameraActive(true);
             setScanError('');
+            // The <video> is always mounted, but flipping this flag is what
+            // triggers the bind+play+scan effect below. We intentionally do
+            // NOT touch videoRef here — that was the original bug (ref was
+            // null because the element only rendered after this state set).
+            setCameraActive(true);
         } catch (err: any) {
             console.error('❌ Camera access error:', err);
-            const msg = err.name === 'NotAllowedError' 
+            const msg = err.name === 'NotAllowedError'
                 ? (isRTL ? 'يرجى السماح بالوصول للكاميرا من إعدادات المتصفح' : 'Please allow camera access in browser settings')
                 : (isRTL ? `فشل الوصول للكاميرا: ${err.message || 'خطأ غير معروف'}` : `Camera error: ${err.message || 'Unknown error'}`);
             setScanError(msg);
         }
-    };
+    }, [isRTL]);
 
-    const stopCamera = () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        setCameraActive(false);
-    };
-
-    const lookupBooking = (code: string): Booking | undefined => {
-        return bookings.find(b =>
-            b.barcode === code.toUpperCase() ||
-            b.backupCode === code.toUpperCase() ||
-            b.barcode === code ||
-            b.backupCode === code
-        );
-    };
+    // Bind the live stream to the always-mounted <video> and kick off the
+    // decode loop. Running this in an effect (after render) guarantees the
+    // video element exists — the core fix for the blank viewfinder.
+    useEffect(() => {
+        if (!cameraActive) return;
+        const video = videoRef.current;
+        const stream = streamRef.current;
+        if (!video || !stream) return;
+        video.srcObject = stream;
+        const p = video.play();
+        if (p && typeof p.catch === 'function') p.catch(() => { /* iOS autoplay race — harmless */ });
+        lastScanRef.current = 0;
+        rafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+        };
+    }, [cameraActive, tick]);
 
     const handleManualSearch = () => {
         if (!manualCode.trim()) return;
@@ -91,6 +180,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
         if (booking) {
             setScanResult(booking);
             setScanError('');
+            stopCamera();
         } else {
             setScanResult(null);
             setScanError(isRTL ? 'لم يتم العثور على حجز بهذا الرمز' : 'No booking found with this code');
@@ -219,37 +309,59 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                     ) : (
                         /* Scanner / Manual Input */
                         <div>
-                            {/* Camera Section */}
+                            {/* Camera Section — the <video> is ALWAYS mounted so
+                                its ref is available the instant the stream is
+                                ready; the "open camera" button just overlays it
+                                until the camera is live. */}
                             <div style={{
-                                background: '#0f172a', borderRadius: 16, height: 200,
+                                background: '#0f172a', borderRadius: 16, height: 220,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 marginBottom: 20, overflow: 'hidden', position: 'relative'
                             }}>
-                                {cameraActive ? (
-                                    <video 
-                                        ref={videoRef} 
-                                        autoPlay 
-                                        playsInline 
-                                        muted 
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                    />
-                                ) : (
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    style={{
+                                        width: '100%', height: '100%', objectFit: 'cover',
+                                        display: cameraActive ? 'block' : 'none'
+                                    }}
+                                />
+                                <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                                {!cameraActive && (
                                     <button onClick={startCamera} style={{
+                                        position: 'absolute', inset: 0,
                                         background: 'rgba(80, 80, 90, 0.3)', border: '2px dashed rgba(80, 80, 95, 0.2)',
-                                        color: 'white', padding: '16px 24px', borderRadius: 16,
-                                        fontSize: '0.9rem', fontWeight: 800, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
+                                        color: 'white', borderRadius: 16,
+                                        fontSize: '0.9rem', fontWeight: 800, display: 'flex', flexDirection: 'column',
+                                        alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer'
                                     }}>
                                         <span style={{ fontSize: '2rem' }}>📷</span>
                                         {isRTL ? 'فتح الكاميرا للمسح' : 'Open Camera to Scan'}
                                     </button>
                                 )}
-                                {/* Scan overlay frame */}
+
+                                {/* Scan overlay frame + helper text */}
                                 {cameraActive && (
-                                    <div style={{
-                                        position: 'absolute', inset: 'auto', width: 180, height: 180,
-                                        border: '3px solid var(--primary)',
-                                        borderRadius: 20
-                                    }} />
+                                    <>
+                                        <div style={{
+                                            position: 'absolute', top: '50%', left: '50%',
+                                            transform: 'translate(-50%, -50%)',
+                                            width: 170, height: 170,
+                                            border: '3px solid var(--primary)',
+                                            borderRadius: 20,
+                                            boxShadow: '0 0 0 9999px rgba(0,0,0,0.35)'
+                                        }} />
+                                        <div style={{
+                                            position: 'absolute', bottom: 10, left: 0, right: 0,
+                                            textAlign: 'center', color: 'white', fontSize: '0.78rem',
+                                            fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.7)'
+                                        }}>
+                                            {isRTL ? 'وجّه الكاميرا نحو رمز QR الخاص بالحجز' : 'Point the camera at the booking QR code'}
+                                        </div>
+                                    </>
                                 )}
                             </div>
 

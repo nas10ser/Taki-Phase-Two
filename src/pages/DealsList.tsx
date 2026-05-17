@@ -32,7 +32,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, topLocation, loading } = useApp();
+    const { deals, language, storeProfiles, topLocation, loading, followedMerchants, toggleFollowMerchant } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -75,10 +75,20 @@ const DealsList: React.FC = () => {
         list = list.filter(d => dealMatchesLocation(d, topLocation));
 
         if (searchQuery.trim()) {
-            list = list.filter(d => {
-                const text = `${d.itemName} ${d.shopName} ${d.category} ${d.description || ''}`;
-                return dealService.advancedSearchMatch(searchQuery, text);
-            });
+            // Active search => rank by relevance (same engine as Home), best
+            // match first, instead of the section's default sort.
+            return list
+                .map(d => ({
+                    d,
+                    score: Math.max(
+                        dealService.searchScore(searchQuery, d.itemName) * 1.0,
+                        dealService.searchScore(searchQuery, d.shopName) * 0.9,
+                        dealService.searchScore(searchQuery, `${d.category} ${d.description || ''}`) * 0.5,
+                    ),
+                }))
+                .filter(x => x.score > 0)
+                .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0))
+                .map(x => x.d);
         }
 
         if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
@@ -88,6 +98,13 @@ const DealsList: React.FC = () => {
 
         return list;
     }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy]);
+
+    // Store directory search — mirrors Home so "find a shop by name" works
+    // identically when browsing the full lists too.
+    const matchingStores = useMemo(
+        () => (searchQuery.trim() ? dealService.matchStores(searchQuery.trim(), storeProfiles, 15) : []),
+        [searchQuery, storeProfiles]
+    );
 
     const title = TITLES[type];
 
@@ -225,6 +242,37 @@ const DealsList: React.FC = () => {
                     />
                 </div>
             </div>
+
+            {/* Store results — same ranked engine & card as Home */}
+            {searchQuery.trim() && matchingStores.length > 0 && (
+                <div style={{ padding: '6px 0 2px' }}>
+                    <div style={{ padding: '0 12px 10px' }}>
+                        <h2 style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)' }}>{isRTL ? 'المتاجر 🏪' : 'Stores 🏪'}</h2>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, padding: '0 12px 14px', overflowX: 'auto' }} className="hide-scrollbar">
+                        {matchingStores.map((store: any) => {
+                            const isFollowed = followedMerchants.includes(store.id);
+                            return (
+                                <div
+                                    key={store.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={store.shop || store.name}
+                                    onClick={() => history.push(`/store/${store.id}`)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/store/${store.id}`); } }}
+                                    style={{ flexShrink: 0, width: 110, background: 'var(--card-bg)', borderRadius: 16, padding: '12px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', border: '1px solid var(--border-color)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                                >
+                                    <img src={store.avatar_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150'} alt={store.shop || store.name} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', marginBottom: 10, border: '2px solid var(--gray-100)' }} />
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{store.shop || store.name}</div>
+                                    <button onClick={(e) => { e.stopPropagation(); toggleFollowMerchant(store.id); }} style={{ background: isFollowed ? 'var(--gray-100)' : 'var(--primary)', color: isFollowed ? 'var(--gray-600)' : 'white', border: 'none', borderRadius: 20, padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, width: '100%' }}>
+                                        {isFollowed ? (isRTL ? 'متابع' : 'Following') : (isRTL ? '+ متابعة' : '+ Follow')}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* 2-column grid — Trendyol-style.
                 Single column under 320px (Galaxy Fold), 2-col on phones,

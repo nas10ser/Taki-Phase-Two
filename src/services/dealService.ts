@@ -1,5 +1,57 @@
 import { Rating } from '../data/mock';
 
+/**
+ * Canonical text normalizer shared by every search surface (Home, DealsList,
+ * Nearby, store search). Keeping ONE implementation guarantees the query a
+ * shopper types is matched identically everywhere.
+ *
+ * - lowercases (Latin) and trims
+ * - folds Arabic alef/yaa/taa-marbuta variants so إ/أ/آ/ا, ي/ى, ة/ه collide
+ * - strips tashkeel (diacritics) and tatweel (ـ)
+ * - maps Arabic-Indic ٠-٩ and Persian ۰-۹ digits to ASCII 0-9 (so "ن١٥"
+ *   and "n15" both reach the store "N15")
+ * - removes zero-width / bidi control chars that sneak in from RTL keyboards
+ * - turns punctuation into spaces and collapses runs of whitespace
+ */
+export const normalizeText = (input: string): string => {
+    if (!input) return '';
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const persian = '۰۱۲۳۴۵۶۷۸۹';
+    return input
+        .toLowerCase()
+        .replace(/[٠-٩]/g, d => String(arabicIndic.indexOf(d)))
+        .replace(/[۰-۹]/g, d => String(persian.indexOf(d)))
+        .replace(/[أإآٱا]/g, 'ا')
+        .replace(/[يىئ]/g, 'ي')
+        .replace(/[ةه]/g, 'ه')
+        .replace(/ؤ/g, 'و')
+        .replace(/ـ/g, '')
+        .replace(/[ًٌٍَُِّْٰ]/g, '')
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
+/**
+ * Relevance score for ranking (higher = better). Used to sort results so the
+ * closest match — e.g. an exact store name — always floats to the top instead
+ * of being buried behind a loose fuzzy hit. 0 means "no match at all".
+ */
+const computeScore = (query: string, text: string): number => {
+    const q = normalizeText(query);
+    const t = normalizeText(text);
+    if (!q) return 0;
+    if (!t) return 0;
+    if (t === q) return 1000;
+    const words = t.split(' ');
+    if (t.startsWith(q)) return 880;
+    if (words.some(w => w === q)) return 820;
+    if (words.some(w => w.startsWith(q))) return 720;
+    if (t.includes(q)) return 560;
+    if (words.some(w => q.startsWith(w) && w.length >= 3)) return 460;
+    return dealService.advancedSearchMatch(query, text) ? 300 : 0;
+};
+
 export const dealService = {
     /**
      * Calculates the average rating from an array of reviews.
@@ -39,14 +91,7 @@ export const dealService = {
 
         const mapArabizi = (str: string) => str.split('').map(char => EN_TO_AR_KEYBOARD[char.toLowerCase()] || char).join('');
 
-        const normalizeArabic = (str: string) => {
-            return str
-                .replace(/[أإآا]/g, 'ا')
-                .replace(/[يى]/g, 'ي')
-                .replace(/[ةه]/g, 'ه')
-                .replace(/ـ/g, '')
-                .replace(/[ًٌٍَُِّْ]/g, ''); // Diacritics
-        };
+        const normalizeArabic = (str: string) => normalizeText(str);
 
         const stemArabic = (str: string) => {
             let s = normalizeArabic(str);
@@ -99,7 +144,6 @@ export const dealService = {
             'قهوه': ['قهوة', 'كوفي', 'coffee', 'cafe', 'اسبريسو', 'لاتيه', 'كابتشينو'],
             'مطعم': ['مطاعم', 'اكل', 'أكل', 'food', 'restaurant', 'وجبة', 'غداء', 'عشاء'],
             'جوال': ['تليفون', 'موبايل', 'هاتف', 'mobile', 'phone', 'smartphone', 'ايفون', 'سامسونج'],
-            'تاكي': ['taki', 'تكي', 'application', 'site', 'موقع', 'تطبيق'],
         };
 
         const words = normQ.split(/\s+/);
@@ -153,5 +197,45 @@ export const dealService = {
             }
             return false;
         });
-    }
+    },
+
+    /**
+     * Numeric relevance of `text` for `query` (0 = no match, bigger = closer).
+     * Pages use this to ORDER results so the strongest hit is always first.
+     */
+    searchScore: (query: string, text: string): number => computeScore(query, text),
+
+    /**
+     * Single source of truth for "find a store by name" used by Home,
+     * DealsList and Nearby. Scores each store across shop name, owner name,
+     * bio and address (name fields weighted heaviest), drops zero-score
+     * stores, and returns them ranked best-first.
+     *
+     * `stores` is the AppContext storeProfiles map (id -> profile); each
+     * returned object keeps its `id` so callers can route to /store/:id.
+     */
+    matchStores: (query: string, stores: Record<string, any>, limit = 20): any[] => {
+        const q = normalizeText(query);
+        if (!q) return [];
+        const scored: { store: any; score: number }[] = [];
+        for (const id of Object.keys(stores)) {
+            const s = stores[id] || {};
+            const shop = s.shop || '';
+            const name = s.name || '';
+            const bio = s.bio || '';
+            const address = s.address || '';
+            // Name fields are what a shopper actually types — weight them far
+            // above bio/address so "N15" beats a store that merely mentions
+            // "n15" somewhere in its description.
+            const score = Math.max(
+                computeScore(query, shop) * 1.0,
+                computeScore(query, name) * 0.95,
+                computeScore(query, bio) * 0.4,
+                computeScore(query, address) * 0.35,
+            );
+            if (score > 0) scored.push({ store: { ...s, id: s.id || id }, score });
+        }
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, limit).map(x => x.store);
+    },
 };

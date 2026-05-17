@@ -34,10 +34,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [isOpen, onClose]);
 
+    // Bookings is a buyer-only surface — sellers fulfil bookings from the
+    // Seller Dashboard, so showing them an empty "حجوزاتي" page was pure
+    // dead-end UI. Hide it whenever the *effective* role is seller (covers
+    // real sellers and admins previewing as seller).
+    const isSellerView = effectiveUserType === 'seller';
+
     const menuItems = [
         { id: 'home', icon: '🏠', ar: 'الرئيسية', en: 'Home', path: '/' },
         { id: 'favs', icon: '❤️', ar: 'المفضلة', en: 'Favorites', path: '/profile' },
-        { id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' },
+        ...(!isSellerView ? [{ id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' }] : []),
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
     ];
     // Seasonal offers section — admin can show/hide globally from
