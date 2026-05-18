@@ -36,7 +36,8 @@ export const userRepository = {
                     notifKeywords: [],
                     smartAlerts: [],
                     preferredLang: 'ar',
-                    followedMerchants: []
+                    followedMerchants: [],
+                    blockedMerchants: []
                 };
                 authService.setUser(fallback);
                 return fallback;
@@ -84,6 +85,7 @@ export const userRepository = {
             if (Array.isArray(p.notifKeywords)) dbData.notif_keywords = p.notifKeywords;
             if (Array.isArray(p.smartAlerts)) dbData.smart_alerts = p.smartAlerts;
             if (Array.isArray(p.followedMerchants)) dbData.followed_merchants = p.followedMerchants;
+            if (Array.isArray(p.blockedMerchants)) dbData.blocked_merchants = p.blockedMerchants;
             if (p.preferredLang !== undefined) dbData.preferred_lang = p.preferredLang;
             if (p.lat !== undefined) dbData.lat = p.lat;
             if (p.lng !== undefined) dbData.lng = p.lng;
@@ -265,6 +267,7 @@ export const userRepository = {
                     smartAlerts: Array.isArray(data.smart_alerts) ? data.smart_alerts : [],
                     preferredLang: data.preferred_lang || 'ar',
                     followedMerchants: Array.isArray(data.followed_merchants) ? data.followed_merchants : [],
+                    blockedMerchants: Array.isArray(data.blocked_merchants) ? data.blocked_merchants : [],
                     lat: data.lat,
                     lng: data.lng,
                     googleMapsLink: data.google_maps_link
@@ -318,6 +321,7 @@ export const userRepository = {
                     smartAlerts: Array.isArray(d.smart_alerts) ? d.smart_alerts : [],
                     preferredLang: d.preferred_lang || 'ar',
                     followedMerchants: Array.isArray(d.followed_merchants) ? d.followed_merchants : [],
+                    blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
                     lat: d.lat,
                     lng: d.lng,
                     googleMapsLink: d.google_maps_link
@@ -353,6 +357,7 @@ export const userRepository = {
                     smartAlerts: Array.isArray(d.smart_alerts) ? d.smart_alerts : [],
                     preferredLang: d.preferred_lang || 'ar',
                     followedMerchants: Array.isArray(d.followed_merchants) ? d.followed_merchants : [],
+                    blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
                     lat: d.lat,
                     lng: d.lng,
                     googleMapsLink: d.google_maps_link

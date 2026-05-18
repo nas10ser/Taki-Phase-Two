@@ -77,7 +77,7 @@ interface AppContextType {
      *  don't bounce logged-in users to home before hydration. */
     isAuthReady: boolean;
     addDeal: (deal: Deal) => Promise<void>;
-    updateDeal: (deal: Deal) => Promise<void>;
+    updateDeal: (deal: Deal) => Promise<boolean>;
     updateDealStock: (dealId: string, newQuantity: number | 'unlimited') => Promise<void>;
     deleteDeal: (id: string) => Promise<void>;
     user: any;
@@ -87,6 +87,8 @@ interface AppContextType {
     toggleFavorite: (dealId: string) => Promise<void>;
     followedMerchants: string[];
     toggleFollowMerchant: (merchantId: string) => Promise<void>;
+    blockedMerchants: string[];
+    toggleBlockMerchant: (merchantId: string) => Promise<void>;
     notifications: Notification[];
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
@@ -204,6 +206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const favoritesRef = useRef<string[]>([]);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
     const [followedMerchants, setFollowedMerchants] = useState<string[]>([]);
+    const [blockedMerchants, setBlockedMerchants] = useState<string[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [bookings, setBookings] = useState<any[]>([]);
     const [branches, setBranches] = useState<StoreBranch[]>([]);
@@ -458,6 +461,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             // INITIAL_SESSION (every page open) — that duplicate
                             // pass is now skipped (see onAuthStateChange).
                             setFollowedMerchants(currentUser.followedMerchants || []);
+                            setBlockedMerchants((currentUser as any).blockedMerchants || []);
                             setNotifKeywords(currentUser.notifKeywords || []);
                             setSmartAlerts((currentUser as any).smartAlerts || []);
                             const cuLang = (currentUser as any).preferredLang;
@@ -588,7 +592,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 notifKeywords: [],
                                 smartAlerts: [],
                                 preferredLang: 'ar',
-                                followedMerchants: []
+                                followedMerchants: [],
+                                blockedMerchants: []
                             };
 
                             setUser((prev: any) => {
@@ -641,6 +646,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             if (existingProfile) {
                                 setUser(existingProfile);
                                 setFollowedMerchants(existingProfile.followedMerchants || []);
+                                setBlockedMerchants((existingProfile as any).blockedMerchants || []);
                             }
 
                             // 30-day soft-delete recovery: if the user signs in while
@@ -827,6 +833,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             await userRepository.saveProfile(updatedUser);
         }
     }, [followedMerchants, user]);
+
+    // Buyer blocks a merchant: their deals must vanish from Home/Nearby
+    // and never trigger a smart-alert notification. The notification side
+    // is enforced server-side (handle_deal_smart_notifications /
+    // handle_smart_alerts_backfill skip blocked_merchants); the client
+    // filters the lists. Blocking a followed store also drops the follow
+    // (following a blocked store is contradictory).
+    const toggleBlockMerchant = useCallback(async (merchantId: string) => {
+        const isBlocked = blockedMerchants.includes(merchantId);
+        const newBlocked = isBlocked
+            ? blockedMerchants.filter(b => b !== merchantId)
+            : [...blockedMerchants, merchantId];
+        const newFollows = (!isBlocked && followedMerchants.includes(merchantId))
+            ? followedMerchants.filter(f => f !== merchantId)
+            : followedMerchants;
+
+        setBlockedMerchants(newBlocked);
+        if (newFollows !== followedMerchants) setFollowedMerchants(newFollows);
+
+        if (user) {
+            const updatedUser = { ...user, blockedMerchants: newBlocked, followedMerchants: newFollows };
+            setUser(updatedUser);
+            authService.setUser(updatedUser);
+            await userRepository.saveProfile(updatedUser);
+        }
+    }, [blockedMerchants, followedMerchants, user]);
 
     const toggleFavorite = useCallback(async (id: string) => {
         const isAdding = !favorites.includes(id);
@@ -1143,7 +1175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
             );
-            return;
+            return false;
         }
 
         // Re-read the row from DB and apply it to local state. This is the
@@ -1162,6 +1194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // Read-back failed but write succeeded. Use the version we wrote.
             setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
         }
+        return true;
     }, [customAlert, language]);
 
     /**
@@ -1860,6 +1893,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                      if (newFollowed) {
                          setFollowedMerchants(newFollowed);
                      }
+                     const newBlocked = Array.isArray(newUser.blocked_merchants) ? newUser.blocked_merchants : undefined;
+                     if (newBlocked) {
+                         setBlockedMerchants(newBlocked);
+                     }
                      setUser((prev: any) => ({
                          ...prev,
                          name: newUser.name,
@@ -1869,6 +1906,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                          avatar_url: newUser.avatar_url,
                          contactPhone: newUser.contact_phone,
                          followedMerchants: newFollowed || prev.followedMerchants,
+                         blockedMerchants: newBlocked || prev.blockedMerchants,
                      }));
                 }
             },
@@ -1981,6 +2019,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
+        blockedMerchants, toggleBlockMerchant,
         notifications, addNotification, markNotifRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
@@ -2004,6 +2043,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
+        blockedMerchants, toggleBlockMerchant,
         notifications, addNotification, markNotifRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,

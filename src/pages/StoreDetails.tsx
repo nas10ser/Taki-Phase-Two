@@ -11,9 +11,10 @@ import { dealService } from '../services/dealService';
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const history = useHistory();
-    const { deals, language, user, followedMerchants, toggleFollowMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm } = useApp();
+    const { deals, language, user, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm } = useApp();
     const isRTL = language === 'ar';
     const isFollowed = followedMerchants.includes(id);
+    const isBlocked = blockedMerchants.includes(id);
 
     const profile = storeProfiles[id] || {};
     const [isEditingStore, setIsEditingStore] = useState(false);
@@ -44,6 +45,20 @@ const StoreDetails: React.FC = () => {
         toggleFollowMerchant(id);
         if (!isFollowed) {
              customAlert(isRTL ? 'سيصلك تنبيه بأحدث عروض هذا المحل 🔔' : 'You will be notified of new deals from this store 🔔');
+        }
+    };
+
+    const toggleBlock = async () => {
+        if (!isBlocked) {
+            const ok = await customConfirm(isRTL
+                ? 'حظر هذا المتجر؟ لن تظهر لك عروضه في الرئيسية ولا في «حولي» ولن تصلك أي تنبيهات منه — حتى لو طابقت تنبيهك الذكي. يمكنك إلغاء الحظر في أي وقت.'
+                : 'Block this store? Its deals will be hidden from Home and Nearby and you will get no alerts from it — even if they match your smart alert. You can unblock anytime.');
+            if (!ok) return;
+            await toggleBlockMerchant(id);
+            customAlert(isRTL ? '🚫 تم حظر المتجر. لن تظهر لك عروضه ولن تصلك تنبيهاته.' : '🚫 Store blocked. Its deals and alerts are now hidden from you.');
+        } else {
+            await toggleBlockMerchant(id);
+            customAlert(isRTL ? '✅ تم إلغاء حظر المتجر.' : '✅ Store unblocked.');
         }
     };
 
@@ -325,15 +340,33 @@ const StoreDetails: React.FC = () => {
                                 👥 {followerCount === null ? '…' : followerCount.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}
                             </span>
                             {user?.id !== store.id && (
-                                <button onClick={toggleFollow} style={{
-                                    background: isFollowed ? '#ef4444' : 'rgba(80, 80, 95, 0.2)',
-                                    color: 'white',
-                                    border: 'none', borderRadius: '50%', width: 28, height: 28,
-                                    fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    transition: 'all 0.2s ease', cursor: 'pointer'
-                                }}>
-                                    {isFollowed ? '❤️' : '🤍'}
-                                </button>
+                                <>
+                                    <button onClick={toggleFollow}
+                                        aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
+                                        title={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة المتجر' : 'Follow store')}
+                                        style={{
+                                            background: isFollowed ? '#ef4444' : 'rgba(80, 80, 95, 0.2)',
+                                            color: 'white',
+                                            border: 'none', borderRadius: '50%', width: 28, height: 28,
+                                            fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            transition: 'all 0.2s ease', cursor: 'pointer'
+                                        }}>
+                                        {isFollowed ? '❤️' : '🤍'}
+                                    </button>
+                                    <button onClick={toggleBlock}
+                                        aria-label={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر' : 'Block store')}
+                                        title={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر — إخفاء عروضه وتنبيهاته' : 'Block store — hide its deals & alerts')}
+                                        style={{
+                                            background: isBlocked ? '#ef4444' : 'rgba(80, 80, 95, 0.2)',
+                                            color: 'white',
+                                            border: 'none', borderRadius: '50%', width: 28, height: 28,
+                                            fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            transition: 'all 0.2s ease', cursor: 'pointer',
+                                            marginInlineStart: 6
+                                        }}>
+                                        🚫
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>

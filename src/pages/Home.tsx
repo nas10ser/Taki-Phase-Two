@@ -17,7 +17,7 @@ import { bannerRepository, Banner } from '../repositories/bannerRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, storeProfiles, refreshDeals, homeCity, user } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, refreshDeals, homeCity, user } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // First-open city prompt: buyers/guests only (sellers & admins have their
@@ -91,7 +91,7 @@ const Home: React.FC = () => {
     // first, then بلجرشي/قلوة/الباحة … expanding outward until the list ends,
     // while each section still ranks by its own metric within a tier.
     const trendingDeals = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && hasStock(d));
+        const base = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
         const list = useProximity ? base.slice() : applyLocationFilter(base);
         list.sort((a, b) => {
             if (useProximity) {
@@ -101,10 +101,10 @@ const Home: React.FC = () => {
             return (b.reliabilityScore || 0) - (a.reliabilityScore || 0);
         });
         return list.slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity]);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
 
     const bestDiscounts = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && hasStock(d));
+        const base = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
         const list = useProximity ? base.slice() : applyLocationFilter(base);
         list.sort((a, b) => {
             if (useProximity) {
@@ -114,10 +114,10 @@ const Home: React.FC = () => {
             return b.discountPercentage - a.discountPercentage;
         });
         return list.slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity]);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
 
     const filteredDeals = useMemo(() => {
-        let list = deals.filter(d => d.status === 'active' && hasStock(d));
+        let list = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
 
         if (activeCategory !== 'all') list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
         if (activeGender !== 'all') list = list.filter(d => d.gender === activeGender || d.gender === 'all');
@@ -187,7 +187,7 @@ const Home: React.FC = () => {
             }
         }
         return interleaved;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, useProximity, homeCity, explicitLocationFilter]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, useProximity, homeCity, explicitLocationFilter, blockedMerchants]);
 
     return (
         <>

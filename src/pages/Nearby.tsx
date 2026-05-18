@@ -62,7 +62,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant } = useApp();
+    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants } = useApp();
     const [userLat, setUserLat] = useState(USER_LOCATION.lat);
     const [userLng, setUserLng] = useState(USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
@@ -158,9 +158,9 @@ const Nearby: React.FC = () => {
                 || (typeof d.quantity === 'number' && d.quantity > 0)
                 || !hasCap;
             const matchesRadius = radius === 0 || d.distance <= radius;
-            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock;
+            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock && !blockedMerchants.includes(d.storeId);
         }).sort((a, b) => a.distance - b.distance);
-    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId]);
+    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, blockedMerchants]);
 
     // Store-by-name results — same shared engine as Home/DealsList so search
     // is consistent on every page (stores aren't geo-bound, so a name match

@@ -246,11 +246,25 @@ const SellerDashboard: React.FC = () => {
             const updatedDeal = {
                 ...deal,
                 quantity: restoreQty,
-                createdAt: Date.now(), // FRESH TIMESTAMP
+                createdAt: Date.now(), // fresh timestamp → same duration, counted from the renew tap
                 status: 'active' as const
             };
-            
-            await updateDeal(updatedDeal);
+
+            const ok = await updateDeal(updatedDeal);
+            if (!ok) {
+                // The renew was REJECTED by the DB (most commonly: this
+                // deal's location slot was deleted/changed, so the
+                // server location-cap trigger refuses to re-activate it).
+                // Previously we showed "renewed successfully" anyway and
+                // the deal silently stayed in the past list. Instead,
+                // open it in the edit form — the "deleted location"
+                // banner + current-location chips there let the seller
+                // re-pick a valid location, and Save then truly renews.
+                // updateDeal already surfaced the specific DB reason.
+                handleEdit(deal);
+                setView('form');
+                return;
+            }
             customAlert(isRTL ? '✅ تم تجديد العرض بنجاح!' : '✅ Deal renewed successfully!');
         }
     };

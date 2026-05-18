@@ -17,6 +17,7 @@ export interface UserProfile {
     notifKeywords?: string[]; // legacy — superseded by smartAlerts
     smartAlerts?: SmartAlertRule[];
     followedMerchants?: string[];
+    blockedMerchants?: string[];
     preferredLang?: 'ar' | 'en';
     lat?: number;
     lng?: number;
