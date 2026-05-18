@@ -7,14 +7,16 @@ import { useApp } from '../context/AppContext';
 import { SellerTopBar } from '../components/SellerTopBar';
 import { userRepository } from '../repositories/userRepository';
 import { dealService } from '../services/dealService';
+import ReportDialog from '../components/ReportDialog';
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const history = useHistory();
-    const { deals, language, user, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm } = useApp();
+    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm } = useApp();
     const isRTL = language === 'ar';
     const isFollowed = followedMerchants.includes(id);
     const isBlocked = blockedMerchants.includes(id);
+    const [showReport, setShowReport] = useState(false);
 
     const profile = storeProfiles[id] || {};
     const [isEditingStore, setIsEditingStore] = useState(false);
@@ -366,6 +368,21 @@ const StoreDetails: React.FC = () => {
                                         }}>
                                         🚫
                                     </button>
+                                    {effectiveUserType === 'buyer' && (
+                                        <button onClick={() => setShowReport(true)}
+                                            aria-label={isRTL ? 'إبلاغ عن المتجر' : 'Report store'}
+                                            title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
+                                            style={{
+                                                background: 'rgba(80, 80, 95, 0.2)',
+                                                color: 'white',
+                                                border: 'none', borderRadius: '50%', width: 28, height: 28,
+                                                fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                transition: 'all 0.2s ease', cursor: 'pointer',
+                                                marginInlineStart: 6
+                                            }}>
+                                            🚩
+                                        </button>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -589,6 +606,16 @@ const StoreDetails: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {showReport && (
+                <ReportDialog
+                    reportedId={id}
+                    reportedRole="seller"
+                    reportedName={store?.name}
+                    isRTL={isRTL}
+                    onClose={() => setShowReport(false)}
+                />
+            )}
 
             <BottomNav />
         </div>

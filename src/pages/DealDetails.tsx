@@ -499,7 +499,18 @@ const DealDetails: React.FC = () => {
         );
     }
 
-    const { average, count } = dealService.calculateRating(deal.ratings);
+    // Reviews are shown at the STORE level (mirrors StoreDetails): a
+    // buyer who reviewed any of this store's deals must see that review
+    // on every deal of the same store. Previously this used deal.ratings
+    // (per-deal), so opening a different deal of a store you'd reviewed
+    // showed "0 reviews / be the first" even though the store had
+    // ratings. Each review keeps its own dealId so reply/like/delete
+    // route to the correct underlying deal.
+    const storeReviews = deals
+        .filter(d => d.storeId === deal.storeId)
+        .flatMap(d => (d.ratings || []).map(r => ({ ...r, dealId: d.id, itemName: d.itemName })))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const { average, count } = dealService.calculateRating(storeReviews);
     const loc = getLocation(deal.locationId);
     const booked = isBooked(deal.id);
     const images = deal.images.length > 0 ? deal.images : ['https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=800'];
@@ -986,17 +997,18 @@ const DealDetails: React.FC = () => {
                         </div>
                     )}
 
-                    {deal.ratings.length > 0 ? deal.ratings.slice(0, 5).map((r, i) => {
+                    {storeReviews.length > 0 ? storeReviews.slice(0, 5).map((r, i) => {
                         const ratingKey = r.id || `${r.userId}-${i}`;
                         const liked = !!(user && r.likedBy && r.likedBy.includes(user.id));
                         const canDelete = !!user && (user.id === r.userId || user.userType === 'admin');
                         const canReply = isOwner && !!r.id;
                         return (
-                        <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < deal.ratings.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                        <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < Math.min(storeReviews.length, 5) - 1 ? '1px solid var(--gray-100)' : 'none' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                                 <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{r.userName}</span>
                                 <span style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</span>
                             </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.itemName}</div>
                             <p style={{ color: 'var(--text-primary)', fontSize: '0.85rem', lineHeight: 1.6, fontWeight: 500 }}>{r.comment}</p>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
                                 <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 600 }}>{r.date}</div>
@@ -1004,7 +1016,7 @@ const DealDetails: React.FC = () => {
                                     {user && r.id && (
                                         <button
                                             type="button"
-                                            onClick={() => toggleRatingLike(deal.id, r.id!)}
+                                            onClick={() => toggleRatingLike(r.dealId, r.id!)}
                                             aria-pressed={liked}
                                             aria-label={liked ? (isRTL ? 'إلغاء الإعجاب' : 'Unlike') : (isRTL ? 'إعجاب' : 'Like')}
                                             style={{
@@ -1031,7 +1043,7 @@ const DealDetails: React.FC = () => {
                                             onClick={async () => {
                                                 if (!r.id) return;
                                                 const ok = await customConfirm(isRTL ? 'حذف هذا التعليق نهائياً؟' : 'Delete this review permanently?');
-                                                if (ok) await removeRating(deal.id, r.id);
+                                                if (ok) await removeRating(r.dealId, r.id);
                                             }}
                                             style={{
                                                 padding: '4px 10px', borderRadius: 999, border: 'none',
@@ -1058,7 +1070,7 @@ const DealDetails: React.FC = () => {
                                         {isOwner && r.id && (
                                             <button
                                                 type="button"
-                                                onClick={() => addReply(deal.id, r.id!, '')}
+                                                onClick={() => addReply(r.dealId, r.id!, '')}
                                                 style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
                                                 aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
                                             >
@@ -1083,7 +1095,7 @@ const DealDetails: React.FC = () => {
                                             <button onClick={async () => {
                                                 const text = (replyDrafts[r.id!] || '').trim();
                                                 if (!text || !r.id) return;
-                                                await addReply(deal.id, r.id, text);
+                                                await addReply(r.dealId, r.id, text);
                                                 setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; });
                                                 setActiveReplyId(null);
                                             }}

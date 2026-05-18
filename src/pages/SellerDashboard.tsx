@@ -6,6 +6,7 @@ import BookingThread from '../components/BookingThread';
 import DualCalendarPicker from '../components/DualCalendarPicker';
 import ImageCropEditor from '../components/ImageCropEditor';
 import CameraCapture from '../components/CameraCapture';
+import ReportDialog from '../components/ReportDialog';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -940,6 +941,7 @@ const SellerDashboard: React.FC = () => {
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
     const [showCamera, setShowCamera] = useState<boolean>(false);
+    const [reportBuyer, setReportBuyer] = useState<{ id: string; name?: string } | null>(null);
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
     // Crop pipeline. Each item is the original File plus pre-decoded
     // dimensions and a data URL. Pre-decoding here (instead of inside the
@@ -2891,6 +2893,14 @@ const SellerDashboard: React.FC = () => {
                                                         {(order as any).userName || (order.userId ? order.userId.substring(0, 8) + '…' : '—')}
                                                     </span>
                                                 </div>
+                                                {order.userId && (
+                                                    <button type="button"
+                                                        onClick={() => setReportBuyer({ id: order.userId, name: (order as any).userName })}
+                                                        title={isRTL ? 'إبلاغ عن المشتري للإدارة' : 'Report this buyer to admin'}
+                                                        style={{ background: 'rgba(220,38,38,0.10)', color: '#dc2626', border: 'none', padding: '5px 10px', borderRadius: 10, fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer' }}>
+                                                        🚩 {isRTL ? 'إبلاغ' : 'Report'}
+                                                    </button>
+                                                )}
                                                 <div style={{ background: 'var(--gray-100)', padding: '5px 10px', borderRadius: 10 }}>
                                                     {isRTL ? '📦 الكمية:' : '📦 Qty:'}{' '}
                                                     <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>{order.bookedQuantity}</span>
@@ -2931,6 +2941,14 @@ const SellerDashboard: React.FC = () => {
                                     <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>
                                         {(order as any).userName || (order.userId ? order.userId.substring(0, 8) + '…' : '—')}
                                     </span>
+                                    {order.userId && (
+                                        <button type="button"
+                                            onClick={() => setReportBuyer({ id: order.userId, name: (order as any).userName })}
+                                            title={isRTL ? 'إبلاغ عن المشتري للإدارة' : 'Report this buyer to admin'}
+                                            style={{ marginInlineStart: 10, background: 'rgba(220,38,38,0.10)', color: '#dc2626', border: 'none', padding: '3px 10px', borderRadius: 10, fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}>
+                                            🚩 {isRTL ? 'إبلاغ' : 'Report'}
+                                        </button>
+                                    )}
                                     {(order as any).userPhone && (
                                         <a href={`tel:${(order as any).userPhone}`} style={{ marginInlineStart: 10, color: '#0284c7', fontWeight: 800, textDecoration: 'none' }}>
                                             📞 {(order as any).userPhone}
@@ -3222,6 +3240,15 @@ const SellerDashboard: React.FC = () => {
                         // existing crop queue then handles the picked photos.
                         setTimeout(() => fileInputRef.current?.click(), 60);
                     }}
+                />
+            )}
+            {reportBuyer && (
+                <ReportDialog
+                    reportedId={reportBuyer.id}
+                    reportedRole="buyer"
+                    reportedName={reportBuyer.name}
+                    isRTL={isRTL}
+                    onClose={() => setReportBuyer(null)}
                 />
             )}
             <BottomNav />
