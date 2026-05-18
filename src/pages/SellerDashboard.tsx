@@ -1057,24 +1057,6 @@ const SellerDashboard: React.FC = () => {
         }
     };
 
-    // Camera shots arrive already framed from the in-app live camera, so
-    // they skip the crop queue entirely — routing them through the
-    // one-by-one crop editor would reintroduce exactly the per-photo
-    // friction the multi-shot camera was built to remove. Compression
-    // still happens inside storageService.uploadImage.
-    const ingestCameraFiles = async (files: File[]) => {
-        if (!files || files.length === 0) return;
-        const remainingSlots = Math.max(0, 4 - images.length - cropQueue.length);
-        const toUpload = files.slice(0, remainingSlots);
-        if (toUpload.length === 0) {
-            customAlert(isRTL ? '⚠️ الحد الأقصى 4 صور' : '⚠️ Maximum 4 images');
-            return;
-        }
-        for (const f of toUpload) {
-            await uploadCroppedFile(f);
-        }
-    };
-
     const advanceCropQueue = (dropCurrent: boolean = false) => {
         setCropQueue(prev => prev.slice(1));
         setCropIndex(i => i + (dropCurrent ? 0 : 1));
@@ -2123,92 +2105,69 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {images.length < 4 && (
-                                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8 }}>
-                                        {/* Camera — in-app live multi-shot. Native <input capture>
-                                            returns one photo then closes; this opens a real
-                                            getUserMedia camera so the seller fires several shots
-                                            in a row without reopening (WhatsApp-style). */}
-                                        <button
-                                            type="button"
-                                            onClick={() => { if (!uploadingImages) setShowCamera(true); }}
+                                    <div
+                                        role="button"
+                                        tabIndex={uploadingImages ? -1 : 0}
+                                        onClick={() => { if (!uploadingImages) setShowCamera(true); }}
+                                        onKeyDown={(e) => {
+                                            if (!uploadingImages && (e.key === 'Enter' || e.key === ' ')) {
+                                                e.preventDefault();
+                                                setShowCamera(true);
+                                            }
+                                        }}
+                                        onDrop={handleDrop}
+                                        onDragOver={handleDragOver}
+                                        onDragEnter={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        aria-label={isRTL ? 'إضافة صور' : 'Add photos'}
+                                        style={{
+                                            position: 'relative',
+                                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                            height: 130, borderRadius: 12,
+                                            border: isDraggingOver ? '2px solid var(--primary)' : '2px dashed var(--primary)',
+                                            cursor: uploadingImages ? 'default' : 'pointer',
+                                            background: isDraggingOver ? 'var(--primary-light)' : 'var(--notif-unread-bg)',
+                                            color: 'var(--primary)',
+                                            transition: 'background 0.2s ease, border-color 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                            opacity: uploadingImages ? 0.6 : 1,
+                                            userSelect: 'none', overflow: 'hidden'
+                                        }}
+                                    >
+                                        {/* Hidden gallery input. Tapping the tile opens the live
+                                            in-app camera; this input is opened from the camera's
+                                            "Studio" button and is also the drop/paste target. */}
+                                        <input
+                                            id="seller-image-upload"
+                                            ref={fileInputRef}
+                                            type="file"
+                                            multiple
+                                            accept="image/*"
                                             disabled={uploadingImages}
+                                            onChange={handleImageUpload}
+                                            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                                            aria-hidden="true"
+                                            tabIndex={-1}
                                             style={{
-                                                flex: 1,
-                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                                height: 130, borderRadius: 12,
-                                                border: '2px dashed var(--primary)',
-                                                cursor: uploadingImages ? 'default' : 'pointer',
-                                                background: 'var(--notif-unread-bg)',
-                                                color: 'var(--primary)',
-                                                WebkitTapHighlightColor: 'transparent',
-                                                opacity: uploadingImages ? 0.6 : 1,
-                                                userSelect: 'none', overflow: 'hidden', padding: '0 8px'
+                                                position: 'absolute',
+                                                width: 1, height: 1,
+                                                padding: 0, margin: -1,
+                                                overflow: 'hidden',
+                                                clip: 'rect(0,0,0,0)',
+                                                whiteSpace: 'nowrap',
+                                                border: 0
                                             }}
-                                        >
-                                            <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>📷</span>
-                                            <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{isRTL ? 'الكاميرا' : 'Camera'}</span>
-                                            <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4, textAlign: 'center' }}>
-                                                {isRTL ? 'صوّر عدة صور بدون إغلاق' : 'Shoot several, no reopen'}
-                                            </span>
-                                        </button>
-
-                                        {/* Studio — OS gallery. Input keeps `multiple`, so iOS
-                                            Photos lets the seller select up to 4 in one go. */}
-                                        <label
-                                            htmlFor="seller-image-upload"
-                                            onDrop={handleDrop}
-                                            onDragOver={handleDragOver}
-                                            onDragEnter={handleDragOver}
-                                            onDragLeave={handleDragLeave}
-                                            style={{
-                                                position: 'relative',
-                                                flex: 1,
-                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                                height: 130, borderRadius: 12,
-                                                border: isDraggingOver ? '2px solid var(--primary)' : '2px dashed var(--primary)',
-                                                cursor: uploadingImages ? 'default' : 'pointer',
-                                                background: isDraggingOver ? 'var(--primary-light)' : 'var(--notif-unread-bg)',
-                                                color: 'var(--primary)',
-                                                transition: 'background 0.2s ease, border-color 0.2s ease', WebkitTapHighlightColor: 'transparent',
-                                                opacity: uploadingImages ? 0.6 : 1,
-                                                userSelect: 'none', overflow: 'hidden'
-                                            }}
-                                        >
-                                            {/* Native <label htmlFor> pattern — opens the OS file picker on any
-                                                browser without needing a programmatic .click(). The input itself
-                                                is visually hidden but stays in the DOM for keyboard/AT users. */}
-                                            <input
-                                                id="seller-image-upload"
-                                                ref={fileInputRef}
-                                                type="file"
-                                                multiple
-                                                accept="image/*"
-                                                disabled={uploadingImages}
-                                                onChange={handleImageUpload}
-                                                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                                                aria-label={isRTL ? 'الاستديو' : 'Studio'}
-                                                style={{
-                                                    position: 'absolute',
-                                                    width: 1, height: 1,
-                                                    padding: 0, margin: -1,
-                                                    overflow: 'hidden',
-                                                    clip: 'rect(0,0,0,0)',
-                                                    whiteSpace: 'nowrap',
-                                                    border: 0
-                                                }}
-                                            />
-                                            {uploadingImages ? (
-                                                <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
-                                            ) : (
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
-                                                    <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>🖼️</span>
-                                                    <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{isRTL ? 'الاستديو' : 'Studio'}</span>
-                                                    <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
-                                                        {isRTL ? 'اختر حتى 4 صور دفعة واحدة' : 'Pick up to 4 at once'}
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </label>
+                                        />
+                                        {uploadingImages ? (
+                                            <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
+                                                <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>📸</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صور' : 'Add Photos'}</span>
+                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
+                                                    {isRTL ? 'كاميرا • قص • المزيد' : 'Camera • crop • more'}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -3241,9 +3200,13 @@ const SellerDashboard: React.FC = () => {
                     maxShots={Math.max(0, 4 - images.length - cropQueue.length)}
                     isRTL={isRTL}
                     onClose={() => setShowCamera(false)}
-                    onDone={(files) => {
+                    onCapture={uploadCroppedFile}
+                    onPickStudio={() => {
                         setShowCamera(false);
-                        ingestCameraFiles(files);
+                        // Let the camera unmount (releases the stream via its
+                        // cleanup) before opening the OS gallery picker; the
+                        // existing crop queue then handles the picked photos.
+                        setTimeout(() => fileInputRef.current?.click(), 60);
                     }}
                 />
             )}

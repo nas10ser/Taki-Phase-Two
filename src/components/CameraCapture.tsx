@@ -1,38 +1,54 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import ImageCropEditor from './ImageCropEditor';
 
 /**
- * In-app camera (WhatsApp-style multi-shot).
+ * In-app camera with an inline per-shot crop loop.
  *
  * The native <input capture> camera on iOS returns ONE photo then closes,
- * forcing the seller to reopen + retake for every image. This component
- * keeps a live getUserMedia stream open so the seller can fire several
- * shots in a row, review the strip, drop bad ones, then return all at
- * once. Captured frames are framed JPEGs already, so they bypass the
- * crop editor — re-cropping each shot would reintroduce the exact
- * friction this screen removes.
+ * forcing the seller to reopen for every image. This keeps a live
+ * getUserMedia stream open and runs a tight loop:
  *
- * iOS Safari notes: requires HTTPS (production is) + a user gesture
- * (mounted from a tap). <video> MUST be playsInline+muted or it goes
- * fullscreen. Tracks are stopped on unmount so the camera light dies.
+ *   viewfinder → shoot → crop THIS shot right away → choose:
+ *      • «المزيد»  → back to the viewfinder for the next shot
+ *      • «تم»      → finish, close
+ *
+ * The crop step reuses the existing ImageCropEditor, so it looks and
+ * behaves exactly like the gallery crop. Each cropped/skip'd shot is
+ * handed to the parent (onCapture) which uploads + appends it; the
+ * stream is kept alive across crop/choice so «المزيد» is instant
+ * (tracks are only stopped on finish/unmount, killing the camera light).
+ *
+ * iOS Safari: requires HTTPS (production is) + a user gesture (mounted
+ * from a tap). <video> MUST be playsInline+muted or it goes fullscreen.
  */
 
-type Shot = { id: string; file: File; thumb: string };
+type Pending = { file: File; dataUrl: string; w: number; h: number };
+type Mode = 'camera' | 'crop' | 'choice';
 
 type Props = {
     maxShots: number;
     isRTL: boolean;
-    onDone: (files: File[]) => void;
+    onCapture: (file: File) => void;
+    onPickStudio: () => void;
     onClose: () => void;
 };
 
 const CAPTURE_MAX_DIM = 1600;
 
-const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) => {
+const CameraCapture: React.FC<Props> = ({
+    maxShots,
+    isRTL,
+    onCapture,
+    onPickStudio,
+    onClose,
+}) => {
     const cap = Math.max(1, maxShots);
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const [shots, setShots] = useState<Shot[]>([]);
+    const [mode, setMode] = useState<Mode>('camera');
+    const [pending, setPending] = useState<Pending | null>(null);
+    const [count, setCount] = useState(0);
     const [facing, setFacing] = useState<'environment' | 'user'>('environment');
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
@@ -46,57 +62,64 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
         }
     }, []);
 
-    const startStream = useCallback(async (mode: 'environment' | 'user') => {
-        setReady(false);
-        setError(null);
-        stopStream();
-        if (!navigator.mediaDevices?.getUserMedia) {
-            setError(
-                isRTL
-                    ? 'متصفحك لا يدعم الكاميرا داخل التطبيق — استخدم زر «الاستديو».'
-                    : 'In-app camera not supported on this browser — use “Studio”.',
-            );
-            return;
-        }
+    const attachVideo = useCallback(async () => {
+        const v = videoRef.current;
+        const s = streamRef.current;
+        if (!v || !s) return;
+        if (v.srcObject !== s) v.srcObject = s;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: mode },
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-                audio: false,
-            });
-            streamRef.current = stream;
-            const v = videoRef.current;
-            if (v) {
-                v.srcObject = stream;
-                // iOS needs an explicit play() inside/after the gesture.
-                try {
-                    await v.play();
-                } catch {
-                    /* autoplay policy — the stream still renders */
-                }
-            }
-            setReady(true);
-        } catch (e: any) {
-            const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError';
-            setError(
-                denied
-                    ? isRTL
-                        ? 'تم رفض إذن الكاميرا. فعّله من إعدادات المتصفح، أو استخدم زر «الاستديو».'
-                        : 'Camera permission denied. Enable it in browser settings, or use “Studio”.'
-                    : isRTL
-                      ? 'تعذّر فتح الكاميرا. استخدم زر «الاستديو» بدلاً منها.'
-                      : 'Could not open the camera. Use “Studio” instead.',
-            );
+            await v.play();
+        } catch {
+            /* autoplay policy — the stream still renders */
         }
-    }, [isRTL, stopStream]);
+    }, []);
 
+    const startStream = useCallback(
+        async (m: 'environment' | 'user') => {
+            setReady(false);
+            setError(null);
+            stopStream();
+            if (!navigator.mediaDevices?.getUserMedia) {
+                setError(
+                    isRTL
+                        ? 'متصفحك لا يدعم الكاميرا داخل التطبيق — استخدم «الاستوديو».'
+                        : 'In-app camera not supported — use “Studio”.',
+                );
+                return;
+            }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: m },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
+                    audio: false,
+                });
+                streamRef.current = stream;
+                setReady(true);
+                attachVideo();
+            } catch (e: any) {
+                const denied =
+                    e?.name === 'NotAllowedError' || e?.name === 'SecurityError';
+                setError(
+                    denied
+                        ? isRTL
+                            ? 'تم رفض إذن الكاميرا. فعّله من إعدادات المتصفح، أو استخدم «الاستوديو».'
+                            : 'Camera permission denied. Enable it in settings, or use “Studio”.'
+                        : isRTL
+                          ? 'تعذّر فتح الكاميرا. استخدم «الاستوديو» بدلاً منها.'
+                          : 'Could not open the camera. Use “Studio” instead.',
+                );
+            }
+        },
+        [isRTL, stopStream, attachVideo],
+    );
+
+    // Acquire once on mount; release on unmount.
     useEffect(() => {
         startStream(facing);
         return stopStream;
-        // facing handled by flip(); mount-once acquisition.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -109,14 +132,21 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
         };
     }, []);
 
+    // The <video> unmounts during crop/choice (mode-exclusive render) but
+    // the stream stays alive — re-attach it whenever we return to the
+    // viewfinder so «المزيد» resumes instantly with no re-permission.
+    useEffect(() => {
+        if (mode === 'camera' && ready) attachVideo();
+    }, [mode, ready, attachVideo]);
+
     const flip = useCallback(() => {
         const next = facing === 'environment' ? 'user' : 'environment';
         setFacing(next);
         startStream(next);
     }, [facing, startStream]);
 
-    const capture = useCallback(async () => {
-        if (busy || shots.length >= cap) return;
+    const capture = useCallback(() => {
+        if (busy || !ready || count >= cap) return;
         const v = videoRef.current;
         if (!v || !v.videoWidth || !v.videoHeight) return;
         setBusy(true);
@@ -134,47 +164,141 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
             if (!ctx) return;
             ctx.drawImage(v, 0, 0, w, h);
 
-            const blob = await new Promise<Blob | null>((resolve) =>
-                canvas.toBlob(resolve, 'image/jpeg', 0.85),
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) {
+                        setBusy(false);
+                        return;
+                    }
+                    const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                    const file = new File([blob], `taki-cam-${id}.jpg`, {
+                        type: 'image/jpeg',
+                        lastModified: Date.now(),
+                    });
+                    setPending({ file, dataUrl, w, h });
+                    setMode('crop');
+                    setBusy(false);
+                },
+                'image/jpeg',
+                0.9,
             );
-            if (!blob) return;
-
-            // Small data-URL thumb for the strip. data: keeps us inside
-            // the existing CSP img-src (no blob: directive needed).
-            const tScale = 200 / Math.max(w, h);
-            const tc = document.createElement('canvas');
-            tc.width = Math.max(1, Math.round(w * tScale));
-            tc.height = Math.max(1, Math.round(h * tScale));
-            tc.getContext('2d')?.drawImage(v, 0, 0, tc.width, tc.height);
-            const thumb = tc.toDataURL('image/jpeg', 0.6);
-
-            const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-            const file = new File([blob], `taki-cam-${id}.jpg`, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-            });
-            setShots((prev) => [...prev, { id, file, thumb }]);
-        } finally {
+        } catch {
             setBusy(false);
         }
-    }, [busy, shots.length, cap]);
+    }, [busy, ready, count, cap]);
 
-    const removeShot = useCallback((id: string) => {
-        setShots((prev) => prev.filter((s) => s.id !== id));
-    }, []);
+    const commitShot = useCallback(
+        (f: File) => {
+            onCapture(f);
+            setCount((c) => c + 1);
+            setPending(null);
+            setMode('choice');
+        },
+        [onCapture],
+    );
 
     const finish = useCallback(() => {
-        stopStream();
-        onDone(shots.map((s) => s.file));
-    }, [shots, stopStream, onDone]);
-
-    const cancel = useCallback(() => {
         stopStream();
         onClose();
     }, [stopStream, onClose]);
 
-    const full = shots.length >= cap;
+    const goStudio = useCallback(() => {
+        stopStream();
+        onPickStudio();
+    }, [stopStream, onPickStudio]);
 
+    // --- Crop step: reuse the exact gallery crop editor ---------------
+    if (mode === 'crop' && pending) {
+        return (
+            <ImageCropEditor
+                file={pending.file}
+                dataUrl={pending.dataUrl}
+                naturalW={pending.w}
+                naturalH={pending.h}
+                queueIndex={count + 1}
+                queueTotal={count + 1}
+                isRTL={isRTL}
+                onApply={(cropped) => commitShot(cropped)}
+                onSkip={() => pending && commitShot(pending.file)}
+                onCancel={() => {
+                    setPending(null);
+                    setMode('camera');
+                }}
+            />
+        );
+    }
+
+    const atLimit = count >= cap;
+
+    // --- Choice step: المزيد / تم ------------------------------------
+    if (mode === 'choice') {
+        const overlay = (
+            <div dir={isRTL ? 'rtl' : 'ltr'} style={sheetStyle}>
+                <div style={{ textAlign: 'center', padding: '0 28px' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: 10 }}>✅</div>
+                    <div style={{ fontWeight: 900, fontSize: '1.15rem', marginBottom: 6 }}>
+                        {isRTL
+                            ? `تمت إضافة ${count} ${count === 1 ? 'صورة' : 'صور'}`
+                            : `${count} photo${count === 1 ? '' : 's'} added`}
+                    </div>
+                    <div style={{ opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>
+                        {atLimit
+                            ? isRTL
+                                ? 'اكتمل الحد الأقصى للصور'
+                                : 'Photo limit reached'
+                            : isRTL
+                              ? 'تبي تضيف صورة ثانية؟'
+                              : 'Add another photo?'}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320, marginTop: 30 }}>
+                    {!atLimit && (
+                        <button
+                            type="button"
+                            onClick={() => setMode('camera')}
+                            style={primaryBtnStyle}
+                        >
+                            📷 {isRTL ? 'المزيد' : 'More'}
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={finish}
+                        style={atLimit ? primaryBtnStyle : secondaryBtnStyle}
+                    >
+                        ✓ {isRTL ? `تم (${count})` : `Done (${count})`}
+                    </button>
+                </div>
+            </div>
+        );
+        return createPortal(overlay, document.body);
+    }
+
+    // --- Error overlay ----------------------------------------------
+    if (error) {
+        const overlay = (
+            <div dir={isRTL ? 'rtl' : 'ltr'} style={sheetStyle}>
+                <div style={{ textAlign: 'center', padding: '0 32px' }}>
+                    <div style={{ fontSize: '2.6rem', marginBottom: 12 }}>📷</div>
+                    <div style={{ fontWeight: 800, lineHeight: 1.8, fontSize: '0.98rem' }}>
+                        {error}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 26 }}>
+                    <button type="button" onClick={goStudio} style={primaryBtnStyle}>
+                        🖼️ {isRTL ? 'الاستوديو' : 'Studio'}
+                    </button>
+                    <button type="button" onClick={finish} style={secondaryBtnStyle}>
+                        {isRTL ? 'إغلاق' : 'Close'}
+                    </button>
+                </div>
+            </div>
+        );
+        return createPortal(overlay, document.body);
+    }
+
+    // --- Camera viewfinder ------------------------------------------
     const overlay = (
         <div
             dir={isRTL ? 'rtl' : 'ltr'}
@@ -190,7 +314,6 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
                 userSelect: 'none',
             }}
         >
-            {/* Top bar */}
             <div
                 style={{
                     display: 'flex',
@@ -202,14 +325,14 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
             >
                 <button
                     type="button"
-                    onClick={cancel}
+                    onClick={finish}
                     aria-label={isRTL ? 'إغلاق' : 'Close'}
                     style={iconBtnStyle}
                 >
                     ✕
                 </button>
                 <span style={{ fontWeight: 900, fontSize: '0.95rem' }}>
-                    {isRTL ? `${shots.length} / ${cap} صور` : `${shots.length} / ${cap}`}
+                    {isRTL ? `${count} / ${cap} صور` : `${count} / ${cap}`}
                 </span>
                 <button
                     type="button"
@@ -221,7 +344,6 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
                 </button>
             </div>
 
-            {/* Viewfinder */}
             <div
                 style={{
                     flex: 1,
@@ -244,7 +366,7 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
                         transform: facing === 'user' ? 'scaleX(-1)' : 'none',
                     }}
                 />
-                {!ready && !error && (
+                {!ready && (
                     <div style={centerMsgStyle}>
                         <div
                             className="spinner"
@@ -262,117 +384,52 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
                         </span>
                     </div>
                 )}
-                {error && (
-                    <div style={{ ...centerMsgStyle, padding: '0 32px', textAlign: 'center' }}>
-                        <span style={{ fontSize: '2.4rem', marginBottom: 12 }}>📷</span>
-                        <span style={{ fontWeight: 800, lineHeight: 1.7 }}>{error}</span>
-                        <button
-                            type="button"
-                            onClick={cancel}
-                            style={{
-                                marginTop: 22,
-                                background: '#fff',
-                                color: '#000',
-                                border: 'none',
-                                borderRadius: 999,
-                                padding: '12px 28px',
-                                fontWeight: 900,
-                                fontSize: '0.95rem',
-                            }}
-                        >
-                            {isRTL ? 'حسناً' : 'OK'}
-                        </button>
-                    </div>
-                )}
             </div>
 
-            {/* Thumbnail strip */}
-            {shots.length > 0 && (
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: 8,
-                        overflowX: 'auto',
-                        padding: '10px 14px',
-                        background: 'rgba(0,0,0,0.4)',
-                    }}
-                >
-                    {shots.map((s) => (
-                        <div
-                            key={s.id}
-                            style={{ position: 'relative', flex: '0 0 auto' }}
-                        >
-                            <img
-                                src={s.thumb}
-                                alt=""
-                                style={{
-                                    width: 58,
-                                    height: 58,
-                                    objectFit: 'cover',
-                                    borderRadius: 10,
-                                    border: '2px solid rgba(255,255,255,0.85)',
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeShot(s.id)}
-                                aria-label={isRTL ? 'حذف اللقطة' : 'Remove shot'}
-                                style={{
-                                    position: 'absolute',
-                                    top: -6,
-                                    [isRTL ? 'left' : 'right']: -6,
-                                    background: 'rgba(220,38,38,0.97)',
-                                    color: '#fff',
-                                    border: '2px solid #fff',
-                                    borderRadius: '50%',
-                                    width: 22,
-                                    height: 22,
-                                    fontSize: '0.7rem',
-                                    fontWeight: 900,
-                                    lineHeight: 1,
-                                    padding: 0,
-                                } as React.CSSProperties}
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Controls */}
             <div
                 style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '18px 26px',
-                    paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
-                    gap: 16,
+                    padding: '16px 24px',
+                    paddingBottom: 'calc(18px + env(safe-area-inset-bottom))',
+                    gap: 14,
                 }}
             >
-                <div style={{ width: 76, fontSize: '0.78rem', opacity: 0.85, fontWeight: 700 }}>
-                    {full
-                        ? isRTL
-                            ? 'اكتمل العدد'
-                            : 'Limit reached'
-                        : isRTL
-                          ? 'صوّر بحرية'
-                          : 'Tap to shoot'}
-                </div>
+                <button
+                    type="button"
+                    onClick={goStudio}
+                    style={{
+                        width: 78,
+                        background: 'rgba(255,255,255,0.16)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 14,
+                        padding: '10px 6px',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 3,
+                    }}
+                >
+                    <span style={{ fontSize: '1.2rem' }}>🖼️</span>
+                    {isRTL ? 'الاستوديو' : 'Studio'}
+                </button>
 
                 <button
                     type="button"
                     onClick={capture}
-                    disabled={!ready || full || busy}
+                    disabled={!ready || busy || atLimit}
                     aria-label={isRTL ? 'التقاط صورة' : 'Capture'}
                     style={{
-                        width: 74,
-                        height: 74,
+                        width: 76,
+                        height: 76,
                         borderRadius: '50%',
                         background: '#fff',
                         border: '5px solid rgba(255,255,255,0.45)',
-                        opacity: !ready || full ? 0.4 : 1,
+                        opacity: !ready || atLimit ? 0.4 : 1,
                         transition: 'transform 0.08s ease',
                         transform: busy ? 'scale(0.9)' : 'scale(1)',
                     }}
@@ -381,19 +438,18 @@ const CameraCapture: React.FC<Props> = ({ maxShots, isRTL, onDone, onClose }) =>
                 <button
                     type="button"
                     onClick={finish}
-                    disabled={shots.length === 0}
+                    disabled={count === 0}
                     style={{
-                        width: 76,
-                        textAlign: isRTL ? 'left' : 'right',
+                        width: 78,
                         background: 'transparent',
                         border: 'none',
                         color: '#fff',
                         fontWeight: 900,
-                        fontSize: '1rem',
-                        opacity: shots.length === 0 ? 0.4 : 1,
+                        fontSize: '0.95rem',
+                        opacity: count === 0 ? 0.35 : 1,
                     }}
                 >
-                    {isRTL ? `تم (${shots.length})` : `Done (${shots.length})`}
+                    {isRTL ? `تم (${count})` : `Done (${count})`}
                 </button>
             </div>
         </div>
@@ -423,6 +479,42 @@ const centerMsgStyle: React.CSSProperties = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+};
+
+const sheetStyle: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 100000,
+    background: 'rgba(0,0,0,0.92)',
+    color: '#fff',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    WebkitTapHighlightColor: 'transparent',
+    userSelect: 'none',
+};
+
+const primaryBtnStyle: React.CSSProperties = {
+    flex: 1,
+    background: '#fff',
+    color: '#000',
+    border: 'none',
+    borderRadius: 999,
+    padding: '15px 24px',
+    fontWeight: 900,
+    fontSize: '1rem',
+};
+
+const secondaryBtnStyle: React.CSSProperties = {
+    flex: 1,
+    background: 'rgba(255,255,255,0.16)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 999,
+    padding: '15px 24px',
+    fontWeight: 900,
+    fontSize: '1rem',
 };
 
 export default CameraCapture;
