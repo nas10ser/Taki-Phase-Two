@@ -82,6 +82,40 @@ export const getDistance = (lat1: number, lon1: number, lat2: number, lon2: numb
 };
 
 /**
+ * Proximity TIER of a deal relative to the customer's home city. Lower =
+ * closer/more relevant. Used on Home to surface the customer's city first,
+ * then progressively wider rings — WITHOUT hard-cutting at the city border
+ * (that strict-distance behaviour is the Nearby page's job). Coarse buckets
+ * (not exact km) so ordering stays "nearest-ish first, then by section
+ * ranking" rather than a rigid distance sort.
+ *
+ *   0 = same city            1 = same region (e.g. المخواة → بلجرشي/قلوة/الباحة)
+ *   2 = < 150 km             3 = < 400 km            4 = farther
+ *   5 = city known, no geo   6 = location unknown (always last)
+ *
+ * Returns 0 for everything when no home city is set (no reordering).
+ */
+export const dealProximityTier = (
+    deal: Deal,
+    home: { regionId?: string; cityId?: string } | null | undefined
+): number => {
+    if (!home || !home.cityId) return 0;
+    const { regionId, cityId } = resolveDealLocation(deal);
+    if (!cityId && !regionId) return 6;
+    if (cityId && cityId === home.cityId) return 0;
+    if (regionId && home.regionId && regionId === home.regionId) return 1;
+    const hc = CITIES.find(c => c.id === home.cityId);
+    const dc = cityId ? CITIES.find(c => c.id === cityId) : undefined;
+    if (hc && dc) {
+        const km = getDistance(hc.lat, hc.lng, dc.lat, dc.lng);
+        if (km < 150) return 2;
+        if (km < 400) return 3;
+        return 4;
+    }
+    return 5;
+};
+
+/**
  * Generates a random alphanumeric barcode string.
  * Excludes confusing characters (0/O, 1/I/L).
  * Uses Web Crypto API for cryptographically strong randomness.

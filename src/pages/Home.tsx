@@ -6,7 +6,8 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation } from '../utils/helpers';
+import { dealMatchesLocation, dealProximityTier } from '../utils/helpers';
+import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
@@ -16,8 +17,16 @@ import { bannerRepository, Banner } from '../repositories/bannerRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, storeProfiles, refreshDeals } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, storeProfiles, refreshDeals, homeCity, user } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
+    const [gateClosed, setGateClosed] = useState(false);
+    // First-open city prompt: buyers/guests only (sellers & admins have their
+    // own dashboards), shown once until a home city is chosen/persisted.
+    const isShopper = user?.userType !== 'seller' && user?.userType !== 'admin';
+    const showLocationGate = isShopper && !homeCity && !gateClosed;
+    // Explicit dropdown filter wins; otherwise we rank by home-city proximity.
+    const explicitLocationFilter = !!(topLocation.region || topLocation.city || topLocation.mall);
+    const useProximity = !explicitLocationFilter && !!homeCity;
     const [activeCategory, setActiveCategory] = useState<Category | 'all'>('all');
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
@@ -77,19 +86,35 @@ const Home: React.FC = () => {
     const applyLocationFilter = (list: Deal[]) =>
         list.filter(d => dealMatchesLocation(d, topLocation));
 
+    // In proximity mode we do NOT cut at the city — we keep every deal and
+    // let the tier be the PRIMARY sort key, so the customer's city shows
+    // first, then بلجرشي/قلوة/الباحة … expanding outward until the list ends,
+    // while each section still ranks by its own metric within a tier.
     const trendingDeals = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && hasStock(d));
-        return applyLocationFilter(base)
-            .sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0))
-            .slice(0, 8);
-    }, [deals, topLocation]);
+        const list = useProximity ? base.slice() : applyLocationFilter(base);
+        list.sort((a, b) => {
+            if (useProximity) {
+                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
+                if (t !== 0) return t;
+            }
+            return (b.reliabilityScore || 0) - (a.reliabilityScore || 0);
+        });
+        return list.slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity]);
 
     const bestDiscounts = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && hasStock(d));
-        return applyLocationFilter(base)
-            .sort((a, b) => b.discountPercentage - a.discountPercentage)
-            .slice(0, 8);
-    }, [deals, topLocation]);
+        const list = useProximity ? base.slice() : applyLocationFilter(base);
+        list.sort((a, b) => {
+            if (useProximity) {
+                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
+                if (t !== 0) return t;
+            }
+            return b.discountPercentage - a.discountPercentage;
+        });
+        return list.slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity]);
 
     const filteredDeals = useMemo(() => {
         let list = deals.filter(d => d.status === 'active' && hasStock(d));
@@ -97,7 +122,10 @@ const Home: React.FC = () => {
         if (activeCategory !== 'all') list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
         if (activeGender !== 'all') list = list.filter(d => d.gender === activeGender || d.gender === 'all');
 
-        list = list.filter(d => dealMatchesLocation(d, topLocation));
+        // Only hard-cut when the user explicitly picked a region/city/mall.
+        // Otherwise keep ALL deals and let home-city proximity rank them so
+        // the list never "stops" at the customer's city.
+        if (explicitLocationFilter) list = list.filter(d => dealMatchesLocation(d, topLocation));
 
         if (searchQuery.trim()) {
             // While the user is actively searching, RELEVANCE wins over the
@@ -118,9 +146,18 @@ const Home: React.FC = () => {
             return scored.map(x => x.d);
         }
 
-        if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
-        if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
-        if (sortBy === 'reliability') list.sort((a, b) => b.reliabilityScore - a.reliabilityScore);
+        const metricCmp = (a: Deal, b: Deal) => {
+            if (sortBy === 'discount') return b.discountPercentage - a.discountPercentage;
+            if (sortBy === 'price') return a.discountedPrice - b.discountedPrice;
+            return b.reliabilityScore - a.reliabilityScore; // 'reliability' / default
+        };
+        list.sort((a, b) => {
+            if (useProximity) {
+                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
+                if (t !== 0) return t;
+            }
+            return metricCmp(a, b);
+        });
 
         // Insertion Logic for Sponsored Deals
         const sponsored: Deal[] = [];
@@ -150,10 +187,11 @@ const Home: React.FC = () => {
             }
         }
         return interleaved;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, useProximity, homeCity, explicitLocationFilter]);
 
     return (
         <>
+        {showLocationGate && <LocationGate onClose={() => setGateClosed(true)} />}
         <PullToRefresh isRTL={isRTL} onRefresh={() => {
             // Fire-and-forget: PullToRefresh caps the spinner regardless,
             // and the realtime channels will deliver any updates we miss.

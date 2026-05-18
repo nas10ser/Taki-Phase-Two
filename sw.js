@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v10.73';
+const CACHE_NAME = 'taki-cache-v10.74';
 const urlsToCache = [
   '/',
   '/index.html',

@@ -38,6 +38,24 @@ interface TopLocation {
     mall: string;
 }
 
+// The customer's home city — chosen once on first open (GPS or manual pick),
+// persisted, and used by Home to rank deals from that city outward. Distinct
+// from `topLocation` (the explicit dropdown filter) so the dropdowns stay on
+// "All" while the home-city ranking quietly applies.
+interface HomeCity {
+    regionId: string;
+    cityId: string;
+}
+const HOME_CITY_KEY = 'taki_home_city';
+const readHomeCity = (): HomeCity | null => {
+    try {
+        const raw = localStorage.getItem(HOME_CITY_KEY);
+        if (!raw) return null;
+        const v = JSON.parse(raw);
+        return v && v.cityId ? v : null;
+    } catch { return null; }
+};
+
 interface Notification {
     id: string;
     userId: string;
@@ -78,6 +96,8 @@ interface AppContextType {
     removeRating: (dealId: string, ratingId: string) => Promise<void>;
     topLocation: TopLocation;
     setTopLocation: (loc: TopLocation) => void;
+    homeCity: HomeCity | null;
+    setHomeCity: (c: HomeCity | null) => void;
     notifKeywords: string[];
     addNotifKeyword: (kw: string) => void;
     removeNotifKeyword: (kw: string) => void;
@@ -213,6 +233,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Custom Dialog State
     const [dialogConfig, setDialogConfig] = useState<{type: 'alert'|'confirm', message: string, resolve: (val: any) => void} | null>(null);
 
+    // Post-purchase rating box: opens automatically for the BUYER the moment
+    // their booking is marked completed (seller scanned the QR). Distinct
+    // from the (removed) booking spam box — this is a one-time "rate the
+    // store" prompt the owner explicitly asked for.
+    const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeName: string } | null>(null);
+    const promptedRatingRef = useRef<Set<string>>(new Set());
+    const [ratingStars, setRatingStars] = useState(5);
+    const [ratingComment, setRatingComment] = useState('');
+    const [ratingSubmitting, setRatingSubmitting] = useState(false);
+
     // Non-blocking realtime banner (booking/message). One slot — the newest
     // replaces the previous; the <InAppBanner> component auto-dismisses it.
     const [inAppBanner, setInAppBanner] = useState<{ id: string; title: { ar: string; en: string }; body: { ar: string; en: string }; metadata?: any } | null>(null);
@@ -244,6 +274,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [loading, setLoading] = useState(() => !(readSnapshot<Deal[]>('deals') || []).length);
 
     const [topLocation, setTopLocationState] = useState<TopLocation>({ region: '', city: '', mall: '' });
+    const [homeCity, setHomeCityState] = useState<HomeCity | null>(() => readHomeCity());
+    const setHomeCity = useCallback((c: HomeCity | null) => {
+        setHomeCityState(c);
+        try {
+            if (c && c.cityId) localStorage.setItem(HOME_CITY_KEY, JSON.stringify(c));
+            else localStorage.removeItem(HOME_CITY_KEY);
+        } catch { /* private mode / quota — keep in memory only */ }
+    }, []);
 
     const [notifKeywords, setNotifKeywords] = useState<string[]>([]);
     const [smartAlerts, setSmartAlerts] = useState<SmartAlertRule[]>([]);
@@ -1735,6 +1773,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         }
                         return prev;
                     });
+                    // Purchase just completed for THIS buyer → ask them to
+                    // rate the store (once, and only if they haven't already).
+                    if (updated.status === 'completed'
+                        && updated.user_id && updated.user_id === user?.id
+                        && !promptedRatingRef.current.has(updated.barcode)) {
+                        const d = dealsRef.current.find(x => x.id === updated.deal_id);
+                        const alreadyRated = !!(d?.ratings || []).some((r: any) => r.userId === user?.id);
+                        if (!alreadyRated) {
+                            promptedRatingRef.current.add(updated.barcode);
+                            setRatingStars(5);
+                            setRatingComment('');
+                            setRatingPrompt({
+                                barcode: updated.barcode,
+                                dealId: updated.deal_id,
+                                storeName: d?.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
+                            });
+                        }
+                    }
                 } else if (payload.eventType === 'DELETE') {
                     setBookings(prev => prev.filter(b => b.barcode !== payload.old.barcode));
                 }
@@ -1931,6 +1987,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshBookings, refreshDeals,
         addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
+        homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
@@ -1953,6 +2010,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshBookings, refreshDeals,
         addRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
+        homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
@@ -1986,6 +2044,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         ? `👁️ معاينة كـ${viewAs === 'buyer' ? 'مشترٍ' : 'تاجر'} — رجوع`
                         : `👁️ Previewing as ${viewAs} — exit`}
                 </button>
+            )}
+
+            {/* Post-purchase store rating box (buyer) */}
+            {ratingPrompt && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 99990,
+                    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18,
+                }}>
+                    <div className="animate-fade-in" style={{
+                        background: 'var(--card-bg)', color: 'var(--text-primary)',
+                        borderRadius: 24, width: '100%', maxWidth: 400,
+                        boxShadow: '0 24px 60px rgba(0,0,0,0.4)', overflow: 'hidden',
+                    }}>
+                        <div style={{
+                            background: 'linear-gradient(135deg, #0f172a, #334155)', color: '#fff',
+                            padding: '22px 20px 18px', textAlign: 'center',
+                        }}>
+                            <div style={{ fontSize: '2.2rem', marginBottom: 4 }}>⭐</div>
+                            <div style={{ fontSize: '1.12rem', fontWeight: 900 }}>
+                                {language === 'ar' ? 'نرجو تقييم المتجر' : 'Please rate the store'}
+                            </div>
+                            <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: 0.9, marginTop: 5, lineHeight: 1.6 }}>
+                                {language === 'ar'
+                                    ? `تقييمك يهمّنا 🙏 — كيف كانت تجربتك مع «${ratingPrompt.storeName}»؟`
+                                    : `Your feedback matters 🙏 — how was your experience with “${ratingPrompt.storeName}”?`}
+                            </div>
+                        </div>
+                        <div style={{ padding: 20 }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
+                                {[1, 2, 3, 4, 5].map(star => (
+                                    <button
+                                        key={star}
+                                        type="button"
+                                        aria-label={`${star}`}
+                                        onClick={() => setRatingStars(star)}
+                                        style={{
+                                            fontSize: '2rem', background: 'none', border: 'none',
+                                            cursor: 'pointer', padding: 2,
+                                            filter: star <= ratingStars ? 'none' : 'grayscale(1)',
+                                            opacity: star <= ratingStars ? 1 : 0.35,
+                                            transition: 'opacity 0.15s ease',
+                                        }}
+                                    >⭐</button>
+                                ))}
+                            </div>
+                            <textarea
+                                value={ratingComment}
+                                onChange={e => setRatingComment(e.target.value)}
+                                placeholder={language === 'ar' ? 'اكتب تعليقك عن المتجر (اختياري)...' : 'Write your comment about the store (optional)…'}
+                                style={{
+                                    width: '100%', padding: 14, borderRadius: 14, minHeight: 84,
+                                    border: '1.5px solid var(--border-color)', background: 'var(--body-bg)',
+                                    color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none',
+                                    resize: 'none', marginBottom: 16, fontFamily: 'inherit',
+                                }}
+                            />
+                            <button
+                                onClick={async () => {
+                                    if (ratingSubmitting) return;
+                                    setRatingSubmitting(true);
+                                    const ok = await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
+                                    setRatingSubmitting(false);
+                                    setRatingPrompt(null);
+                                    if (!ok) {
+                                        customAlert(language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later');
+                                    }
+                                }}
+                                disabled={ratingSubmitting}
+                                style={{
+                                    width: '100%', padding: 15, borderRadius: 16, border: 'none',
+                                    background: 'var(--primary)', color: '#fff', fontWeight: 900,
+                                    fontSize: '0.98rem', cursor: ratingSubmitting ? 'default' : 'pointer',
+                                }}
+                            >
+                                {ratingSubmitting
+                                    ? (language === 'ar' ? '⏳ جاري الإرسال...' : '⏳ Submitting…')
+                                    : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
+                            </button>
+                            <button
+                                onClick={() => setRatingPrompt(null)}
+                                style={{
+                                    width: '100%', padding: 10, marginTop: 10, background: 'none',
+                                    border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
+                                    fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline',
+                                }}
+                            >
+                                {language === 'ar' ? 'لاحقاً' : 'Later'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Global Custom Dialog */}

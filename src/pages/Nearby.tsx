@@ -9,20 +9,40 @@ import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
 import { getDistance, resolveDealLocation } from '../utils/helpers';
 
-const MapUpdater = ({ center }: { center: [number, number] }) => {
+/**
+ * Live-follow controller. The old version called `map.flyTo(center, 12)` on
+ * every position change, which (a) snapped the zoom back to 12 each time and
+ * (b) animated a fresh fly on every GPS tick — so driving felt like the map
+ * never kept up. Now: pick a street-level zoom ONCE, then `panTo` the user
+ * on each fix keeping their zoom, so the map tracks them smoothly as they
+ * walk/drive. If the user drags the map we pause following (so they can
+ * explore); the floating 📍 button flips `follow` back on and re-centers.
+ */
+const FollowController = ({
+    lat, lng, follow, onUserDrag,
+}: { lat: number; lng: number; follow: boolean; onUserDrag: () => void }) => {
     const map = useMap();
+    const didInit = React.useRef(false);
+
     useEffect(() => {
-        if (!center[0] || !center[1]) return;
-        // invalidateSize() handles the common case where the map container
-        // got laid out at zero height (e.g. while a parent was animating in)
-        // and Leaflet cached the wrong tile grid. Without it, flyTo silently
-        // moves the camera off-screen.
-        const t = setTimeout(() => {
-            map.invalidateSize();
-            map.flyTo(center, 12);
-        }, 0);
-        return () => clearTimeout(t);
-    }, [center[0], center[1], map]);
+        const onDrag = () => onUserDrag();
+        map.on('dragstart', onDrag);
+        const t = setTimeout(() => map.invalidateSize(), 0);
+        return () => { map.off('dragstart', onDrag); clearTimeout(t); };
+    }, [map, onUserDrag]);
+
+    useEffect(() => {
+        if (!lat || !lng) return;
+        if (!didInit.current) {
+            didInit.current = true;
+            map.setView([lat, lng], 15);
+            return;
+        }
+        if (follow) {
+            map.setView([lat, lng], map.getZoom() || 15, { animate: true, duration: 0.5 });
+        }
+    }, [lat, lng, follow, map]);
+
     return null;
 };
 
@@ -46,6 +66,9 @@ const Nearby: React.FC = () => {
     const [userLat, setUserLat] = useState(USER_LOCATION.lat);
     const [userLng, setUserLng] = useState(USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
+    // Live-follow: ON by default so the map tracks the user as they move.
+    // Dragging the map turns it off (explore freely); the 📍 button re-arms it.
+    const [followMode, setFollowMode] = useState(true);
     const [radius, setRadius] = useState(30);
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -76,10 +99,13 @@ const Nearby: React.FC = () => {
             pos => {
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
-                // Skip near-duplicate readings: GPS jitter would otherwise
-                // re-sort the list every second while parked.
+                // 6 m guard: kills stationary GPS jitter (so a parked list
+                // doesn't churn) but is small enough that the map + marker
+                // track the user smoothly the moment they actually move —
+                // walking OR driving. The old 30 m gate made the map feel
+                // frozen in a moving car.
                 const moved = getDistance(lastLat, lastLng, lat, lng) * 1000; // meters
-                if (moved < 30 && alertChecked) return;
+                if (moved < 6 && alertChecked) return;
                 lastLat = lat;
                 lastLng = lng;
                 setUserLat(lat);
@@ -92,7 +118,7 @@ const Nearby: React.FC = () => {
             () => { /* permission denied / unavailable — keep default coords */ },
             {
                 enableHighAccuracy: true,
-                maximumAge: 5000,    // accept fixes up to 5s old (battery friendly)
+                maximumAge: 1000,    // fresh fixes — we want second-by-second follow
                 timeout: 15000
             }
         );
@@ -183,6 +209,7 @@ const Nearby: React.FC = () => {
                                 setSelectedCity(''); 
                                 setSelectedLocationId('');
                                 if (regId) {
+                                    setFollowMode(false); // browsing a chosen area — don't snap back to GPS
                                     setRadius(0); // Show whole region
                                     const reg = REGIONS.find(r => r.id === regId);
                                     if (reg && reg.lat && reg.lng) {
@@ -203,6 +230,7 @@ const Nearby: React.FC = () => {
                                 setSelectedCity(cityId); 
                                 setSelectedLocationId('');
                                 if (cityId) {
+                                    setFollowMode(false);
                                     setRadius(30); // Default 30km for city
                                     const city = CITIES.find(c => c.id === cityId);
                                     if (city) { setUserLat(city.lat); setUserLng(city.lng); }
@@ -237,6 +265,7 @@ const Nearby: React.FC = () => {
                                 const locId = e.target.value;
                                 setSelectedLocationId(locId);
                                 if (locId) {
+                                    setFollowMode(false);
                                     const loc = LOCATIONS.find(l => l.id === locId);
                                     if (loc) { setUserLat(loc.lat); setUserLng(loc.lng); }
                                 }
@@ -297,6 +326,7 @@ const Nearby: React.FC = () => {
                                     setSelectedLocationId('');
                                     setLocationType('');
                                     setRadius(30);
+                                    setFollowMode(true); // re-arm live follow
                                     customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
                                 },
                                 () => { customAlert(isRTL ? "لا يمكن الوصول للموقع" : "Cannot access location"); }
@@ -334,10 +364,11 @@ const Nearby: React.FC = () => {
                     // hybrid mode the list provides its own padding-bottom.
                     marginBottom: viewMode === 'map' ? 'calc(env(safe-area-inset-bottom, 0px) + 120px)' : 24,
                     transition: 'height 0.3s ease',
+                    position: 'relative',
                 }}
             >
-                <MapContainer center={[userLat, userLng]} zoom={12} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                    <MapUpdater center={[userLat, userLng]} />
+                <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                    <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     
                     {/* Visual Mask for Selection */}
@@ -394,6 +425,29 @@ const Nearby: React.FC = () => {
                         );
                     })}
                 </MapContainer>
+                {/* Recenter / resume-follow control (Google-Maps style). Lit
+                    green while actively following; tap to re-arm after a drag. */}
+                <button
+                    type="button"
+                    aria-label={isRTL ? 'تتبّع موقعي' : 'Follow my location'}
+                    onClick={() => setFollowMode(true)}
+                    style={{
+                        position: 'absolute',
+                        insetInlineEnd: 14,
+                        bottom: viewMode === 'map' ? 'calc(env(safe-area-inset-bottom, 0px) + 28px)' : 16,
+                        zIndex: 1000,
+                        width: 46, height: 46, borderRadius: '50%',
+                        border: 'none',
+                        background: followMode ? 'var(--primary)' : 'var(--card-bg)',
+                        color: followMode ? '#fff' : 'var(--primary)',
+                        boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+                        fontSize: '1.25rem', fontWeight: 900, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        WebkitTapHighlightColor: 'transparent',
+                    }}
+                >
+                    {followMode ? '📍' : '🎯'}
+                </button>
             </div>
             )}
             

@@ -1252,6 +1252,31 @@ const DealDetails: React.FC = () => {
                                 <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>{deal.discountedPrice * selectedQuantity} ر.س</span>
                         </div>
 
+                        <div style={{
+                            display: 'flex', gap: 10, alignItems: 'flex-start',
+                            background: 'rgba(245, 158, 11, 0.12)',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            borderRadius: 16, padding: '14px 16px', marginBottom: 18,
+                        }}>
+                            <span style={{ fontSize: '1.2rem', lineHeight: 1.2 }}>⏳</span>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                                {isRTL ? (
+                                    <>
+                                        <span style={{ fontWeight: 900 }}>مدة الحجز ساعتان فقط.</span>{' '}
+                                        يُرجى استلام طلبك من المتجر خلال <span style={{ fontWeight: 900 }}>ساعتين</span> من تأكيد الحجز.
+                                        وعند انتهاء المهلة دون استلام، يُلغى حجزك تلقائياً ويعود المنتج للبيع — دون أي التزام عليك.
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={{ fontWeight: 900 }}>Your booking is valid for 2 hours only.</span>{' '}
+                                        Please collect your order from the store within <span style={{ fontWeight: 900 }}>2 hours</span> of
+                                        confirming. If the window passes without pickup, the booking is cancelled automatically and the
+                                        item is released back for sale — at no obligation to you.
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
                         <button onClick={() => { setShowBookingModal(false); handleBooking(); }} style={{ width: '100%', padding: '16px', borderRadius: 16, background: 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: 'pointer', boxShadow: '0 8px 20px var(--primary-glow)' }}>
                             {isRTL ? 'تأكيد الحجز النهائي ✅' : 'Confirm Final Booking ✅'}
                         </button>
