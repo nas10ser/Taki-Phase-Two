@@ -155,12 +155,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     </button>
                 </div>
 
-                {/* Navigation. `flex: 1` used to push the settings block all
-                    the way to the bottom of the viewport, leaving a big empty
-                    column on phones with only 4 menu items. Plain flex-column
-                    keeps the items + settings stacked naturally with their
-                    intrinsic spacing. */}
-                <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                {/* Scroll region: ONLY the menu + settings scroll. The
+                    header above is pinned (flexShrink:0) so it can never
+                    slide under the iOS status bar no matter how long the
+                    menu is, and short menus stack naturally under the
+                    header with no ugly empty middle column. */}
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}>
+                <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {menuItems.map(item => (
                         <button
                             key={item.id}
@@ -279,6 +280,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             </button>
                         </>
                     )}
+                </div>
                 </div>
             </aside>
         </>
