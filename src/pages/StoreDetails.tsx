@@ -282,12 +282,12 @@ const StoreDetails: React.FC = () => {
                 // Same safe-area pattern as Bookings.tsx (v10.22): the back
                 // button used to land beside the camera cutout on iPhones
                 // with a notch. env() resolves to 0 on devices without one.
-                padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 24px',
+                padding: 'calc(env(safe-area-inset-top, 12px) + 6px) 20px 16px',
                 borderRadius: '0 0 24px 24px',
                 boxShadow: '0 8px 30px rgba(15,23,42,0.15)'
             }}>
                 {/* Back Button & Top Action */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <button onClick={() => history.goBack()} style={{ background: 'rgba(80, 80, 90, 0.3)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: 12, fontSize: '0.85rem', fontWeight: 800 }}>
                         {isRTL ? '→ رجوع' : '← Back'}
                     </button>
@@ -299,8 +299,8 @@ const StoreDetails: React.FC = () => {
                 </div>
 
                 {/* Main Profile Info (Centered) */}
-                <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                    <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto 16px' }}>
+                <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                    <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto 10px' }}>
                         <div style={{ width: '100%', height: '100%', borderRadius: 28, background: ((profile as any).avatar_url || (profile as any).avatar) ? 'transparent' : 'rgba(80, 80, 90, 0.3)', border: '3px solid rgba(80, 80, 95, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', overflow: 'hidden', textTransform: 'uppercase' }}>
                             {((profile as any).avatar_url || (profile as any).avatar) ? <img src={(profile as any).avatar_url || (profile as any).avatar} loading="lazy" alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : store.name.charAt(0)}
                         </div>
@@ -409,48 +409,36 @@ const StoreDetails: React.FC = () => {
                     ) : (
                         <>
                             <p style={{ fontSize: '0.95rem', lineHeight: 1.6, margin: '0 0 20px', fontWeight: 500, opacity: 0.9 }}>{defaultBio}</p>
-                            <div style={{ display: 'flex', gap: 12 }}>
-                                {(profile.contactPhone || profile.phone) && (
-                                    <div style={{ display: 'flex', gap: 10, width: '100%' }}>
-                                        <a href={`tel:${profile.contactPhone || profile.phone}`} style={{ 
-                                            flex: 1, 
-                                            background: 'linear-gradient(135deg, rgba(100, 100, 100, 0.15), rgba(80, 80, 90, 0.2))', 
-                                            backdropFilter: 'blur(10px)',
-                                            border: '1px solid rgba(80, 80, 95, 0.2)', 
-                                            borderRadius: 20, 
-                                            padding: '14px 20px', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'space-between', 
-                                            textDecoration: 'none', 
-                                            color: 'white',
-                                            boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
-                                        }}>
-                                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                                <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(80, 80, 90, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>📞</div>
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, opacity: 0.6, letterSpacing: '0.5px' }}>{isRTL ? 'اتصال مباشر' : 'Direct Call'}</span>
-                                                    <span style={{ fontSize: '1.1rem', fontWeight: 900 }}>{profile.contactPhone || profile.phone}</span>
-                                                </div>
-                                            </div>
-                                        </a>
-                                        <a href={`https://wa.me/966${(profile.contactPhone || profile.phone)?.replace(/^0/, '')}`} target="_blank" rel="noopener noreferrer" style={{ 
-                                            width: 60, 
-                                            height: 60, 
-                                            background: 'linear-gradient(135deg, #25d366, #128c7e)', 
-                                            borderRadius: 20, 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'center', 
-                                            fontSize: '1.8rem',
-                                            boxShadow: '0 8px 32px rgba(37,211,102,0.2)',
-                                            border: '1px solid rgba(80, 80, 95, 0.2)'
-                                        }}>
-                                            💬
-                                        </a>
-                                    </div>
-                                )}
-                            </div>
+                            {(profile.contactPhone || profile.phone) && (
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                    <a href={`tel:${profile.contactPhone || profile.phone}`} style={{
+                                        flex: 1,
+                                        background: 'rgba(255,255,255,0.92)',
+                                        color: '#0f172a',
+                                        border: '1px solid rgba(80, 80, 95, 0.2)',
+                                        borderRadius: 16,
+                                        padding: '15px 14px',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                        textDecoration: 'none', fontWeight: 900, fontSize: '1rem',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                                    }}>
+                                        📞 {isRTL ? 'اتصال' : 'Call'}
+                                    </a>
+                                    <a href={`https://wa.me/966${(profile.contactPhone || profile.phone)?.replace(/^0/, '')}`} target="_blank" rel="noopener noreferrer" style={{
+                                        flex: 1,
+                                        background: '#25d366',
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: 16,
+                                        padding: '15px 14px',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                        textDecoration: 'none', fontWeight: 900, fontSize: '1rem',
+                                        boxShadow: '0 8px 24px rgba(37,211,102,0.25)'
+                                    }}>
+                                        WhatsApp 💬
+                                    </a>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
