@@ -97,7 +97,12 @@ const Notifications: React.FC = () => {
                                 // Before v10.69 the buyer flow opened /deal/{id} which sent the
                                 // user back to the product page even when they tapped "💬 رسالة
                                 // جديدة" — the chat is on Bookings, not on the deal page.
-                                const dest = isBookingNotif && audience === 'seller' && barcode
+                                // Report-threshold admin alert → the new
+                                // Reports & Complaints center tab.
+                                const isReportNotif = n.type === 'report';
+                                const dest = isReportNotif
+                                    ? '/admin?tab=reports'
+                                    : isBookingNotif && audience === 'seller' && barcode
                                     ? `/seller?tab=orders&barcode=${barcode}`
                                     : isBookingNotif && audience === 'buyer' && barcode
                                         ? `/bookings?barcode=${barcode}`

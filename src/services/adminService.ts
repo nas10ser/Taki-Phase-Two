@@ -80,6 +80,43 @@ export interface ApplySubscriptionParams {
     maxBranches?: number;
 }
 
+export interface AdminReportRow {
+    id: string;
+    created_at: string;
+    report_type: string;
+    reason: string;
+    status: string;
+    admin_note: string | null;
+    reporter_id: string;
+    reporter_name: string;
+    reporter_phone: string | null;
+    reporter_role: string;
+    reporter_filed_count: number;
+    reported_id: string;
+    reported_name: string;
+    reported_phone: string | null;
+    reported_role: string;
+    reported_under_review: boolean;
+    reported_received_count: number;
+    reported_distinct_reporters: number;
+}
+
+export interface AdminComplaintRow {
+    id: string;
+    created_at: string;
+    category: string;
+    subject: string | null;
+    message: string;
+    status: string;
+    admin_note: string | null;
+    user_id: string;
+    user_name: string;
+    user_phone: string | null;
+    user_type: string | null;
+    target_id: string | null;
+    target_name: string | null;
+}
+
 // ============================================================
 // In-memory cache (TTL based) — يقلل الطلبات بنسبة 90%
 // ============================================================
@@ -165,6 +202,72 @@ export const adminService = {
             return [];
         }
         return (data as AdminUserRow[]) ?? [];
+    },
+
+    async listReports(filters: {
+        query?: string;
+        reportedRole?: 'buyer' | 'seller' | null;
+        type?: string | null;
+        status?: string | null;
+        days?: number;
+        limit?: number;
+        offset?: number;
+    } = {}): Promise<AdminReportRow[]> {
+        const { data, error } = await supabase.rpc('admin_list_reports', {
+            p_query: filters.query ?? '',
+            p_reported_role: filters.reportedRole ?? null,
+            p_type: filters.type ?? null,
+            p_status: filters.status ?? null,
+            p_days: filters.days ?? 0,
+            p_limit: filters.limit ?? 100,
+            p_offset: filters.offset ?? 0,
+        });
+        if (error) {
+            console.error('[adminService.listReports]', error);
+            return [];
+        }
+        return (data as AdminReportRow[]) ?? [];
+    },
+
+    async listComplaints(filters: {
+        query?: string;
+        status?: string | null;
+        limit?: number;
+        offset?: number;
+    } = {}): Promise<AdminComplaintRow[]> {
+        const { data, error } = await supabase.rpc('admin_list_complaints', {
+            p_query: filters.query ?? '',
+            p_status: filters.status ?? null,
+            p_limit: filters.limit ?? 100,
+            p_offset: filters.offset ?? 0,
+        });
+        if (error) {
+            console.error('[adminService.listComplaints]', error);
+            return [];
+        }
+        return (data as AdminComplaintRow[]) ?? [];
+    },
+
+    async setReportStatus(id: string, status: string, note?: string): Promise<{ success: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_set_report_status', {
+            p_id: id, p_status: status, p_note: note ?? null,
+        });
+        if (error) {
+            console.error('[adminService.setReportStatus]', error);
+            return { success: false, error: error.message };
+        }
+        return { success: !!data?.success };
+    },
+
+    async setComplaintStatus(id: string, status: string, note?: string): Promise<{ success: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_set_complaint_status', {
+            p_id: id, p_status: status, p_note: note ?? null,
+        });
+        if (error) {
+            console.error('[adminService.setComplaintStatus]', error);
+            return { success: false, error: error.message };
+        }
+        return { success: !!data?.success };
     },
 
     async applySubscription(p: ApplySubscriptionParams): Promise<{ success: boolean; error?: string }> {

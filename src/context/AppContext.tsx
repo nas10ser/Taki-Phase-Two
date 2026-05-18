@@ -61,7 +61,7 @@ interface Notification {
     userId: string;
     title: { ar: string, en: string };
     body: { ar: string, en: string };
-    type: 'booking' | 'deal' | 'system' | 'rating' | 'follow' | 'marketing';
+    type: 'booking' | 'deal' | 'system' | 'rating' | 'follow' | 'marketing' | 'report';
     isRead: boolean;
     createdAt: number;
     metadata?: any;

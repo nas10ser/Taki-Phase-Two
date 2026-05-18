@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import ComplaintDialog from './ComplaintDialog';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -16,6 +17,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     // and `isAuthReady` so the sidebar never flashes admin controls based on
     // a stale optimistic profile (e.g. legacy JWT user_metadata mismatch).
     const isRealAdmin = isAuthReady && user?.userType === 'admin';
+    const [showComplaint, setShowComplaint] = useState(false);
 
     // Lock body scroll while open so the page underneath doesn't move when
     // the user scrolls inside the panel on iOS Safari.
@@ -57,6 +59,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     }
     if (isRealAdmin) {
         menuItems.push({ id: 'admin', icon: '🛠️', ar: 'مركز الإدارة', en: 'Admin Center', path: '/admin' });
+    }
+    // Complaints / contact admin — any signed-in user (#3 entry point).
+    if (isAuthReady && user) {
+        menuItems.push({ id: 'complaint', icon: '📣', ar: 'الشكاوى / تواصل الإدارة', en: 'Complaints / Contact admin', path: '__complaint__' });
     }
 
     const handleNav = (path: string) => {
@@ -152,7 +158,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     {menuItems.map(item => (
                         <button
                             key={item.id}
-                            onClick={() => handleNav(item.path)}
+                            onClick={() => {
+                                if (item.path === '__complaint__') { setShowComplaint(true); onClose(); }
+                                else handleNav(item.path);
+                            }}
                             style={{
                                 width: '100%',
                                 padding: '13px 14px',
@@ -177,6 +186,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </button>
                     ))}
                 </nav>
+
+                {showComplaint && (
+                    <ComplaintDialog isRTL={isRTL} onClose={() => setShowComplaint(false)} />
+                )}
 
                 {/* Footer: settings + auth */}
                 <div style={{ borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: 16, marginTop: 16 }}>

@@ -27,7 +27,7 @@
  */
 
 import React, { Suspense, lazy, useState, useEffect, useCallback, memo } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { adminService } from '../services/adminService';
 
@@ -40,8 +40,9 @@ const AdminBuyers    = lazy(() => import('./admin/AdminBuyers'));
 const AdminSellers   = lazy(() => import('./admin/AdminSellers'));
 const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
+const AdminReports   = lazy(() => import('./admin/AdminReports'));
 
-type Tab = 'overview' | 'buyers' | 'sellers' | 'analytics' | 'tools';
+type Tab = 'overview' | 'buyers' | 'sellers' | 'reports' | 'analytics' | 'tools';
 
 const TABS: Array<{
     value: Tab;
@@ -52,6 +53,7 @@ const TABS: Array<{
     { value: 'overview',  label: 'الرئيسية',   icon: '🏠', gradient: 'from-emerald-500 to-teal-600' },
     { value: 'buyers',    label: 'المشترون',   icon: '🛒', gradient: 'from-blue-500 to-indigo-600' },
     { value: 'sellers',   label: 'البائعون',   icon: '🏪', gradient: 'from-purple-500 to-fuchsia-600' },
+    { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩', gradient: 'from-red-500 to-rose-600' },
     { value: 'analytics', label: 'التحليلات',  icon: '📊', gradient: 'from-amber-500 to-orange-600' },
     { value: 'tools',     label: 'الأدوات',    icon: '🛠️', gradient: 'from-pink-500 to-rose-600' },
 ];
@@ -119,7 +121,18 @@ TabNav.displayName = 'TabNav';
 const AdminDashboard: React.FC = () => {
     const { user, isAuthReady } = useApp();
     const history = useHistory();
+    const location = useLocation();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
+
+    // Deep-link support: /admin?tab=reports (used by the report-threshold
+    // admin notification) opens the right tab on load.
+    useEffect(() => {
+        const t = new URLSearchParams(location.search).get('tab');
+        if (t && ['overview', 'buyers', 'sellers', 'reports', 'analytics', 'tools'].includes(t)) {
+            setActiveTab(t as Tab);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.search]);
 
     const handleBack = useCallback(() => {
         if (activeTab !== 'overview') {
@@ -199,6 +212,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'overview'  && <AdminOverview onNavigate={handleNavigate} />}
                         {activeTab === 'buyers'    && <AdminBuyers />}
                         {activeTab === 'sellers'   && <AdminSellers />}
+                        {activeTab === 'reports'   && <AdminReports />}
                         {activeTab === 'analytics' && <AdminAnalytics />}
                         {activeTab === 'tools'     && <AdminTools />}
                     </Suspense>
