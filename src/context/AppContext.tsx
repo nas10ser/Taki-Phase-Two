@@ -103,6 +103,11 @@ interface AppContextType {
     toggleDarkMode: () => void;
     customAlert: (message: string) => Promise<void>;
     customConfirm: (message: string) => Promise<boolean>;
+    // Non-blocking top banner for incoming realtime notifications (booking,
+    // message, etc.). Replaces the old blocking center "موافق" box so a
+    // merchant with hundreds of orders can keep working. Auto-dismisses.
+    inAppBanner: { id: string; title: { ar: string; en: string }; body: { ar: string; en: string }; metadata?: any } | null;
+    dismissInAppBanner: () => void;
     // Admin "view-as" impersonation. Reflects what role the UI should
     // render — the underlying user.userType stays unchanged. null = real role.
     viewAs: 'buyer' | 'seller' | null;
@@ -207,6 +212,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     // Custom Dialog State
     const [dialogConfig, setDialogConfig] = useState<{type: 'alert'|'confirm', message: string, resolve: (val: any) => void} | null>(null);
+
+    // Non-blocking realtime banner (booking/message). One slot — the newest
+    // replaces the previous; the <InAppBanner> component auto-dismisses it.
+    const [inAppBanner, setInAppBanner] = useState<{ id: string; title: { ar: string; en: string }; body: { ar: string; en: string }; metadata?: any } | null>(null);
+    const dismissInAppBanner = useCallback(() => setInAppBanner(null), []);
 
     const customAlert = useCallback((message: string): Promise<void> => {
         return new Promise(resolve => {
@@ -1028,8 +1038,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (isLocationCap) {
                 customAlert(
                     language === 'ar'
-                        ? '⚠️ باقتك تسمح بـ3 مواقع مختلفة فقط للعروض النشطة.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل إضافة موقع جديد.'
-                        : '⚠️ Your plan allows 3 distinct active locations only.\n\nPick one of your existing locations or empty a slot first.'
+                        ? '⚠️ وصلت لحد المواقع المسموح في باقتك.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل إضافة موقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.'
+                        : '⚠️ You\'ve reached your package\'s location limit.\n\nPick one of your existing locations, or free a vacant slot first. Contact TAKI admin to upgrade.'
                 );
                 return;
             }
@@ -1085,12 +1095,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customAlert(
                 language === 'ar'
                     ? (isLocationCap
-                        ? '⚠️ باقتك تسمح بـ3 مواقع مختلفة فقط للعروض النشطة.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل نقل العرض لموقع جديد.'
+                        ? '⚠️ وصلت لحد المواقع المسموح في باقتك.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل نقل العرض لموقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.'
                         : isTransientLock
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
                     : (isLocationCap
-                        ? '⚠️ Your plan allows 3 distinct active locations only.'
+                        ? '⚠️ You\'ve reached your package\'s location limit. Pick an existing location or free a vacant slot. Contact TAKI admin to upgrade.'
                         : isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
@@ -1640,7 +1650,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     if (prev.find(p => p.id === mapped.id)) return prev;
                     return [mapped, ...prev];
                 });
-                if (user?.id === n.user_id) showRealTimeAlertRef.current(mapped.title, mapped.body);
+                if (user?.id === n.user_id) {
+                    // OS notification (if permitted) + the non-blocking in-app
+                    // top banner. The banner is what guarantees the BUYER sees
+                    // a "new message" heads-up too — previously they got
+                    // nothing visible because only the seller had the (now
+                    // removed) center box and the OS path is permission-gated.
+                    showRealTimeAlertRef.current(mapped.title, mapped.body);
+                    setInAppBanner({ id: mapped.id, title: mapped.title, body: mapped.body, metadata: mapped.metadata });
+                }
             },
             onNotificationUpdate: (payload) => {
                 if (payload.eventType === 'DELETE') {
@@ -1918,6 +1936,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
+        inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
         incrementDealView, incrementDealClick,
         platformSettings,
@@ -1939,6 +1958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
+        inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
         incrementDealView, incrementDealClick,
         platformSettings,

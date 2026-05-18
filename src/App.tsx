@@ -5,6 +5,7 @@ import { validationService } from './services/validationService';
 import { normalizeArabicNumerals } from './utils/helpers';
 import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
+import InAppBanner from './components/InAppBanner';
 
 // Code-split each route. Initial bundle no longer pays for pages the user
 // hasn't visited (e.g. SellerDashboard's 1124 lines on a buyer's first paint).
@@ -178,6 +179,7 @@ const App = () => {
     return (
         <Router>
             <AuthRedirector />
+            <InAppBanner />
             <Suspense fallback={null}>
                 <UpdateBanner />
             </Suspense>

@@ -18,6 +18,8 @@
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
+import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
+import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 
 type FilterTab = 'all' | 'premium' | 'trial' | 'free' | 'suspended';
 
@@ -52,6 +54,16 @@ const SubscriptionModal = memo<{
     const [notes, setNotes] = useState('');
     const [sendNotif, setSendNotif] = useState(true);
     const [saving, setSaving] = useState(false);
+    // Location package (1/3/6/10). max_branches isn't on AdminUserRow, so we
+    // pull the store's current value once and default the picker to it.
+    const [maxBranches, setMaxBranches] = useState<number>(3);
+    useEffect(() => {
+        let alive = true;
+        subscriptionRepository.getStoreSubscription(seller.id)
+            .then(s => { if (alive && s?.maxBranches) setMaxBranches(s.maxBranches); })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [seller.id]);
 
     // أزرار سريعة لتغيير المدة
     const quickDurations = [
@@ -83,6 +95,7 @@ const SubscriptionModal = memo<{
             amount,
             notes: notes || undefined,
             sendNotification: sendNotif,
+            maxBranches,
         };
         const res = await adminService.applySubscription(params);
         setSaving(false);
@@ -144,6 +157,35 @@ const SubscriptionModal = memo<{
                                     {p.label}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+
+                    {/* باقة المواقع — كم لوكيشن مسموح للتاجر */}
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">
+                            📍 باقة المواقع (عدد اللوكيشنات المسموحة)
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {LOCATION_PACKAGES.map((pkg) => {
+                                const selected = maxBranches === pkg.max;
+                                return (
+                                    <button
+                                        key={pkg.id}
+                                        onClick={() => setMaxBranches(pkg.max)}
+                                        className={`p-3 rounded-xl border-2 transition-all text-sm text-right ${
+                                            selected
+                                                ? 'bg-purple-50 border-purple-500 text-purple-700'
+                                                : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                        }`}
+                                    >
+                                        <div className="font-extrabold">{pkg.ar}</div>
+                                        <div className="text-xs opacity-80 mt-0.5">{pkg.descAr}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="text-[11px] text-[var(--text-secondary)] mt-2">
+                            الباقة الحالية: <span className="font-bold">{packageForMax(maxBranches).ar}</span> — {packageForMax(maxBranches).descAr}
                         </div>
                     </div>
 

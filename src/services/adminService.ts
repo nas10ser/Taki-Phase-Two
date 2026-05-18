@@ -76,6 +76,8 @@ export interface ApplySubscriptionParams {
     amount?: number;
     notes?: string;
     sendNotification?: boolean;
+    /** Location package size: 1 | 3 | 6 | 10. Omit/undefined = leave as-is. */
+    maxBranches?: number;
 }
 
 // ============================================================
@@ -175,6 +177,7 @@ export const adminService = {
             p_amount: p.amount ?? 199,
             p_notes: p.notes ?? null,
             p_send_notification: p.sendNotification ?? true,
+            p_max_branches: p.maxBranches ?? null,
         });
         if (error) {
             console.error('[adminService.applySubscription]', error);

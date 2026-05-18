@@ -8,6 +8,7 @@ import ImageCropEditor from '../components/ImageCropEditor';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
+import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
@@ -117,6 +118,9 @@ const SellerDashboard: React.FC = () => {
     const [editingDealId, setEditingDealId] = useState<string | null>(null);
     const [isPaymentEnabled, setIsPaymentEnabled] = useState(false);
     const [isSubscriptionValid, setIsSubscriptionValid] = useState(true);
+    // The store's location package size (store_profiles.max_branches): 1/3/6/10.
+    // Admin-controlled from Admin → Sellers. Falls back to the base 3.
+    const [maxLocations, setMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
 
     // Fetch payment settings + check subscription status.
     // Source of truth is `merchant_subscriptions` (status + trial/period dates) —
@@ -131,6 +135,17 @@ const SellerDashboard: React.FC = () => {
             const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
             const enabled = data?.value === true;
             setIsPaymentEnabled(enabled);
+
+            // Load the store's location package (max_branches). Authoritative
+            // source is store_profiles; default to the base tier when absent.
+            if (user?.id) {
+                const { data: sp } = await supabase
+                    .from('store_profiles')
+                    .select('max_branches')
+                    .eq('store_id', user.id)
+                    .maybeSingle();
+                setMaxLocations(Number(sp?.max_branches) > 0 ? Number(sp!.max_branches) : DEFAULT_MAX_LOCATIONS);
+            }
 
             // Admins are not paying merchants — they always pass.
             if (user?.userType === 'admin') {
@@ -713,11 +728,11 @@ const SellerDashboard: React.FC = () => {
         return o > 0 && d > 0 && d >= o;
     })();
 
-    // === Location-limit accounting (base plan = 3 distinct locations) ===
-    // The actual block is enforced in submitAction; this block just computes
-    // the current state so the form can show a "2/3 مواقع مستخدمة" hint and
-    // turn it red/orange as the seller approaches the limit.
-    const MAX_LOCATIONS = 3;
+    // === Location-limit accounting (package-driven, admin-controlled) ===
+    // MAX_LOCATIONS is the store's package size (1/3/6/10) from
+    // store_profiles.max_branches. The hard block is enforced server-side by
+    // enforce_seller_location_cap; this just powers the hint + chip colors.
+    const MAX_LOCATIONS = maxLocations;
     const locKeyOf = (d: { locationId?: string | null; mapLocation?: { lat?: number; lng?: number } }): string => {
         const lid = d.locationId;
         if (lid && typeof lid === 'string' && !lid.startsWith('custom_') && lid !== 'other') {
@@ -1423,7 +1438,7 @@ const SellerDashboard: React.FC = () => {
             // (delete every deal in one of their existing locations).
             // Admins bypass entirely.
             if (user?.userType !== 'admin') {
-                const MAX_LOCATIONS = 3;
+                const MAX_LOCATIONS = maxLocations;
 
                 const locKeyOf = (d: { locationId?: string | null; mapLocation?: { lat?: number; lng?: number } }): string => {
                     const lid = d.locationId;
@@ -1449,8 +1464,8 @@ const SellerDashboard: React.FC = () => {
 
                 if (!activeKeys.has(candidateKey) && activeKeys.size >= MAX_LOCATIONS) {
                     await customAlert(isRTL
-                        ? `⚠️ باقتك تسمح بـ${MAX_LOCATIONS} مواقع مختلفة فقط (${activeKeys.size}/${MAX_LOCATIONS}).\n\nاختر موقعاً من مواقعك الـ${MAX_LOCATIONS} الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة قبل إضافة موقع جديد.`
-                        : `⚠️ Your plan allows ${MAX_LOCATIONS} distinct locations only (${activeKeys.size}/${MAX_LOCATIONS}).\n\nPick one of your existing ${MAX_LOCATIONS} locations, or delete every deal in one of them to free a slot.`);
+                        ? `⚠️ ${packageLabel(MAX_LOCATIONS, true)}: تسمح بـ${MAX_LOCATIONS} ${MAX_LOCATIONS === 1 ? 'موقع' : 'مواقع'} فقط (${activeKeys.size}/${MAX_LOCATIONS}).\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل إضافة موقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.`
+                        : `⚠️ ${packageLabel(MAX_LOCATIONS, false)}: allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} only (${activeKeys.size}/${MAX_LOCATIONS}).\n\nPick one of your existing locations, or free a vacant slot first. Contact TAKI admin to upgrade.`);
                     return;
                 }
             }
@@ -1646,21 +1661,11 @@ const SellerDashboard: React.FC = () => {
     const myOrders = bookings.filter(b => myProducts.some(p => p.id === b.deal.id));
     const activeOrders = myOrders.filter(b => b.status === 'pending' || b.status === 'acknowledged');
     const pastOrders = myOrders.filter(b => b.status === 'completed' || b.status === 'cancelled');
-    const [processedNotifIds, setProcessedNotifIds] = useState<Set<string>>(new Set());
-    useEffect(() => {
-        if (!loading && user) {
-            const unreadBookingNotifs = notifications
-                .filter(n => n.userId === user.id && !n.isRead && n.type === 'booking')
-                .sort((a, b) => a.createdAt - b.createdAt);
-            
-            unreadBookingNotifs.forEach(n => {
-                if (!processedNotifIds.has(n.id)) {
-                    setProcessedNotifIds(prev => new Set(prev).add(n.id));
-                    customAlert(`${isRTL ? n.title.ar : n.title.en}\n\n${isRTL ? n.body.ar : n.body.en}`);
-                }
-            });
-        }
-    }, [notifications, user, loading, processedNotifIds, isRTL, customAlert]);
+    // v10.73 — the blocking center "موافق" box that fired for EVERY unread
+    // booking notification was removed. A merchant taking hundreds of orders
+    // could not work through a modal-per-order. Booking/message alerts now
+    // surface ONLY via (1) the non-blocking top banner (AppContext) and
+    // (2) the in-app Notifications list — same for buyer and seller.
 
     const myDeals = deals.filter(d => d.storeId === user?.id);
     
@@ -2192,8 +2197,8 @@ const SellerDashboard: React.FC = () => {
                                     <span style={{ fontSize: '1rem' }}>📍</span>
                                     <span style={{ flex: 1 }}>
                                         {isRTL
-                                            ? `الباقة تسمح بـ${MAX_LOCATIONS} مواقع مختلفة — المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
-                                            : `Plan allows ${MAX_LOCATIONS} distinct locations — currently using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
+                                            ? `${packageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
+                                            : `${packageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
                                         {wouldExceedLimit && (
                                             <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
                                                 {isRTL
@@ -2233,8 +2238,8 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 10 }}>
                                         {isRTL
-                                            ? 'انتهت كل عروض موقعه السابق فحُذفت الخانة. تم تغيير موقعك السابق — اختر أحد مواقعك الحالية الـ3 لتجديد هذا العرض:'
-                                            : 'All deals in its old location expired, so the slot was freed. Your previous location was reassigned — pick one of your current 3 locations to renew this deal:'}
+                                            ? `انتهت كل عروض موقعه السابق فحُذفت الخانة. تم تغيير موقعك السابق — اختر أحد مواقعك الحالية (${activeLocationKeys.size}/${MAX_LOCATIONS}) لتجديد هذا العرض:`
+                                            : `All deals in its old location expired, so the slot was freed. Your previous location was reassigned — pick one of your current locations (${activeLocationKeys.size}/${MAX_LOCATIONS}) to renew this deal:`}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                         {activeLocationsList.map(({ key, deal }) => (
@@ -2371,25 +2376,58 @@ const SellerDashboard: React.FC = () => {
                                         fontSize: '0.75rem',
                                         fontWeight: 800,
                                         color: 'var(--text-primary)',
-                                        marginBottom: 8,
+                                        marginBottom: 6,
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 6
                                     }}>
-                                        📍 {isRTL ? 'لوكيشن سابق — اضغط لاستخدامه فوراً' : 'Previous location — tap to reuse'}
+                                        📍 {isRTL ? 'مواقعك — اضغط لاستخدامه فوراً' : 'Your locations — tap to reuse'}
+                                    </div>
+                                    {/* Legend: green = tied to live deals (counts toward the
+                                        package, locked from deletion). amber = a free saved
+                                        slot the seller can delete to make room. */}
+                                    <div style={{
+                                        display: 'flex', flexWrap: 'wrap', gap: 12,
+                                        fontSize: '0.68rem', fontWeight: 700,
+                                        color: 'var(--text-secondary)', marginBottom: 9, lineHeight: 1.5
+                                    }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(16,185,129,0.85)', display: 'inline-block' }} />
+                                            {isRTL ? '🔒 نشط — مرتبط بعروض ويُحتسب (لا يُحذف حتى تنتهي/تُحذف عروضه)' : '🔒 Active — tied to deals & counted (locked until its deals end)'}
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(245,158,11,0.9)', display: 'inline-block' }} />
+                                            {isRTL ? 'شاغر — لا يُحتسب، يمكنك حذفه ✕ لتفريغ خانة' : 'Vacant — not counted, delete ✕ to free a slot'}
+                                        </span>
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                         {mergedLocationChips.map(chip => {
-                                            const active = chip.key === currentCandidateKey;
+                                            const isSelected = chip.key === currentCandidateKey;
+                                            // Locked = this location currently powers ≥1 active
+                                            // deal → it consumes a package slot and MUST NOT be
+                                            // deletable until those deals end/are removed.
+                                            const isLocked = activeLocationKeys.has(chip.key);
+                                            // Vacant = a saved branch with no live deal → free,
+                                            // safe to delete to open a slot.
+                                            const isVacant = !!chip.branchId && !isLocked;
+
+                                            const colors = isSelected
+                                                ? { bg: 'var(--primary)', fg: '#fff', bd: 'var(--primary)' }
+                                                : isLocked
+                                                    ? { bg: 'rgba(16,185,129,0.14)', fg: 'var(--text-primary)', bd: 'rgba(16,185,129,0.55)' }
+                                                    : isVacant
+                                                        ? { bg: 'rgba(245,158,11,0.14)', fg: 'var(--text-primary)', bd: 'rgba(245,158,11,0.6)' }
+                                                        : { bg: 'var(--body-bg)', fg: 'var(--text-primary)', bd: 'var(--gray-200)' };
+
                                             return (
                                                 <div
                                                     key={chip.key}
                                                     style={{
                                                         display: 'inline-flex',
                                                         alignItems: 'stretch',
-                                                        background: active ? 'var(--primary)' : 'var(--body-bg)',
-                                                        color: active ? '#fff' : 'var(--text-primary)',
-                                                        border: '1.5px solid ' + (active ? 'var(--primary)' : 'var(--gray-200)'),
+                                                        background: colors.bg,
+                                                        color: colors.fg,
+                                                        border: '1.5px solid ' + colors.bd,
                                                         borderRadius: 999,
                                                         overflow: 'hidden',
                                                         transition: 'background 0.15s ease, color 0.15s ease'
@@ -2398,6 +2436,9 @@ const SellerDashboard: React.FC = () => {
                                                     <button
                                                         type="button"
                                                         onClick={() => adoptLocationChip(chip)}
+                                                        title={isLocked
+                                                            ? (isRTL ? 'مرتبط بعروض نشطة — يُحتسب ضمن باقتك' : 'Tied to active deals — counts toward your package')
+                                                            : (isRTL ? 'موقع شاغر محفوظ' : 'Vacant saved location')}
                                                         style={{
                                                             background: 'transparent',
                                                             color: 'inherit',
@@ -2412,21 +2453,26 @@ const SellerDashboard: React.FC = () => {
                                                             WebkitTapHighlightColor: 'transparent'
                                                         }}
                                                     >
-                                                        📍 {chip.label}
+                                                        {isLocked ? '🔒' : '📍'} {chip.label}
+                                                        {isVacant && (
+                                                            <span style={{ fontSize: '0.62rem', fontWeight: 800, opacity: 0.85 }}>
+                                                                {isRTL ? '• شاغر' : '• vacant'}
+                                                            </span>
+                                                        )}
                                                     </button>
-                                                    {chip.branchId && (
+                                                    {isVacant ? (
                                                         <button
                                                             type="button"
-                                                            aria-label={isRTL ? 'حذف اللوكيشن المحفوظ' : 'Delete saved location'}
+                                                            aria-label={isRTL ? 'حذف اللوكيشن الشاغر' : 'Delete vacant location'}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 handleRemoveBranch(chip.branchId!, chip.label);
                                                             }}
                                                             style={{
-                                                                background: active ? 'rgba(255,255,255,0.18)' : 'rgba(220,38,38,0.08)',
-                                                                color: active ? '#fff' : 'var(--danger)',
+                                                                background: 'rgba(220,38,38,0.10)',
+                                                                color: 'var(--danger)',
                                                                 border: 'none',
-                                                                borderInlineStart: '1px solid ' + (active ? 'rgba(255,255,255,0.35)' : 'var(--gray-200)'),
+                                                                borderInlineStart: '1px solid rgba(245,158,11,0.5)',
                                                                 padding: '0 11px',
                                                                 fontSize: '0.85rem',
                                                                 fontWeight: 900,
@@ -2438,7 +2484,24 @@ const SellerDashboard: React.FC = () => {
                                                         >
                                                             ✕
                                                         </button>
-                                                    )}
+                                                    ) : isLocked ? (
+                                                        <span
+                                                            aria-hidden
+                                                            title={isRTL ? 'لا يمكن حذفه حتى تنتهي أو تُحذف كل عروضه' : 'Cannot delete until all its deals end or are removed'}
+                                                            style={{
+                                                                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(16,185,129,0.18)',
+                                                                color: isSelected ? '#fff' : 'rgb(5,150,105)',
+                                                                borderInlineStart: '1px solid ' + (isSelected ? 'rgba(255,255,255,0.35)' : 'rgba(16,185,129,0.4)'),
+                                                                padding: '0 10px',
+                                                                fontSize: '0.78rem',
+                                                                fontWeight: 900,
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center'
+                                                            }}
+                                                        >
+                                                            🔒
+                                                        </span>
+                                                    ) : null}
                                                 </div>
                                             );
                                         })}
