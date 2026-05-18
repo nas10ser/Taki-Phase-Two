@@ -5,6 +5,7 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import BookingThread from '../components/BookingThread';
 import DualCalendarPicker from '../components/DualCalendarPicker';
 import ImageCropEditor from '../components/ImageCropEditor';
+import CameraCapture from '../components/CameraCapture';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -924,6 +925,7 @@ const SellerDashboard: React.FC = () => {
     // Removed auto-centering effect to prevent overwriting manual map pin placement
 
     const [uploadingImages, setUploadingImages] = useState<boolean>(false);
+    const [showCamera, setShowCamera] = useState<boolean>(false);
     const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
     // Crop pipeline. Each item is the original File plus pre-decoded
     // dimensions and a data URL. Pre-decoding here (instead of inside the
@@ -1052,6 +1054,24 @@ const SellerDashboard: React.FC = () => {
             }
         } finally {
             setUploadingImages(false);
+        }
+    };
+
+    // Camera shots arrive already framed from the in-app live camera, so
+    // they skip the crop queue entirely — routing them through the
+    // one-by-one crop editor would reintroduce exactly the per-photo
+    // friction the multi-shot camera was built to remove. Compression
+    // still happens inside storageService.uploadImage.
+    const ingestCameraFiles = async (files: File[]) => {
+        if (!files || files.length === 0) return;
+        const remainingSlots = Math.max(0, 4 - images.length - cropQueue.length);
+        const toUpload = files.slice(0, remainingSlots);
+        if (toUpload.length === 0) {
+            customAlert(isRTL ? '⚠️ الحد الأقصى 4 صور' : '⚠️ Maximum 4 images');
+            return;
+        }
+        for (const f of toUpload) {
+            await uploadCroppedFile(f);
         }
     };
 
@@ -2103,60 +2123,93 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {images.length < 4 && (
-                                    <label
-                                        htmlFor="seller-image-upload"
-                                        onDrop={handleDrop}
-                                        onDragOver={handleDragOver}
-                                        onDragEnter={handleDragOver}
-                                        onDragLeave={handleDragLeave}
-                                        style={{
-                                            position: 'relative',
-                                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                            height: 130, borderRadius: 12,
-                                            border: isDraggingOver ? '2px solid var(--primary)' : '2px dashed var(--primary)',
-                                            cursor: uploadingImages ? 'default' : 'pointer',
-                                            background: isDraggingOver ? 'var(--primary-light)' : 'var(--notif-unread-bg)',
-                                            color: 'var(--primary)',
-                                            transition: 'background 0.2s ease, border-color 0.2s ease', WebkitTapHighlightColor: 'transparent',
-                                            opacity: uploadingImages ? 0.6 : 1,
-                                            userSelect: 'none', overflow: 'hidden'
-                                        }}
-                                    >
-                                        {/* Native <label htmlFor> pattern — opens the OS file picker on any
-                                            browser without needing a programmatic .click(). The input itself
-                                            is visually hidden but stays in the DOM for keyboard/AT users. */}
-                                        <input
-                                            id="seller-image-upload"
-                                            ref={fileInputRef}
-                                            type="file"
-                                            multiple
-                                            accept="image/*"
+                                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8 }}>
+                                        {/* Camera — in-app live multi-shot. Native <input capture>
+                                            returns one photo then closes; this opens a real
+                                            getUserMedia camera so the seller fires several shots
+                                            in a row without reopening (WhatsApp-style). */}
+                                        <button
+                                            type="button"
+                                            onClick={() => { if (!uploadingImages) setShowCamera(true); }}
                                             disabled={uploadingImages}
-                                            onChange={handleImageUpload}
-                                            onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                                            aria-label={isRTL ? 'إضافة صورة' : 'Add Image'}
                                             style={{
-                                                position: 'absolute',
-                                                width: 1, height: 1,
-                                                padding: 0, margin: -1,
-                                                overflow: 'hidden',
-                                                clip: 'rect(0,0,0,0)',
-                                                whiteSpace: 'nowrap',
-                                                border: 0
+                                                flex: 1,
+                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                height: 130, borderRadius: 12,
+                                                border: '2px dashed var(--primary)',
+                                                cursor: uploadingImages ? 'default' : 'pointer',
+                                                background: 'var(--notif-unread-bg)',
+                                                color: 'var(--primary)',
+                                                WebkitTapHighlightColor: 'transparent',
+                                                opacity: uploadingImages ? 0.6 : 1,
+                                                userSelect: 'none', overflow: 'hidden', padding: '0 8px'
                                             }}
-                                        />
-                                        {uploadingImages ? (
-                                            <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
-                                        ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
-                                                <span style={{ fontSize: '1.5rem', marginBottom: 4 }}>📸</span>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صورة' : 'Add Image'}</span>
-                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
-                                                    {isRTL ? 'أو اسحب الصورة هنا • أو الصق (Cmd+V)' : 'or drag • or paste (Cmd+V)'}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </label>
+                                        >
+                                            <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>📷</span>
+                                            <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{isRTL ? 'الكاميرا' : 'Camera'}</span>
+                                            <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4, textAlign: 'center' }}>
+                                                {isRTL ? 'صوّر عدة صور بدون إغلاق' : 'Shoot several, no reopen'}
+                                            </span>
+                                        </button>
+
+                                        {/* Studio — OS gallery. Input keeps `multiple`, so iOS
+                                            Photos lets the seller select up to 4 in one go. */}
+                                        <label
+                                            htmlFor="seller-image-upload"
+                                            onDrop={handleDrop}
+                                            onDragOver={handleDragOver}
+                                            onDragEnter={handleDragOver}
+                                            onDragLeave={handleDragLeave}
+                                            style={{
+                                                position: 'relative',
+                                                flex: 1,
+                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                height: 130, borderRadius: 12,
+                                                border: isDraggingOver ? '2px solid var(--primary)' : '2px dashed var(--primary)',
+                                                cursor: uploadingImages ? 'default' : 'pointer',
+                                                background: isDraggingOver ? 'var(--primary-light)' : 'var(--notif-unread-bg)',
+                                                color: 'var(--primary)',
+                                                transition: 'background 0.2s ease, border-color 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                                opacity: uploadingImages ? 0.6 : 1,
+                                                userSelect: 'none', overflow: 'hidden'
+                                            }}
+                                        >
+                                            {/* Native <label htmlFor> pattern — opens the OS file picker on any
+                                                browser without needing a programmatic .click(). The input itself
+                                                is visually hidden but stays in the DOM for keyboard/AT users. */}
+                                            <input
+                                                id="seller-image-upload"
+                                                ref={fileInputRef}
+                                                type="file"
+                                                multiple
+                                                accept="image/*"
+                                                disabled={uploadingImages}
+                                                onChange={handleImageUpload}
+                                                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                                                aria-label={isRTL ? 'الاستديو' : 'Studio'}
+                                                style={{
+                                                    position: 'absolute',
+                                                    width: 1, height: 1,
+                                                    padding: 0, margin: -1,
+                                                    overflow: 'hidden',
+                                                    clip: 'rect(0,0,0,0)',
+                                                    whiteSpace: 'nowrap',
+                                                    border: 0
+                                                }}
+                                            />
+                                            {uploadingImages ? (
+                                                <div className="spinner" style={{ width: 24, height: 24, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', pointerEvents: 'none' }} />
+                                            ) : (
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
+                                                    <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>🖼️</span>
+                                                    <span style={{ fontSize: '0.78rem', fontWeight: 800 }}>{isRTL ? 'الاستديو' : 'Studio'}</span>
+                                                    <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
+                                                        {isRTL ? 'اختر حتى 4 صور دفعة واحدة' : 'Pick up to 4 at once'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </label>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -3180,6 +3233,17 @@ const SellerDashboard: React.FC = () => {
                     }}
                     onCancel={() => {
                         advanceCropQueue(true);
+                    }}
+                />
+            )}
+            {showCamera && (
+                <CameraCapture
+                    maxShots={Math.max(0, 4 - images.length - cropQueue.length)}
+                    isRTL={isRTL}
+                    onClose={() => setShowCamera(false)}
+                    onDone={(files) => {
+                        setShowCamera(false);
+                        ingestCameraFiles(files);
                     }}
                 />
             )}

@@ -1,6 +1,7 @@
 import { CONFIG } from '../config';
 import { supabase } from './supabaseClient';
 import { logger } from '../utils/logger';
+import { compressImage } from '../utils/imageCompression';
 
 export const storageService = {
     get: <T>(key: keyof typeof CONFIG.STORAGE_KEYS): T | null => {
@@ -42,11 +43,15 @@ export const storageService = {
         localStorage.clear();
     },
 
-    uploadImage: async (file: File): Promise<string | null> => {
+    uploadImage: async (rawFile: File): Promise<string | null> => {
         try {
-            logger.info(`📸 Attempting to upload image: ${file.name} (${Math.round(file.size/1024)}KB)`);
-            const fileExt = file.name.split('.').pop() || 'png';
-            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+            // Single chokepoint: every upload path (camera, gallery,
+            // crop-applied, crop-skipped, decode-fail) flows through here,
+            // so compressing here guarantees no raw multi-MB photo ever
+            // hits the network. This is the fix for the ~10s/image uploads.
+            const file = await compressImage(rawFile);
+            logger.info(`📸 Uploading image: ${file.name} — ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB`);
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.jpg`;
 
             // Create a timeout promise
             const timeoutPromise = new Promise<null>((_, reject) => 
