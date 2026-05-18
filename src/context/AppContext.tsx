@@ -1248,15 +1248,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? { ...d, ratings: [...(d.ratings || []), local] }
             : d));
 
-        addNotification(
-            dealToUpdate.storeId,
-            { ar: '⭐ تقييم جديد!', en: '⭐ New Rating!' },
-            { ar: `قام العميل ${user.name || 'مجهول'} بتقييم منتجك ${dealToUpdate.itemName} بـ ${ratingData.score} نجوم`, en: `Customer ${user.name || 'Anon'} rated ${dealToUpdate.itemName} with ${ratingData.score} stars` },
-            'system',
-            { dealId }
-        );
+        // The merchant + admin notification is created server-side by the
+        // SECURITY DEFINER trigger `tr_rating_notification` on rating
+        // INSERT (sets meta_data.audience='seller'). A client-side insert
+        // is impossible here anyway: the notifications RLS policy
+        // `notifs_insert_self` only allows writing rows for one's own auth
+        // uid, so the buyer can never notify the merchant from the client
+        // — that silent RLS rejection is exactly why this never arrived.
         return true;
-    }, [deals, user, addNotification]);
+    }, [deals, user]);
 
     const addReply = useCallback(async (dealId: string, ratingId: string, reply: string) => {
         const { ratingRepository } = await import('../repositories/ratingRepository');
