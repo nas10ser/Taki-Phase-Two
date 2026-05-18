@@ -49,7 +49,13 @@ const AUTO_APPLIED_KEY = 'TAKI_SW_AUTO_APPLIED_AT';
  * scheduling. This is the path that makes "I deployed but the user is
  * still on the old version" stop happening.
  */
+let _lastVersionCheck = 0;
+
 async function autoCheckServerVersion(): Promise<void> {
+    // Throttle: foreground events (visibilitychange/pageshow/focus) can
+    // fire in bursts on iOS — one network probe per 15s is plenty.
+    if (Date.now() - _lastVersionCheck < 15_000) return;
+    _lastVersionCheck = Date.now();
     try {
         // Force a network fetch — we have to bypass the SW for THIS one
         // request, otherwise the stale SW happily returns its cached
@@ -94,6 +100,20 @@ async function autoCheckServerVersion(): Promise<void> {
     // Kick the version probe immediately. It runs in parallel with the
     // rest of the SW wiring below.
     autoCheckServerVersion();
+
+    // CRITICAL for iOS standalone PWAs: when the user "reopens" the app
+    // iOS resumes it from memory/bfcache WITHOUT re-running this module
+    // or doing a fresh navigation — so the cold-start probe above never
+    // fires again and the device stays frozen on an old build no matter
+    // how many times they reopen. Re-checking the server's sw.js version
+    // every time the app returns to the foreground is what actually
+    // delivers new deploys to iOS PWA users (throttled to 1/15s inside).
+    const onForeground = () => {
+        if (document.visibilityState !== 'hidden') autoCheckServerVersion();
+    };
+    document.addEventListener('visibilitychange', onForeground);
+    window.addEventListener('pageshow', onForeground);
+    window.addEventListener('focus', onForeground);
 
     if ('serviceWorker' in navigator) {
         // Reload exactly once when the new worker takes control. This is the
