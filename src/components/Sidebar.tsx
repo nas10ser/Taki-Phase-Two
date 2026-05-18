@@ -119,15 +119,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     paddingInline: 18,
                     display: 'flex',
                     flexDirection: 'column',
-                    overflowY: 'auto',
+                    // The aside itself does NOT scroll — only the <nav> in
+                    // the middle does. This keeps the header pinned below
+                    // the status bar and the footer pinned at the bottom,
+                    // so a tall menu can never scroll its content up under
+                    // the iOS status bar (which made the drawer look
+                    // broken once the menu grew past one screen).
+                    overflow: 'hidden',
                     boxShadow: side === 'right'
                         ? '-12px 0 40px rgba(0,0,0,0.25)'
                         : '12px 0 40px rgba(0,0,0,0.25)',
                     WebkitOverflowScrolling: 'touch'
                 }}
             >
-                {/* Header row: avatar + name + close */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 }}>
+                {/* Header row: avatar + name + close — pinned (never scrolls) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexShrink: 0 }}>
                     <div style={{ width: 48, height: 48, borderRadius: 16, background: 'linear-gradient(135deg, var(--primary, #00897b), var(--primary-dark, #00695c))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', color: 'white', fontWeight: 900 }}>
                         {user ? (user.name || 'U').charAt(0).toUpperCase() : '👤'}
                     </div>
@@ -154,7 +160,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     column on phones with only 4 menu items. Plain flex-column
                     keeps the items + settings stacked naturally with their
                     intrinsic spacing. */}
-                <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     {menuItems.map(item => (
                         <button
                             key={item.id}
@@ -191,8 +197,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     <ComplaintDialog isRTL={isRTL} onClose={() => setShowComplaint(false)} />
                 )}
 
-                {/* Footer: settings + auth */}
-                <div style={{ borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: 16, marginTop: 16 }}>
+                {/* Footer: settings + auth — pinned (never scrolls) */}
+                <div style={{ borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: 16, marginTop: 16, flexShrink: 0 }}>
                     <div style={{ fontSize: '0.7rem', color: 'var(--gray-400, #94a3b8)', fontWeight: 800, marginBottom: 10, textAlign: isRTL ? 'right' : 'left', letterSpacing: 0.5 }}>
                         {isRTL ? 'الإعدادات' : 'SETTINGS'}
                     </div>
