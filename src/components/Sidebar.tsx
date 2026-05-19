@@ -119,21 +119,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     paddingInline: 18,
                     display: 'flex',
                     flexDirection: 'column',
-                    // The aside itself does NOT scroll — only the <nav> in
-                    // the middle does. This keeps the header pinned below
-                    // the status bar and the footer pinned at the bottom,
-                    // so a tall menu can never scroll its content up under
-                    // the iOS status bar (which made the drawer look
-                    // broken once the menu grew past one screen).
-                    overflow: 'hidden',
+                    // The aside scrolls; the header below is position:sticky
+                    // so it stays pinned at the top while the list scrolls
+                    // under it. Sticky (not flex pinning) is the most
+                    // bullet-proof pattern on iOS Safari inside a
+                    // position:fixed drawer — it never lets the menu slide
+                    // up under the status bar no matter how long it is.
+                    overflowY: 'auto',
                     boxShadow: side === 'right'
                         ? '-12px 0 40px rgba(0,0,0,0.25)'
                         : '12px 0 40px rgba(0,0,0,0.25)',
                     WebkitOverflowScrolling: 'touch'
                 }}
             >
-                {/* Header row: avatar + name + close — pinned (never scrolls) */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexShrink: 0 }}>
+                {/* Header row: avatar + name + close — sticky-pinned. Solid
+                    bg + paddingBottom (not margin) so list items scroll
+                    cleanly UNDER it with nothing peeking through. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 16, flexShrink: 0, position: 'sticky', top: 0, background: 'var(--card-bg, #ffffff)', zIndex: 2 }}>
                     <div style={{ width: 48, height: 48, borderRadius: 16, background: 'linear-gradient(135deg, var(--primary, #00897b), var(--primary-dark, #00695c))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', color: 'white', fontWeight: 900 }}>
                         {user ? (user.name || 'U').charAt(0).toUpperCase() : '👤'}
                     </div>
@@ -155,12 +157,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     </button>
                 </div>
 
-                {/* Scroll region: ONLY the menu + settings scroll. The
-                    header above is pinned (flexShrink:0) so it can never
-                    slide under the iOS status bar no matter how long the
-                    menu is, and short menus stack naturally under the
-                    header with no ugly empty middle column. */}
-                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}>
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {menuItems.map(item => (
                         <button
@@ -280,7 +276,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             </button>
                         </>
                     )}
-                </div>
                 </div>
             </aside>
         </>
