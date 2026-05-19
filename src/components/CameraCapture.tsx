@@ -43,7 +43,13 @@ const CameraCapture: React.FC<Props> = ({
     onPickStudio,
     onClose,
 }) => {
-    const cap = Math.max(1, maxShots);
+    // FREEZE the per-session cap at mount. Each committed shot calls
+    // onCapture → the parent does setImages([...]) → the parent recomputes
+    // maxShots = 4 - images.length and passes a SMALLER value back. If we
+    // read the live prop, `count >= 4 - count` → the camera always jammed
+    // at 2 photos ("لا زال نفس الخلل"). Snapshotting the remaining slots
+    // when the camera opens lets a fresh session take the full 4.
+    const [cap] = useState(() => Math.max(1, maxShots));
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const [mode, setMode] = useState<Mode>('camera');
