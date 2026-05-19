@@ -472,22 +472,46 @@ const Bookings: React.FC = () => {
                                                     <h4 style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--primary)', marginBottom: 16, marginTop: 0, textAlign: isRTL ? 'right' : 'left' }}>
                                                         {booking.status === 'completed' ? (isRTL ? '🎊 تم الاستلام بنجاح!' : '🎊 Delivery Successful!') : (isRTL ? 'تفاصيل حالة الحجز:' : 'Booking Status Details:')}
                                                     </h4>
+                                                    {(() => {
+                                                        // Cancelled is terminal: paint the whole rail RED with ✕
+                                                        // marks instead of a green ✓ stuck on "Confirmed"
+                                                        // (Nasser: red + X looks more professional).
+                                                        const cancelled = booking.status === 'cancelled';
+                                                        const ack = booking.status === 'acknowledged' || booking.status === 'completed';
+                                                        const done = booking.status === 'completed';
+                                                        const RED = '#ef4444';
+                                                        const node = (filled: boolean, fill: string) => ({
+                                                            width: 28, height: 28, borderRadius: 14,
+                                                            background: filled ? fill : 'var(--gray-200)',
+                                                            color: 'white', display: 'flex', alignItems: 'center',
+                                                            justifyContent: 'center', fontSize: '0.8rem',
+                                                        } as React.CSSProperties);
+                                                        const bar = (filled: boolean, fill: string) => ({
+                                                            flex: 1, height: 3,
+                                                            background: filled ? fill : 'var(--gray-200)',
+                                                            borderRadius: 2,
+                                                        } as React.CSSProperties);
+                                                        const lbl = { fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' } as React.CSSProperties;
+                                                        const col = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 } as React.CSSProperties;
+                                                        return (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>✓</div>
-                                                            <div style={{ fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'مؤكد' : 'Confirmed'}</div>
+                                                        <div style={col}>
+                                                            <div style={node(true, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : '✓'}</div>
+                                                            <div style={lbl}>{isRTL ? 'مؤكد' : 'Confirmed'}</div>
                                                         </div>
-                                                        <div style={{ flex: 1, height: 3, background: 'var(--primary)', borderRadius: 2 }} />
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: (booking.status === 'acknowledged' || booking.status === 'completed') ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{(booking.status === 'acknowledged' || booking.status === 'completed') ? '✓' : ''}</div>
-                                                            <div style={{ fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'استلمه التاجر' : 'S. Received'}</div>
+                                                        <div style={bar(cancelled || ack, cancelled ? RED : 'var(--primary)')} />
+                                                        <div style={col}>
+                                                            <div style={node(cancelled || ack, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : (ack ? '✓' : '')}</div>
+                                                            <div style={lbl}>{isRTL ? 'استلمه التاجر' : 'S. Received'}</div>
                                                         </div>
-                                                        <div style={{ flex: 1, height: 3, background: booking.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', borderRadius: 2 }} />
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: booking.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{booking.status === 'completed' ? '✓' : ''}</div>
-                                                            <div style={{ fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
+                                                        <div style={bar(cancelled || done, cancelled ? RED : 'var(--primary)')} />
+                                                        <div style={col}>
+                                                            <div style={node(cancelled || done, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : (done ? '✓' : '')}</div>
+                                                            <div style={lbl}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
                                                         </div>
                                                     </div>
+                                                        );
+                                                    })()}
                                                     {booking.status === 'completed' && (
                                                         <div style={{ marginTop: 16, textAlign: 'center', padding: '10px', background: 'var(--gray-100)', borderRadius: 12 }}>
                                                             <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--primary)' }}>

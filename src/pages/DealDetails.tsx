@@ -23,25 +23,41 @@ const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) =>
         return 0;
     };
 
-    const currentIndex = getStatusIndex(status);
+    // A cancelled order is terminal: fill the whole rail and paint it RED
+    // with ✕ marks instead of a green ✓ sitting on "Confirmed" (Nasser:
+    // "when cancelled the green bar should turn red with an X at Received
+    // — that looks better").
+    const isCancelled = status === 'cancelled';
+    const currentIndex = isCancelled ? steps.length - 1 : getStatusIndex(status);
+    const lineColor = isCancelled ? '#ef4444' : 'var(--primary)';
+    const glow = isCancelled ? '0 0 10px rgba(239,68,68,0.45)' : '0 0 10px var(--primary-glow)';
+    const mark = isCancelled ? '✕' : '✓';
+
+    // Node centres sit at (2i+1)/(2N) of the row. Inset the rail to the
+    // first/last node centre so the fill ends EXACTLY on the active node
+    // instead of overshooting past it (Nasser: "why is there an extra
+    // green strip — at Received it must stop").
+    const edgePct = 100 / (2 * steps.length);
+    const spanPct = 100 - 2 * edgePct;
+    const fillPct = (currentIndex / (steps.length - 1)) * spanPct;
 
     return (
         <div style={{ padding: '24px 16px', background: 'var(--card-bg)', borderRadius: 24, border: '1px solid var(--border-color)', marginBottom: 20, boxShadow: 'var(--shadow-sm)', position: 'relative' }}>
             <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-secondary)', marginBottom: 20 }}>
                 {isRTL ? 'تتبع حالة الطلب:' : 'Track Order Status:'}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', position: 'relative', padding: '0 10px' }}>
-                <div style={{ position: 'absolute', top: 12, left: 30, right: 30, height: 4, background: 'var(--gray-100)', borderRadius: 2, zIndex: 0 }} />
+            <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 12, left: `${edgePct}%`, right: `${edgePct}%`, height: 4, background: 'var(--gray-100)', borderRadius: 2, zIndex: 0 }} />
                 <div style={{
                     position: 'absolute', top: 12,
-                    left: isRTL ? 'auto' : 30,
-                    right: isRTL ? 30 : 'auto',
-                    width: `${(currentIndex / (steps.length - 1)) * 100}%`,
+                    left: isRTL ? 'auto' : `${edgePct}%`,
+                    right: isRTL ? `${edgePct}%` : 'auto',
+                    width: `${fillPct}%`,
                     height: 4,
-                    background: 'var(--primary)',
+                    background: lineColor,
                     borderRadius: 2, zIndex: 1,
                     transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: '0 0 10px var(--primary-glow)'
+                    boxShadow: glow
                 }} />
 
                 {steps.map((step, index) => {
@@ -61,7 +77,7 @@ const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) =>
                                 width: 28,
                                 height: 28,
                                 borderRadius: '50%',
-                                background: isActive ? 'var(--primary)' : 'var(--card-bg)',
+                                background: isActive ? lineColor : 'var(--card-bg)',
                                 border: isActive ? 'none' : '4px solid var(--gray-100)',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -70,9 +86,9 @@ const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) =>
                                 fontSize: '0.8rem',
                                 transition: 'all 0.3s ease',
                                 transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                                boxShadow: isCurrent ? '0 0 15px var(--primary-glow)' : 'none'
+                                boxShadow: isCurrent ? glow : 'none'
                             }}>
-                                {isActive && '✓'}
+                                {isActive && mark}
                             </div>
                             <div style={{
                                 marginTop: 12,
