@@ -3247,11 +3247,17 @@ const SellerDashboard: React.FC = () => {
                     onClose={() => setShowCamera(false)}
                     onCapture={uploadCroppedFile}
                     onPickStudio={() => {
+                        // Open the OS gallery SYNCHRONOUSLY inside this tap.
+                        // The old setTimeout() broke iOS user-activation, so
+                        // Safari collapsed the multi-select picker to a SINGLE
+                        // photo (the "studio only picks one" regression — it
+                        // used to grab up to 4 like WhatsApp). The hidden
+                        // <input multiple> lives in the form, which is still
+                        // mounted under the camera portal, so its ref is valid
+                        // right now. CameraCapture already stopped its stream
+                        // before calling this; just close the camera after.
+                        fileInputRef.current?.click();
                         setShowCamera(false);
-                        // Let the camera unmount (releases the stream via its
-                        // cleanup) before opening the OS gallery picker; the
-                        // existing crop queue then handles the picked photos.
-                        setTimeout(() => fileInputRef.current?.click(), 60);
                     }}
                 />
             )}
