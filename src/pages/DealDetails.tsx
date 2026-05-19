@@ -449,14 +449,34 @@ const DealDetails: React.FC = () => {
     const isOwner = isSeller && user?.id === deal?.storeId;
     const isFollowed = deal ? followedMerchants.includes(deal.storeId) : false;
 
-    // Find active booking for this user/deal OR linked from notification
+    // Find the user's CURRENT booking for this deal (or the one linked
+    // from a notification). Uses the SAME "still live" rule as
+    // useBooking: a `cancelled` booking — or a pending/acknowledged one
+    // past its effective 2h hold — is NOT active and must never render
+    // as "حجز مؤكد". This buyer had 6 terminal bookings on one deal and
+    // the old raw .find() surfaced a stale CANCELLED row as "Booking
+    // Confirmed" with a fake live timer, blocking the sense that they
+    // could re-book. A recently `completed` booking is still surfaced so
+    // the receipt + rating box show. When several qualify, newest wins.
     const activeBooking = useMemo(() => {
         if (!deal) return null;
+        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+        const now = Date.now();
+        const recencyOf = (b: any) => b.bookedAt || b.createdAt || 0;
+        const stillRelevant = (b: any) => {
+            if (!b || b.status === 'cancelled') return false;
+            if (b.status === 'completed') return true;
+            const eff = Math.min(b.expiryTime || 0, recencyOf(b) + TWO_HOURS_MS);
+            return eff > now;
+        };
         if (linkedBarcode) {
-            return bookings.find(b => b.barcode === linkedBarcode);
+            const b = bookings.find((x: any) => x.barcode === linkedBarcode);
+            return b && stillRelevant(b) ? b : null;
         }
         if (user && !isOwner) {
-            return bookings.find(b => b.deal.id === deal.id && b.userId === user.id);
+            return bookings
+                .filter((b: any) => b.deal.id === deal.id && b.userId === user.id && stillRelevant(b))
+                .sort((a: any, b: any) => recencyOf(b) - recencyOf(a))[0] || null;
         }
         return null;
     }, [bookings, deal, user, isOwner, linkedBarcode]);

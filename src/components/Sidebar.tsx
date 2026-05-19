@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import ComplaintDialog from './ComplaintDialog';
@@ -76,7 +77,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     // sticky header on first paint.
     const translateX = isOpen ? '0' : (side === 'right' ? '110%' : '-110%');
 
-    return (
+    // Render into <body> via a portal. The drawer is position:fixed, but
+    // Navbar (which mounts this) lives inside <PullToRefresh> on Home/
+    // Bookings, and PullToRefresh wraps its children in a
+    // `transform: translateY()` div. ANY non-none transform on an ancestor
+    // re-anchors position:fixed to that ancestor instead of the viewport,
+    // so the drawer scrolled/jittered with the page there — while
+    // Notifications (no PullToRefresh) was rock-stable. Portalling to
+    // document.body removes every transformed ancestor, so the drawer is
+    // viewport-fixed and stable on every page, exactly like Notifications.
+    return createPortal(
         <>
             <div
                 onClick={onClose}
@@ -278,7 +288,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     )}
                 </div>
             </aside>
-        </>
+        </>,
+        document.body
     );
 };
 

@@ -137,16 +137,30 @@ const StoreDetails: React.FC = () => {
 
     const reActivateDeal = async (deal: any) => {
         const confirmed = await customConfirm(isRTL ? 'هل تريد تجديد هذا العرض ليعود للظهور في الصفحة الرئيسية؟' : 'Do you want to renew this deal to appear on the home page?');
-        if (confirmed) {
-            const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
-            await updateDeal({
-                ...deal,
-                quantity: restoreQty,
-                createdAt: Date.now(),
-                status: 'active'
-            });
-            customAlert(isRTL ? '✅ تم تجديد العرض بنجاح!' : '✅ Deal renewed successfully!');
+        if (!confirmed) return;
+        const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
+        const ok = await updateDeal({
+            ...deal,
+            quantity: restoreQty,
+            createdAt: Date.now(),
+            status: 'active'
+        });
+        if (!ok) {
+            // Renew REJECTED by the DB (almost always: this deal's old
+            // location slot was deleted/changed and the server
+            // location-cap trigger refuses to re-activate it). This is the
+            // 2nd renew entry point — unlike the Seller Dashboard it has
+            // no edit form with the "deleted location" re-pick banner, so
+            // it was lying with a success toast while the deal silently
+            // stayed expired (the exact bug Nasser hit twice). Send the
+            // seller to the dashboard where the renew can actually finish.
+            await customAlert(isRTL
+                ? '⚠️ تعذّر تجديد العرض — لم يعد موقعه السابق ضمن مواقعك أو وصلت لحد المواقع في باقتك. جدّده من «لوحة التاجر ← عروضي» لإعادة اختيار الموقع.'
+                : '⚠️ Couldn\'t renew — its old location is no longer one of yours, or you hit your package location limit. Renew it from "Seller Dashboard → My Deals" to re-pick a location.');
+            history.push('/seller');
+            return;
         }
+        customAlert(isRTL ? '✅ تم تجديد العرض بنجاح!' : '✅ Deal renewed successfully!');
     };
 
     const togglePauseDeal = async (deal: any) => {
