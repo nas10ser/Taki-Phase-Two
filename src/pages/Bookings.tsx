@@ -53,6 +53,18 @@ const Bookings: React.FC = () => {
         refreshBookings();
     }, [refreshBookings, user?.id]);
 
+    // Arriving here from the "✅ تم الحجز — انتقل لحجوزاتي" CTA (or any
+    // navigation) keeps the previous page's scroll offset, so the user
+    // landed in the MIDDLE of the list instead of at the newest booking
+    // up top (sortOrder='newest'). Reset to the top on entry — unless a
+    // ?barcode= deep-link wants a specific row centred (that effect below
+    // handles its own scroll).
+    useEffect(() => {
+        if (new URLSearchParams(location.search).get('barcode')) return;
+        window.scrollTo(0, 0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Guard against bookings whose `deal` payload didn't come back from the
     // server (e.g. the deal was deleted but the booking row remains). Without
     // this, `b.deal.itemName` throws and blanks the whole page on refresh.
