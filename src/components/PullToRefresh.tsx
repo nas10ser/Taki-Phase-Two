@@ -47,8 +47,25 @@ const PullToRefresh: React.FC<Props> = ({
     useEffect(() => {
         if (disabled) return;
 
+        // A full-screen drawer/modal (the hamburger Sidebar) renders on top
+        // of the page and locks body scroll while open. PullToRefresh's
+        // listeners live on `document`, so without this guard a drag on the
+        // open drawer was still tracked as a pull and translated the page
+        // behind it — the "menu jumps up/down" bug. Notifications has no
+        // PullToRefresh, which is exactly why it was stable. Staying inert
+        // whenever scroll is locked / an aria-modal is open makes every
+        // page behave like Notifications.
+        const blockedByModal = () => {
+            if (document.body.style.overflow === 'hidden') return true;
+            return !!document.querySelector('[aria-modal="true"]:not([aria-hidden="true"])');
+        };
+
         const onTouchStart = (e: TouchEvent) => {
-            if (refreshing) return;
+            if (refreshing || blockedByModal()) {
+                startYRef.current = null;
+                trackingRef.current = false;
+                return;
+            }
             if (!atTop()) {
                 startYRef.current = null;
                 trackingRef.current = false;
@@ -62,6 +79,12 @@ const PullToRefresh: React.FC<Props> = ({
         const onTouchMove = (e: TouchEvent) => {
             if (!trackingRef.current || startYRef.current == null) return;
             if (refreshing) return;
+            if (blockedByModal()) {
+                trackingRef.current = false;
+                startYRef.current = null;
+                if (pullDistance) setPullDistance(0);
+                return;
+            }
             const dy = e.touches[0].clientY - startYRef.current;
             if (dy <= 0) {
                 setPullDistance(0);
