@@ -57,20 +57,33 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
     // 3rd INSERT landed while his tab was in the background. Refetching on
     // visibilitychange + window focus + pageshow closes that gap deterministically.
     useEffect(() => {
+        // Was the page genuinely hidden since the last refetch? iOS fires a
+        // window `focus` when the soft keyboard dismisses (tapping "Send"),
+        // which is NOT a return-from-background — refetching there fired a
+        // redundant messages query + mark-read write on every single send.
+        // The realtime channel already delivers live messages while
+        // foregrounded, so on-focus refetch is only needed after a real hide.
+        let wasHidden = false;
         const refetch = () => {
             if (document.visibilityState !== 'visible') return;
             fetchBookingMessages(barcode);
             markBookingMessagesRead(barcode);
         };
-        const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
-        const onFocus = () => refetch();
-        const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) refetch(); };
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') { wasHidden = true; return; }
+            if (document.visibilityState === 'visible') { wasHidden = false; refetch(); }
+        };
+        const onFocus = () => { if (wasHidden) { wasHidden = false; refetch(); } };
+        const onPageHide = () => { wasHidden = true; };
+        const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) { wasHidden = false; refetch(); } };
         document.addEventListener('visibilitychange', onVisibility);
         window.addEventListener('focus', onFocus);
+        window.addEventListener('pagehide', onPageHide);
         window.addEventListener('pageshow', onPageShow as EventListener);
         return () => {
             document.removeEventListener('visibilitychange', onVisibility);
             window.removeEventListener('focus', onFocus);
+            window.removeEventListener('pagehide', onPageHide);
             window.removeEventListener('pageshow', onPageShow as EventListener);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

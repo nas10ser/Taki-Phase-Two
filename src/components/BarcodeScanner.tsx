@@ -9,7 +9,7 @@ interface Props {
 }
 
 const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
-    const { language, customAlert } = useApp();
+    const { language, customAlert, customConfirm } = useApp();
     const { bookings, completeBooking, cancelBooking } = useBooking();
     const [manualCode, setManualCode] = useState('');
     const [scanResult, setScanResult] = useState<Booking | null>(null);
@@ -198,11 +198,18 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
         }, 3000);
     };
 
-    const handleCancel = () => {
+    const handleCancel = async () => {
         if (!scanResult) return;
+        // This cancels the WHOLE order, not the scanner — confirm first so a
+        // merchant who only wanted to close the scanner can't wipe the order
+        // by accident.
+        const ok = await customConfirm(isRTL
+            ? '⚠️ سيتم إلغاء الطلب نهائياً وإعادة الكمية للمخزون، وسيُبلَّغ المشتري. هل أنت متأكد؟'
+            : '⚠️ This will permanently cancel the order, restore the stock and notify the buyer. Are you sure?');
+        if (!ok) return;
         // cancelBooking centrally handles status sync, quantity restore, and notifying the buyer.
         cancelBooking(scanResult.barcode);
-        customAlert(isRTL ? 'تم إلغاء الحجز بنجاح' : 'Booking Cancelled Successfully');
+        customAlert(isRTL ? 'تم إلغاء الطلب بنجاح' : 'Order Cancelled Successfully');
         setScanResult(null);
         setManualCode('');
     };
@@ -302,7 +309,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                     background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)',
                                     fontWeight: 900, fontSize: '0.9rem', border: 'none'
                                 }}>
-                                    {isRTL ? '❌ إلغاء' : '❌ Cancel'}
+                                    {isRTL ? '❌ إلغاء الطلب' : '❌ Cancel Order'}
                                 </button>
                             </div>
                         </div>

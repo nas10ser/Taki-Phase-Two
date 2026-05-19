@@ -40,6 +40,15 @@ let favoritesChannel: ReturnType<typeof supabase.channel> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastActivityAt = Date.now();
+// Timestamp of the last time the page was genuinely hidden (backgrounded /
+// locked / app-switched). iOS standalone PWAs fire a window `focus` event
+// when the soft keyboard is dismissed — e.g. tapping "Send" after typing a
+// chat message — even though the app never left the foreground. Treating
+// that as a return-from-background kicked off onRefreshAll() (5 heavy
+// queries + 5 big setState → a full re-render) right on top of the send,
+// which froze the UI for ~6s before the message appeared. We only count a
+// focus/visible as a real return when the page was actually hidden first.
+let lastHiddenAt = 0;
 let isConnected = false;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 30_000; // 30s max backoff
@@ -88,18 +97,31 @@ function requestRefresh(reason: string) {
 
 // ─── Visibility & Online Handlers ───────────────────────────────
 
+// True only if the page was genuinely hidden since we last treated the app
+// as active. This is what tells a real background→foreground return apart
+// from an in-app iOS keyboard-dismiss `focus` (page never hid → no heavy
+// re-sync). Real background trips reliably fire visibilitychange→hidden
+// and/or pagehide on every modern iOS, so genuine returns still re-sync.
+function cameBackFromHidden(): boolean {
+    return lastHiddenAt > lastActivityAt;
+}
+
 function handleVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+        lastHiddenAt = Date.now();
+        return;
+    }
     if (document.visibilityState === 'visible') {
         logger.info('👁️ Tab became visible — triggering sync');
         const now = Date.now();
         const elapsed = now - lastActivityAt;
 
-        // Always re-sync on any return to foreground. iOS Safari pauses the
-        // realtime websocket as soon as the tab loses focus, so even a 2-second
-        // dip behind another app means we missed packets. The user noticed
-        // the previous 10-second floor as "I have to leave and come back
-        // before bookings update".
-        if (currentConfig && elapsed > 1_000) {
+        // Re-sync on a genuine return to foreground. iOS Safari pauses the
+        // realtime websocket as soon as the tab loses focus, so even a
+        // 2-second dip behind another app means we missed packets. Gated
+        // on cameBackFromHidden() so a spurious visible (no preceding
+        // hide) can't trigger the heavy onRefreshAll storm.
+        if (currentConfig && cameBackFromHidden() && elapsed > 1_000) {
             logger.info(`⏰ Away for ${Math.round(elapsed / 1000)}s — full re-sync`);
             requestRefresh('visibility');
         }
@@ -107,6 +129,12 @@ function handleVisibilityChange() {
         verifyAndReconnect();
         lastActivityAt = now;
     }
+}
+
+// pagehide is the most reliable "the app is going to the background" signal
+// on iOS standalone PWAs (visibilitychange is sometimes skipped there).
+function handlePageHide() {
+    lastHiddenAt = Date.now();
 }
 
 // iOS Safari restores the page from the back-forward cache (bfcache) on
@@ -143,12 +171,13 @@ function handleOffline() {
 }
 
 // Handle page focus (works on mobile browsers better than visibilitychange).
-// Threshold dropped from 5s to 1s for the same reason as visibilitychange —
-// users were seeing stale data on any quick app switch.
+// Only a focus that follows a genuine hide counts as a return — a bare
+// focus with the page never hidden is the iOS keyboard-dismiss case (e.g.
+// tapping "Send" after typing), which must NOT trigger onRefreshAll().
 function handleFocus() {
     const now = Date.now();
     const elapsed = now - lastActivityAt;
-    if (elapsed > 1_000 && currentConfig) {
+    if (currentConfig && cameBackFromHidden() && elapsed > 1_000) {
         logger.info(`🔄 Window focused after ${Math.round(elapsed / 1000)}s — quick sync`);
         requestRefresh('focus');
         verifyAndReconnect();
@@ -414,6 +443,7 @@ export const realtimeService = {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
         window.addEventListener('focus', handleFocus);
+        window.addEventListener('pagehide', handlePageHide);
         window.addEventListener('pageshow', handlePageShow);
 
         // NOTE: no auto-refresh on connect. Cold load is owned by
@@ -453,6 +483,7 @@ export const realtimeService = {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
         window.removeEventListener('focus', handleFocus);
+        window.removeEventListener('pagehide', handlePageHide);
         window.removeEventListener('pageshow', handlePageShow);
     },
 

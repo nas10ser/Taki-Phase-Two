@@ -105,7 +105,7 @@ const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
     const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, branches, saveBranch, removeBranch } = useApp();
-    const { completeBooking } = useBooking();
+    const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
@@ -3042,6 +3042,19 @@ const SellerDashboard: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
+                                {(order.status === 'pending' || order.status === 'acknowledged') && (
+                                    <button onClick={async () => {
+                                        const ok = await customConfirm(isRTL
+                                            ? '⚠️ سيتم إلغاء الطلب نهائياً وإعادة الكمية للمخزون، وسيُبلَّغ المشتري. هل أنت متأكد؟'
+                                            : '⚠️ This will permanently cancel the order, restore the stock and notify the buyer. Are you sure?');
+                                        if (!ok) return;
+                                        cancelBooking(order.barcode);
+                                        customAlert(isRTL ? 'تم إلغاء الطلب بنجاح' : 'Order Cancelled Successfully');
+                                    }}
+                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)', fontWeight: 800, color: 'var(--danger)', cursor: 'pointer', marginTop: 10 }}>
+                                        {isRTL ? '❌ إلغاء الطلب' : '❌ Cancel Order'}
+                                    </button>
+                                )}
                                 {/* Seller↔Buyer chat thread (3+3). Lives at the bottom of
                                     each active order card so the seller sees buyer messages
                                     and can reply without leaving the dashboard. */}
