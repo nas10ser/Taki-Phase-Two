@@ -387,7 +387,20 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                     placeholder={isRTL ? 'أدخل رمز الباركود أو الرمز الاحتياطي' : 'Enter barcode or backup code'}
                                     style={{
                                         flex: 1, padding: '14px 16px', borderRadius: 14,
-                                        border: '1.5px solid var(--gray-200)',
+                                        border: '1.5px solid #334155',
+                                        // Explicit dark field + WHITE text. With no
+                                        // background set, an iPhone whose SYSTEM is in
+                                        // dark mode painted this input black via the
+                                        // native control while the app's manual
+                                        // light-mode text stayed dark navy → the typed
+                                        // code was invisible. Forcing our own colors
+                                        // (and colorScheme:dark for caret/placeholder)
+                                        // makes it readable in BOTH app modes.
+                                        background: '#0f172a',
+                                        color: '#ffffff',
+                                        WebkitTextFillColor: '#ffffff',
+                                        colorScheme: 'dark',
+                                        caretColor: '#ffffff',
                                         fontSize: '0.95rem', fontWeight: 700, fontFamily: 'monospace',
                                         textAlign: 'center', letterSpacing: 2, outline: 'none'
                                     }}

@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar';
 import { Booking } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
+import ReportDialog from '../components/ReportDialog';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -40,6 +41,10 @@ const Bookings: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [highlightedBarcode, setHighlightedBarcode] = useState<string | null>(null);
+    // Buyer → merchant report (mirrors the seller's "🚩 إبلاغ" on order
+    // cards). ReportDialog + reportRepository persist it to the DB; the
+    // v10.79 trigger stamps it as a complaint against this store.
+    const [reportStore, setReportStore] = useState<{ id: string; name?: string } | null>(null);
     // Default to newest-first so the most recently booked order is visible
     // without scrolling — matches what users expect from inbox-style screens.
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -299,6 +304,15 @@ const Bookings: React.FC = () => {
                                                     <span>{isRTL ? 'التاجر:' : 'Seller:'} {booking.deal?.shopName}</span>
                                                     <span style={{ color: '#f59e0b' }}>★ {(booking.deal as any).rating || (isRTL ? 'جديد' : 'New')}</span>
                                                 </div>
+                                                {booking.deal?.storeId && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setReportStore({ id: booking.deal.storeId, name: booking.deal.shopName }); }}
+                                                        title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
+                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}
+                                                    >
+                                                        🚩 {isRTL ? 'إبلاغ' : 'Report'}
+                                                    </button>
+                                                )}
                                             </div>
                                             <div style={{ textAlign: 'end' }}>
                                                 <div style={{ 
@@ -464,6 +478,15 @@ const Bookings: React.FC = () => {
                                                     <span>{new Date(booking.bookedAt).toLocaleDateString(isRTL ? 'ar-SA' : 'en-US')}</span>
                                                     <span style={{ color: '#f59e0b' }}>★ {(booking.deal as any).rating || (isRTL ? 'جديد' : 'New')}</span>
                                                 </div>
+                                                {booking.deal?.storeId && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setReportStore({ id: booking.deal.storeId, name: booking.deal.shopName }); }}
+                                                        title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
+                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}
+                                                    >
+                                                        🚩 {isRTL ? 'إبلاغ' : 'Report'}
+                                                    </button>
+                                                )}
                                             </div>
                                             <div style={{ 
                                                 padding: '8px 16px', 
@@ -556,6 +579,15 @@ const Bookings: React.FC = () => {
         {/* Sibling, not child — PullToRefresh's translateY() would otherwise
             re-anchor `position: fixed` to the wrapper instead of the viewport. */}
         <BottomNav />
+        {reportStore && (
+            <ReportDialog
+                reportedId={reportStore.id}
+                reportedRole="seller"
+                reportedName={reportStore.name}
+                isRTL={isRTL}
+                onClose={() => setReportStore(null)}
+            />
+        )}
         </>
     );
 };
