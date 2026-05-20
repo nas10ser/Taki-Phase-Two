@@ -23,6 +23,12 @@ const Notifications   = lazy(() => import('./pages/Notifications'));
 const SeasonalOffers  = lazy(() => import('./pages/SeasonalOffers'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
+const Terms           = lazy(() => import('./pages/legal/Terms'));
+const Privacy         = lazy(() => import('./pages/legal/Privacy'));
+const Refund          = lazy(() => import('./pages/legal/Refund'));
+const About           = lazy(() => import('./pages/legal/About'));
+const Contact         = lazy(() => import('./pages/legal/Contact'));
+const NotFound        = lazy(() => import('./pages/NotFound'));
 
 const RouteFallback = () => (
     <div style={{
@@ -200,11 +206,20 @@ const App = () => {
                         <Route path="/profile" component={Profile} />
                         <Route path="/notifications" component={Notifications} />
                         <Route path="/seasonal" component={SeasonalGate} />
+                        {/* Legal + informational pages (lazy-loaded, SEO indexable) */}
+                        <Route path="/terms"   component={Terms} />
+                        <Route path="/privacy" component={Privacy} />
+                        <Route path="/refund"  component={Refund} />
+                        <Route path="/about"   component={About} />
+                        <Route path="/contact" component={Contact} />
                         {/* 🔄 Unified Redirects for v7.2 */}
                         <Route path="/dashboard">
                             <Redirect to="/seller" />
                         </Route>
-                        <Redirect from="*" to="/" />
+                        {/* 404 catch-all — previously redirected silently to /
+                            which confused SEO crawlers (every URL returned 200).
+                            Now any unknown route renders NotFound. */}
+                        <Route component={NotFound} />
                     </Switch>
                 </Suspense>
             </div>

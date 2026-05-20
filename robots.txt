@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Block private routes — these don't make sense for search engines
+Disallow: /admin
+Disallow: /admin/
+Disallow: /seller
+Disallow: /seller/
+Disallow: /complete-profile
+Disallow: /subscription
+Disallow: /profile
+Disallow: /notifications
+Disallow: /bookings
+
+# Allow service-worker + manifest to be crawled (Google ranks PWAs better when they're discoverable)
+Allow: /sw.js
+Allow: /manifest.webmanifest
+
+Sitemap: https://taki-test-eight.vercel.app/sitemap.xml

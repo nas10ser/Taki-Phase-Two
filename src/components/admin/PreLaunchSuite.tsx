@@ -858,24 +858,53 @@ interface ChecklistItem {
 }
 
 const LAUNCH_CHECKLIST: ChecklistItem[] = [
-    { id: 'rls',           category: 'security', status: 'ready',       label: 'RLS مفعّل على كل الجداول الحساسة',    detail: 'فحص الـHealth Check يتأكد منها' },
-    { id: 'admin-rpc',     category: 'security', status: 'ready',       label: 'كل admin_* RPCs محمية بـis_admin()', detail: 'مطبّق منذ v9.7' },
-    { id: 'sw',            category: 'tech',     status: 'ready',       label: 'Service Worker + cache versioning',  detail: 'CACHE_NAME يُرفع كل deploy' },
-    { id: 'pwa',           category: 'tech',     status: 'ready',       label: 'PWA installable على iOS وأندرويد',   detail: 'manifest + viewport-fit=cover' },
-    { id: 'realtime',      category: 'tech',     status: 'ready',       label: 'Realtime channels تعمل',             detail: '3 قنوات + heartbeat + bfcache' },
-    { id: 'payment',       category: 'business', status: 'needs_work',  label: 'بوابة الدفع متكاملة فعلياً',           detail: 'الـUI جاهز — يحتاج Edge Function للـwebhook + مفاتيح حقيقية' },
-    { id: 'edge-fn',       category: 'tech',     status: 'needs_work',  label: 'Edge Function للـwebhook منشورة',     detail: 'تستقبل أحداث الدفع وتنشئ subscription_payment' },
-    { id: 'terms',         category: 'legal',    status: 'manual',      label: 'شروط الاستخدام',                       detail: 'صفحة قانونية يقرّها المستخدم عند التسجيل' },
-    { id: 'privacy',       category: 'legal',    status: 'manual',      label: 'سياسة الخصوصية',                       detail: 'متطلب SAMA + App Store + Play Store' },
-    { id: 'refund',        category: 'legal',    status: 'manual',      label: 'سياسة الاسترداد',                      detail: 'مطلوبة قبل قبول بطاقات' },
-    { id: 'crm',           category: 'business', status: 'manual',      label: 'تسجيل تجاري + ملف ضريبي + بنك',       detail: 'مطلوب من بوابات الدفع' },
-    { id: 'sentry',        category: 'tech',     status: 'manual',      label: 'Error monitoring (Sentry أو بديل)',  detail: 'متابعة الأخطاء بعد الإطلاق على نطاق واسع' },
-    { id: 'backup',        category: 'tech',     status: 'ready',       label: 'النسخ الاحتياطي اليومي',              detail: 'Supabase يأخذ snapshots تلقائية' },
-    { id: 'rate-limit',    category: 'security', status: 'manual',      label: 'Rate limiting على الـauth + RPCs',   detail: 'يحمي من DDoS + brute force — Supabase يوفّر إعدادات افتراضية' },
-    { id: 'seo',           category: 'tech',     status: 'manual',      label: 'SEO meta tags + sitemap',            detail: 'مهم للظهور في Google' },
-    { id: 'analytics',     category: 'tech',     status: 'ready',       label: 'Analytics tracking (داخلي)',         detail: 'activity_log + store_analytics_events موجودة' },
-    { id: 'load-test',     category: 'tech',     status: 'manual',      label: 'Load test 1M طلب على staging',       detail: 'استخدم الدليل أسفل هذا التاب' },
-    { id: 'lighthouse',    category: 'tech',     status: 'manual',      label: 'Lighthouse score ≥ 90',              detail: 'chrome devtools → Lighthouse' },
+    // ───── Security (الأمان) ─────
+    { id: 'rls',             category: 'security', status: 'ready',       label: 'RLS مفعّل على كل الجداول الحساسة',          detail: 'فحص الـHealth Check يتأكد منها' },
+    { id: 'admin-rpc',       category: 'security', status: 'ready',       label: 'كل admin_* RPCs محمية بـis_admin()',       detail: 'مطبّق منذ v9.7' },
+    { id: 'csp',             category: 'security', status: 'ready',       label: 'Content Security Policy صارمة',             detail: 'مفعّلة في index.html — تمنع XSS' },
+    { id: 'https',           category: 'security', status: 'ready',       label: 'HTTPS مفروض على كل الطلبات',                detail: 'Vercel يفرضه افتراضياً' },
+    { id: 'referrer',        category: 'security', status: 'ready',       label: 'Referrer policy آمن',                       detail: 'strict-origin-when-cross-origin' },
+    { id: 'rate-limit',      category: 'security', status: 'manual',      label: 'Rate limiting على الـauth + RPCs',         detail: 'Supabase يوفّر إعدادات افتراضية — راجعها في Dashboard' },
+    { id: 'pentest',         category: 'security', status: 'manual',      label: 'Penetration testing',                       detail: 'لإطلاق رسمي على نطاق واسع — استعن بمختبر معتمد' },
+    { id: 'secrets',         category: 'security', status: 'ready',       label: 'لا توجد مفاتيح سرّية في الكود',             detail: 'Anon key فقط في الـclient، باقي المفاتيح في Vercel env' },
+
+    // ───── Legal (قانوني) ─────
+    { id: 'terms',           category: 'legal',    status: 'ready',       label: 'شروط الاستخدام',                            detail: '/terms — مسوّدة جاهزة، تحتاج مراجعة محامي' },
+    { id: 'privacy',         category: 'legal',    status: 'ready',       label: 'سياسة الخصوصية (PDPL)',                     detail: '/privacy — متوافقة مبدئياً مع نظام حماية البيانات السعودي' },
+    { id: 'refund',          category: 'legal',    status: 'ready',       label: 'سياسة الاسترداد',                           detail: '/refund — جاهزة' },
+    { id: 'about',           category: 'legal',    status: 'ready',       label: 'صفحة «من نحن»',                              detail: '/about' },
+    { id: 'contact',         category: 'legal',    status: 'ready',       label: 'صفحة «اتصل بنا»',                            detail: '/contact' },
+    { id: 'crm',             category: 'business', status: 'manual',      label: 'وثيقة عمل حر أو سجل تجاري + بنك',           detail: 'مطلوب من بوابات الدفع — وثيقة العمل الحر تكفي لـMoyasar' },
+    { id: 'maroof',          category: 'legal',    status: 'manual',      label: 'تسجيل في منصة «معروف»',                     detail: 'maroof.sa — يزيد ثقة المشتري' },
+    { id: 'vat',             category: 'legal',    status: 'manual',      label: 'تسجيل ضريبي (لو الدخل > 375K ر.س/سنة)',    detail: 'تحت الحد: لا حاجة' },
+
+    // ───── Tech (تقني) ─────
+    { id: 'sw',              category: 'tech',     status: 'ready',       label: 'Service Worker + cache versioning',         detail: 'CACHE_NAME يُرفع كل deploy' },
+    { id: 'pwa',             category: 'tech',     status: 'ready',       label: 'PWA installable على iOS وأندرويد',         detail: 'manifest + viewport-fit=cover' },
+    { id: 'realtime',        category: 'tech',     status: 'ready',       label: 'Realtime channels تعمل',                    detail: '3 قنوات + heartbeat + bfcache' },
+    { id: 'backup',          category: 'tech',     status: 'ready',       label: 'النسخ الاحتياطي اليومي',                    detail: 'Supabase يأخذ snapshots تلقائية' },
+    { id: 'analytics',       category: 'tech',     status: 'ready',       label: 'Analytics tracking داخلي',                   detail: 'activity_log + store_analytics_events موجودة' },
+    { id: 'errorboundary',   category: 'tech',     status: 'ready',       label: 'Error Boundary لكل التطبيق',                detail: 'يلتقط الأخطاء + يمسح SW عند ChunkLoadError' },
+    { id: '404',             category: 'tech',     status: 'ready',       label: 'صفحة 404 مخصصة',                            detail: 'NotFound.tsx — تظهر لأي رابط غير معروف' },
+    { id: 'sitemap',         category: 'tech',     status: 'ready',       label: 'sitemap.xml + robots.txt',                  detail: 'منشوران في الجذر للـSEO' },
+    { id: 'og',              category: 'tech',     status: 'ready',       label: 'Open Graph + Twitter Card',                 detail: 'بطاقات معاينة جميلة في WhatsApp/Twitter' },
+    { id: 'sentry',          category: 'tech',     status: 'manual',      label: 'Error monitoring خارجي (Sentry)',           detail: 'مفيد لاكتشاف الأخطاء قبل ما يبلّغها المستخدم' },
+    { id: 'uptime',          category: 'tech',     status: 'manual',      label: 'Uptime monitoring (UptimeRobot)',           detail: 'تنبيه فوري لو الموقع نزل' },
+    { id: 'load-test',       category: 'tech',     status: 'manual',      label: 'Load test 1M طلب على staging',              detail: 'استخدم الدليل أسفل هذا التاب' },
+    { id: 'lighthouse',      category: 'tech',     status: 'manual',      label: 'Lighthouse score ≥ 90',                     detail: 'Chrome DevTools → Lighthouse → audit موبايل' },
+    { id: 'a11y',            category: 'tech',     status: 'manual',      label: 'Accessibility audit (a11y)',                detail: 'WCAG 2.1 AA — تستخدم axe DevTools' },
+    { id: 'real-device',     category: 'tech',     status: 'manual',      label: 'اختبار على iPhone + Android حقيقيَين',     detail: 'محاكي ≠ جهاز فعلي — اختبر على الأقل آيفون قديم + أندرويد متوسط' },
+    { id: 'cross-browser',   category: 'tech',     status: 'manual',      label: 'Cross-browser: Safari + Chrome + Firefox',  detail: 'Safari خاصة (iOS) له اختلافات' },
+
+    // ───── Business (الأعمال) ─────
+    { id: 'payment',         category: 'business', status: 'needs_work',  label: 'بوابة الدفع متكاملة فعلياً',                detail: 'الـUI جاهز — يحتاج مفاتيح Moyasar حقيقية' },
+    { id: 'edge-fn',         category: 'business', status: 'needs_work',  label: 'Edge Function للـwebhook منشورة',          detail: 'تستقبل أحداث الدفع وتنشئ subscription_payment' },
+    { id: 'pricing',         category: 'business', status: 'manual',      label: 'خطة تسعير واضحة للتجار',                   detail: 'إذا فعّلت الدفع — كم يدفع التاجر شهرياً؟ ما الباقات؟' },
+    { id: 'support',         category: 'business', status: 'manual',      label: 'قناة دعم عملاء',                            detail: 'واتساب أو إيميل مخصّص — راجع response time SLA' },
+    { id: 'onboarding',      category: 'business', status: 'manual',      label: 'دعوة 10-20 تاجر أولي',                     detail: 'لبدء الزخم — منصة marketplace بدون تجار = فارغة' },
+    { id: 'social',          category: 'business', status: 'manual',      label: 'حسابات Twitter + Instagram + TikTok',      detail: 'لإعلانات التسويق ودعم المجتمع' },
+    { id: 'launch-plan',     category: 'business', status: 'manual',      label: 'خطة إطلاق + مواد تسويقية',                  detail: 'صور + فيديو + بيان صحفي + لائحة media kit' },
+    { id: 'app-store',       category: 'business', status: 'manual',      label: 'App Store + Play Store (PWA-only الآن)',   detail: 'PWA يكفي للبداية — Native لاحقاً' },
 ];
 
 const CHECKLIST_CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
@@ -1112,6 +1141,183 @@ const PaymentAttemptsTable: React.FC = () => {
 };
 
 // ============================================================
+// Smoke Test Runner — fetches every public route to make sure the SPA
+// shell + static files are reachable. Doesn't deep-test UI, but catches
+// the most common "shipped a broken build" failure mode.
+// ============================================================
+interface SmokeResult {
+    path: string;
+    label: string;
+    expectStatus: number;
+    expectsHtml: boolean;
+    status: 'pending' | 'pass' | 'warn' | 'fail';
+    httpStatus?: number;
+    duration_ms?: number;
+    detail?: string;
+}
+
+const SMOKE_ROUTES: Array<Omit<SmokeResult, 'status'>> = [
+    // SPA routes — should all return the same index.html shell (200)
+    { path: '/',              label: 'الرئيسية',              expectStatus: 200, expectsHtml: true },
+    { path: '/deals',         label: 'قائمة العروض',          expectStatus: 200, expectsHtml: true },
+    { path: '/nearby',        label: 'العروض القريبة',        expectStatus: 200, expectsHtml: true },
+    { path: '/register',      label: 'صفحة التسجيل',         expectStatus: 200, expectsHtml: true },
+    { path: '/about',         label: 'من نحن',                expectStatus: 200, expectsHtml: true },
+    { path: '/contact',       label: 'اتصل بنا',              expectStatus: 200, expectsHtml: true },
+    { path: '/terms',         label: 'شروط الاستخدام',        expectStatus: 200, expectsHtml: true },
+    { path: '/privacy',       label: 'سياسة الخصوصية',        expectStatus: 200, expectsHtml: true },
+    { path: '/refund',        label: 'سياسة الاسترداد',       expectStatus: 200, expectsHtml: true },
+    { path: '/seasonal',      label: 'عروض الموسم',           expectStatus: 200, expectsHtml: true },
+    // Static files
+    { path: '/sw.js',                 label: 'Service Worker',       expectStatus: 200, expectsHtml: false },
+    { path: '/manifest.webmanifest',  label: 'PWA Manifest',         expectStatus: 200, expectsHtml: false },
+    { path: '/robots.txt',            label: 'robots.txt (SEO)',     expectStatus: 200, expectsHtml: false },
+    { path: '/sitemap.xml',           label: 'sitemap.xml (SEO)',    expectStatus: 200, expectsHtml: false },
+];
+
+const SmokeTestRunner: React.FC = () => {
+    const [results, setResults] = useState<SmokeResult[]>(() =>
+        SMOKE_ROUTES.map((r) => ({ ...r, status: 'pending' as const })),
+    );
+    const [running, setRunning] = useState(false);
+    const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
+
+    const run = useCallback(async () => {
+        if (running) return;
+        setRunning(true);
+        setResults(SMOKE_ROUTES.map((r) => ({ ...r, status: 'pending' as const })));
+        const promises = SMOKE_ROUTES.map(async (route, i) => {
+            const start = performance.now();
+            try {
+                const res = await fetch(route.path, { method: 'GET', cache: 'no-cache' });
+                const dur = Math.round(performance.now() - start);
+                if (res.status !== route.expectStatus) {
+                    return {
+                        ...route,
+                        status: 'fail' as const,
+                        httpStatus: res.status,
+                        duration_ms: dur,
+                        detail: `متوقّع ${route.expectStatus} لكن HTTP ${res.status}`,
+                    };
+                }
+                // Check content-type matches expectation
+                if (route.expectsHtml) {
+                    const text = await res.text();
+                    if (!/<div\s+id=["']root["']|<title|<html/i.test(text)) {
+                        return {
+                            ...route,
+                            status: 'warn' as const,
+                            httpStatus: res.status,
+                            duration_ms: dur,
+                            detail: 'الاستجابة ليست HTML تطبيق',
+                        };
+                    }
+                }
+                return {
+                    ...route,
+                    status: 'pass' as const,
+                    httpStatus: res.status,
+                    duration_ms: dur,
+                    detail: 'OK',
+                };
+            } catch (e: any) {
+                return {
+                    ...route,
+                    status: 'fail' as const,
+                    duration_ms: Math.round(performance.now() - start),
+                    detail: e?.message ?? 'فشل غير معروف',
+                };
+            }
+        });
+        await Promise.all(promises.map(async (p, i) => {
+            const r = await p;
+            setResults((prev) => {
+                const next = [...prev];
+                next[i] = r;
+                return next;
+            });
+        }));
+        setRunning(false);
+        setLastRunAt(new Date());
+    }, [running]);
+
+    const summary = useMemo(() => {
+        const pass = results.filter((r) => r.status === 'pass').length;
+        const warn = results.filter((r) => r.status === 'warn').length;
+        const fail = results.filter((r) => r.status === 'fail').length;
+        const pending = results.filter((r) => r.status === 'pending').length;
+        return { total: results.length, pass, warn, fail, pending };
+    }, [results]);
+
+    return (
+        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
+            <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
+                <div>
+                    <h3 className="text-xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
+                        🧪 اختبار الصفحات (Smoke Test)
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)] mt-1 font-bold">
+                        نقرة → فحص كل صفحة + ملف ستاتيك ({results.length}) في التطبيق. يلتقط «أرسلت إصداراً مكسوراً».
+                    </p>
+                </div>
+                <button
+                    onClick={run}
+                    disabled={running}
+                    className="px-5 h-11 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-extrabold rounded-xl text-sm shadow-md disabled:opacity-50 flex items-center gap-2"
+                >
+                    {running ? '⏳ يفحص...' : '🧪 ابدأ اختبار الصفحات'}
+                </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 mb-3">
+                <SummaryTile label="نجح" value={summary.pass} tone="emerald" />
+                <SummaryTile label="تحذير" value={summary.warn} tone="amber" />
+                <SummaryTile label="فشل" value={summary.fail} tone="red" />
+                <SummaryTile label="معلّق" value={summary.pending} tone="gray" />
+            </div>
+            {lastRunAt && (
+                <div className="text-[10px] text-[var(--gray-400)] font-bold mb-3 text-left">
+                    آخر فحص: {lastRunAt.toLocaleString('ar-SA')}
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                {results.map((r) => {
+                    const s = STATUS_STYLE[r.status];
+                    return (
+                        <div key={r.path} className="flex items-center gap-2 p-2 bg-[var(--body-bg)] rounded-lg">
+                            <span className={`w-6 h-6 rounded flex items-center justify-center font-extrabold text-xs ${s.bg} ${s.text}`}>
+                                {s.icon}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-[var(--text-primary)] truncate">
+                                    {r.label}
+                                </div>
+                                <div className="text-[10px] text-[var(--text-secondary)] truncate font-mono" dir="ltr">
+                                    {r.path}
+                                </div>
+                            </div>
+                            {r.duration_ms !== undefined && r.status !== 'pending' && (
+                                <div className="flex flex-col items-end">
+                                    {r.httpStatus !== undefined && (
+                                        <span className="text-[10px] text-[var(--gray-400)] font-bold tabular-nums">
+                                            HTTP {r.httpStatus}
+                                        </span>
+                                    )}
+                                    <span className="text-[10px] text-[var(--gray-400)] font-bold tabular-nums">
+                                        {r.duration_ms}ms
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+// ============================================================
 // Master container
 // ============================================================
 export const PreLaunchSuite: React.FC = () => (
@@ -1129,6 +1335,7 @@ export const PreLaunchSuite: React.FC = () => (
         </div>
 
         <HealthCheckRunner />
+        <SmokeTestRunner />
         <PaymentGatewaySetup />
         <PaymentAttemptsTable />
         <LaunchChecklist />
