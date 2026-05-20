@@ -14,8 +14,11 @@ import { useLocation } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
+import { useLocalStringList } from '../../hooks/useLocalStringList';
+import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
+import { PinButton } from '../../components/admin/PinButton';
 
 // ============================================================
 // User Edit Modal
@@ -219,57 +222,123 @@ Field.displayName = 'Field';
 // ============================================================
 // User Row
 // ============================================================
-const UserRow = memo<{
+interface UserRowProps {
     user: AdminUserRow;
     onEdit: (u: AdminUserRow) => void;
-}>(({ user, onEdit }) => (
-    <button
-        onClick={() => onEdit(user)}
-        className={`w-full text-right p-4 rounded-2xl border transition-all hover:shadow-md hover:-translate-y-0.5 ${
-            user.is_suspended
-                ? 'bg-red-50 border-red-200'
-                : 'bg-[var(--card-bg)] border-[var(--border-color)] hover:border-blue-200'
-        }`}
-    >
-        <div className="flex items-center gap-3">
-            <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0 ${
-                    user.is_suspended
-                        ? 'bg-red-100 text-red-600'
-                        : 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600'
-                }`}
-            >
-                {user.name?.[0]?.toUpperCase() ?? '?'}
-            </div>
-            <div className="flex-1 min-w-0 text-right">
-                <div className="font-bold text-sm text-[var(--text-primary)] truncate flex items-center gap-2">
-                    {user.name}
-                    {user.is_suspended && (
-                        <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
-                            معلّق
-                        </span>
+    pinned: boolean;
+    onTogglePin: (id: string) => void;
+    selectionMode: boolean;
+    selected: boolean;
+    onToggleSelect: (id: string) => void;
+}
+
+const UserRow = memo<UserRowProps>(({
+    user, onEdit, pinned, onTogglePin, selectionMode, selected, onToggleSelect,
+}) => {
+    const handleClick = () => {
+        if (selectionMode) onToggleSelect(user.id);
+        else onEdit(user);
+    };
+    return (
+        <button
+            onClick={handleClick}
+            className={`w-full text-right p-4 rounded-2xl border transition-all hover:shadow-md hover:-translate-y-0.5 ${
+                selectionMode && selected
+                    ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-200'
+                    : user.is_suspended
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-[var(--card-bg)] border-[var(--border-color)] hover:border-blue-200'
+            }`}
+        >
+            <div className="flex items-center gap-3">
+                {selectionMode && (
+                    <div
+                        className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                            selected
+                                ? 'bg-blue-500 border-blue-500 text-white'
+                                : 'bg-[var(--card-bg)] border-[var(--gray-300)]'
+                        }`}
+                        aria-hidden
+                    >
+                        {selected && <span className="text-xs">✓</span>}
+                    </div>
+                )}
+                <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0 ${
+                        user.is_suspended
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600'
+                    }`}
+                >
+                    {user.name?.[0]?.toUpperCase() ?? '?'}
+                </div>
+                <div className="flex-1 min-w-0 text-right">
+                    <div className="font-bold text-sm text-[var(--text-primary)] truncate flex items-center gap-2">
+                        {user.name}
+                        {user.is_suspended && (
+                            <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
+                                معلّق
+                            </span>
+                        )}
+                    </div>
+                    <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate flex items-center gap-1.5" dir="ltr">
+                        {user.phone ?? '—'}
+                        {user.phone && <CopyButton value={user.phone} label="الجوال" size="xs" />}
+                    </div>
+                </div>
+                <div className="flex-shrink-0 text-left flex items-center gap-2">
+                    <div>
+                        <div className="text-lg font-extrabold text-blue-600 tabular-nums">
+                            {user.total_bookings}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-secondary)] font-medium">حجز</div>
+                    </div>
+                    {!selectionMode && (
+                        <PinButton pinned={pinned} onToggle={() => onTogglePin(user.id)} />
                     )}
                 </div>
-                <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate flex items-center gap-1.5" dir="ltr">
-                    {user.phone ?? '—'}
-                    {user.phone && <CopyButton value={user.phone} label="الجوال" size="xs" />}
-                </div>
             </div>
-            <div className="flex-shrink-0 text-left">
-                <div className="text-lg font-extrabold text-blue-600 tabular-nums">
-                    {user.total_bookings}
-                </div>
-                <div className="text-[10px] text-[var(--text-secondary)] font-medium">حجز</div>
-            </div>
-        </div>
-    </button>
-));
+        </button>
+    );
+});
 UserRow.displayName = 'UserRow';
+
+// ============================================================
+// Smart filter chip (compact, scrolling-friendly)
+// ============================================================
+const SmartChip: React.FC<{
+    active: boolean;
+    onClick: () => void;
+    icon: string;
+    label: string;
+    count?: number;
+}> = ({ active, onClick, icon, label, count }) => (
+    <button
+        onClick={onClick}
+        className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
+            active
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow'
+                : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-blue-300'
+        }`}
+    >
+        <span>{icon}</span>
+        <span>{label}</span>
+        {count !== undefined && count > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full tabular-nums ${
+                active ? 'bg-white/20' : 'bg-[var(--gray-100)]'
+            }`}>{count}</span>
+        )}
+    </button>
+);
+SmartChip.displayName = 'SmartChip';
 
 // ============================================================
 // Main Component
 // ============================================================
+type SmartFilter = 'all' | 'pinned' | 'new_week' | 'top_spender' | 'no_bookings' | 'suspended';
+
 const AdminBuyers: React.FC = () => {
+    const { customAlert, customConfirm } = useApp();
     const location = useLocation();
     const initialQuery = useMemo(() => {
         // Deep-link from CommandPalette: /admin?tab=buyers&q=name
@@ -284,7 +353,40 @@ const AdminBuyers: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<AdminUserRow | null>(null);
     const [page, setPage] = useState(0);
+    const [smartFilter, setSmartFilter] = useState<SmartFilter>('all');
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const pins = useLocalStringList('taki:admin:buyers:pins', { maxItems: 50 });
+    const { push: pushRecent } = useAdminRecents();
     const PAGE_SIZE = 50;
+
+    // Push to recents whenever the admin opens a buyer's edit modal.
+    useEffect(() => {
+        if (editing) {
+            pushRecent({
+                id: editing.id,
+                name: editing.name ?? 'مشتري',
+                type: 'buyer',
+                phone: editing.phone,
+            });
+        }
+    }, [editing, pushRecent]);
+
+    // Toggle selection for bulk operations.
+    const toggleSelected = useCallback((id: string) => {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+    const clearSelected = useCallback(() => setSelected(new Set()), []);
+    const exitSelection = useCallback(() => {
+        setSelectionMode(false);
+        setSelected(new Set());
+    }, []);
 
     // Sync the input whenever the URL `q` changes (covers re-navigating
     // from the palette while already on this tab).
@@ -324,16 +426,93 @@ const AdminBuyers: React.FC = () => {
         return { active, suspended, totalBookings };
     }, [users]);
 
+    // Apply the active smart filter. Filters compose with the text search
+    // because the underlying RPC already restricts by `debouncedQuery`.
+    const filteredUsers = useMemo(() => {
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        switch (smartFilter) {
+            case 'pinned':
+                return users.filter((u) => pins.has(u.id));
+            case 'new_week':
+                return users.filter((u) => {
+                    if (!u.created_at) return false;
+                    const t = new Date(u.created_at).getTime();
+                    return Number.isFinite(t) && t >= weekAgo;
+                });
+            case 'top_spender':
+                return [...users].sort((a, b) => (b.total_spent ?? 0) - (a.total_spent ?? 0));
+            case 'no_bookings':
+                return users.filter((u) => (u.total_bookings ?? 0) === 0);
+            case 'suspended':
+                return users.filter((u) => u.is_suspended);
+            default:
+                return users;
+        }
+    }, [users, smartFilter, pins]);
+
+    // Split into pinned vs the rest so favourites float to the top.
+    const { pinnedList, restList } = useMemo(() => {
+        const pinnedList: AdminUserRow[] = [];
+        const restList: AdminUserRow[] = [];
+        for (const u of filteredUsers) {
+            if (pins.has(u.id)) pinnedList.push(u);
+            else restList.push(u);
+        }
+        return { pinnedList, restList };
+    }, [filteredUsers, pins]);
+
+    // Bulk operations — suspend / unsuspend selected. We don't expose
+    // bulk delete from the UI: deletion is irreversible and routinely
+    // requested in admin tools is a footgun for a non-technical owner.
+    const bulkSetSuspended = async (suspend: boolean) => {
+        if (selected.size === 0) return;
+        const ok = await customConfirm(
+            `${suspend ? 'تعليق' : 'استرجاع'} ${selected.size} حساب؟${
+                suspend ? '\nالحسابات المُعلَّقة لا تستطيع تسجيل الدخول.' : ''
+            }`
+        );
+        if (!ok) return;
+        setBulkBusy(true);
+        const ids = Array.from(selected);
+        const results = await Promise.allSettled(
+            ids.map((id) => adminService.updateUser(id, { is_suspended: suspend }))
+        );
+        const okCount = results.filter(
+            (r) => r.status === 'fulfilled' && (r.value as any).success,
+        ).length;
+        const failed = results.length - okCount;
+        setBulkBusy(false);
+        await customAlert(
+            failed === 0
+                ? `✅ تم ${suspend ? 'تعليق' : 'استرجاع'} ${okCount} حساب`
+                : `⚠️ نجح: ${okCount} | فشل: ${failed}`
+        );
+        exitSelection();
+        fetchUsers();
+    };
+
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                     <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🛒 إدارة المشترين</h1>
                     <p className="text-sm text-[var(--text-secondary)] mt-0.5">
                         ابحث، اعرض، عدّل أي مشتري في المنصة
                     </p>
                 </div>
+                <Tooltip text={selectionMode ? 'إلغاء وضع التحديد' : 'تحديد عدة حسابات لإجراء جماعي'}>
+                    <button
+                        onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+                        className={`px-4 h-10 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
+                            selectionMode
+                                ? 'bg-blue-600 text-white shadow'
+                                : 'bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-blue-300 text-[var(--text-secondary)]'
+                        }`}
+                    >
+                        {selectionMode ? '✕ خروج من التحديد' : '☑ تحديد متعدد'}
+                    </button>
+                </Tooltip>
             </div>
 
             {/* Stats strip */}
@@ -363,6 +542,56 @@ const AdminBuyers: React.FC = () => {
                 />
             </div>
 
+            {/* Smart filter chips */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                <SmartChip active={smartFilter === 'all'}          onClick={() => setSmartFilter('all')}          icon="👥" label="الكل" />
+                <SmartChip active={smartFilter === 'pinned'}       onClick={() => setSmartFilter('pinned')}       icon="★"  label="المفضّلة" count={pins.list.length} />
+                <SmartChip active={smartFilter === 'new_week'}     onClick={() => setSmartFilter('new_week')}     icon="✨" label="جدد هذا الأسبوع" />
+                <SmartChip active={smartFilter === 'top_spender'}  onClick={() => setSmartFilter('top_spender')}  icon="💎" label="الأكثر صرفاً" />
+                <SmartChip active={smartFilter === 'no_bookings'}  onClick={() => setSmartFilter('no_bookings')}  icon="🪫" label="بدون حجوزات" />
+                <SmartChip active={smartFilter === 'suspended'}    onClick={() => setSmartFilter('suspended')}    icon="🚫" label="معلّق" />
+            </div>
+
+            {/* Bulk action toolbar — visible only in selection mode */}
+            {selectionMode && (
+                <div className="sticky top-[60px] z-10 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl p-3 shadow-lg flex items-center justify-between gap-3 flex-wrap animate-fade-in">
+                    <div className="flex items-center gap-2 font-bold text-sm">
+                        <span>محدّد:</span>
+                        <span className="bg-white/20 px-2.5 py-0.5 rounded-full tabular-nums">{selected.size}</span>
+                        {selected.size > 0 && (
+                            <button onClick={clearSelected} className="text-xs underline opacity-90 hover:opacity-100">
+                                مسح
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                const ids = new Set(filteredUsers.map((u) => u.id));
+                                setSelected(ids);
+                            }}
+                            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold"
+                        >
+                            تحديد الكل ({filteredUsers.length})
+                        </button>
+                        <button
+                            onClick={() => bulkSetSuspended(true)}
+                            disabled={selected.size === 0 || bulkBusy}
+                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                            🚫 تعليق
+                        </button>
+                        <button
+                            onClick={() => bulkSetSuspended(false)}
+                            disabled={selected.size === 0 || bulkBusy}
+                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                            ✅ استرجاع
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Users List */}
             {loading ? (
                 <div className="space-y-2">
@@ -373,15 +602,58 @@ const AdminBuyers: React.FC = () => {
                         />
                     ))}
                 </div>
-            ) : users.length === 0 ? (
+            ) : filteredUsers.length === 0 ? (
                 <div className="bg-[var(--card-bg)] rounded-2xl p-12 border border-dashed border-[var(--border-color)] text-center text-[var(--gray-400)]">
-                    لا توجد نتائج. جرّب كلمة بحث أخرى.
+                    {smartFilter === 'pinned'
+                        ? 'لا يوجد مشترين في مفضّلتك بعد. اضغط ★ بجانب أي مشتري لإضافته.'
+                        : 'لا توجد نتائج. جرّب كلمة بحث أخرى أو فلتر مختلف.'}
                 </div>
             ) : (
-                <div className="space-y-2">
-                    {users.map((u) => (
-                        <UserRow key={u.id} user={u} onEdit={setEditing} />
-                    ))}
+                <div className="space-y-3">
+                    {pinnedList.length > 0 && smartFilter !== 'pinned' && (
+                        <div>
+                            <div className="text-xs font-extrabold text-amber-700 mb-2 flex items-center gap-1.5 px-1">
+                                ★ المفضّلة ({pinnedList.length})
+                            </div>
+                            <div className="space-y-2">
+                                {pinnedList.map((u) => (
+                                    <UserRow
+                                        key={u.id}
+                                        user={u}
+                                        onEdit={setEditing}
+                                        pinned={true}
+                                        onTogglePin={pins.toggle}
+                                        selectionMode={selectionMode}
+                                        selected={selected.has(u.id)}
+                                        onToggleSelect={toggleSelected}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {restList.length > 0 && (
+                        <div>
+                            {pinnedList.length > 0 && smartFilter !== 'pinned' && (
+                                <div className="text-xs font-extrabold text-[var(--text-secondary)] mb-2 px-1">
+                                    باقي النتائج ({restList.length})
+                                </div>
+                            )}
+                            <div className="space-y-2">
+                                {restList.map((u) => (
+                                    <UserRow
+                                        key={u.id}
+                                        user={u}
+                                        onEdit={setEditing}
+                                        pinned={false}
+                                        onTogglePin={pins.toggle}
+                                        selectionMode={selectionMode}
+                                        selected={selected.has(u.id)}
+                                        onToggleSelect={toggleSelected}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

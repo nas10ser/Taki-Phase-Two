@@ -21,8 +21,11 @@ import { useApp } from '../../context/AppContext';
 import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 import { useEscClose } from '../../hooks/useEscClose';
+import { useLocalStringList } from '../../hooks/useLocalStringList';
+import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
+import { PinButton } from '../../components/admin/PinButton';
 
 type FilterTab = 'all' | 'premium' | 'trial' | 'free' | 'suspended';
 
@@ -379,7 +382,9 @@ function toDateInput(d: Date): string {
 const SellerRow = memo<{
     seller: AdminUserRow;
     onEdit: (s: AdminUserRow) => void;
-}>(({ seller, onEdit }) => {
+    pinned: boolean;
+    onTogglePin: (id: string) => void;
+}>(({ seller, onEdit, pinned, onTogglePin }) => {
     const expiresAt = seller.subscription_expires_at
         ? new Date(seller.subscription_expires_at)
         : null;
@@ -433,22 +438,54 @@ const SellerRow = memo<{
                         </div>
                     )}
                 </div>
-                <div className="flex-shrink-0 text-left">
-                    <div className="text-base font-extrabold text-emerald-600 tabular-nums">
-                        {(seller.subscription_amount ?? 0).toLocaleString('ar-SA')}
-                    </div>
-                    <div className="text-[10px] text-[var(--text-secondary)] font-medium">ر.س/شهر</div>
-                    {(seller.discount_percentage ?? 0) > 0 && (
-                        <div className="text-[10px] mt-0.5 bg-orange-100 text-orange-700 rounded px-1.5 py-0.5 font-bold">
-                            خصم {seller.discount_percentage}%
+                <div className="flex-shrink-0 text-left flex items-center gap-2">
+                    <div>
+                        <div className="text-base font-extrabold text-emerald-600 tabular-nums">
+                            {(seller.subscription_amount ?? 0).toLocaleString('ar-SA')}
                         </div>
-                    )}
+                        <div className="text-[10px] text-[var(--text-secondary)] font-medium">ر.س/شهر</div>
+                        {(seller.discount_percentage ?? 0) > 0 && (
+                            <div className="text-[10px] mt-0.5 bg-orange-100 text-orange-700 rounded px-1.5 py-0.5 font-bold">
+                                خصم {seller.discount_percentage}%
+                            </div>
+                        )}
+                    </div>
+                    <PinButton pinned={pinned} onToggle={() => onTogglePin(seller.id)} />
                 </div>
             </div>
         </button>
     );
 });
 SellerRow.displayName = 'SellerRow';
+
+// ============================================================
+// Smart filter chip — second-tier filter (composes with the plan tabs)
+// ============================================================
+const SellerSmartChip: React.FC<{
+    active: boolean;
+    onClick: () => void;
+    icon: string;
+    label: string;
+    count?: number;
+}> = ({ active, onClick, icon, label, count }) => (
+    <button
+        onClick={onClick}
+        className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+            active
+                ? 'bg-purple-100 border border-purple-400 text-purple-800 shadow-sm'
+                : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-purple-300'
+        }`}
+    >
+        <span>{icon}</span>
+        <span>{label}</span>
+        {count !== undefined && count > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full tabular-nums ${
+                active ? 'bg-purple-200' : 'bg-[var(--gray-100)]'
+            }`}>{count}</span>
+        )}
+    </button>
+);
+SellerSmartChip.displayName = 'SellerSmartChip';
 
 // ============================================================
 // Global Subscription Mode — platform-wide controls.
@@ -1170,14 +1207,32 @@ BulkSubscriptionPanel.displayName = 'BulkSubscriptionPanel';
 // ============================================================
 // Main Component
 // ============================================================
+type SellerSmartFilter = 'pinned' | 'expiring_7d' | 'expiring_30d' | 'no_plan' | 'high_discount';
+
 const AdminSellers: React.FC = () => {
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const [filter, setFilter] = useState<FilterTab>('all');
+    const [smartFilter, setSmartFilter] = useState<SellerSmartFilter | null>(null);
     const [sellers, setSellers] = useState<AdminUserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<AdminUserRow | null>(null);
     const [bulkPanelOpen, setBulkPanelOpen] = useState(false);
+    const pins = useLocalStringList('taki:admin:sellers:pins', { maxItems: 100 });
+    const { push: pushRecent } = useAdminRecents();
+
+    // Push to recents whenever the admin opens a seller's subscription modal.
+    useEffect(() => {
+        if (editing) {
+            pushRecent({
+                id: editing.id,
+                name: editing.name ?? 'تاجر',
+                shop: editing.shop,
+                type: 'seller',
+                phone: editing.phone,
+            });
+        }
+    }, [editing, pushRecent]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -1196,10 +1251,43 @@ const AdminSellers: React.FC = () => {
     }, [fetchSellers]);
 
     const filtered = useMemo(() => {
-        if (filter === 'all') return sellers;
-        if (filter === 'suspended') return sellers.filter((s) => s.is_suspended);
-        return sellers.filter((s) => s.subscription_plan === filter && !s.is_suspended);
-    }, [sellers, filter]);
+        // Step 1: plan/status filter (the existing tabs).
+        let base: AdminUserRow[];
+        if (filter === 'all') base = sellers;
+        else if (filter === 'suspended') base = sellers.filter((s) => s.is_suspended);
+        else base = sellers.filter((s) => s.subscription_plan === filter && !s.is_suspended);
+
+        // Step 2: smart filter on top (optional).
+        if (!smartFilter) return base;
+        const now = Date.now();
+        const in7d = now + 7 * 24 * 60 * 60 * 1000;
+        const in30d = now + 30 * 24 * 60 * 60 * 1000;
+        if (smartFilter === 'pinned') return base.filter((s) => pins.has(s.id));
+        if (smartFilter === 'expiring_7d') return base.filter((s) => {
+            if (!s.subscription_expires_at) return false;
+            const t = new Date(s.subscription_expires_at).getTime();
+            return Number.isFinite(t) && t >= now && t <= in7d;
+        });
+        if (smartFilter === 'expiring_30d') return base.filter((s) => {
+            if (!s.subscription_expires_at) return false;
+            const t = new Date(s.subscription_expires_at).getTime();
+            return Number.isFinite(t) && t >= now && t <= in30d;
+        });
+        if (smartFilter === 'no_plan') return base.filter((s) => !s.subscription_plan || s.subscription_plan === 'free');
+        if (smartFilter === 'high_discount') return base.filter((s) => (s.discount_percentage ?? 0) >= 30);
+        return base;
+    }, [sellers, filter, smartFilter, pins]);
+
+    // Split into pinned vs the rest so favourites float to the top.
+    const { pinnedSellers, restSellers } = useMemo(() => {
+        const pinnedSellers: AdminUserRow[] = [];
+        const restSellers: AdminUserRow[] = [];
+        for (const s of filtered) {
+            if (pins.has(s.id)) pinnedSellers.push(s);
+            else restSellers.push(s);
+        }
+        return { pinnedSellers, restSellers };
+    }, [filtered, pins]);
 
     const stats = useMemo(() => {
         const premium = sellers.filter((s) => s.subscription_plan === 'premium').length;
@@ -1291,6 +1379,16 @@ const AdminSellers: React.FC = () => {
                         </button>
                     ))}
                 </div>
+
+                {/* Smart filters (compose on top of the plan filter above) */}
+                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                    <SellerSmartChip active={smartFilter === null}             onClick={() => setSmartFilter(null)}             icon="✓" label="بلا فلتر ذكي" />
+                    <SellerSmartChip active={smartFilter === 'pinned'}         onClick={() => setSmartFilter('pinned')}         icon="★" label="المفضّلة" count={pins.list.length} />
+                    <SellerSmartChip active={smartFilter === 'expiring_7d'}    onClick={() => setSmartFilter('expiring_7d')}    icon="⏰" label="ينتهي خلال 7 أيام" />
+                    <SellerSmartChip active={smartFilter === 'expiring_30d'}   onClick={() => setSmartFilter('expiring_30d')}   icon="📅" label="ينتهي خلال 30 يوم" />
+                    <SellerSmartChip active={smartFilter === 'no_plan'}        onClick={() => setSmartFilter('no_plan')}        icon="🆓" label="بدون اشتراك" />
+                    <SellerSmartChip active={smartFilter === 'high_discount'}  onClick={() => setSmartFilter('high_discount')}  icon="🏷️" label="خصم ≥ 30%" />
+                </div>
             </div>
 
             {/* List */}
@@ -1302,13 +1400,50 @@ const AdminSellers: React.FC = () => {
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="bg-[var(--card-bg)] rounded-2xl p-12 border border-dashed border-[var(--border-color)] text-center text-[var(--gray-400)]">
-                    لا توجد نتائج لهذا الفلتر.
+                    {smartFilter === 'pinned'
+                        ? 'لا يوجد تجار في مفضّلتك بعد. اضغط ★ بجانب أي تاجر لإضافته.'
+                        : 'لا توجد نتائج لهذا الفلتر.'}
                 </div>
             ) : (
-                <div className="space-y-2">
-                    {filtered.map((s) => (
-                        <SellerRow key={s.id} seller={s} onEdit={setEditing} />
-                    ))}
+                <div className="space-y-3">
+                    {pinnedSellers.length > 0 && smartFilter !== 'pinned' && (
+                        <div>
+                            <div className="text-xs font-extrabold text-amber-700 mb-2 flex items-center gap-1.5 px-1">
+                                ★ المفضّلة ({pinnedSellers.length})
+                            </div>
+                            <div className="space-y-2">
+                                {pinnedSellers.map((s) => (
+                                    <SellerRow
+                                        key={s.id}
+                                        seller={s}
+                                        onEdit={setEditing}
+                                        pinned={true}
+                                        onTogglePin={pins.toggle}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {restSellers.length > 0 && (
+                        <div>
+                            {pinnedSellers.length > 0 && smartFilter !== 'pinned' && (
+                                <div className="text-xs font-extrabold text-[var(--text-secondary)] mb-2 px-1">
+                                    باقي المتاجر ({restSellers.length})
+                                </div>
+                            )}
+                            <div className="space-y-2">
+                                {restSellers.map((s) => (
+                                    <SellerRow
+                                        key={s.id}
+                                        seller={s}
+                                        onEdit={setEditing}
+                                        pinned={false}
+                                        onTogglePin={pins.toggle}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

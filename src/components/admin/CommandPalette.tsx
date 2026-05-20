@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
+import { useAdminRecents, RecentEntity } from '../../hooks/useAdminRecents';
 
 export type AdminTab =
     | 'overview'
@@ -51,7 +52,12 @@ type UserCommand = {
     id: string;
     user: AdminUserRow;
 };
-type Item = NavCommand | ActionCommand | UserCommand;
+type RecentCommand = {
+    kind: 'recent';
+    id: string;
+    recent: RecentEntity;
+};
+type Item = NavCommand | ActionCommand | UserCommand | RecentCommand;
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
     open,
@@ -66,6 +72,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const history = useHistory();
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
+    const { recents } = useAdminRecents();
 
     // Static nav + action commands. Memoized so identity is stable for
     // dependency arrays.
@@ -157,14 +164,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const filteredNav = navCommands.filter(matchesQ);
     const filteredActions = actionCommands.filter(matchesQ);
 
+    // Recents only show when the input is empty — once typing starts,
+    // the search results take over so the list isn't cluttered.
+    const showRecents = !q && recents.length > 0;
+
     // Flat ordered list (used for keyboard nav).
     const items: Item[] = useMemo(() => {
         const out: Item[] = [];
+        if (showRecents) {
+            recents.forEach((r) => out.push({ kind: 'recent', id: r.id, recent: r }));
+        }
         filteredNav.forEach((c) => out.push(c));
         filteredActions.forEach((c) => out.push(c));
         userMatches.forEach((u) => out.push({ kind: 'user', id: u.id, user: u }));
         return out;
-    }, [filteredNav, filteredActions, userMatches]);
+    }, [filteredNav, filteredActions, userMatches, showRecents, recents]);
 
     // Reset highlight when results change.
     useEffect(() => {
@@ -183,6 +197,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 history.push(`/store/${u.id}`);
             } else {
                 history.push(`/admin?tab=buyers&q=${encodeURIComponent(u.name ?? u.id)}`);
+            }
+            onClose();
+        } else if (it.kind === 'recent') {
+            const r = it.recent;
+            if (r.type === 'seller') {
+                history.push(`/store/${r.id}`);
+            } else {
+                history.push(`/admin?tab=buyers&q=${encodeURIComponent(r.name)}`);
             }
             onClose();
         }
@@ -224,6 +246,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     if (!open) return null;
 
     let runningIdx = -1;
+    const recentStart = runningIdx + 1;
+    if (showRecents) runningIdx += recents.length;
     const navStart = runningIdx + 1;
     runningIdx += filteredNav.length;
     const actionStart = runningIdx + 1;
@@ -274,6 +298,32 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         </div>
                     ) : (
                         <>
+                            {showRecents && (
+                                <>
+                                    <CategoryHeader label="آخر ما فتحت" />
+                                    {recents.map((r, i) => {
+                                        const idx = recentStart + i;
+                                        const active = idx === selectedIdx;
+                                        const isSeller = r.type === 'seller';
+                                        return (
+                                            <CommandRow
+                                                key={`recent-${r.id}`}
+                                                idx={idx}
+                                                active={active}
+                                                icon="🕒"
+                                                title={r.shop ?? r.name}
+                                                subtitle={r.phone ?? (isSeller ? 'تاجر' : 'مشتري')}
+                                                subtitleLtr={!!r.phone}
+                                                badge={isSeller ? 'تاجر' : 'مشتري'}
+                                                onHover={() => setSelectedIdx(idx)}
+                                                onSelect={() => runItem({ kind: 'recent', id: r.id, recent: r })}
+                                                accent={isSeller ? 'purple' : 'blue'}
+                                            />
+                                        );
+                                    })}
+                                </>
+                            )}
+
                             {filteredNav.length > 0 && (
                                 <CategoryHeader label="الصفحات" />
                             )}
