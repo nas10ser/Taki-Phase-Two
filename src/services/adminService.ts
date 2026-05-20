@@ -580,4 +580,96 @@ export const adminService = {
             category: string; views: number; bookings: number; conversion_pct: number;
         }>;
     },
+
+    // ================================================================
+    // v10.99 — Investor-grade analytics RPCs
+    // ================================================================
+
+    async lookupByDate(date: string) {
+        const { data, error } = await supabase.rpc('admin_lookup_by_date', { p_date: date });
+        if (error) { console.error('[adminService.lookupByDate]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            target_date: string;
+            views_count: number; unique_viewers: number;
+            bookings_count: number; unique_bookers: number;
+            completed_bookings: number; cancelled_bookings: number;
+            gmv: number; savings_delivered: number;
+            new_buyers: number; new_sellers: number;
+            active_users: number; total_events: number;
+        } | null;
+    },
+
+    async lookupByMonth(year: number, month: number) {
+        const { data, error } = await supabase.rpc('admin_lookup_by_month', { p_year: year, p_month: month });
+        if (error) { console.error('[adminService.lookupByMonth]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            label: string;
+            views_count: number; bookings_count: number; completed_bookings: number;
+            gmv: number; savings_delivered: number;
+            new_buyers: number; active_users: number;
+            daily_breakdown: Array<{ day: string; views: number; books: number }>;
+        } | null;
+    },
+
+    async lookupByYear(year: number) {
+        const { data, error } = await supabase.rpc('admin_lookup_by_year', { p_year: year });
+        if (error) { console.error('[adminService.lookupByYear]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            label: string;
+            views_count: number; bookings_count: number; completed_bookings: number;
+            gmv: number; savings_delivered: number;
+            new_buyers: number; new_sellers: number;
+            monthly_breakdown: Array<{ month: string; month_key: string; views: number; books: number; gmv: number }>;
+        } | null;
+    },
+
+    async getInvestorKpis(days = 30) {
+        const { data, error } = await supabase.rpc('admin_investor_kpis', { p_days: days });
+        if (error) { console.error('[adminService.getInvestorKpis]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            period_days: number;
+            gmv: number; gmv_completed: number; savings_delivered: number;
+            total_bookings: number; completed_bookings: number; cancelled_bookings: number;
+            avg_order_value: number;
+            dau: number; wau: number; mau: number; stickiness_pct: number;
+            total_views: number; unique_viewers: number; conversion_pct: number;
+            repeat_customer_rate_pct: number;
+            mom_gmv_growth_pct: number; mom_bookings_growth_pct: number; mom_new_users_growth_pct: number;
+            new_buyers: number; new_sellers: number; net_active_merchants: number;
+        } | null;
+    },
+
+    async getGeographicBreakdown(days = 30, limit = 20) {
+        const { data, error } = await supabase.rpc('admin_geographic_breakdown', { p_days: days, p_limit: limit });
+        if (error) { console.error('[adminService.getGeographicBreakdown]', error); return []; }
+        return (data ?? []) as Array<{
+            city: string; region: string;
+            bookings_count: number; completed_bookings: number;
+            gmv: number; unique_buyers: number; active_stores: number;
+        }>;
+    },
+
+    async getRetentionCurve(monthsBack = 6) {
+        const { data, error } = await supabase.rpc('admin_retention_curve', { p_months_back: monthsBack });
+        if (error) { console.error('[adminService.getRetentionCurve]', error); return []; }
+        return (data ?? []) as Array<{
+            cohort_month: string; cohort_label: string; cohort_size: number;
+            d1_pct: number; d7_pct: number; d30_pct: number; d60_pct: number;
+        }>;
+    },
+
+    async getGmvMonthly(months = 12) {
+        const { data, error } = await supabase.rpc('admin_gmv_monthly', { p_months: months });
+        if (error) { console.error('[adminService.getGmvMonthly]', error); return []; }
+        return (data ?? []) as Array<{
+            month_key: string; month_label: string;
+            gmv: number; completed_gmv: number;
+            bookings_count: number; completed_count: number;
+            avg_order_value: number; savings_delivered: number; unique_buyers: number;
+        }>;
+    },
 };

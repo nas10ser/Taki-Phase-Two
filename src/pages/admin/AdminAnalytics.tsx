@@ -17,6 +17,7 @@ import { ExportButton } from '../../components/admin/ExportButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { CsvColumn } from '../../utils/csvExport';
 import { AdvancedAnalytics } from '../../components/admin/AdvancedAnalytics';
+import { InvestorPack } from '../../components/admin/InvestorPack';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -224,10 +225,19 @@ const AdminAnalytics: React.FC = () => {
                 </p>
             </div>
 
-            {/* World-class advanced analytics (v10.98). Lives at the top because
-                it's the headline answer to "give me the numbers I need to run
-                the platform" — everything below is supporting / live detail. */}
-            <AdvancedAnalytics />
+            {/* Investor Pack — the headline metrics every VC asks for in the
+                first call (GMV, AOV, MAU, stickiness, conversion %, MoM growth,
+                retention curve, geographic spread). Sits at the very top because
+                this is what Nasser uses to *raise money* — everything else is
+                operational detail behind it. */}
+            <InvestorPack />
+
+            {/* World-class advanced analytics (v10.98). Lives below the investor
+                pack — operational metrics for running the platform day-to-day:
+                funnel, heatmap, churn, lifecycle, browse-no-book, etc. */}
+            <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
+                <AdvancedAnalytics />
+            </div>
 
             {/* Live Counters */}
             <div className="border-t border-[var(--border-color)] pt-5">
