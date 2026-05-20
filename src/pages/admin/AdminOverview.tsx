@@ -12,6 +12,8 @@ import React, { useEffect, useState, useCallback, memo } from 'react';
 import { useHistory } from 'react-router-dom';
 import { adminService, LiveStats, ActivityRow } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
+import { useKpiSnapshot, KpiDelta } from '../../hooks/useKpiSnapshot';
+import { TrendChip } from '../../components/admin/TrendChip';
 
 // ============================================================
 // KPI Card — مكوّن صغير معاد استخدامه
@@ -23,7 +25,9 @@ const KpiCard = memo<{
     subtitle?: string;
     gradient: string;
     pulse?: boolean;
-}>(({ icon, label, value, subtitle, gradient, pulse }) => (
+    trend?: KpiDelta;
+    trendHigherIsBetter?: boolean;
+}>(({ icon, label, value, subtitle, gradient, pulse, trend, trendHigherIsBetter }) => (
     <div
         className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 ${gradient}`}
     >
@@ -37,6 +41,11 @@ const KpiCard = memo<{
         <div className="text-3xl font-extrabold tabular-nums">{value}</div>
         <div className="text-sm opacity-90 mt-1 font-medium">{label}</div>
         {subtitle && <div className="text-xs opacity-70 mt-0.5">{subtitle}</div>}
+        {trend && (
+            <div className="mt-2">
+                <TrendChip delta={trend} higherIsBetter={trendHigherIsBetter} />
+            </div>
+        )}
     </div>
 ));
 KpiCard.displayName = 'KpiCard';
@@ -159,6 +168,7 @@ const AdminOverview: React.FC<{
     const [stats, setStats] = useState<LiveStats | null>(null);
     const [activity, setActivity] = useState<ActivityRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const { deltas } = useKpiSnapshot(stats);
 
     const refresh = useCallback(async () => {
         const [s, a] = await Promise.all([
@@ -262,6 +272,7 @@ const AdminOverview: React.FC<{
                         value={stats?.bookings_today ?? '...'}
                         subtitle={`${stats?.bookings_hour ?? 0} في آخر ساعة`}
                         gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
+                        trend={deltas.bookings}
                     />
                     <KpiCard
                         icon="✨"
@@ -269,6 +280,7 @@ const AdminOverview: React.FC<{
                         value={stats?.new_users_today ?? '...'}
                         subtitle={`من ${stats?.total_users ?? 0} إجمالاً`}
                         gradient="bg-gradient-to-br from-purple-500 to-fuchsia-600"
+                        trend={deltas.new_users}
                     />
                     <KpiCard
                         icon="💰"
@@ -276,6 +288,7 @@ const AdminOverview: React.FC<{
                         value={`${(stats?.mrr ?? 0).toLocaleString('ar-SA')} ر.س`}
                         subtitle={`${stats?.paying_sellers ?? 0} مشترك مدفوع`}
                         gradient="bg-gradient-to-br from-amber-500 to-orange-600"
+                        trend={deltas.mrr}
                     />
                 </div>
             </div>

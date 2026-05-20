@@ -775,6 +775,48 @@ const AdminTools: React.FC = () => {
         }
     };
 
+    // Banner reordering: persist the new order to `banners.display_order`
+    // for each affected row. We do this in parallel via Promise.allSettled
+    // so a single failed write doesn't block the rest.
+    const dragId = useRef<string | null>(null);
+    const persistBannerOrder = async (newList: any[]) => {
+        const updates = newList.map((b, i) => ({ id: b.id, display_order: i }));
+        // Reflect locally first (optimistic) — the parent state already
+        // received the reordered list before this is called.
+        const writes = updates.map(({ id, display_order }) =>
+            supabase.from('banners').update({ display_order }).eq('id', id)
+        );
+        const results = await Promise.allSettled(writes);
+        const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && (r.value as any).error)).length;
+        if (failed > 0) {
+            await customAlert(`⚠️ تعذّر حفظ ترتيب ${failed} بانر — حدّث الصفحة للتأكد`);
+        }
+    };
+    const onBannerDragStart = (id: string) => { dragId.current = id; };
+    const onBannerDrop = (targetId: string) => {
+        const sourceId = dragId.current;
+        dragId.current = null;
+        if (!sourceId || sourceId === targetId) return;
+        const srcIdx = banners.findIndex((b) => b.id === sourceId);
+        const dstIdx = banners.findIndex((b) => b.id === targetId);
+        if (srcIdx < 0 || dstIdx < 0) return;
+        const next = [...banners];
+        const [moved] = next.splice(srcIdx, 1);
+        next.splice(dstIdx, 0, moved);
+        setBanners(next);
+        persistBannerOrder(next);
+    };
+    const moveBanner = (id: string, direction: -1 | 1) => {
+        const idx = banners.findIndex((b) => b.id === id);
+        if (idx < 0) return;
+        const targetIdx = idx + direction;
+        if (targetIdx < 0 || targetIdx >= banners.length) return;
+        const next = [...banners];
+        [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+        setBanners(next);
+        persistBannerOrder(next);
+    };
+
     const toggleBanner = async (b: any) => {
         const next = !b.is_active;
         // Flip locally first — toggle pill snaps instantly.
@@ -870,23 +912,35 @@ const AdminTools: React.FC = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {banners.map((b) => (
+                        {banners.map((b, i) => (
                             <div
                                 key={b.id}
-                                className="bg-[var(--card-bg)] rounded-2xl overflow-hidden border border-[var(--border-color)] shadow-sm"
+                                draggable
+                                onDragStart={() => onBannerDragStart(b.id)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => onBannerDrop(b.id)}
+                                className="group bg-[var(--card-bg)] rounded-2xl overflow-hidden border border-[var(--border-color)] shadow-sm transition-all hover:shadow-md cursor-move"
                             >
                                 <div className="relative h-32 bg-[var(--gray-100)]">
                                     {b.image_url && (
                                         <img
                                             src={b.image_url}
                                             alt=""
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-cover pointer-events-none"
                                             onError={(e) =>
                                                 ((e.target as HTMLImageElement).style.display = 'none')
                                             }
                                         />
                                     )}
-                                    <div className="absolute top-2 right-2">
+                                    <Tooltip text="اسحب لإعادة الترتيب">
+                                        <span className="absolute top-2 left-2 bg-black/40 backdrop-blur-sm text-white text-base font-bold rounded-md px-2 py-1 cursor-grab active:cursor-grabbing">
+                                            ⋮⋮
+                                        </span>
+                                    </Tooltip>
+                                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                                        <span className="bg-black/40 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums">
+                                            #{i + 1}
+                                        </span>
                                         <span
                                             className={`px-2 py-1 rounded-md text-[10px] font-bold text-white ${
                                                 b.is_active ? 'bg-emerald-500' : 'bg-red-500'
@@ -911,13 +965,35 @@ const AdminTools: React.FC = () => {
                                             {b.is_active ? 'نشط' : 'متوقف'}
                                         </span>
                                         <div className="flex-1" />
-                                        <button
-                                            type="button"
-                                            onClick={() => deleteBanner(b.id)}
-                                            className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 active:scale-90"
-                                        >
-                                            🗑
-                                        </button>
+                                        <Tooltip text="انقل للأعلى">
+                                            <button
+                                                type="button"
+                                                onClick={() => moveBanner(b.id, -1)}
+                                                disabled={i === 0}
+                                                className="w-7 h-7 text-sm font-bold bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)] rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                                            >
+                                                ↑
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="انقل للأسفل">
+                                            <button
+                                                type="button"
+                                                onClick={() => moveBanner(b.id, 1)}
+                                                disabled={i === banners.length - 1}
+                                                className="w-7 h-7 text-sm font-bold bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)] rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                                            >
+                                                ↓
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="حذف نهائي">
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteBanner(b.id)}
+                                                className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 active:scale-90"
+                                            >
+                                                🗑
+                                            </button>
+                                        </Tooltip>
                                     </div>
                                 </div>
                             </div>
