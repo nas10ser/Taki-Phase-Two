@@ -462,4 +462,122 @@ export const adminService = {
         }
         return { ok, failed, total: targets.length };
     },
+
+    // ================================================================
+    // v10.98 — World-class analytics RPCs (added in
+    // v10_98_admin_world_class_analytics migration). Every wrapper here
+    // logs its error and returns an empty/zero shape so the UI never
+    // crashes on a missing function or transient DB issue.
+    // ================================================================
+
+    async getMrrMonthly(months = 12) {
+        const { data, error } = await supabase.rpc('admin_mrr_monthly', { p_months: months });
+        if (error) { console.error('[adminService.getMrrMonthly]', error); return []; }
+        return (data ?? []) as Array<{
+            month_key: string; month_label: string;
+            paid_amount: number; paid_count: number; refunded_amount: number;
+        }>;
+    },
+
+    async getSubscriptionLifecycle() {
+        const { data, error } = await supabase.rpc('admin_subscription_lifecycle');
+        if (error) { console.error('[adminService.getSubscriptionLifecycle]', error); return []; }
+        return (data ?? []) as Array<{ status: string; cnt: number }>;
+    },
+
+    async getSubscriptionGrowth(months = 12) {
+        const { data, error } = await supabase.rpc('admin_subscription_growth', { p_months: months });
+        if (error) { console.error('[adminService.getSubscriptionGrowth]', error); return []; }
+        return (data ?? []) as Array<{
+            month_key: string; month_label: string;
+            new_subs: number; churned_subs: number; net_change: number;
+        }>;
+    },
+
+    async getActivityHeatmap(days = 30) {
+        const { data, error } = await supabase.rpc('admin_activity_heatmap', { p_days: days });
+        if (error) { console.error('[adminService.getActivityHeatmap]', error); return []; }
+        return (data ?? []) as Array<{ dow: number; hour: number; cnt: number }>;
+    },
+
+    async getBookingFunnel(days = 30) {
+        const { data, error } = await supabase.rpc('admin_booking_funnel', { p_days: days });
+        if (error) { console.error('[adminService.getBookingFunnel]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            total_views: number; unique_viewers: number;
+            total_bookings: number; unique_bookers: number;
+            conversion_pct: number; avg_views_per_booker: number;
+        } | null;
+    },
+
+    async getBrowseNoBook(days = 14, limit = 50) {
+        const { data, error } = await supabase.rpc('admin_browse_no_book', { p_days: days, p_limit: limit });
+        if (error) { console.error('[adminService.getBrowseNoBook]', error); return []; }
+        return (data ?? []) as Array<{
+            user_id: string; name: string; phone: string | null;
+            views_count: number; last_viewed_at: string; deals_seen: number;
+        }>;
+    },
+
+    async getRevenueForecast() {
+        const { data, error } = await supabase.rpc('admin_revenue_forecast');
+        if (error) { console.error('[adminService.getRevenueForecast]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            monthly_expected: number;
+            paying_sellers: number; free_sellers: number; trial_sellers: number;
+            expires_7d: number; expires_30d: number;
+            avg_arpu: number;
+        } | null;
+    },
+
+    async getChurnedSubscribers(days = 90, limit = 100) {
+        const { data, error } = await supabase.rpc('admin_churned_subscribers', { p_days: days, p_limit: limit });
+        if (error) { console.error('[adminService.getChurnedSubscribers]', error); return []; }
+        return (data ?? []) as Array<{
+            store_id: string; name: string; shop: string | null;
+            phone: string | null; plan: string | null;
+            ended_at: string; days_since_churn: number; last_amount: number;
+        }>;
+    },
+
+    async getSubscriptionTimeline(limit = 200) {
+        const { data, error } = await supabase.rpc('admin_subscription_timeline', { p_limit: limit });
+        if (error) { console.error('[adminService.getSubscriptionTimeline]', error); return []; }
+        return (data ?? []) as Array<{
+            store_id: string; name: string; shop: string | null; phone: string | null;
+            plan: string; started_at: string | null; expires_at: string | null;
+            days_remaining: number | null;
+            amount: number; discount: number; net_amount: number;
+        }>;
+    },
+
+    async getUserCohorts(months = 6) {
+        const { data, error } = await supabase.rpc('admin_user_cohorts', { p_months: months });
+        if (error) { console.error('[adminService.getUserCohorts]', error); return []; }
+        return (data ?? []) as Array<{
+            cohort_key: string; cohort_label: string;
+            registered: number; active_now: number; booked_ever: number;
+            retention_pct: number;
+        }>;
+    },
+
+    async getDailyMetrics(days = 30) {
+        const { data, error } = await supabase.rpc('admin_daily_metrics', { p_days: days });
+        if (error) { console.error('[adminService.getDailyMetrics]', error); return []; }
+        return (data ?? []) as Array<{
+            day_key: string; day_label: string;
+            events: number; bookings: number; new_users: number;
+            completed_bookings: number; cancelled_bookings: number;
+        }>;
+    },
+
+    async getCategoryFunnel(days = 30, limit = 12) {
+        const { data, error } = await supabase.rpc('admin_category_funnel', { p_days: days, p_limit: limit });
+        if (error) { console.error('[adminService.getCategoryFunnel]', error); return []; }
+        return (data ?? []) as Array<{
+            category: string; views: number; bookings: number; conversion_pct: number;
+        }>;
+    },
 };

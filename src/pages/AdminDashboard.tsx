@@ -79,7 +79,16 @@ interface TabNavProps {
 }
 
 const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, reportsBadge }) => (
-    <div className="sticky top-0 z-20 -mx-4 px-4 pt-2 pb-3 bg-card-glass border-b border-[var(--border-color)]">
+    // env(safe-area-inset-top) keeps the bar BELOW the notch/Dynamic Island
+    // instead of slamming into the clock/battery. Previously top-0 + pt-2 left
+    // about 8px to the status bar on a real iPhone, which Nasser flagged.
+    <div
+        className="sticky z-20 -mx-4 px-4 pb-3 bg-card-glass border-b border-[var(--border-color)]"
+        style={{
+            top: 'env(safe-area-inset-top, 0px)',
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+        }}
+    >
         <div className="flex items-center gap-2">
             <Tooltip text="رجوع للخلف">
                 <button

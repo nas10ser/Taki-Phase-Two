@@ -16,6 +16,7 @@ import { adminService, LiveStats, TimelinePoint, ActivityRow } from '../../servi
 import { ExportButton } from '../../components/admin/ExportButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { CsvColumn } from '../../utils/csvExport';
+import { AdvancedAnalytics } from '../../components/admin/AdvancedAnalytics';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -223,7 +224,15 @@ const AdminAnalytics: React.FC = () => {
                 </p>
             </div>
 
+            {/* World-class advanced analytics (v10.98). Lives at the top because
+                it's the headline answer to "give me the numbers I need to run
+                the platform" — everything below is supporting / live detail. */}
+            <AdvancedAnalytics />
+
             {/* Live Counters */}
+            <div className="border-t border-[var(--border-color)] pt-5">
+                <h2 className="text-xl font-extrabold text-[var(--text-primary)] mb-3">⚡ المؤشرات اللحظية</h2>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <LiveCounter
                     value={stats?.active_users ?? 0}
