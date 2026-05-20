@@ -31,6 +31,7 @@ const AdminSellers   = lazy(() => import('./admin/AdminSellers'));
 const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
+const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
 
 type Tab = AdminTab;
 
@@ -49,6 +50,7 @@ const TABS: TabDef[] = [
     { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة' },
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات' },
+    { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق' },
 ];
 
 // ============================================================
@@ -162,7 +164,7 @@ const AdminDashboard: React.FC = () => {
     // Deep-link support: /admin?tab=reports opens the right tab on load.
     useEffect(() => {
         const t = new URLSearchParams(location.search).get('tab');
-        if (t && ['overview', 'buyers', 'sellers', 'reports', 'analytics', 'tools'].includes(t)) {
+        if (t && ['overview', 'buyers', 'sellers', 'reports', 'analytics', 'tools', 'launch'].includes(t)) {
             setActiveTab(t as Tab);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -283,6 +285,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'reports'   && <AdminReports />}
                         {activeTab === 'analytics' && <AdminAnalytics />}
                         {activeTab === 'tools'     && <AdminTools />}
+                        {activeTab === 'launch'    && <AdminLaunch />}
                     </Suspense>
                 </div>
             </div>

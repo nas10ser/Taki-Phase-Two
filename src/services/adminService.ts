@@ -672,4 +672,56 @@ export const adminService = {
             avg_order_value: number; savings_delivered: number; unique_buyers: number;
         }>;
     },
+
+    // ================================================================
+    // v11.0 — Pre-Launch Suite (health, settings audit, payment scaffold)
+    // ================================================================
+
+    async healthCheck() {
+        const { data, error } = await supabase.rpc('admin_health_check');
+        if (error) { console.error('[adminService.healthCheck]', error); return null; }
+        return data as {
+            as_of: string;
+            admin_user_id: string;
+            table_counts: Record<string, number>;
+            critical_triggers: Record<string, boolean>;
+            critical_indexes: Record<string, boolean>;
+            rls_enabled: Record<string, boolean>;
+            db_size_bytes: number;
+        } | null;
+    },
+
+    async listPlatformSettings() {
+        const { data, error } = await supabase.rpc('admin_list_platform_settings');
+        if (error) { console.error('[adminService.listPlatformSettings]', error); return []; }
+        return (data ?? []) as Array<{
+            key: string; value: any; description: string | null; updated_at: string;
+        }>;
+    },
+
+    async getPaymentGatewayStatus() {
+        const { data, error } = await supabase.rpc('admin_payment_gateway_status');
+        if (error) { console.error('[adminService.getPaymentGatewayStatus]', error); return null; }
+        return data as {
+            enabled: boolean;
+            provider: string;
+            has_publishable_key: boolean;
+            publishable_key_hint: string | null;
+            webhook_url: string;
+            has_secret_configured: boolean;
+            attempts_total: number;
+            attempts_paid: number;
+            attempts_failed: number;
+        } | null;
+    },
+
+    async listPaymentAttempts(days = 30, limit = 100) {
+        const { data, error } = await supabase.rpc('admin_list_payment_attempts', { p_days: days, p_limit: limit });
+        if (error) { console.error('[adminService.listPaymentAttempts]', error); return []; }
+        return (data ?? []) as Array<{
+            id: string; merchant_id: string; merchant_name: string | null; merchant_shop: string | null;
+            gateway: string; amount: number; currency: string; status: string;
+            gateway_reference: string | null; error_message: string | null; created_at: string;
+        }>;
+    },
 };

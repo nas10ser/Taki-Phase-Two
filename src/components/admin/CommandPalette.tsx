@@ -21,7 +21,8 @@ export type AdminTab =
     | 'sellers'
     | 'reports'
     | 'analytics'
-    | 'tools';
+    | 'tools'
+    | 'launch';
 
 interface CommandPaletteProps {
     open: boolean;
@@ -83,6 +84,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
         { kind: 'nav', id: 'nav-analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
         { kind: 'nav', id: 'nav-tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
+        { kind: 'nav', id: 'nav-launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
     ], []);
 
     const actionCommands: ActionCommand[] = useMemo(() => [
