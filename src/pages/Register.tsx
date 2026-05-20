@@ -3,6 +3,7 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { validationService } from '../services/validationService';
 import { authService } from '../services/authService';
+import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 
 const Register: React.FC = () => {
@@ -64,6 +65,12 @@ const Register: React.FC = () => {
     const [emailSuccess, setEmailSuccess] = useState(false);
     const [phoneSuccess, setPhoneSuccess] = useState(false);
     const [resending, setResending] = useState(false);
+    // v11.2 — explicit consent to terms+privacy+refund is now a hard
+    // prerequisite for signup. The checkbox below records consent and
+    // disables submission until ticked. After auth completes, record_user_consent
+    // RPC writes the timestamp + IP + user-agent for legal evidence.
+    const [acceptedLegal, setAcceptedLegal] = useState(false);
+    const TERMS_VERSION = '2026-05-20';
     const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const phoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -390,6 +397,17 @@ const Register: React.FC = () => {
             await customAlert(t(`الكود غير صحيح أو انتهت صلاحيته: ${error.message}`, `Invalid or expired code: ${error.message}`));
             return;
         }
+
+        // v11.2 — persist legal consent now that we have an authenticated user
+        // session. Done as fire-and-forget; a failure here doesn't block the
+        // user reaching their dashboard (we'll retry on next login).
+        try {
+            await supabase.rpc('record_user_consent', {
+                p_terms_version: TERMS_VERSION,
+                p_ip: null, // server side determines if needed
+                p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
+            });
+        } catch { /* non-blocking */ }
 
         await customAlert(t('✅ تم التحقق والتسجيل بنجاح!', '✅ Registration verified successfully!'));
         history.push(userType === 'seller' ? '/seller' : '/');
@@ -758,7 +776,7 @@ const Register: React.FC = () => {
             ? (emailError.includes('جاري') || emailError.includes('checking') || (email.length > 0 && !!emailError && !emailError.includes('مسجل') && !emailError.includes('registered') && !/^\d+$/.test(email)))
             : (!!emailError || !!phoneError);
 
-        const isSubmitDisabled = loading || emailChecking || phoneChecking || hasCriticalError || !password || (isLogin ? false : !isPasswordValid);
+        const isSubmitDisabled = loading || emailChecking || phoneChecking || hasCriticalError || !password || (isLogin ? false : !isPasswordValid) || (!isLogin && !acceptedLegal);
 
         // Login = green glow, Register = navy
         const activeBtnColor = isLogin ? '#10b981' : 'var(--primary)';
@@ -932,9 +950,113 @@ const Register: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Legal consent — required for new registrations only.
+                            Records intent to be bound (digital signature) before
+                            we collect any further details. Without this tick,
+                            the submit button stays disabled. */}
+                        {!isLogin && (
+                            <div style={{
+                                marginTop: 18,
+                                padding: 14,
+                                background: acceptedLegal ? 'rgba(16, 185, 129, 0.08)' : 'rgba(15, 25, 45, 0.5)',
+                                border: `1.5px solid ${acceptedLegal ? 'rgba(16, 185, 129, 0.45)' : 'rgba(148, 163, 184, 0.3)'}`,
+                                borderRadius: 14,
+                                transition: 'all 0.25s ease',
+                            }}>
+                                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                                    <span
+                                        onClick={(e) => { e.preventDefault(); setAcceptedLegal(v => !v); }}
+                                        style={{
+                                            flexShrink: 0,
+                                            marginTop: 2,
+                                            width: 22,
+                                            height: 22,
+                                            borderRadius: 6,
+                                            border: `2px solid ${acceptedLegal ? '#10b981' : 'rgba(148, 163, 184, 0.6)'}`,
+                                            background: acceptedLegal ? '#10b981' : 'transparent',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: '#fff',
+                                            fontSize: 14,
+                                            fontWeight: 900,
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        {acceptedLegal ? '✓' : ''}
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={acceptedLegal}
+                                        onChange={(e) => setAcceptedLegal(e.target.checked)}
+                                        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
+                                        aria-label={t('أقرّ بأنني قرأت ووافقت على شروط الاستخدام وسياسة الخصوصية وسياسة الاسترداد', 'I acknowledge I have read and agree to the Terms, Privacy Policy, and Refund Policy')}
+                                    />
+                                    <div style={{ fontSize: '0.82rem', lineHeight: 1.6, color: '#e2e8f0', fontWeight: 600 }}>
+                                        {t('أُقرّ بأنني قرأت ووافقت على', 'I have read and agree to the')}{' '}
+                                        <a
+                                            href="/terms"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ color: '#38bdf8', fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                        >
+                                            {t('شروط الاستخدام', 'Terms of Service')}
+                                        </a>
+                                        {' '}{t('و', 'and the')}{' '}
+                                        <a
+                                            href="/privacy"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ color: '#38bdf8', fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                        >
+                                            {t('سياسة الخصوصية', 'Privacy Policy')}
+                                        </a>
+                                        {' '}{t('و', 'and the')}{' '}
+                                        <a
+                                            href="/refund"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ color: '#38bdf8', fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                        >
+                                            {t('سياسة الاسترداد', 'Refund Policy')}
+                                        </a>
+                                        {t('، وأتعهّد بتحمّل المسؤولية الكاملة عن أي محتوى أنشره أو معاملة أُجريها على TAKI.', ', and I take full responsibility for any content I publish or transactions I make on TAKI.')}
+                                    </div>
+                                </label>
+                                <div style={{
+                                    marginTop: 10,
+                                    paddingTop: 10,
+                                    borderTop: '1px solid rgba(148, 163, 184, 0.15)',
+                                    fontSize: '0.7rem',
+                                    color: 'rgba(180, 195, 220, 0.7)',
+                                    lineHeight: 1.5,
+                                    fontWeight: 500,
+                                }}>
+                                    {t(
+                                        '⚖️ موافقتك توقيع إلكتروني ملزم وفقاً لنظام التعاملات الإلكترونية السعودي (المادة 7). يُسجَّل التاريخ والوقت كدليل قانوني.',
+                                        '⚖️ Your consent is a legally binding electronic signature under Saudi Electronic Transactions Law (Art. 7). The date and time are logged as legal evidence.'
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <button className="auth-submit" onClick={isLogin ? handleLoginSubmit : handleProceedToVerify} disabled={isSubmitDisabled} style={{ ...primaryButtonStyle, background: isSubmitDisabled ? 'rgba(15,23,42,0.2)' : activeBtnColor, opacity: buttonOpacity, marginTop: 16, cursor: isSubmitDisabled ? 'not-allowed' : 'pointer', boxShadow: isSubmitDisabled ? 'none' : activeBtnGlow, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                             {loading ? t('جاري المعالجة...', 'Processing...') : isLogin ? t('تسجيل الدخول', 'Sign In') : t('إرسال كود التحقق', 'Send Verification Code')}
                         </button>
+                        {!isLogin && !acceptedLegal && (
+                            <div style={{
+                                marginTop: 8,
+                                fontSize: '0.72rem',
+                                color: 'rgba(251, 191, 36, 0.95)',
+                                textAlign: 'center',
+                                fontWeight: 700,
+                            }}>
+                                ⚠️ {t('ضع علامة الموافقة على الشروط لإكمال التسجيل', 'Tick the agreement box to complete registration')}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
