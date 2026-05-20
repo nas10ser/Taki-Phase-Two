@@ -20,6 +20,9 @@ import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../servi
 import { useApp } from '../../context/AppContext';
 import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
+import { useEscClose } from '../../hooks/useEscClose';
+import { CopyButton } from '../../components/admin/CopyButton';
+import { Tooltip } from '../../components/admin/Tooltip';
 
 type FilterTab = 'all' | 'premium' | 'trial' | 'free' | 'suspended';
 
@@ -108,24 +111,36 @@ const SubscriptionModal = memo<{
         }
     };
 
+    // Esc closes the modal. The subscription form is intentionally
+    // close-on-Esc without an unsaved-changes prompt — applying the
+    // subscription is an explicit action (the "تطبيق" button), so
+    // Esc is just "cancel" and that matches the seller's mental model.
+    useEscClose(true, onClose);
+
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-[var(--card-bg)] rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
                 {/* Header */}
                 <div className="sticky top-0 bg-gradient-to-r from-purple-500 via-fuchsia-600 to-pink-600 text-white p-5 rounded-t-3xl flex items-center justify-between z-10">
-                    <div>
+                    <div className="min-w-0">
                         <div className="text-xs opacity-80 mb-1">إدارة الاشتراك</div>
-                        <div className="text-xl font-extrabold">{seller.shop ?? seller.name}</div>
-                        <div className="text-xs opacity-80 mt-0.5" dir="ltr">
-                            {seller.phone}
+                        <div className="text-xl font-extrabold truncate">{seller.shop ?? seller.name}</div>
+                        <div className="text-xs opacity-80 mt-0.5 flex items-center gap-1.5" dir="ltr">
+                            <span>{seller.phone ?? '—'}</span>
+                            {seller.phone && (
+                                <CopyButton value={seller.phone} label="الجوال" size="xs" />
+                            )}
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl"
-                    >
-                        ✕
-                    </button>
+                    <Tooltip text="إغلاق (Esc)">
+                        <button
+                            onClick={onClose}
+                            aria-label="إغلاق"
+                            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl flex-shrink-0"
+                        >
+                            ✕
+                        </button>
+                    </Tooltip>
                 </div>
 
                 <div className="p-5 space-y-5">
@@ -399,8 +414,9 @@ const SellerRow = memo<{
                             {meta.icon} {meta.label}
                         </span>
                     </div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate" dir="ltr">
-                        {seller.phone ?? '—'}
+                    <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate flex items-center gap-1.5" dir="ltr">
+                        <span>{seller.phone ?? '—'}</span>
+                        {seller.phone && <CopyButton value={seller.phone} label="الجوال" size="xs" />}
                     </div>
                     {expiresAt && daysLeft !== null && (
                         <div

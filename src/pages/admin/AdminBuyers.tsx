@@ -10,8 +10,12 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
+import { useEscClose } from '../../hooks/useEscClose';
+import { CopyButton } from '../../components/admin/CopyButton';
+import { Tooltip } from '../../components/admin/Tooltip';
 
 // ============================================================
 // User Edit Modal
@@ -21,7 +25,7 @@ const UserEditModal = memo<{
     onClose: () => void;
     onSaved: () => void;
 }>(({ user, onClose, onSaved }) => {
-    const { customAlert } = useApp();
+    const { customAlert, customConfirm } = useApp();
     const [form, setForm] = useState({
         name: user.name ?? '',
         phone: user.phone ?? '',
@@ -31,6 +35,24 @@ const UserEditModal = memo<{
         admin_notes: '',
     });
     const [saving, setSaving] = useState(false);
+
+    // Track whether the form has unsaved edits so an accidental Esc/click
+    // can't quietly wipe what the admin typed.
+    const isDirty =
+        form.name !== (user.name ?? '') ||
+        form.phone !== (user.phone ?? '') ||
+        form.email !== (user.email ?? '') ||
+        form.address !== (user.address ?? '') ||
+        form.is_suspended !== !!user.is_suspended ||
+        form.admin_notes !== '';
+
+    const handleCloseRequest = useCallback(async () => {
+        if (!isDirty) { onClose(); return; }
+        const ok = await customConfirm('لديك تغييرات غير محفوظة. هل تريد الإغلاق دون حفظ؟');
+        if (ok) onClose();
+    }, [isDirty, onClose, customConfirm]);
+
+    useEscClose(true, handleCloseRequest);
 
     const handleSave = async () => {
         setSaving(true);
@@ -49,17 +71,27 @@ const UserEditModal = memo<{
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-[var(--card-bg)] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
                 {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-5 rounded-t-3xl flex items-center justify-between">
-                    <div>
-                        <div className="text-xs opacity-80">تعديل مشتري</div>
-                        <div className="text-xl font-bold">{user.name}</div>
+                <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-5 rounded-t-3xl flex items-center justify-between z-10">
+                    <div className="min-w-0">
+                        <div className="text-xs opacity-80 flex items-center gap-1.5">
+                            تعديل مشتري
+                            {isDirty && (
+                                <span className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                                    ● غير محفوظ
+                                </span>
+                            )}
+                        </div>
+                        <div className="text-xl font-bold truncate">{user.name}</div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl"
-                    >
-                        ✕
-                    </button>
+                    <Tooltip text="إغلاق (Esc)">
+                        <button
+                            onClick={handleCloseRequest}
+                            aria-label="إغلاق"
+                            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl flex-shrink-0"
+                        >
+                            ✕
+                        </button>
+                    </Tooltip>
                 </div>
 
                 {/* Stats badge row */}
@@ -147,17 +179,17 @@ const UserEditModal = memo<{
                 {/* Footer */}
                 <div className="sticky bottom-0 p-4 bg-[var(--body-bg)] rounded-b-3xl flex gap-3 border-t border-[var(--border-color)]">
                     <button
-                        onClick={onClose}
+                        onClick={handleCloseRequest}
                         className="flex-1 py-3 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:bg-[var(--gray-100)]"
                     >
-                        إلغاء
+                        إلغاء (Esc)
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={saving}
-                        className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold rounded-xl hover:shadow-lg disabled:opacity-50"
+                        disabled={saving || !isDirty}
+                        className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {saving ? 'جاري الحفظ...' : '✅ حفظ التغييرات'}
+                        {saving ? 'جاري الحفظ...' : isDirty ? '✅ حفظ التغييرات' : '— لا تغييرات —'}
                     </button>
                 </div>
             </div>
@@ -218,8 +250,9 @@ const UserRow = memo<{
                         </span>
                     )}
                 </div>
-                <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate" dir="ltr">
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate flex items-center gap-1.5" dir="ltr">
                     {user.phone ?? '—'}
+                    {user.phone && <CopyButton value={user.phone} label="الجوال" size="xs" />}
                 </div>
             </div>
             <div className="flex-shrink-0 text-left">
@@ -237,13 +270,30 @@ UserRow.displayName = 'UserRow';
 // Main Component
 // ============================================================
 const AdminBuyers: React.FC = () => {
-    const [query, setQuery] = useState('');
-    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const location = useLocation();
+    const initialQuery = useMemo(() => {
+        // Deep-link from CommandPalette: /admin?tab=buyers&q=name
+        try {
+            return new URLSearchParams(location.search).get('q') ?? '';
+        } catch { return ''; }
+    }, [location.search]);
+
+    const [query, setQuery] = useState(initialQuery);
+    const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
     const [users, setUsers] = useState<AdminUserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<AdminUserRow | null>(null);
     const [page, setPage] = useState(0);
     const PAGE_SIZE = 50;
+
+    // Sync the input whenever the URL `q` changes (covers re-navigating
+    // from the palette while already on this tab).
+    useEffect(() => {
+        if (initialQuery && initialQuery !== query) {
+            setQuery(initialQuery);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialQuery]);
 
     // Debounce search
     useEffect(() => {

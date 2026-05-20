@@ -1,39 +1,29 @@
 /**
- * AdminDashboard v9.7 — Premium Admin Center
+ * AdminDashboard v10.94 — Premium Admin Center
  *
- * الميزات:
- *  ⚡ سرعة كالبرق:
- *      - React.lazy لكل تاب → التحميل عند الطلب فقط
- *      - Suspense skeleton جميل أثناء التحميل
- *      - Memoized components → 0 re-renders لا داعي لها
- *      - Server-side cached RPC calls (TTL = 3s)
+ * What this file is:
+ *  - The top-level shell for /admin
+ *  - Owns: tab state, deep-link parsing, ⌘K palette, the reports badge,
+ *    and the Suspense fallback for lazy-loaded tabs.
  *
- *  🎨 تصميم 2026:
- *      - Glassmorphism + gradients
- *      - Rounded corners + shadows لطيفة
- *      - Live indicators (pulse animations)
- *
- *  🔒 آمن بالكامل:
- *      - كل RPC تتحقق من user_type='admin' داخل قاعدة البيانات
- *      - RLS policies صارمة
- *      - Activity log لكل عملية أدمن
- *
- *  📊 الميزات:
- *      - 4 صفحات منفصلة: Overview / Buyers / Sellers / Tools / Analytics
- *      - بحث متقدم + فلاتر
- *      - تحكم كامل بالاشتراكات (تاريخ، خصم، مبلغ، باقة) بضغطة
- *      - تحليلات لحظية مع فلاتر زمنية متقدمة
- *      - Activity feed مباشر
+ * v10.94 additions (Phase 1 of the admin redesign):
+ *  - ⌘K / Ctrl+K command palette for instant navigation + user search
+ *  - Reports tab badge (red dot when there are open reports)
+ *  - Bigger, labeled back button — no more guessing what "›" means
+ *  - Tab tooltips so the admin learns what each section holds
+ *  - Quick-action bridge (palette → "new banner" / "new campaign") wired
+ *    through localStorage so the destination tab can pick it up on mount
  */
 
 import React, { Suspense, lazy, useState, useEffect, useCallback, memo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { adminService } from '../services/adminService';
+import { CommandPalette, AdminTab } from '../components/admin/CommandPalette';
+import { Tooltip } from '../components/admin/Tooltip';
 
 // ============================================================
 // Lazy load all admin tabs — كل تاب ملف منفصل
-// التحميل يحدث فقط عند الانتقال إلى التاب
 // ============================================================
 const AdminOverview  = lazy(() => import('./admin/AdminOverview'));
 const AdminBuyers    = lazy(() => import('./admin/AdminBuyers'));
@@ -42,20 +32,23 @@ const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
 
-type Tab = 'overview' | 'buyers' | 'sellers' | 'reports' | 'analytics' | 'tools';
+type Tab = AdminTab;
 
-const TABS: Array<{
+interface TabDef {
     value: Tab;
     label: string;
     icon: string;
     gradient: string;
-}> = [
-    { value: 'overview',  label: 'الرئيسية',   icon: '🏠', gradient: 'from-emerald-500 to-teal-600' },
-    { value: 'buyers',    label: 'المشترون',   icon: '🛒', gradient: 'from-blue-500 to-indigo-600' },
-    { value: 'sellers',   label: 'البائعون',   icon: '🏪', gradient: 'from-purple-500 to-fuchsia-600' },
-    { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩', gradient: 'from-red-500 to-rose-600' },
-    { value: 'analytics', label: 'التحليلات',  icon: '📊', gradient: 'from-amber-500 to-orange-600' },
-    { value: 'tools',     label: 'الأدوات',    icon: '🛠️', gradient: 'from-pink-500 to-rose-600' },
+    hint: string;
+}
+
+const TABS: TabDef[] = [
+    { value: 'overview',  label: 'الرئيسية',          icon: '🏠',  gradient: 'from-emerald-500 to-teal-600',     hint: 'نظرة عامة لحظية على المنصة' },
+    { value: 'buyers',    label: 'المشترون',          icon: '🛒',  gradient: 'from-blue-500 to-indigo-600',      hint: 'بحث وتعديل أي مشتري' },
+    { value: 'sellers',   label: 'البائعون',          icon: '🏪',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'تحكم بالاشتراكات والباقات' },
+    { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة' },
+    { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية' },
+    { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات' },
 ];
 
 // ============================================================
@@ -75,38 +68,69 @@ const LoadingSkeleton = memo(() => (
 LoadingSkeleton.displayName = 'LoadingSkeleton';
 
 // ============================================================
-// Tab Navigation — pill style مع indicators
+// Tab Navigation — pill style + tooltips + badges + ⌘K trigger
 // ============================================================
-const TabNav = memo<{
+interface TabNavProps {
     active: Tab;
     onChange: (t: Tab) => void;
     onBack: () => void;
-}>(({ active, onChange, onBack }) => (
+    onOpenPalette: () => void;
+    reportsBadge: number;
+}
+
+const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, reportsBadge }) => (
     <div className="sticky top-0 z-20 -mx-4 px-4 pt-2 pb-3 bg-card-glass border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">
-            <button
-                onClick={onBack}
-                aria-label="رجوع"
-                className="flex-shrink-0 w-10 h-10 rounded-xl bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-primary)] flex items-center justify-center transition-all"
-            >
-                <span className="text-xl">›</span>
-            </button>
+            <Tooltip text="رجوع للخلف">
+                <button
+                    onClick={onBack}
+                    aria-label="رجوع"
+                    className="flex-shrink-0 h-10 px-3 rounded-xl bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-primary)] flex items-center gap-1.5 transition-all font-bold text-sm"
+                >
+                    <span className="text-lg leading-none">→</span>
+                    <span className="hidden sm:inline">رجوع</span>
+                </button>
+            </Tooltip>
+
+            <Tooltip text="بحث سريع — اضغط ⌘K أو Ctrl+K">
+                <button
+                    onClick={onOpenPalette}
+                    aria-label="فتح البحث السريع"
+                    className="flex-shrink-0 h-10 px-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border border-emerald-200 text-emerald-700 flex items-center gap-1.5 transition-all font-bold text-sm"
+                >
+                    <span className="text-base">🔎</span>
+                    <span className="hidden sm:inline">بحث</span>
+                    <kbd className="hidden md:inline-block text-[10px] bg-white/70 border border-emerald-200 px-1.5 py-0.5 rounded">⌘K</kbd>
+                </button>
+            </Tooltip>
+
             <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1">
                 {TABS.map((tab) => {
                     const isActive = active === tab.value;
+                    const showBadge = tab.value === 'reports' && reportsBadge > 0;
                     return (
-                        <button
-                            key={tab.value}
-                            onClick={() => onChange(tab.value)}
-                            className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                                isActive
-                                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
-                                    : 'text-[var(--text-secondary)] hover:bg-[var(--gray-100)]'
-                            }`}
-                        >
-                            <span className="text-lg ml-1">{tab.icon}</span>
-                            {tab.label}
-                        </button>
+                        <Tooltip key={tab.value} text={tab.hint}>
+                            <button
+                                onClick={() => onChange(tab.value)}
+                                className={`relative flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                                    isActive
+                                        ? `bg-gradient-to-r ${tab.gradient} text-white shadow-md`
+                                        : 'text-[var(--text-secondary)] hover:bg-[var(--gray-100)]'
+                                }`}
+                            >
+                                <span className="text-lg ml-1">{tab.icon}</span>
+                                {tab.label}
+                                {showBadge && (
+                                    <span
+                                        className={`absolute -top-1 -left-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[10px] font-extrabold ${
+                                            isActive ? 'bg-white text-red-600' : 'bg-red-500 text-white'
+                                        } shadow ring-2 ring-[var(--body-bg)]`}
+                                    >
+                                        {reportsBadge > 99 ? '99+' : reportsBadge}
+                                    </span>
+                                )}
+                            </button>
+                        </Tooltip>
                     );
                 })}
             </div>
@@ -123,9 +147,10 @@ const AdminDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
+    const [paletteOpen, setPaletteOpen] = useState(false);
+    const [reportsBadge, setReportsBadge] = useState(0);
 
-    // Deep-link support: /admin?tab=reports (used by the report-threshold
-    // admin notification) opens the right tab on load.
+    // Deep-link support: /admin?tab=reports opens the right tab on load.
     useEffect(() => {
         const t = new URLSearchParams(location.search).get('tab');
         if (t && ['overview', 'buyers', 'sellers', 'reports', 'analytics', 'tools'].includes(t)) {
@@ -151,20 +176,48 @@ const AdminDashboard: React.FC = () => {
         return () => clearInterval(id);
     }, [user]);
 
+    // Reports badge — poll the open count every 60s. Cheap RPC, capped at 100.
+    useEffect(() => {
+        if (user?.user_type !== 'admin' && user?.userType !== 'admin') return;
+        let alive = true;
+        const refresh = async () => {
+            const rows = await adminService.listReports({ status: 'open', limit: 100 });
+            if (alive) setReportsBadge(rows.length);
+        };
+        refresh();
+        const id = setInterval(refresh, 60000);
+        return () => { alive = false; clearInterval(id); };
+    }, [user]);
+
+    // ⌘K / Ctrl+K opens the palette anywhere inside /admin.
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                setPaletteOpen((v) => !v);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
+
     // IMPORTANT: every hook must run on every render (Rules of Hooks).
-    // Define handleNavigate ABOVE the early returns or React throws
-    // "Rendered more hooks than during the previous render" when isAuthReady
-    // flips from false to true (different number of hooks each render).
-    const handleNavigate = useCallback((t: 'buyers' | 'sellers' | 'tools' | 'analytics') => {
+    const handleNavigate = useCallback((t: AdminTab) => {
         setActiveTab(t);
         if (typeof window !== 'undefined') {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     }, []);
 
-    // Auth gate. While the Supabase session is still hydrating after a hard
-    // refresh, `user` is briefly null — show a soft loader instead of an
-    // "Access denied" flash that confuses returning admins.
+    // Quick-action bridge for the palette. We stash a one-shot intent
+    // in sessionStorage; the destination tab reads + clears it on mount.
+    const handleQuickAction = useCallback((id: string) => {
+        try {
+            sessionStorage.setItem('taki:admin:quick_action', id);
+        } catch {}
+    }, []);
+
+    // Auth gate.
     const userType = user?.user_type ?? user?.userType;
     if (!isAuthReady) {
         return (
@@ -205,7 +258,13 @@ const AdminDashboard: React.FC = () => {
     return (
         <div className="min-h-screen bg-[var(--body-bg)] pb-24" dir="rtl">
             <div className="max-w-7xl mx-auto px-4 pt-3">
-                <TabNav active={activeTab} onChange={setActiveTab} onBack={handleBack} />
+                <TabNav
+                    active={activeTab}
+                    onChange={setActiveTab}
+                    onBack={handleBack}
+                    onOpenPalette={() => setPaletteOpen(true)}
+                    reportsBadge={reportsBadge}
+                />
 
                 <div className="mt-4">
                     <Suspense fallback={<LoadingSkeleton />}>
@@ -218,6 +277,13 @@ const AdminDashboard: React.FC = () => {
                     </Suspense>
                 </div>
             </div>
+
+            <CommandPalette
+                open={paletteOpen}
+                onClose={() => setPaletteOpen(false)}
+                onNavigate={handleNavigate}
+                onQuickAction={handleQuickAction}
+            />
         </div>
     );
 };

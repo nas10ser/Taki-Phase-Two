@@ -12,6 +12,8 @@ import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
+import { useEscClose } from '../../hooks/useEscClose';
+import { Tooltip } from '../../components/admin/Tooltip';
 
 // ============================================================
 // Setting Toggle Card
@@ -120,6 +122,10 @@ const BannerModal: React.FC<{
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Esc closes the modal. Banner draft is purely client-side until the
+    // explicit "نشر" button — no DB write happens on close.
+    useEscClose(true, onClose);
 
     const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -359,6 +365,10 @@ const CampaignModal: React.FC<{
         is_active: initial?.is_active ?? true,
     }));
     const [saving, setSaving] = useState(false);
+
+    // Esc closes the campaign modal — same rationale as the banner modal:
+    // nothing persists until "نشر" / "تعديل" is pressed.
+    useEscClose(true, onClose);
 
     const set = <K extends keyof CampaignDraft>(k: K, v: CampaignDraft[K]) =>
         setForm((prev) => ({ ...prev, [k]: v }));
@@ -701,6 +711,23 @@ const AdminTools: React.FC = () => {
     useEffect(() => {
         fetchAll();
     }, [fetchAll]);
+
+    // Quick-action bridge from the ⌘K command palette. Each entry is a
+    // one-shot intent: read it, clear it, act on it. Anything we don't
+    // recognise is ignored silently — the user just lands on the tools
+    // tab, which is still useful.
+    useEffect(() => {
+        try {
+            const intent = sessionStorage.getItem('taki:admin:quick_action');
+            if (!intent) return;
+            sessionStorage.removeItem('taki:admin:quick_action');
+            if (intent === 'new-banner') {
+                setBannerModalOpen(true);
+            } else if (intent === 'new-campaign') {
+                setCampaignModal({ open: true, initial: null });
+            }
+        } catch {}
+    }, []);
 
     const togglePayment = async () => {
         const newValue = !paymentEnabled;
