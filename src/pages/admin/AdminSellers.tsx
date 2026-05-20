@@ -26,6 +26,23 @@ import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { PinButton } from '../../components/admin/PinButton';
+import { ExportButton } from '../../components/admin/ExportButton';
+import { CsvColumn } from '../../utils/csvExport';
+
+const SELLER_CSV_COLUMNS: CsvColumn<AdminUserRow>[] = [
+    { header: 'المتجر',           accessor: (s) => s.shop ?? '' },
+    { header: 'اسم المالك',       accessor: (s) => s.name },
+    { header: 'الجوال',           accessor: (s) => s.phone ?? '' },
+    { header: 'الإيميل',          accessor: (s) => s.email ?? '' },
+    { header: 'الباقة',           accessor: (s) => s.subscription_plan ?? 'free' },
+    { header: 'تنتهي في',         accessor: (s) => s.subscription_expires_at ?? '' },
+    { header: 'المبلغ الشهري',    accessor: (s) => s.subscription_amount ?? 0 },
+    { header: 'الخصم %',          accessor: (s) => s.discount_percentage ?? 0 },
+    { header: 'معلّق',            accessor: (s) => (s.is_suspended ? 'نعم' : 'لا') },
+    { header: 'آخر نشاط',         accessor: (s) => s.last_active_at ?? '' },
+    { header: 'تاريخ التسجيل',    accessor: (s) => s.created_at ?? '' },
+    { header: 'المعرّف',           accessor: (s) => s.id },
+];
 
 type FilterTab = 'all' | 'premium' | 'trial' | 'free' | 'suspended';
 
@@ -1306,11 +1323,20 @@ const AdminSellers: React.FC = () => {
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🏪 إدارة البائعين</h1>
-                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                    تحكم كامل بالاشتراكات والخصومات بضغطة زر واحدة
-                </p>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🏪 إدارة البائعين</h1>
+                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
+                        تحكم كامل بالاشتراكات والخصومات بضغطة زر واحدة
+                    </p>
+                </div>
+                <ExportButton
+                    rows={filtered}
+                    columns={SELLER_CSV_COLUMNS}
+                    filenameStem="taki-sellers"
+                    accent="purple"
+                    tooltip="تنزيل القائمة المعروضة حالياً كملف CSV — يحتوي على الباقة، تاريخ الانتهاء، الخصم، MRR لكل تاجر"
+                />
             </div>
 
             {/* Stats strip */}

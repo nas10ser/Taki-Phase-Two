@@ -19,6 +19,22 @@ import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { PinButton } from '../../components/admin/PinButton';
+import { ExportButton } from '../../components/admin/ExportButton';
+import { CsvColumn } from '../../utils/csvExport';
+
+// CSV layout for buyer exports. Ordering here = column order in Excel.
+const BUYER_CSV_COLUMNS: CsvColumn<AdminUserRow>[] = [
+    { header: 'الاسم',          accessor: (u) => u.name },
+    { header: 'الجوال',         accessor: (u) => u.phone ?? '' },
+    { header: 'الإيميل',        accessor: (u) => u.email ?? '' },
+    { header: 'العنوان',        accessor: (u) => u.address ?? '' },
+    { header: 'عدد الحجوزات',   accessor: (u) => u.total_bookings ?? 0 },
+    { header: 'إجمالي الصرف',   accessor: (u) => u.total_spent ?? 0 },
+    { header: 'معلّق',          accessor: (u) => (u.is_suspended ? 'نعم' : 'لا') },
+    { header: 'آخر نشاط',       accessor: (u) => u.last_active_at ?? '' },
+    { header: 'تاريخ التسجيل',  accessor: (u) => u.created_at ?? '' },
+    { header: 'المعرّف',         accessor: (u) => u.id },
+];
 
 // ============================================================
 // User Edit Modal
@@ -501,18 +517,27 @@ const AdminBuyers: React.FC = () => {
                         ابحث، اعرض، عدّل أي مشتري في المنصة
                     </p>
                 </div>
-                <Tooltip text={selectionMode ? 'إلغاء وضع التحديد' : 'تحديد عدة حسابات لإجراء جماعي'}>
-                    <button
-                        onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
-                        className={`px-4 h-10 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
-                            selectionMode
-                                ? 'bg-blue-600 text-white shadow'
-                                : 'bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-blue-300 text-[var(--text-secondary)]'
-                        }`}
-                    >
-                        {selectionMode ? '✕ خروج من التحديد' : '☑ تحديد متعدد'}
-                    </button>
-                </Tooltip>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <ExportButton
+                        rows={filteredUsers}
+                        columns={BUYER_CSV_COLUMNS}
+                        filenameStem="taki-buyers"
+                        accent="blue"
+                        tooltip="تنزيل القائمة المعروضة حالياً كملف CSV يفتح في Excel — ستحتوي على كل الحسابات بعد تطبيق البحث والفلاتر"
+                    />
+                    <Tooltip text={selectionMode ? 'إلغاء وضع التحديد' : 'تحديد عدة حسابات لإجراء جماعي'}>
+                        <button
+                            onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+                            className={`px-4 h-10 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
+                                selectionMode
+                                    ? 'bg-blue-600 text-white shadow'
+                                    : 'bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-blue-300 text-[var(--text-secondary)]'
+                            }`}
+                        >
+                            {selectionMode ? '✕ خروج من التحديد' : '☑ تحديد متعدد'}
+                        </button>
+                    </Tooltip>
+                </div>
             </div>
 
             {/* Stats strip */}

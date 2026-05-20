@@ -13,6 +13,9 @@
 
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { adminService, LiveStats, TimelinePoint, ActivityRow } from '../../services/adminService';
+import { ExportButton } from '../../components/admin/ExportButton';
+import { Tooltip } from '../../components/admin/Tooltip';
+import { CsvColumn } from '../../utils/csvExport';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -101,6 +104,30 @@ const LiveCounter = memo<{ value: number; label: string; gradient: string }>(({ 
 ));
 LiveCounter.displayName = 'LiveCounter';
 
+// Activity is an admin action when its name starts with `admin_`. That's
+// the convention the DB triggers + RPCs use when logging actions taken
+// from this panel.
+const isAdminAction = (a: string) => typeof a === 'string' && a.startsWith('admin_');
+
+const ACTIVITY_CSV_COLUMNS: CsvColumn<ActivityRow>[] = [
+    { header: 'الوقت',         accessor: (r) => r.created_at },
+    { header: 'المستخدم',      accessor: (r) => r.user_name ?? '' },
+    { header: 'نوع الحساب',    accessor: (r) => r.user_type ?? '' },
+    { header: 'الإجراء',       accessor: (r) => r.action },
+    { header: 'النوع',         accessor: (r) => r.entity_type ?? '' },
+    { header: 'معرّف العنصر',  accessor: (r) => r.entity_id ?? '' },
+    { header: 'بيانات إضافية', accessor: (r) => r.metadata ? JSON.stringify(r.metadata) : '' },
+];
+
+const TOP_PERF_CSV_COLUMNS: CsvColumn<any>[] = [
+    { header: 'الترتيب',       accessor: (_r: any) => '' }, // filled by caller
+    { header: 'الاسم',         accessor: (r: any) => r.shop ?? r.name ?? '' },
+    { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
+    { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
+    { header: 'عدد العروض',    accessor: (r: any) => r.deals_count ?? '' },
+    { header: 'المعرّف',        accessor: (r: any) => r.id },
+];
+
 // ============================================================
 // Main Component
 // ============================================================
@@ -113,6 +140,7 @@ const AdminAnalytics: React.FC = () => {
     const [range, setRange] = useState<TimeRange>('24hour');
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
+    const [auditOnly, setAuditOnly] = useState(false);
 
     // Compute timeline range
     const { from, to, bucket } = useMemo(() => {
@@ -360,53 +388,153 @@ const AdminAnalytics: React.FC = () => {
                 </div>
             </div>
 
-            {/* Activity Feed */}
-            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                    ⚡ النشاط اللحظي
-                    <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                        Live
-                    </span>
-                </h3>
-                <div className="divide-y divide-[var(--border-color)] max-h-96 overflow-y-auto">
-                    {activity.length === 0 ? (
-                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">
-                            في انتظار النشاطات...
-                        </div>
-                    ) : (
-                        activity.map((row) => (
-                            <div key={row.id} className="flex gap-3 p-3 text-sm">
-                                <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0 text-base">
-                                    {actionIcon(row.action)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-[var(--text-primary)] truncate">
-                                        {row.user_name ?? 'زائر'}
-                                        <span className="font-normal text-[var(--text-secondary)] ml-1">
-                                            {' '}
-                                            {actionLabel(row.action)}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="text-xs text-[var(--gray-400)] self-center tabular-nums whitespace-nowrap">
-                                    {timeAgo(row.created_at)}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
+            {/* Activity Feed + Audit Log toggle */}
+            <ActivityFeed
+                activity={activity}
+                auditOnly={auditOnly}
+                onToggleAuditOnly={() => setAuditOnly((v) => !v)}
+            />
+
+            {/* Top performers — exportable */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 -mt-2">
+                <ExportButton
+                    rows={topSellers.map((s: any, i: number) => ({ ...s, rank: i + 1 }))}
+                    columns={[
+                        { header: 'الترتيب',       accessor: (r: any) => r.rank },
+                        { header: 'اسم المتجر',    accessor: (r: any) => r.shop ?? r.name ?? '' },
+                        { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
+                        { header: 'عدد العروض',    accessor: (r: any) => r.deals_count ?? 0 },
+                        { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
+                        { header: 'المعرّف',        accessor: (r: any) => r.id },
+                    ]}
+                    filenameStem="taki-top-sellers"
+                    label="🏆 تصدير أعلى البائعين"
+                    accent="purple"
+                    tooltip="تنزيل قائمة أعلى 10 بائعين الحالية كـCSV"
+                />
+                <ExportButton
+                    rows={topBuyers.map((b: any, i: number) => ({ ...b, rank: i + 1 }))}
+                    columns={[
+                        { header: 'الترتيب',       accessor: (r: any) => r.rank },
+                        { header: 'الاسم',         accessor: (r: any) => r.name ?? '' },
+                        { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
+                        { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
+                        { header: 'المعرّف',        accessor: (r: any) => r.id },
+                    ]}
+                    filenameStem="taki-top-buyers"
+                    label="💎 تصدير أعلى المشترين"
+                    accent="blue"
+                    tooltip="تنزيل قائمة أعلى 10 مشترين الحالية كـCSV"
+                />
             </div>
         </div>
     );
 };
 
+// ============================================================
+// ActivityFeed — shows all activity OR admin-only "audit log"
+// ============================================================
+const ActivityFeed = memo<{
+    activity: ActivityRow[];
+    auditOnly: boolean;
+    onToggleAuditOnly: () => void;
+}>(({ activity, auditOnly, onToggleAuditOnly }) => {
+    const filtered = useMemo(
+        () => (auditOnly ? activity.filter((r) => isAdminAction(r.action)) : activity),
+        [activity, auditOnly],
+    );
+    return (
+        <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <h3 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
+                    {auditOnly ? '👑 سجل تعديلات الأدمن' : '⚡ النشاط اللحظي'}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        auditOnly ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                        {auditOnly ? `${filtered.length} عملية` : 'Live'}
+                    </span>
+                </h3>
+                <div className="flex items-center gap-2">
+                    <Tooltip text={auditOnly ? 'اعرض كل نشاطات المستخدمين' : 'اعرض فقط ما عدّله الأدمن (اشتراكات، حسابات، إعدادات)'}>
+                        <button
+                            onClick={onToggleAuditOnly}
+                            className={`px-3 h-9 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                                auditOnly
+                                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow'
+                                    : 'bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)]'
+                            }`}
+                        >
+                            {auditOnly ? '✓ أدمن فقط' : '👑 تعديلات الأدمن فقط'}
+                        </button>
+                    </Tooltip>
+                    <ExportButton
+                        rows={filtered}
+                        columns={ACTIVITY_CSV_COLUMNS}
+                        filenameStem={auditOnly ? 'taki-admin-audit' : 'taki-activity'}
+                        label="📥 CSV"
+                        accent="emerald"
+                        tooltip={auditOnly
+                            ? 'تنزيل سجل تعديلات الأدمن كملف CSV — مفيد للأرشيف والمراجعات'
+                            : 'تنزيل سجل النشاط الكامل كملف CSV'}
+                    />
+                </div>
+            </div>
+            <div className="divide-y divide-[var(--border-color)] max-h-96 overflow-y-auto">
+                {filtered.length === 0 ? (
+                    <div className="p-8 text-center text-[var(--gray-400)] text-sm font-bold">
+                        {auditOnly
+                            ? 'لا توجد تعديلات أدمن في الفترة الحالية'
+                            : 'في انتظار النشاطات...'}
+                    </div>
+                ) : (
+                    filtered.map((row) => (
+                        <div key={row.id} className="flex gap-3 p-3 text-sm">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-base ${
+                                isAdminAction(row.action) ? 'bg-indigo-50' : 'bg-purple-50'
+                            }`}>
+                                {actionIcon(row.action)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-[var(--text-primary)] truncate">
+                                    {row.user_name ?? 'زائر'}
+                                    <span className="font-normal text-[var(--text-secondary)] ml-1">
+                                        {' '}
+                                        {actionLabel(row.action)}
+                                    </span>
+                                </div>
+                                {row.entity_id && (
+                                    <div className="text-[10px] text-[var(--gray-400)] truncate mt-0.5" dir="ltr">
+                                        {row.entity_type} · {row.entity_id.slice(0, 24)}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="text-xs text-[var(--gray-400)] self-center tabular-nums whitespace-nowrap">
+                                {timeAgo(row.created_at)}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+});
+ActivityFeed.displayName = 'ActivityFeed';
+
 function actionIcon(a: string): string {
     const map: Record<string, string> = {
         login: '🔓', register: '✨', book: '🎟️', cancel_booking: '❌',
         view_deal: '👀', add_deal: '➕', edit_deal: '✏️', delete_deal: '🗑️',
-        follow: '⭐', rate: '💬', admin_apply_subscription: '👑',
+        follow: '⭐', rate: '💬',
+        // Admin actions — distinct icons to make audit log scannable.
+        admin_apply_subscription: '👑',
+        admin_update_user: '🛠️',
+        admin_soft_delete_user: '🗑️',
+        admin_set_report_status: '🚩',
+        admin_set_complaint_status: '📣',
+        admin_set_platform_setting: '⚙️',
+        admin_bulk_subscription: '⚡',
     };
-    return map[a] ?? '•';
+    return map[a] ?? (a.startsWith('admin_') ? '👑' : '•');
 }
 function actionLabel(a: string): string {
     const map: Record<string, string> = {
@@ -420,7 +548,14 @@ function actionLabel(a: string): string {
         delete_deal: 'حذف عرضاً',
         follow: 'تابع متجراً',
         rate: 'قيّم عرضاً',
+        // Admin labels — used by the audit log view.
         admin_apply_subscription: 'طبّق اشتراكاً',
+        admin_update_user: 'عدّل بيانات مستخدم',
+        admin_soft_delete_user: 'حذف مستخدم',
+        admin_set_report_status: 'غيّر حالة بلاغ',
+        admin_set_complaint_status: 'غيّر حالة شكوى',
+        admin_set_platform_setting: 'عدّل إعداد منصة',
+        admin_bulk_subscription: 'طبّق اشتراكاً جماعياً',
     };
     return map[a] ?? a;
 }
