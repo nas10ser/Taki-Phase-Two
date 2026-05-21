@@ -1700,6 +1700,18 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
 .dark-mode .text-orange-600,
 .dark-mode .text-orange-700  { color: #fb923c; }
 
+/* Deep "-900" text colours used in legal callout cards (Refund principle box,
+   "Important notice" amber box, "How subscription works" box). Without these
+   overrides the dark text on a light tint becomes unreadable in dark mode. */
+.dark-mode .text-emerald-900 { color: #ffffff; }
+.dark-mode .text-emerald-800 { color: #d1fae5; }
+.dark-mode .text-amber-900   { color: #ffffff; }
+.dark-mode .text-amber-800   { color: #fef3c7; }
+.dark-mode .text-red-900     { color: #ffffff; }
+.dark-mode .text-red-800     { color: #fee2e2; }
+.dark-mode .text-blue-900    { color: #ffffff; }
+.dark-mode .text-blue-800    { color: #dbeafe; }
+
 /* shadow softening on dark mode for admin cards */
 .dark-mode .shadow-sm  { box-shadow: 0 1px 2px rgba(0,0,0,.5); }
 .dark-mode .shadow,

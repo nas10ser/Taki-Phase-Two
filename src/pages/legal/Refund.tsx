@@ -239,14 +239,14 @@ const Refund: React.FC = () => {
                     'بعد نشر أيّ عرض على المنصّة (ولو عرضاً واحداً، ولو لدقيقة) — لأنّه استفاد من الخدمة المدفوعة.',
                     'عند قرار التاجر إلغاء الاشتراك في أيّ يوم خلال الشهر المدفوع — يبقى الاشتراك نافذاً للنهاية ولا يُسترَدّ جزء منه.',
                     'عند تعليق حساب التاجر بسبب مخالفة شروط الاستخدام أو الأنظمة السعودية — لا يُسترَدّ المبلغ المتبقّي من الفترة المدفوعة.',
-                    'بعد مرور 14 يوماً على تاريخ المعاملة — حتى لو لم يستخدم التاجر الخدمة، تسقط الفترة النظامية للمطالبة.',
+                    'بعد مرور 7 أيام على تاريخ المعاملة — حتى لو لم يستخدم التاجر الخدمة، تَسقط الفترة النظامية للمطالبة وفقاً لحقّ العدول المنصوص عليه في نظام التجارة الإلكترونية السعودي.',
                     'إذا كان السبب «غيّرت رأيي»، «وجدت بديلاً أرخص»، «النتائج لم ترقَ لتوقّعاتي»، «اكتسبت زبائن أقلّ من المتوقّع» — هذه ليست أسباباً موجبة للاسترداد بعد إتمام الدفع.',
                 ] : [
                     'After payment has been completed — because the service starts immediately and the merchant\'s listing appears on the platform.',
                     'After publishing any offer on the platform (even one offer, even for one minute) — because the merchant has benefited from the paid service.',
                     'Where the merchant chooses to cancel the subscription on any day of the paid month — the subscription remains effective until the end and no part of it is refunded.',
                     'Where the merchant\'s account is suspended for breach of the Terms of Service or Saudi laws — no portion of the remaining paid period is refunded.',
-                    'After 14 days have elapsed since the transaction date — even if the merchant has not used the service, the statutory window for claiming has expired.',
+                    'After 7 days have elapsed since the transaction date — even if the merchant has not used the service, the statutory window for claiming has expired, in line with the right of withdrawal under the Saudi E-Commerce Law.',
                     'Where the reason is «I changed my mind», «I found a cheaper alternative», «results fell short of expectations», or «I gained fewer customers than expected» — these are not valid grounds for refund after payment.',
                 ]} />
             </Section>
@@ -270,19 +270,19 @@ const Refund: React.FC = () => {
                 <Bullets items={isRTL ? [
                     <><strong>خطأ تقنيّ من المنصّة</strong>: سحب المبلغ مرّتين عن نفس الفترة، أو خصم بدون تفعيل اشتراك.</>,
                     <><strong>سحب بدون موافقة</strong>: استخدام طرف آخر بطاقة التاجر دون إذنه — مع تقديم بلاغ شرطة وتجميد البطاقة وإثبات بنكي.</>,
-                    <><strong>عطل في خدمة TAKI لأكثر من 7 أيام متواصلة</strong>: يحقّ للتاجر استرداد قيمة الأيام المُتعطّلة تناسبياً.</>,
+                    <><strong>عطل في خدمة TAKI لأكثر من 15 يوماً متواصلة</strong> (المدّة القصوى المنصوص عليها في نظام التجارة الإلكترونية السعودي للتأخير في تَنفيذ الخدمة): يحقّ للتاجر استرداد قيمة الأيام المُتعطّلة تناسبياً.</>,
                     <><strong>إنهاء حساب التاجر من قِبَل الإدارة بدون مخالفة منه</strong>: يُسترَدّ ما تبقّى من الفترة المدفوعة تناسبياً.</>,
                 ] : [
                     <><strong>A technical error of the platform</strong>: charging the amount twice for the same period, or charging without activating a subscription.</>,
                     <><strong>Unauthorised charge</strong>: a third party used the merchant's card without authorisation — supported by a police report, card freeze, and bank evidence.</>,
-                    <><strong>A TAKI service outage exceeding 7 consecutive days</strong>: the merchant is entitled to a pro-rata refund of the value of the days lost.</>,
+                    <><strong>A TAKI service outage exceeding 15 consecutive days</strong> (the maximum period for delay in service performance prescribed by the Saudi E-Commerce Law): the merchant is entitled to a pro-rata refund of the value of the days lost.</>,
                     <><strong>Termination of the merchant's account by the administration without any breach on the merchant's part</strong>: the remaining portion of the paid period is refunded pro-rata.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
                         <>
                             <strong>تُقدَّم المطالبة بالاسترداد خلال 14 يوماً</strong> من تاريخ الواقعة،
-                            عبر زرّ «📣 الشكاوى» داخل التطبيق، مع إرفاق:
+                            عبر زرّ «📣 الشكاوى» داخل التطبيق، مع إرفاق ما يَلزم من إثباتات:
                         </>
                     ) : (
                         <>
@@ -307,14 +307,14 @@ const Refund: React.FC = () => {
 
             <Section n={7} title={isRTL ? '⏱️ مدّة معالجة طلبات الاسترداد المقبولة' : '⏱️ Processing time for approved refund requests'}>
                 <Bullets items={isRTL ? [
-                    'تُراجَع الطلبات خلال 3–7 أيام عمل من استلامها كاملةً.',
-                    'في حال قبول الطلب، يُحوَّل المبلغ خلال 7–14 يوم عمل إلى نفس وسيلة الدفع الأصلية.',
-                    'قد تختلف المدّة الفعلية بحسب البنك أو شبكة البطاقة (مدى / Visa / Mastercard).',
+                    'تُراجَع الطلبات خلال 14 يوم عمل من استلامها كاملةً مع كامل المستندات.',
+                    'في حال قبول الطلب، يُحوَّل المبلغ خلال 14 يوم عمل إلى نفس وسيلة الدفع الأصلية.',
+                    'قد تُضاف حتى 3 أيام عمل إضافية لإتمام الإيداع من جانب البنك أو شبكة البطاقة (مدى / Visa / Mastercard) وفقاً للوائح البنك المركزي السعودي (SAMA).',
                     'لا تتحمّل TAKI أيّ تأخير من الجهة البنكية بعد إتمام التحويل من جانبها.',
                 ] : [
-                    'Requests are reviewed within 3–7 business days of being received in complete form.',
-                    'If accepted, the amount is transferred within 7–14 business days to the same original payment method.',
-                    'Actual timing may vary depending on the bank or card network (mada / Visa / Mastercard).',
+                    'Requests are reviewed within 14 business days of being received complete with all supporting documents.',
+                    'If accepted, the amount is transferred within 14 business days to the same original payment method.',
+                    'Up to 3 additional business days may be required for the deposit to settle on the bank or card-network side (mada / Visa / Mastercard) in accordance with the Saudi Central Bank (SAMA) regulations.',
                     'TAKI bears no responsibility for any delay caused by the banking side once the transfer has been completed on TAKI\'s end.',
                 ]} />
             </Section>
