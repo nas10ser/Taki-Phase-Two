@@ -288,12 +288,12 @@ const merchantFAQ_AR: QA[] = [
             <li>ادخل صفحة التسجيل واختر «تاجر».</li>
             <li>أَدخِل بيانات متجرك: الاسم، الفئة، الموقع، الفروع، صور تعريفية.</li>
             <li>تَوافق على الشروط القانونية الإلزامية.</li>
-            <li>تنتظر مراجعة فريق الإدارة لتفعيل الحساب. قد تُطلب وثائق إضافية للتحقّق من النشاط (سجلّ تجاري، وثيقة عمل حرّ، رخصة بلدية بحسب النشاط).</li>
+            <li>يُفعَّل الحساب فوراً بعد الإكمال، وتَبدأ باستخدام لوحة التاجر مباشرةً. وللإدارة الحقّ في طَلب أيّ وثائق نظامية لاحقاً عند الحاجة.</li>
         </ol>,
     },
     {
         q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <p>التسجيل والاستخدام الأساسي حالياً <strong>مجاني</strong>. عند تفعيل الاشتراك المدفوع مستقبلاً، يكون اختيارياً، ويُعلَن سعره بوضوح قبل أيّ خصم. النموذج المعتمد: «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية المدّة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p>يَحصل كلّ تاجر جديد على <strong>تجربة مجانية لمدّة 14 يوماً</strong> يَستخدم خلالها كلّ ميزات لوحة التاجر دون أيّ دفع. بعد انتهاء التَجربة، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. يُعلَن السعر بوضوح قبل أيّ خصم، والنموذج المعتمَد: «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية المدّة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
     },
     {
         q: 'كيف أُضيف عرضاً جديداً؟',
@@ -308,7 +308,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'كيف أستقبل الحجوزات؟',
-        a: <p>تَصِلك إشعارات فورية في التطبيق وعبر الإيميل عند كلّ حجز جديد. من «لوحة التاجر» ← «الحجوزات» تَرى كل الحجوزات الواردة مع بيانات المشتري الأساسية ووقت الحجز. يمكنك التواصل مع المشتري عبر شات الحجز لتأكيد التفاصيل.</p>,
+        a: <p>تَصِلك إشعارات فورية داخل التطبيق عند كلّ حجز جديد. من «لوحة التاجر» ← «الطلبات» تَرى كل الحجوزات الواردة مع بيانات المشتري الأساسية (الاسم ورقم الجوّال) ووقت الحجز. يمكنك التواصل مع المشتري عبر شات الحجز لتأكيد التفاصيل.</p>,
     },
     {
         q: 'ماذا أفعل عند حضور المشتري لاستلام العرض؟',
@@ -324,7 +324,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني الردّ على تقييمات المشترين؟',
-        a: <p>نعم. من «لوحة التاجر» ← «التقييمات» يمكنك الاطّلاع على كل التقييمات والردّ عليها باحتراف. الردّ الهادئ والمهنيّ على التقييمات السلبية يبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>,
+        a: <p>نعم. من «لوحة التاجر» ← <strong>تَبويب «⭐ التقييمات»</strong> تَجد كلّ التَقييمات على عُروضك في مكان واحد، وتحت كلّ تَقييم زرّ <strong>«💬 الردّ على هذا التعليق»</strong> (مثل فيسبوك تماماً) — اكتب ردّك واضغط «إرسال» فيَظهر تحت التَعليق مباشرةً. الردّ الهادئ والمهنيّ على التقييمات السلبية يَبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>,
     },
     {
         q: 'هل يمكنني نَشر منتجات محظورة؟',
@@ -371,12 +371,12 @@ const merchantFAQ_EN: QA[] = [
             <li>Open the registration page and choose «Merchant».</li>
             <li>Enter your store details: name, category, location, branches, and introductory images.</li>
             <li>Accept the binding legal terms.</li>
-            <li>Wait for the admin team to review and activate the account. Additional documents may be requested to verify the activity (commercial register, freelance permit, or municipal licence depending on the activity).</li>
+            <li>The account is activated immediately on completion and you can start using the merchant dashboard right away. The administration retains the right to request regulatory documents at any later point if needed.</li>
         </ol>,
     },
     {
         q: 'Is merchant registration paid?',
-        a: <p>Currently, registration and basic use are <strong>free</strong>. When a paid subscription is enabled in the future it will be optional, and the price will be clearly disclosed before any charge. The adopted model: «Pay monthly, cancel anytime, use until end of paid month» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>Every new merchant gets a <strong>14-day free trial</strong> during which all merchant-dashboard features are available at no charge. Once the trial ends, a paid subscription is required to continue publishing and receiving bookings. Pricing is disclosed clearly before any charge, and the adopted model is: «Pay monthly, cancel anytime, use until end of paid month» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
     {
         q: 'How do I add a new offer?',
@@ -391,7 +391,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'How do I receive bookings?',
-        a: <p>You receive instant in-app and email notifications for every new booking. From the «Merchant Dashboard» → «Bookings» you can see all incoming bookings with basic buyer details and booking time. You can communicate with the buyer through the booking chat to confirm details.</p>,
+        a: <p>You receive instant in-app notifications for every new booking. From the «Merchant Dashboard» → «Orders» you can see all incoming bookings with basic buyer details (name and mobile number) and booking time. You can communicate with the buyer through the booking chat to confirm details.</p>,
     },
     {
         q: 'What do I do when the buyer arrives to collect the offer?',
@@ -407,7 +407,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Can I reply to buyers\' ratings?',
-        a: <p>Yes. From the «Merchant Dashboard» → «Ratings» you can view all ratings and reply to them professionally. A calm, professional reply to negative ratings builds trust. Do not argue or threaten — any inappropriate reply may be removed.</p>,
+        a: <p>Yes. From the «Merchant Dashboard» → the <strong>«⭐ Reviews» tab</strong>, you can see every rating on your deals in one place, with a <strong>«💬 Reply to this review»</strong> button under each one (just like Facebook). Type your reply and tap «Send» — it appears directly under the review. A calm, professional reply to negative ratings builds trust. Do not argue or threaten — any inappropriate reply may be removed.</p>,
     },
     {
         q: 'Can I publish prohibited products?',

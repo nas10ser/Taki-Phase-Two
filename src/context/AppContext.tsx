@@ -1469,7 +1469,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             bookedQuantity: quantity,
             userId,
             userName: user?.name || (user as any)?.shop || '',
-            userPhone: user?.phone || '',
+            userPhone: user?.phone || user?.contactPhone || '',
             prepTime,
             notes,
             status: 'pending' as const

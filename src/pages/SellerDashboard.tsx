@@ -107,8 +107,13 @@ const SellerDashboard: React.FC = () => {
     const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, branches, saveBranch, removeBranch } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
-    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights'>('form');
+    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
+    // Reviews tab — Facebook-style inline reply state. activeReplyId picks
+    // which rating is currently in "compose" mode; replyDrafts holds the
+    // half-typed text per-rating so switching focus doesn't lose it.
+    const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+    const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
     const [highlightedBarcode, setHighlightedBarcode] = useState<string | null>(null);
     const [scannerOpen, setScannerOpen] = useState(false);
     const [showDualPicker, setShowDualPicker] = useState(false);
@@ -192,7 +197,7 @@ const SellerDashboard: React.FC = () => {
         const editId = params.get('edit');
         if (editId) {
             setView('form');
-        } else if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights'] as const).includes(tab as any)) {
+        } else if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights' , 'reviews'] as const).includes(tab as any)) {
             setView(tab as any);
         } else if (!tab) {
             setView('form');
@@ -1738,7 +1743,7 @@ const SellerDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(10px)', borderRadius: 16, padding: 6, overflowX: 'auto', gap: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                    {(['form', 'products', 'orders', 'scanner', 'insights'] as const).map(tab => {
+                    {(['form', 'products', 'orders', 'reviews', 'scanner', 'insights'] as const).map(tab => {
                         const unreadOrdersCount = notifications.filter(n => n.userId === user?.id && !n.isRead && n.type === 'booking').length;
                         const badgeCount = tab === 'orders' ? unreadOrdersCount : 0;
 
@@ -1770,13 +1775,15 @@ const SellerDashboard: React.FC = () => {
                                     {tab === 'form' ? (editingDealId ? '✏️' : '➕') :
                                      tab === 'products' ? '📦' :
                                      tab === 'orders' ? '🔔' :
+                                     tab === 'reviews' ? '⭐' :
                                      tab === 'scanner' ? '📷' :
                                      '📊'}
                                 </span>
                                 <span style={{ whiteSpace: 'nowrap' }}>
-                                    {tab === 'form' ? (isRTL ? (editingDealId ? 'تعديل' : 'إضافة') : (editingDealId ? 'Edit' : 'Add')) : 
+                                    {tab === 'form' ? (isRTL ? (editingDealId ? 'تعديل' : 'إضافة') : (editingDealId ? 'Edit' : 'Add')) :
                                      tab === 'products' ? (isRTL ? 'عروضي' : 'Deals') :
                                      tab === 'orders' ? (isRTL ? 'الطلبات' : 'Orders') :
+                                     tab === 'reviews' ? (isRTL ? 'التقييمات' : 'Reviews') :
                                      tab === 'scanner' ? (isRTL ? 'سكانر' : 'Scanner') :
                                      (isRTL ? 'تحليلات' : 'Insights')}
                                 </span>
@@ -3135,6 +3142,140 @@ const SellerDashboard: React.FC = () => {
                                 })}
                             </div>
                         </div>
+                    </div>
+                ) : view === 'reviews' ? (
+                    // Reviews tab — aggregates every rating across this
+                    // seller's deals into one feed with a Facebook-style
+                    // inline reply box per row. Uses `addReply` from
+                    // AppContext, which already routes to the
+                    // `set_rating_reply` RPC (SECURITY DEFINER, only the
+                    // store owner can write the reply column).
+                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {(() => {
+                            const allRatings = myDeals.flatMap(d =>
+                                (d.ratings || []).map(r => ({ ...r, dealId: d.id, dealName: (d as any).itemName || (d as any).title || '' }))
+                            ).sort((a: any, b: any) => {
+                                const ta = new Date(a.createdAt || a.date || 0).getTime();
+                                const tb = new Date(b.createdAt || b.date || 0).getTime();
+                                return tb - ta;
+                            });
+
+                            if (allRatings.length === 0) {
+                                return (
+                                    <div style={{ textAlign: 'center', padding: 40, opacity: 0.6 }}>
+                                        <div style={{ fontSize: '3rem', marginBottom: 10 }}>⭐</div>
+                                        <div style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                            {isRTL ? 'لا توجد تقييمات على عروضك بعد.' : 'No reviews on your deals yet.'}
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            return allRatings.map((r: any) => (
+                                <div key={r.id} style={{
+                                    background: 'var(--card-bg)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 18,
+                                    padding: 16,
+                                    boxShadow: 'var(--shadow-sm)'
+                                }}>
+                                    {/* Reviewer header */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                        <span style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{r.userName || (isRTL ? 'مستخدم' : 'User')}</span>
+                                        <span style={{ color: '#f59e0b', fontSize: '0.9rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</span>
+                                    </div>
+
+                                    {/* Which deal this is on */}
+                                    {r.dealName && (
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.dealName}</div>
+                                    )}
+
+                                    {/* The review text */}
+                                    <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.6, fontWeight: 500, margin: '6px 0' }}>{r.comment}</p>
+
+                                    {/* Date */}
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 600, marginBottom: 8 }}>
+                                        {(r.createdAt || r.date) ? new Date(r.createdAt || r.date).toLocaleString(isRTL ? 'ar-SA' : 'en-US') : ''}
+                                    </div>
+
+                                    {/* Existing reply (with "Remove" button so the seller
+                                        can rewrite it if needed — Facebook lets the page
+                                        owner edit/delete their reply). */}
+                                    {r.reply && (
+                                        <div style={{
+                                            marginTop: 10,
+                                            padding: 12,
+                                            background: 'var(--body-bg)',
+                                            borderRadius: 12,
+                                            borderRight: isRTL ? '3px solid var(--primary)' : 'none',
+                                            borderLeft: !isRTL ? '3px solid var(--primary)' : 'none'
+                                        }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                                <span>💬 {isRTL ? 'ردك:' : 'Your reply:'}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
+                                                        if (ok) await addReply(r.dealId, r.id, '');
+                                                    }}
+                                                    style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                >
+                                                    ✕ {isRTL ? 'حذف الردّ' : 'Remove'}
+                                                </button>
+                                            </div>
+                                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>{r.reply}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Reply composer — only when no reply yet */}
+                                    {!r.reply && (
+                                        activeReplyId === r.id ? (
+                                            <div style={{ marginTop: 10 }}>
+                                                <textarea
+                                                    value={replyDrafts[r.id] || ''}
+                                                    onChange={e => setReplyDrafts({ ...replyDrafts, [r.id]: e.target.value })}
+                                                    placeholder={isRTL ? 'اكتب ردك على هذا التعليق...' : 'Write your reply...'}
+                                                    style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid var(--gray-200)', minHeight: 70, outline: 'none', resize: 'vertical', fontSize: '0.9rem' }}
+                                                />
+                                                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            const text = (replyDrafts[r.id] || '').trim();
+                                                            if (!text) return;
+                                                            await addReply(r.dealId, r.id, text);
+                                                            setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                                                            setActiveReplyId(null);
+                                                        }}
+                                                        style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer' }}
+                                                    >
+                                                        {isRTL ? '💬 إرسال الردّ' : '💬 Send reply'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setActiveReplyId(null);
+                                                            setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                                                        }}
+                                                        style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer' }}
+                                                    >
+                                                        {isRTL ? 'إلغاء' : 'Cancel'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveReplyId(r.id)}
+                                                style={{ marginTop: 6, padding: '6px 14px', borderRadius: 10, background: 'var(--body-bg)', border: '1px solid var(--gray-200)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer' }}
+                                            >
+                                                💬 {isRTL ? 'الردّ على هذا التعليق' : 'Reply to this review'}
+                                            </button>
+                                        )
+                                    )}
+                                </div>
+                            ));
+                        })()}
                     </div>
                 ) : view === 'form' ? (
                     // Form tab is active but the seller's subscription isn't.
