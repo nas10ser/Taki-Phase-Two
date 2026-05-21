@@ -154,45 +154,41 @@ const Privacy: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            لا نَبيع بياناتك لأيّ طرف لأيّ غرض تسويقي. وقد تَشمل حالات
-                            المشاركة المسموح بها — بحدود ما يَلزم لتقديم الخدمة — ما يلي:
+                            نَلتزم بحماية بياناتك ولا نَبيعها ولا نُؤجّرها ولا نُفشيها لأيّ
+                            طرف لأيّ غرض تسويقيّ. وقد تَجري المشاركة — بحدود ما يَلزم
+                            ووفق الأنظمة المعمول بها — في الحالات العامّة التالية:
                         </>
                     ) : (
                         <>
-                            We do not sell your data to any party for any marketing purpose.
-                            Permitted sharing — within the limits required to deliver the
-                            service — may include the following:
+                            We are committed to protecting your data and do not sell,
+                            rent or disclose it to any party for any marketing purpose.
+                            Sharing may take place — within the limits required and in
+                            accordance with applicable laws — in the following general
+                            cases:
                         </>
                     )}
                 </Paragraph>
                 <Bullets items={isRTL ? [
-                    <><strong>الطرف الآخر في الحجز</strong>: التاجر الذي تَحجز منه يَطّلع على ما يَلزم للاتصال بك وتسليم العرض؛ والمشتري الذي يَحجز من التاجر يَطّلع على ما تَنشره من بيانات متجر وعروض.</>,
-                    <><strong>مزوّدو الخدمات التشغيلية والتقنية</strong>: قد نَستعين بشركاء يُقدّمون لنا خدمات استضافة، معالجة بيانات، تواصل، إشعارات، تحليلات، أو معالجة مدفوعات — يَلتزمون بمعايير حماية بيانات لا تَقلّ عمّا تُلزم به الأنظمة المعمول بها.</>,
-                    <><strong>بوّابات الدفع المرخّصة</strong>: عند إجراء أيّ عملية دفع، تُمرَّر البيانات اللازمة لإتمامها مباشرةً إلى الجهات المُرخَّصة من البنك المركزي السعودي.</>,
-                    <><strong>الجهات الحكومية والأمنية والقضائية</strong>: عند ورود طلب رسميّ بموجب الأنظمة المعمول بها.</>,
-                    <><strong>المستشارون والمدقّقون</strong>: بحدود ما تَقتضيه حماية مصالح المنصّة في النزاعات والتدقيق، مع التزامهم بالسرّية.</>,
-                    <><strong>المُتنازَل لهم</strong>: عند بيع المنصّة أو دمجها أو إعادة هيكلتها، تُنقل البيانات للخَلَف النظامي مع التزامه بهذه السياسة أو ما يكافئها.</>,
-                    <><strong>حماية المنصّة والآخرين</strong>: عندما نَرى أنّ الإفصاح ضروريّ للوقاية من الاحتيال، أو لحماية حقوقنا وحقوق مستخدمينا، أو لمنع ضرر محتمل.</>,
+                    <><strong>الطرف الآخر في المعاملة</strong>: التاجر يَطّلع على ما يَلزم للاتصال بك وتسليم العرض، والمشتري يَطّلع على ما يَنشره التاجر من بيانات متجره وعروضه.</>,
+                    <><strong>الشركاء التشغيليون والتقنيون والمالِيُّون</strong>: بقَدر ما يَلزم لتقديم الخدمات وتشغيلها (استضافة، معالجة بيانات، اتصالات، مدفوعات، تحليلات، وغيرها)، مع التزام كلّ شريك بأنظمة حماية البيانات المعمول بها.</>,
+                    <><strong>الجهات النظامية والأمنية والقضائية</strong>: عند ورود طلب رسميّ بموجب الأنظمة، أو عند الحاجة لحماية المنصّة أو مستخدميها أو الغير من ضرر محتمل.</>,
+                    <><strong>الأغراض المشروعة الأخرى</strong>: كالتدقيق، حلّ النزاعات، عمليات إعادة الهيكلة أو التَنازل، أو أيّ غرض آخر تَسمح به الأنظمة.</>,
                 ] : [
-                    <><strong>The other party to the booking</strong>: the merchant from whom you book receives what is needed to contact you and deliver the offer; the buyer who books from a merchant sees the store and offer details that the merchant has published.</>,
-                    <><strong>Operational and technical service providers</strong>: we may engage partners providing hosting, data processing, communications, notifications, analytics or payment processing — who commit to data-protection standards no lower than those required by applicable law.</>,
-                    <><strong>Licensed payment gateways</strong>: when any payment is made, the data necessary to complete it is passed directly to entities licensed by the Saudi Central Bank.</>,
-                    <><strong>Governmental, security and judicial authorities</strong>: upon receipt of an official request under applicable law.</>,
-                    <><strong>Advisers and auditors</strong>: to the extent required to protect the platform's interests in disputes and audits, subject to their confidentiality obligations.</>,
-                    <><strong>Assignees</strong>: in the event of sale, merger or restructuring of the platform, data may be transferred to the legal successor, which will be bound by this policy or its equivalent.</>,
-                    <><strong>Protection of the platform and others</strong>: where we consider disclosure necessary to prevent fraud, protect our rights and those of our users, or prevent potential harm.</>,
+                    <><strong>The other party to the transaction</strong>: the merchant receives what is needed to contact you and deliver the offer, and the buyer sees what the merchant has published of their store and offer details.</>,
+                    <><strong>Operational, technical and financial partners</strong>: to the extent required to provide and operate the services (hosting, data processing, communications, payments, analytics, and the like), with each partner committed to applicable data-protection laws.</>,
+                    <><strong>Regulatory, security and judicial authorities</strong>: upon receipt of an official request under the law, or where necessary to protect the platform, its users or third parties from potential harm.</>,
+                    <><strong>Other legitimate purposes</strong>: such as auditing, dispute resolution, restructuring or assignment, or any other purpose permitted by law.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            نَضمن — قدر الإمكان — أنّ كلّ من نَتشارك معه بيانات لا يَستخدمها
-                            لأغراضه الخاصّة، وأنّه يُعالجها وفق تعليماتنا.
+                            ولا تُستخدَم بياناتك في أيّ حال لأغراض خارجة عن الغرض الذي
+                            جُمعت من أجله.
                         </>
                     ) : (
                         <>
-                            We seek — as far as reasonably possible — to ensure that any
-                            party with whom we share data does not use it for its own
-                            purposes and processes it in line with our instructions.
+                            In all cases, your data is not used for purposes outside the
+                            purpose for which it was collected.
                         </>
                     )}
                 </Paragraph>
