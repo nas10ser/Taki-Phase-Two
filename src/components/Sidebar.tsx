@@ -48,7 +48,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { id: 'favs', icon: '❤️', ar: 'المفضلة', en: 'Favorites', path: '/profile' },
         ...(!isSellerView ? [{ id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' }] : []),
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
-        { id: 'faq', icon: '❓', ar: 'الأسئلة الشائعة', en: 'FAQ', path: '/faq' },
     ];
     // Seasonal offers section — admin can show/hide globally from
     // platform_settings.seasonal_offers_visible. Hidden by default.
@@ -238,64 +237,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             }} />
                         </span>
                     </button>
-
-                    {/* Legal pages box — a compact card placed inside the
-                        settings group, below language + dark-mode toggles.
-                        FAQ is the only "informational" entry that lives up
-                        in the main nav (users hit it often); the contractual
-                        docs live here because they're rarely opened day-to-day
-                        but must remain one tap away for compliance. */}
-                    <div style={{
-                        borderRadius: 12,
-                        border: '1.5px solid var(--border-color, #e2e8f0)',
-                        background: 'var(--card-bg, white)',
-                        padding: 8,
-                        marginBottom: 10,
-                    }}>
-                        <div style={{
-                            fontSize: '0.68rem',
-                            color: 'var(--gray-400, #94a3b8)',
-                            fontWeight: 800,
-                            letterSpacing: 0.5,
-                            padding: '4px 8px 6px',
-                            textAlign: isRTL ? 'right' : 'left',
-                        }}>
-                            {isRTL ? 'الصفحات القانونية' : 'LEGAL PAGES'}
-                        </div>
-                        {[
-                            { icon: 'ℹ️', ar: 'من نحن', en: 'About', path: '/about' },
-                            { icon: '📄', ar: 'شروط الاستخدام', en: 'Terms of Service', path: '/terms' },
-                            { icon: '🔒', ar: 'سياسة الخصوصية', en: 'Privacy Policy', path: '/privacy' },
-                            { icon: '💳', ar: 'سياسة الاسترداد', en: 'Refund Policy', path: '/refund' },
-                            { icon: '✉️', ar: 'اتصل بنا', en: 'Contact us', path: '/contact' },
-                        ].map(item => (
-                            <button
-                                key={item.path}
-                                onClick={() => handleNav(item.path)}
-                                style={{
-                                    width: '100%',
-                                    padding: '9px 8px',
-                                    borderRadius: 8,
-                                    border: 'none',
-                                    background: 'transparent',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 10,
-                                    cursor: 'pointer',
-                                    textAlign: isRTL ? 'right' : 'left',
-                                    color: 'var(--text-primary, #0f172a)',
-                                    fontWeight: 700,
-                                    fontSize: '0.82rem',
-                                    transition: 'background 0.15s ease',
-                                }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--gray-50, #f8fafc)'; }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                            >
-                                <span style={{ fontSize: '0.95rem', width: 22, textAlign: 'center' }} aria-hidden>{item.icon}</span>
-                                <span>{isRTL ? item.ar : item.en}</span>
-                            </button>
-                        ))}
-                    </div>
 
                     {isRealAdmin && (
                         <div style={{ marginBottom: 16 }}>

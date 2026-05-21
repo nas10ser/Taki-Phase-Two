@@ -218,6 +218,16 @@ const App = () => {
                         <Route path="/dashboard">
                             <Redirect to="/seller" />
                         </Route>
+                        {/* PWA users whose manifest pointed at /index.html
+                            (start_url before v11.6) still hit that URL when
+                            launching the installed app from the home screen.
+                            Vercel's rewrite skips paths ending in an
+                            extension, so without this redirect React Router
+                            sees `/index.html` as an unknown route and
+                            renders NotFound. */}
+                        <Route path="/index.html">
+                            <Redirect to="/" />
+                        </Route>
                         {/* 404 catch-all — previously redirected silently to /
                             which confused SEO crawlers (every URL returned 200).
                             Now any unknown route renders NotFound. */}

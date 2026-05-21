@@ -4,7 +4,7 @@
   "description": "منصة تكي للعروض والخصومات الحصرية في منطقتك",
   "lang": "ar",
   "dir": "rtl",
-  "start_url": "./index.html",
+  "start_url": "./?source=pwa",
   "scope": "./",
   "id": "/?source=pwa",
   "display": "standalone",

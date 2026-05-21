@@ -288,6 +288,52 @@ const Profile: React.FC = () => {
                             </button>
                         </div>
 
+                        {/* Help & legal box — lives between "language" and
+                            "account management" on the Profile/Settings tab.
+                            Originally these links lived in the hamburger
+                            drawer; v11.6 moves them here so signed-in users
+                            find them where they expect (in the same place as
+                            language + logout). */}
+                        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 15 }}>{isRTL ? 'المساعدة والصفحات القانونية' : 'Help & Legal'}</h3>
+                            {[
+                                { icon: '❓', ar: 'الأسئلة الشائعة', en: 'FAQ', path: '/faq' },
+                                { icon: 'ℹ️', ar: 'من نحن', en: 'About', path: '/about' },
+                                { icon: '📄', ar: 'شروط الاستخدام', en: 'Terms of Service', path: '/terms' },
+                                { icon: '🔒', ar: 'سياسة الخصوصية', en: 'Privacy Policy', path: '/privacy' },
+                                { icon: '💳', ar: 'سياسة الاسترداد', en: 'Refund Policy', path: '/refund' },
+                                { icon: '✉️', ar: 'اتصل بنا', en: 'Contact us', path: '/contact' },
+                            ].map((item, idx, arr) => (
+                                <button
+                                    key={item.path}
+                                    onClick={() => history.push(item.path)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '14px 14px',
+                                        borderRadius: 12,
+                                        border: '1.5px solid var(--border-color)',
+                                        background: 'var(--card-bg)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 12,
+                                        cursor: 'pointer',
+                                        textAlign: isRTL ? 'right' : 'left',
+                                        color: 'var(--text-primary)',
+                                        fontWeight: 800,
+                                        fontSize: '0.92rem',
+                                        marginBottom: idx === arr.length - 1 ? 0 : 8,
+                                        transition: 'background 0.15s ease, border-color 0.15s ease',
+                                    }}
+                                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--gray-50, #f8fafc)'; }}
+                                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--card-bg)'; }}
+                                >
+                                    <span style={{ fontSize: '1.1rem', width: 26, textAlign: 'center' }} aria-hidden>{item.icon}</span>
+                                    <span style={{ flex: 1 }}>{isRTL ? item.ar : item.en}</span>
+                                    <span aria-hidden style={{ color: 'var(--gray-400)', fontWeight: 900, fontSize: '1rem' }}>{isRTL ? '‹' : '›'}</span>
+                                </button>
+                            ))}
+                        </div>
+
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
                             <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 15 }}>{isRTL ? 'إدارة الحساب' : 'Account Management'}</h3>
                             <button onClick={() => { logout(); history.push('/register'); }} style={{ width: '100%', padding: '16px', borderRadius: 15, background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800, border: 'none', marginBottom: 10 }}>
