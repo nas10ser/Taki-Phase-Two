@@ -28,6 +28,7 @@ const Privacy         = lazy(() => import('./pages/legal/Privacy'));
 const Refund          = lazy(() => import('./pages/legal/Refund'));
 const About           = lazy(() => import('./pages/legal/About'));
 const Contact         = lazy(() => import('./pages/legal/Contact'));
+const FAQ             = lazy(() => import('./pages/legal/FAQ'));
 const NotFound        = lazy(() => import('./pages/NotFound'));
 
 const RouteFallback = () => (
@@ -212,6 +213,7 @@ const App = () => {
                         <Route path="/refund"  component={Refund} />
                         <Route path="/about"   component={About} />
                         <Route path="/contact" component={Contact} />
+                        <Route path="/faq"     component={FAQ} />
                         {/* 🔄 Unified Redirects for v7.2 */}
                         <Route path="/dashboard">
                             <Redirect to="/seller" />

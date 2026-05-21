@@ -200,6 +200,51 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     ))}
                 </nav>
 
+                {/* About TAKI / legal section — a separate group below the
+                    primary nav. FAQ first because that's where most users
+                    will find their answer; then About, then the contractual
+                    docs (Terms, Privacy, Refund, Contact). All five routes
+                    are public so signed-out visitors see them too. */}
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400, #94a3b8)', fontWeight: 800, marginBottom: 8, textAlign: isRTL ? 'right' : 'left', letterSpacing: 0.5, paddingInline: 4 }}>
+                        {isRTL ? 'حول TAKI' : 'ABOUT TAKI'}
+                    </div>
+                    {[
+                        { icon: '❓', ar: 'الأسئلة الشائعة', en: 'FAQ', path: '/faq' },
+                        { icon: 'ℹ️', ar: 'من نحن', en: 'About', path: '/about' },
+                        { icon: '📄', ar: 'شروط الاستخدام', en: 'Terms of Service', path: '/terms' },
+                        { icon: '🔒', ar: 'سياسة الخصوصية', en: 'Privacy Policy', path: '/privacy' },
+                        { icon: '💳', ar: 'سياسة الاسترداد', en: 'Refund Policy', path: '/refund' },
+                        { icon: '✉️', ar: 'اتصل بنا', en: 'Contact us', path: '/contact' },
+                    ].map(item => (
+                        <button
+                            key={item.path}
+                            onClick={() => handleNav(item.path)}
+                            style={{
+                                width: '100%',
+                                padding: '11px 14px',
+                                borderRadius: 12,
+                                border: 'none',
+                                background: 'transparent',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 14,
+                                cursor: 'pointer',
+                                textAlign: isRTL ? 'right' : 'left',
+                                color: 'var(--text-primary, #0f172a)',
+                                fontWeight: 700,
+                                fontSize: '0.88rem',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--gray-50, #f8fafc)'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                        >
+                            <span style={{ fontSize: '1.1rem', width: 28, textAlign: 'center' }}>{item.icon}</span>
+                            <span>{isRTL ? item.ar : item.en}</span>
+                        </button>
+                    ))}
+                </div>
+
                 {showComplaint && (
                     <ComplaintDialog isRTL={isRTL} onClose={() => setShowComplaint(false)} />
                 )}
