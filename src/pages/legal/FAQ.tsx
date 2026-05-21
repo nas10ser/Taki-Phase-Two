@@ -1,5 +1,5 @@
 /**
- * FAQ — الأسئلة الشائعة (كيف تتم الخدمة / للمشتري / للتاجر).
+ * FAQ — الأسئلة الشائعة / Frequently Asked Questions. Bilingual (v11.9).
  *
  * مبنيّة على نموذج accordion بسيط (details/summary) لأنها تعمل بدون JS إضافي،
  * متوافقة مع قارئات الشاشة، وتدعم البحث داخل المتصفّح (Ctrl+F) دون مفاجآت.
@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { LegalLayout, Section } from './LegalLayout';
+import { useApp } from '../../context/AppContext';
 
 interface QA {
     q: string;
@@ -19,7 +20,7 @@ const Item: React.FC<QA> = ({ q, a }) => (
             <span className="text-emerald-600 text-base mt-0.5 transition-transform group-open:rotate-90 select-none">▸</span>
             <span className="flex-1">{q}</span>
         </summary>
-        <div className="px-4 pb-4 pt-1 pr-11 text-sm leading-relaxed text-[var(--text-secondary)] space-y-2">
+        <div className="px-4 pb-4 pt-1 text-sm leading-relaxed text-[var(--text-secondary)] space-y-2">
             {a}
         </div>
     </details>
@@ -34,151 +35,148 @@ const Group: React.FC<{ title: string; emoji: string; items: QA[] }> = ({ title,
 );
 
 // ============================================================
-// كيف تتم الخدمة
+// كيف تتم الخدمة / How the service works
 // ============================================================
-const howItWorks: QA[] = [
+const howItWorksAR: QA[] = [
     {
         q: 'ما هي منصّة TAKI باختصار؟',
-        a: <>
-            <p>TAKI منصّة سعودية رقمية لحجز التخفيضات والعروض من التجار المحلّيين، تعمل عبر الموقع وتطبيق الهاتف. مهمّتنا أن نَربط المشتري الباحث عن صفقة بالتاجر الذي يريد تصريف مخزون أو زيادة الإقبال — بضغطة واحدة، وبدون رسوم على المشتري.</p>
-        </>,
+        a: <p>TAKI منصّة سعودية رقمية لحجز التخفيضات والعروض من التجار المحلّيين، تعمل عبر الموقع وتطبيق الهاتف. مهمّتنا أن نَربط المشتري الباحث عن صفقة بالتاجر الذي يريد تصريف مخزون أو زيادة الإقبال — بضغطة واحدة، وبدون رسوم على المشتري.</p>,
     },
     {
         q: 'هل TAKI تبيع المنتجات بنفسها؟',
-        a: <>
-            <p><strong>لا</strong>. TAKI <strong>منصّة وسيطة فقط</strong>. لا تشتري، ولا تبيع، ولا تخزّن، ولا تشحن. التجار يَنشرون عروضهم بأنفسهم، والمشترون يحجزون ويذهبون لاستلام البضاعة/الخدمة من التاجر مباشرة.</p>
-        </>,
+        a: <p><strong>لا</strong>. TAKI <strong>منصّة وسيطة فقط</strong>. لا تشتري، ولا تبيع، ولا تخزّن، ولا تشحن. التجار يَنشرون عروضهم بأنفسهم، والمشترون يحجزون ويذهبون لاستلام البضاعة/الخدمة من التاجر مباشرة.</p>,
     },
     {
         q: 'ما الفرق بين TAKI والمتاجر الإلكترونية التقليدية؟',
-        a: <>
-            <p>في المتجر الإلكتروني التقليدي تشتري المنتج، يُحجَز ثمنه، ويُشحَن إليك. في TAKI أنت <strong>تَحجِز عرضاً</strong>، تذهب إلى موقع التاجر في المدّة المحدّدة، تتفقّد البضاعة بنفسك وتدفع ثمنها مباشرةً للتاجر. لا شحن، لا انتظار طويل، ولا حجز مال على بطاقتك.</p>
-        </>,
+        a: <p>في المتجر الإلكتروني التقليدي تشتري المنتج، يُحجَز ثمنه، ويُشحَن إليك. في TAKI أنت <strong>تَحجِز عرضاً</strong>، تذهب إلى موقع التاجر في المدّة المحدّدة، تتفقّد البضاعة بنفسك وتدفع ثمنها مباشرةً للتاجر. لا شحن، لا انتظار طويل، ولا حجز مال على بطاقتك.</p>,
     },
     {
         q: 'كيف تَكسِب TAKI من المنصّة إذاً؟',
-        a: <>
-            <p>المنصّة مجانية تماماً للمشتري. مصدر الدخل (حالياً أو مستقبلاً) قد يكون اشتراكات اختيارية للتجار مقابل خدمات نشر متقدّمة، أو شراكات مع علامات تجارية كبيرة. لن تُفرض رسوم خفية على المشتري إطلاقاً.</p>
-        </>,
+        a: <p>المنصّة مجانية تماماً للمشتري. مصدر الدخل (حالياً أو مستقبلاً) قد يكون اشتراكات اختيارية للتجار مقابل خدمات نشر متقدّمة، أو شراكات مع علامات تجارية كبيرة. لن تُفرض رسوم خفية على المشتري إطلاقاً.</p>,
     },
     {
         q: 'هل TAKI متوفّرة في كل مدن السعودية؟',
-        a: <>
-            <p>نعم، المنصّة تغطّي جغرافياً كل مناطق المملكة. نشاط التجار يتركّز حالياً في المدن الكبرى، ويتوسّع تدريجياً بحسب انضمام التجار في كل منطقة.</p>
-        </>,
+        a: <p>نعم، المنصّة تغطّي جغرافياً كل مناطق المملكة. نشاط التجار يتركّز حالياً في المدن الكبرى، ويتوسّع تدريجياً بحسب انضمام التجار في كل منطقة.</p>,
     },
     {
         q: 'هل بياناتي محميّة؟',
-        a: <>
-            <p>نعم. نَلتزم بنظام حماية البيانات الشخصية السعودي ولوائحه التنفيذية، ونطبّق إجراءات وقائية فنّية وإدارية معقولة تجارياً لحماية بياناتك. للتفاصيل، راجع <a href="/privacy" className="text-emerald-600 font-bold underline">سياسة الخصوصية</a>.</p>
-        </>,
+        a: <p>نعم. نَلتزم بنظام حماية البيانات الشخصية السعودي ولوائحه التنفيذية، ونطبّق إجراءات وقائية فنّية وإدارية معقولة تجارياً لحماية بياناتك. للتفاصيل، راجع <a href="/privacy" className="text-emerald-600 font-bold underline">سياسة الخصوصية</a>.</p>,
     },
     {
         q: 'ما الذي يَحدث عند تَلقّي بَلاغ من مُستخدم؟',
-        a: <>
-            <p>تَستقبل الإدارة البلاغ وتُراجعه بحسب أولويّاتها وسلطتها التَقديرية. ولها — وَحدها — صلاحية اتّخاذ ما تَراه مناسباً (تَحذير، تَعليق، حذف، تَجميد) دون التزام بمدّة زمنية محدَّدة ودون شرح أسباب القرار. آليّات الكشف والعَتبات الداخلية تُعتبر أسراراً تَشغيلية لا يَحقّ لأيّ مستخدم الاطّلاع عليها.</p>
-        </>,
+        a: <p>تَستقبل الإدارة البلاغ وتُراجعه بحسب أولويّاتها وسلطتها التَقديرية. ولها — وَحدها — صلاحية اتّخاذ ما تَراه مناسباً (تَحذير، تَعليق، حذف، تَجميد) دون التزام بمدّة زمنية محدَّدة ودون شرح أسباب القرار. آليّات الكشف والعَتبات الداخلية تُعتبر أسراراً تَشغيلية لا يَحقّ لأيّ مستخدم الاطّلاع عليها.</p>,
     },
     {
         q: 'ما الذي يحدث عند نشوء خلاف بين المشتري والتاجر؟',
-        a: <>
-            <p>الخلاف يُحَلّ بين الطرفين مباشرة وفقاً لسياسة التاجر المُعلَنة والأنظمة السعودية لحماية المستهلك. تتدخّل TAKI كميسِّر للتواصل فقط عبر زر «📣 الشكاوى» داخل التطبيق. للنزاعات التي لا تُحلّ ودّياً، يحقّ للطرف غير الراضي اللجوء إلى وزارة التجارة، منصّة معروف، أو المحاكم السعودية المختصّة.</p>
-        </>,
+        a: <p>الخلاف يُحَلّ بين الطرفين مباشرة وفقاً لسياسة التاجر المُعلَنة والأنظمة السعودية لحماية المستهلك. تتدخّل TAKI كميسِّر للتواصل فقط عبر زر «📣 الشكاوى» داخل التطبيق. للنزاعات التي لا تُحلّ ودّياً، يحقّ للطرف غير الراضي اللجوء إلى وزارة التجارة، منصّة معروف، أو المحاكم السعودية المختصّة.</p>,
+    },
+];
+
+const howItWorksEN: QA[] = [
+    {
+        q: 'What is TAKI, in short?',
+        a: <p>TAKI is a Saudi digital platform for booking discounts and offers from local merchants, available through the website and mobile app. Our mission is to connect shoppers searching for a deal with merchants who want to clear stock or drive footfall — in a single tap, and at no cost to the buyer.</p>,
+    },
+    {
+        q: 'Does TAKI sell products itself?',
+        a: <p><strong>No.</strong> TAKI is an <strong>intermediary platform only</strong>. It does not buy, sell, store or ship. Merchants publish their own offers, and buyers book and then collect the goods/service from the merchant directly.</p>,
+    },
+    {
+        q: 'How does TAKI differ from a traditional online store?',
+        a: <p>In a traditional online store you buy the product, the price is charged, and it is shipped to you. On TAKI you <strong>book an offer</strong>, go to the merchant's location within the offer window, inspect the goods yourself, and pay for them directly to the merchant. No shipping, no long wait, and no hold on your card.</p>,
+    },
+    {
+        q: 'So how does TAKI earn from the platform?',
+        a: <p>The platform is entirely free for buyers. The revenue source — now or in the future — may include optional merchant subscriptions in return for premium listing services, or partnerships with major brands. Hidden fees will never be imposed on buyers.</p>,
+    },
+    {
+        q: 'Is TAKI available in every Saudi city?',
+        a: <p>Yes — the platform geographically covers every region of the Kingdom. Merchant activity is currently concentrated in the larger cities and expands gradually as merchants join in each region.</p>,
+    },
+    {
+        q: 'Is my data protected?',
+        a: <p>Yes. We comply with the Saudi Personal Data Protection Law and its implementing regulations, and apply commercially reasonable technical and administrative safeguards to protect your data. For details, see the <a href="/privacy" className="text-emerald-600 font-bold underline">Privacy Policy</a>.</p>,
+    },
+    {
+        q: 'What happens when a report is received from a user?',
+        a: <p>The administration receives the report and reviews it according to its priorities and discretionary authority. The administration alone has the authority to take whatever action it deems appropriate (warning, suspension, deletion, freezing) without being bound to a specific timeframe and without explaining the reasons for the decision. Detection mechanisms and internal thresholds are considered operational secrets that no user is entitled to inspect.</p>,
+    },
+    {
+        q: 'What happens if a dispute arises between buyer and merchant?',
+        a: <p>The dispute is resolved between the two parties directly under the merchant's published policy and Saudi consumer-protection laws. TAKI intervenes only as a facilitator of communication, through the «📣 Complaints» button inside the app. For disputes that cannot be settled amicably, the dissatisfied party may approach the Ministry of Commerce, the Maroof Platform, or the competent Saudi courts.</p>,
     },
 ];
 
 // ============================================================
-// للمشتري
+// للمشتري / For buyers
 // ============================================================
-const buyerFAQ: QA[] = [
+const buyerFAQ_AR: QA[] = [
     {
         q: 'هل التسجيل والاستخدام مجاني للمشتري؟',
-        a: <>
-            <p>نعم، 100% مجاني. لا اشتراك، لا عمولة، لا رسوم خفية. كلّ ما تحتاجه: تسجيل حساب بسيط برقم الجوّال أو البريد، ويمكنك تصفّح كل العروض حول موقعك.</p>
-        </>,
+        a: <p>نعم، 100% مجاني. لا اشتراك، لا عمولة، لا رسوم خفية. كلّ ما تحتاجه: تسجيل حساب بسيط برقم الجوّال أو البريد، ويمكنك تصفّح كل العروض حول موقعك.</p>,
     },
     {
         q: 'كيف أحجز عرضاً؟',
-        a: <>
-            <ol className="list-decimal pr-5 space-y-1">
-                <li>تتصفّح العروض في الصفحة الرئيسية أو من قسم «حولي» لرؤية القريب من موقعك.</li>
-                <li>تختار العرض وتقرأ تفاصيله، شروطه، ومدّة صلاحيّته.</li>
-                <li>تضغط زرّ «احجز» — يصلك إشعار بتأكيد الحجز ويصل التاجر إشعار آخر.</li>
-                <li>تذهب إلى موقع التاجر خلال المدّة، تستلم البضاعة/الخدمة، وتدفع له مباشرة.</li>
-            </ol>
-        </>,
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>تتصفّح العروض في الصفحة الرئيسية أو من قسم «حولي» لرؤية القريب من موقعك.</li>
+            <li>تختار العرض وتقرأ تفاصيله، شروطه، ومدّة صلاحيّته.</li>
+            <li>تضغط زرّ «احجز» — يصلك إشعار بتأكيد الحجز ويصل التاجر إشعار آخر.</li>
+            <li>تذهب إلى موقع التاجر خلال المدّة، تستلم البضاعة/الخدمة، وتدفع له مباشرة.</li>
+        </ol>,
     },
     {
         q: 'هل يتم سحب أي مبلغ من بطاقتي عند الحجز؟',
-        a: <>
-            <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء. الدفع كاملاً يتمّ بينك وبين التاجر في موقعه عند الاستلام.</p>
-        </>,
+        a: <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء. الدفع كاملاً يتمّ بينك وبين التاجر في موقعه عند الاستلام.</p>,
     },
     {
         q: 'هل يمكنني إلغاء الحجز؟',
-        a: <>
-            <p>نعم، في أيّ وقت قبل انتهاء صلاحيّة العرض، من صفحة «حجوزاتي» بضغطة واحدة، بدون أيّ غرامة من المنصّة. لكن تجنّب الحجز المتكرّر بدون نيّة الحضور — قد يُقيَّد حسابك إن أُسيء الاستخدام.</p>
-        </>,
+        a: <p>نعم، في أيّ وقت قبل انتهاء صلاحيّة العرض، من صفحة «حجوزاتي» بضغطة واحدة، بدون أيّ غرامة من المنصّة. لكن تجنّب الحجز المتكرّر بدون نيّة الحضور — قد يُقيَّد حسابك إن أُسيء الاستخدام.</p>,
     },
     {
         q: 'ماذا لو لم أحضر في الوقت المحدّد؟',
-        a: <>
-            <p>يحقّ للتاجر إلغاء الحجز من جانبه، وقد يَفقد العرض. إن كان العرض لا يزال متوفّراً يمكنك إعادة الحجز. تكرار التغيّب قد يؤدّي إلى تقييد حسابك لأنّه يُضرّ بثقة التجار.</p>
-        </>,
+        a: <p>يحقّ للتاجر إلغاء الحجز من جانبه، وقد يَفقد العرض. إن كان العرض لا يزال متوفّراً يمكنك إعادة الحجز. تكرار التغيّب قد يؤدّي إلى تقييد حسابك لأنّه يُضرّ بثقة التجار.</p>,
     },
     {
         q: 'هل التاجر يَرى رقم جوّالي؟',
-        a: <>
-            <p>نعم، عند الحجز يَرى التاجر اسمك ورقم جوّالك وعدد الحجز لكي يتواصل معك ويسلّمك العرض. لا نُشارك بريدك الإلكتروني ولا بياناتك المالية معه. ولا يَحقّ للتاجر استخدام رقمك لأيّ غرض خارج هذا الحجز تحديداً.</p>
-        </>,
+        a: <p>نعم، عند الحجز يَرى التاجر اسمك ورقم جوّالك وعدد الحجز لكي يتواصل معك ويسلّمك العرض. لا نُشارك بريدك الإلكتروني ولا بياناتك المالية معه. ولا يَحقّ للتاجر استخدام رقمك لأيّ غرض خارج هذا الحجز تحديداً.</p>,
     },
     {
         q: 'كيف أحصل على استرداد إذا كان المنتج تالفاً أو لم يطابق الوصف؟',
-        a: <>
-            <p>الاسترداد يتمّ <strong>عبر التاجر مباشرةً</strong> وفق سياسته المُعلَنة (كل تاجر له سياسته). تواصَل معه أوّلاً عبر شات الحجز. إن لم يستجب أو رفض الالتزام بسياسته، ارفع شكوى عبر «📣 الشكاوى» داخل التطبيق. للنزاعات التي لا تُحلّ، يحقّ لك التقدّم إلى <a href="https://mc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">وزارة التجارة</a> أو <a href="https://maroof.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">منصّة معروف</a>.</p>
-        </>,
+        a: <p>الاسترداد يتمّ <strong>عبر التاجر مباشرةً</strong> وفق سياسته المُعلَنة (كل تاجر له سياسته). تواصَل معه أوّلاً عبر شات الحجز. إن لم يستجب أو رفض الالتزام بسياسته، ارفع شكوى عبر «📣 الشكاوى» داخل التطبيق. للنزاعات التي لا تُحلّ، يحقّ لك التقدّم إلى <a href="https://mc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">وزارة التجارة</a> أو <a href="https://maroof.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">منصّة معروف</a>.</p>,
     },
     {
         q: 'كيف أقيّم تجربتي مع متجر؟',
-        a: <>
-            <p>بعد إتمام الحجز، يظهر لك خيار تقييم المتجر بنجوم وإضافة تعليق. التقييم الصادق يُساعد المشترين الآخرين ويُحفّز التجار على تحسين خدماتهم. تجنّب التقييمات الكيدية أو غير الصادقة لأنّها قد تتعرّض للحذف.</p>
-        </>,
+        a: <p>بعد إتمام الحجز، يظهر لك خيار تقييم المتجر بنجوم وإضافة تعليق. التقييم الصادق يُساعد المشترين الآخرين ويُحفّز التجار على تحسين خدماتهم. تجنّب التقييمات الكيدية أو غير الصادقة لأنّها قد تتعرّض للحذف.</p>,
     },
     {
         q: 'لاحظت عرضاً مخالفاً أو متجراً مشبوهاً، ماذا أفعل؟',
-        a: <>
-            <p>اضغط زرّ «🚩 إبلاغ» في صفحة العرض أو المتجر، اختر سبب البلاغ، واكتب التفاصيل. تُراجَع البلاغات يدوياً ولا تُكشف هويّتك للمُبلَّغ عنه. إذا كان البلاغ يخصّ جريمة (احتيال، تهديد، إلخ.)، أبلِغ الجهات الأمنية أيضاً بشكل مستقلّ.</p>
-        </>,
+        a: <p>اضغط زرّ «🚩 إبلاغ» في صفحة العرض أو المتجر، اختر سبب البلاغ، واكتب التفاصيل. تُراجَع البلاغات يدوياً ولا تُكشف هويّتك للمُبلَّغ عنه. إذا كان البلاغ يخصّ جريمة (احتيال، تهديد، إلخ.)، أبلِغ الجهات الأمنية أيضاً بشكل مستقلّ.</p>,
     },
     {
         q: 'كيف أَحمي نفسي من الاحتيال؟',
-        a: <>
-            <ul className="list-disc pr-5 space-y-1">
-                <li>تَأكّد من هوية التاجر قَبل أيّ تَعامل، وفَحص العرض/البضاعة عند الاستلام.</li>
-                <li>تَعامل في مكان عامّ وآمن، وفي ساعات معروفة.</li>
-                <li>لا تُشارك مع أحد بياناتك الشخصية أو رموز التحقّق أو كلمات المرور — مهما كان السبب.</li>
-                <li>لا تَفتح روابط مَشبوهة تَصلك خارج المنصّة، حتى لو ادّعى المُرسِل أنّها آمنة.</li>
-                <li>لا تَدفع لشخص لا تَعرفه بناءً على وَعد بوظيفة أو عمولة أو استثمار.</li>
-                <li>لا تَنقل التعامل خارج المنصّة بطلب من التاجر — هذا غالباً مؤشّر احتيال.</li>
-            </ul>
-        </>,
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li>تَأكّد من هوية التاجر قَبل أيّ تَعامل، وفَحص العرض/البضاعة عند الاستلام.</li>
+            <li>تَعامل في مكان عامّ وآمن، وفي ساعات معروفة.</li>
+            <li>لا تُشارك مع أحد بياناتك الشخصية أو رموز التحقّق أو كلمات المرور — مهما كان السبب.</li>
+            <li>لا تَفتح روابط مَشبوهة تَصلك خارج المنصّة، حتى لو ادّعى المُرسِل أنّها آمنة.</li>
+            <li>لا تَدفع لشخص لا تَعرفه بناءً على وَعد بوظيفة أو عمولة أو استثمار.</li>
+            <li>لا تَنقل التعامل خارج المنصّة بطلب من التاجر — هذا غالباً مؤشّر احتيال.</li>
+        </ul>,
     },
     {
         q: 'تَعرّضت لاحتيال أو إساءة من تاجر، ماذا أفعل؟',
-        a: <>
-            <ol className="list-decimal pr-5 space-y-1">
-                <li>ارفع بَلاغاً فوريّاً عبر زرّ «🚩 إبلاغ» على المتجر أو العرض.</li>
-                <li>راسل الإدارة عبر «📣 الشكاوى» مع كلّ التفاصيل والأدلّة.</li>
-                <li>تَوجّه إلى أقرب مَركز شرطة وارفع شكوى رسمية ضدّ المُحتال.</li>
-                <li>TAKI ليست طرفاً في النزاع، لكنّها تَتعاون مع الجهات الأمنية وتُقدّم البيانات المُتاحة عند ورود طلب رسميّ. وتُوقف الحسابات المُتورّطة لحماية المستخدمين الآخرين.</li>
-            </ol>
-        </>,
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>ارفع بَلاغاً فوريّاً عبر زرّ «🚩 إبلاغ» على المتجر أو العرض.</li>
+            <li>راسل الإدارة عبر «📣 الشكاوى» مع كلّ التفاصيل والأدلّة.</li>
+            <li>تَوجّه إلى أقرب مَركز شرطة وارفع شكوى رسمية ضدّ المُحتال.</li>
+            <li>TAKI ليست طرفاً في النزاع، لكنّها تَتعاون مع الجهات الأمنية وتُقدّم البيانات المُتاحة عند ورود طلب رسميّ. وتُوقف الحسابات المُتورّطة لحماية المستخدمين الآخرين.</li>
+        </ol>,
     },
     {
         q: 'تَعرّضت لمُضايقة أو تَهديد، ماذا أفعل؟',
         a: <>
             <p>تَلتزم TAKI بتَوفير بيئة آمنة. عند التَعرّض لأيّ مُضايقة أو تَهديد أو تَنمّر أو تَمييز:</p>
-            <ul className="list-disc pr-5 space-y-1 mt-2">
+            <ul className="list-disc ps-5 space-y-1 mt-2">
                 <li>احظر المُستخدم فوراً من خلال أدوات الحظر في الشات.</li>
                 <li>ارفع بلاغاً عَلى الحساب المُسيء.</li>
                 <li>راسل الإدارة عبر «📣 الشكاوى».</li>
@@ -188,160 +186,334 @@ const buyerFAQ: QA[] = [
     },
     {
         q: 'كيف أحصل على تنبيهات للعروض المهمّة؟',
-        a: <>
-            <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. الكلّ اختياري ويمكنك تعطيله متى تشاء.</p>
-        </>,
+        a: <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. الكلّ اختياري ويمكنك تعطيله متى تشاء.</p>,
     },
     {
         q: 'هل يمكنني حذف حسابي نهائياً؟',
-        a: <>
-            <p>نعم. من القائمة الجانبية (☰) ← «حذف الحساب نهائياً». ستُحذَف بياناتك خلال مدّة قصيرة، مع احتفاظنا بالحدّ الأدنى الذي تقتضيه الالتزامات النظامية (سجلّات معاملات لمدّة 5 سنوات بحسب أنظمة المحاسبة السعودية).</p>
-        </>,
+        a: <p>نعم. من القائمة الجانبية (☰) ← «حذف الحساب نهائياً». ستُحذَف بياناتك خلال مدّة قصيرة، مع احتفاظنا بالحدّ الأدنى الذي تقتضيه الالتزامات النظامية (سجلّات معاملات لمدّة 5 سنوات بحسب أنظمة المحاسبة السعودية).</p>,
     },
 ];
 
-// ============================================================
-// للتاجر
-// ============================================================
-const merchantFAQ: QA[] = [
+const buyerFAQ_EN: QA[] = [
     {
-        q: 'كيف أُسجِّل كتاجر؟',
-        a: <>
-            <ol className="list-decimal pr-5 space-y-1">
-                <li>ادخل صفحة التسجيل واختر «تاجر».</li>
-                <li>أَدخِل بيانات متجرك: الاسم، الفئة، الموقع، الفروع، صور تعريفية.</li>
-                <li>تَوافق على الشروط القانونية الإلزامية.</li>
-                <li>تنتظر مراجعة فريق الإدارة لتفعيل الحساب. قد تُطلب وثائق إضافية للتحقّق من النشاط (سجلّ تجاري، وثيقة عمل حرّ، رخصة بلدية بحسب النشاط).</li>
-            </ol>
-        </>,
+        q: 'Is registration and use free for buyers?',
+        a: <p>Yes — 100% free. No subscriptions, no commission, no hidden fees. All you need is a quick account using your mobile number or email, and you can browse every offer around you.</p>,
     },
     {
-        q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <>
-            <p>التسجيل والاستخدام الأساسي حالياً <strong>مجاني</strong>. عند تفعيل الاشتراك المدفوع مستقبلاً، يكون اختيارياً، ويُعلَن سعره بوضوح قبل أيّ خصم. النموذج المعتمد: «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية المدّة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>
-        </>,
+        q: 'How do I book an offer?',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>Browse offers on the home page or in the «Nearby» section to see what is close to you.</li>
+            <li>Choose an offer and read its details, conditions and validity window.</li>
+            <li>Tap «Book» — you receive a booking confirmation and the merchant receives a notification.</li>
+            <li>Visit the merchant's location within the window, collect the goods or service, and pay them directly.</li>
+        </ol>,
     },
     {
-        q: 'كيف أُضيف عرضاً جديداً؟',
-        a: <>
-            <ol className="list-decimal pr-5 space-y-1">
-                <li>من «لوحة التاجر» اضغط «➕ إضافة عرض».</li>
-                <li>اكتب عنوان العرض، وصفه، السعر قبل وبعد التخفيض.</li>
-                <li>حدّد الكمّيّة المتاحة ومدّة صلاحيّة العرض (تاريخ بداية ونهاية).</li>
-                <li>ارفع صوراً واضحة (يَدعم محرّر القصّ الذكيّ لتعديل النسبة).</li>
-                <li>اختر الفرع أو الفروع التي يَسري عليها العرض.</li>
-                <li>اضغط «انشر» — يَظهر العرض فوراً للمشترين.</li>
-            </ol>
-        </>,
+        q: 'Is any amount charged to my card on booking?',
+        a: <p><strong>Never.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you. Full payment is made between you and the merchant at their location on receipt.</p>,
     },
     {
-        q: 'كيف أستقبل الحجوزات؟',
-        a: <>
-            <p>تَصِلك إشعارات فورية في التطبيق وعبر الإيميل عند كلّ حجز جديد. من «لوحة التاجر» ← «الحجوزات» تَرى كل الحجوزات الواردة مع بيانات المشتري الأساسية ووقت الحجز. يمكنك التواصل مع المشتري عبر شات الحجز لتأكيد التفاصيل.</p>
-        </>,
+        q: 'Can I cancel a booking?',
+        a: <p>Yes, at any time before the offer expires, from the «My Bookings» page in a single tap, with no penalty from the platform. But avoid repeated bookings without intent to attend — your account may be restricted if the feature is misused.</p>,
     },
     {
-        q: 'ماذا أفعل عند حضور المشتري لاستلام العرض؟',
-        a: <>
-            <p>تحقّق من رقم الحجز من تطبيق المشتري (يَظهر في «حجوزاتي» عنده)، سلّمه البضاعة أو قدّم له الخدمة، استلم الثمن بالطريقة المناسبة (نقد / بطاقة / تحويل)، ثم اضغط «✓ إكمال الحجز» من لوحتك. هذا يُحدِّث الكمّيّة المتبقّية تلقائياً.</p>
-        </>,
+        q: 'What if I do not attend on time?',
+        a: <p>The merchant may cancel the booking from their side, and you may lose the offer. If the offer is still available you can re-book. Repeated no-shows may result in restrictions on your account, since they damage merchant trust.</p>,
     },
     {
-        q: 'ماذا أفعل إذا لم يحضر المشتري؟',
-        a: <>
-            <p>يحقّ لك إلغاء الحجز من «لوحة التاجر» بعد انتهاء مدّة صلاحيّته. لا توجد عقوبة عليك من المنصّة. تكرار عدم الحضور من نفس المشتري يُسجَّل تلقائياً في النظام وقد يؤدّي إلى تقييد حسابه.</p>
-        </>,
+        q: 'Does the merchant see my mobile number?',
+        a: <p>Yes — on booking, the merchant sees your name, mobile number and booking quantity in order to contact you and hand over the offer. We do not share your email address or financial data with them. The merchant is not permitted to use your number for any purpose outside that booking.</p>,
     },
     {
-        q: 'هل يمكنني إدارة فروع متعدّدة؟',
-        a: <>
-            <p>نعم. من إعدادات المتجر تَستطيع إضافة فروع متعدّدة وربط كلّ عرض بالفرع/الفروع التي يَسري عليها. الباقة الأساسية تتيح عدداً معيّناً من الفروع، والباقات المتقدّمة تَزيد العدد.</p>
-        </>,
+        q: 'How do I obtain a refund if a product is faulty or does not match the description?',
+        a: <p>The refund is processed <strong>directly through the merchant</strong> under their published policy (every merchant has its own). Contact them first via the booking chat. If they do not respond or refuse to honour their policy, raise a complaint via «📣 Complaints» inside the app. For unresolved disputes you may approach the <a href="https://mc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">Ministry of Commerce</a> or the <a href="https://maroof.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">Maroof Platform</a>.</p>,
     },
     {
-        q: 'هل يمكنني الردّ على تقييمات المشترين؟',
-        a: <>
-            <p>نعم. من «لوحة التاجر» ← «التقييمات» يمكنك الاطّلاع على كل التقييمات والردّ عليها باحتراف. الردّ الهادئ والمهنيّ على التقييمات السلبية يبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>
-        </>,
+        q: 'How do I rate my experience with a store?',
+        a: <p>After completing a booking, you will see an option to rate the store in stars and add a comment. An honest review helps other buyers and motivates merchants to improve. Avoid malicious or untruthful ratings — they may be removed.</p>,
     },
     {
-        q: 'هل يمكنني نَشر منتجات محظورة؟',
-        a: <>
-            <p>لا. نَشر أيّ منتج يخالف الأنظمة السعودية (مخدّرات، خمر، أدوية موصوفة، أسلحة، تَسويق شبكيّ، أوراق مالية، أجهزة تَجسّس، منتجات مقلَّدة، تَبغ، تَقسيط ومنتجات بنكية، إلخ.) يُؤدّي فوراً إلى حذف العرض، تعليق الحساب، وإحالة الواقعة للجهات الأمنية. القائمة الكاملة في <a href="/terms" className="text-emerald-600 font-bold underline">شروط الاستخدام (القسم 7)</a>.</p>
-        </>,
+        q: 'I have noticed a non-compliant offer or a suspicious store — what do I do?',
+        a: <p>Tap the «🚩 Report» button on the offer or store page, choose a reason and add details. Reports are reviewed manually and your identity is not disclosed to the reported party. If the matter concerns a crime (fraud, threats, etc.), also report it independently to the security authorities.</p>,
     },
     {
-        q: 'تَعرّضت لمُشتري احتياليّ، ماذا أفعل؟',
-        a: <>
-            <ol className="list-decimal pr-5 space-y-1">
-                <li>ارفع بَلاغاً على المشتري عبر «🚩 إبلاغ» في صفحة الحجز مع وصف الواقعة.</li>
-                <li>راسل الإدارة عبر «📣 الشكاوى» مع الأدلّة المتوفّرة.</li>
-                <li>تَوجّه للجهات الأمنية لرفع شكوى رسمية إن وَقع ضرر فعليّ.</li>
-                <li>TAKI تَتعاون مع الجهات الأمنية وتَستجيب لطلباتها الرسمية، وتُوقف الحسابات المُتورّطة لحماية باقي التجار.</li>
-            </ol>
-        </>,
+        q: 'How do I protect myself from fraud?',
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li>Verify the merchant's identity before any interaction, and inspect the offer/goods on receipt.</li>
+            <li>Meet in a safe public place during reasonable hours.</li>
+            <li>Never share your personal data, verification codes or passwords with anyone, whatever the reason.</li>
+            <li>Do not open suspicious links sent from outside the platform, even if the sender claims they are safe.</li>
+            <li>Do not pay a person you do not know on the promise of a job, commission or investment.</li>
+            <li>Do not take the dealing off-platform at the merchant's request — that is often a fraud signal.</li>
+        </ul>,
     },
     {
-        q: 'هل التاجر مسؤول عن سياسة الاسترجاع والاستبدال؟',
-        a: <>
-            <p><strong>نعم بشكل كامل</strong>. سياسة الاسترجاع والاستبدال محصورة بينك وبين المشتري، وتَخضع لِما تُعلِنه أنت في متجرك أو ما تَنصّ عليه الأنظمة السعودية لحماية المستهلك. TAKI ليست طرفاً في الاسترجاع، ولا تَضمنه، ولا تُنفِّذه. يُنصح بأن تَنشر سياستك بوضوح في صفحة متجرك لتجنّب الخلافات.</p>
-        </>,
+        q: 'I have been defrauded or mistreated by a merchant — what do I do?',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>Raise an immediate report via the «🚩 Report» button on the store or offer.</li>
+            <li>Message the administration via «📣 Complaints» with all the details and evidence.</li>
+            <li>Visit the nearest police station and lodge a formal complaint against the offender.</li>
+            <li>TAKI is not a party to the dispute, but it cooperates with the security authorities and provides available data on receipt of an official request. It also suspends the accounts involved to protect other users.</li>
+        </ol>,
     },
     {
-        q: 'هل TAKI تَستلم ثمن مبيعاتي؟',
+        q: 'I have been harassed or threatened — what do I do?',
         a: <>
-            <p>لا. كلّ ثمن البضاعة/الخدمة يستلمه التاجر مباشرةً من المشتري عند الاستلام في الموقع. TAKI لا تتدخّل في تحويل الأموال بين الطرفين، ولا تستلم نيابةً عن أيّ تاجر، ولا تَحتفظ ببيانات بطاقة المشتري.</p>
-        </>,
-    },
-    {
-        q: 'ما المسؤوليات النظامية على عاتقي كتاجر؟',
-        a: <>
-            <ul className="list-disc pr-5 space-y-1">
-                <li>حِيازَة سجلّ تجاري ساري أو وثيقة عمل حرّ، وأيّ ترخيص نظامي يَلزم نشاطك.</li>
-                <li>إصدار فواتير ضريبية للمشتري إن انطبق عليك ذلك بحسب أنظمة هيئة الزكاة والضريبة.</li>
-                <li>الالتزام بسياسة استرداد واضحة ومُعلَنة للمشتري، وفقاً لنظام حماية المستهلك.</li>
-                <li>دقّة وصف العروض — لا «طُعم وتبديل» (bait-and-switch) ولا تسعير مُضلِّل.</li>
-                <li>تنفيذ كلّ حجز صحيح ما لم يقع سبب نظاميّ يمنع ذلك.</li>
-                <li>عدم استخدام بيانات اتصال المشتري لأيّ غرض خارج تنفيذ الحجز نفسه.</li>
+            <p>TAKI is committed to providing a safe environment. If you are harassed, threatened, bullied or discriminated against:</p>
+            <ul className="list-disc ps-5 space-y-1 mt-2">
+                <li>Block the user immediately using the blocking tools in the chat.</li>
+                <li>Report the offending account.</li>
+                <li>Message the administration via «📣 Complaints».</li>
+                <li>If harm has been done, lodge a complaint with the security authorities, or with the Human Rights Commission (<a href="https://www.hrc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">hrc.gov.sa</a>) where needed.</li>
             </ul>
         </>,
     },
     {
-        q: 'كيف أقفل حسابي كتاجر؟',
-        a: <>
-            <p>من «إعدادات الحساب» ← «حذف الحساب». الحجوزات الجارية يجب تنفيذها أو إلغاؤها أوّلاً. عند تفعيل الاشتراك المدفوع، يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة دون استرداد جزئي (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>
-        </>,
+        q: 'How do I get alerts for offers that matter to me?',
+        a: <p>From the «My Account» page you can configure <strong>Smart Alerts</strong>: pick categories of interest, merchants to follow, or keywords, and you will be notified whenever an offer matches your preferences. It is all optional and you can disable it at any time.</p>,
+    },
+    {
+        q: 'Can I permanently delete my account?',
+        a: <p>Yes. From the side menu (☰) → «Delete account permanently». Your data is deleted within a short period, save the minimum we are required by law to retain (transaction records for 5 years under Saudi accounting laws).</p>,
     },
 ];
 
-const FAQ: React.FC = () => (
-    <LegalLayout
-        title="الأسئلة الشائعة"
-        subtitle="Frequently Asked Questions · TAKI"
-        lastUpdated="2026-05-21"
-        draftNotice={false}
-    >
-        <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            في هذه الصفحة تجد أكثر الاستفسارات شيوعاً عن طريقة عمل المنصّة،
-            وما يَخصّ المشتري، وما يَخصّ التاجر. للاستفسارات التي لا تجد جوابها هنا،
-            استخدم زرّ <strong>«📣 الشكاوى / تواصل الإدارة»</strong> داخل التطبيق.
-        </p>
+// ============================================================
+// للتاجر / For merchants
+// ============================================================
+const merchantFAQ_AR: QA[] = [
+    {
+        q: 'كيف أُسجِّل كتاجر؟',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>ادخل صفحة التسجيل واختر «تاجر».</li>
+            <li>أَدخِل بيانات متجرك: الاسم، الفئة، الموقع، الفروع، صور تعريفية.</li>
+            <li>تَوافق على الشروط القانونية الإلزامية.</li>
+            <li>تنتظر مراجعة فريق الإدارة لتفعيل الحساب. قد تُطلب وثائق إضافية للتحقّق من النشاط (سجلّ تجاري، وثيقة عمل حرّ، رخصة بلدية بحسب النشاط).</li>
+        </ol>,
+    },
+    {
+        q: 'هل التسجيل كتاجر مدفوع؟',
+        a: <p>التسجيل والاستخدام الأساسي حالياً <strong>مجاني</strong>. عند تفعيل الاشتراك المدفوع مستقبلاً، يكون اختيارياً، ويُعلَن سعره بوضوح قبل أيّ خصم. النموذج المعتمد: «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية المدّة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+    },
+    {
+        q: 'كيف أُضيف عرضاً جديداً؟',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>من «لوحة التاجر» اضغط «➕ إضافة عرض».</li>
+            <li>اكتب عنوان العرض، وصفه، السعر قبل وبعد التخفيض.</li>
+            <li>حدّد الكمّيّة المتاحة ومدّة صلاحيّة العرض (تاريخ بداية ونهاية).</li>
+            <li>ارفع صوراً واضحة (يَدعم محرّر القصّ الذكيّ لتعديل النسبة).</li>
+            <li>اختر الفرع أو الفروع التي يَسري عليها العرض.</li>
+            <li>اضغط «انشر» — يَظهر العرض فوراً للمشترين.</li>
+        </ol>,
+    },
+    {
+        q: 'كيف أستقبل الحجوزات؟',
+        a: <p>تَصِلك إشعارات فورية في التطبيق وعبر الإيميل عند كلّ حجز جديد. من «لوحة التاجر» ← «الحجوزات» تَرى كل الحجوزات الواردة مع بيانات المشتري الأساسية ووقت الحجز. يمكنك التواصل مع المشتري عبر شات الحجز لتأكيد التفاصيل.</p>,
+    },
+    {
+        q: 'ماذا أفعل عند حضور المشتري لاستلام العرض؟',
+        a: <p>تحقّق من رقم الحجز من تطبيق المشتري (يَظهر في «حجوزاتي» عنده)، سلّمه البضاعة أو قدّم له الخدمة، استلم الثمن بالطريقة المناسبة (نقد / بطاقة / تحويل)، ثم اضغط «✓ إكمال الحجز» من لوحتك. هذا يُحدِّث الكمّيّة المتبقّية تلقائياً.</p>,
+    },
+    {
+        q: 'ماذا أفعل إذا لم يحضر المشتري؟',
+        a: <p>يحقّ لك إلغاء الحجز من «لوحة التاجر» بعد انتهاء مدّة صلاحيّته. لا توجد عقوبة عليك من المنصّة. تكرار عدم الحضور من نفس المشتري يُسجَّل تلقائياً في النظام وقد يؤدّي إلى تقييد حسابه.</p>,
+    },
+    {
+        q: 'هل يمكنني إدارة فروع متعدّدة؟',
+        a: <p>نعم. من إعدادات المتجر تَستطيع إضافة فروع متعدّدة وربط كلّ عرض بالفرع/الفروع التي يَسري عليها. الباقة الأساسية تتيح عدداً معيّناً من الفروع، والباقات المتقدّمة تَزيد العدد.</p>,
+    },
+    {
+        q: 'هل يمكنني الردّ على تقييمات المشترين؟',
+        a: <p>نعم. من «لوحة التاجر» ← «التقييمات» يمكنك الاطّلاع على كل التقييمات والردّ عليها باحتراف. الردّ الهادئ والمهنيّ على التقييمات السلبية يبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>,
+    },
+    {
+        q: 'هل يمكنني نَشر منتجات محظورة؟',
+        a: <p>لا. نَشر أيّ منتج يخالف الأنظمة السعودية (مخدّرات، خمر، أدوية موصوفة، أسلحة، تَسويق شبكيّ، أوراق مالية، أجهزة تَجسّس، منتجات مقلَّدة، تَبغ، تَقسيط ومنتجات بنكية، إلخ.) يُؤدّي فوراً إلى حذف العرض، تعليق الحساب، وإحالة الواقعة للجهات الأمنية. القائمة الكاملة في <a href="/terms" className="text-emerald-600 font-bold underline">شروط الاستخدام (القسم 7)</a>.</p>,
+    },
+    {
+        q: 'تَعرّضت لمُشتري احتياليّ، ماذا أفعل؟',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>ارفع بَلاغاً على المشتري عبر «🚩 إبلاغ» في صفحة الحجز مع وصف الواقعة.</li>
+            <li>راسل الإدارة عبر «📣 الشكاوى» مع الأدلّة المتوفّرة.</li>
+            <li>تَوجّه للجهات الأمنية لرفع شكوى رسمية إن وَقع ضرر فعليّ.</li>
+            <li>TAKI تَتعاون مع الجهات الأمنية وتَستجيب لطلباتها الرسمية، وتُوقف الحسابات المُتورّطة لحماية باقي التجار.</li>
+        </ol>,
+    },
+    {
+        q: 'هل التاجر مسؤول عن سياسة الاسترجاع والاستبدال؟',
+        a: <p><strong>نعم بشكل كامل</strong>. سياسة الاسترجاع والاستبدال محصورة بينك وبين المشتري، وتَخضع لِما تُعلِنه أنت في متجرك أو ما تَنصّ عليه الأنظمة السعودية لحماية المستهلك. TAKI ليست طرفاً في الاسترجاع، ولا تَضمنه، ولا تُنفِّذه. يُنصح بأن تَنشر سياستك بوضوح في صفحة متجرك لتجنّب الخلافات.</p>,
+    },
+    {
+        q: 'هل TAKI تَستلم ثمن مبيعاتي؟',
+        a: <p>لا. كلّ ثمن البضاعة/الخدمة يستلمه التاجر مباشرةً من المشتري عند الاستلام في الموقع. TAKI لا تتدخّل في تحويل الأموال بين الطرفين، ولا تستلم نيابةً عن أيّ تاجر، ولا تَحتفظ ببيانات بطاقة المشتري.</p>,
+    },
+    {
+        q: 'ما المسؤوليات النظامية على عاتقي كتاجر؟',
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li>حِيازَة سجلّ تجاري ساري أو وثيقة عمل حرّ، وأيّ ترخيص نظامي يَلزم نشاطك.</li>
+            <li>إصدار فواتير ضريبية للمشتري إن انطبق عليك ذلك بحسب أنظمة هيئة الزكاة والضريبة.</li>
+            <li>الالتزام بسياسة استرداد واضحة ومُعلَنة للمشتري، وفقاً لنظام حماية المستهلك.</li>
+            <li>دقّة وصف العروض — لا «طُعم وتبديل» (bait-and-switch) ولا تسعير مُضلِّل.</li>
+            <li>تنفيذ كلّ حجز صحيح ما لم يقع سبب نظاميّ يمنع ذلك.</li>
+            <li>عدم استخدام بيانات اتصال المشتري لأيّ غرض خارج تنفيذ الحجز نفسه.</li>
+        </ul>,
+    },
+    {
+        q: 'كيف أقفل حسابي كتاجر؟',
+        a: <p>من «إعدادات الحساب» ← «حذف الحساب». الحجوزات الجارية يجب تنفيذها أو إلغاؤها أوّلاً. عند تفعيل الاشتراك المدفوع، يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة دون استرداد جزئي (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+    },
+];
 
-        <Group title="كيف تتم الخدمة" emoji="🔄" items={howItWorks} />
-        <Group title="للمشتري" emoji="🛒" items={buyerFAQ} />
-        <Group title="للتاجر" emoji="🏪" items={merchantFAQ} />
+const merchantFAQ_EN: QA[] = [
+    {
+        q: 'How do I register as a merchant?',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>Open the registration page and choose «Merchant».</li>
+            <li>Enter your store details: name, category, location, branches, and introductory images.</li>
+            <li>Accept the binding legal terms.</li>
+            <li>Wait for the admin team to review and activate the account. Additional documents may be requested to verify the activity (commercial register, freelance permit, or municipal licence depending on the activity).</li>
+        </ol>,
+    },
+    {
+        q: 'Is merchant registration paid?',
+        a: <p>Currently, registration and basic use are <strong>free</strong>. When a paid subscription is enabled in the future it will be optional, and the price will be clearly disclosed before any charge. The adopted model: «Pay monthly, cancel anytime, use until end of paid month» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+    },
+    {
+        q: 'How do I add a new offer?',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>From the «Merchant Dashboard» tap «➕ Add offer».</li>
+            <li>Enter the title, description, and price before and after discount.</li>
+            <li>Set the available quantity and offer window (start and end date).</li>
+            <li>Upload clear images (the smart crop editor lets you adjust the ratio).</li>
+            <li>Select the branch or branches to which the offer applies.</li>
+            <li>Tap «Publish» — the offer appears to buyers immediately.</li>
+        </ol>,
+    },
+    {
+        q: 'How do I receive bookings?',
+        a: <p>You receive instant in-app and email notifications for every new booking. From the «Merchant Dashboard» → «Bookings» you can see all incoming bookings with basic buyer details and booking time. You can communicate with the buyer through the booking chat to confirm details.</p>,
+    },
+    {
+        q: 'What do I do when the buyer arrives to collect the offer?',
+        a: <p>Verify the booking number from the buyer's app (it appears in their «My Bookings»), hand over the goods or provide the service, take payment by the appropriate means (cash / card / transfer), then tap «✓ Complete booking» from your dashboard. This automatically updates the remaining quantity.</p>,
+    },
+    {
+        q: 'What do I do if the buyer does not attend?',
+        a: <p>You may cancel the booking from the «Merchant Dashboard» once it has expired. There is no penalty from the platform. Repeated no-shows from the same buyer are recorded automatically by the system and may result in restrictions on their account.</p>,
+    },
+    {
+        q: 'Can I manage multiple branches?',
+        a: <p>Yes. From the store settings you can add multiple branches and link each offer to the branch(es) on which it applies. The basic plan allows a fixed number of branches; advanced plans increase that allowance.</p>,
+    },
+    {
+        q: 'Can I reply to buyers\' ratings?',
+        a: <p>Yes. From the «Merchant Dashboard» → «Ratings» you can view all ratings and reply to them professionally. A calm, professional reply to negative ratings builds trust. Do not argue or threaten — any inappropriate reply may be removed.</p>,
+    },
+    {
+        q: 'Can I publish prohibited products?',
+        a: <p>No. Publishing any product that contravenes Saudi laws (drugs, alcohol, prescription medication, weapons, network/pyramid marketing, securities, surveillance devices, counterfeit goods, tobacco, instalment or banking products, etc.) leads immediately to removal of the offer, suspension of the account, and referral of the matter to the security authorities. The full list is in the <a href="/terms" className="text-emerald-600 font-bold underline">Terms of Service (Section 7)</a>.</p>,
+    },
+    {
+        q: 'I have been targeted by a fraudulent buyer — what do I do?',
+        a: <ol className="list-decimal ps-5 space-y-1">
+            <li>Report the buyer via «🚩 Report» on the booking page with a description of the incident.</li>
+            <li>Message the administration via «📣 Complaints» with whatever evidence you have.</li>
+            <li>Approach the security authorities to lodge a formal complaint if actual harm has occurred.</li>
+            <li>TAKI cooperates with the security authorities and responds to their official requests, and suspends accounts involved to protect other merchants.</li>
+        </ol>,
+    },
+    {
+        q: 'Is the merchant responsible for returns and exchange policy?',
+        a: <p><strong>Yes, in full.</strong> The returns and exchange policy is confined to you and the buyer, and is governed by what you publish at your store or by the Saudi consumer-protection laws. TAKI is not a party to returns, does not guarantee them, and does not implement them. We recommend that you publish your policy clearly on your store page to avoid disputes.</p>,
+    },
+    {
+        q: 'Does TAKI collect the price of my sales?',
+        a: <p>No. All proceeds from the goods or services are received by the merchant directly from the buyer on receipt at the merchant's location. TAKI does not intervene in transferring funds between the parties, does not collect on behalf of any merchant, and does not retain the buyer's card data.</p>,
+    },
+    {
+        q: 'What regulatory obligations do I bear as a merchant?',
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li>Hold a valid commercial register or freelance permit, and any regulatory licence required by your activity.</li>
+            <li>Issue tax invoices to the buyer where this applies to you under the Zakat, Tax and Customs Authority rules.</li>
+            <li>Maintain a clear, published refund policy for the buyer, in line with the Consumer Protection Law.</li>
+            <li>Accuracy of offer descriptions — no «bait-and-switch» and no misleading pricing.</li>
+            <li>Honour every valid booking unless a regulatory reason prevents it.</li>
+            <li>Do not use the buyer's contact details for any purpose outside performing the booking itself.</li>
+        </ul>,
+    },
+    {
+        q: 'How do I close my merchant account?',
+        a: <p>From «Account settings» → «Delete account». Ongoing bookings must be fulfilled or cancelled first. Where a paid subscription is enabled, it remains effective until the end of the paid period with no partial refund (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+    },
+];
 
-        <div className="mt-8 p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">
-            <div className="text-2xl mb-2">💬</div>
-            <p className="text-sm font-extrabold text-emerald-900">
-                لم تجد جواباً لسؤالك؟
+const FAQ: React.FC = () => {
+    const { language } = useApp();
+    const isRTL = language === 'ar';
+
+    return (
+        <LegalLayout
+            title={isRTL ? 'الأسئلة الشائعة' : 'Frequently Asked Questions'}
+            subtitle={isRTL ? 'Frequently Asked Questions · TAKI' : 'الأسئلة الشائعة · TAKI'}
+            lastUpdated="2026-05-21"
+            draftNotice={false}
+        >
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                {isRTL ? (
+                    <>
+                        في هذه الصفحة تجد أكثر الاستفسارات شيوعاً عن طريقة عمل المنصّة،
+                        وما يَخصّ المشتري، وما يَخصّ التاجر. للاستفسارات التي لا تجد جوابها هنا،
+                        استخدم زرّ <strong>«📣 الشكاوى / تواصل الإدارة»</strong> داخل التطبيق.
+                    </>
+                ) : (
+                    <>
+                        On this page you will find the most common queries about how the
+                        platform works, what concerns buyers, and what concerns merchants.
+                        For queries whose answers you cannot find here, use the{' '}
+                        <strong>«📣 Complaints / Contact the Admin»</strong> button inside
+                        the app.
+                    </>
+                )}
             </p>
-            <p className="text-xs text-emerald-800 mt-1 font-medium">
-                راسلنا عبر زرّ «📣 الشكاوى / تواصل الإدارة» داخل التطبيق، أو زُر{' '}
-                <a href="/contact" className="font-bold underline">صفحة اتصل بنا</a>.
-            </p>
-        </div>
-    </LegalLayout>
-);
+
+            <Group
+                title={isRTL ? 'كيف تتم الخدمة' : 'How the service works'}
+                emoji="🔄"
+                items={isRTL ? howItWorksAR : howItWorksEN}
+            />
+            <Group
+                title={isRTL ? 'للمشتري' : 'For buyers'}
+                emoji="🛒"
+                items={isRTL ? buyerFAQ_AR : buyerFAQ_EN}
+            />
+            <Group
+                title={isRTL ? 'للتاجر' : 'For merchants'}
+                emoji="🏪"
+                items={isRTL ? merchantFAQ_AR : merchantFAQ_EN}
+            />
+
+            <div className="mt-8 p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">
+                <div className="text-2xl mb-2">💬</div>
+                <p className="text-sm font-extrabold text-emerald-900">
+                    {isRTL ? 'لم تجد جواباً لسؤالك؟' : 'Did not find an answer to your question?'}
+                </p>
+                <p className="text-xs text-emerald-800 mt-1 font-medium">
+                    {isRTL ? (
+                        <>
+                            راسلنا عبر زرّ «📣 الشكاوى / تواصل الإدارة» داخل التطبيق، أو زُر{' '}
+                            <a href="/contact" className="font-bold underline">صفحة اتصل بنا</a>.
+                        </>
+                    ) : (
+                        <>
+                            Message us via the «📣 Complaints / Contact the Admin» button
+                            inside the app, or visit the{' '}
+                            <a href="/contact" className="font-bold underline">Contact Us</a> page.
+                        </>
+                    )}
+                </p>
+            </div>
+        </LegalLayout>
+    );
+};
 
 export default FAQ;
