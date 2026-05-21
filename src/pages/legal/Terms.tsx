@@ -161,16 +161,16 @@ const Terms: React.FC = () => {
                     'إذا كان اسم المتجر يَتضمّن اسماً تجارياً أو علامة تجارية، فيَلزم أن تكون مالكها أو مُفوَّضاً باستخدامها.',
                     'يُمنع بيع المتجر أو التنازل عنه أو تَأجيره أو السماح لأيّ طرف باستخدامه. وفي حالة المخالفة يُعتبر صاحب الحساب الأوّل هو المسؤول قانونياً عن كلّ ما يَصدر منه، ويُعدّ الطرفان (المتنازِل والمتنازَل له) مُخالفَين لشروط الاستخدام.',
                     'تَحديث رقم الجوّال المرتبط بالمتجر فور تَغييره أو فقدانه.',
-                    'حِيازة سجلّ تجاريّ ساري أو وثيقة عمل حرّ، وأيّ تَرخيص نظاميّ يَلزم لطبيعة النشاط (تَرخيص بلديّ، اشتراطات صحّية، تَرخيص هيئة الغذاء والدواء، إلخ.) — حسب نَوع الخدمة المُقدَّمة. الإفصاح عن الجهة المُرخِّصة وبيانات التَرخيص واللقب المهنيّ إن لَزم.',
-                    'تَقديم وثائق التحقّق التي تَطلبها الإدارة (هوية المُفوَّض، السجلّ التجاريّ، رخصة النشاط، البيانات البنكية عند تَفعيل اشتراك مدفوع).',
+                    <><strong>التاجر وحده مسؤول</strong> عن حِيازة جميع الوثائق والتَراخيص النظامية اللازمة لمزاولة نشاطه (سجلّ تجاريّ، وثيقة عمل حرّ، تَرخيص بلديّ، اشتراطات صحّية، تَرخيص هيئة الغذاء والدواء، أو أيّ تَرخيص نظاميّ آخر يَقتضيه نشاطه) — والمنصّة <strong>لا تَلتزم بالتحقّق المسبق</strong> من هذه الوثائق قبل تَفعيل الحساب أو نَشر العروض.</>,
+                    <>للإدارة الحقّ في طَلب أيّ من هذه الوثائق متى رأت ذلك ضرورياً (وثائق هوية، سجلّ تجاريّ، رخصة نشاط، بيانات بنكية عند تَفعيل اشتراك مدفوع)، وتَعليق الحساب فوراً إن تَخلّف التاجر عن تَقديمها. وأيّ مخالفة لمتطلّبات التَرخيص أو نَشر نشاط دون التَراخيص اللازمة تَقع مسؤوليّتها الكاملة — جنائياً ومدنياً — على التاجر وحده، دون أيّ مسؤولية على المنصّة.</>,
                 ] : [
                     'Choosing a decent and suitable store name that does not breach public taste or the laws.',
                     'It is prohibited to create more than one account for the same person or entity on the platform without prior written permission from the administration.',
                     'If the store name contains a trade name or trademark, you must be its owner or duly authorised to use it.',
                     'Selling, assigning, leasing or allowing any party to use the store account is prohibited. In the event of breach, the original account holder is legally responsible for everything done through it, and both parties (transferor and transferee) are deemed to have breached the Terms.',
                     'Updating the mobile number associated with the store as soon as it is changed or lost.',
-                    'Holding a valid commercial register or freelance permit, and any regulatory licence required by the nature of the activity (municipal licence, health requirements, Saudi Food &amp; Drug Authority licence, etc.) — depending on the type of service. Disclose the licensing body, licence particulars, and professional title where required.',
-                    'Producing the verification documents requested by the administration (authorised signatory ID, commercial register, activity licence, bank details when a paid subscription is enabled).',
+                    <><strong>The merchant alone is responsible</strong> for holding all documents and regulatory licences required to carry on their activity (commercial register, freelance permit, municipal licence, health requirements, Saudi Food &amp; Drug Authority licence, or any other regulatory licence required by the activity) — and the platform <strong>does not undertake to verify these documents in advance</strong> before activating the account or publishing offers.</>,
+                    <>The administration has the right to request any of these documents whenever it deems necessary (identity documents, commercial register, activity licence, bank details when a paid subscription is enabled) and to suspend the account immediately if the merchant fails to produce them. Any breach of licensing requirements, or publishing of activity without the required licences, falls entirely on the merchant alone — criminally and civilly — and not on the platform.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
@@ -323,6 +323,10 @@ const Terms: React.FC = () => {
                     <><strong>السبام والإعلانات المتطفّلة</strong>: تَكرار الرسائل، نَشر روابط خارجية، استغلال نظام الإشعارات أو التَنبيهات.</>,
                     <><strong>محاولات التحايل التقنيّ</strong>: الوصول غير المشروع، استخراج البيانات (scraping)، هجمات الحرمان من الخدمة، استغلال الثغرات، تشغيل bots دون إذن.</>,
                     <><strong>جَمع بيانات المستخدمين الآخرين دون موافقتهم</strong> أو الإفصاح عنها لأيّ طرف بمقابل أو دونه — بما يُخالف نظام حماية البيانات الشخصية.</>,
+                    <><strong>الاتجار بالبشر واستغلالهم</strong>: تَحظر المنصّة كلّ أشكال الاتجار بالأشخاص والأعضاء، استناداً إلى المعايير المحلّية والدولية بما فيها بروتوكول باليرمو. ويُحال المحتوى المخالف إلى هيئة حقوق الإنسان السعودية (<a href="https://www.hrc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">hrc.gov.sa</a>) فوراً مع إيقاف حساب المُخالف.</>,
+                    <><strong>أيّ محتوى يَتضمّن تَحرّشاً بالقاصرين أو استغلالاً لهم أو تَنمّراً عليهم</strong>، أو ألفاظاً مُهينة لكرامتهم، أو محتوى مُوجَّه للأطفال يُخالف الشريعة الإسلامية أو النظام العامّ أو الآداب. ويُبلَّغ عن المخالفات لوزارة الموارد البشرية والتنمية الاجتماعية وهيئة حقوق الإنسان.</>,
+                    <><strong>التَحرّش بالنساء والفتيات أو ابتزازهنّ أو التَنمّر عليهنّ</strong>: تَلتزم المنصّة بتَوفير بيئة آمنة وتُتاح أدوات الحظر الفوريّ والإبلاغ، وعلى المُتضرّرة الإبلاغ عبر «📣 الشكاوى» ورفع شكوى لدى الجهات الأمنية لحماية حقوقها.</>,
+                    <><strong>التَمييز أو التَهديد أو الإساءة أو التَنمّر بسبب الدين أو العرق أو الجنس أو الجنسية</strong> — سواء في المحتوى المنشور أو عبر الشات — تُحال المخالفات لذوي الاختصاص ويُعلَّق الحساب فوراً.</>,
                 ] : [
                     <><strong>Anything prohibited by the laws of the Kingdom of Saudi Arabia</strong> — even if not expressly listed below.</>,
                     <><strong>Content contrary to Islamic Sharia, public taste or Saudi mores</strong>: religious insults, pornography, sexual innuendo, or incitement to vice.</>,
@@ -350,6 +354,10 @@ const Terms: React.FC = () => {
                     <><strong>Spam and intrusive advertising</strong>: repeated messaging, posting external links, or abuse of the notifications or alerts system.</>,
                     <><strong>Technical circumvention attempts</strong>: unauthorised access, data scraping, denial-of-service attacks, exploitation of vulnerabilities, running bots without permission.</>,
                     <><strong>Collecting data on other users without their consent</strong>, or disclosing it to any party for or without consideration — in breach of the Personal Data Protection Law.</>,
+                    <><strong>Human trafficking and exploitation</strong>: the platform prohibits all forms of trafficking in persons and organs, based on domestic and international standards including the Palermo Protocol. Non-compliant content is referred to the Saudi Human Rights Commission (<a href="https://www.hrc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">hrc.gov.sa</a>) immediately and the offender's account is suspended.</>,
+                    <><strong>Any content involving harassment, exploitation or bullying of minors</strong>, language insulting to their dignity, or content directed at children that breaches Islamic Sharia, public order or morality. Breaches are reported to the Ministry of Human Resources &amp; Social Development and the Human Rights Commission.</>,
+                    <><strong>Harassment, extortion or bullying of women and girls</strong>: the platform is committed to providing a safe environment with immediate blocking and reporting tools. Affected parties should report via «📣 Complaints» and file a complaint with the security authorities to protect their rights.</>,
+                    <><strong>Discrimination, threats, abuse or bullying on grounds of religion, race, gender or nationality</strong> — whether in published content or via chat — are referred to the competent authorities and the account is suspended immediately.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
@@ -408,54 +416,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={9} title={isRTL ? '🛡️ بنود الحماية الخاصّة (الاتجار بالبشر، الأطفال، النساء، المُضايقة)' : '🛡️ Special protection clauses (human trafficking, children, women, harassment)'}>
-                <Paragraph>
-                    {isRTL ? (
-                        <>
-                            التزاماً بالأنظمة السعودية وحقوق الإنسان، تَلتزم TAKI بسياسات
-                            صارمة لحماية الفئات الأكثر عرضةً للأذى — وتُحال أيّ مخالفة من
-                            هذه الأنواع إلى الجهات المختصّة فوراً:
-                        </>
-                    ) : (
-                        <>
-                            In compliance with Saudi laws and human rights, TAKI commits
-                            to strict policies to protect the categories most vulnerable
-                            to harm — and any breach of this kind is referred to the
-                            competent authorities immediately:
-                        </>
-                    )}
-                </Paragraph>
-                <Bullets items={isRTL ? [
-                    <><strong>الاتجار بالبشر واستغلالهم</strong>: تَحظر المنصّة كلّ أشكال الاتجار بالأشخاص والأعضاء، استناداً إلى المعايير المحلّية والدولية بما فيها بروتوكول باليرمو لمنع ومعاقبة الاتجار بالأشخاص. ويُحال المحتوى المخالف إلى هيئة حقوق الإنسان السعودية (<a href="https://www.hrc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">hrc.gov.sa</a>) فوراً مع إيقاف حساب المُخالف.</>,
-                    <><strong>حماية الأطفال</strong>: تَحظر المنصّة أيّ محتوى يَتضمّن تَحرّشاً بالقاصرين، أو استغلالاً لهم، أو تَنمّراً عليهم، أو ألفاظاً مُهينة لكرامتهم، أو تَمييزاً ضدّهم لأيّ سبب. كما يُحظر أيّ محتوى مُوجَّه للأطفال يُخالف الشريعة الإسلامية أو النظام العامّ أو الآداب. ويُبلَّغ عن المخالفات لوزارة الموارد البشرية والتنمية الاجتماعية وهيئة حقوق الإنسان.</>,
-                    <><strong>حماية النساء والفتيات</strong>: تَلتزم المنصّة بتَوفير بيئة آمنة للنساء والفتيات من المُضايقات والتَحرّش والابتزاز والتَنمّر. وتُتاح أدوات الحظر الفوريّ، والإبلاغ، وتَقييم المُستخدمين. وعلى المُتضرّرة الإبلاغ عبر «📣 الشكاوى» داخل التطبيق ورفع شكوى لدى الجهات الأمنية لحماية حقوقها.</>,
-                    <><strong>الحماية من المُضايقة والكراهية والعنصرية</strong>: لا تَسمح المنصّة بأيّ تَمييز أو تَهديد أو إساءة أو أذى أو تَنمّر — في المحتوى المنشور أو عبر الشات — بسبب الدين أو العرق أو الجنس أو الجنسية. تُحال المُخالفات لذوي الاختصاص ويُعلَّق الحساب فوراً.</>,
-                ] : [
-                    <><strong>Human trafficking and exploitation</strong>: the platform prohibits all forms of trafficking in persons and organs, on the basis of domestic and international standards, including the Palermo Protocol to Prevent, Suppress and Punish Trafficking in Persons. Non-compliant content is referred to the Saudi Human Rights Commission (<a href="https://www.hrc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">hrc.gov.sa</a>) immediately and the offender's account is suspended.</>,
-                    <><strong>Protection of children</strong>: the platform prohibits any content involving harassment of minors, their exploitation, bullying of them, language insulting to their dignity, or discrimination against them on any ground. Any content directed at children that breaches Islamic Sharia, public order or morality is also prohibited. Breaches are reported to the Ministry of Human Resources &amp; Social Development and the Human Rights Commission.</>,
-                    <><strong>Protection of women and girls</strong>: the platform is committed to providing a safe environment for women and girls, free from harassment, extortion and bullying. Immediate-blocking tools, reporting tools and user-rating tools are available. The injured party should report via «📣 Complaints» inside the app and file a complaint with the security authorities to protect their rights.</>,
-                    <><strong>Protection against harassment, hatred and racism</strong>: the platform does not permit any discrimination, threat, abuse, harm or bullying — whether in published content or via chat — on grounds of religion, race, gender or nationality. Breaches are referred to the competent authorities and the account is suspended immediately.</>,
-                ]} />
-                <Paragraph>
-                    {isRTL ? (
-                        <>
-                            للإبلاغ عن أيّ محتوى مُخالف لهذه البنود: استخدم زرّ «🚩 إبلاغ»
-                            في صفحة العرض/المتجر، أو زرّ «📣 الشكاوى / تواصل الإدارة».
-                            وللجرائم، أبلِغ الجهات الأمنية مباشرةً بشكل مُستقلّ.
-                        </>
-                    ) : (
-                        <>
-                            To report any content in breach of these clauses, use the
-                            «🚩 Report» button on the offer/store page, or the
-                            «📣 Complaints / Contact the Admin» button. For criminal
-                            matters, notify the security authorities directly and
-                            independently.
-                        </>
-                    )}
-                </Paragraph>
-            </Section>
-
-            <Section n={10} title={isRTL ? '⚖️ تَحمّل المستخدم للمسؤولية الكاملة' : '⚖️ The user\'s full assumption of responsibility'}>
+            <Section n={9} title={isRTL ? '⚖️ تَحمّل المستخدم للمسؤولية الكاملة' : '⚖️ The user\'s full assumption of responsibility'}>
                 <Paragraph>{isRTL ? 'كلّ مستخدم — مشترٍ أو تاجر — يُقرّ ويُوافق صراحةً على ما يلي:' : 'Every user — buyer or merchant — expressly acknowledges and agrees to the following:'}</Paragraph>
                 <Bullets items={isRTL ? [
                     'هو وَحده المسؤول جنائياً ومدنياً عن أيّ محتوى يَنشره، وأيّ فعل يَرتكبه، وأيّ معاملة يُجريها عبر المنصّة.',
@@ -474,7 +435,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={11} title={isRTL ? '🛡️ الحماية من الاحتيال — مسؤولية مُشتركة' : '🛡️ Fraud protection — a shared responsibility'}>
+            <Section n={10} title={isRTL ? '🛡️ الحماية من الاحتيال — مسؤولية مُشتركة' : '🛡️ Fraud protection — a shared responsibility'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -526,7 +487,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={12} title={isRTL ? '📝 نظام التقييمات والتعليقات' : '📝 Ratings and reviews system'}>
+            <Section n={11} title={isRTL ? '📝 نظام التقييمات والتعليقات' : '📝 Ratings and reviews system'}>
                 <Bullets items={isRTL ? [
                     'يُوافق المُستخدم على ظهور التقييمات والتعليقات للعموم — سواء كانت إيجابية أو سَلبية — على أنّها تَعبير عن آراء مُرسليها.',
                     'TAKI لا تَتحمّل مسؤولية محتوى التقييمات، ولا تَلتزم بحذف أو تَعديل أيّ تَقييم بناءً على طلب مَن وَجَّه إليه.',
@@ -542,7 +503,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={13} title={isRTL ? '🛡️ إخلاء المسؤولية الشامل' : '🛡️ Comprehensive disclaimer of liability'}>
+            <Section n={12} title={isRTL ? '🛡️ إخلاء المسؤولية الشامل' : '🛡️ Comprehensive disclaimer of liability'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -621,7 +582,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={14} title={isRTL ? '🤝 تَعويض TAKI (Indemnity)' : '🤝 Indemnity to TAKI'}>
+            <Section n={13} title={isRTL ? '🤝 تَعويض TAKI (Indemnity)' : '🤝 Indemnity to TAKI'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -654,7 +615,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={15} title={isRTL ? 'حقوق الملكية الفكرية' : 'Intellectual property rights'}>
+            <Section n={14} title={isRTL ? 'حقوق الملكية الفكرية' : 'Intellectual property rights'}>
                 <Bullets items={isRTL ? [
                     'الاسم التجاري «TAKI» وشعارها وتَصميم الواجهات والكود البرمجيّ وقاعدة البيانات والمحتوى التحريريّ — كلّها ملك حصريّ للمنصّة.',
                     'يُمنع نَسخ أو تَفكيك (reverse engineering) أو استخراج أو إعادة استخدام أيّ جزء من المنصّة دون إذن خطّيّ مُسبق.',
@@ -670,7 +631,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={16} title={isRTL ? '🛠️ صلاحيّات الإدارة' : '🛠️ Administration powers'}>
+            <Section n={15} title={isRTL ? '🛠️ صلاحيّات الإدارة' : '🛠️ Administration powers'}>
                 <Paragraph>{isRTL ? 'للإدارة الحقّ المُطلق — دون إشعار مُسبق ودون أيّ تَعويض — في:' : 'The administration has the absolute right — without prior notice and without any compensation — to:'}</Paragraph>
                 <Bullets items={isRTL ? [
                     'حذف أو إخفاء أيّ محتوى تَراه مُخالفاً أو مَشكوكاً فيه، أو ضعيف الجودة، أو ناقص التفاصيل، أو في القسم الخطأ.',
@@ -711,7 +672,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={17} title={isRTL ? 'نظام البلاغات وآلية المُراجعة' : 'Reports system and review mechanism'}>
+            <Section n={16} title={isRTL ? 'نظام البلاغات وآلية المُراجعة' : 'Reports system and review mechanism'}>
                 <Bullets items={isRTL ? [
                     'يحقّ لأيّ مُستخدم تَقديم بلاغ ضدّ عرض أو حساب أو مستخدم عبر زرّ «🚩 إبلاغ».',
                     'تُراجَع البلاغات يدوياً من الإدارة وَفق أولويّاتها وسلطتها التَقديرية، دون التزام بمدّة زمنية مُحدَّدة.',
@@ -729,7 +690,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={18} title={isRTL ? 'القوّة القاهرة' : 'Force majeure'}>
+            <Section n={17} title={isRTL ? 'القوّة القاهرة' : 'Force majeure'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -756,7 +717,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={19} title={isRTL ? 'علاقة الأطراف' : 'Relationship of the parties'}>
+            <Section n={18} title={isRTL ? 'علاقة الأطراف' : 'Relationship of the parties'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -781,7 +742,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={20} title={isRTL ? 'مُجمل الاتفاق وعدم التنازل' : 'Entire agreement and no waiver'}>
+            <Section n={19} title={isRTL ? 'مُجمل الاتفاق وعدم التنازل' : 'Entire agreement and no waiver'}>
                 <Bullets items={isRTL ? [
                     'تُمثّل هذه الشروط — مع سياسة الخصوصية وسياسة الاسترداد وأيّ سياسة لاحقة — مُجمل الاتفاق بين الأطراف، وتَسمو على وتُلغي أيّ اتفاقات شفوية أو خطّية سابقة.',
                     'لا يُعتبر تنازل TAKI عن حقّ من حقوقها — أو تأخّرها في ممارسته — تنازلاً عن ذلك الحقّ مستقبلاً ولا عن أيّ حقّ آخر، ما لم يكن التنازل خطّياً وصريحاً من مُمثّل مفوَّض.',
@@ -797,7 +758,7 @@ const Terms: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={21} title={isRTL ? 'تَعديل الشروط' : 'Amendment of the Terms'}>
+            <Section n={20} title={isRTL ? 'تَعديل الشروط' : 'Amendment of the Terms'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -822,7 +783,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={22} title={isRTL ? 'القانون الحاكم والاختصاص القَضائيّ' : 'Governing law and jurisdiction'}>
+            <Section n={21} title={isRTL ? 'القانون الحاكم والاختصاص القَضائيّ' : 'Governing law and jurisdiction'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
@@ -843,7 +804,7 @@ const Terms: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            <strong>الاختصاص حصرياً للمحاكم السعودية المختصّة بمدينة الرياض</strong>،
+                            <strong>الاختصاص حصرياً للمحاكم السعودية المختصّة داخل المملكة العربية السعودية</strong>،
                             ما لم يَقتضِ النظام خلاف ذلك (كقضايا حماية المستهلك التي تَنظرها
                             محاكم محلّ المستهلك). ويَتنازل المستخدم صراحةً عن أيّ حقّ في
                             رَفع دعوى ضدّ TAKI أمام محاكم أجنبية.
@@ -851,11 +812,11 @@ const Terms: React.FC = () => {
                     ) : (
                         <>
                             <strong>Jurisdiction lies exclusively with the competent
-                            Saudi courts seated in Riyadh</strong>, unless the law
-                            requires otherwise (for example, consumer-protection cases
-                            heard by the courts of the consumer's domicile). The user
-                            expressly waives any right to bring an action against TAKI
-                            before foreign courts.
+                            courts within the Kingdom of Saudi Arabia</strong>, unless
+                            the law requires otherwise (for example, consumer-protection
+                            cases heard by the courts of the consumer's domicile). The
+                            user expressly waives any right to bring an action against
+                            TAKI before foreign courts.
                         </>
                     )}
                 </Paragraph>
@@ -879,7 +840,7 @@ const Terms: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section n={23} title={isRTL ? 'التواصل' : 'Contact'}>
+            <Section n={22} title={isRTL ? 'التواصل' : 'Contact'}>
                 <Paragraph>
                     {isRTL ? (
                         <>

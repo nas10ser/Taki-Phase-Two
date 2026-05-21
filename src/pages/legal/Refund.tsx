@@ -346,13 +346,13 @@ const Refund: React.FC = () => {
                     <><strong>منصّة معروف</strong> — <a href="https://maroof.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">maroof.sa</a> — لتوثيق المتاجر الإلكترونية والشكاوى عليها.</>,
                     <><strong>البنك المركزي السعودي (SAMA)</strong> — <a href="https://sama.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">sama.gov.sa</a> — للنزاعات المتعلّقة بالمدفوعات الإلكترونية.</>,
                     <><strong>هيئة البيانات والذكاء الاصطناعي (SDAIA)</strong> — <a href="https://sdaia.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">sdaia.gov.sa</a> — للشكاوى المتعلّقة بالخصوصية.</>,
-                    'المحاكم التجارية السعودية المختصّة بمدينة الرياض.',
+                    'المحاكم التجارية السعودية المختصّة داخل المملكة العربية السعودية.',
                 ] : [
                     <><strong>Ministry of Commerce</strong> — <a href="https://mc.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">mc.gov.sa</a> — for e-commerce and consumer-protection matters.</>,
                     <><strong>Maroof Platform</strong> — <a href="https://maroof.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">maroof.sa</a> — for the accreditation of online stores and complaints against them.</>,
                     <><strong>Saudi Central Bank (SAMA)</strong> — <a href="https://sama.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">sama.gov.sa</a> — for disputes relating to electronic payments.</>,
                     <><strong>Saudi Data &amp; AI Authority (SDAIA)</strong> — <a href="https://sdaia.gov.sa" target="_blank" rel="noopener noreferrer" className="text-emerald-600 font-bold underline">sdaia.gov.sa</a> — for complaints relating to privacy.</>,
-                    'The competent Saudi commercial courts seated in Riyadh.',
+                    'The competent Saudi commercial courts within the Kingdom of Saudi Arabia.',
                 ]} />
             </Section>
 

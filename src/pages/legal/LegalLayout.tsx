@@ -17,6 +17,7 @@ interface LegalLayoutProps {
     title: string;
     subtitle?: string;
     lastUpdated: string;
+    /** Reserved for future drafts; pages do not render the draft banner by default. */
     draftNotice?: boolean;
     children: React.ReactNode;
 }
@@ -25,7 +26,7 @@ export const LegalLayout: React.FC<LegalLayoutProps> = ({
     title,
     subtitle,
     lastUpdated,
-    draftNotice = true,
+    draftNotice = false,
     children,
 }) => {
     const history = useHistory();

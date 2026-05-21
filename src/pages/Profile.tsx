@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
@@ -57,7 +57,18 @@ const Profile: React.FC = () => {
         [myNotifications]
     );
 
-    const [activeTab, setActiveTab] = useState<'notifications' | 'followed' | 'settings'>('notifications');
+    // Persist the active tab in sessionStorage so that navigating away
+    // (e.g. opening a legal page from "Settings") and coming back via the
+    // browser/native back button returns to the same tab the user left.
+    const [activeTab, setActiveTab] = useState<'notifications' | 'followed' | 'settings'>(() => {
+        try {
+            const saved = sessionStorage.getItem('taki:profile:activeTab');
+            return saved === 'followed' || saved === 'settings' ? saved : 'notifications';
+        } catch { return 'notifications'; }
+    });
+    useEffect(() => {
+        try { sessionStorage.setItem('taki:profile:activeTab', activeTab); } catch { /* ignore */ }
+    }, [activeTab]);
     const [newKeyword, setNewKeyword] = useState('');
     const [filterRegion, setFilterRegion] = useState('');
     const [filterCity, setFilterCity] = useState('');
