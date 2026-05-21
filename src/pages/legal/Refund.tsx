@@ -270,12 +270,12 @@ const Refund: React.FC = () => {
                 <Bullets items={isRTL ? [
                     <><strong>خطأ تقنيّ من المنصّة</strong>: سحب المبلغ مرّتين عن نفس الفترة، أو خصم بدون تفعيل اشتراك.</>,
                     <><strong>سحب بدون موافقة</strong>: استخدام طرف آخر بطاقة التاجر دون إذنه — مع تقديم بلاغ شرطة وتجميد البطاقة وإثبات بنكي.</>,
-                    <><strong>عطل في خدمة TAKI لأكثر من 15 يوماً متواصلة</strong> (المدّة القصوى المنصوص عليها في نظام التجارة الإلكترونية السعودي للتأخير في تَنفيذ الخدمة): يحقّ للتاجر استرداد قيمة الأيام المُتعطّلة تناسبياً.</>,
+                    <><strong>عطل في خدمة TAKI لأكثر من 15 يوماً متواصلة</strong>: يحقّ للتاجر استرداد قيمة الأيام المُتعطّلة تناسبياً.</>,
                     <><strong>إنهاء حساب التاجر من قِبَل الإدارة بدون مخالفة منه</strong>: يُسترَدّ ما تبقّى من الفترة المدفوعة تناسبياً.</>,
                 ] : [
                     <><strong>A technical error of the platform</strong>: charging the amount twice for the same period, or charging without activating a subscription.</>,
                     <><strong>Unauthorised charge</strong>: a third party used the merchant's card without authorisation — supported by a police report, card freeze, and bank evidence.</>,
-                    <><strong>A TAKI service outage exceeding 15 consecutive days</strong> (the maximum period for delay in service performance prescribed by the Saudi E-Commerce Law): the merchant is entitled to a pro-rata refund of the value of the days lost.</>,
+                    <><strong>A TAKI service outage exceeding 15 consecutive days</strong>: the merchant is entitled to a pro-rata refund of the value of the days lost.</>,
                     <><strong>Termination of the merchant's account by the administration without any breach on the merchant's part</strong>: the remaining portion of the paid period is refunded pro-rata.</>,
                 ]} />
                 <Paragraph>
