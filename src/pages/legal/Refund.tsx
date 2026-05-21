@@ -30,10 +30,15 @@ const Refund: React.FC = () => (
         <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 my-4">
             <div className="text-lg font-extrabold text-emerald-900 mb-2">🔗 المبدأ الجوهري</div>
             <p className="text-sm font-bold text-emerald-900 leading-relaxed">
-                TAKI <strong>منصّة وسيطة فقط</strong>. لا تبيع منتجات ولا تستلم ثمنها.
+                TAKI <strong>منصّة وسيطة فقط</strong>. لا تَبيع منتجات ولا تَستلم ثمنها،
+                ولا تَتدخّل في طريقة الشراء ولا في آلية البيع.
                 <br />
-                <strong>ثمن المشتريات يتم بين المشتري والتاجر مباشرة</strong> — لكلّ تاجر
-                سياسة استرداده الخاصّة، وTAKI ليست طرفاً فيها ولا تضمنها.
+                <strong>ثمن المشتريات يَتمّ بين المشتري والتاجر مباشرة</strong>،
+                و<strong>سياسة الاسترجاع والاستبدال محصورة بينهما</strong> وفق
+                سياسة المتجر المُعلَنة. TAKI ليست طرفاً فيها ولا تَضمنها.
+                <br />
+                عند ورود شكوى، يَحقّ للموقع اتّخاذ ما يَراه مناسباً من إجراءات
+                دون التزام بمدّة محدَّدة ودون شرح أسباب القرار.
             </p>
         </div>
 
