@@ -164,18 +164,20 @@ const SubscriptionModal = memo<{
                 </div>
 
                 <div className="p-5 space-y-5">
-                    {/* Browse-as-user action — opens the app as this seller */}
+                    {/* Act-as-user action — full session swap. After clicking,
+                        the admin's Supabase session becomes this seller's:
+                        every deal, message, deletion is attributed to them. */}
                     <div>
                         <button
                             type="button"
                             onClick={() => startImpersonating(seller.id)}
-                            className="w-full p-3 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                            className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                         >
-                            <span className="text-base">👁️</span>
-                            <span>تصفّح التطبيق كهذا التاجر</span>
+                            <span className="text-base">🔓</span>
+                            <span>دخول كَهذا التاجِر (جَلسة كاملة)</span>
                         </button>
                         <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
-                            ستشاهد لوحته، عروضه، حجوزاته، رسائله — كأنك هو. ارجع للمدير في أي وقت.
+                            كأنّك سَجَّلت دخول بِحسابه — تَنشر عُروض، تَحذف، تُراسِل، تُعدِّل بَيانات المتجر. كل إجراء مُسجَّل في سِجل التَّدقيق.
                         </div>
                     </div>
 

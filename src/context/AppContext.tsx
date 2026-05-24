@@ -135,12 +135,18 @@ interface AppContextType {
     viewAs: 'buyer' | 'seller' | null;
     setViewAs: (role: 'buyer' | 'seller' | null) => void;
     effectiveUserType: 'buyer' | 'seller' | 'admin';
-    /** Admin "browse as user" — swaps `user` to a specific target's profile
-     *  so every screen renders as that user. Admin's Supabase session
-     *  stays intact (RLS still authorizes as admin). Non-null = active. */
-    impersonating: { adminId: string; adminName: string } | null;
+    /** Admin "act as user" — v11.16 real session swap. After starting,
+     *  the Supabase session IS the target's: every read/write/delete is
+     *  authorized as the target. Admin's tokens are saved to localStorage
+     *  so stopImpersonating restores them. Non-null = active. */
+    impersonating: {
+        adminId: string;
+        adminName: string;
+        targetId: string;
+        startedAt: string;
+    } | null;
     startImpersonating: (targetUserId: string) => Promise<void>;
-    stopImpersonating: () => void;
+    stopImpersonating: () => Promise<void>;
     incrementDealView: (dealId: string) => Promise<void>;
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
@@ -198,22 +204,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return null;
         }
     });
-    // Admin "browse as user" — admin keeps their real Supabase session
-    // (RLS still treats them as admin), but `user` state is swapped to the
-    // target user's profile so every screen renders as if that user was
-    // signed in. `impersonating` holds the admin's identity for the
-    // floating exit banner and the "stop" action.
-    const [impersonating, setImpersonating] = useState<{ adminId: string; adminName: string } | null>(() => {
+    // Admin "act as user" — v11.16 real session swap. The admin's tokens
+    // are saved to localStorage before swapping; the Supabase session is
+    // replaced with the target's via verifyOtp (edge function admin-impersonate
+    // returns the hashed_token). After the swap every Supabase call from
+    // this browser is authorized as the target — they can post, delete,
+    // message, edit DB rows just as the target would. `impersonating` holds
+    // the admin's identity for the exit banner.
+    const [impersonating, setImpersonating] = useState<{
+        adminId: string; adminName: string; targetId: string; startedAt: string;
+    } | null>(() => {
         try {
-            const raw = localStorage.getItem('TAKI_IMPERSONATE_ADMIN');
-            return raw ? JSON.parse(raw) : null;
+            // Clear leftover v11.15 keys (deprecated by v11.16 real-swap).
+            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
+            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+            const raw = localStorage.getItem('TAKI_IMPERSONATION_SESSION');
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return {
+                adminId: parsed.adminId,
+                adminName: parsed.adminName,
+                targetId: parsed.targetId,
+                startedAt: parsed.startedAt,
+            };
         } catch { return null; }
     });
-    // Ref mirror so the auth listener can short-circuit without depending
-    // on `impersonating` state (callback captures stale closures).
-    const impersonationTargetIdRef = useRef<string | null>(
-        typeof window !== 'undefined' ? localStorage.getItem('TAKI_IMPERSONATE_TARGET') : null
-    );
     // True once the initial Supabase session check has resolved (success OR
     // failure). Distinguishes "still hydrating" from "definitively a guest".
     // Without this, AuthRedirector kicks logged-in admins off /admin on
@@ -473,34 +488,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 userRepository.getCurrentUser()
                     .then(async currentUser => {
                         if (currentUser) {
-                            // Admin "browse as user" override — if the admin has
-                            // an active impersonation target in localStorage,
-                            // swap the displayed user to that target's profile.
-                            // The Supabase session stays as the admin (RLS keeps
-                            // admin's reach), but every UI screen reads from
-                            // `user`, so the swap makes the app feel like the
-                            // target is signed in.
-                            if (currentUser.userType === 'admin') {
-                                const targetId = (() => {
-                                    try { return localStorage.getItem('TAKI_IMPERSONATE_TARGET'); }
-                                    catch { return null; }
-                                })();
-                                if (targetId) {
-                                    const target = await userRepository.findById(targetId).catch(() => null);
-                                    if (target && target.userType !== 'admin') {
-                                        currentUser = target;
-                                        impersonationTargetIdRef.current = targetId;
-                                    } else {
-                                        // Stale or invalid target — clear and fall back to admin
-                                        try {
-                                            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
-                                            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
-                                        } catch {}
+                            // v11.16: real session swap means Supabase already
+                            // reports the target as the current user (when
+                            // impersonating). Sanity-check that the stored
+                            // impersonation metadata still matches the live
+                            // session — if it drifted (admin manually restored
+                            // session elsewhere), clear the stale localStorage.
+                            try {
+                                const raw = localStorage.getItem('TAKI_IMPERSONATION_SESSION');
+                                if (raw) {
+                                    const parsed = JSON.parse(raw);
+                                    if (parsed.targetId && parsed.targetId !== currentUser.id) {
+                                        localStorage.removeItem('TAKI_IMPERSONATION_SESSION');
                                         setImpersonating(null);
-                                        impersonationTargetIdRef.current = null;
                                     }
                                 }
-                            }
+                            } catch {}
                             logger.info(`👤 Session found: ${currentUser.name}`);
                             setUser(currentUser);
                             // initData is now the single owner of cold-load
@@ -604,13 +607,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         // left `user` populated until a full reload, so the UI
                         // showed the previous account on a guest session.
                         if (event === 'SIGNED_OUT' || (!session?.user && event !== 'INITIAL_SESSION')) {
-                            // Drop any active impersonation — the admin session is gone.
+                            // v11.16: drop impersonation state too. Note this
+                            // ALSO fires when the admin gracefully stops
+                            // impersonating — but `stopImpersonating` already
+                            // restored admin's session BEFORE this listener
+                            // would fire SIGNED_OUT, so this branch only runs
+                            // for an actual sign-out / token expiry.
                             try {
-                                localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
-                                localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+                                localStorage.removeItem('TAKI_IMPERSONATION_SESSION');
                             } catch {}
                             setImpersonating(null);
-                            impersonationTargetIdRef.current = null;
                             setUser(null);
                             authService.setUser(null as any);
                             setBookings([]);
@@ -627,17 +633,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             return;
                         }
                         if (session?.user) {
-                            // Impersonation short-circuit — if an admin is
-                            // currently browsing as another user, do NOT let
-                            // INITIAL_SESSION/TOKEN_REFRESHED swap `user` back
-                            // to the admin's optimistic profile. initData()
-                            // already hydrated the target user above.
-                            if (impersonationTargetIdRef.current &&
-                                (session.user.user_metadata?.user_type === 'admin')) {
-                                setIsAuthReady(true);
-                                clearTimeout(safetyTimer);
-                                return;
-                            }
                             const spUser = session.user;
                             const meta = spUser.user_metadata || {};
 
@@ -1101,11 +1096,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // SIGNED_OUT listener also clears, but doing it here closes the gap
         // between click and Supabase responding.
         try {
-            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
-            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+            localStorage.removeItem('TAKI_IMPERSONATION_SESSION');
         } catch {}
         setImpersonating(null);
-        impersonationTargetIdRef.current = null;
         setUser(null);
         setFavorites([]);
         setFollowedMerchants([]);
@@ -1123,57 +1116,152 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     // ============================================================
-    // Admin "browse as user" — start / stop
+    // Admin "act as user" — v11.16 real session swap
     // ============================================================
-    // Start: persists target + admin identity to localStorage and reloads
-    // so initData() picks up the swap. Reload is the simplest way to ensure
-    // every userId-dependent hook re-runs with the target's id.
+    // start: backs up admin's tokens, calls the admin-impersonate edge
+    // function (service-role) to get a magiclink hashed_token, then calls
+    // verifyOtp to actually swap the Supabase session to the target. After
+    // the swap, every Supabase call is authorized as the target — the
+    // admin can post, delete, message, edit DB rows exactly as the target
+    // would. The page reloads so all userId-dependent hooks re-bind.
     const startImpersonating = useCallback(async (targetUserId: string) => {
         if (!user || user.userType !== 'admin') {
-            await customAlert('⚠️ هذه الخاصية متاحة للمدير فقط');
+            await customAlert('⚠️ هذه الخاصية مُتاحة للمدير فَقَط');
             return;
         }
         if (impersonating) {
-            await customAlert('⚠️ أنت بالفعل تتصفّح حساب آخر — ارجع للمدير أولاً');
+            await customAlert('⚠️ أنت بِالفِعل تَتَصفَّح حساب آخر — ارجع للمدير أوّلاً');
             return;
         }
         if (targetUserId === user.id) {
-            await customAlert('⚠️ لا يمكنك التصفّح كحساب المدير نفسه');
+            await customAlert('⚠️ لا يُمكنك التَّصفُّح كَحساب المدير نَفسه');
             return;
         }
-        const target = await userRepository.findById(targetUserId).catch(() => null);
-        if (!target) {
-            await customAlert('⚠️ تعذّر تحميل بيانات هذا الحساب');
+
+        // 1. Capture admin's current tokens BEFORE the swap — these are
+        //    what we'll use to restore the admin session on exit.
+        const { data: sessData, error: sessErr } = await supabase.auth.getSession();
+        if (sessErr || !sessData?.session?.access_token || !sessData?.session?.refresh_token) {
+            await customAlert('⚠️ تَعذَّر قِراءة جَلسة المدير — حاول تَسجيل دخول جديد');
             return;
         }
-        if (target.userType === 'admin') {
-            await customAlert('⚠️ لا يمكنك التصفّح كحساب مدير آخر');
+        const adminTokens = {
+            access_token: sessData.session.access_token,
+            refresh_token: sessData.session.refresh_token,
+        };
+
+        // 2. Ask the edge function for a magiclink token for the target.
+        const { data: efData, error: efErr } = await supabase.functions.invoke('admin-impersonate', {
+            body: { targetUserId },
+        });
+        if (efErr || !efData?.hashed_token) {
+            const msg = (efData as any)?.error || efErr?.message || 'خَطأ غَير مَعروف';
+            await customAlert('⚠️ ' + msg);
             return;
         }
+
+        // 3. Swap the Supabase session. verifyOtp consumes the hashed_token
+        //    and returns a real session for the target. After this, every
+        //    Supabase call from this browser is authorized as the target.
+        const { error: verifyErr } = await supabase.auth.verifyOtp({
+            type: 'magiclink',
+            token_hash: efData.hashed_token,
+        });
+        if (verifyErr) {
+            // Restore admin session if the swap clobbered something.
+            try {
+                await supabase.auth.setSession(adminTokens);
+            } catch {}
+            await customAlert('⚠️ فَشل تَبديل الجَلسة: ' + verifyErr.message);
+            return;
+        }
+
+        // 4. Persist the admin's tokens + target metadata so stopImpersonating
+        //    can restore the original admin session on exit, and so the
+        //    reloaded page can show the banner. We write AFTER the successful
+        //    swap to avoid leaving stale state on a failed attempt.
         try {
-            localStorage.setItem('TAKI_IMPERSONATE_TARGET', targetUserId);
-            localStorage.setItem('TAKI_IMPERSONATE_ADMIN', JSON.stringify({
+            localStorage.setItem('TAKI_IMPERSONATION_SESSION', JSON.stringify({
+                adminAccessToken: adminTokens.access_token,
+                adminRefreshToken: adminTokens.refresh_token,
                 adminId: user.id,
                 adminName: user.name || 'مدير',
+                targetId: targetUserId,
+                targetName: efData.target?.name || 'مُستَخدِم',
+                targetUserType: efData.target?.userType || 'buyer',
+                startedAt: new Date().toISOString(),
             }));
         } catch {
-            await customAlert('⚠️ تعذّر بدء التصفّح — المتصفّح يمنع الحفظ المحلي');
+            // localStorage blocked — without it stopImpersonating can't restore.
+            // Try to restore admin session right away and bail.
+            try { await supabase.auth.setSession(adminTokens); } catch {}
+            await customAlert('⚠️ المتصفِّح يَمنع الحفظ المحلي — لا يُمكن بَدء الجَلسة');
             return;
         }
-        // Full navigation so the entire user-id-dependent state tree rebuilds.
-        const dest = target.userType === 'seller' ? '/seller' : '/';
+
+        // 5. Full navigation — every userId-dependent hook rebuilds for the
+        //    target. Sellers land on their dashboard, buyers on home.
+        const dest = efData.target?.userType === 'seller' ? '/seller' : '/';
         window.location.assign(dest);
     }, [user, impersonating, customAlert]);
 
-    // Stop: clears localStorage and reloads back to /admin. The reload
-    // restores the admin's identity through the normal init path.
-    const stopImpersonating = useCallback(() => {
+    // stop: restores admin's saved tokens via setSession, logs the stop
+    // action, and reloads to /admin. If the saved refresh_token has been
+    // rotated (e.g., admin opened another tab that refreshed the session),
+    // setSession fails and we fall back to a full sign-out + clear hint.
+    const stopImpersonating = useCallback(async () => {
+        const raw = (() => {
+            try { return localStorage.getItem('TAKI_IMPERSONATION_SESSION'); }
+            catch { return null; }
+        })();
+        if (!raw) {
+            // No backup — just bounce to /admin and hope the admin session is intact.
+            window.location.assign('/admin');
+            return;
+        }
+
+        let backup: any;
+        try { backup = JSON.parse(raw); }
+        catch {
+            try { localStorage.removeItem('TAKI_IMPERSONATION_SESSION'); } catch {}
+            window.location.assign('/admin');
+            return;
+        }
+
+        // Audit log — best effort while we're still authorized as the target.
+        // (We could call this server-side from a "stop" RPC, but doing it
+        // here keeps the system simple; the log row still has admin_id.)
         try {
-            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
-            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
-        } catch {}
+            await supabase.from('admin_impersonation_log').insert({
+                admin_id: backup.adminId,
+                target_id: backup.targetId,
+                action: 'stop',
+            });
+        } catch { /* ignore — the start row is the security record that matters */ }
+
+        // Restore the admin session.
+        try {
+            const { error } = await supabase.auth.setSession({
+                access_token: backup.adminAccessToken,
+                refresh_token: backup.adminRefreshToken,
+            });
+            if (error) throw error;
+        } catch (e: any) {
+            // Admin's tokens got rotated/invalidated — sign out and send admin
+            // to login. The audit log still recorded the start, so the
+            // accountability trail is intact.
+            try { await supabase.auth.signOut(); } catch {}
+            try { localStorage.removeItem('TAKI_IMPERSONATION_SESSION'); } catch {}
+            setImpersonating(null);
+            await customAlertRef.current(
+                '⚠️ انتَهت صَلاحية جَلسة المدير — يَرجى تَسجيل الدخول مَرَّة أُخرى'
+            );
+            window.location.assign('/register');
+            return;
+        }
+
+        try { localStorage.removeItem('TAKI_IMPERSONATION_SESSION'); } catch {}
         setImpersonating(null);
-        impersonationTargetIdRef.current = null;
         window.location.assign('/admin');
     }, []);
 
@@ -2198,9 +2286,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         <AppContext.Provider value={contextValue}>
             {children}
 
-            {/* Admin "browse as user" banner — full-width, fixed at the top.
-                Shows while the admin is signed in but the UI is rendering as
-                a specific buyer/seller. Tap to return to the admin dashboard. */}
+            {/* Admin "act as user" banner — v11.16 full session swap.
+                The Supabase session IS the target's, so the admin can post,
+                delete, message, and modify DB rows exactly as the target.
+                Banner stays fixed on top with a one-tap exit. */}
             {impersonating && user && (
                 <div
                     style={{
@@ -2209,14 +2298,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         insetInlineStart: 0,
                         insetInlineEnd: 0,
                         zIndex: 99999,
-                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
                         color: 'white',
                         padding: '10px 14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: 10,
-                        boxShadow: '0 6px 18px rgba(220, 38, 38, 0.45)',
+                        boxShadow: '0 6px 18px rgba(185, 28, 28, 0.55)',
                         fontFamily: 'inherit',
                     }}
                     dir={language === 'ar' ? 'rtl' : 'ltr'}
@@ -2232,16 +2321,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         alignItems: 'center',
                         gap: 6,
                     }}>
-                        <span style={{ fontSize: '1rem' }}>👤</span>
+                        <span style={{ fontSize: '1rem' }}>🔓</span>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            تتصفّح كـ <strong>{user?.name || '—'}</strong> ({user?.userType === 'seller' ? 'تاجر' : 'مشتري'})
+                            جَلسة كاملة كَـ <strong>{user?.name || '—'}</strong> ({user?.userType === 'seller' ? 'تاجر' : 'مُشتري'}) — كل تَعديل يَتم بِاسمه
                         </span>
                     </div>
                     <button
                         onClick={stopImpersonating}
                         style={{
                             background: 'white',
-                            color: '#dc2626',
+                            color: '#b91c1c',
                             border: 'none',
                             borderRadius: 999,
                             padding: '6px 14px',

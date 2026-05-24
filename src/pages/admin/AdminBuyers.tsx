@@ -113,18 +113,20 @@ const UserEditModal = memo<{
                     </Tooltip>
                 </div>
 
-                {/* Browse-as-user action — opens the app as this buyer */}
+                {/* Act-as-user action — full session swap. After clicking,
+                    the admin's Supabase session becomes this buyer's: every
+                    booking, message, deletion is attributed to them. */}
                 <div className="px-4 pt-4">
                     <button
                         type="button"
                         onClick={() => startImpersonating(user.id)}
-                        className="w-full p-3 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                        <span className="text-base">👁️</span>
-                        <span>تصفّح التطبيق كهذا المشتري</span>
+                        <span className="text-base">🔓</span>
+                        <span>دخول كَهذا المُشتري (جَلسة كاملة)</span>
                     </button>
                     <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
-                        ستشاهد كل ما يراه — حجوزاته، إشعاراته، مفضّلته. ارجع للمدير في أي وقت.
+                        كأنّك سَجَّلت دخول بِحسابه — تَحجز، تَحذف، تُراسِل، تُعدِّل كَما يَفعل. كل إجراء مُسجَّل في سِجل التَّدقيق.
                     </div>
                 </div>
 
