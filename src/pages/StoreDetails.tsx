@@ -12,7 +12,7 @@ import ReportDialog from '../components/ReportDialog';
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const history = useHistory();
-    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm } = useApp();
+    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm, addReply } = useApp();
     const isRTL = language === 'ar';
     const isFollowed = followedMerchants.includes(id);
     const isBlocked = blockedMerchants.includes(id);
@@ -42,6 +42,12 @@ const StoreDetails: React.FC = () => {
     const [editAddress, setEditAddress] = useState(profile.address || '');
     const [isUploading, setIsUploading] = useState(false);
     const [viewTab, setViewTab] = useState<'active' | 'past' | 'reviews'>('active');
+    // FB-style inline reply state for the Reviews tab — same pattern as
+    // SellerDashboard/DealDetails. activeReplyId selects which review is in
+    // compose/edit mode; replyDrafts keeps per-rating text so blurring or
+    // re-opening the composer doesn't lose work.
+    const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+    const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
     const toggleFollow = () => {
         toggleFollowMerchant(id);
@@ -580,8 +586,14 @@ const StoreDetails: React.FC = () => {
                 {viewTab === 'reviews' && (
                     <div className="animate-fade-in">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {allStoreReviews.length > 0 ? allStoreReviews.map((r, i) => (
-                                <div key={i} style={{ background: 'var(--card-bg)', padding: 16, borderRadius: 20, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                            {allStoreReviews.length > 0 ? allStoreReviews.map((r: any) => {
+                                // The merchant viewing their own store can reply/edit/remove
+                                // every review here, just like in the SellerDashboard
+                                // "التقييمات" tab — so they never need to leave this page.
+                                const canManage = user?.id === store?.id && !!r.id;
+                                const isEditing = canManage && activeReplyId === r.id;
+                                return (
+                                <div key={r.id || r.date} style={{ background: 'var(--card-bg)', padding: 16, borderRadius: 20, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                                         <div style={{ fontWeight: 800, fontSize: '0.9rem' }}>{r.userName}</div>
                                         <div style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</div>
@@ -591,14 +603,98 @@ const StoreDetails: React.FC = () => {
                                     </div>
                                     <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', fontWeight: 500 }}>{r.comment}</p>
                                     <div style={{ marginTop: 8, fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700 }}>{r.date}</div>
-                                    {r.reply && (
+
+                                    {/* Existing reply (shown when not actively editing).
+                                        Merchant gets Edit + Remove controls inline. */}
+                                    {r.reply && !isEditing && (
                                         <div style={{ marginTop: 12, padding: 12, background: 'var(--body-bg)', borderRadius: 12, borderRight: isRTL ? '3px solid var(--primary)' : 'none', borderLeft: !isRTL ? '3px solid var(--primary)' : 'none' }}>
-                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4 }}>💬 {isRTL ? 'رد المتجر:' : 'Store Reply:'}</div>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <span>💬 {canManage ? (isRTL ? 'ردك:' : 'Your reply:') : (isRTL ? 'رد المتجر:' : 'Store Reply:')}</span>
+                                                {canManage && (
+                                                    <div style={{ display: 'flex', gap: 6 }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setReplyDrafts(prev => ({ ...prev, [r.id]: r.reply || '' }));
+                                                                setActiveReplyId(r.id);
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                            aria-label={isRTL ? 'تعديل الرد' : 'Edit reply'}
+                                                        >
+                                                            ✏️ {isRTL ? 'تعديل' : 'Edit'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
+                                                                if (ok) await addReply(r.dealId, r.id, '');
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                            aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
+                                                        >
+                                                            ✕ {isRTL ? 'حذف' : 'Remove'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{r.reply}</div>
                                         </div>
                                     )}
+
+                                    {/* Compose UI — handles both first-reply and edit
+                                        modes. When editing, the textarea is pre-filled
+                                        with the existing reply so the merchant can tweak
+                                        wording without retyping (true "high flexibility").
+                                        Cancel just closes — it never deletes existing data. */}
+                                    {canManage && isEditing && (
+                                        <div style={{ marginTop: 12 }}>
+                                            <textarea
+                                                value={replyDrafts[r.id] || ''}
+                                                onChange={e => setReplyDrafts({ ...replyDrafts, [r.id]: e.target.value })}
+                                                placeholder={isRTL ? 'اكتب ردك على هذا التعليق...' : 'Write your reply...'}
+                                                style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid var(--gray-200)', minHeight: 70, outline: 'none', resize: 'vertical', fontSize: '0.9rem' }}
+                                            />
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        const text = (replyDrafts[r.id] || '').trim();
+                                                        if (!text) return;
+                                                        await addReply(r.dealId, r.id, text);
+                                                        setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                                                        setActiveReplyId(null);
+                                                    }}
+                                                    style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer' }}
+                                                >
+                                                    {r.reply ? (isRTL ? '💾 حفظ التعديل' : '💾 Save edit') : (isRTL ? '💬 إرسال الردّ' : '💬 Send reply')}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setActiveReplyId(null);
+                                                        setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                                                    }}
+                                                    style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer' }}
+                                                >
+                                                    {isRTL ? 'إلغاء' : 'Cancel'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* "Reply" affordance when no reply exists yet. */}
+                                    {canManage && !r.reply && !isEditing && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveReplyId(r.id)}
+                                            style={{ marginTop: 10, padding: '6px 14px', borderRadius: 10, background: 'var(--body-bg)', border: '1px solid var(--gray-200)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer' }}
+                                        >
+                                            💬 {isRTL ? 'الردّ على هذا التعليق' : 'Reply to this review'}
+                                        </button>
+                                    )}
                                 </div>
-                            )) : (
+                                );
+                            }) : (
                                 <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>💬</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد تقييمات بعد' : 'No reviews yet'}</div>

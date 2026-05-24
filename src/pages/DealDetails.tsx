@@ -1099,58 +1099,81 @@ const DealDetails: React.FC = () => {
                                 </div>
                             </div>
 
-                            {r.reply && (
-                                <div style={{ marginTop: 12, padding: '12px', background: 'var(--body-bg)', borderRadius: 14, borderRight: isRTL ? '3px solid var(--primary)' : 'none', borderLeft: !isRTL ? '3px solid var(--primary)' : 'none' }}>
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                                        <span>💬 {isRTL ? 'رد المتجر:' : 'Store Reply:'}</span>
-                                        {isOwner && r.id && (
-                                            <button
-                                                type="button"
-                                                onClick={() => addReply(r.dealId, r.id!, '')}
-                                                style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
-                                                aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
-                                            >
-                                                ✕ {isRTL ? 'حذف الرد' : 'Remove'}
-                                            </button>
-                                        )}
-                                    </div>
-                                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>{r.reply}</p>
-                                </div>
-                            )}
-
-                            {canReply && !r.reply && (
-                                activeReplyId === r.id ? (
-                                    <div style={{ marginTop: 12 }}>
-                                        <textarea
-                                            value={replyDrafts[r.id!] || ''}
-                                            onChange={e => setReplyDrafts({ ...replyDrafts, [r.id!]: e.target.value })}
-                                            placeholder={isRTL ? 'اكتب ردك على هذا التعليق...' : 'Write your reply...'}
-                                            style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid var(--gray-200)', minHeight: 60, outline: 'none', resize: 'vertical', fontSize: '0.85rem' }}
-                                        />
-                                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                            <button onClick={async () => {
-                                                const text = (replyDrafts[r.id!] || '').trim();
-                                                if (!text || !r.id) return;
-                                                await addReply(r.dealId, r.id, text);
-                                                setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; });
-                                                setActiveReplyId(null);
-                                            }}
-                                                style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
-                                                {isRTL ? '💬 إرسال الرد' : '💬 Send Reply'}
-                                            </button>
-                                            <button onClick={() => { setActiveReplyId(null); setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; }); }}
-                                                style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
-                                                {isRTL ? 'إلغاء' : 'Cancel'}
-                                            </button>
+                            {(() => {
+                                const isEditing = canReply && activeReplyId === r.id;
+                                return (
+                                <>
+                                    {r.reply && !isEditing && (
+                                        <div style={{ marginTop: 12, padding: '12px', background: 'var(--body-bg)', borderRadius: 14, borderRight: isRTL ? '3px solid var(--primary)' : 'none', borderLeft: !isRTL ? '3px solid var(--primary)' : 'none' }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <span>💬 {isOwner ? (isRTL ? 'ردك:' : 'Your reply:') : (isRTL ? 'رد المتجر:' : 'Store Reply:')}</span>
+                                                {isOwner && r.id && (
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setReplyDrafts(prev => ({ ...prev, [r.id!]: r.reply || '' }));
+                                                                setActiveReplyId(r.id!);
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                            aria-label={isRTL ? 'تعديل الرد' : 'Edit reply'}
+                                                        >
+                                                            ✏️ {isRTL ? 'تعديل' : 'Edit'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
+                                                                if (ok) await addReply(r.dealId, r.id!, '');
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                            aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
+                                                        >
+                                                            ✕ {isRTL ? 'حذف الرد' : 'Remove'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>{r.reply}</p>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <button onClick={() => setActiveReplyId(r.id!)}
-                                        style={{ marginTop: 8, padding: '6px 14px', borderRadius: 10, background: 'var(--body-bg)', border: '1px solid var(--gray-200)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer' }}>
-                                        💬 {isRTL ? 'الرد على هذا التعليق' : 'Reply to this review'}
-                                    </button>
-                                )
-                            )}
+                                    )}
+
+                                    {isEditing && (
+                                        <div style={{ marginTop: 12 }}>
+                                            <textarea
+                                                value={replyDrafts[r.id!] || ''}
+                                                onChange={e => setReplyDrafts({ ...replyDrafts, [r.id!]: e.target.value })}
+                                                placeholder={isRTL ? 'اكتب ردك على هذا التعليق...' : 'Write your reply...'}
+                                                style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid var(--gray-200)', minHeight: 60, outline: 'none', resize: 'vertical', fontSize: '0.85rem' }}
+                                            />
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                                <button onClick={async () => {
+                                                    const text = (replyDrafts[r.id!] || '').trim();
+                                                    if (!text || !r.id) return;
+                                                    await addReply(r.dealId, r.id, text);
+                                                    setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; });
+                                                    setActiveReplyId(null);
+                                                }}
+                                                    style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                    {r.reply ? (isRTL ? '💾 حفظ التعديل' : '💾 Save edit') : (isRTL ? '💬 إرسال الرد' : '💬 Send Reply')}
+                                                </button>
+                                                <button onClick={() => { setActiveReplyId(null); setReplyDrafts(prev => { const n = { ...prev }; delete n[r.id!]; return n; }); }}
+                                                    style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 800, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                                    {isRTL ? 'إلغاء' : 'Cancel'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {canReply && !r.reply && !isEditing && (
+                                        <button onClick={() => setActiveReplyId(r.id!)}
+                                            style={{ marginTop: 8, padding: '6px 14px', borderRadius: 10, background: 'var(--body-bg)', border: '1px solid var(--gray-200)', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer' }}>
+                                            💬 {isRTL ? 'الرد على هذا التعليق' : 'Reply to this review'}
+                                        </button>
+                                    )}
+                                </>
+                                );
+                            })()}
                         </div>
                         );
                     }) : (
