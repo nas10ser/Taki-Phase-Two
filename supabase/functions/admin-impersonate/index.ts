@@ -61,9 +61,11 @@ Deno.serve(async (req) => {
         });
 
         // 3. Caller authorization — trust the DB, not the JWT metadata.
+        //    v11.19: also check the granular `action_impersonate` permission.
+        //    Super admins (is_super_admin=true) bypass the array check.
         const { data: callerProfile, error: callerProfileErr } = await admin
             .from("users")
-            .select("id, name, user_type")
+            .select("id, name, user_type, is_super_admin, admin_permissions")
             .eq("id", caller.id)
             .maybeSingle();
         if (callerProfileErr) {
@@ -71,6 +73,15 @@ Deno.serve(async (req) => {
         }
         if (!callerProfile || callerProfile.user_type !== "admin") {
             return jsonResponse({ error: "ممنوع — هذه الخاصية للمدير فَقَط" }, 403);
+        }
+        const isSuper = callerProfile.is_super_admin === true;
+        const perms: string[] = Array.isArray(callerProfile.admin_permissions)
+            ? callerProfile.admin_permissions
+            : [];
+        if (!isSuper && !perms.includes("action_impersonate")) {
+            return jsonResponse({
+                error: "ممنوع — حسابك لا يَملِك صلاحية الدخول كَحسابات أُخرى",
+            }, 403);
         }
 
         // 4. Parse + validate target.

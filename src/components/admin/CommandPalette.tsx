@@ -22,7 +22,8 @@ export type AdminTab =
     | 'reports'
     | 'analytics'
     | 'tools'
-    | 'launch';
+    | 'launch'
+    | 'admins';
 
 interface CommandPaletteProps {
     open: boolean;

@@ -270,7 +270,9 @@ export const userRepository = {
                     blockedMerchants: Array.isArray(data.blocked_merchants) ? data.blocked_merchants : [],
                     lat: data.lat,
                     lng: data.lng,
-                    googleMapsLink: data.google_maps_link
+                    googleMapsLink: data.google_maps_link,
+                    isSuperAdmin: data.is_super_admin === true,
+                    adminPermissions: Array.isArray(data.admin_permissions) ? data.admin_permissions : []
                 };
             }
         } catch (e) {

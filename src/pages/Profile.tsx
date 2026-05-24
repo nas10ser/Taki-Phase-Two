@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals } from '../utils/helpers';
+import AccountSettingsCard from '../components/AccountSettingsCard';
 
 const Profile: React.FC = () => {
     const history = useHistory();
@@ -269,6 +270,13 @@ const Profile: React.FC = () => {
 
                 {activeTab === 'settings' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {/* v11.19 — self-service account management. Lets the
+                            user change their display name, phone, email and
+                            password from one card. Email + password go
+                            through Supabase auth (email-confirmation hop for
+                            new email; in-session reset for password). */}
+                        <AccountSettingsCard />
+
                         {displayUserType === 'seller' && (
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
                                 <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 15 }}>{isRTL ? 'معلومات التواصل للمتجر 🏪' : 'Store Contact Info 🏪'}</h3>

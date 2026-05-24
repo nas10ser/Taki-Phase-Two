@@ -22,7 +22,34 @@ export interface UserProfile {
     lat?: number;
     lng?: number;
     googleMapsLink?: string;
+    // v11.19 — granular admin permissions. Super admin (Nasser) bypasses
+    // every check; staff admins (`isSuperAdmin=false`) only see tabs/actions
+    // whose key is present in `adminPermissions`. Both fields are loaded
+    // from `public.users` and are also exposed via the `admin_my_permissions`
+    // RPC for fresh reads after a privilege change.
+    isSuperAdmin?: boolean;
+    adminPermissions?: string[];
 }
+
+// v11.19 — canonical permission keys. Keep this list in sync with the
+// migration (`v11_19_admin_permissions_system`) and with the Admin
+// management UI. Adding a new key here is enough to let the super admin
+// grant it; the consuming code decides what it gates.
+export type AdminPermission =
+    | 'tab_overview'
+    | 'tab_buyers'
+    | 'tab_sellers'
+    | 'tab_reports'
+    | 'tab_analytics'
+    | 'tab_tools'
+    | 'tab_admins'
+    | 'action_impersonate'
+    | 'action_view_finance'
+    | 'action_delete_deals'
+    | 'action_manage_seasonal'
+    | 'action_manage_campaigns'
+    | 'action_manage_banners'
+    | 'action_manage_users';
 
 export interface SmartAlertRule {
     regions?: string[];

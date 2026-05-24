@@ -22,6 +22,10 @@ export interface Booking {
     backupCode: string;
     expiryTime: number;
     bookedAt: number;
+    /** Epoch ms when the booking was marked completed (DB trigger sets
+     *  `completed_at` on status flip to 'completed'). Used by v11.19 to
+     *  hide the buyer's phone call button 2 hours after completion. */
+    completedAt?: number;
     bookedQuantity: number;
     userId: string;
     userName?: string;
@@ -107,6 +111,7 @@ export const bookingRepository = {
                     merchantNote: b.merchant_note,
                     status: b.status as Booking['status'],
                     bookedAt: b.booked_at,
+                    completedAt: b.completed_at ? new Date(b.completed_at).getTime() : undefined,
                     expiryTime: b.expiry_time
                 } as Booking));
 
@@ -141,6 +146,7 @@ export const bookingRepository = {
                     merchantNote: data.merchant_note,
                     status: data.status as Booking['status'],
                     bookedAt: data.booked_at,
+                    completedAt: data.completed_at ? new Date(data.completed_at).getTime() : undefined,
                     expiryTime: data.expiry_time
                 };
             }

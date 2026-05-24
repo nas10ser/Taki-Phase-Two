@@ -32,6 +32,7 @@ const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
+const AdminAdmins    = lazy(() => import('./admin/AdminAdmins'));
 
 type Tab = AdminTab;
 
@@ -41,16 +42,20 @@ interface TabDef {
     icon: string;
     gradient: string;
     hint: string;
+    permission: string; // permission key — empty string = always allowed
 }
 
+// v11.19 — each tab gates on a permission key. The super admin sees all of
+// them automatically (hasPermission returns true unconditionally).
 const TABS: TabDef[] = [
-    { value: 'overview',  label: 'الرئيسية',          icon: '🏠',  gradient: 'from-emerald-500 to-teal-600',     hint: 'نظرة عامة لحظية على المنصة' },
-    { value: 'buyers',    label: 'المشترون',          icon: '🛒',  gradient: 'from-blue-500 to-indigo-600',      hint: 'بحث وتعديل أي مشتري' },
-    { value: 'sellers',   label: 'البائعون',          icon: '🏪',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'تحكم بالاشتراكات والباقات' },
-    { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة' },
-    { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية' },
-    { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات' },
-    { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق' },
+    { value: 'overview',  label: 'الرئيسية',          icon: '🏠',  gradient: 'from-emerald-500 to-teal-600',     hint: 'نظرة عامة لحظية على المنصة',                          permission: 'tab_overview'  },
+    { value: 'buyers',    label: 'المشترون',          icon: '🛒',  gradient: 'from-blue-500 to-indigo-600',      hint: 'بحث وتعديل أي مشتري',                                permission: 'tab_buyers'    },
+    { value: 'sellers',   label: 'البائعون',          icon: '🏪',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'تحكم بالاشتراكات والباقات',                          permission: 'tab_sellers'   },
+    { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة',           permission: 'tab_reports'   },
+    { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
+    { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
+    { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_tools'     },
+    { value: 'admins',    label: 'المسؤولون',         icon: '👑',  gradient: 'from-amber-500 to-orange-600',     hint: 'إدارة الفريق + الصلاحيات (المالك فقط)',              permission: 'tab_admins'    },
 ];
 
 // ============================================================
@@ -78,9 +83,10 @@ interface TabNavProps {
     onBack: () => void;
     onOpenPalette: () => void;
     reportsBadge: number;
+    visibleTabs: TabDef[];
 }
 
-const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, reportsBadge }) => (
+const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, reportsBadge, visibleTabs }) => (
     // env(safe-area-inset-top) keeps the bar BELOW the notch/Dynamic Island
     // instead of slamming into the clock/battery. Previously top-0 + pt-2 left
     // about 8px to the status bar on a real iPhone, which Nasser flagged.
@@ -116,7 +122,7 @@ const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, rep
             </Tooltip>
 
             <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1">
-                {TABS.map((tab) => {
+                {visibleTabs.map((tab) => {
                     const isActive = active === tab.value;
                     const showBadge = tab.value === 'reports' && reportsBadge > 0;
                     return (
@@ -154,21 +160,35 @@ TabNav.displayName = 'TabNav';
 // Main Component
 // ============================================================
 const AdminDashboard: React.FC = () => {
-    const { user, isAuthReady } = useApp();
+    const { user, isAuthReady, hasPermission, isSuperAdmin } = useApp();
     const history = useHistory();
     const location = useLocation();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [reportsBadge, setReportsBadge] = useState(0);
 
+    // v11.19 — filter tabs by the caller's permissions. Super admin sees
+    // everything; staff admins only see tabs they're allowed.
+    const visibleTabs = React.useMemo(() => TABS.filter(t => hasPermission(t.permission)), [hasPermission]);
+
+    // If the current tab disappears (e.g. super admin revoked the permission
+    // mid-session), fall back to the first allowed tab.
+    useEffect(() => {
+        if (visibleTabs.length === 0) return;
+        if (!visibleTabs.some(t => t.value === activeTab)) {
+            setActiveTab(visibleTabs[0].value);
+        }
+    }, [visibleTabs, activeTab]);
+
     // Deep-link support: /admin?tab=reports opens the right tab on load.
+    // Block the deep-link if the caller lacks permission.
     useEffect(() => {
         const t = new URLSearchParams(location.search).get('tab');
-        if (t && ['overview', 'buyers', 'sellers', 'reports', 'analytics', 'tools', 'launch'].includes(t)) {
+        if (t && visibleTabs.some(vt => vt.value === t)) {
             setActiveTab(t as Tab);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [location.search]);
+    }, [location.search, visibleTabs]);
 
     const handleBack = useCallback(() => {
         if (activeTab !== 'overview') {
@@ -275,17 +295,29 @@ const AdminDashboard: React.FC = () => {
                     onBack={handleBack}
                     onOpenPalette={() => setPaletteOpen(true)}
                     reportsBadge={reportsBadge}
+                    visibleTabs={visibleTabs}
                 />
+
+                {/* If the staff admin has been granted zero tabs, surface
+                    a clear message instead of a blank screen. */}
+                {visibleTabs.length === 0 && (
+                    <div className="mt-8 text-center bg-amber-50 border border-amber-200 rounded-2xl p-6">
+                        <div className="text-5xl mb-2">🔒</div>
+                        <p className="font-extrabold text-amber-900">لا توجد صلاحيات مفعّلة لحسابك</p>
+                        <p className="text-sm text-amber-800 mt-1">تواصل مع المالك ليفعّل لك التبويبات اللازمة.</p>
+                    </div>
+                )}
 
                 <div className="mt-4">
                     <Suspense fallback={<LoadingSkeleton />}>
-                        {activeTab === 'overview'  && <AdminOverview onNavigate={handleNavigate} />}
-                        {activeTab === 'buyers'    && <AdminBuyers />}
-                        {activeTab === 'sellers'   && <AdminSellers />}
-                        {activeTab === 'reports'   && <AdminReports />}
-                        {activeTab === 'analytics' && <AdminAnalytics />}
-                        {activeTab === 'tools'     && <AdminTools />}
-                        {activeTab === 'launch'    && <AdminLaunch />}
+                        {activeTab === 'overview'  && hasPermission('tab_overview')  && <AdminOverview onNavigate={handleNavigate} />}
+                        {activeTab === 'buyers'    && hasPermission('tab_buyers')    && <AdminBuyers />}
+                        {activeTab === 'sellers'   && hasPermission('tab_sellers')   && <AdminSellers />}
+                        {activeTab === 'reports'   && hasPermission('tab_reports')   && <AdminReports />}
+                        {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
+                        {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
+                        {activeTab === 'launch'    && hasPermission('tab_tools')     && <AdminLaunch />}
+                        {activeTab === 'admins'    && isSuperAdmin                   && <AdminAdmins />}
                     </Suspense>
                 </div>
             </div>

@@ -2956,11 +2956,57 @@ const SellerDashboard: React.FC = () => {
                                             🚩 {isRTL ? 'إبلاغ' : 'Report'}
                                         </button>
                                     )}
-                                    {(order as any).userPhone && (
-                                        <a href={`tel:${(order as any).userPhone}`} style={{ marginInlineStart: 10, color: '#0284c7', fontWeight: 800, textDecoration: 'none' }}>
-                                            📞 {(order as any).userPhone}
-                                        </a>
-                                    )}
+                                    {(() => {
+                                        // v11.19 — masked phone call. The merchant no
+                                        // longer sees the raw number; instead a button
+                                        // labelled "📞 اتصال" opens a confirm prompt
+                                        // and only then triggers the tel: dialer
+                                        // (where the OS dialer naturally shows the
+                                        // number). After completion + 2h, the button
+                                        // disappears entirely so old orders can't be
+                                        // mined for buyer phone numbers.
+                                        const phone = (order as any).userPhone as string | undefined;
+                                        if (!phone) return null;
+                                        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+                                        const completedAt = (order as any).completedAt as number | undefined;
+                                        const hidden = order.status === 'completed'
+                                            && completedAt
+                                            && (Date.now() - completedAt) > TWO_HOURS_MS;
+                                        if (hidden) return null;
+                                        const buyerName = (order as any).userName as string | undefined;
+                                        return (
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    const ok = await customConfirm(
+                                                        isRTL
+                                                            ? `هل تريد الاتصال بـ${buyerName ? ' «' + buyerName + '»' : 'المشتري'}؟`
+                                                            : `Call ${buyerName ? buyerName : 'this buyer'}?`
+                                                    );
+                                                    if (ok) {
+                                                        window.location.href = `tel:${phone}`;
+                                                    }
+                                                }}
+                                                title={isRTL ? 'اتصال بالمشتري (الرقم لا يظهر في التطبيق)' : 'Call buyer (number is hidden in the app)'}
+                                                style={{
+                                                    marginInlineStart: 10,
+                                                    background: 'rgba(2,132,199,0.12)',
+                                                    color: '#0284c7',
+                                                    fontWeight: 900,
+                                                    border: '1px solid rgba(2,132,199,0.25)',
+                                                    padding: '4px 12px',
+                                                    borderRadius: 12,
+                                                    fontSize: '0.78rem',
+                                                    cursor: 'pointer',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 4,
+                                                }}
+                                            >
+                                                📞 {isRTL ? 'اتصال' : 'Call'}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
                                 {order.prepTime && (
                                     <div style={{ marginBottom: 12, padding: '8px 14px', background: '#e0f2fe', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#0369a1', fontSize: '0.85rem' }}>

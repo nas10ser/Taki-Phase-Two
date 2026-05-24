@@ -147,6 +147,13 @@ interface AppContextType {
     } | null;
     startImpersonating: (targetUserId: string) => Promise<void>;
     stopImpersonating: () => Promise<void>;
+    /** v11.19 — granular admin permissions. `isSuperAdmin` (Nasser) bypasses
+     *  every check; staff admins only have the permissions present in
+     *  `adminPermissions`. `hasPermission` is the gate every tab / action /
+     *  delete button should consult before rendering. */
+    isSuperAdmin: boolean;
+    adminPermissions: string[];
+    hasPermission: (perm: string) => boolean;
     incrementDealView: (dealId: string) => Promise<void>;
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
@@ -2197,6 +2204,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const effectiveUserType: 'buyer' | 'seller' | 'admin' =
         (user?.userType === 'admin' && viewAs) ? viewAs : (user?.userType || 'buyer');
 
+    // v11.19 — admin permission derivations. Single source of truth; both
+    // the dashboard tab filtering and individual action buttons consult
+    // `hasPermission`. Super admin always wins; non-admins always lose.
+    const isSuperAdmin = user?.userType === 'admin' && user?.isSuperAdmin === true;
+    const adminPermissions: string[] = (user?.userType === 'admin' && Array.isArray(user?.adminPermissions))
+        ? user!.adminPermissions!
+        : [];
+    const hasPermission = useCallback((perm: string): boolean => {
+        if (!user || user.userType !== 'admin') return false;
+        if (user.isSuperAdmin === true) return true;
+        return Array.isArray(user.adminPermissions) && user.adminPermissions.includes(perm);
+    }, [user]);
+
     const incrementDealView = async (dealId: string) => {
         try {
             const { error } = await supabase.rpc('increment_deal_view', { target_deal_id: dealId });
@@ -2273,6 +2293,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
         impersonating, startImpersonating, stopImpersonating,
+        isSuperAdmin, adminPermissions, hasPermission,
         incrementDealView, incrementDealClick,
         platformSettings,
         branches, saveBranch, removeBranch,
@@ -2298,6 +2319,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
         impersonating, startImpersonating, stopImpersonating,
+        isSuperAdmin, adminPermissions, hasPermission,
         incrementDealView, incrementDealClick,
         platformSettings,
         branches, saveBranch, removeBranch,

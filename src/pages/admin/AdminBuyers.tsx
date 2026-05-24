@@ -44,17 +44,45 @@ const UserEditModal = memo<{
     onClose: () => void;
     onSaved: () => void;
 }>(({ user, onClose, onSaved }) => {
-    const { customAlert, customConfirm, startImpersonating } = useApp();
+    const { customAlert, customConfirm, startImpersonating, hasPermission, isSuperAdmin } = useApp();
+    // v11.19 — both admin powers (impersonate + promote) are
+    // permission-gated. The super admin gets both automatically.
+    const canImpersonate = hasPermission('action_impersonate');
+    const canPromote = isSuperAdmin && user.user_type !== 'admin';
     // Loading flag for the "act as user" button — the start chain takes
     // ~2 s (edge fn + verifyOtp + reload), and without visible feedback
     // the admin assumed the first tap was ignored and tapped again.
     const [opening, setOpening] = useState(false);
+    const [promoting, setPromoting] = useState(false);
     const handleOpenAsUser = useCallback(async () => {
         if (opening) return;
         setOpening(true);
         try { await startImpersonating(user.id); }
         finally { setOpening(false); }
     }, [opening, startImpersonating, user.id]);
+
+    // Promote this buyer to staff admin. Opens a granular permission picker
+    // (the same one used in AdminAdmins) so the super admin can decide what
+    // the new admin can do BEFORE granting them the role.
+    const handlePromote = useCallback(async () => {
+        if (promoting || !canPromote) return;
+        const { default: openPromoteDialog } = await import('../../components/admin/PromoteToAdminDialog');
+        const perms = await openPromoteDialog(user.name || user.email || user.id);
+        if (!perms) return; // cancelled
+        setPromoting(true);
+        try {
+            const { supabase } = await import('../../services/supabaseClient');
+            const { error } = await supabase.rpc('admin_promote_user', { target_id: user.id, perms });
+            if (error) throw error;
+            await customAlert('✅ تمت الترقية لمسؤول. الصلاحيات نشطة فوراً.');
+            onSaved();
+            onClose();
+        } catch (e: any) {
+            await customAlert('❌ ' + (e?.message || 'فشلت الترقية'));
+        } finally {
+            setPromoting(false);
+        }
+    }, [promoting, canPromote, user.id, user.name, user.email, customAlert, onSaved, onClose]);
     const [form, setForm] = useState({
         name: user.name ?? '',
         phone: user.phone ?? '',
@@ -125,30 +153,57 @@ const UserEditModal = memo<{
 
                 {/* Act-as-user action — full session swap. After clicking,
                     the admin's Supabase session becomes this buyer's: every
-                    booking, message, deletion is attributed to them. */}
-                <div className="px-4 pt-4">
-                    <button
-                        type="button"
-                        onClick={handleOpenAsUser}
-                        disabled={opening}
-                        className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
-                    >
-                        {opening ? (
+                    booking, message, deletion is attributed to them.
+                    v11.19 — gated on `action_impersonate` permission. */}
+                {(canImpersonate || canPromote) && (
+                    <div className="px-4 pt-4 space-y-2">
+                        {canImpersonate && (
                             <>
-                                <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                                <span>جاري فَتح الجَلسة...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span className="text-base">🔓</span>
-                                <span>دخول كَهذا المُشتري (جَلسة كاملة)</span>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenAsUser}
+                                    disabled={opening}
+                                    className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
+                                >
+                                    {opening ? (
+                                        <>
+                                            <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                                            <span>جاري فَتح الجَلسة...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-base">🔓</span>
+                                            <span>دخول كَهذا المُشتري (جَلسة كاملة)</span>
+                                        </>
+                                    )}
+                                </button>
+                                <div className="text-[10px] text-[var(--text-secondary)] text-center">
+                                    كأنّك سَجَّلت دخول بِحسابه — تَحجز، تَحذف، تُراسِل، تُعدِّل كَما يَفعل. كل إجراء مُسجَّل في سِجل التَّدقيق.
+                                </div>
                             </>
                         )}
-                    </button>
-                    <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
-                        كأنّك سَجَّلت دخول بِحسابه — تَحجز، تَحذف، تُراسِل، تُعدِّل كَما يَفعل. كل إجراء مُسجَّل في سِجل التَّدقيق.
+                        {canPromote && (
+                            <button
+                                type="button"
+                                onClick={handlePromote}
+                                disabled={promoting}
+                                className="w-full p-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {promoting ? (
+                                    <>
+                                        <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                                        <span>جاري الترقية...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-base">👑</span>
+                                        <span>ترقية لمسؤول (مع اختيار الصلاحيات)</span>
+                                    </>
+                                )}
+                            </button>
+                        )}
                     </div>
-                </div>
+                )}
 
                 {/* Stats badge row */}
                 <div className="grid grid-cols-3 gap-2 p-4 bg-[var(--body-bg)] border-b">
