@@ -135,6 +135,12 @@ interface AppContextType {
     viewAs: 'buyer' | 'seller' | null;
     setViewAs: (role: 'buyer' | 'seller' | null) => void;
     effectiveUserType: 'buyer' | 'seller' | 'admin';
+    /** Admin "browse as user" — swaps `user` to a specific target's profile
+     *  so every screen renders as that user. Admin's Supabase session
+     *  stays intact (RLS still authorizes as admin). Non-null = active. */
+    impersonating: { adminId: string; adminName: string } | null;
+    startImpersonating: (targetUserId: string) => Promise<void>;
+    stopImpersonating: () => void;
     incrementDealView: (dealId: string) => Promise<void>;
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
@@ -192,6 +198,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return null;
         }
     });
+    // Admin "browse as user" — admin keeps their real Supabase session
+    // (RLS still treats them as admin), but `user` state is swapped to the
+    // target user's profile so every screen renders as if that user was
+    // signed in. `impersonating` holds the admin's identity for the
+    // floating exit banner and the "stop" action.
+    const [impersonating, setImpersonating] = useState<{ adminId: string; adminName: string } | null>(() => {
+        try {
+            const raw = localStorage.getItem('TAKI_IMPERSONATE_ADMIN');
+            return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+    });
+    // Ref mirror so the auth listener can short-circuit without depending
+    // on `impersonating` state (callback captures stale closures).
+    const impersonationTargetIdRef = useRef<string | null>(
+        typeof window !== 'undefined' ? localStorage.getItem('TAKI_IMPERSONATE_TARGET') : null
+    );
     // True once the initial Supabase session check has resolved (success OR
     // failure). Distinguishes "still hydrating" from "definitively a guest".
     // Without this, AuthRedirector kicks logged-in admins off /admin on
@@ -451,6 +473,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 userRepository.getCurrentUser()
                     .then(async currentUser => {
                         if (currentUser) {
+                            // Admin "browse as user" override — if the admin has
+                            // an active impersonation target in localStorage,
+                            // swap the displayed user to that target's profile.
+                            // The Supabase session stays as the admin (RLS keeps
+                            // admin's reach), but every UI screen reads from
+                            // `user`, so the swap makes the app feel like the
+                            // target is signed in.
+                            if (currentUser.userType === 'admin') {
+                                const targetId = (() => {
+                                    try { return localStorage.getItem('TAKI_IMPERSONATE_TARGET'); }
+                                    catch { return null; }
+                                })();
+                                if (targetId) {
+                                    const target = await userRepository.findById(targetId).catch(() => null);
+                                    if (target && target.userType !== 'admin') {
+                                        currentUser = target;
+                                        impersonationTargetIdRef.current = targetId;
+                                    } else {
+                                        // Stale or invalid target — clear and fall back to admin
+                                        try {
+                                            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
+                                            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+                                        } catch {}
+                                        setImpersonating(null);
+                                        impersonationTargetIdRef.current = null;
+                                    }
+                                }
+                            }
                             logger.info(`👤 Session found: ${currentUser.name}`);
                             setUser(currentUser);
                             // initData is now the single owner of cold-load
@@ -554,6 +604,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         // left `user` populated until a full reload, so the UI
                         // showed the previous account on a guest session.
                         if (event === 'SIGNED_OUT' || (!session?.user && event !== 'INITIAL_SESSION')) {
+                            // Drop any active impersonation — the admin session is gone.
+                            try {
+                                localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
+                                localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+                            } catch {}
+                            setImpersonating(null);
+                            impersonationTargetIdRef.current = null;
                             setUser(null);
                             authService.setUser(null as any);
                             setBookings([]);
@@ -570,6 +627,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             return;
                         }
                         if (session?.user) {
+                            // Impersonation short-circuit — if an admin is
+                            // currently browsing as another user, do NOT let
+                            // INITIAL_SESSION/TOKEN_REFRESHED swap `user` back
+                            // to the admin's optimistic profile. initData()
+                            // already hydrated the target user above.
+                            if (impersonationTargetIdRef.current &&
+                                (session.user.user_metadata?.user_type === 'admin')) {
+                                setIsAuthReady(true);
+                                clearTimeout(safetyTimer);
+                                return;
+                            }
                             const spUser = session.user;
                             const meta = spUser.user_metadata || {};
 
@@ -1032,6 +1100,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // outgoing account's data while authService.logout() round-trips. The
         // SIGNED_OUT listener also clears, but doing it here closes the gap
         // between click and Supabase responding.
+        try {
+            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
+            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+        } catch {}
+        setImpersonating(null);
+        impersonationTargetIdRef.current = null;
         setUser(null);
         setFavorites([]);
         setFollowedMerchants([]);
@@ -1046,6 +1120,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // signOut just delays the next interaction (e.g. typing in the login
         // form) without changing the outcome.
         authService.logout().catch(e => console.warn('Signout deferred:', e));
+    }, []);
+
+    // ============================================================
+    // Admin "browse as user" — start / stop
+    // ============================================================
+    // Start: persists target + admin identity to localStorage and reloads
+    // so initData() picks up the swap. Reload is the simplest way to ensure
+    // every userId-dependent hook re-runs with the target's id.
+    const startImpersonating = useCallback(async (targetUserId: string) => {
+        if (!user || user.userType !== 'admin') {
+            await customAlert('⚠️ هذه الخاصية متاحة للمدير فقط');
+            return;
+        }
+        if (impersonating) {
+            await customAlert('⚠️ أنت بالفعل تتصفّح حساب آخر — ارجع للمدير أولاً');
+            return;
+        }
+        if (targetUserId === user.id) {
+            await customAlert('⚠️ لا يمكنك التصفّح كحساب المدير نفسه');
+            return;
+        }
+        const target = await userRepository.findById(targetUserId).catch(() => null);
+        if (!target) {
+            await customAlert('⚠️ تعذّر تحميل بيانات هذا الحساب');
+            return;
+        }
+        if (target.userType === 'admin') {
+            await customAlert('⚠️ لا يمكنك التصفّح كحساب مدير آخر');
+            return;
+        }
+        try {
+            localStorage.setItem('TAKI_IMPERSONATE_TARGET', targetUserId);
+            localStorage.setItem('TAKI_IMPERSONATE_ADMIN', JSON.stringify({
+                adminId: user.id,
+                adminName: user.name || 'مدير',
+            }));
+        } catch {
+            await customAlert('⚠️ تعذّر بدء التصفّح — المتصفّح يمنع الحفظ المحلي');
+            return;
+        }
+        // Full navigation so the entire user-id-dependent state tree rebuilds.
+        const dest = target.userType === 'seller' ? '/seller' : '/';
+        window.location.assign(dest);
+    }, [user, impersonating, customAlert]);
+
+    // Stop: clears localStorage and reloads back to /admin. The reload
+    // restores the admin's identity through the normal init path.
+    const stopImpersonating = useCallback(() => {
+        try {
+            localStorage.removeItem('TAKI_IMPERSONATE_TARGET');
+            localStorage.removeItem('TAKI_IMPERSONATE_ADMIN');
+        } catch {}
+        setImpersonating(null);
+        impersonationTargetIdRef.current = null;
+        window.location.assign('/admin');
     }, []);
 
     const deleteAccount = useCallback(async () => {
@@ -2034,6 +2163,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
+        impersonating, startImpersonating, stopImpersonating,
         incrementDealView, incrementDealClick,
         platformSettings,
         branches, saveBranch, removeBranch,
@@ -2058,6 +2188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
         viewAs, setViewAs, effectiveUserType,
+        impersonating, startImpersonating, stopImpersonating,
         incrementDealView, incrementDealClick,
         platformSettings,
         branches, saveBranch, removeBranch,
@@ -2066,6 +2197,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return (
         <AppContext.Provider value={contextValue}>
             {children}
+
+            {/* Admin "browse as user" banner — full-width, fixed at the top.
+                Shows while the admin is signed in but the UI is rendering as
+                a specific buyer/seller. Tap to return to the admin dashboard. */}
+            {impersonating && user && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 'env(safe-area-inset-top, 0)',
+                        insetInlineStart: 0,
+                        insetInlineEnd: 0,
+                        zIndex: 99999,
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: 'white',
+                        padding: '10px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        boxShadow: '0 6px 18px rgba(220, 38, 38, 0.45)',
+                        fontFamily: 'inherit',
+                    }}
+                    dir={language === 'ar' ? 'rtl' : 'ltr'}
+                >
+                    <div style={{
+                        fontWeight: 900,
+                        fontSize: '0.85rem',
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>👤</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            تتصفّح كـ <strong>{user?.name || '—'}</strong> ({user?.userType === 'seller' ? 'تاجر' : 'مشتري'})
+                        </span>
+                    </div>
+                    <button
+                        onClick={stopImpersonating}
+                        style={{
+                            background: 'white',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: 999,
+                            padding: '6px 14px',
+                            fontWeight: 900,
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                            fontFamily: 'inherit',
+                        }}
+                    >
+                        🔙 رجوع للمدير
+                    </button>
+                </div>
+            )}
 
             {/* Admin "view as" badge — only visible while an admin is
                 impersonating a buyer or seller. Tap to return to admin. */}

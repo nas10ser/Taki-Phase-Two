@@ -51,6 +51,7 @@ const AuthRedirector = () => {
     const isAuthReady = context.isAuthReady;
     const language = context.language;
     const customAlert = context.customAlert;
+    const impersonating = context.impersonating;
     const history = useHistory();
     const location = useLocation();
     const isRTL = language === 'ar';
@@ -131,6 +132,12 @@ const AuthRedirector = () => {
 
     useEffect(() => {
         if (user) {
+            // While an admin is "browsing as" a target user, skip the
+            // profile-completion + register/complete-profile redirects —
+            // admin is just observing and must NOT be funneled into editing
+            // the target's profile. The exit banner is the way back.
+            if (impersonating) return;
+
             // Detect OAuth users whose profile is missing required fields.
             // Email/password signups never reach this branch with a missing
             // phone — the Register form blocks that. OAuth providers

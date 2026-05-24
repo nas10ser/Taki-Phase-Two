@@ -44,7 +44,7 @@ const UserEditModal = memo<{
     onClose: () => void;
     onSaved: () => void;
 }>(({ user, onClose, onSaved }) => {
-    const { customAlert, customConfirm } = useApp();
+    const { customAlert, customConfirm, startImpersonating } = useApp();
     const [form, setForm] = useState({
         name: user.name ?? '',
         phone: user.phone ?? '',
@@ -111,6 +111,21 @@ const UserEditModal = memo<{
                             ✕
                         </button>
                     </Tooltip>
+                </div>
+
+                {/* Browse-as-user action — opens the app as this buyer */}
+                <div className="px-4 pt-4">
+                    <button
+                        type="button"
+                        onClick={() => startImpersonating(user.id)}
+                        className="w-full p-3 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                        <span className="text-base">👁️</span>
+                        <span>تصفّح التطبيق كهذا المشتري</span>
+                    </button>
+                    <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
+                        ستشاهد كل ما يراه — حجوزاته، إشعاراته، مفضّلته. ارجع للمدير في أي وقت.
+                    </div>
                 </div>
 
                 {/* Stats badge row */}
