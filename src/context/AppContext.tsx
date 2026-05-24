@@ -229,6 +229,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
         } catch { return null; }
     });
+    // v11.17: drives the banner exit-button spinner + double-tap guard.
+    const [stoppingImp, setStoppingImp] = useState(false);
+    const stoppingImpRef = useRef(false);
     // True once the initial Supabase session check has resolved (success OR
     // failure). Distinguishes "still hydrating" from "definitively a guest".
     // Without this, AuthRedirector kicks logged-in admins off /admin on
@@ -1206,16 +1209,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [user, impersonating, customAlert]);
 
     // stop: restores admin's saved tokens via setSession, logs the stop
-    // action, and reloads to /admin. If the saved refresh_token has been
-    // rotated (e.g., admin opened another tab that refreshed the session),
-    // setSession fails and we fall back to a full sign-out + clear hint.
+    // action, and reloads to /admin. v11.17 hardening:
+    //   - Audit log is fire-and-forget (RLS denies it while we're on the
+    //     target's session anyway — the start row is the security record;
+    //     awaiting the failed INSERT was hanging the exit on slow links).
+    //   - setSession is wrapped in a 6 s race so a flaky network never
+    //     traps the admin inside the impersonation.
+    //   - The function ALWAYS reaches a navigation step (success ⇒ /admin,
+    //     failure ⇒ /register after sign-out) so the click never feels dead.
+    //   - `stoppingImp` state gates double-tap and drives the banner spinner.
     const stopImpersonating = useCallback(async () => {
+        if (stoppingImpRef.current) return;
+        stoppingImpRef.current = true;
+        setStoppingImp(true);
+
         const raw = (() => {
             try { return localStorage.getItem('TAKI_IMPERSONATION_SESSION'); }
             catch { return null; }
         })();
         if (!raw) {
-            // No backup — just bounce to /admin and hope the admin session is intact.
             window.location.assign('/admin');
             return;
         }
@@ -1228,41 +1240,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return;
         }
 
-        // Audit log — best effort while we're still authorized as the target.
-        // (We could call this server-side from a "stop" RPC, but doing it
-        // here keeps the system simple; the log row still has admin_id.)
+        // Fire-and-forget audit log. RLS will deny this (we're on target's
+        // session, is_admin() returns false), so we don't even bother
+        // surfacing the error — the start row is the audit record that
+        // matters and was inserted server-side via service_role.
         try {
-            await supabase.from('admin_impersonation_log').insert({
+            supabase.from('admin_impersonation_log').insert({
                 admin_id: backup.adminId,
                 target_id: backup.targetId,
                 action: 'stop',
-            });
-        } catch { /* ignore — the start row is the security record that matters */ }
+            }).then(() => {}, () => {});
+        } catch {}
 
-        // Restore the admin session.
+        // Race setSession against an 8 s timeout so a hung token refresh
+        // never strands the admin on the target's account.
+        type SetSessionResult = { error: { message: string } | null };
+        const restorePromise: Promise<SetSessionResult> = supabase.auth.setSession({
+            access_token: backup.adminAccessToken,
+            refresh_token: backup.adminRefreshToken,
+        }) as unknown as Promise<SetSessionResult>;
+        const timeoutPromise: Promise<SetSessionResult> = new Promise((resolve) =>
+            setTimeout(() => resolve({ error: { message: 'timeout' } }), 8000)
+        );
+
+        let restored = false;
         try {
-            const { error } = await supabase.auth.setSession({
-                access_token: backup.adminAccessToken,
-                refresh_token: backup.adminRefreshToken,
-            });
-            if (error) throw error;
-        } catch (e: any) {
-            // Admin's tokens got rotated/invalidated — sign out and send admin
-            // to login. The audit log still recorded the start, so the
-            // accountability trail is intact.
-            try { await supabase.auth.signOut(); } catch {}
-            try { localStorage.removeItem('TAKI_IMPERSONATION_SESSION'); } catch {}
-            setImpersonating(null);
-            await customAlertRef.current(
-                '⚠️ انتَهت صَلاحية جَلسة المدير — يَرجى تَسجيل الدخول مَرَّة أُخرى'
-            );
-            window.location.assign('/register');
-            return;
-        }
+            const result = await Promise.race([restorePromise, timeoutPromise]);
+            if (!result?.error) restored = true;
+        } catch { /* fall through */ }
 
+        // ALWAYS clean up local state and navigate, even on failure.
         try { localStorage.removeItem('TAKI_IMPERSONATION_SESSION'); } catch {}
         setImpersonating(null);
-        window.location.assign('/admin');
+
+        if (restored) {
+            window.location.assign('/admin');
+        } else {
+            try { await supabase.auth.signOut(); } catch {}
+            try {
+                await customAlertRef.current(
+                    '⚠️ انتَهت صَلاحية جَلسة المدير — سَجِّل الدخول مَرَّة أُخرى للعَودة'
+                );
+            } catch {}
+            window.location.assign('/register');
+        }
     }, []);
 
     const deleteAccount = useCallback(async () => {
@@ -2291,6 +2312,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 delete, message, and modify DB rows exactly as the target.
                 Banner stays fixed on top with a one-tap exit. */}
             {impersonating && user && (
+                <style>{`@keyframes taki-spin{to{transform:rotate(360deg)}}`}</style>
+            )}
+            {impersonating && user && (
                 <div
                     style={{
                         position: 'fixed',
@@ -2328,6 +2352,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     </div>
                     <button
                         onClick={stopImpersonating}
+                        disabled={stoppingImp}
                         style={{
                             background: 'white',
                             color: '#b91c1c',
@@ -2336,13 +2361,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             padding: '6px 14px',
                             fontWeight: 900,
                             fontSize: '0.78rem',
-                            cursor: 'pointer',
+                            cursor: stoppingImp ? 'wait' : 'pointer',
                             whiteSpace: 'nowrap',
                             flexShrink: 0,
                             fontFamily: 'inherit',
+                            opacity: stoppingImp ? 0.7 : 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
                         }}
                     >
-                        🔙 رجوع للمدير
+                        {stoppingImp ? (
+                            <>
+                                <span style={{
+                                    display: 'inline-block', width: 12, height: 12,
+                                    borderRadius: '50%',
+                                    border: '2px solid rgba(185,28,28,0.3)',
+                                    borderTopColor: '#b91c1c',
+                                    animation: 'taki-spin 0.7s linear infinite',
+                                }} />
+                                جاري الرُّجوع...
+                            </>
+                        ) : (
+                            <>🔙 رجوع للمدير</>
+                        )}
                     </button>
                 </div>
             )}

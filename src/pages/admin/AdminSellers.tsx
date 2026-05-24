@@ -55,6 +55,14 @@ const SubscriptionModal = memo<{
     onSaved: () => void;
 }>(({ seller, onClose, onSaved }) => {
     const { customAlert, startImpersonating } = useApp();
+    // Loading flag for the "act as seller" button — see AdminBuyers comment.
+    const [opening, setOpening] = useState(false);
+    const handleOpenAsUser = useCallback(async () => {
+        if (opening) return;
+        setOpening(true);
+        try { await startImpersonating(seller.id); }
+        finally { setOpening(false); }
+    }, [opening, startImpersonating, seller.id]);
     const today = new Date();
     // Defensive: subscription_expires_at can be a malformed string from
     // legacy rows. Fall back to "today + 30 days" instead of letting an
@@ -170,11 +178,21 @@ const SubscriptionModal = memo<{
                     <div>
                         <button
                             type="button"
-                            onClick={() => startImpersonating(seller.id)}
-                            className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                            onClick={handleOpenAsUser}
+                            disabled={opening}
+                            className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
                         >
-                            <span className="text-base">🔓</span>
-                            <span>دخول كَهذا التاجِر (جَلسة كاملة)</span>
+                            {opening ? (
+                                <>
+                                    <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                                    <span>جاري فَتح الجَلسة...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="text-base">🔓</span>
+                                    <span>دخول كَهذا التاجِر (جَلسة كاملة)</span>
+                                </>
+                            )}
                         </button>
                         <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
                             كأنّك سَجَّلت دخول بِحسابه — تَنشر عُروض، تَحذف، تُراسِل، تُعدِّل بَيانات المتجر. كل إجراء مُسجَّل في سِجل التَّدقيق.

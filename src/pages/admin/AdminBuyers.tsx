@@ -45,6 +45,16 @@ const UserEditModal = memo<{
     onSaved: () => void;
 }>(({ user, onClose, onSaved }) => {
     const { customAlert, customConfirm, startImpersonating } = useApp();
+    // Loading flag for the "act as user" button — the start chain takes
+    // ~2 s (edge fn + verifyOtp + reload), and without visible feedback
+    // the admin assumed the first tap was ignored and tapped again.
+    const [opening, setOpening] = useState(false);
+    const handleOpenAsUser = useCallback(async () => {
+        if (opening) return;
+        setOpening(true);
+        try { await startImpersonating(user.id); }
+        finally { setOpening(false); }
+    }, [opening, startImpersonating, user.id]);
     const [form, setForm] = useState({
         name: user.name ?? '',
         phone: user.phone ?? '',
@@ -119,11 +129,21 @@ const UserEditModal = memo<{
                 <div className="px-4 pt-4">
                     <button
                         type="button"
-                        onClick={() => startImpersonating(user.id)}
-                        className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        onClick={handleOpenAsUser}
+                        disabled={opening}
+                        className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
                     >
-                        <span className="text-base">🔓</span>
-                        <span>دخول كَهذا المُشتري (جَلسة كاملة)</span>
+                        {opening ? (
+                            <>
+                                <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                                <span>جاري فَتح الجَلسة...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="text-base">🔓</span>
+                                <span>دخول كَهذا المُشتري (جَلسة كاملة)</span>
+                            </>
+                        )}
                     </button>
                     <div className="text-[10px] text-[var(--text-secondary)] text-center mt-1.5">
                         كأنّك سَجَّلت دخول بِحسابه — تَحجز، تَحذف، تُراسِل، تُعدِّل كَما يَفعل. كل إجراء مُسجَّل في سِجل التَّدقيق.
