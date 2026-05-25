@@ -97,7 +97,9 @@ export const dealRepository = {
             is_unlimited: deal.quantity === 'unlimited',
             initial_quantity: deal.initialQuantity === 'unlimited' ? null : (deal.initialQuantity ?? (deal.quantity === 'unlimited' ? null : deal.quantity)),
             status: deal.status,
-            created_at: deal.createdAt || Date.now()
+            created_at: deal.createdAt || Date.now(),
+            // v11.20 — scheduled launch (Coming Soon). null = launches immediately.
+            starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null
         };
 
         // Internal 25s ceiling per attempt. The deal triggers
@@ -129,6 +131,17 @@ export const dealRepository = {
             const { region, city, ...noGeo } = dbDeal;
             const retry = await withTimeout(
                 supabase.from('deals').upsert(noGeo) as unknown as Promise<{ error: any }>,
+                25000
+            );
+            error = retry.error;
+        }
+        // v11.20 — same forward-compat trick for starts_at (Coming Soon).
+        // If the migration hasn't yet landed in the target DB, drop the field
+        // and retry so the merchant can still publish (without scheduling).
+        if (error && /starts_at/i.test(error.message || '')) {
+            const { starts_at, ...noStart } = dbDeal;
+            const retry = await withTimeout(
+                supabase.from('deals').upsert(noStart) as unknown as Promise<{ error: any }>,
                 25000
             );
             error = retry.error;
@@ -191,7 +204,8 @@ export const dealRepository = {
                 is_unlimited: deal.quantity === 'unlimited',
                 initial_quantity: deal.initialQuantity === 'unlimited' ? null : (deal.initialQuantity ?? (deal.quantity === 'unlimited' ? null : deal.quantity)),
                 status: deal.status,
-                created_at: deal.createdAt || Date.now()
+                created_at: deal.createdAt || Date.now(),
+                starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null
             }));
             const { error } = await supabase.from('deals').upsert(dbDeals);
             if (error) throw error;
@@ -265,6 +279,10 @@ export const dealRepository = {
         if ('city' in d) deal.city = d.city || undefined;
         if ('expiry_type' in d && d.expiry_type) deal.expiryType = d.expiry_type;
         if ('expiry_date' in d && d.expiry_date) deal.expiryDate = d.expiry_date;
+        // v11.20 — scheduled launch (Coming Soon). Stored as BIGINT epoch ms.
+        if ('starts_at' in d && d.starts_at != null) {
+            deal.startsAt = isNaN(Number(d.starts_at)) ? new Date(d.starts_at).getTime() : Number(d.starts_at);
+        }
 
         // Analytics counters (migration v13). Optional — older rows may be null.
         if ('views' in d && d.views != null)   deal.views  = Number(d.views)  || 0;

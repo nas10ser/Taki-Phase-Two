@@ -5,9 +5,9 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation } from '../utils/helpers';
+import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon } from '../utils/helpers';
 
-type DealsType = 'trending' | 'discount' | 'all';
+type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
 
 const useQuery = () => {
     const { search } = useLocation();
@@ -18,6 +18,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
     trending: { ar: 'الأكثر تداولاً', en: 'Most Trending', emoji: '🔥' },
     discount: { ar: 'أقوى الخصومات', en: 'Top Discounts', emoji: '💸' },
     all: { ar: 'كل العروض', en: 'All Deals', emoji: '🛍️' },
+    coming_soon: { ar: 'العروض القادمة', en: 'Coming Soon', emoji: '⏳' },
 };
 
 /**
@@ -61,7 +62,14 @@ const DealsList: React.FC = () => {
     };
 
     const filteredDeals = useMemo(() => {
-        let list = deals.filter(d => d.status === 'active' && hasStock(d));
+        // v11.20 — Coming Soon view shows ONLY scheduled deals in their 7-day
+        // visibility window; every other view EXCLUDES them (they can't be
+        // booked and would just bloat the live grid).
+        let list = deals.filter(d => {
+            if (d.status !== 'active' || !hasStock(d)) return false;
+            if (type === 'coming_soon') return isDealVisibleComingSoon(d);
+            return !isDealComingSoon(d);
+        });
 
         if (activeCategory !== 'all') {
             list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
@@ -91,13 +99,18 @@ const DealsList: React.FC = () => {
                 .map(x => x.d);
         }
 
-        if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
+        // v11.20 — Coming Soon defaults to sort-by-launch (soonest first).
+        // The user-facing sort toggle still works (price/discount/etc.) but
+        // the natural default for "what's about to open" is chronological.
+        if (type === 'coming_soon') {
+            list.sort((a, b) => (a.startsAt || Infinity) - (b.startsAt || Infinity));
+        } else if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
         else if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
         else if (sortBy === 'reliability') list.sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0));
         else list.sort((a, b) => b.createdAt - a.createdAt);
 
         return list;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.

@@ -6,7 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, dealProximityTier } from '../utils/helpers';
+import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon } from '../utils/helpers';
 import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
@@ -90,8 +90,12 @@ const Home: React.FC = () => {
     // let the tier be the PRIMARY sort key, so the customer's city shows
     // first, then بلجرشي/قلوة/الباحة … expanding outward until the list ends,
     // while each section still ranks by its own metric within a tier.
+    // v11.20 — every "live" section excludes Coming Soon deals; they live
+    // exclusively in the dedicated "العروض القادمة" carousel below.
+    const isLive = (d: Deal) => !isDealComingSoon(d);
+
     const trendingDeals = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
+        const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
         const list = useProximity ? base.slice() : applyLocationFilter(base);
         list.sort((a, b) => {
             if (useProximity) {
@@ -104,7 +108,7 @@ const Home: React.FC = () => {
     }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
 
     const bestDiscounts = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
+        const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
         const list = useProximity ? base.slice() : applyLocationFilter(base);
         list.sort((a, b) => {
             if (useProximity) {
@@ -116,8 +120,27 @@ const Home: React.FC = () => {
         return list.slice(0, 8);
     }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
 
+    // v11.20 — Coming Soon carousel. Same look as trending/discount, but
+    // ONLY deals whose startsAt is in the future AND inside the 7-day
+    // visibility window. Deals scheduled further out stay hidden until
+    // the window opens. Same proximity/location ranking so the section
+    // respects the user's region/city/home filter.
+    const comingSoonDeals = useMemo(() => {
+        const base = deals.filter(d => d.status === 'active' && isDealVisibleComingSoon(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
+        const list = useProximity ? base.slice() : applyLocationFilter(base);
+        // Soonest-to-launch first — that's the most actionable for the buyer.
+        list.sort((a, b) => {
+            if (useProximity) {
+                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
+                if (t !== 0) return t;
+            }
+            return (a.startsAt || 0) - (b.startsAt || 0);
+        });
+        return list.slice(0, 12);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
+
     const filteredDeals = useMemo(() => {
-        let list = deals.filter(d => d.status === 'active' && hasStock(d) && !blockedMerchants.includes(d.storeId));
+        let list = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
 
         if (activeCategory !== 'all') list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
         if (activeGender !== 'all') list = list.filter(d => d.gender === activeGender || d.gender === 'all');
@@ -279,6 +302,37 @@ const Home: React.FC = () => {
 
 
             </div>
+
+            {/* v11.20 — Coming Soon carousel. Only renders when at least one
+                scheduled deal is inside its 7-day visibility window — empty
+                section would just be noise on Home. Placed FIRST (above
+                trending) so buyers see what's about to open and can prep,
+                exactly the pattern Nasser asked for. */}
+            {comingSoonDeals.length > 0 && (
+                <div style={{ padding: '20px 0 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
+                        <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                            {isRTL ? 'العروض القادمة ⏳' : 'Coming Soon ⏳'}
+                        </h2>
+                        <button
+                            onClick={() => history.push('/deals?type=coming_soon')}
+                            aria-label={isRTL ? 'عرض كل العروض القادمة' : 'View all coming soon'}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
+                        {comingSoonDeals.map(deal => {
+                            const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                            return (
+                                <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Trending Section — header is a button so the user can drill into a
                 full-grid view (the Trendyol-style page at /deals?type=trending). */}

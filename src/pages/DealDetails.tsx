@@ -8,7 +8,7 @@ import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -558,7 +558,13 @@ const DealDetails: React.FC = () => {
         && typeof deal.quantity === 'number'
         && deal.quantity <= 0
         && hasStockCap;
-    const canBook = !isSoldOut;
+    // v11.20 — Coming Soon: the deal is scheduled and not yet live. Buyer
+    // can browse the full page (item info, ratings, store profile) but the
+    // book CTA is locked until startsAt passes. We tick the countdown live
+    // below so the page can flip to "bookable" automatically the moment
+    // the timestamp passes without a refresh.
+    const isComingSoon = isDealComingSoon(deal);
+    const canBook = !isSoldOut && !isComingSoon;
 
     const handleBooking = () => {
         if (!user) {
@@ -566,6 +572,11 @@ const DealDetails: React.FC = () => {
             return;
         }
         if (isSoldOut) return;
+        // v11.20 — defense in depth. canBook also gates the modal-open click,
+        // but if the buyer somehow opens the modal mid-countdown (e.g. the
+        // deal flipped while their modal was already mounted on a previous
+        // tab) the booking action stays locked until launch.
+        if (isComingSoon) return;
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, bookingNotes);
@@ -701,9 +712,17 @@ const DealDetails: React.FC = () => {
                 <div style={{ position: 'absolute', top: 12, right: 12, background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', padding: '6px 14px', borderRadius: 12, fontWeight: 900, fontSize: '1rem', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>
                     -{deal.discountPercentage}%
                 </div>
-                {/* Live countdown — same compact badge as the home-feed card. */}
+                {/* Live countdown — same compact badge as the home-feed card.
+                    v11.20: switches to a Coming-Soon countdown when the deal
+                    hasn't launched yet (counts to startsAt, not expiry, and
+                    turns solid red inside the final 4 hours). */}
                 {(() => {
-                    const remaining = formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL);
+                    const cs = isComingSoon
+                        ? formatComingSoonRemaining(deal.startsAt!, isRTL)
+                        : null;
+                    const remaining = cs
+                        ? { text: cs.text, urgent: cs.urgent, expired: false }
+                        : formatRemaining(dealLifespanStart(deal), deal.expiresInMinutes || 0, isRTL);
                     return (
                         <div style={{
                             position: 'absolute',
@@ -711,24 +730,60 @@ const DealDetails: React.FC = () => {
                             [isRTL ? 'right' : 'left']: 12,
                             background: remaining.expired
                                 ? 'rgba(100,116,139,0.92)'
-                                : remaining.urgent
-                                    ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
-                                    : 'rgba(15,23,42,0.78)',
+                                : isComingSoon && remaining.urgent
+                                    ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
+                                    : isComingSoon
+                                        ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                                        : remaining.urgent
+                                            ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
+                                            : 'rgba(15,23,42,0.78)',
                             color: 'white',
                             padding: '6px 12px',
                             borderRadius: 10,
                             fontSize: '0.85rem',
                             fontWeight: 900,
                             backdropFilter: 'blur(8px)',
-                            boxShadow: remaining.urgent ? '0 2px 10px rgba(239,68,68,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
+                            boxShadow: (remaining.urgent || isComingSoon) ? '0 2px 10px rgba(99,102,241,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
                             animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',
                             display: 'flex', alignItems: 'center', gap: 6
                         } as React.CSSProperties}>
-                            <span>{remaining.expired ? '⏹' : '⏱'}</span>
+                            <span>{remaining.expired ? '⏹' : isComingSoon ? '⏳' : '⏱'}</span>
                             <span>{remaining.text}</span>
                         </div>
                     );
                 })()}
+                {/* v11.20 — Coming Soon big lock chip overlaying the hero image.
+                    Mirrors the card-level overlay so the buyer knows instantly
+                    they can browse but not book yet. */}
+                {isComingSoon && (
+                    <div style={{
+                        position: 'absolute', inset: 0,
+                        background: 'linear-gradient(135deg, rgba(15,23,42,0.42) 0%, rgba(15,23,42,0.10) 50%, rgba(15,23,42,0.55) 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        pointerEvents: 'none'
+                    }}>
+                        <div style={{
+                            background: 'rgba(15,23,42,0.82)',
+                            backdropFilter: 'blur(10px)',
+                            color: 'white',
+                            padding: '14px 22px',
+                            borderRadius: 18,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            fontSize: '1rem',
+                            fontWeight: 900,
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                            border: '2px solid rgba(255,255,255,0.18)'
+                        }}>
+                            <span style={{ fontSize: '1.8rem', lineHeight: 1 }}>🔒</span>
+                            <div>
+                                <div style={{ fontSize: '0.95rem', fontWeight: 900 }}>{isRTL ? 'عرض قادم — مغلق حالياً' : 'Coming soon — locked'}</div>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, opacity: 0.85, marginTop: 2 }}>{isRTL ? 'تابع العد التنازلي للحجز' : 'Booking opens at launch'}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {zoomOpen && (
@@ -1220,28 +1275,80 @@ const DealDetails: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-                            <button
-                                onClick={() => {
-                                    if (!user) {
-                                        history.push('/register');
-                                        return;
-                                    }
-                                    if (booked) {
-                                        history.push('/bookings');
-                                        return;
-                                    }
-                                    setShowBookingModal(true);
-                                }}
-                                disabled={isSoldOut && !booked}
-                                className={`book-btn ${booked ? 'booked' : ''}`}
-                                style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
-                            >
-                                {booked
-                                    ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
-                                    : isSoldOut
-                                        ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                        : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
-                            </button>
+                            {/* v11.20 — Coming Soon block. Instead of the live "احجز
+                                الآن" CTA we render a locked, dim button with a
+                                live countdown. The buyer can still browse the
+                                rest of the page (store profile, ratings, gallery)
+                                and the CTA flips to a real bookable button
+                                automatically the moment startsAt passes. */}
+                            {isComingSoon ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {(() => {
+                                        const cs = formatComingSoonRemaining(deal.startsAt!, isRTL);
+                                        const urgent = cs.urgent;
+                                        return (
+                                            <div style={{
+                                                background: urgent
+                                                    ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
+                                                    : 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                                color: 'white',
+                                                borderRadius: 18,
+                                                padding: '18px 16px',
+                                                textAlign: 'center',
+                                                boxShadow: urgent
+                                                    ? '0 10px 24px rgba(220,38,38,0.4)'
+                                                    : '0 10px 24px rgba(99,102,241,0.35)',
+                                                animation: urgent ? 'pulse 1.4s ease-in-out infinite' : 'none'
+                                            }}>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 800, opacity: 0.9, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                    <span style={{ fontSize: '1rem' }}>🔒</span>
+                                                    {isRTL ? 'يفتح الحجز خلال' : 'Booking opens in'}
+                                                </div>
+                                                <div style={{ fontSize: '1.9rem', fontWeight: 950, letterSpacing: 1, lineHeight: 1 }}>
+                                                    {cs.text}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>
+                                                    {urgent
+                                                        ? (isRTL ? '⚡ آخر ٤ ساعات — جهّز نفسك' : '⚡ Last 4 hours — get ready')
+                                                        : (isRTL ? 'تابع الصفحة وحضّر طلبك من الآن' : 'Browse the page and prep ahead')}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                    <button
+                                        disabled
+                                        className="book-btn"
+                                        style={{ opacity: 0.55, cursor: 'not-allowed' }}
+                                    >
+                                        {isRTL
+                                            ? `🔒 احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س`
+                                            : `🔒 Book Now — ${deal.discountedPrice * selectedQuantity} SAR`}
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        if (!user) {
+                                            history.push('/register');
+                                            return;
+                                        }
+                                        if (booked) {
+                                            history.push('/bookings');
+                                            return;
+                                        }
+                                        setShowBookingModal(true);
+                                    }}
+                                    disabled={isSoldOut && !booked}
+                                    className={`book-btn ${booked ? 'booked' : ''}`}
+                                    style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
+                                >
+                                    {booked
+                                        ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
+                                        : isSoldOut
+                                            ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
+                                            : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

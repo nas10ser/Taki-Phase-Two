@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Deal, getLocation } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
+import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
 
 interface Props {
     deal: Deal;
@@ -46,14 +47,33 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
     const imageUrl = Array.isArray(deal.images) ? deal.images[0] : (deal as unknown as { image?: string }).image || '';
     const isRTL = language === 'ar';
 
+    // v11.20 — Coming Soon overrides the live-countdown. We show the time
+    // remaining UNTIL the deal opens instead of UNTIL it expires, with a
+    // lock + dim overlay so the buyer instantly understands they can't book.
+    const comingSoon = isDealComingSoon(deal);
+
     // Tick the countdown every second so the urgency indicator stays live.
-    const [remaining, setRemaining] = useState(() => formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL));
+    // v11.20 — once a scheduled deal flips to live we anchor the lifespan
+    // countdown to startsAt (not createdAt) so the merchant's chosen
+    // "valid for 2h" actually means 2h starting from launch.
+    const [remaining, setRemaining] = useState(() =>
+        comingSoon
+            ? (() => { const r = formatComingSoonRemaining(deal.startsAt!, isRTL); return { text: r.text, urgent: r.urgent, expired: false }; })()
+            : formatRemaining(dealLifespanStart(deal), deal.expiresInMinutes || 0, isRTL)
+    );
     useEffect(() => {
-        const tick = () => setRemaining(formatRemaining(deal.createdAt, deal.expiresInMinutes || 0, isRTL));
+        const tick = () => {
+            if (isDealComingSoon(deal)) {
+                const r = formatComingSoonRemaining(deal.startsAt!, isRTL);
+                setRemaining({ text: r.text, urgent: r.urgent, expired: false });
+            } else {
+                setRemaining(formatRemaining(dealLifespanStart(deal), deal.expiresInMinutes || 0, isRTL));
+            }
+        };
         tick();
         const id = setInterval(tick, 1000);
         return () => clearInterval(id);
-    }, [deal.createdAt, deal.expiresInMinutes, isRTL]);
+    }, [deal.createdAt, deal.expiresInMinutes, deal.startsAt, isRTL]);
 
     const handleFollowClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -97,11 +117,46 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                     alt={deal.itemName}
                     /* Square 1:1 — Noon-style density. Shortest aspect that still
                        reads as a photo, keeps cards scannable on phone & desktop. */
-                    style={{ width: '100%', aspectRatio: '1 / 1', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+                    style={{
+                        width: '100%', aspectRatio: '1 / 1', height: 'auto', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease',
+                        // v11.20 — Coming Soon dims the image the same way expired
+                        // deals do (40% black overlay + 60% brightness). Reads
+                        // instantly as "not bookable" without removing the photo.
+                        filter: comingSoon ? 'brightness(0.6) saturate(0.85)' : undefined
+                    }}
                     onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=600';
                     }}
                 />
+                {/* v11.20 — Coming Soon lock overlay. Sits above the image, below
+                    the follow / discount / countdown chips so those remain
+                    readable. Lock icon + Arabic/English "قريباً" label. */}
+                {comingSoon && (
+                    <div style={{
+                        position: 'absolute', inset: 0,
+                        background: 'linear-gradient(135deg, rgba(15,23,42,0.45) 0%, rgba(15,23,42,0.15) 50%, rgba(15,23,42,0.55) 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        pointerEvents: 'none'
+                    }}>
+                        <div style={{
+                            background: 'rgba(15,23,42,0.78)',
+                            backdropFilter: 'blur(10px)',
+                            color: 'white',
+                            padding: '10px 16px',
+                            borderRadius: 14,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            fontSize: '0.78rem',
+                            fontWeight: 900,
+                            boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+                            border: '1.5px solid rgba(255,255,255,0.18)'
+                        }}>
+                            <span style={{ fontSize: '1.15rem', lineHeight: 1 }}>🔒</span>
+                            <span>{isRTL ? 'قريباً' : 'Coming soon'}</span>
+                        </div>
+                    </div>
+                )}
                 <button
                     onClick={handleFollowClick}
                     aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
@@ -144,27 +199,35 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                 }}>
                     -{deal.discountPercentage}%
                 </div>
-                {/* Live countdown — pulses red in the final hour so urgency reads at a glance. */}
+                {/* Live countdown — pulses red in the final hour so urgency reads
+                    at a glance. v11.20: for Coming Soon deals the countdown
+                    counts DOWN to the launch (startsAt) and goes solid red
+                    in the last 4 hours so the buyer knows it's about to open. */}
                 <div style={{
                     position: 'absolute',
                     bottom: 10,
                     [isRTL ? 'left' : 'right']: 10,
                     background: remaining.expired
                         ? 'rgba(100,116,139,0.92)'
-                        : remaining.urgent
-                            ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
-                            : 'rgba(15,23,42,0.78)',
+                        : comingSoon && remaining.urgent
+                            ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
+                            : comingSoon
+                                ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                                : remaining.urgent
+                                    ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
+                                    : 'rgba(15,23,42,0.78)',
                     color: 'white',
                     padding: '4px 10px',
                     borderRadius: 8,
                     fontSize: '0.7rem',
                     fontWeight: 900,
                     backdropFilter: 'blur(8px)',
-                    boxShadow: remaining.urgent ? '0 2px 10px rgba(239,68,68,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
+                    boxShadow: (remaining.urgent || comingSoon) ? '0 2px 10px rgba(99,102,241,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
                     animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',
-                    display: 'flex', alignItems: 'center', gap: 4
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    zIndex: 2
                 }}>
-                    <span style={{ fontSize: '0.75rem' }}>{remaining.expired ? '⏹' : '⏱'}</span>
+                    <span style={{ fontSize: '0.75rem' }}>{remaining.expired ? '⏹' : comingSoon ? '⏳' : '⏱'}</span>
                     <span>{remaining.text}</span>
                 </div>
                 {loc && (

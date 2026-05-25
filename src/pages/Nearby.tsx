@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { getDistance, resolveDealLocation } from '../utils/helpers';
+import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/helpers';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -158,7 +158,10 @@ const Nearby: React.FC = () => {
                 || (typeof d.quantity === 'number' && d.quantity > 0)
                 || !hasCap;
             const matchesRadius = radius === 0 || d.distance <= radius;
-            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock && !blockedMerchants.includes(d.storeId);
+            // v11.20 — exclude Coming Soon deals from the Nearby map+list.
+            // The map is for "what can I get RIGHT NOW within X km"; a
+            // locked future deal would be visual noise here.
+            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
         }).sort((a, b) => a.distance - b.distance);
     }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, blockedMerchants]);
 

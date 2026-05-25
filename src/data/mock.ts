@@ -126,6 +126,13 @@ export interface Deal {
     prepTime?: string;
     createdAt: number;
     status: 'active' | 'expired' | 'paused';
+    /** v11.20 — scheduled launch (epoch ms). When set & in the future, the
+     *  deal is "Coming Soon": locked from booking, dimmed with a lock icon,
+     *  and surfaced in Home's "العروض القادمة" section only while it sits
+     *  inside the 7-day visibility window. Merchant can schedule up to 30
+     *  days ahead so they can prep early; deal only appears publicly once
+     *  the 7-day window opens. Unset (undefined) = legacy behavior. */
+    startsAt?: number;
     /** Aggregated impressions counter — incremented by RPC `increment_deal_view`
      *  (migration v13). Optional because legacy deals predate the column. */
     views?: number;

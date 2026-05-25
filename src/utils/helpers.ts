@@ -52,6 +52,81 @@ export const dealMatchesLocation = (
     return true;
 };
 
+// =========================================================================
+// Coming Soon (v11.20) — A scheduled deal lives in three phases:
+//   1. Hidden       — startsAt > now + 7 days   (only merchant sees it)
+//   2. Coming Soon  — now < startsAt ≤ now + 7d  (shown on Home, locked)
+//   3. Live         — startsAt ≤ now             (normal active deal)
+// `null/undefined` startsAt = legacy behavior (always live from createdAt).
+// =========================================================================
+export const COMING_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;   // 7 days
+export const COMING_SOON_URGENT_MS = 4 * 60 * 60 * 1000;        // 4 hours
+export const COMING_SOON_MAX_LEAD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/** True if the deal has a future startsAt — i.e. not yet bookable. */
+export const isDealComingSoon = (deal: Deal): boolean => {
+    return typeof deal.startsAt === 'number' && deal.startsAt > Date.now();
+};
+
+/** True if the deal is in its public 7-day countdown window
+ *  (visible on Home + StoreDetails but locked from booking). */
+export const isDealVisibleComingSoon = (deal: Deal): boolean => {
+    if (typeof deal.startsAt !== 'number') return false;
+    const now = Date.now();
+    return deal.startsAt > now && deal.startsAt <= now + COMING_SOON_WINDOW_MS;
+};
+
+/** True if the deal is scheduled further than 7 days out — merchant
+ *  prep mode; not shown to buyers yet. */
+export const isDealScheduledHidden = (deal: Deal): boolean => {
+    if (typeof deal.startsAt !== 'number') return false;
+    return deal.startsAt > Date.now() + COMING_SOON_WINDOW_MS;
+};
+
+/** True if the deal is in the last 4 hours of its coming-soon window
+ *  (countdown turns red). */
+export const isComingSoonUrgent = (deal: Deal): boolean => {
+    if (typeof deal.startsAt !== 'number') return false;
+    const diff = deal.startsAt - Date.now();
+    return diff > 0 && diff <= COMING_SOON_URGENT_MS;
+};
+
+/** The timestamp the deal's lifespan should be measured from. For legacy
+ *  deals (no startsAt) this is just createdAt. For scheduled deals the
+ *  expiry clock only begins ticking the moment the deal goes live, NOT
+ *  from publish time — otherwise a "2-hour" deal scheduled a week out
+ *  would be born already expired. */
+export const dealLifespanStart = (deal: Deal): number => {
+    return typeof deal.startsAt === 'number' ? Math.max(deal.startsAt, deal.createdAt || 0) : (deal.createdAt || 0);
+};
+
+/** Effective expiry timestamp (ms). Combines startsAt + expiresInMinutes
+ *  so callers don't have to reproduce the lifespan-start logic. */
+export const dealExpiryTs = (deal: Deal): number => {
+    return dealLifespanStart(deal) + (deal.expiresInMinutes || 0) * 60 * 1000;
+};
+
+/** Format the remaining time until startsAt — same shape as the live-deal
+ *  countdown so the two read consistently. */
+export const formatComingSoonRemaining = (
+    startsAt: number,
+    isRTL: boolean
+): { text: string; urgent: boolean; ready: boolean } => {
+    const diff = startsAt - Date.now();
+    if (diff <= 0) return { text: isRTL ? 'متاح الآن' : 'Live now', urgent: false, ready: true };
+
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff / 3600000) % 24);
+    const mins = Math.floor((diff / 60000) % 60);
+    const secs = Math.floor((diff / 1000) % 60);
+    const urgent = diff <= COMING_SOON_URGENT_MS;
+
+    if (days > 0) return { text: isRTL ? `${days}ي ${hours}س` : `${days}d ${hours}h`, urgent: false, ready: false };
+    if (hours > 0) return { text: isRTL ? `${hours}س ${mins}د` : `${hours}h ${mins}m`, urgent, ready: false };
+    if (mins > 0) return { text: isRTL ? `${mins}د ${secs.toString().padStart(2,'0')}ث` : `${mins}m ${secs}s`, urgent: true, ready: false };
+    return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, ready: false };
+};
+
 /**
  * Normalizes Arabic/Eastern numerals (٠١٢٣٤٥٦٧٨٩) to Western (0123456789).
  * Essential for Saudi users typing on Arabic keyboards.

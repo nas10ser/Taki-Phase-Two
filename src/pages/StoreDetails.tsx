@@ -225,9 +225,17 @@ const StoreDetails: React.FC = () => {
     // the countdown is what gates visibility, not the number. That made the
     // deal show up in both "Active" and "Past" tabs at the same time.
     const isTimedOut = (d: any) => {
+        // v11.20 — scheduled deals don't start their lifespan clock until
+        // startsAt. Without this guard a "2 hours validity" deal scheduled
+        // a week out would be born already expired.
+        const lifespanStart = (typeof d.startsAt === 'number') ? Math.max(d.startsAt, d.createdAt || 0) : (d.createdAt || 0);
         const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
-        return Date.now() > (d.createdAt + lifespanMs);
+        return Date.now() > (lifespanStart + lifespanMs);
     };
+
+    // v11.20 — Coming Soon = scheduled deal whose startsAt is in the future.
+    const isComingSoonLocal = (d: any) =>
+        typeof d.startsAt === 'number' && d.startsAt > Date.now();
 
     // Sold-out requires a real stock cap. Without initialQuantity > 0 the
     // deal is time-based, so quantity=0 is meaningless — don't treat it
@@ -237,6 +245,10 @@ const StoreDetails: React.FC = () => {
         && typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
 
     const storeDeals = useMemo(() => {
+        // v11.20 — Coming Soon deals stay in this tab. Buyers (and the
+        // merchant themselves) need to see what's scheduled. The DealCard
+        // already renders them locked + dimmed; the booking page itself
+        // blocks the actual book click until startsAt passes.
         return deals.filter(d =>
             d.storeId === id &&
             d.status === 'active' &&

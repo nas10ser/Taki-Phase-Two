@@ -352,6 +352,13 @@ const SellerDashboard: React.FC = () => {
     const [days, setDays] = useState('');
     const [expiryHours, setExpiryHours] = useState('');
     const [expiryDate, setExpiryDate] = useState(''); // Gregorian YYYY-MM-DD (used for calculation)
+    // v11.20 — Coming Soon scheduling. Off by default so existing sellers
+    // see no behavior change. When ON we capture a single datetime-local
+    // value (browser-native picker, native validation). The 30-day cap is
+    // enforced both here (max attribute) AND inside submitAction so even a
+    // tampered input can't sneak in a year-out date.
+    const [scheduledEnabled, setScheduledEnabled] = useState(false);
+    const [scheduledAt, setScheduledAt] = useState(''); // YYYY-MM-DDTHH:mm
     const [category, setCategory] = useState<Category | ''>('');
     const [gender, setGender] = useState<GenderTarget>('all');
     const [size, setSize] = useState('');
@@ -1238,7 +1245,10 @@ const SellerDashboard: React.FC = () => {
         setExpiryDate('');
         setExpiryGregorian('');
         setExpiryHijriDisplay('');
-        
+        // v11.20 — reset Coming Soon scheduling
+        setScheduledEnabled(false);
+        setScheduledAt('');
+
         // Reset location to shop defaults
         if (user?.lat && user?.lng) {
             setMapPos([user.lat, user.lng]);
@@ -1311,6 +1321,20 @@ const SellerDashboard: React.FC = () => {
             }
         }
         
+        // v11.20 — restore Coming Soon scheduling when editing.
+        if (typeof deal.startsAt === 'number' && deal.startsAt > Date.now()) {
+            setScheduledEnabled(true);
+            // Convert ms → YYYY-MM-DDTHH:mm in the browser's local timezone
+            // so the datetime-local input shows the same moment the
+            // merchant originally picked.
+            const d = new Date(deal.startsAt);
+            const pad = (n: number) => n.toString().padStart(2, '0');
+            setScheduledAt(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+        } else {
+            setScheduledEnabled(false);
+            setScheduledAt('');
+        }
+
         setCategory(deal.category);
         setGender(deal.gender);
         setSize(deal.size || '');
@@ -1402,6 +1426,38 @@ const SellerDashboard: React.FC = () => {
         if (!hasDate && !hasDuration && !hasStock && !hasHours) {
             await customAlert(isRTL ? '⚠️ يرجى تحديد تاريخ انتهاء أو مدة بالساعات أو الأيام' : '⚠️ Please specify an end date, hours, or duration');
             return;
+        }
+
+        // 4. v11.20 — Coming Soon validation. Schedule must be in the
+        //    future and within 30 days. We use the user's local timezone
+        //    (datetime-local has no tz info) which matches the merchant's
+        //    intent — they typed a wall-clock time, not a UTC offset.
+        let computedStartsAt: number | undefined;
+        if (scheduledEnabled) {
+            if (!scheduledAt) {
+                await customAlert(isRTL ? '⚠️ يرجى اختيار تاريخ ووقت بدء العرض' : '⚠️ Please pick a scheduled start date+time');
+                return;
+            }
+            const startMs = new Date(scheduledAt).getTime();
+            if (isNaN(startMs)) {
+                await customAlert(isRTL ? '⚠️ تاريخ غير صالح' : '⚠️ Invalid date');
+                return;
+            }
+            const minMs = Date.now() + 10 * 60 * 1000;          // at least 10 min ahead
+            const maxMs = Date.now() + 30 * 24 * 60 * 60 * 1000; // at most 30 days ahead
+            if (startMs < minMs) {
+                await customAlert(isRTL
+                    ? '⚠️ يجب أن يكون موعد البدء بعد ١٠ دقائق على الأقل من الآن'
+                    : '⚠️ Schedule must be at least 10 minutes in the future');
+                return;
+            }
+            if (startMs > maxMs) {
+                await customAlert(isRTL
+                    ? '⚠️ الحد الأقصى لجدولة العرض هو ٣٠ يوماً من الآن'
+                    : '⚠️ Maximum schedule lead time is 30 days from now');
+                return;
+            }
+            computedStartsAt = startMs;
         }
 
         // 4. Hours mode needs an explicit hour count — no silent default.
@@ -1563,7 +1619,13 @@ const SellerDashboard: React.FC = () => {
             initialQuantity: finalQuantity,
             ratings: existingDeal ? existingDeal.ratings : [],
             createdAt: Date.now(), // Always refresh timestamp on publish/save to ensure fresh countdown
-            status: forcePublish ? 'active' : (existingDeal?.status || 'active') as any
+            status: forcePublish ? 'active' : (existingDeal?.status || 'active') as any,
+            // v11.20 — startsAt is set ONLY when scheduling is on. Editing
+            // an already-launched deal CANNOT push it back into the future
+            // (computedStartsAt is undefined unless the toggle is on AND a
+            // future date is picked), so a buyer who opened the locked
+            // detail page mid-launch never sees the lock reappear.
+            startsAt: computedStartsAt
         };
 
             // 20s ceiling per DB write. Without this, a stalled Supabase
@@ -1692,10 +1754,13 @@ const SellerDashboard: React.FC = () => {
 
     const myDeals = deals.filter(d => d.storeId === user?.id);
     
-    // Check if a deal has timed out based on its creation date and lifespan
+    // Check if a deal has timed out based on its creation date and lifespan.
+    // v11.20 — scheduled deals don't start their lifespan clock until startsAt,
+    // so a "2 hours" deal scheduled a week out is NOT immediately timed-out.
     const isTimedOut = (d: any) => {
+        const lifespanStart = (typeof d.startsAt === 'number') ? Math.max(d.startsAt, d.createdAt || 0) : (d.createdAt || 0);
         const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
-        return Date.now() > (d.createdAt + lifespanMs);
+        return Date.now() > (lifespanStart + lifespanMs);
     };
 
     // A deal is "sold out" only when the seller actually picked a stock cap
@@ -2085,6 +2150,121 @@ const SellerDashboard: React.FC = () => {
                                         </div>
                                         <span style={{ fontSize: '1.3rem' }}>📅</span>
                                     </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* v11.20 — Coming Soon scheduling. Toggle is OFF by
+                            default; turning it ON reveals the datetime picker
+                            and pins min/max to "10 min from now" → "30 days
+                            from now". The deal saves with a future startsAt,
+                            stays HIDDEN from buyers until 7 days before launch,
+                            then surfaces locked with a live countdown until
+                            startsAt passes and bookings open automatically. */}
+                        <div style={{ marginBottom: 20 }}>
+                            <label style={labelStyle}>{isRTL ? 'جدولة العرض (اختياري)' : 'Schedule Launch (Optional)'}</label>
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setScheduledEnabled(v => { if (v) setScheduledAt(''); return !v; })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setScheduledEnabled(v => { if (v) setScheduledAt(''); return !v; }); } }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 12,
+                                    padding: '14px 16px', borderRadius: 14,
+                                    border: scheduledEnabled ? '1.5px solid var(--primary)' : '1.5px solid var(--gray-200)',
+                                    background: scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                    cursor: 'pointer', WebkitTapHighlightColor: 'transparent'
+                                }}
+                            >
+                                <div style={{ fontSize: '1.4rem' }}>⏳</div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                        {isRTL ? 'عرض قادم — Coming Soon' : 'Coming Soon launch'}
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
+                                        {isRTL
+                                            ? 'جهّز العرض من الآن، يبدأ تلقائياً في الوقت المحدد. لا يستطيع المشتري الحجز قبل الموعد.'
+                                            : 'Prep ahead — deal stays locked until launch time. Up to 30 days out.'}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    width: 44, height: 26, borderRadius: 999,
+                                    background: scheduledEnabled ? 'var(--primary)' : 'var(--gray-300)',
+                                    position: 'relative', transition: 'background 0.2s ease',
+                                    flexShrink: 0
+                                }}>
+                                    <div style={{
+                                        position: 'absolute', top: 3,
+                                        [isRTL ? 'right' : 'left']: scheduledEnabled ? 21 : 3,
+                                        width: 20, height: 20, borderRadius: '50%',
+                                        background: 'white',
+                                        transition: 'all 0.2s ease',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                    }} />
+                                </div>
+                            </div>
+
+                            {scheduledEnabled && (
+                                <div style={{ marginTop: 12 }}>
+                                    <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                        {isRTL ? 'موعد بدء العرض (لا يتعدى ٣٠ يوماً)' : 'Launch time (max 30 days ahead)'}
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={scheduledAt}
+                                        onChange={(e) => setScheduledAt(e.target.value)}
+                                        min={(() => {
+                                            // min = now + 10 minutes (local tz). datetime-local has
+                                            // no tz info so we format from the user's wall clock.
+                                            const d = new Date(Date.now() + 10 * 60 * 1000);
+                                            const pad = (n: number) => n.toString().padStart(2, '0');
+                                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                        })()}
+                                        max={(() => {
+                                            const d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                                            const pad = (n: number) => n.toString().padStart(2, '0');
+                                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                        })()}
+                                        style={{
+                                            ...fieldInputStyle,
+                                            border: scheduledAt ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                            colorScheme: 'light',
+                                        }}
+                                    />
+                                    {scheduledAt && (() => {
+                                        const startMs = new Date(scheduledAt).getTime();
+                                        if (isNaN(startMs)) return null;
+                                        const diff = startMs - Date.now();
+                                        if (diff <= 0) return null;
+                                        const days = Math.floor(diff / 86400000);
+                                        const hours = Math.floor((diff / 3600000) % 24);
+                                        const inWindow = diff <= 7 * 24 * 60 * 60 * 1000;
+                                        return (
+                                            <div style={{
+                                                marginTop: 8,
+                                                padding: '10px 12px',
+                                                borderRadius: 10,
+                                                background: inWindow ? 'rgba(99,102,241,0.12)' : 'rgba(245,158,11,0.12)',
+                                                border: inWindow ? '1px solid rgba(99,102,241,0.35)' : '1px solid rgba(245,158,11,0.35)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '0.78rem',
+                                                fontWeight: 700,
+                                                lineHeight: 1.5,
+                                                display: 'flex', gap: 8, alignItems: 'flex-start'
+                                            }}>
+                                                <span style={{ fontSize: '1rem' }}>{inWindow ? '⏳' : '📅'}</span>
+                                                <span>
+                                                    {isRTL
+                                                        ? (inWindow
+                                                            ? `سيظهر العرض في "العروض القادمة" ويبدأ خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
+                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days} يوماً للظهور).`)
+                                                        : (inWindow
+                                                            ? `Will appear in Coming Soon — launches in ${days > 0 ? days + 'd ' : ''}${hours}h`
+                                                            : `Saved & scheduled. Visible to buyers 7 days before launch (${days} days until visible).`)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
                         </div>
