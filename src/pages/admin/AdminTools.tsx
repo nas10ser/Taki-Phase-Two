@@ -380,47 +380,67 @@ const CampaignModal: React.FC<{
             return;
         }
         if (saving) return;
-        setSaving(true);
-        // The DB has NOT NULL on title_en/body_en. Mirror Arabic when missing
-        // so admins can publish a single-language campaign without friction.
-        const row: any = {
-            title_ar: form.title_ar.trim(),
-            title_en: (form.title_en.trim() || form.title_ar.trim()),
-            body_ar: form.body_ar.trim(),
-            body_en: (form.body_en.trim() || form.body_ar.trim()),
-            target_audience: form.target_audience || 'all',
-            target_city: form.target_city.trim() || null,
-            target_region: form.target_region.trim() || null,
-            image_url: form.image_url.trim() || null,
-            action_url: form.action_url.trim() || null,
-            action_label_ar: form.action_label_ar.trim() || null,
-            action_label_en: form.action_label_en.trim() || null,
-            starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : new Date().toISOString(),
-            ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
-            priority: Number(form.priority) || 0,
-            is_active: form.is_active,
-        };
 
-        // 15s timeout so a stalled network call never leaves the button
-        // stuck on "جاري الحفظ...". The user sees a clear error and can retry.
-        // try/finally guarantees setSaving(false) even if a date in `row`
-        // was malformed and .toISOString() above had thrown.
+        // Validate dates BEFORE the spinner — a malformed value shows a clear
+        // error instantly instead of any spinner time (v11.22.1). Empty is fine
+        // (starts_at defaults to now, ends_at to null).
+        const startMs = form.starts_at ? new Date(form.starts_at).getTime() : Date.now();
+        const endMs = form.ends_at ? new Date(form.ends_at).getTime() : null;
+        if (Number.isNaN(startMs) || (endMs !== null && Number.isNaN(endMs))) {
+            await customAlert('❌ تاريخ غير صالح. تحقّق من تاريخ البداية والنهاية.');
+            return;
+        }
+        if (endMs !== null && endMs <= startMs) {
+            await customAlert('❌ تاريخ النهاية يجب أن يكون بعد تاريخ البداية.');
+            return;
+        }
+
+        setSaving(true);
+        // EVERYTHING that can throw (date conversion + network) lives inside the
+        // try, and setSaving(false) is in finally — so the button can NEVER
+        // stick on "جاري الحفظ..." no matter what fails (v11.22.1: the row was
+        // previously built OUTSIDE the try, so a bad date hung the button).
         let result: any;
         let broadcastCount = 0;
         try {
+            // The DB has NOT NULL on title_en/body_en. Mirror Arabic when missing
+            // so admins can publish a single-language campaign without friction.
+            const row: any = {
+                title_ar: form.title_ar.trim(),
+                title_en: (form.title_en.trim() || form.title_ar.trim()),
+                body_ar: form.body_ar.trim(),
+                body_en: (form.body_en.trim() || form.body_ar.trim()),
+                target_audience: form.target_audience || 'all',
+                target_city: form.target_city.trim() || null,
+                target_region: form.target_region.trim() || null,
+                image_url: form.image_url.trim() || null,
+                action_url: form.action_url.trim() || null,
+                action_label_ar: form.action_label_ar.trim() || null,
+                action_label_en: form.action_label_en.trim() || null,
+                starts_at: new Date(startMs).toISOString(),
+                ends_at: endMs !== null ? new Date(endMs).toISOString() : null,
+                priority: Number(form.priority) || 0,
+                is_active: form.is_active,
+            };
+
+            // 12s timeout so a stalled network call never leaves the button
+            // stuck. The user sees a clear error and can retry.
             const networkCall = isEdit
                 ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id).select().maybeSingle()
                 : supabase.from('promotional_campaigns').insert([row]).select().maybeSingle();
             const timeout = new Promise<{ error: any }>(resolve =>
-                setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 15000)
+                setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
             );
             result = await Promise.race([networkCall as any, timeout]);
             // On a NEW active campaign, fan out to the targeted inboxes right
             // away (v11.22) — without this the campaign reaches nobody. Edits
             // don't re-broadcast (broadcast_campaign skips users who already
             // saw it, but we also don't want an edit to re-ping everyone).
+            // Broadcast also gets its own timeout so a slow fan-out can't hang.
             if (!result?.error && !isEdit && row.is_active && result?.data?.id) {
-                broadcastCount = await promoRepository.broadcastNow(result.data.id);
+                const bc = promoRepository.broadcastNow(result.data.id);
+                const bcTimeout = new Promise<number>(resolve => setTimeout(() => resolve(0), 12000));
+                broadcastCount = await Promise.race([bc, bcTimeout]);
             }
         } catch (e: any) {
             result = { error: { message: e?.message || 'فشل الحفظ — تحقق من الاتصال' } };
@@ -647,7 +667,11 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
                 .select('id')
                 .single();
             if (error) throw error;
-            count = await promoRepository.broadcastNow(data.id);
+            // Fan-out with a 12s safety timeout so a slow broadcast never
+            // leaves the button stuck on "جاري النشر".
+            const bc = promoRepository.broadcastNow(data.id);
+            const bcTimeout = new Promise<number>(resolve => setTimeout(() => resolve(0), 12000));
+            count = await Promise.race([bc, bcTimeout]);
         } catch (e: any) {
             failMsg = e?.message || 'فشل النشر — تحقق من الاتصال';
         } finally {
