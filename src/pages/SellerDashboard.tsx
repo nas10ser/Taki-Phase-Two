@@ -1429,9 +1429,9 @@ const SellerDashboard: React.FC = () => {
         }
 
         // 4. v11.20 — Coming Soon validation. Schedule must be in the
-        //    future and within 30 days. We use the user's local timezone
-        //    (datetime-local has no tz info) which matches the merchant's
-        //    intent — they typed a wall-clock time, not a UTC offset.
+        //    future (no upper cap as of v11.21). We use the user's local
+        //    timezone (datetime-local has no tz info) which matches the
+        //    merchant's intent — they typed a wall-clock time, not a UTC offset.
         let computedStartsAt: number | undefined;
         if (scheduledEnabled) {
             if (!scheduledAt) {
@@ -1443,19 +1443,27 @@ const SellerDashboard: React.FC = () => {
                 await customAlert(isRTL ? '⚠️ تاريخ غير صالح' : '⚠️ Invalid date');
                 return;
             }
-            const minMs = Date.now() + 10 * 60 * 1000;          // at least 10 min ahead
-            const maxMs = Date.now() + 30 * 24 * 60 * 60 * 1000; // at most 30 days ahead
+            const minMs = Date.now() + 10 * 60 * 1000; // at least 10 min ahead
             if (startMs < minMs) {
                 await customAlert(isRTL
                     ? '⚠️ يجب أن يكون موعد البدء بعد ١٠ دقائق على الأقل من الآن'
                     : '⚠️ Schedule must be at least 10 minutes in the future');
                 return;
             }
-            if (startMs > maxMs) {
-                await customAlert(isRTL
-                    ? '⚠️ الحد الأقصى لجدولة العرض هو ٣٠ يوماً من الآن'
-                    : '⚠️ Maximum schedule lead time is 30 days from now');
-                return;
+            // v11.21 — the 30-day lead-time cap was removed (merchants may
+            // schedule as far ahead as they like). The one hard rule left:
+            // when the offer ends on a fixed DATE, the launch must land before
+            // that date — otherwise the deal would go live already expired.
+            // Hours / days / stock anchor their lifespan to startsAt, so they
+            // can never collide with the launch time.
+            if (expiryType === 'date' && expiryGregorian) {
+                const expiryMs = new Date(expiryGregorian).getTime();
+                if (!isNaN(expiryMs) && startMs >= expiryMs) {
+                    await customAlert(isRTL
+                        ? '⚠️ موعد بدء العرض يجب أن يكون قبل تاريخ انتهاء العرض. عدّل أحد التاريخين.'
+                        : '⚠️ The launch time must be before the deal\'s expiry date. Adjust one of them.');
+                    return;
+                }
             }
             computedStartsAt = startMs;
         }
@@ -1566,9 +1574,14 @@ const SellerDashboard: React.FC = () => {
                 return finalHours * 60;
             }
             if (expiryType === 'date') {
-                // Use gregorian date if available, else hijri
+                // v11.21 — anchor a date-based expiry to the scheduled launch
+                // (if any) so a Coming Soon deal expires EXACTLY on the picked
+                // date instead of drifting past it. computedStartsAt is
+                // undefined for non-scheduled deals → falls back to now, which
+                // preserves the original behaviour.
+                const anchor = computedStartsAt ?? Date.now();
                 if (expiryGregorian) {
-                    return Math.max(1, Math.floor((new Date(expiryGregorian).getTime() - Date.now()) / 60000));
+                    return Math.max(1, Math.floor((new Date(expiryGregorian).getTime() - anchor) / 60000));
                 }
                 if (expiryDate) {
                     return parseHijriAndGetMinutes(expiryDate);
@@ -2156,8 +2169,8 @@ const SellerDashboard: React.FC = () => {
 
                         {/* v11.20 — Coming Soon scheduling. Toggle is OFF by
                             default; turning it ON reveals the datetime picker
-                            and pins min/max to "10 min from now" → "30 days
-                            from now". The deal saves with a future startsAt,
+                            with a floor of "10 min from now" and no upper cap
+                            (v11.21). The deal saves with a future startsAt,
                             stays HIDDEN from buyers until 7 days before launch,
                             then surfaces locked with a live countdown until
                             startsAt passes and bookings open automatically. */}
@@ -2184,7 +2197,7 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
                                         {isRTL
                                             ? 'جهّز العرض من الآن، يبدأ تلقائياً في الوقت المحدد. لا يستطيع المشتري الحجز قبل الموعد.'
-                                            : 'Prep ahead — deal stays locked until launch time. Up to 30 days out.'}
+                                            : 'Prep ahead — deal stays locked until launch time.'}
                                     </div>
                                 </div>
                                 <div style={{
@@ -2207,7 +2220,7 @@ const SellerDashboard: React.FC = () => {
                             {scheduledEnabled && (
                                 <div style={{ marginTop: 12 }}>
                                     <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                        {isRTL ? 'موعد بدء العرض (لا يتعدى ٣٠ يوماً)' : 'Launch time (max 30 days ahead)'}
+                                        {isRTL ? 'موعد بدء العرض' : 'Launch time'}
                                     </label>
                                     <input
                                         type="datetime-local"
@@ -2217,11 +2230,6 @@ const SellerDashboard: React.FC = () => {
                                             // min = now + 10 minutes (local tz). datetime-local has
                                             // no tz info so we format from the user's wall clock.
                                             const d = new Date(Date.now() + 10 * 60 * 1000);
-                                            const pad = (n: number) => n.toString().padStart(2, '0');
-                                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                                        })()}
-                                        max={(() => {
-                                            const d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
                                             const pad = (n: number) => n.toString().padStart(2, '0');
                                             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
                                         })()}
@@ -2818,7 +2826,7 @@ const SellerDashboard: React.FC = () => {
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
                                         }}
                                     >
-                                        {submitMode === 'publish' ? (
+                                        {(isSaving && submitMode === 'publish') ? (
                                             <div className="spinner" style={{ width: 20, height: 20, border: '3px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                         ) : (
                                             isRTL ? (editingDealId ? 'حفظ التعديلات والنشر' : 'حفظ وإضافة العرض') : (editingDealId ? 'Save & Publish' : 'Save & Add Deal')
@@ -2838,7 +2846,7 @@ const SellerDashboard: React.FC = () => {
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                             }}
                                         >
-                                            {submitMode === 'saveOnly' ? (
+                                            {(isSaving && submitMode === 'saveOnly') ? (
                                                 <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                             ) : (
                                                 <>💾 {isRTL ? 'حفظ التعديل فقط' : 'Save Only'}</>
@@ -2881,7 +2889,7 @@ const SellerDashboard: React.FC = () => {
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >
-                                        {submitMode === 'addAnother' ? (
+                                        {(isSaving && submitMode === 'addAnother') ? (
                                             <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid var(--text-secondary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                         ) : (
                                             isRTL ? 'إضافة وتكرار' : 'Add Another'
