@@ -10,6 +10,7 @@
 
 import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { promoRepository } from '../../repositories/promoRepository';
 import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
@@ -402,20 +403,42 @@ const CampaignModal: React.FC<{
 
         // 15s timeout so a stalled network call never leaves the button
         // stuck on "جاري الحفظ...". The user sees a clear error and can retry.
-        const networkCall = isEdit
-            ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id).select().maybeSingle()
-            : supabase.from('promotional_campaigns').insert([row]).select().maybeSingle();
-        const timeout = new Promise<{ error: any }>(resolve =>
-            setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 15000)
-        );
-        const result = await Promise.race([networkCall as any, timeout]);
-        setSaving(false);
+        // try/finally guarantees setSaving(false) even if a date in `row`
+        // was malformed and .toISOString() above had thrown.
+        let result: any;
+        let broadcastCount = 0;
+        try {
+            const networkCall = isEdit
+                ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id).select().maybeSingle()
+                : supabase.from('promotional_campaigns').insert([row]).select().maybeSingle();
+            const timeout = new Promise<{ error: any }>(resolve =>
+                setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 15000)
+            );
+            result = await Promise.race([networkCall as any, timeout]);
+            // On a NEW active campaign, fan out to the targeted inboxes right
+            // away (v11.22) — without this the campaign reaches nobody. Edits
+            // don't re-broadcast (broadcast_campaign skips users who already
+            // saw it, but we also don't want an edit to re-ping everyone).
+            if (!result?.error && !isEdit && row.is_active && result?.data?.id) {
+                broadcastCount = await promoRepository.broadcastNow(result.data.id);
+            }
+        } catch (e: any) {
+            result = { error: { message: e?.message || 'فشل الحفظ — تحقق من الاتصال' } };
+        } finally {
+            setSaving(false);
+        }
         if (result?.error) {
             console.error('Campaign save failed:', result.error);
             await customAlert('❌ ' + (result.error.message || 'فشل الحفظ — تحقق من الاتصال'));
             return;
         }
-        await customAlert(isEdit ? '✅ تم تعديل الحملة' : '✅ تم نشر الحملة');
+        await customAlert(
+            isEdit
+                ? '✅ تم تعديل الحملة'
+                : (broadcastCount > 0
+                    ? `✅ تم نشر الحملة ووصلت إلى ${broadcastCount.toLocaleString('ar-SA')} مستخدم.`
+                    : '✅ تم نشر الحملة.')
+        );
         onSaved();
         onClose();
     };
@@ -597,25 +620,50 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
             await customAlert('⚠️ اكتب العنوان والمحتوى قبل النشر.');
             return;
         }
+        if (posting) return;
         setPosting(true);
-        const { error } = await supabase.from('promotional_campaigns').insert([{
-            title_ar: t,
-            title_en: t,    // mirror — admin can refine later via modal
-            body_ar: b,
-            body_en: b,
-            target_audience: audience,
-            starts_at: new Date().toISOString(),
-            ends_at: null,
-            priority: 0,
-            is_active: true,
-        }]);
-        setPosting(false);
-        if (error) {
-            await customAlert('❌ ' + error.message);
+        // Insert the campaign, then immediately fan it out to every targeted
+        // user's notification inbox via broadcast_campaign(). BEFORE v11.22 the
+        // quick-post only inserted the row — the fan-out RPC was never called,
+        // so "نشر فوراً" created a campaign that reached NOBODY (campaigns sat
+        // at current_impressions=0). try/finally guarantees the button never
+        // hangs on "جاري النشر" regardless of which step fails.
+        let count = 0;
+        let failMsg = '';
+        try {
+            const { data, error } = await supabase
+                .from('promotional_campaigns')
+                .insert([{
+                    title_ar: t,
+                    title_en: t,    // mirror — admin can refine later via modal
+                    body_ar: b,
+                    body_en: b,
+                    target_audience: audience,
+                    starts_at: new Date().toISOString(),
+                    ends_at: null,
+                    priority: 0,
+                    is_active: true,
+                }])
+                .select('id')
+                .single();
+            if (error) throw error;
+            count = await promoRepository.broadcastNow(data.id);
+        } catch (e: any) {
+            failMsg = e?.message || 'فشل النشر — تحقق من الاتصال';
+        } finally {
+            setPosting(false);
+        }
+        if (failMsg) {
+            await customAlert('❌ ' + failMsg);
             return;
         }
         setTitle('');
         setBody('');
+        await customAlert(
+            count > 0
+                ? `📤 تم النشر ووصل الإشعار إلى ${count.toLocaleString('ar-SA')} ${audience === 'seller' ? 'بائع' : audience === 'buyer' ? 'مشترٍ' : 'مستخدم'}.`
+                : '📤 تم نشر الحملة. (لا يوجد مستخدمون مطابقون لاستلامها الآن — ستصل لمن يطابق لاحقاً.)'
+        );
         onPosted();
     };
 

@@ -141,20 +141,41 @@ const SubscriptionModal = memo<{
     }, [amount, discount]);
 
     const handleApply = async () => {
+        if (saving) return;
+        // Validate dates up front — a bad value must show a clear error, never a
+        // silent hang on the button (v11.22).
+        const startMs = new Date(startedAt).getTime();
+        const expMs = expiresAt ? new Date(expiresAt).getTime() : null;
+        if (Number.isNaN(startMs) || (expMs !== null && Number.isNaN(expMs))) {
+            await customAlert('❌ تاريخ غير صالح. تحقّق من تاريخ البداية والنهاية.');
+            return;
+        }
+        if (expMs !== null && expMs <= startMs) {
+            await customAlert('❌ تاريخ النهاية يجب أن يكون بعد تاريخ البداية.');
+            return;
+        }
         setSaving(true);
-        const params: ApplySubscriptionParams = {
-            storeId: seller.id,
-            plan,
-            startedAt: new Date(startedAt),
-            expiresAt: expiresAt ? new Date(expiresAt) : null,
-            discount,
-            amount,
-            notes: notes || undefined,
-            sendNotification: sendNotif,
-            maxBranches,
-        };
-        const res = await adminService.applySubscription(params);
-        setSaving(false);
+        // Resolve outside the try so the alert/navigation runs AFTER the button
+        // is re-enabled in finally — no eternal spinner on any path (v11.22).
+        let res: { success: boolean; error?: string } = { success: false };
+        try {
+            const params: ApplySubscriptionParams = {
+                storeId: seller.id,
+                plan,
+                startedAt: new Date(startedAt),
+                expiresAt: expiresAt ? new Date(expiresAt) : null,
+                discount,
+                amount,
+                notes: notes || undefined,
+                sendNotification: sendNotif,
+                maxBranches,
+            };
+            res = await adminService.applySubscription(params);
+        } catch (e: any) {
+            res = { success: false, error: e?.message || 'فشل التطبيق' };
+        } finally {
+            setSaving(false);
+        }
         if (res.success) {
             await customAlert(`✅ تم تطبيق الاشتراك على متجر "${seller.shop ?? seller.name}"`);
             onSaved();
@@ -631,14 +652,21 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
 
     const saveAmount = async () => {
         const n = Math.max(0, Math.round(Number(draftAmount) || 0));
-        if (n === globalAmount) return;
+        if (n === globalAmount || savingAmount) return;
         setSavingAmount(true);
-        const res = await adminService.setPlatformSetting(
-            'basic_plan_price_sar',
-            n,
-            'Default monthly subscription price for sellers (SAR).'
-        );
-        setSavingAmount(false);
+        // try/finally so the spinner never sticks on a thrown error (v11.22).
+        let res: { success: boolean; error?: string } = { success: false };
+        try {
+            res = await adminService.setPlatformSetting(
+                'basic_plan_price_sar',
+                n,
+                'Default monthly subscription price for sellers (SAR).'
+            );
+        } catch (e: any) {
+            res = { success: false, error: e?.message || 'تعذّر الحفظ' };
+        } finally {
+            setSavingAmount(false);
+        }
         if (!res.success) {
             await customAlert('❌ ' + (res.error ?? 'تعذّر الحفظ'));
             return;
@@ -656,23 +684,29 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         );
         if (!ok) return;
         setBusyMode('free');
+        // try/finally so a thrown bulk call never leaves the button stuck.
+        let r: { ok: number; failed: number; total: number } | null = null;
+        try {
+            const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', false);
+            if (!settingRes.success) {
+                await customAlert('❌ تعذر تعطيل البوابة: ' + (settingRes.error ?? ''));
+                return;
+            }
+            setGatewayEnabled(false);
 
-        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', false);
-        if (!settingRes.success) {
-            setBusyMode(null);
-            await customAlert('❌ تعذر تعطيل البوابة: ' + (settingRes.error ?? ''));
+            r = await adminService.bulkSetAllActiveSellers({
+                plan: 'free',
+                amount: 0,
+                discount: 100,
+                expiresAt: null,
+                notes: 'Platform mode: free for all',
+            });
+        } catch (e: any) {
+            await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
             return;
+        } finally {
+            setBusyMode(null);
         }
-        setGatewayEnabled(false);
-
-        const r = await adminService.bulkSetAllActiveSellers({
-            plan: 'free',
-            amount: 0,
-            discount: 100,
-            expiresAt: null,
-            notes: 'Platform mode: free for all',
-        });
-        setBusyMode(null);
         await customAlert(
             r.failed === 0
                 ? `🆓 الموقع الآن مجاني تماماً.\n${r.ok} متجر تم ضبطه على الباقة المجانية.`
@@ -691,23 +725,28 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         );
         if (!ok) return;
         setBusyMode('paid');
+        let r: { ok: number; failed: number; total: number } | null = null;
+        try {
+            const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
+            if (!settingRes.success) {
+                await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+                return;
+            }
+            setGatewayEnabled(true);
 
-        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
-        if (!settingRes.success) {
-            setBusyMode(null);
-            await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+            r = await adminService.bulkSetAllActiveSellers({
+                plan: 'premium',
+                amount: globalAmount,
+                discount: 0,
+                expiresAt: null,
+                notes: 'Platform mode: mandatory paid for all',
+            });
+        } catch (e: any) {
+            await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
             return;
+        } finally {
+            setBusyMode(null);
         }
-        setGatewayEnabled(true);
-
-        const r = await adminService.bulkSetAllActiveSellers({
-            plan: 'premium',
-            amount: globalAmount,
-            discount: 0,
-            expiresAt: null,
-            notes: 'Platform mode: mandatory paid for all',
-        });
-        setBusyMode(null);
         await customAlert(
             r.failed === 0
                 ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
@@ -727,24 +766,27 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         );
         if (!ok) return;
         setBusyMode('trial-paid');
+        try {
+            const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
+            if (!settingRes.success) {
+                await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+                return;
+            }
+            setGatewayEnabled(true);
 
-        const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
-        if (!settingRes.success) {
-            setBusyMode(null);
-            await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+            // Persist trial config so the DB trigger `tr_new_seller_trial` reads
+            // the latest values when a new seller signs up. We only update the
+            // platform-wide settings — existing sellers keep their current plan.
+            await Promise.allSettled([
+                adminService.setPlatformSetting('trial_days', trialDays),
+                adminService.setPlatformSetting('basic_plan_price_sar', globalAmount),
+            ]);
+        } catch (e: any) {
+            await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
             return;
+        } finally {
+            setBusyMode(null);
         }
-        setGatewayEnabled(true);
-
-        // Persist trial config so the DB trigger `tr_new_seller_trial` reads
-        // the latest values when a new seller signs up. We only update the
-        // platform-wide settings — existing sellers keep their current plan.
-        await Promise.allSettled([
-            adminService.setPlatformSetting('trial_days', trialDays),
-            adminService.setPlatformSetting('basic_plan_price_sar', globalAmount),
-        ]);
-
-        setBusyMode(null);
         await customAlert(
             `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${trialDays} يوم تجربة، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
         );
@@ -981,33 +1023,38 @@ const BulkSubscriptionPanel = memo<{
         const startDate = startedAt ? new Date(startedAt) : new Date();
 
         // Run in chunks of 8 — keeps Supabase happy and updates progress as we go.
+        // try/finally so a thrown chunk never leaves the panel stuck "busy"
+        // with a frozen progress bar (v11.22).
         const CHUNK = 8;
         let okCount = 0;
         let failCount = 0;
-        for (let i = 0; i < targetIds.length; i += CHUNK) {
-            const slice = targetIds.slice(i, i + CHUNK);
-            const results = await Promise.allSettled(
-                slice.map((sid) =>
-                    adminService.applySubscription({
-                        storeId: sid,
-                        plan,
-                        startedAt: startDate,
-                        expiresAt: expiresDate,
-                        discount,
-                        amount,
-                        notes: 'Bulk panel (admin)',
-                        sendNotification: sendNotif,
-                    })
-                )
-            );
-            results.forEach((r) => {
-                if (r.status === 'fulfilled' && (r.value as any).success) okCount++;
-                else failCount++;
-            });
-            setProgress({ done: Math.min(i + CHUNK, targetIds.length), total: targetIds.length });
+        try {
+            for (let i = 0; i < targetIds.length; i += CHUNK) {
+                const slice = targetIds.slice(i, i + CHUNK);
+                const results = await Promise.allSettled(
+                    slice.map((sid) =>
+                        adminService.applySubscription({
+                            storeId: sid,
+                            plan,
+                            startedAt: startDate,
+                            expiresAt: expiresDate,
+                            discount,
+                            amount,
+                            notes: 'Bulk panel (admin)',
+                            sendNotification: sendNotif,
+                        })
+                    )
+                );
+                results.forEach((r) => {
+                    if (r.status === 'fulfilled' && (r.value as any).success) okCount++;
+                    else failCount++;
+                });
+                setProgress({ done: Math.min(i + CHUNK, targetIds.length), total: targetIds.length });
+            }
+        } finally {
+            setBusy(false);
+            setProgress(null);
         }
-        setBusy(false);
-        setProgress(null);
 
         await customAlert(
             failCount === 0

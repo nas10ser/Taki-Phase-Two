@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -130,63 +130,115 @@ const SellerDashboard: React.FC = () => {
     const [maxLocations, setMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
 
     // Fetch payment settings + check subscription status.
-    // Source of truth is `merchant_subscriptions` (status + trial/period dates) —
-    // the old path read `storeProfiles[user.id].subscription_expires_at`, which
-    // is a denormalized column that never gets populated for trial sellers or
-    // for admins. When `payment_gateway_enabled=true`, that path made every
-    // user without an explicit `subscription_expires_at` look "expired" — so
-    // clicking the Add (form) tab fell through to the Scanner fallback.
-    React.useEffect(() => {
-        const checkSub = async () => {
-            const { supabase } = await import('../services/supabaseClient');
-            const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
-            const enabled = data?.value === true;
-            setIsPaymentEnabled(enabled);
+    //
+    // SOURCES OF TRUTH (v11.22): the admin "apply subscription" RPC
+    // (`admin_apply_subscription`) writes the merchant's plan + expiry into
+    // `store_profiles` (subscription_plan / subscription_expires_at). The newer
+    // billing lifecycle lives in `merchant_subscriptions` (status + trial/period
+    // dates). Before v11.22 this gate read ONLY `merchant_subscriptions`, so an
+    // admin activation — which lands in `store_profiles` — never unlocked the
+    // seller (they stayed on the locked "Add" screen). We now unlock if EITHER
+    // store says the seller is subscribed.
+    //
+    // It's also a reusable callback that re-runs on focus / tab visibility and a
+    // realtime change to this seller's rows, so an activation appears without a
+    // full PWA reinstall.
+    const checkSub = useCallback(async () => {
+        const { supabase } = await import('../services/supabaseClient');
+        const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
+        const enabled = data?.value === true;
+        setIsPaymentEnabled(enabled);
 
-            // Load the store's location package (max_branches). Authoritative
-            // source is store_profiles; default to the base tier when absent.
-            if (user?.id) {
-                const { data: sp } = await supabase
-                    .from('store_profiles')
-                    .select('max_branches')
-                    .eq('store_id', user.id)
-                    .maybeSingle();
-                setMaxLocations(Number(sp?.max_branches) > 0 ? Number(sp!.max_branches) : DEFAULT_MAX_LOCATIONS);
-            }
-
-            // Admins are not paying merchants — they always pass.
-            if (user?.userType === 'admin') {
-                setIsSubscriptionValid(true);
-                return;
-            }
-
-            if (!enabled || !user?.id) {
-                setIsSubscriptionValid(true);
-                return;
-            }
-
-            const { data: sub } = await supabase
-                .from('merchant_subscriptions')
-                .select('status, trial_ends_at, current_period_end')
-                .eq('merchant_id', user.id)
+        // Read the location package (max_branches) AND the admin-written
+        // subscription mirror (plan + expiry) in a single store_profiles query.
+        // The seller can always read their own row (RLS: own store_id).
+        let mirrorOk = false;
+        if (user?.id) {
+            const { data: sp } = await supabase
+                .from('store_profiles')
+                .select('max_branches, subscription_plan, subscription_expires_at')
+                .eq('store_id', user.id)
                 .maybeSingle();
+            setMaxLocations(Number(sp?.max_branches) > 0 ? Number(sp!.max_branches) : DEFAULT_MAX_LOCATIONS);
 
-            if (!sub) {
-                setIsSubscriptionValid(false);
-                return;
-            }
+            const plan = (sp?.subscription_plan ?? 'free').toString().toLowerCase();
+            const exp = sp?.subscription_expires_at ? new Date(sp.subscription_expires_at).getTime() : null;
+            // A non-free plan with no expiry, or an expiry still in the future.
+            mirrorOk = plan !== 'free' && plan !== '' && (exp === null || exp > Date.now());
+        }
 
-            const now = Date.now();
-            const trialOk = sub.status === 'trial'
-                && sub.trial_ends_at
-                && new Date(sub.trial_ends_at).getTime() > now;
-            const activeOk = (sub.status === 'active' || sub.status === 'gifted')
-                && (!sub.current_period_end || new Date(sub.current_period_end).getTime() > now);
+        // Admins are not paying merchants — they always pass.
+        if (user?.userType === 'admin') {
+            setIsSubscriptionValid(true);
+            return;
+        }
 
-            setIsSubscriptionValid(Boolean(trialOk || activeOk));
-        };
-        checkSub();
+        if (!enabled || !user?.id) {
+            setIsSubscriptionValid(true);
+            return;
+        }
+
+        const { data: sub } = await supabase
+            .from('merchant_subscriptions')
+            .select('status, trial_ends_at, current_period_end')
+            .eq('merchant_id', user.id)
+            .maybeSingle();
+
+        const now = Date.now();
+        const trialOk = !!sub && sub.status === 'trial'
+            && !!sub.trial_ends_at
+            && new Date(sub.trial_ends_at).getTime() > now;
+        const activeOk = !!sub && (sub.status === 'active' || sub.status === 'gifted')
+            && (!sub.current_period_end || new Date(sub.current_period_end).getTime() > now);
+
+        // Unlock on ANY positive signal (billing row OR admin-written mirror).
+        setIsSubscriptionValid(Boolean(trialOk || activeOk || mirrorOk));
     }, [user]);
+
+    React.useEffect(() => {
+        checkSub();
+    }, [checkSub]);
+
+    // Re-check when the seller returns to the app — this is what makes an admin
+    // activation appear without a reinstall.
+    React.useEffect(() => {
+        const onFocus = () => { checkSub(); };
+        const onVisible = () => { if (document.visibilityState === 'visible') checkSub(); };
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [checkSub]);
+
+    // Realtime: live-unlock the instant an admin activates this seller's
+    // subscription. Watches BOTH the billing row and the store_profiles mirror,
+    // scoped to this merchant, and cleans up on unmount.
+    React.useEffect(() => {
+        if (!user?.id) return;
+        let channel: any;
+        let active = true;
+        (async () => {
+            const { supabase } = await import('../services/supabaseClient');
+            if (!active) return;
+            channel = supabase
+                .channel(`seller-sub-${user.id}`)
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'merchant_subscriptions', filter: `merchant_id=eq.${user.id}` },
+                    () => { checkSub(); })
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'store_profiles', filter: `store_id=eq.${user.id}` },
+                    () => { checkSub(); })
+                .subscribe();
+        })();
+        return () => {
+            active = false;
+            if (channel) {
+                import('../services/supabaseClient').then(({ supabase }) => supabase.removeChannel(channel));
+            }
+        };
+    }, [user?.id, checkSub]);
 
     // Sync view with URL tab parameter. An `edit=` param always means form
     // view, even if deals haven't loaded yet — guarantees the form tab is

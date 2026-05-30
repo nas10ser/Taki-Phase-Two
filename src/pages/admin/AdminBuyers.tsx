@@ -112,9 +112,18 @@ const UserEditModal = memo<{
     useEscClose(true, handleCloseRequest);
 
     const handleSave = async () => {
+        if (saving) return;
         setSaving(true);
-        const res = await adminService.updateUser(user.id, form);
-        setSaving(false);
+        // try/finally so a thrown error never leaves the button stuck on
+        // "جاري الحفظ..." (v11.22).
+        let res: { success: boolean; error?: string } = { success: false };
+        try {
+            res = await adminService.updateUser(user.id, form);
+        } catch (e: any) {
+            res = { success: false, error: e?.message || 'فشل الحفظ' };
+        } finally {
+            setSaving(false);
+        }
         if (res.success) {
             await customAlert('✅ تم حفظ التغييرات بنجاح');
             onSaved();
