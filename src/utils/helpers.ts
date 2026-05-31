@@ -158,36 +158,47 @@ export const interleaveSponsored = (
         return normal.map(deal => ({ deal, sponsored: false }));
     }
 
-    // Rotation order: official sponsors (label 'sponsor') ALWAYS before plain
-    // ads ('ad'); within the same tier, higher priority first, then stable by
-    // storeId. Each store keeps its own queue; we take one deal per visit and
-    // cycle. This is what makes "راعٍ رسمي" lead the page over an "إعلان".
-    const storeOrder = Array.from(adsByStore.keys()).sort((a, b) => {
-        const la = labelRank(sponsorMap[a]?.labelType);
-        const lb = labelRank(sponsorMap[b]?.labelType);
-        if (lb !== la) return lb - la;
-        const pa = sponsorMap[a]?.priority ?? 0;
-        const pb = sponsorMap[b]?.priority ?? 0;
-        if (pb !== pa) return pb - pa;
-        return a < b ? -1 : a > b ? 1 : 0;
-    });
+    // Build the ad SEQUENCE with strict tier precedence:
+    //   1. ALL official sponsors (label 'sponsor') are emitted first — fully
+    //      drained — before ANY plain advertiser ('ad') appears.
+    //   2. WITHIN a tier, stores rotate round-robin (S1, S2, S3, S1, S2, …) so
+    //      no single sponsor dominates; higher priority leads the rotation.
+    // So with 3 sponsors + 1 advertiser the order is:
+    //   S1,S2,S3, S1,S2,S3, … (until sponsors exhausted), then A1,A1,…
+    const byTier = new Map<number, string[]>(); // rank → storeIds
+    for (const id of adsByStore.keys()) {
+        const rank = labelRank(sponsorMap[id]?.labelType);
+        if (!byTier.has(rank)) byTier.set(rank, []);
+        byTier.get(rank)!.push(id);
+    }
+    const tiers = Array.from(byTier.keys()).sort((a, b) => b - a); // 2 (sponsor) before 1 (ad)
+    const adQueue: DisplayDeal[] = [];
+    for (const rank of tiers) {
+        const stores = byTier.get(rank)!.sort((a, b) => {
+            const pa = sponsorMap[a]?.priority ?? 0;
+            const pb = sponsorMap[b]?.priority ?? 0;
+            if (pb !== pa) return pb - pa;
+            return a < b ? -1 : a > b ? 1 : 0;
+        });
+        // Round-robin across this tier's stores until all their queues drain.
+        let any = true;
+        while (any) {
+            any = false;
+            for (const id of stores) {
+                const q = adsByStore.get(id);
+                if (q && q.length > 0) {
+                    adQueue.push({ deal: q.shift()!, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' });
+                    any = true;
+                }
+            }
+        }
+    }
 
     const out: DisplayDeal[] = [];
     let ni = 0;       // normal index
-    let rot = 0;      // rotation cursor across storeOrder
-    const remainingAds = () => storeOrder.some(id => (adsByStore.get(id)?.length ?? 0) > 0);
-    const nextAd = (): DisplayDeal | null => {
-        // Walk the rotation up to one full cycle to find a store with stock.
-        for (let tries = 0; tries < storeOrder.length; tries++) {
-            const id = storeOrder[rot % storeOrder.length];
-            rot++;
-            const q = adsByStore.get(id);
-            if (q && q.length > 0) {
-                return { deal: q.shift()!, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' };
-            }
-        }
-        return null;
-    };
+    let ai = 0;       // ad-queue index
+    const remainingAds = () => ai < adQueue.length;
+    const nextAd = (): DisplayDeal | null => (ai < adQueue.length ? adQueue[ai++] : null);
 
     // The FIRST sponsored card leads the page (before any normal deal), then
     // one sponsored card after every `everyN` normal deals. With few/no normal
