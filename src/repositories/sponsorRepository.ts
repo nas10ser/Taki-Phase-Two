@@ -82,6 +82,7 @@ export const sponsorRepository = {
         targetLng?: number | null;
         targetRadiusKm?: number | null;
         priority?: number;
+        startsAt?: string | null;
         expiresAt?: string | null;
         notes?: string | null;
         labelType?: 'ad' | 'sponsor' | 'none';
@@ -99,6 +100,7 @@ export const sponsorRepository = {
             p_expires_at: p.expiresAt ?? null,
             p_notes: p.notes ?? null,
             p_label_type: p.labelType ?? 'ad',
+            p_starts_at: p.startsAt ?? null,
         });
         if (error) {
             console.error('[sponsorRepository.set]', error);

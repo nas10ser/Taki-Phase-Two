@@ -88,10 +88,14 @@ export const sponsorLabelText = (label: SponsorLabel | undefined, isRTL: boolean
     return isRTL ? 'إعلان' : 'Ad';
 };
 
-/** True if the sponsorship is live right now (active + not expired). */
+/** True if the sponsorship is live right now: active, started, not expired.
+ *  A future `startsAt` means the gold ads don't begin until that date; a past
+ *  `expiresAt` means they've ended. */
 export const isSponsorActive = (s: Sponsor | undefined | null): boolean => {
     if (!s || !s.isActive) return false;
-    if (s.expiresAt && new Date(s.expiresAt).getTime() <= Date.now()) return false;
+    const now = Date.now();
+    if (s.startsAt && new Date(s.startsAt).getTime() > now) return false;
+    if (s.expiresAt && new Date(s.expiresAt).getTime() <= now) return false;
     return true;
 };
 

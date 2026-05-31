@@ -132,6 +132,7 @@ const SubscriptionModal = memo<{
     const [spCity, setSpCity] = useState('');            // '' = كل المدن
     const [spRadius, setSpRadius] = useState('');        // كم (اختياري) — يتطلب موقع المتجر
     const [spPriority, setSpPriority] = useState(0);
+    const [spStarts, setSpStarts] = useState(toDateInput(new Date()));
     const [spExpires, setSpExpires] = useState(toDateInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
     const [savingSponsor, setSavingSponsor] = useState(false);
     // Load current sponsor state for this seller so the toggle reflects reality.
@@ -149,6 +150,10 @@ const SubscriptionModal = memo<{
                 setSpRadius(mine.targetRadiusKm != null ? String(mine.targetRadiusKm) : '');
                 setSpLabel((mine.labelType as any) || 'ad');
                 setSpPriority(mine.priority || 0);
+                if (mine.startsAt) {
+                    const d = new Date(mine.startsAt);
+                    if (!isNaN(d.getTime())) setSpStarts(toDateInput(d));
+                }
                 if (mine.expiresAt) {
                     const d = new Date(mine.expiresAt);
                     if (!isNaN(d.getTime())) setSpExpires(toDateInput(d));
@@ -160,9 +165,18 @@ const SubscriptionModal = memo<{
 
     const handleSaveSponsor = async () => {
         if (savingSponsor) return;
+        const startMs = spStarts ? new Date(spStarts).getTime() : null;
         const expMs = spExpires ? new Date(spExpires).getTime() : null;
-        if (sponsorOn && expMs !== null && (Number.isNaN(expMs) || expMs <= Date.now())) {
-            await customAlert('❌ تاريخ انتهاء الرعاية يجب أن يكون في المستقبل (أو اتركه فارغاً لرعاية بلا انتهاء).');
+        if (sponsorOn && startMs !== null && Number.isNaN(startMs)) {
+            await customAlert('❌ تاريخ ابتداء غير صالح.');
+            return;
+        }
+        if (sponsorOn && expMs !== null && Number.isNaN(expMs)) {
+            await customAlert('❌ تاريخ انتهاء غير صالح.');
+            return;
+        }
+        if (sponsorOn && startMs !== null && expMs !== null && expMs <= startMs) {
+            await customAlert('❌ تاريخ الانتهاء يجب أن يكون بعد تاريخ الابتداء.');
             return;
         }
         setSavingSponsor(true);
@@ -177,6 +191,7 @@ const SubscriptionModal = memo<{
                     targetCity: spCity || null,
                     targetRadiusKm: spRadius ? Number(spRadius) || null : null,
                     priority: Number(spPriority) || 0,
+                    startsAt: spStarts ? new Date(spStarts).toISOString() : null,
                     expiresAt: spExpires ? new Date(spExpires).toISOString() : null,
                     labelType: spLabel,
                 });
@@ -642,18 +657,24 @@ const SubscriptionModal = memo<{
                                             className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
                                     </div>
                                 </div>
+                                {/* v11.28 — explicit start + end dates, each in its own box. */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الأولوية (الأعلى يظهر أولاً)</label>
-                                        <input type="tel" inputMode="numeric" value={String(spPriority)}
-                                            onChange={(e) => setSpPriority(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">يبدأ في</label>
+                                        <input type="date" value={spStarts} onChange={(e) => setSpStarts(e.target.value)}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" style={{ colorScheme: 'light' }} />
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">ينتهي في (فارغ = بلا انتهاء)</label>
                                         <input type="date" value={spExpires} onChange={(e) => setSpExpires(e.target.value)}
                                             className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" style={{ colorScheme: 'light' }} />
                                     </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الأولوية (الأعلى يظهر أولاً)</label>
+                                    <input type="tel" inputMode="numeric" value={String(spPriority)}
+                                        onChange={(e) => setSpPriority(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
                                 </div>
                                 <div className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
                                     💡 النطاق الكيلومتري يتطلب وجود موقع محدد للمتجر على الخريطة. اترك كل الحقول فارغة ليظهر الإعلان في كل مكان.
