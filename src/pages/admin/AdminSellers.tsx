@@ -61,6 +61,7 @@ const SubscriptionModal = memo<{
     // permission-gated. The super admin gets both automatically.
     const canImpersonate = hasPermission('action_impersonate');
     const canPromote = isSuperAdmin && seller.user_type !== 'admin';
+    const canManageSponsors = hasPermission('action_manage_sponsors');
     // Loading flag for the "act as seller" button — see AdminBuyers comment.
     const [opening, setOpening] = useState(false);
     const [promoting, setPromoting] = useState(false);
@@ -547,7 +548,9 @@ const SubscriptionModal = memo<{
                 {/* ── v11.23 Sponsor (راعٍ رسمي) ───────────────────────────
                     A separate, self-contained block with its own save button —
                     sponsorship is independent of the subscription above. Gold
-                    theme to match the on-card ad styling. */}
+                    theme to match the on-card ad styling. Gated on the
+                    action_manage_sponsors permission (v11.24). */}
+                {canManageSponsors && (
                 <div className="px-5 pb-5">
                     <div className="rounded-2xl border-2 p-4" style={{ borderColor: '#fbbf24', background: 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(245,158,11,0.06))' }}>
                         <div className="flex items-center justify-between mb-3">
@@ -639,6 +642,7 @@ const SubscriptionModal = memo<{
                         </button>
                     </div>
                 </div>
+                )}
 
                 {/* Footer */}
                 <div className="sticky bottom-0 p-4 bg-[var(--body-bg)] rounded-b-3xl flex gap-3 border-t border-[var(--border-color)]">

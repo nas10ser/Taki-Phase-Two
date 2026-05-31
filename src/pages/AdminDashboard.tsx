@@ -32,6 +32,7 @@ const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
+const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
 const AdminAdmins    = lazy(() => import('./admin/AdminAdmins'));
 
 type Tab = AdminTab;
@@ -55,6 +56,7 @@ const TABS: TabDef[] = [
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
     { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_tools'     },
+    { value: 'messages',  label: 'الرسائل',           icon: '💬',  gradient: 'from-cyan-500 to-blue-600',        hint: 'مراقبة كل المحادثات لحظة بلحظة',                     permission: 'tab_messages'  },
     { value: 'admins',    label: 'المسؤولون',         icon: '👑',  gradient: 'from-amber-500 to-orange-600',     hint: 'إدارة الفريق + الصلاحيات (المالك فقط)',              permission: 'tab_admins'    },
 ];
 
@@ -317,6 +319,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
                         {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
                         {activeTab === 'launch'    && hasPermission('tab_tools')     && <AdminLaunch />}
+                        {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}
                         {activeTab === 'admins'    && isSuperAdmin                   && <AdminAdmins />}
                     </Suspense>
                 </div>

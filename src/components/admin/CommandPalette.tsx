@@ -23,6 +23,7 @@ export type AdminTab =
     | 'analytics'
     | 'tools'
     | 'launch'
+    | 'messages'
     | 'admins';
 
 interface CommandPaletteProps {

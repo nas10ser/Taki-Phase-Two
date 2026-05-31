@@ -42,6 +42,7 @@ export type AdminPermission =
     | 'tab_reports'
     | 'tab_analytics'
     | 'tab_tools'
+    | 'tab_messages'
     | 'tab_admins'
     | 'action_impersonate'
     | 'action_view_finance'
@@ -49,7 +50,9 @@ export type AdminPermission =
     | 'action_manage_seasonal'
     | 'action_manage_campaigns'
     | 'action_manage_banners'
-    | 'action_manage_users';
+    | 'action_manage_users'
+    | 'action_manage_sponsors'
+    | 'action_moderate_messages';
 
 export interface SmartAlertRule {
     regions?: string[];
