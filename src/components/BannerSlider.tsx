@@ -9,107 +9,140 @@ interface BannerSliderProps {
 }
 
 /**
- * Banner carousel (v11.30).
+ * Banner carousel (v11.33) — seamless INFINITE, both-direction, momentum swipe.
  *
- * Noon-style: auto-advances every 5s AND follows the finger on swipe
- * (drag-to-pan with snap + edge resistance). The frame is a fixed 2:1
- * aspect ratio so the admin's crop (1200×600, chosen in BannerImageEditor)
- * displays pixel-faithfully on every device — no per-device re-cropping.
+ * How the infinite loop works: we render the real slides flanked by one clone
+ * each side — [cloneOfLast, ...reals, cloneOfFirst]. The position index `pos`
+ * walks over this extended track. Swiping/auto-advancing past either edge lands
+ * on a clone, and the moment that transition ends we jump (with animation
+ * disabled) to the identical real slide. The user never sees a wall — they can
+ * keep dragging in EITHER direction forever, and it feels continuous.
+ *
+ * Smoothness: the finger is tracked 1:1 during a drag (no transition), and on
+ * release we ease with a long decelerate curve. A fast flick (velocity-based)
+ * advances even on a short drag, so it feels light and responsive.
  */
-const AUTOPLAY_MS = 5000;
+const AUTOPLAY_MS = 4500;
+const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';   // easeOutQuint — smooth decelerate
+const DIST_RATIO = 0.16;                          // drag past 16% of width → advance
+const VEL_THRESHOLD = 0.35;                        // px/ms → a flick
 
 const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const count = banners.length;
+    const loop = count > 1;
+    // Extended track with a clone on each side for seamless wrap-around.
+    const slides = loop ? [banners[count - 1], ...banners, banners[0]] : banners;
+    const slideCount = slides.length;            // count + 2 when looping
+    const step = 100 / slideCount;               // one slide = step% of the track
+
+    const [pos, setPos] = useState(loop ? 1 : 0); // index into `slides`
     const [dragPx, setDragPx] = useState(0);
     const [dragging, setDragging] = useState(false);
+    const [animate, setAnimate] = useState(true); // false = instant jump (clone reset)
+    const [duration, setDuration] = useState(0.5);
+
     const history = useHistory();
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const startXRef = useRef(0);
+    const lastXRef = useRef(0);
+    const lastTRef = useRef(0);
+    const velRef = useRef(0);
     const movedRef = useRef(false);
-    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const count = banners.length;
-    // Clamp the index if the banner list shrinks under us.
-    useEffect(() => {
-        if (currentIndex > count - 1) setCurrentIndex(Math.max(0, count - 1));
-    }, [count, currentIndex]);
+    const realIndex = loop ? (((pos - 1) % count) + count) % count : pos;
 
-    // Autoplay — paused while the user is actively dragging.
+    // Reset when the banner set changes (e.g. admin toggles one).
+    useEffect(() => { setPos(loop ? 1 : 0); setDragPx(0); /* eslint-disable-next-line */ }, [count]);
+
+    // Autoplay — always "next", paused while dragging.
     useEffect(() => {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        if (count > 1 && !dragging) {
-            timeoutRef.current = setTimeout(
-                () => setCurrentIndex(prev => (prev + 1) % count),
-                AUTOPLAY_MS
-            );
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (loop && !dragging) {
+            timerRef.current = setTimeout(() => { setDuration(0.55); setAnimate(true); setPos(p => p + 1); }, AUTOPLAY_MS);
         }
-        return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
-    }, [currentIndex, count, dragging]);
+        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [pos, dragging, loop]);
+
+    // After easing INTO a clone, snap (no animation) to the identical real slide.
+    const handleTransitionEnd = (e: React.TransitionEvent) => {
+        if (!loop || e.target !== e.currentTarget || e.propertyName !== 'transform') return;
+        if (pos === slideCount - 1) { setAnimate(false); setPos(1); }          // firstClone → first real
+        else if (pos === 0) { setAnimate(false); setPos(count); }              // lastClone → last real
+    };
+
+    // Re-enable animation once the no-anim jump has painted (double rAF).
+    useEffect(() => {
+        if (animate) return;
+        const id = requestAnimationFrame(() => requestAnimationFrame(() => setAnimate(true)));
+        return () => cancelAnimationFrame(id);
+    }, [animate, pos]);
 
     if (count === 0) return null;
 
     const handleBannerClick = (banner: Banner) => {
-        // A swipe must never be read as a tap.
-        if (movedRef.current) { movedRef.current = false; return; }
-        if (banner.deal_id) {
-            history.push(`/deal/${banner.deal_id}`);
-        } else if (banner.store_id) {
-            history.push(`/store/${banner.store_id}`);
-        } else if (banner.target_url) {
-            if (banner.target_url.startsWith('http')) {
-                openExternalUrl(banner.target_url);
-            } else {
-                history.push(banner.target_url);
-            }
+        if (movedRef.current) { movedRef.current = false; return; } // a swipe is not a tap
+        if (banner.deal_id) history.push(`/deal/${banner.deal_id}`);
+        else if (banner.store_id) history.push(`/store/${banner.store_id}`);
+        else if (banner.target_url) {
+            if (banner.target_url.startsWith('http')) openExternalUrl(banner.target_url);
+            else history.push(banner.target_url);
         }
     };
 
-    // ===== Swipe (drag-follow + snap) =====
-    // In RTL, advancing moves content to the right (+); in LTR, to the left (−).
-    const nextSign = isRTL ? 1 : -1;
-
-    const onStart = (clientX: number) => {
-        if (count <= 1) return;
-        startXRef.current = clientX;
+    // ===== Drag (1:1 follow) + velocity flick =====
+    const onStart = (x: number) => {
+        if (!loop) return;
+        // Normalize off a clone first so a rapid second swipe can't overrun it.
+        if (pos === 0) { setAnimate(false); setPos(count); }
+        else if (pos === slideCount - 1) { setAnimate(false); setPos(1); }
+        startXRef.current = x;
+        lastXRef.current = x;
+        lastTRef.current = Date.now();
+        velRef.current = 0;
         movedRef.current = false;
         setDragging(true);
     };
-    const onMove = (clientX: number) => {
+    const onMove = (x: number) => {
         if (!dragging) return;
-        let dx = clientX - startXRef.current;
+        const now = Date.now();
+        const dt = now - lastTRef.current;
+        if (dt > 0) velRef.current = (x - lastXRef.current) / dt; // px/ms
+        lastXRef.current = x;
+        lastTRef.current = now;
+        const dx = x - startXRef.current;
         if (Math.abs(dx) > 6) movedRef.current = true;
-        // Rubber-band at the ends so the carousel never reveals empty space.
-        const towardNext = nextSign > 0 ? dx > 0 : dx < 0;
-        const towardPrev = nextSign > 0 ? dx < 0 : dx > 0;
-        if ((currentIndex === 0 && towardPrev) || (currentIndex === count - 1 && towardNext)) {
-            dx /= 3;
-        }
         setDragPx(dx);
     };
     const onEnd = () => {
         if (!dragging) return;
         const width = wrapRef.current?.offsetWidth || 320;
-        const threshold = Math.max(40, width * 0.18);
-        let next = currentIndex;
-        if (Math.abs(dragPx) >= threshold) {
-            const towardNext = nextSign > 0 ? dragPx > 0 : dragPx < 0;
-            next = towardNext ? currentIndex + 1 : currentIndex - 1;
+        const dist = dragPx;
+        const vel = velRef.current;
+        // Direction of "next": RTL advances by moving content right (dx > 0),
+        // LTR by moving it left (dx < 0).
+        let dir = 0;
+        if (Math.abs(vel) > VEL_THRESHOLD) {
+            const flickNext = isRTL ? vel > 0 : vel < 0;
+            dir = flickNext ? 1 : -1;
+        } else if (Math.abs(dist) > width * DIST_RATIO) {
+            const dragNext = isRTL ? dist > 0 : dist < 0;
+            dir = dragNext ? 1 : -1;
         }
-        next = Math.max(0, Math.min(count - 1, next));
         setDragPx(0);
         setDragging(false);
-        setCurrentIndex(next);
+        if (dir !== 0) { setDuration(Math.abs(vel) > VEL_THRESHOLD ? 0.34 : 0.46); setAnimate(true); setPos(p => p + dir); }
     };
 
-    const step = 100 / count;                       // one slide = step% of the inner track
-    const basePercent = (isRTL ? 1 : -1) * currentIndex * step;
+    const goToReal = (idx: number) => { setDuration(0.5); setAnimate(true); setPos(loop ? idx + 1 : idx); };
+
+    const basePercent = (isRTL ? 1 : -1) * pos * step;
 
     return (
         <div
             ref={wrapRef}
             style={{
-                // Inset card: rounded corners + side margins (set by the Home
-                // wrapper) so the banner is trimmed from both edges, not full-bleed.
+                // Inset card: rounded corners + side margins (set by the Home wrapper).
                 position: 'relative', width: '100%', aspectRatio: '2 / 1',
                 borderRadius: 20, overflow: 'hidden', touchAction: 'pan-y',
                 boxShadow: 'var(--shadow-lg)',
@@ -123,33 +156,32 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
             onMouseUp={onEnd}
             onMouseLeave={() => { if (dragging) onEnd(); }}
         >
-            <div style={{
-                display: 'flex',
-                width: `${count * 100}%`,
-                height: '100%',
-                transform: `translateX(calc(${basePercent}% + ${dragPx}px))`,
-                transition: dragging ? 'none' : 'transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}>
-                {banners.map((banner, idx) => (
+            <div
+                onTransitionEnd={handleTransitionEnd}
+                style={{
+                    display: 'flex',
+                    width: `${slideCount * 100}%`,
+                    height: '100%',
+                    transform: `translateX(calc(${basePercent}% + ${dragPx}px))`,
+                    transition: (dragging || !animate) ? 'none' : `transform ${duration}s ${EASE}`,
+                    willChange: 'transform',
+                }}
+            >
+                {slides.map((banner, idx) => (
                     <div
-                        key={banner.id}
+                        key={`${banner.id}-${idx}`}
                         onClick={() => handleBannerClick(banner)}
-                        style={{
-                            width: `${100 / count}%`,
-                            height: '100%',
-                            position: 'relative',
-                            cursor: 'pointer',
-                        }}
+                        style={{ width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer' }}
                     >
                         <img
                             src={banner.image_url}
                             alt={isRTL ? banner.title_ar : banner.title_en}
                             width={1200}
                             height={600}
-                            loading={idx === 0 ? 'eager' : 'lazy'}
+                            loading={idx <= 1 ? 'eager' : 'lazy'}
                             decoding="async"
                             draggable={false}
-                            {...(idx === 0 ? { fetchpriority: 'high' as 'high' } : {})}
+                            {...(idx === 1 ? { fetchpriority: 'high' as 'high' } : {})}
                             style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
                         />
                         {(banner.title_ar || banner.title_en) && (
@@ -176,13 +208,13 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                     {banners.map((_, idx) => (
                         <div
                             key={idx}
-                            onClick={(e) => { e.stopPropagation(); setCurrentIndex(idx); }}
+                            onClick={(e) => { e.stopPropagation(); goToReal(idx); }}
                             style={{
-                                width: idx === currentIndex ? 24 : 8,
+                                width: idx === realIndex ? 24 : 8,
                                 height: 8, borderRadius: 4,
-                                background: idx === currentIndex ? 'white' : 'rgba(255,255,255,0.4)',
+                                background: idx === realIndex ? 'white' : 'rgba(255,255,255,0.4)',
                                 transition: 'all 0.3s ease', cursor: 'pointer',
-                                boxShadow: idx === currentIndex ? '0 0 10px rgba(0,0,0,0.3)' : 'none',
+                                boxShadow: idx === realIndex ? '0 0 10px rgba(0,0,0,0.3)' : 'none',
                             }}
                         />
                     ))}
