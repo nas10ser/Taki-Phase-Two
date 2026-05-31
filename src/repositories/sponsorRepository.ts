@@ -36,14 +36,19 @@ export const sponsorRepository = {
      */
     getActive: async (): Promise<Sponsor[]> => {
         try {
-            const nowIso = new Date().toISOString();
+            // NOTE: we deliberately do NOT use a PostgREST `.or(expires_at...)`
+            // filter — an ISO timestamp contains ':' and '.' which break the
+            // .or() mini-grammar and silently return nothing. Fetch active rows
+            // and drop expired ones in JS (the active-sponsor set is tiny).
             const { data, error } = await supabase
                 .from('sponsors')
                 .select('*')
-                .eq('is_active', true)
-                .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+                .eq('is_active', true);
             if (error) throw error;
-            return (data || []).map(mapRow);
+            const now = Date.now();
+            return (data || [])
+                .filter((r: any) => !r.expires_at || new Date(r.expires_at).getTime() > now)
+                .map(mapRow);
         } catch (e) {
             console.warn('Failed to load sponsors:', e);
             return [];
