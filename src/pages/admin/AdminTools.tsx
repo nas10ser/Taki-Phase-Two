@@ -15,6 +15,7 @@ import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
 import { Tooltip } from '../../components/admin/Tooltip';
+import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
 
 // ============================================================
@@ -110,7 +111,8 @@ const BannerModal: React.FC<{
     onClose: () => void;
     onSaved: () => void;
 }> = ({ onClose, onSaved }) => {
-    const { customAlert } = useApp();
+    const { customAlert, language } = useApp();
+    const isRTL = language === 'ar';
     const [form, setForm] = useState({
         title_ar: '',
         title_en: '',
@@ -123,23 +125,59 @@ const BannerModal: React.FC<{
     });
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [editorSrc, setEditorSrc] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Blob URL backing the "adjust existing image" flow — revoked on close.
+    const objectUrlRef = useRef<string | null>(null);
 
     // Esc closes the modal. Banner draft is purely client-side until the
     // explicit "نشر" button — no DB write happens on close.
     useEscClose(true, onClose);
 
-    const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Revoke any outstanding blob URL when the modal unmounts.
+    useEffect(() => () => { if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current); }, []);
+
+    const closeEditor = () => {
+        setEditorSrc(null);
+        if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null; }
+    };
+
+    // Pick from device → open the positioner on a data URL (no upload yet;
+    // the cropped 1200×600 result is what gets uploaded).
+    const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.target.value = ''; // allow re-picking the same file
         if (!file) return;
-        if (!file.type.startsWith('image/')) {
-            await customAlert('⚠️ يرجى اختيار صورة');
-            return;
+        if (!file.type.startsWith('image/')) { customAlert('⚠️ يرجى اختيار صورة'); return; }
+        if (file.size > 12 * 1024 * 1024) { customAlert('⚠️ حجم الصورة أكبر من 12MB'); return; }
+        const reader = new FileReader();
+        reader.onload = () => setEditorSrc(String(reader.result));
+        reader.onerror = () => customAlert('❌ تعذّرت قراءة الصورة. حاول مجدداً.');
+        reader.readAsDataURL(file);
+    };
+
+    // Re-open the positioner on an already-set image_url. We fetch it into a
+    // blob first so the canvas is same-origin (never tainted). External URLs
+    // that block CORS fall back gracefully with a clear message.
+    const handleAdjustExisting = async () => {
+        const url = form.image_url.trim();
+        if (!url) return;
+        try {
+            const resp = await fetch(url, { mode: 'cors' });
+            if (!resp.ok) throw new Error('fetch_failed');
+            const blob = await resp.blob();
+            const objUrl = URL.createObjectURL(blob);
+            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+            objectUrlRef.current = objUrl;
+            setEditorSrc(objUrl);
+        } catch {
+            await customAlert('⚠️ تعذّر تجهيز هذه الصورة للقص (قد تكون من مصدر خارجي). ارفع صورة من جهازك لاستخدام أداة القص.');
         }
-        if (file.size > 5 * 1024 * 1024) {
-            await customAlert('⚠️ حجم الصورة أكبر من 5MB');
-            return;
-        }
+    };
+
+    // Editor handed back a ready 1200×600 JPEG → upload it, set the URL.
+    const handleEditorApply = async (file: File) => {
+        closeEditor();
         setUploading(true);
         const url = await storageService.uploadImage(file);
         setUploading(false);
@@ -147,7 +185,7 @@ const BannerModal: React.FC<{
             await customAlert('❌ فشل رفع الصورة. تأكد من الإنترنت أو ألصق رابطاً جاهزاً.');
             return;
         }
-        setForm((prev) => ({ ...prev, image_url: url }));
+        setForm(prev => ({ ...prev, image_url: url }));
     };
 
     const handleSave = async () => {
@@ -161,7 +199,22 @@ const BannerModal: React.FC<{
         // "جاري النشر..." if the network stalls (v11.23).
         let err: any = null;
         try {
-            const insert = supabase.from('banners').insert([form]);
+            // deal_id / store_id are FOREIGN KEYS (→ deals.id / users.id). An
+            // empty optional field MUST be null, never '' — Postgres treats ''
+            // as a real value and it fails banners_deal_id_fkey /
+            // banners_store_id_fkey. This was the silent "النشر لا يعمل" bug
+            // (v11.30): the form shipped deal_id:'' store_id:'' on every banner.
+            const row = {
+                title_ar: form.title_ar.trim() || null,
+                title_en: form.title_en.trim() || null,
+                image_url: form.image_url.trim(),
+                target_url: form.target_url.trim() || null,
+                deal_id: form.deal_id.trim() || null,
+                store_id: form.store_id.trim() || null,
+                position: form.position,
+                is_active: form.is_active,
+            };
+            const insert = supabase.from('banners').insert([row]);
             const timeout = new Promise<{ error: any }>(resolve =>
                 setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
             );
@@ -173,7 +226,13 @@ const BannerModal: React.FC<{
             setSaving(false);
         }
         if (err) {
-            await customAlert('❌ ' + (err.message || 'فشل النشر'));
+            // Translate the raw Postgres FK error into a clear Arabic hint.
+            const m = String(err.message || '');
+            const friendly =
+                m.includes('banners_deal_id_fkey') ? 'رقم العرض الذي أدخلته غير موجود. تأكد منه أو اتركه فارغاً.'
+                : m.includes('banners_store_id_fkey') ? 'رقم المتجر الذي أدخلته غير موجود. تأكد منه أو اتركه فارغاً.'
+                : (m || 'فشل النشر');
+            await customAlert('❌ ' + friendly);
             return;
         }
         await customAlert('✅ تم نشر البانر بنجاح');
@@ -197,19 +256,32 @@ const BannerModal: React.FC<{
                 <div className="p-5 space-y-4">
                     {form.image_url && (
                         <div className="rounded-2xl overflow-hidden border border-[var(--border-color)] relative">
-                            <img
-                                src={form.image_url}
-                                alt=""
-                                className="w-full h-32 object-cover"
-                                onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
-                            />
+                            {/* WYSIWYG preview — exactly the 2:1 shape shown on the home page */}
+                            <div className="relative w-full" style={{ aspectRatio: '2 / 1', background: 'var(--gray-100)' }}>
+                                <img
+                                    src={form.image_url}
+                                    alt=""
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+                                />
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-3 py-2 pointer-events-none">
+                                    <span className="text-[10px] font-bold text-white/90">معاينة كما سيظهر في الرئيسية (2:1)</span>
+                                </div>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => setForm({ ...form, image_url: '' })}
-                                className="absolute top-2 left-2 bg-red-500/90 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shadow-md"
+                                className="absolute top-2 left-2 bg-red-500/90 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-md active:scale-90 transition"
                                 aria-label="إزالة الصورة"
                             >
                                 ✕
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAdjustExisting}
+                                className="absolute top-2 right-2 bg-black/55 backdrop-blur-sm text-white rounded-full px-3 h-8 flex items-center gap-1 text-xs font-bold shadow-md active:scale-90 transition"
+                            >
+                                ✂️ ضبط الجزء الظاهر
                             </button>
                         </div>
                     )}
@@ -228,9 +300,12 @@ const BannerModal: React.FC<{
 
                     {/* Image: upload OR paste URL */}
                     <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1">
                             صورة البانر <span className="text-red-500">*</span>
                         </label>
+                        <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+                            📐 المقاس المثالي <b>1200×600</b> بكسل (نسبة 2:1). بعد اختيار الصورة ستفتح أداة تتيح لك تحريك الصورة واختيار الجزء الظاهر بالضبط.
+                        </div>
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -255,23 +330,59 @@ const BannerModal: React.FC<{
                             className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 focus:bg-[var(--card-bg)] outline-none"
                         />
                     </div>
-                    <Field
-                        label="رابط الوجهة (اختياري)"
-                        value={form.target_url}
-                        onChange={(v) => setForm({ ...form, target_url: v })}
-                        placeholder="https://..."
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field
-                            label="ID العرض (اختياري)"
-                            value={form.deal_id}
-                            onChange={(v) => setForm({ ...form, deal_id: v })}
-                        />
-                        <Field
-                            label="ID المتجر (اختياري)"
-                            value={form.store_id}
-                            onChange={(v) => setForm({ ...form, store_id: v })}
-                        />
+                    {/* What happens when the banner is tapped — explained clearly,
+                        with the advanced ID fields tucked away so they never
+                        confuse. Empty here is fine: the banner just shows. */}
+                    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--body-bg)] p-3 space-y-3">
+                        <div>
+                            <div className="text-sm font-extrabold text-[var(--text-primary)]">🔗 عند الضغط على البانر</div>
+                            <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                                اختياري. اختر وجهة <b>واحدة فقط</b>. اترك الكل فارغاً لعرض الصورة دون فتح أي صفحة.
+                            </div>
+                        </div>
+                        <div>
+                            <Field
+                                label="رابط الوجهة"
+                                value={form.target_url}
+                                onChange={(v) => setForm({ ...form, target_url: v })}
+                                placeholder="https://..."
+                            />
+                            <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                صفحة خارجية تُفتح عند الضغط (مثل منتج في موقعك). هذا الخيار الأسهل والأنسب لمعظم الإعلانات.
+                            </div>
+                        </div>
+                        <details className="rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
+                            <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-[var(--text-secondary)]">
+                                🧩 أو اربط البانر بعرض/متجر داخل التطبيق (متقدّم)
+                            </summary>
+                            <div className="p-3 space-y-3">
+                                <div>
+                                    <Field
+                                        label="ID العرض"
+                                        value={form.deal_id}
+                                        onChange={(v) => setForm({ ...form, deal_id: v })}
+                                        placeholder="معرّف عرض موجود"
+                                    />
+                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                        معرّف عرض موجود — يفتح صفحة ذلك العرض داخل التطبيق. تجده في نهاية رابط العرض: <span dir="ltr">/deal/<b>المعرّف</b></span>.
+                                    </div>
+                                </div>
+                                <div>
+                                    <Field
+                                        label="ID المتجر"
+                                        value={form.store_id}
+                                        onChange={(v) => setForm({ ...form, store_id: v })}
+                                        placeholder="معرّف حساب التاجر"
+                                    />
+                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                        معرّف حساب التاجر — يفتح صفحة المتجر داخل التطبيق.
+                                    </div>
+                                </div>
+                                <div className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 leading-relaxed">
+                                    💡 إذا أدخلت معرّفاً غير موجود فلن يُنشر البانر. عند الشك، اترك الحقلين فارغين واستخدم «رابط الوجهة» بالأعلى.
+                                </div>
+                            </div>
+                        </details>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">المكان</label>
@@ -302,6 +413,26 @@ const BannerModal: React.FC<{
                     </button>
                 </div>
             </div>
+
+            {/* Upload-in-progress veil (after the positioner hands back the crop) */}
+            {uploading && (
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-[3100]">
+                    <div className="bg-[var(--card-bg)] rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3">
+                        <span className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-sm font-bold text-[var(--text-primary)]">جاري رفع الصورة...</span>
+                    </div>
+                </div>
+            )}
+
+            {/* WYSIWYG banner positioner (portal — renders to <body>) */}
+            {editorSrc && (
+                <BannerImageEditor
+                    src={editorSrc}
+                    isRTL={isRTL}
+                    onApply={handleEditorApply}
+                    onCancel={closeEditor}
+                />
+            )}
         </div>
     );
 };
