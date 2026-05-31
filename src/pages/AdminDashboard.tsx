@@ -93,10 +93,17 @@ const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, rep
     // instead of slamming into the clock/battery. Previously top-0 + pt-2 left
     // about 8px to the status bar on a real iPhone, which Nasser flagged.
     <div
-        className="sticky z-20 -mx-4 px-4 pb-3 bg-card-glass border-b border-[var(--border-color)]"
+        className="sticky z-30 -mx-4 px-4 pb-3 border-b border-[var(--border-color)]"
         style={{
-            top: 'env(safe-area-inset-top, 0px)',
+            top: 0,
+            // SOLID background (not the 82% glass) — on iOS the backdrop blur
+            // sometimes fails to paint, letting the welcome banner bleed through
+            // the bar (Nasser: "البانر العلوي متداخل مع الكلمات"). A fully opaque
+            // surface + a lift shadow guarantees a clean, professional header
+            // that content scrolls cleanly underneath (v11.29).
+            background: 'var(--body-bg)',
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            boxShadow: '0 6px 18px -8px rgba(0,0,0,0.25)',
         }}
     >
         <div className="flex items-center gap-2">
@@ -310,7 +317,7 @@ const AdminDashboard: React.FC = () => {
                     </div>
                 )}
 
-                <div className="mt-4">
+                <div className="mt-5">
                     <Suspense fallback={<LoadingSkeleton />}>
                         {activeTab === 'overview'  && hasPermission('tab_overview')  && <AdminOverview onNavigate={handleNavigate} />}
                         {activeTab === 'buyers'    && hasPermission('tab_buyers')    && <AdminBuyers />}
