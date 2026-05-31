@@ -8,7 +8,7 @@
  *  - الإعدادات العامة
  */
 
-import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { promoRepository } from '../../repositories/promoRepository';
 import { storageService } from '../../services/storageService';
@@ -111,7 +111,7 @@ const BannerModal: React.FC<{
     onClose: () => void;
     onSaved: () => void;
 }> = ({ onClose, onSaved }) => {
-    const { customAlert, language } = useApp();
+    const { customAlert, language, deals } = useApp();
     const isRTL = language === 'ar';
     const [form, setForm] = useState({
         title_ar: '',
@@ -126,9 +126,46 @@ const BannerModal: React.FC<{
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [editorSrc, setEditorSrc] = useState<string | null>(null);
+    const [storeQuery, setStoreQuery] = useState('');
+    const [selectedStoreName, setSelectedStoreName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     // Blob URL backing the "adjust existing image" flow — revoked on close.
     const objectUrlRef = useRef<string | null>(null);
+
+    // Link a banner by NAME, not by ID. Stores + their deals are derived from
+    // the deals already in memory, so the admin never types a UUID or a URL.
+    // Each unique storeId→shopName is a selectable store; its active deals are
+    // the deal options once a store is chosen.
+    const stores = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const d of deals) {
+            if (d.storeId && !map.has(d.storeId)) map.set(d.storeId, d.shopName || d.storeId);
+        }
+        return Array.from(map, ([id, name]) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    }, [deals]);
+
+    const storeMatches = useMemo(() => {
+        const q = storeQuery.trim().toLowerCase();
+        if (!q) return [];
+        return stores.filter(s => s.name.toLowerCase().includes(q)).slice(0, 8);
+    }, [stores, storeQuery]);
+
+    const storeDeals = useMemo(() => {
+        if (!form.store_id) return [];
+        return deals.filter(d => d.storeId === form.store_id && d.status === 'active');
+    }, [deals, form.store_id]);
+
+    const selectStore = (s: { id: string; name: string }) => {
+        setForm(prev => ({ ...prev, store_id: s.id, deal_id: '' }));
+        setSelectedStoreName(s.name);
+        setStoreQuery('');
+    };
+    const clearStore = () => {
+        setForm(prev => ({ ...prev, store_id: '', deal_id: '' }));
+        setSelectedStoreName('');
+        setStoreQuery('');
+    };
 
     // Esc closes the modal. Banner draft is purely client-side until the
     // explicit "نشر" button — no DB write happens on close.
@@ -330,56 +367,98 @@ const BannerModal: React.FC<{
                             className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 focus:bg-[var(--card-bg)] outline-none"
                         />
                     </div>
-                    {/* What happens when the banner is tapped — explained clearly,
-                        with the advanced ID fields tucked away so they never
-                        confuse. Empty here is fine: the banner just shows. */}
+                    {/* What happens when the banner is tapped. The admin links by
+                        NAME: search a store, then optionally pick one of its deals.
+                        No IDs, no links. Empty = the banner just shows. */}
                     <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--body-bg)] p-3 space-y-3">
                         <div>
                             <div className="text-sm font-extrabold text-[var(--text-primary)]">🔗 عند الضغط على البانر</div>
                             <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-relaxed">
-                                اختياري. اختر وجهة <b>واحدة فقط</b>. اترك الكل فارغاً لعرض الصورة دون فتح أي صفحة.
+                                اختياري. اختر متجراً (وعرضاً محدداً إن أردت). اترك الكل فارغاً لعرض الصورة فقط.
                             </div>
                         </div>
-                        <div>
-                            <Field
-                                label="رابط الوجهة"
-                                value={form.target_url}
-                                onChange={(v) => setForm({ ...form, target_url: v })}
-                                placeholder="https://..."
-                            />
-                            <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                                صفحة خارجية تُفتح عند الضغط (مثل منتج في موقعك). هذا الخيار الأسهل والأنسب لمعظم الإعلانات.
+
+                        {!form.store_id ? (
+                            /* Step 1 — search the store by name */
+                            <div className="relative">
+                                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">🏪 ابحث عن المتجر بالاسم</label>
+                                <input
+                                    type="text"
+                                    value={storeQuery}
+                                    onChange={(e) => setStoreQuery(e.target.value)}
+                                    placeholder="اكتب اسم المتجر..."
+                                    className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 outline-none"
+                                />
+                                {storeMatches.length > 0 && (
+                                    <div className="mt-1 max-h-52 overflow-y-auto rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] shadow-lg divide-y divide-[var(--border-color)]">
+                                        {storeMatches.map((s) => (
+                                            <button
+                                                key={s.id}
+                                                type="button"
+                                                onClick={() => selectStore(s)}
+                                                className="w-full text-right px-3 py-2.5 text-sm font-bold text-[var(--text-primary)] hover:bg-orange-50 active:bg-orange-100 transition flex items-center gap-2"
+                                            >
+                                                <span>🏪</span><span className="truncate">{s.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {storeQuery.trim() && storeMatches.length === 0 && (
+                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1.5">
+                                        لا يوجد متجر بهذا الاسم. (تظهر المتاجر التي لديها عروض فقط.)
+                                    </div>
+                                )}
                             </div>
-                        </div>
+                        ) : (
+                            /* Step 2 — store chosen; optionally pick a specific deal */
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+                                    <span className="text-sm font-bold text-emerald-800 flex items-center gap-2 min-w-0">
+                                        <span>🏪</span><span className="truncate">{selectedStoreName || 'متجر مُختار'}</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={clearStore}
+                                        className="text-xs font-bold text-emerald-700 hover:text-red-600 flex-shrink-0"
+                                    >
+                                        تغيير ✕
+                                    </button>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">🎯 عرض محدد من هذا المتجر (اختياري)</label>
+                                    <select
+                                        value={form.deal_id}
+                                        onChange={(e) => setForm({ ...form, deal_id: e.target.value })}
+                                        className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 outline-none"
+                                    >
+                                        <option value="">— بدون عرض محدد (يفتح صفحة المتجر) —</option>
+                                        {storeDeals.map((d) => (
+                                            <option key={d.id} value={d.id}>{d.itemName}</option>
+                                        ))}
+                                    </select>
+                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                        {storeDeals.length === 0
+                                            ? 'لا توجد عروض نشطة لهذا المتجر — سيفتح البانر صفحة المتجر.'
+                                            : 'إن اخترت عرضاً، يفتح البانر صفحة ذلك العرض مباشرة بدل صفحة المتجر.'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* External link — secondary/advanced, used only if no store is chosen */}
                         <details className="rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
                             <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-[var(--text-secondary)]">
-                                🧩 أو اربط البانر بعرض/متجر داخل التطبيق (متقدّم)
+                                🌐 أو رابط خارجي بدل المتجر (متقدّم)
                             </summary>
-                            <div className="p-3 space-y-3">
-                                <div>
-                                    <Field
-                                        label="ID العرض"
-                                        value={form.deal_id}
-                                        onChange={(v) => setForm({ ...form, deal_id: v })}
-                                        placeholder="معرّف عرض موجود"
-                                    />
-                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                                        معرّف عرض موجود — يفتح صفحة ذلك العرض داخل التطبيق. تجده في نهاية رابط العرض: <span dir="ltr">/deal/<b>المعرّف</b></span>.
-                                    </div>
-                                </div>
-                                <div>
-                                    <Field
-                                        label="ID المتجر"
-                                        value={form.store_id}
-                                        onChange={(v) => setForm({ ...form, store_id: v })}
-                                        placeholder="معرّف حساب التاجر"
-                                    />
-                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                                        معرّف حساب التاجر — يفتح صفحة المتجر داخل التطبيق.
-                                    </div>
-                                </div>
-                                <div className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 leading-relaxed">
-                                    💡 إذا أدخلت معرّفاً غير موجود فلن يُنشر البانر. عند الشك، اترك الحقلين فارغين واستخدم «رابط الوجهة» بالأعلى.
+                            <div className="p-3">
+                                <Field
+                                    label="رابط الوجهة"
+                                    value={form.target_url}
+                                    onChange={(v) => setForm({ ...form, target_url: v })}
+                                    placeholder="https://..."
+                                />
+                                <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                    صفحة خارجية تُفتح عند الضغط (مثل منتج في موقعك). يُستخدم فقط إذا لم تختر متجراً بالأعلى.
                                 </div>
                             </div>
                         </details>

@@ -108,9 +108,9 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
         <div
             ref={wrapRef}
             style={{
+                // Full-bleed: straight vertical edges flush to the screen sides.
                 position: 'relative', width: '100%', aspectRatio: '2 / 1',
-                borderRadius: 24, overflow: 'hidden', marginBottom: 24,
-                boxShadow: 'var(--shadow-lg)', touchAction: 'pan-y',
+                borderRadius: 0, overflow: 'hidden', touchAction: 'pan-y',
             }}
             onTouchStart={(e) => onStart(e.touches[0].clientX)}
             onTouchMove={(e) => onMove(e.touches[0].clientX)}
