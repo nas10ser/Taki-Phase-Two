@@ -20,6 +20,8 @@ import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../servi
 import { useApp } from '../../context/AppContext';
 import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
+import { sponsorRepository } from '../../repositories/sponsorRepository';
+import { CATEGORIES, REGIONS, CITIES } from '../../data/mock';
 import { useEscClose } from '../../hooks/useEscClose';
 import { useLocalStringList } from '../../hooks/useLocalStringList';
 import { useAdminRecents } from '../../hooks/useAdminRecents';
@@ -120,6 +122,75 @@ const SubscriptionModal = memo<{
             .catch(() => {});
         return () => { alive = false; };
     }, [seller.id]);
+
+    // ── v11.23 Sponsor (راعٍ رسمي) state ──────────────────────────────
+    const [sponsorOn, setSponsorOn] = useState(false);
+    const [spCategory, setSpCategory] = useState('');   // '' = كل التصنيفات
+    const [spRegion, setSpRegion] = useState('');        // '' = كل المناطق
+    const [spCity, setSpCity] = useState('');            // '' = كل المدن
+    const [spRadius, setSpRadius] = useState('');        // كم (اختياري) — يتطلب موقع المتجر
+    const [spPriority, setSpPriority] = useState(0);
+    const [spExpires, setSpExpires] = useState(toDateInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
+    const [savingSponsor, setSavingSponsor] = useState(false);
+    // Load current sponsor state for this seller so the toggle reflects reality.
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const all = await sponsorRepository.listAll();
+            if (!alive) return;
+            const mine = all.find(s => s.storeId === seller.id);
+            if (mine) {
+                setSponsorOn(!!mine.isActive);
+                setSpCategory(mine.targetCategory || '');
+                setSpRegion(mine.targetRegion || '');
+                setSpCity(mine.targetCity || '');
+                setSpRadius(mine.targetRadiusKm != null ? String(mine.targetRadiusKm) : '');
+                setSpPriority(mine.priority || 0);
+                if (mine.expiresAt) {
+                    const d = new Date(mine.expiresAt);
+                    if (!isNaN(d.getTime())) setSpExpires(toDateInput(d));
+                }
+            }
+        })();
+        return () => { alive = false; };
+    }, [seller.id]);
+
+    const handleSaveSponsor = async () => {
+        if (savingSponsor) return;
+        const expMs = spExpires ? new Date(spExpires).getTime() : null;
+        if (sponsorOn && expMs !== null && (Number.isNaN(expMs) || expMs <= Date.now())) {
+            await customAlert('❌ تاريخ انتهاء الرعاية يجب أن يكون في المستقبل (أو اتركه فارغاً لرعاية بلا انتهاء).');
+            return;
+        }
+        setSavingSponsor(true);
+        let res: { success: boolean; error?: string } = { success: false };
+        try {
+            if (sponsorOn) {
+                res = await sponsorRepository.set({
+                    storeId: seller.id,
+                    isActive: true,
+                    targetCategory: spCategory || null,
+                    targetRegion: spRegion || null,
+                    targetCity: spCity || null,
+                    targetRadiusKm: spRadius ? Number(spRadius) || null : null,
+                    priority: Number(spPriority) || 0,
+                    expiresAt: spExpires ? new Date(spExpires).toISOString() : null,
+                });
+            } else {
+                res = await sponsorRepository.remove(seller.id);
+            }
+        } catch (e: any) {
+            res = { success: false, error: e?.message || 'فشل الحفظ' };
+        } finally {
+            setSavingSponsor(false);
+        }
+        if (res.success) {
+            await customAlert(sponsorOn ? '🌟 تم تفعيل الراعي الرسمي — تظهر منتجاته كإعلان ذهبي.' : '✅ تم إلغاء الرعاية.');
+            onSaved();
+        } else {
+            await customAlert('❌ ' + (res.error ?? 'فشل حفظ الرعاية'));
+        }
+    };
 
     // أزرار سريعة لتغيير المدة
     const quickDurations = [
@@ -469,6 +540,102 @@ const SubscriptionModal = memo<{
                                     sendNotif ? 'translate-x-6' : 'translate-x-1'
                                 }`}
                             />
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── v11.23 Sponsor (راعٍ رسمي) ───────────────────────────
+                    A separate, self-contained block with its own save button —
+                    sponsorship is independent of the subscription above. Gold
+                    theme to match the on-card ad styling. */}
+                <div className="px-5 pb-5">
+                    <div className="rounded-2xl border-2 p-4" style={{ borderColor: '#fbbf24', background: 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(245,158,11,0.06))' }}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <div className="font-extrabold text-sm flex items-center gap-2" style={{ color: '#b45309' }}>
+                                    <span>⭐</span> راعٍ رسمي (إعلان ذهبي)
+                                </div>
+                                <div className="text-[11px] mt-0.5" style={{ color: '#92400e' }}>
+                                    منتجاته تظهر كإعلان بإطار ذهبي بعد كل ٥ عروض، بالمداورة مع باقي الرعاة.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSponsorOn(v => !v)}
+                                aria-pressed={sponsorOn}
+                                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${sponsorOn ? 'bg-amber-500' : 'bg-[var(--gray-300)]'}`}
+                            >
+                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${sponsorOn ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+
+                        {sponsorOn && (
+                            <div className="space-y-3">
+                                {/* Targeting */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">التصنيف المستهدف</label>
+                                        <select value={spCategory} onChange={(e) => setSpCategory(e.target.value)}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
+                                            <option value="">كل التصنيفات</option>
+                                            {CATEGORIES.filter(c => c.id !== 'all').map(c => (
+                                                <option key={c.id} value={c.id}>{c.emoji} {c.ar}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">المنطقة المستهدفة</label>
+                                        <select value={spRegion} onChange={(e) => { setSpRegion(e.target.value); setSpCity(''); }}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
+                                            <option value="">كل المناطق</option>
+                                            {REGIONS.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">المدينة المستهدفة</label>
+                                        <select value={spCity} onChange={(e) => setSpCity(e.target.value)}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
+                                            <option value="">كل المدن</option>
+                                            {CITIES.filter(c => !spRegion || c.regionId === spRegion).map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">نطاق كيلومتري (اختياري)</label>
+                                        <input type="tel" inputMode="numeric" value={spRadius}
+                                            onChange={(e) => setSpRadius(e.target.value.replace(/\D/g, ''))}
+                                            placeholder="مثال: 10 كم"
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الأولوية (الأعلى يظهر أولاً)</label>
+                                        <input type="tel" inputMode="numeric" value={String(spPriority)}
+                                            onChange={(e) => setSpPriority(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">ينتهي في (فارغ = بلا انتهاء)</label>
+                                        <input type="date" value={spExpires} onChange={(e) => setSpExpires(e.target.value)}
+                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" style={{ colorScheme: 'light' }} />
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                                    💡 النطاق الكيلومتري يتطلب وجود موقع محدد للمتجر على الخريطة. اترك كل الحقول فارغة ليظهر الإعلان في كل مكان.
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={handleSaveSponsor}
+                            disabled={savingSponsor}
+                            className="w-full mt-3 py-2.5 rounded-xl text-white font-extrabold text-sm shadow-md disabled:opacity-50"
+                            style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                        >
+                            {savingSponsor ? 'جاري الحفظ...' : (sponsorOn ? '⭐ حفظ إعدادات الراعي' : '🚫 إلغاء الرعاية')}
                         </button>
                     </div>
                 </div>

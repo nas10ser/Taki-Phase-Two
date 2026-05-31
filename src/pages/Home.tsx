@@ -6,7 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon } from '../utils/helpers';
+import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored } from '../utils/helpers';
 import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
@@ -17,7 +17,7 @@ import { bannerRepository, Banner } from '../repositories/bannerRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, refreshDeals, homeCity, user } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // First-open city prompt: buyers/guests only (sellers & admins have their
@@ -166,7 +166,8 @@ const Home: React.FC = () => {
                 }))
                 .filter(x => x.score > 0)
                 .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0));
-            return scored.map(x => x.d);
+            // While searching, no sponsored interleave — relevance wins.
+            return scored.map(x => ({ deal: x.d, sponsored: false }));
         }
 
         const metricCmp = (a: Deal, b: Deal) => {
@@ -182,35 +183,12 @@ const Home: React.FC = () => {
             return metricCmp(a, b);
         });
 
-        // Insertion Logic for Sponsored Deals
-        const sponsored: Deal[] = [];
-        const normal: Deal[] = [];
-        list.forEach(d => {
-            const profile = storeProfiles[d.storeId] as any;
-            if (profile?.is_pinned) {
-                sponsored.push(d);
-            } else {
-                normal.push(d);
-            }
-        });
-
-        const interleaved: Deal[] = [];
-        let sponsoredIndex = 0;
-        let normalIndex = 0;
-        
-        // Insert 1 sponsored deal every 3 normal deals
-        while (normalIndex < normal.length || sponsoredIndex < sponsored.length) {
-            // Add up to 3 normal deals
-            for (let i = 0; i < 3 && normalIndex < normal.length; i++) {
-                interleaved.push(normal[normalIndex++]);
-            }
-            // Add 1 sponsored deal
-            if (sponsoredIndex < sponsored.length) {
-                interleaved.push(sponsored[sponsoredIndex++]);
-            }
-        }
-        return interleaved;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, useProximity, homeCity, explicitLocationFilter, blockedMerchants]);
+        // v11.23 — Official Sponsors: pull on-target sponsor deals out of the
+        // stream and re-insert them as gold ads after every 5 normal deals,
+        // rotating across all active sponsors (targeting + expiry respected
+        // inside interleaveSponsored).
+        return interleaveSponsored(list, sponsors);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants]);
 
     return (
         <>
@@ -429,10 +407,9 @@ const Home: React.FC = () => {
             {/* Deals Grid */}
             <div className="taki-deals-grid" style={{ padding: '0 16px 20px', display: 'grid', gap: 10 }}>
                 {filteredDeals.length > 0 ? (
-                    filteredDeals.map(deal => {
-                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                        return <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />;
-                    })
+                    filteredDeals.map(({ deal, sponsored }) => (
+                        <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} />
+                    ))
                 ) : loading ? (
                     // Skeleton placeholders while initial fetch is in flight.
                     // Shows immediately so the user never sees a blank screen.

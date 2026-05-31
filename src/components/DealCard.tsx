@@ -82,29 +82,41 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
 
     return (
         <div
-            className={`deal-card animate-fade-in ${isSponsored ? 'shadow-yellow-500/20' : ''}`}
+            className={`deal-card animate-fade-in ${isSponsored ? 'taki-sponsored' : ''}`}
             onClick={() => onClick(deal.id)}
-            style={isSponsored ? { border: '2px solid #fbbf24', position: 'relative' } : { position: 'relative' }}
+            style={isSponsored ? {
+                position: 'relative',
+                // Premium double gold ring + warm glow. Works on both light and
+                // dark themes (gradient border, not a theme-var color).
+                border: '2px solid transparent',
+                borderRadius: 24,
+                backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)',
+                backgroundOrigin: 'border-box',
+                backgroundClip: 'padding-box, border-box',
+                boxShadow: '0 6px 22px rgba(245,158,11,0.35)'
+            } : { position: 'relative' }}
         >
             {isSponsored && (
                 <div style={{
                     position: 'absolute',
-                    top: -12,
-                    [isRTL ? 'right' : 'left']: 16,
-                    background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                    top: -11,
+                    [isRTL ? 'right' : 'left']: 14,
+                    background: 'linear-gradient(135deg, #fbbf24, #d97706)',
                     color: '#fff',
-                    padding: '2px 12px',
-                    borderRadius: '12px',
+                    padding: '3px 14px',
+                    borderRadius: '999px',
                     fontSize: '0.7rem',
                     fontWeight: 900,
                     zIndex: 10,
-                    boxShadow: '0 2px 4px rgba(245,158,11,0.3)',
+                    boxShadow: '0 3px 8px rgba(180,83,9,0.45)',
+                    border: '1px solid rgba(255,255,255,0.55)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    gap: '4px',
+                    letterSpacing: '0.5px'
                 }}>
                     <span>⭐</span>
-                    {isRTL ? 'برعاية' : 'Sponsored'}
+                    {isRTL ? 'إعلان' : 'Ad'}
                 </div>
             )}
             <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>

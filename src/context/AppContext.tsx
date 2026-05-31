@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Deal, getLocation, CITIES } from '../data/mock';
-import { getDistance, normalizeArabicNumerals, generateBarcode } from '../utils/helpers';
+import { getDistance, normalizeArabicNumerals, generateBarcode, Sponsor } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
 import { userRepository } from '../repositories/userRepository';
@@ -9,6 +9,7 @@ import { dealService } from '../services/dealService';
 import { notificationRepository } from '../repositories/notificationRepository';
 import { bookingRepository } from '../repositories/bookingRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
+import { sponsorRepository } from '../repositories/sponsorRepository';
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 import { SmartAlertRule } from '../services/authService';
@@ -118,6 +119,7 @@ interface AppContextType {
     refreshBookings: () => Promise<void>;
     refreshDeals: () => Promise<void>;
     storeProfiles: Record<string, StoreProfile>;
+    sponsors: Record<string, Sponsor>;
     updateStoreProfile: (storeId: string, profile: StoreProfile) => void;
     updateProfile: (data: Partial<UserProfile>) => Promise<void>;
     checkMarketingAlerts: (lat?: number, lng?: number) => void;
@@ -339,6 +341,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>(
         () => readSnapshot<Record<string, StoreProfile>>('sellers') || {}
     );
+
+    // v11.23 — active sponsors (راعٍ رسمي), keyed by storeId. Loaded once on
+    // mount and refreshed via realtime so an admin grant/revoke reflects live.
+    const [sponsors, setSponsors] = useState<Record<string, Sponsor>>({});
+    useEffect(() => {
+        let alive = true;
+        const load = async () => {
+            const list = await sponsorRepository.getActive();
+            if (!alive) return;
+            const map: Record<string, Sponsor> = {};
+            for (const s of list) map[s.storeId] = s;
+            setSponsors(map);
+        };
+        load();
+        let channel: any;
+        (async () => {
+            const { supabase } = await import('../services/supabaseClient');
+            if (!alive) return;
+            channel = supabase
+                .channel('sponsors-live')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'sponsors' }, () => { load(); })
+                .subscribe();
+        })();
+        return () => {
+            alive = false;
+            if (channel) import('../services/supabaseClient').then(({ supabase }) => supabase.removeChannel(channel));
+        };
+    }, []);
 
     // Platform-wide feature flags read from `platform_settings`. Defaults are
     // conservative (off) so the UI never accidentally exposes a section before
@@ -2287,7 +2317,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
-        storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
@@ -2313,7 +2343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
-        storeProfiles, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,

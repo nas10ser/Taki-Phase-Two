@@ -5,7 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon } from '../utils/helpers';
+import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored } from '../utils/helpers';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
 
@@ -33,7 +33,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, topLocation, loading, followedMerchants, toggleFollowMerchant } = useApp();
+    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -96,7 +96,7 @@ const DealsList: React.FC = () => {
                 }))
                 .filter(x => x.score > 0)
                 .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0))
-                .map(x => x.d);
+                .map(x => ({ deal: x.d, sponsored: false }));
         }
 
         // v11.20 — Coming Soon defaults to sort-by-launch (soonest first).
@@ -109,8 +109,11 @@ const DealsList: React.FC = () => {
         else if (sortBy === 'reliability') list.sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0));
         else list.sort((a, b) => b.createdAt - a.createdAt);
 
-        return list;
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type]);
+        // v11.23 — interleave gold sponsor ads (every 5, rotated, targeted).
+        // Coming-soon view stays ad-free (those deals aren't bookable yet).
+        if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false }));
+        return interleaveSponsored(list, sponsors);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.
@@ -298,17 +301,14 @@ const DealsList: React.FC = () => {
                 gap: 10,
             }} className="taki-deals-list-grid">
                 {filteredDeals.length > 0 ? (
-                    filteredDeals.map(deal => {
-                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                        return (
-                            <DealCard
-                                key={deal.id}
-                                deal={deal}
-                                onClick={(id) => history.push(`/deal/${id}`)}
-                                isSponsored={isSponsored}
-                            />
-                        );
-                    })
+                    filteredDeals.map(({ deal, sponsored }) => (
+                        <DealCard
+                            key={deal.id}
+                            deal={deal}
+                            onClick={(id) => history.push(`/deal/${id}`)}
+                            isSponsored={sponsored}
+                        />
+                    ))
                 ) : loading ? (
                     Array.from({ length: 8 }).map((_, i) => (
                         <div key={`sk-${i}`} className="taki-skeleton" style={{ aspectRatio: '4 / 5', height: 'auto' }} />

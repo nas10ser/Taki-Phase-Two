@@ -53,6 +53,137 @@ export const dealMatchesLocation = (
 };
 
 // =========================================================================
+// Official Sponsors (v11.23) — راعٍ رسمي
+// An admin grants a store sponsor status with optional targeting + expiry.
+// Sponsored deals render with a gold frame as ads, inserted after every
+// SPONSOR_EVERY_N normal deals, ROTATING across all active sponsors (so with
+// 20 sponsors each gets one slot before the cycle repeats). A sponsor may
+// restrict where its ads appear (category / city / region / radius); outside
+// that target its deals still appear normally but NOT as a gold ad.
+// =========================================================================
+export const SPONSOR_EVERY_N = 5; // one sponsor ad after every 5 normal deals
+
+export interface Sponsor {
+    storeId: string;
+    isActive: boolean;
+    targetCategory?: string | null;
+    targetCity?: string | null;
+    targetRegion?: string | null;
+    targetLat?: number | null;
+    targetLng?: number | null;
+    targetRadiusKm?: number | null;
+    priority: number;
+    startsAt?: string | null;
+    expiresAt?: string | null;
+}
+
+/** True if the sponsorship is live right now (active + not expired). */
+export const isSponsorActive = (s: Sponsor | undefined | null): boolean => {
+    if (!s || !s.isActive) return false;
+    if (s.expiresAt && new Date(s.expiresAt).getTime() <= Date.now()) return false;
+    return true;
+};
+
+/**
+ * Does this deal qualify to be shown as a GOLD sponsored ad, given the
+ * sponsor's targeting? All unset axes mean "no restriction". Radius is only
+ * applied when the sponsor set lat/lng + radius AND we know the deal's coords.
+ */
+export const dealMatchesSponsorTarget = (deal: Deal, s: Sponsor): boolean => {
+    if (s.targetCategory && deal.category !== s.targetCategory && (deal.category as string) !== 'all') return false;
+    if (s.targetCity || s.targetRegion) {
+        const { regionId, cityId } = resolveDealLocation(deal);
+        if (s.targetCity && cityId !== s.targetCity) return false;
+        if (s.targetRegion && regionId !== s.targetRegion) return false;
+    }
+    if (s.targetLat != null && s.targetLng != null && s.targetRadiusKm != null && s.targetRadiusKm > 0) {
+        const lat = deal.mapLocation?.lat;
+        const lng = deal.mapLocation?.lng;
+        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+        if (getDistance(s.targetLat, s.targetLng, lat, lng) > s.targetRadiusKm) return false;
+    }
+    return true;
+};
+
+/**
+ * Build the final list with sponsored ads interleaved. Pure + deterministic.
+ *
+ *  - `ranked` is the already-sorted list of NORMAL deals to display.
+ *  - `sponsorMap` maps storeId → Sponsor.
+ *  - A deal is an ad-candidate if its store is an active sponsor AND the deal
+ *    matches that sponsor's targeting for the current view.
+ *  - Ad-candidates are pulled OUT of the normal stream and re-inserted as gold
+ *    ads after every SPONSOR_EVERY_N normal deals, rotating one sponsor STORE
+ *    per slot (round-robin by priority desc) so no single sponsor dominates.
+ *    When the sponsor rotation is exhausted it loops back to the start.
+ *
+ * Returns items tagged so the renderer knows which to gold-frame.
+ */
+export interface DisplayDeal { deal: Deal; sponsored: boolean; }
+
+export const interleaveSponsored = (
+    ranked: Deal[],
+    sponsorMap: Record<string, Sponsor>,
+    everyN: number = SPONSOR_EVERY_N
+): DisplayDeal[] => {
+    // Partition: ad-eligible deals (active sponsor + on-target) vs the rest.
+    const normal: Deal[] = [];
+    const adsByStore = new Map<string, Deal[]>();
+    for (const d of ranked) {
+        const s = sponsorMap[d.storeId];
+        if (s && isSponsorActive(s) && dealMatchesSponsorTarget(d, s)) {
+            if (!adsByStore.has(d.storeId)) adsByStore.set(d.storeId, []);
+            adsByStore.get(d.storeId)!.push(d);
+        } else {
+            normal.push(d);
+        }
+    }
+
+    if (adsByStore.size === 0) {
+        return normal.map(deal => ({ deal, sponsored: false }));
+    }
+
+    // Rotation order: sponsor stores by priority desc (longer/bigger sponsors
+    // first), then stable by storeId. Each store keeps its own queue; we take
+    // one deal from a store per visit and cycle. Exhausted stores drop out;
+    // when all are drained the rotation naturally ends.
+    const storeOrder = Array.from(adsByStore.keys()).sort((a, b) => {
+        const pa = sponsorMap[a]?.priority ?? 0;
+        const pb = sponsorMap[b]?.priority ?? 0;
+        if (pb !== pa) return pb - pa;
+        return a < b ? -1 : a > b ? 1 : 0;
+    });
+
+    const out: DisplayDeal[] = [];
+    let ni = 0;       // normal index
+    let rot = 0;      // rotation cursor across storeOrder
+    const remainingAds = () => storeOrder.some(id => (adsByStore.get(id)?.length ?? 0) > 0);
+    const nextAd = (): Deal | null => {
+        // Walk the rotation up to one full cycle to find a store with stock.
+        for (let tries = 0; tries < storeOrder.length; tries++) {
+            const id = storeOrder[rot % storeOrder.length];
+            rot++;
+            const q = adsByStore.get(id);
+            if (q && q.length > 0) return q.shift()!;
+        }
+        return null;
+    };
+
+    while (ni < normal.length || remainingAds()) {
+        for (let i = 0; i < everyN && ni < normal.length; i++) {
+            out.push({ deal: normal[ni++], sponsored: false });
+        }
+        // One sponsor ad per slot (rotated). Only inject if some normal deals
+        // were shown OR there are no normal deals left (so ads still surface).
+        if (remainingAds()) {
+            const ad = nextAd();
+            if (ad) out.push({ deal: ad, sponsored: true });
+        }
+    }
+    return out;
+};
+
+// =========================================================================
 // Coming Soon (v11.20) — A scheduled deal lives in three phases:
 //   1. Hidden       — startsAt > now + 7 days   (only merchant sees it)
 //   2. Coming Soon  — now < startsAt ≤ now + 7d  (shown on Home, locked)

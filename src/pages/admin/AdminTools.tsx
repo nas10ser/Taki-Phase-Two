@@ -15,6 +15,7 @@ import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
 import { Tooltip } from '../../components/admin/Tooltip';
+import { applySwUpdate } from '../../sw-cleanup';
 
 // ============================================================
 // Setting Toggle Card
@@ -150,15 +151,29 @@ const BannerModal: React.FC<{
     };
 
     const handleSave = async () => {
+        if (saving) return;
         if (!form.image_url.trim()) {
             await customAlert('⚠️ يرجى رفع صورة أو لصق رابط');
             return;
         }
         setSaving(true);
-        const { error } = await supabase.from('banners').insert([form]);
-        setSaving(false);
-        if (error) {
-            await customAlert('❌ ' + error.message);
+        // try/finally + a 12s safety timeout so the button can never stick on
+        // "جاري النشر..." if the network stalls (v11.23).
+        let err: any = null;
+        try {
+            const insert = supabase.from('banners').insert([form]);
+            const timeout = new Promise<{ error: any }>(resolve =>
+                setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
+            );
+            const { error } = await Promise.race([insert as any, timeout]);
+            err = error;
+        } catch (e: any) {
+            err = { message: e?.message || 'فشل النشر — تحقق من الاتصال' };
+        } finally {
+            setSaving(false);
+        }
+        if (err) {
+            await customAlert('❌ ' + (err.message || 'فشل النشر'));
             return;
         }
         await customAlert('✅ تم نشر البانر بنجاح');
@@ -924,11 +939,26 @@ const AdminTools: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in" dir="rtl">
-            <div>
-                <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🛠️ أدوات الإدارة</h1>
-                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                    إعدادات المنصة، البانرات، الحملات الترويجية
-                </p>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🛠️ أدوات الإدارة</h1>
+                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
+                        إعدادات المنصة، البانرات، الحملات الترويجية
+                    </p>
+                </div>
+                {/* Force-update escape hatch (v11.23): if the device is stuck on an
+                    old cached build (iOS Safari pins the SW), this purges every
+                    cache and hard-reloads to the latest deploy in one tap. */}
+                <button
+                    type="button"
+                    onClick={async () => {
+                        const ok = await customConfirm('سيتم تحديث التطبيق لأحدث نسخة وإعادة التحميل. متابعة؟');
+                        if (ok) await applySwUpdate();
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center gap-2"
+                >
+                    🔄 تحديث التطبيق للأحدث
+                </button>
             </div>
 
             {/* Settings */}
