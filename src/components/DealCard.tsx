@@ -99,28 +99,34 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
         >
             {isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '' && (
                 <div style={{
+                    // v11.27 — the badge sits INSIDE the card's top edge. The old
+                    // `top:-12` placed it above the card, but `.deal-card` has
+                    // overflow:hidden so it was clipped (Nasser's screenshot:
+                    // half-cut gold strip). Now it's a full-width gold ribbon
+                    // pinned to the top of the image — impossible to clip, always
+                    // sharp and readable.
                     position: 'absolute',
-                    top: -12,
-                    [isRTL ? 'right' : 'left']: 12,
-                    // Solid gold gradient + white outline + strong shadow so the
-                    // word is sharp and legible over any thumbnail (v11.25 — the
-                    // old badge was too faint).
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%)',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%)',
                     color: '#fff',
-                    padding: '4px 16px',
-                    borderRadius: '999px',
-                    fontSize: '0.8rem',
+                    padding: '6px 10px',
+                    fontSize: '0.82rem',
                     fontWeight: 900,
                     zIndex: 10,
-                    boxShadow: '0 4px 12px rgba(180,83,9,0.55), 0 0 0 1.5px #fff',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.35)',
+                    boxShadow: '0 2px 8px rgba(180,83,9,0.5)',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.4)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px',
-                    letterSpacing: '0.3px',
-                    whiteSpace: 'nowrap'
+                    justifyContent: 'center',
+                    gap: '6px',
+                    letterSpacing: '0.5px',
+                    whiteSpace: 'nowrap',
+                    borderTopLeftRadius: 21,
+                    borderTopRightRadius: 21
                 }}>
-                    <span style={{ fontSize: '0.85rem' }}>⭐</span>
+                    <span style={{ fontSize: '0.9rem' }}>⭐</span>
                     {sponsorLabelText(sponsorLabel, isRTL)}
                 </div>
             )}
@@ -179,8 +185,12 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
                     style={{
                         position: 'absolute',
-                        top: 8,
+                        // When the gold sponsor ribbon is shown it occupies the
+                        // top strip — drop the heart below it so neither is
+                        // covered (v11.27).
+                        top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 8,
                         [isRTL ? 'left' : 'right']: 8,
+                        zIndex: 11,
                         background: 'rgba(255, 255, 255, 0.95)',
                         backdropFilter: 'blur(8px)',
                         border: 'none',
@@ -250,7 +260,8 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                 {loc && (
                     <div style={{
                         position: 'absolute',
-                        top: 10,
+                        // Drop below the gold ribbon when sponsored (v11.27).
+                        top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 10,
                         [isRTL ? 'right' : 'left']: 10,
                         background: 'rgba(0,0,0,0.45)',
                         color: 'white',
