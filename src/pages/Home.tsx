@@ -254,10 +254,10 @@ const Home: React.FC = () => {
                 </div>
             </div>
 
-            {/* Banner Slider Section — full-bleed (edge-to-edge): break out of
-                page-content so it spans the whole viewport width. */}
+            {/* Banner Slider Section — inset card with side margins (NOT
+                full-bleed): trimmed from both edges to match the rest of the page. */}
             {banners.length > 0 && (
-                <div style={{ marginTop: 16, marginBottom: 16, width: '100vw', marginLeft: 'calc(50% - 50vw)' }}>
+                <div style={{ margin: '16px 16px 8px' }}>
                     <BannerSlider banners={banners} isRTL={isRTL} />
                 </div>
             )}
