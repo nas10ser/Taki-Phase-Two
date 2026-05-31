@@ -108,26 +108,30 @@ const ToggleSwitch: React.FC<{
 // Banner Modal
 // ============================================================
 const BannerModal: React.FC<{
+    initial?: any | null;
     onClose: () => void;
     onSaved: () => void;
-}> = ({ onClose, onSaved }) => {
+}> = ({ initial, onClose, onSaved }) => {
     const { customAlert, language, deals } = useApp();
     const isRTL = language === 'ar';
+    const isEdit = Boolean(initial?.id);
     const [form, setForm] = useState({
-        title_ar: '',
-        title_en: '',
-        image_url: '',
-        target_url: '',
-        deal_id: '',
-        store_id: '',
-        position: 'home_top',
-        is_active: true,
+        title_ar: initial?.title_ar || '',
+        title_en: initial?.title_en || '',
+        image_url: initial?.image_url || '',
+        target_url: initial?.target_url || '',
+        deal_id: initial?.deal_id || '',
+        store_id: initial?.store_id || '',
+        position: initial?.position || 'home_top',
+        is_active: initial?.is_active ?? true,
     });
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [editorSrc, setEditorSrc] = useState<string | null>(null);
     const [storeQuery, setStoreQuery] = useState('');
-    const [selectedStoreName, setSelectedStoreName] = useState('');
+    const [selectedStoreName, setSelectedStoreName] = useState(
+        initial?.store_id ? (deals.find(d => d.storeId === initial.store_id)?.shopName || '') : ''
+    );
     const fileInputRef = useRef<HTMLInputElement>(null);
     // Blob URL backing the "adjust existing image" flow — revoked on close.
     const objectUrlRef = useRef<string | null>(null);
@@ -251,11 +255,14 @@ const BannerModal: React.FC<{
                 position: form.position,
                 is_active: form.is_active,
             };
-            const insert = supabase.from('banners').insert([row]);
+            // Edit updates the same row in place; otherwise insert a new banner.
+            const writeQuery = isEdit
+                ? supabase.from('banners').update(row).eq('id', initial.id)
+                : supabase.from('banners').insert([row]);
             const timeout = new Promise<{ error: any }>(resolve =>
                 setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
             );
-            const { error } = await Promise.race([insert as any, timeout]);
+            const { error } = await Promise.race([writeQuery as any, timeout]);
             err = error;
         } catch (e: any) {
             err = { message: e?.message || 'فشل النشر — تحقق من الاتصال' };
@@ -272,7 +279,7 @@ const BannerModal: React.FC<{
             await customAlert('❌ ' + friendly);
             return;
         }
-        await customAlert('✅ تم نشر البانر بنجاح');
+        await customAlert(isEdit ? '✅ تم حفظ تعديلات البانر' : '✅ تم نشر البانر بنجاح');
         onSaved();
         onClose();
     };
@@ -281,7 +288,7 @@ const BannerModal: React.FC<{
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
             <div className="bg-[var(--card-bg)] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
                 <div className="sticky top-0 bg-gradient-to-r from-orange-500 to-red-600 text-white p-5 rounded-t-3xl flex items-center justify-between">
-                    <div className="text-xl font-bold">🖼️ بانر إعلاني جديد</div>
+                    <div className="text-xl font-bold">{isEdit ? '✏️ تعديل البانر' : '🖼️ بانر إعلاني جديد'}</div>
                     <button
                         onClick={onClose}
                         className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"
@@ -488,7 +495,7 @@ const BannerModal: React.FC<{
                         disabled={saving}
                         className="flex-[2] py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold rounded-xl disabled:opacity-50"
                     >
-                        {saving ? 'جاري النشر...' : '🚀 نشر البانر'}
+                        {saving ? (isEdit ? 'جاري الحفظ...' : 'جاري النشر...') : (isEdit ? '💾 حفظ التعديلات' : '🚀 نشر البانر')}
                     </button>
                 </div>
             </div>
@@ -983,6 +990,7 @@ const AdminTools: React.FC = () => {
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
+    const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = new banner
     const [campaignModal, setCampaignModal] = useState<{ open: boolean; initial: any | null }>({ open: false, initial: null });
     const [loading, setLoading] = useState(true);
 
@@ -1019,6 +1027,7 @@ const AdminTools: React.FC = () => {
             if (!intent) return;
             sessionStorage.removeItem('taki:admin:quick_action');
             if (intent === 'new-banner') {
+                setBannerEdit(null);
                 setBannerModalOpen(true);
             } else if (intent === 'new-campaign') {
                 setCampaignModal({ open: true, initial: null });
@@ -1206,7 +1215,7 @@ const AdminTools: React.FC = () => {
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">🖼️ البانرات الإعلانية</h2>
                     <button
-                        onClick={() => setBannerModalOpen(true)}
+                        onClick={() => { setBannerEdit(null); setBannerModalOpen(true); }}
                         className="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all"
                     >
                         ➕ بانر جديد
@@ -1295,6 +1304,15 @@ const AdminTools: React.FC = () => {
                                                 className="w-7 h-7 text-sm font-bold bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)] rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
                                             >
                                                 ↓
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip text="تعديل البانر">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setBannerEdit(b); setBannerModalOpen(true); }}
+                                                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200 active:scale-90"
+                                            >
+                                                ✏️
                                             </button>
                                         </Tooltip>
                                         <Tooltip text="حذف نهائي">
@@ -1391,7 +1409,11 @@ const AdminTools: React.FC = () => {
             </section>
 
             {bannerModalOpen && (
-                <BannerModal onClose={() => setBannerModalOpen(false)} onSaved={fetchAll} />
+                <BannerModal
+                    initial={bannerEdit}
+                    onClose={() => { setBannerModalOpen(false); setBannerEdit(null); }}
+                    onSaved={fetchAll}
+                />
             )}
             {campaignModal.open && (
                 <CampaignModal

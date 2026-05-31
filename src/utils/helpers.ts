@@ -63,7 +63,7 @@ export const dealMatchesLocation = (
 // =========================================================================
 export const SPONSOR_EVERY_N = 5; // one sponsor ad after every 5 normal deals
 
-export type SponsorLabel = 'ad' | 'sponsor' | 'none';
+export type SponsorLabel = 'ad' | 'sponsor' | 'none' | 'star';
 
 export interface Sponsor {
     storeId: string;
@@ -83,7 +83,9 @@ export interface Sponsor {
 /** The Arabic/English label text for a sponsor card. '' = no text (frame only). */
 export const sponsorLabelText = (label: SponsorLabel | undefined, isRTL: boolean): string => {
     const l = label || 'ad';
-    if (l === 'none') return '';
+    // 'none' = gold frame only; 'star' = gold frame + a corner ⭐ badge
+    // (rendered separately in DealCard) — neither shows a full text ribbon.
+    if (l === 'none' || l === 'star') return '';
     if (l === 'sponsor') return isRTL ? 'راعٍ رسمي' : 'Official Sponsor';
     return isRTL ? 'إعلان' : 'Ad';
 };

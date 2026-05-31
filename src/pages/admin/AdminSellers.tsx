@@ -126,7 +126,7 @@ const SubscriptionModal = memo<{
 
     // ── v11.23 Sponsor (راعٍ رسمي) state ──────────────────────────────
     const [sponsorOn, setSponsorOn] = useState(false);
-    const [spLabel, setSpLabel] = useState<'ad' | 'sponsor' | 'none'>('ad'); // v11.25 badge text
+    const [spLabel, setSpLabel] = useState<'ad' | 'sponsor' | 'none' | 'star'>('ad'); // v11.25 badge text
     const [spCategory, setSpCategory] = useState('');   // '' = كل التصنيفات
     const [spRegion, setSpRegion] = useState('');        // '' = كل المناطق
     const [spCity, setSpCity] = useState('');            // '' = كل المدن
@@ -595,11 +595,12 @@ const SubscriptionModal = memo<{
                                 {/* v11.25 — badge text on the gold frame */}
                                 <div>
                                     <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">النص على الإطار الذهبي</label>
-                                    <div className="grid grid-cols-3 gap-2">
+                                    <div className="grid grid-cols-2 gap-2">
                                         {([
                                             { v: 'ad', label: '📢 إعلان' },
                                             { v: 'sponsor', label: '⭐ راعٍ رسمي' },
                                             { v: 'none', label: '⬜ بدون (إطار فقط)' },
+                                            { v: 'star', label: '✨ نجمة بالزاوية' },
                                         ] as const).map(o => (
                                             <button
                                                 key={o.v}
@@ -616,7 +617,7 @@ const SubscriptionModal = memo<{
                                         ))}
                                     </div>
                                     <div className="text-[10px] text-[var(--text-secondary)] mt-1">
-                                        💡 «راعٍ رسمي» يظهر دائماً قبل «إعلان» في كل الصفحات. «بدون» = إطار ذهبي بلا كلمة.
+                                        💡 «راعٍ رسمي» يظهر دائماً قبل «إعلان» في كل الصفحات. «بدون» = إطار ذهبي بلا كلمة. «نجمة بالزاوية» = إطار ذهبي + ⭐ صغيرة في الزاوية العلوية بدون شريط نص.
                                     </div>
                                 </div>
                                 {/* Targeting */}

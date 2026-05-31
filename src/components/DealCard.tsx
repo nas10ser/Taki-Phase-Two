@@ -212,6 +212,25 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                 >
                     {isFollowed ? '❤️' : '🤍'}
                 </button>
+                {/* 'star' sponsor label: a small ⭐ at the gold frame's leading-top
+                    corner (NOT a full ribbon) — sits opposite the heart. v11.34 */}
+                {isSponsored && sponsorLabel === 'star' && (
+                    <div
+                        aria-hidden="true"
+                        style={{
+                            position: 'absolute',
+                            top: 8,
+                            [isRTL ? 'right' : 'left']: 8,
+                            zIndex: 11,
+                            width: 30, height: 30, borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #fde68a 0%, #f59e0b 55%, #b45309 100%)',
+                            border: '1.5px solid rgba(255,255,255,0.85)',
+                            boxShadow: '0 2px 8px rgba(180,83,9,0.55)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '0.9rem',
+                        }}
+                    >⭐</div>
+                )}
                 <div style={{
                     position: 'absolute',
                     bottom: 10,
@@ -260,8 +279,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                 {loc && (
                     <div style={{
                         position: 'absolute',
-                        // Drop below the gold ribbon when sponsored (v11.27).
-                        top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 10,
+                        // Drop below the gold ribbon when sponsored (v11.27), or
+                        // below the corner star badge when the label is 'star' (v11.34).
+                        top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42
+                            : (isSponsored && sponsorLabel === 'star') ? 44
+                            : 10,
                         [isRTL ? 'right' : 'left']: 10,
                         background: 'rgba(0,0,0,0.45)',
                         color: 'white',

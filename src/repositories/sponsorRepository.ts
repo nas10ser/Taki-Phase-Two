@@ -85,7 +85,7 @@ export const sponsorRepository = {
         startsAt?: string | null;
         expiresAt?: string | null;
         notes?: string | null;
-        labelType?: 'ad' | 'sponsor' | 'none';
+        labelType?: 'ad' | 'sponsor' | 'none' | 'star';
     }): Promise<{ success: boolean; error?: string }> => {
         const { data, error } = await supabase.rpc('admin_set_sponsor', {
             p_store_id: p.storeId,
