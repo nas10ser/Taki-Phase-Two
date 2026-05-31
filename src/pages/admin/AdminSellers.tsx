@@ -126,6 +126,7 @@ const SubscriptionModal = memo<{
 
     // ── v11.23 Sponsor (راعٍ رسمي) state ──────────────────────────────
     const [sponsorOn, setSponsorOn] = useState(false);
+    const [spLabel, setSpLabel] = useState<'ad' | 'sponsor' | 'none'>('ad'); // v11.25 badge text
     const [spCategory, setSpCategory] = useState('');   // '' = كل التصنيفات
     const [spRegion, setSpRegion] = useState('');        // '' = كل المناطق
     const [spCity, setSpCity] = useState('');            // '' = كل المدن
@@ -146,6 +147,7 @@ const SubscriptionModal = memo<{
                 setSpRegion(mine.targetRegion || '');
                 setSpCity(mine.targetCity || '');
                 setSpRadius(mine.targetRadiusKm != null ? String(mine.targetRadiusKm) : '');
+                setSpLabel((mine.labelType as any) || 'ad');
                 setSpPriority(mine.priority || 0);
                 if (mine.expiresAt) {
                     const d = new Date(mine.expiresAt);
@@ -176,6 +178,7 @@ const SubscriptionModal = memo<{
                     targetRadiusKm: spRadius ? Number(spRadius) || null : null,
                     priority: Number(spPriority) || 0,
                     expiresAt: spExpires ? new Date(spExpires).toISOString() : null,
+                    labelType: spLabel,
                 });
             } else {
                 res = await sponsorRepository.remove(seller.id);
@@ -574,6 +577,33 @@ const SubscriptionModal = memo<{
 
                         {sponsorOn && (
                             <div className="space-y-3">
+                                {/* v11.25 — badge text on the gold frame */}
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">النص على الإطار الذهبي</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {([
+                                            { v: 'ad', label: '📢 إعلان' },
+                                            { v: 'sponsor', label: '⭐ راعٍ رسمي' },
+                                            { v: 'none', label: '⬜ بدون (إطار فقط)' },
+                                        ] as const).map(o => (
+                                            <button
+                                                key={o.v}
+                                                type="button"
+                                                onClick={() => setSpLabel(o.v)}
+                                                className={`px-2 py-2 rounded-xl text-xs font-bold border transition-all ${
+                                                    spLabel === o.v
+                                                        ? 'border-amber-500 bg-amber-500/15 text-amber-800'
+                                                        : 'border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-secondary)]'
+                                                }`}
+                                            >
+                                                {o.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="text-[10px] text-[var(--text-secondary)] mt-1">
+                                        💡 «راعٍ رسمي» يظهر دائماً قبل «إعلان» في كل الصفحات. «بدون» = إطار ذهبي بلا كلمة.
+                                    </div>
+                                </div>
                                 {/* Targeting */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>

@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Deal, getLocation } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
+import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel } from '../utils/helpers';
 
 interface Props {
     deal: Deal;
     onClick: (id: string) => void;
     isSponsored?: boolean;
+    sponsorLabel?: SponsorLabel;   // 'ad' | 'sponsor' | 'none' — controls the badge text
 }
 
 const GENDER_EMOJI: { [key: string]: string } = {
@@ -38,7 +39,7 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
     return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, expired: false };
 };
 
-const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
+const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
     const { toggleFollowMerchant, followedMerchants, language } = useApp();
     const { average, count } = dealService.calculateRating(deal.ratings);
     const loc = getLocation(deal.locationId);
@@ -96,27 +97,31 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored }) => {
                 boxShadow: '0 6px 22px rgba(245,158,11,0.35)'
             } : { position: 'relative' }}
         >
-            {isSponsored && (
+            {isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '' && (
                 <div style={{
                     position: 'absolute',
-                    top: -11,
-                    [isRTL ? 'right' : 'left']: 14,
-                    background: 'linear-gradient(135deg, #fbbf24, #d97706)',
+                    top: -12,
+                    [isRTL ? 'right' : 'left']: 12,
+                    // Solid gold gradient + white outline + strong shadow so the
+                    // word is sharp and legible over any thumbnail (v11.25 — the
+                    // old badge was too faint).
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%)',
                     color: '#fff',
-                    padding: '3px 14px',
+                    padding: '4px 16px',
                     borderRadius: '999px',
-                    fontSize: '0.7rem',
+                    fontSize: '0.8rem',
                     fontWeight: 900,
                     zIndex: 10,
-                    boxShadow: '0 3px 8px rgba(180,83,9,0.45)',
-                    border: '1px solid rgba(255,255,255,0.55)',
+                    boxShadow: '0 4px 12px rgba(180,83,9,0.55), 0 0 0 1.5px #fff',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.35)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px',
-                    letterSpacing: '0.5px'
+                    gap: '5px',
+                    letterSpacing: '0.3px',
+                    whiteSpace: 'nowrap'
                 }}>
-                    <span>⭐</span>
-                    {isRTL ? 'إعلان' : 'Ad'}
+                    <span style={{ fontSize: '0.85rem' }}>⭐</span>
+                    {sponsorLabelText(sponsorLabel, isRTL)}
                 </div>
             )}
             <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>

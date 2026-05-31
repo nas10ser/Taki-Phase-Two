@@ -6,7 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored } from '../utils/helpers';
+import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal } from '../utils/helpers';
 import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
@@ -104,8 +104,10 @@ const Home: React.FC = () => {
             }
             return (b.reliabilityScore || 0) - (a.reliabilityScore || 0);
         });
-        return list.slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
+        // v11.25 — sponsors lead this carousel too (gold first, then every 5),
+        // then cap at 8 cards so the section stays a tidy horizontal strip.
+        return interleaveSponsored(list, sponsors).slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors]);
 
     const bestDiscounts = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
@@ -117,8 +119,8 @@ const Home: React.FC = () => {
             }
             return b.discountPercentage - a.discountPercentage;
         });
-        return list.slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
+        return interleaveSponsored(list, sponsors).slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors]);
 
     // v11.20 — Coming Soon carousel. Same look as trending/discount, but
     // ONLY deals whose startsAt is in the future AND inside the 7-day
@@ -167,7 +169,7 @@ const Home: React.FC = () => {
                 .filter(x => x.score > 0)
                 .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0));
             // While searching, no sponsored interleave — relevance wins.
-            return scored.map(x => ({ deal: x.d, sponsored: false }));
+            return scored.map(x => ({ deal: x.d, sponsored: false })) as DisplayDeal[];
         }
 
         const metricCmp = (a: Deal, b: Deal) => {
@@ -325,14 +327,11 @@ const Home: React.FC = () => {
                     </button>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
-                    {trendingDeals.map(deal => {
-                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                        return (
-                            <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
-                                <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
-                            </div>
-                        );
-                    })}
+                    {trendingDeals.map(({ deal, sponsored, sponsorLabel }) => (
+                        <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                            <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} sponsorLabel={sponsorLabel} />
+                        </div>
+                    ))}
                 </div>
             </div>
 
@@ -348,14 +347,11 @@ const Home: React.FC = () => {
                     </button>
                 </div>
                 <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
-                    {bestDiscounts.map(deal => {
-                        const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                        return (
-                            <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
-                                <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
-                            </div>
-                        );
-                    })}
+                    {bestDiscounts.map(({ deal, sponsored, sponsorLabel }) => (
+                        <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                            <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} sponsorLabel={sponsorLabel} />
+                        </div>
+                    ))}
                 </div>
             </div>
 
@@ -407,8 +403,8 @@ const Home: React.FC = () => {
             {/* Deals Grid */}
             <div className="taki-deals-grid" style={{ padding: '0 16px 20px', display: 'grid', gap: 10 }}>
                 {filteredDeals.length > 0 ? (
-                    filteredDeals.map(({ deal, sponsored }) => (
-                        <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} />
+                    filteredDeals.map(({ deal, sponsored, sponsorLabel }) => (
+                        <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} sponsorLabel={sponsorLabel} />
                     ))
                 ) : loading ? (
                     // Skeleton placeholders while initial fetch is in flight.

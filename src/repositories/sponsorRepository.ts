@@ -19,6 +19,7 @@ const mapRow = (r: any): Sponsor => ({
     targetLng: r.target_lng ?? null,
     targetRadiusKm: r.target_radius_km ?? null,
     priority: r.priority ?? 0,
+    labelType: (r.label_type ?? 'ad'),
     startsAt: r.starts_at ?? null,
     expiresAt: r.expires_at ?? null,
 });
@@ -83,6 +84,7 @@ export const sponsorRepository = {
         priority?: number;
         expiresAt?: string | null;
         notes?: string | null;
+        labelType?: 'ad' | 'sponsor' | 'none';
     }): Promise<{ success: boolean; error?: string }> => {
         const { data, error } = await supabase.rpc('admin_set_sponsor', {
             p_store_id: p.storeId,
@@ -96,6 +98,7 @@ export const sponsorRepository = {
             p_priority: p.priority ?? 0,
             p_expires_at: p.expiresAt ?? null,
             p_notes: p.notes ?? null,
+            p_label_type: p.labelType ?? 'ad',
         });
         if (error) {
             console.error('[sponsorRepository.set]', error);

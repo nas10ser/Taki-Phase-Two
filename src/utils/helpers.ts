@@ -63,6 +63,8 @@ export const dealMatchesLocation = (
 // =========================================================================
 export const SPONSOR_EVERY_N = 5; // one sponsor ad after every 5 normal deals
 
+export type SponsorLabel = 'ad' | 'sponsor' | 'none';
+
 export interface Sponsor {
     storeId: string;
     isActive: boolean;
@@ -73,9 +75,18 @@ export interface Sponsor {
     targetLng?: number | null;
     targetRadiusKm?: number | null;
     priority: number;
+    labelType?: SponsorLabel;   // 'ad' = إعلان, 'sponsor' = راعٍ رسمي, 'none' = frame only
     startsAt?: string | null;
     expiresAt?: string | null;
 }
+
+/** The Arabic/English label text for a sponsor card. '' = no text (frame only). */
+export const sponsorLabelText = (label: SponsorLabel | undefined, isRTL: boolean): string => {
+    const l = label || 'ad';
+    if (l === 'none') return '';
+    if (l === 'sponsor') return isRTL ? 'راعٍ رسمي' : 'Official Sponsor';
+    return isRTL ? 'إعلان' : 'Ad';
+};
 
 /** True if the sponsorship is live right now (active + not expired). */
 export const isSponsorActive = (s: Sponsor | undefined | null): boolean => {
@@ -119,7 +130,11 @@ export const dealMatchesSponsorTarget = (deal: Deal, s: Sponsor): boolean => {
  *
  * Returns items tagged so the renderer knows which to gold-frame.
  */
-export interface DisplayDeal { deal: Deal; sponsored: boolean; }
+export interface DisplayDeal { deal: Deal; sponsored: boolean; sponsorLabel?: SponsorLabel; }
+
+/** Rank value for a sponsor's label type — 'sponsor' (راعٍ رسمي) always
+ *  outranks 'ad' (إعلان) so an official sponsor appears before a plain ad. */
+const labelRank = (label: SponsorLabel | undefined): number => (label === 'sponsor' ? 2 : 1);
 
 export const interleaveSponsored = (
     ranked: Deal[],
@@ -143,11 +158,14 @@ export const interleaveSponsored = (
         return normal.map(deal => ({ deal, sponsored: false }));
     }
 
-    // Rotation order: sponsor stores by priority desc (longer/bigger sponsors
-    // first), then stable by storeId. Each store keeps its own queue; we take
-    // one deal from a store per visit and cycle. Exhausted stores drop out;
-    // when all are drained the rotation naturally ends.
+    // Rotation order: official sponsors (label 'sponsor') ALWAYS before plain
+    // ads ('ad'); within the same tier, higher priority first, then stable by
+    // storeId. Each store keeps its own queue; we take one deal per visit and
+    // cycle. This is what makes "راعٍ رسمي" lead the page over an "إعلان".
     const storeOrder = Array.from(adsByStore.keys()).sort((a, b) => {
+        const la = labelRank(sponsorMap[a]?.labelType);
+        const lb = labelRank(sponsorMap[b]?.labelType);
+        if (lb !== la) return lb - la;
         const pa = sponsorMap[a]?.priority ?? 0;
         const pb = sponsorMap[b]?.priority ?? 0;
         if (pb !== pa) return pb - pa;
@@ -158,26 +176,32 @@ export const interleaveSponsored = (
     let ni = 0;       // normal index
     let rot = 0;      // rotation cursor across storeOrder
     const remainingAds = () => storeOrder.some(id => (adsByStore.get(id)?.length ?? 0) > 0);
-    const nextAd = (): Deal | null => {
+    const nextAd = (): DisplayDeal | null => {
         // Walk the rotation up to one full cycle to find a store with stock.
         for (let tries = 0; tries < storeOrder.length; tries++) {
             const id = storeOrder[rot % storeOrder.length];
             rot++;
             const q = adsByStore.get(id);
-            if (q && q.length > 0) return q.shift()!;
+            if (q && q.length > 0) {
+                return { deal: q.shift()!, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' };
+            }
         }
         return null;
     };
+
+    // The FIRST sponsored card leads the page (before any normal deal), then
+    // one sponsored card after every `everyN` normal deals. With few/no normal
+    // deals the ads still surface (the leading one + the rest trail).
+    const lead = nextAd();
+    if (lead) out.push(lead);
 
     while (ni < normal.length || remainingAds()) {
         for (let i = 0; i < everyN && ni < normal.length; i++) {
             out.push({ deal: normal[ni++], sponsored: false });
         }
-        // One sponsor ad per slot (rotated). Only inject if some normal deals
-        // were shown OR there are no normal deals left (so ads still surface).
         if (remainingAds()) {
             const ad = nextAd();
-            if (ad) out.push({ deal: ad, sponsored: true });
+            if (ad) out.push(ad);
         }
     }
     return out;
