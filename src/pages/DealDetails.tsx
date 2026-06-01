@@ -118,6 +118,9 @@ const ImageZoomViewer: React.FC<{
     const [scale, setScale] = useState(1);
     const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
     const [imgError, setImgError] = useState(false);
+    const [imgLoading, setImgLoading] = useState(true);
+    // Clamp so a shrunk images[] can never render an out-of-range "4 / 3".
+    const idx = Math.min(Math.max(index, 0), Math.max(0, images.length - 1));
     const lastTouchDist = React.useRef<number | null>(null);
     const lastTouchPos = React.useRef<{ x: number; y: number } | null>(null);
     // ===== Modern swipe-to-navigate (Instagram-style) =====
@@ -148,7 +151,13 @@ const ImageZoomViewer: React.FC<{
     }, [images.length, onClose]);
 
     const reset = () => { setScale(1); setOffset({ x: 0, y: 0 }); };
-    React.useEffect(() => { reset(); setImgError(false); }, [index]);
+    React.useEffect(() => { reset(); setImgError(false); setImgLoading(true); }, [index]);
+    // Warm the browser cache for EVERY image the moment the viewer opens, so
+    // navigating between them is instant instead of a multi-second black gap
+    // (each <img> remount otherwise refetches the full-res photo). v11.35
+    React.useEffect(() => {
+        images.forEach((src) => { try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch {} });
+    }, [images]);
 
     const onWheel = (e: React.WheelEvent) => {
         e.preventDefault();
@@ -244,14 +253,16 @@ const ImageZoomViewer: React.FC<{
             style={{
                 position: 'fixed', inset: 0,
                 zIndex: 99999,
-                background: 'rgba(0,0,0,0.94)',
-                WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)',
+                // No fullscreen backdrop-filter: at 0.97 black the blur is
+                // invisible anyway, and on iOS it re-rasterised every swipe
+                // frame — a major cause of the laggy navigation. v11.35
+                background: 'rgba(0,0,0,0.97)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 animation: 'taki-zoom-fade .2s ease-out',
                 overflow: 'hidden'
             }}
         >
-            <style>{`@keyframes taki-zoom-fade{from{opacity:0}to{opacity:1}}`}</style>
+            <style>{`@keyframes taki-zoom-fade{from{opacity:0}to{opacity:1}}@keyframes taki-spin{to{transform:rotate(360deg)}}`}</style>
 
             <button
                 onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -275,7 +286,7 @@ const ImageZoomViewer: React.FC<{
                 background: 'rgba(80, 80, 95, 0.12)', padding: '8px 14px', borderRadius: 14,
                 backdropFilter: 'blur(8px)'
             } as React.CSSProperties}>
-                {index + 1} / {images.length}
+                {idx + 1} / {images.length}
             </div>
 
             {images.length > 1 && (
@@ -319,7 +330,7 @@ const ImageZoomViewer: React.FC<{
                         {isRTL ? 'تعذّر تحميل الصورة' : 'Failed to load image'}
                     </div>
                     <a
-                        href={images[index]}
+                        href={images[idx]}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -333,10 +344,11 @@ const ImageZoomViewer: React.FC<{
                 </div>
             ) : (
                 <img
-                    key={images[index]}
-                    src={images[index]}
+                    key={images[idx]}
+                    src={images[idx]}
                     alt=""
-                    onError={() => setImgError(true)}
+                    onError={() => { setImgError(true); setImgLoading(false); }}
+                    onLoad={() => setImgLoading(false)}
                     onClick={(e) => e.stopPropagation()}
                     onWheel={onWheel}
                     onTouchStart={onTouchStart}
@@ -366,6 +378,20 @@ const ImageZoomViewer: React.FC<{
                         userSelect: 'none', touchAction: 'none',
                         boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
                         background: 'rgba(80, 80, 90, 0.2)'
+                    }}
+                />
+            )}
+
+            {/* Loading spinner — so navigation never looks like a dead black
+                screen while the next photo decodes (v11.35). */}
+            {!imgError && imgLoading && (
+                <div
+                    onClick={(e) => e.stopPropagation()}
+                    aria-hidden="true"
+                    style={{
+                        position: 'absolute', width: 46, height: 46, borderRadius: '50%',
+                        border: '3px solid rgba(255,255,255,0.22)', borderTopColor: '#fff',
+                        animation: 'taki-spin 0.8s linear infinite', pointerEvents: 'none',
                     }}
                 />
             )}

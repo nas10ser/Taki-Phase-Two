@@ -17,10 +17,11 @@
 
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
+import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
-import { sponsorRepository } from '../../repositories/sponsorRepository';
+import { sponsorRepository, AdminSponsorRow } from '../../repositories/sponsorRepository';
 import { CATEGORIES, REGIONS, CITIES } from '../../data/mock';
 import { useEscClose } from '../../hooks/useEscClose';
 import { useLocalStringList } from '../../hooks/useLocalStringList';
@@ -1583,8 +1584,175 @@ BulkSubscriptionPanel.displayName = 'BulkSubscriptionPanel';
 // ============================================================
 type SellerSmartFilter = 'pinned' | 'expiring_7d' | 'expiring_30d' | 'no_plan' | 'high_discount';
 
+// ============================================================
+// Sponsors box — every sponsor/advertiser in ONE place, with its own search,
+// so the gold-frame accounts are instantly distinguishable among thousands of
+// ordinary sellers. Each row jumps straight to that store's subscription modal.
+// ============================================================
+const SPONSOR_LABEL_BADGE: Record<string, string> = {
+    ad: '📢 إعلان',
+    sponsor: '⭐ راعٍ رسمي',
+    none: '⬜ إطار فقط',
+    star: '✨ نجمة بالزاوية',
+};
+
+const SponsorsBox: React.FC<{
+    refreshKey: number;
+    onManage: (storeId: string, name: string) => void;
+}> = ({ refreshKey, onManage }) => {
+    const [rows, setRows] = useState<AdminSponsorRow[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [q, setQ] = useState('');
+    const [open, setOpen] = useState(true);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        sponsorRepository.listAll().then((r) => { if (alive) { setRows(r); setLoading(false); } });
+        return () => { alive = false; };
+    }, [refreshKey]);
+
+    const filtered = useMemo(() => {
+        const term = q.trim().toLowerCase();
+        if (!term) return rows;
+        return rows.filter((r) =>
+            (r.storeName || '').toLowerCase().includes(term) || (r.shop || '').toLowerCase().includes(term));
+    }, [rows, q]);
+
+    const activeCount = rows.filter((r) => r.isActive).length;
+
+    return (
+        <section className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl overflow-hidden">
+            <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
+                <span className="font-extrabold text-amber-900 flex items-center gap-2">
+                    🌟 الرعاة والمعلنون
+                    <span className="text-[11px] bg-amber-500 text-white rounded-full px-2 py-0.5">{activeCount} نشط</span>
+                </span>
+                <span className="text-amber-700 text-sm">{open ? '▲' : '▼'}</span>
+            </button>
+            {open && (
+                <div className="px-4 pb-4 space-y-2">
+                    <input
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="🔍 ابحث باسم المتجر الراعي..."
+                        className="w-full px-3 py-2.5 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:border-amber-500"
+                    />
+                    {loading ? (
+                        <div className="text-center text-sm text-amber-700 py-4">جاري التحميل...</div>
+                    ) : filtered.length === 0 ? (
+                        <div className="text-center text-sm text-amber-700/80 py-4">
+                            {rows.length === 0 ? 'لا يوجد رعاة بعد. فعّل راعياً من بطاقة أي تاجر بالأسفل.' : 'لا نتيجة مطابقة.'}
+                        </div>
+                    ) : (
+                        <div className="space-y-2 max-h-80 overflow-y-auto">
+                            {filtered.map((r) => (
+                                <div key={r.storeId} className="bg-white rounded-xl border border-amber-100 p-3 flex items-center gap-3">
+                                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${r.isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-sm text-[var(--text-primary)] truncate">{r.storeName || r.shop || r.storeId}</div>
+                                        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                                            <span>{SPONSOR_LABEL_BADGE[r.labelType || 'ad']}</span>
+                                            <span>•</span>
+                                            <span>{r.isActive ? 'نشط' : 'متوقف'}</span>
+                                            {r.expiresAt && (<><span>•</span><span>حتى {new Date(r.expiresAt).toLocaleDateString('ar-SA')}</span></>)}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => onManage(r.storeId, r.storeName || r.shop || '')}
+                                        className="px-3 py-1.5 text-xs font-bold bg-amber-500 text-white rounded-lg flex-shrink-0 active:scale-95"
+                                    >
+                                        ⚙️ إدارة
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+};
+
+// ============================================================
+// Admins box — lists every staff/admin account (super-admin only) so the owner
+// can instantly tell admin accounts apart from ordinary users. Permission
+// editing stays in the dedicated "👑 إدارة المسؤولين" tab.
+// ============================================================
+const AdminsBox: React.FC = () => {
+    const [rows, setRows] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [q, setQ] = useState('');
+    const [open, setOpen] = useState(false);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        supabase.rpc('admin_list_staff').then((res) => { if (alive) { setRows((res.data as any[]) || []); setLoading(false); } });
+        return () => { alive = false; };
+    }, []);
+
+    const filtered = useMemo(() => {
+        const term = q.trim().toLowerCase();
+        if (!term) return rows;
+        return rows.filter((r: any) =>
+            (r.name || '').toLowerCase().includes(term) ||
+            (r.phone || '').includes(term) ||
+            (r.email || '').toLowerCase().includes(term));
+    }, [rows, q]);
+
+    return (
+        <section className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 rounded-2xl overflow-hidden">
+            <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
+                <span className="font-extrabold text-indigo-900 flex items-center gap-2">
+                    🛡️ حسابات الأدمن
+                    <span className="text-[11px] bg-indigo-500 text-white rounded-full px-2 py-0.5">{rows.length}</span>
+                </span>
+                <span className="text-indigo-700 text-sm">{open ? '▲' : '▼'}</span>
+            </button>
+            {open && (
+                <div className="px-4 pb-4 space-y-2">
+                    <input
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="🔍 ابحث عن مسؤول..."
+                        className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:border-indigo-500"
+                    />
+                    {loading ? (
+                        <div className="text-center text-sm text-indigo-700 py-4">جاري التحميل...</div>
+                    ) : filtered.length === 0 ? (
+                        <div className="text-center text-sm text-indigo-700/80 py-4">لا نتيجة.</div>
+                    ) : (
+                        <div className="space-y-2 max-h-80 overflow-y-auto">
+                            {filtered.map((r: any) => (
+                                <div key={r.id} className="bg-white rounded-xl border border-indigo-100 p-3 flex items-center gap-3">
+                                    <span className="text-lg flex-shrink-0">{r.is_super_admin ? '👑' : '🛡️'}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-sm text-[var(--text-primary)] truncate">
+                                            {r.name || 'مسؤول'}
+                                            {r.is_super_admin && <span className="text-[10px] text-amber-600 font-extrabold mr-1">(المالك)</span>}
+                                        </div>
+                                        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 flex flex-wrap gap-x-2">
+                                            {r.phone && <span dir="ltr">{r.phone}</span>}
+                                            {r.phone && <span>•</span>}
+                                            <span>{r.is_super_admin ? 'كل الصلاحيات' : `${(r.admin_permissions || []).length} صلاحية`}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="text-[11px] text-indigo-700/80 pt-1">لإدارة الصلاحيات افتح تبويب «👑 إدارة المسؤولين».</div>
+                </div>
+            )}
+        </section>
+    );
+};
+
 const AdminSellers: React.FC = () => {
+    const { isSuperAdmin, customAlert } = useApp();
     const [query, setQuery] = useState('');
+    const [boxesRefresh, setBoxesRefresh] = useState(0);
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const [filter, setFilter] = useState<FilterTab>('all');
     const [smartFilter, setSmartFilter] = useState<SellerSmartFilter | null>(null);
@@ -1677,6 +1845,18 @@ const AdminSellers: React.FC = () => {
         return { premium, trial, free, mrr };
     }, [sellers]);
 
+    // Open a sponsor's subscription modal: reuse the loaded row if present,
+    // otherwise look it up by name so the modal works even for stores outside
+    // the current 200-row page.
+    const manageSponsor = useCallback(async (storeId: string, name: string) => {
+        const found = sellers.find((s) => s.id === storeId);
+        if (found) { setEditing(found); return; }
+        const rows = await adminService.searchUsers(name || '', 'seller', 20, 0);
+        const match = rows.find((r) => r.id === storeId) || (rows.length === 1 ? rows[0] : undefined);
+        if (match) setEditing(match);
+        else await customAlert('تعذّر فتح حساب هذا المتجر تلقائياً. ابحث عنه بالأسفل بالاسم.');
+    }, [sellers, customAlert]);
+
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
             {/* Header */}
@@ -1717,6 +1897,11 @@ const AdminSellers: React.FC = () => {
                     <div className="text-xs text-[var(--text-secondary)] mt-0.5">🆓 مجاني</div>
                 </div>
             </div>
+
+            {/* Dedicated boxes so sponsors & admins are distinguishable among
+                thousands of ordinary accounts (each with its own search). */}
+            <SponsorsBox refreshKey={boxesRefresh} onManage={manageSponsor} />
+            {isSuperAdmin && <AdminsBox />}
 
             {/* Platform-wide subscription mode — set the default amount + flip
                 the entire site to free / paid in one click. This is the
@@ -1834,8 +2019,8 @@ const AdminSellers: React.FC = () => {
             {editing && (
                 <SubscriptionModal
                     seller={editing}
-                    onClose={() => setEditing(null)}
-                    onSaved={fetchSellers}
+                    onClose={() => { setEditing(null); setBoxesRefresh((k) => k + 1); }}
+                    onSaved={() => { fetchSellers(); setBoxesRefresh((k) => k + 1); }}
                 />
             )}
         </div>
