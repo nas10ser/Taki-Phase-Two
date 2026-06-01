@@ -52,7 +52,7 @@ const howItWorksAR: QA[] = [
     },
     {
         q: 'كيف تَكسِب TAKI من المنصّة إذاً؟',
-        a: <p>المنصّة مجانية تماماً للمشتري. مصدر الدخل (حالياً أو مستقبلاً) قد يكون اشتراكات اختيارية للتجار مقابل خدمات نشر متقدّمة، أو شراكات مع علامات تجارية كبيرة. لن تُفرض رسوم خفية على المشتري إطلاقاً.</p>,
+        a: <p>المنصّة مجانية تماماً للمشتري. مصدر الدخل (حالياً أو مستقبلاً) قد يكون اشتراكات التجار مقابل خدمات النشر والظهور، أو شراكات مع علامات تجارية. لن تُفرض رسوم خفية على المشتري إطلاقاً.</p>,
     },
     {
         q: 'هل TAKI متوفّرة في كل مدن السعودية؟',
@@ -87,7 +87,7 @@ const howItWorksEN: QA[] = [
     },
     {
         q: 'So how does TAKI earn from the platform?',
-        a: <p>The platform is entirely free for buyers. The revenue source — now or in the future — may include optional merchant subscriptions in return for premium listing services, or partnerships with major brands. Hidden fees will never be imposed on buyers.</p>,
+        a: <p>The platform is entirely free for buyers. The revenue source — now or in the future — may include merchant subscriptions in return for listing and visibility services, or partnerships with brands. Hidden fees will never be imposed on buyers.</p>,
     },
     {
         q: 'Is TAKI available in every Saudi city?',
@@ -190,7 +190,7 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني حذف حسابي نهائياً؟',
-        a: <p>نعم. من القائمة الجانبية (☰) ← «حذف الحساب نهائياً». ستُحذَف بياناتك خلال مدّة قصيرة، مع احتفاظنا بالحدّ الأدنى الذي تقتضيه الالتزامات النظامية (سجلّات معاملات لمدّة 5 سنوات بحسب أنظمة المحاسبة السعودية).</p>,
+        a: <p>نعم. من القائمة الجانبية (☰) ← «حذف الحساب نهائياً». ستُحذَف بياناتك خلال مدّة قصيرة، مع احتفاظنا بالحدّ الأدنى الذي تقتضيه الالتزامات النظامية المعمول بها (مثل سجلّات المعاملات للمدّة التي تتطلّبها الأنظمة).</p>,
     },
 ];
 
@@ -274,7 +274,7 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'Can I permanently delete my account?',
-        a: <p>Yes. From the side menu (☰) → «Delete account permanently». Your data is deleted within a short period, save the minimum we are required by law to retain (transaction records for 5 years under Saudi accounting laws).</p>,
+        a: <p>Yes. From the side menu (☰) → «Delete account permanently». Your data is deleted within a short period, save the minimum we are required by applicable law to retain (such as transaction records for the period required by the regulations).</p>,
     },
 ];
 
@@ -293,7 +293,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <p>يَحصل كلّ تاجر جديد على <strong>تجربة مجانية لمدّة 14 يوماً</strong> يَستخدم خلالها كلّ ميزات لوحة التاجر دون أيّ دفع. بعد انتهاء التَجربة، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. يُعلَن السعر بوضوح قبل أيّ خصم، والنموذج المعتمَد: «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية المدّة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات، وفق الباقات والأسعار والشروط المُعلَنة وقت الاشتراك. النموذج العامّ: «ادفع للمدّة المختارة، ألغِ متى تشاء، واستفد حتى نهايتها» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
     },
     {
         q: 'كيف أُضيف عرضاً جديداً؟',
@@ -376,7 +376,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Is merchant registration paid?',
-        a: <p>Every new merchant gets a <strong>14-day free trial</strong> during which all merchant-dashboard features are available at no charge. Once the trial ends, a paid subscription is required to continue publishing and receiving bookings. Pricing is disclosed clearly before any charge, and the adopted model is: «Pay monthly, cancel anytime, use until end of paid month» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings, according to the plans, prices and terms published at the time of subscription. The general model is: «Pay for the chosen period, cancel anytime, and benefit until it ends» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
     {
         q: 'How do I add a new offer?',
@@ -455,7 +455,7 @@ const FAQ: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'الأسئلة الشائعة' : 'Frequently Asked Questions'}
             subtitle={isRTL ? 'Frequently Asked Questions · TAKI' : 'الأسئلة الشائعة · TAKI'}
-            lastUpdated="2026-05-21"
+            lastUpdated="2026-06-01"
             draftNotice={false}
         >
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">

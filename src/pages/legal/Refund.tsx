@@ -21,7 +21,7 @@ const Refund: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الاسترداد' : 'Refund Policy'}
             subtitle={isRTL ? 'Refund Policy · TAKI' : 'Refund Policy · TAKI'}
-            lastUpdated="2026-05-21"
+            lastUpdated="2026-06-01"
         >
             <Paragraph>
                 {isRTL ? (
@@ -190,18 +190,18 @@ const Refund: React.FC = () => {
                         {isRTL ? (
                             <>
                                 <li>التاجر يدفع المبلغ الشهري عبر بوّابة الدفع المُرخَّصة.</li>
-                                <li>الاشتراك يُفعَّل فوراً ويبقى نافذاً لمدّة <strong>شهر كامل</strong> من تاريخ الدفع.</li>
-                                <li>في أيّ لحظة خلال الشهر، يحقّ للتاجر إلغاء الاشتراك من إعدادات حسابه.</li>
-                                <li>عند الإلغاء: <strong>يبقى الاشتراك نافذاً حتى نهاية الشهر المدفوع</strong>، ثم يتوقّف تلقائياً.</li>
+                                <li>الاشتراك يُفعَّل فوراً ويبقى نافذاً <strong>للمدّة المحدَّدة في الباقة</strong> من تاريخ الدفع.</li>
+                                <li>في أيّ لحظة خلال المدّة، يحقّ للتاجر إلغاء الاشتراك من إعدادات حسابه.</li>
+                                <li>عند الإلغاء: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف تلقائياً.</li>
                                 <li><strong>لا يُجدَّد الاشتراك تلقائياً</strong> ولا يُسحَب أيّ مبلغ إضافي.</li>
                                 <li>إذا لم يُلغِ التاجر، يُجدَّد الاشتراك تلقائياً بنفس المبلغ في تاريخ بدء الدورة التالية.</li>
                             </>
                         ) : (
                             <>
                                 <li>The merchant pays the monthly fee through the licensed payment gateway.</li>
-                                <li>The subscription is activated immediately and remains effective for <strong>a full month</strong> from the date of payment.</li>
-                                <li>At any point during the month, the merchant may cancel the subscription from their account settings.</li>
-                                <li>On cancellation: <strong>the subscription remains effective until the end of the paid month</strong>, then ceases automatically.</li>
+                                <li>The subscription is activated immediately and remains effective for <strong>the period specified in the plan</strong> from the date of payment.</li>
+                                <li>At any point during the period, the merchant may cancel the subscription from their account settings.</li>
+                                <li>On cancellation: <strong>the subscription remains effective until the end of the paid period</strong>, then ceases automatically.</li>
                                 <li><strong>The subscription is not auto-renewed</strong> and no further amount is charged.</li>
                                 <li>If the merchant does not cancel, the subscription is automatically renewed for the same amount on the start date of the next cycle.</li>
                             </>
@@ -251,44 +251,45 @@ const Refund: React.FC = () => {
                 ]} />
             </Section>
 
-            <Section n={6} title={isRTL ? '✅ الحالات الاستثنائية للاسترداد الكامل' : '✅ Exceptional cases of full refund'}>
+            <Section n={6} title={isRTL ? '✅ حالات استثنائية قد يُنظَر فيها بالاسترداد' : '✅ Exceptional cases where a refund may be considered'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            يحقّ للتاجر استرداد المبلغ المدفوع للمنصّة (أو الجزء المتبقّي تناسبياً)
-                            <strong> فقط</strong> في الحالات التالية، مع تقديم إثبات قاطع:
+                            قد تَنظر الإدارة — وفق تَقديرها والأنظمة المعمول بها — في استرداد المبلغ
+                            المدفوع للمنصّة (كلّياً أو جزئياً) في حالات استثنائية محدودة، مع تقديم
+                            إثبات قاطع، ومن أمثلتها:
                         </>
                     ) : (
                         <>
-                            A merchant is entitled to a refund of the amount paid to the
-                            platform (or, on a pro-rata basis, the remaining portion)
-                            <strong> only</strong> in the following cases, on submission of
-                            conclusive evidence:
+                            The administration may consider — at its discretion and in
+                            accordance with applicable law — refunding the amount paid to the
+                            platform (in whole or in part) in limited exceptional cases, on
+                            submission of conclusive evidence, such as:
                         </>
                     )}
                 </Paragraph>
                 <Bullets items={isRTL ? [
                     <><strong>خطأ تقنيّ من المنصّة</strong>: سحب المبلغ مرّتين عن نفس الفترة، أو خصم بدون تفعيل اشتراك.</>,
                     <><strong>سحب بدون موافقة</strong>: استخدام طرف آخر بطاقة التاجر دون إذنه — مع تقديم بلاغ شرطة وتجميد البطاقة وإثبات بنكي.</>,
-                    <><strong>عطل في خدمة TAKI لأكثر من 15 يوماً متواصلة</strong>: يحقّ للتاجر استرداد قيمة الأيام المُتعطّلة تناسبياً.</>,
-                    <><strong>إنهاء حساب التاجر من قِبَل الإدارة بدون مخالفة منه</strong>: يُسترَدّ ما تبقّى من الفترة المدفوعة تناسبياً.</>,
+                    <><strong>انقطاع جوهريّ ومُطوَّل في الخدمة من جانب المنصّة</strong> يَحول دون الانتفاع بها — قد تَنظر الإدارة في تعويض مناسب وفق تقديرها.</>,
+                    <><strong>إنهاء حساب التاجر من قِبَل الإدارة بدون مخالفة منه</strong> — قد يُنظَر في ردّ ما تبقّى من الفترة المدفوعة وفق تقدير الإدارة.</>,
                 ] : [
                     <><strong>A technical error of the platform</strong>: charging the amount twice for the same period, or charging without activating a subscription.</>,
                     <><strong>Unauthorised charge</strong>: a third party used the merchant's card without authorisation — supported by a police report, card freeze, and bank evidence.</>,
-                    <><strong>A TAKI service outage exceeding 15 consecutive days</strong>: the merchant is entitled to a pro-rata refund of the value of the days lost.</>,
-                    <><strong>Termination of the merchant's account by the administration without any breach on the merchant's part</strong>: the remaining portion of the paid period is refunded pro-rata.</>,
+                    <><strong>A substantial and prolonged service outage on the platform's side</strong> that prevents use — the administration may consider appropriate compensation at its discretion.</>,
+                    <><strong>Termination of the merchant's account by the administration without any breach on the merchant's part</strong> — the remaining portion of the paid period may be considered for refund at the administration's discretion.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            <strong>تُقدَّم المطالبة بالاسترداد خلال 14 يوماً</strong> من تاريخ الواقعة،
+                            تُقدَّم المطالبة بالاسترداد <strong>خلال مدّة معقولة</strong> من تاريخ الواقعة،
                             عبر زرّ «📣 الشكاوى» داخل التطبيق، مع إرفاق ما يَلزم من إثباتات:
                         </>
                     ) : (
                         <>
-                            <strong>The refund claim must be submitted within 14 days</strong>{' '}
-                            of the incident, through the «📣 Complaints» button inside the
-                            app, attaching:
+                            The refund claim <strong>should be submitted within a reasonable
+                            period</strong> of the incident, through the «📣 Complaints»
+                            button inside the app, attaching:
                         </>
                     )}
                 </Paragraph>
@@ -307,14 +308,14 @@ const Refund: React.FC = () => {
 
             <Section n={7} title={isRTL ? '⏱️ مدّة معالجة طلبات الاسترداد المقبولة' : '⏱️ Processing time for approved refund requests'}>
                 <Bullets items={isRTL ? [
-                    'تُراجَع الطلبات خلال 14 يوم عمل من استلامها كاملةً مع كامل المستندات.',
-                    'في حال قبول الطلب، يُحوَّل المبلغ خلال 14 يوم عمل إلى نفس وسيلة الدفع الأصلية.',
-                    'قد تُضاف حتى 3 أيام عمل إضافية لإتمام الإيداع من جانب البنك أو شبكة البطاقة (مدى / Visa / Mastercard) وفقاً للوائح البنك المركزي السعودي (SAMA).',
+                    'تُراجَع طلبات الاسترداد المقبولة خلال مدّة معقولة من استلامها كاملةً مع كامل المستندات.',
+                    'في حال قبول الطلب، يُحوَّل المبلغ خلال مدّة معقولة إلى وسيلة الدفع الأصلية، وفق الأنظمة المعمول بها ولوائح البنك المركزي السعودي.',
+                    'قد تَستغرق الإجراءات البنكية أو شبكات البطاقات (مدى / Visa / Mastercard) مدّة إضافية خارجة عن سيطرة المنصّة.',
                     'لا تتحمّل TAKI أيّ تأخير من الجهة البنكية بعد إتمام التحويل من جانبها.',
                 ] : [
-                    'Requests are reviewed within 14 business days of being received complete with all supporting documents.',
-                    'If accepted, the amount is transferred within 14 business days to the same original payment method.',
-                    'Up to 3 additional business days may be required for the deposit to settle on the bank or card-network side (mada / Visa / Mastercard) in accordance with the Saudi Central Bank (SAMA) regulations.',
+                    'Approved requests are reviewed within a reasonable period of being received complete with all supporting documents.',
+                    'If accepted, the amount is transferred within a reasonable period to the original payment method, in accordance with applicable regulations and the Saudi Central Bank rules.',
+                    'Banking procedures or card networks (mada / Visa / Mastercard) may take additional time beyond the platform\'s control.',
                     'TAKI bears no responsibility for any delay caused by the banking side once the transfer has been completed on TAKI\'s end.',
                 ]} />
             </Section>
