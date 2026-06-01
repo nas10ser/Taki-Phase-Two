@@ -19,7 +19,8 @@ import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
-import { LOCATION_PACKAGES, packageForMax } from '../../data/packages';
+import { LOCATION_PACKAGES, packageForMax, effectivePrice, LocationPackage } from '../../data/packages';
+import { packageRepository } from '../../repositories/packageRepository';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 import { sponsorRepository, AdminSponsorRow } from '../../repositories/sponsorRepository';
 import { CATEGORIES, REGIONS, CITIES } from '../../data/mock';
@@ -125,6 +126,19 @@ const SubscriptionModal = memo<{
             .catch(() => {});
         return () => { alive = false; };
     }, [seller.id]);
+    // v11.37 — the location-package grid reads the LIVE catalogue (the same one
+    // the owner edits in "💎 باقات المواقع والأسعار"), not the static defaults,
+    // so every package the owner adds/edits (incl. 7, 8, …) shows up here too.
+    const [pkgCatalog, setPkgCatalog] = useState<LocationPackage[]>(LOCATION_PACKAGES);
+    useEffect(() => {
+        let alive = true;
+        packageRepository.get()
+            .then(list => { if (alive && list.length) setPkgCatalog(list); })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, []);
+    const activePkgs = pkgCatalog.filter(p => p.active);
+    const currentPkg = pkgCatalog.find(p => p.max === maxBranches) || packageForMax(maxBranches);
 
     // ── v11.23 Sponsor (راعٍ رسمي) state ──────────────────────────────
     const [sponsorOn, setSponsorOn] = useState(false);
@@ -401,8 +415,9 @@ const SubscriptionModal = memo<{
                             📍 باقة المواقع (عدد اللوكيشنات المسموحة)
                         </label>
                         <div className="grid grid-cols-2 gap-2">
-                            {LOCATION_PACKAGES.map((pkg) => {
+                            {activePkgs.map((pkg) => {
                                 const selected = maxBranches === pkg.max;
+                                const eff = effectivePrice(pkg);
                                 return (
                                     <button
                                         key={pkg.id}
@@ -415,12 +430,15 @@ const SubscriptionModal = memo<{
                                     >
                                         <div className="font-extrabold">{pkg.ar}</div>
                                         <div className="text-xs opacity-80 mt-0.5">{pkg.descAr}</div>
+                                        <div className="text-[11px] font-bold mt-1" style={{ color: '#b45309' }}>
+                                            {eff.toLocaleString('ar-SA')} ر.س/شهر
+                                        </div>
                                     </button>
                                 );
                             })}
                         </div>
                         <div className="text-[11px] text-[var(--text-secondary)] mt-2">
-                            الباقة الحالية: <span className="font-bold">{packageForMax(maxBranches).ar}</span> — {packageForMax(maxBranches).descAr}
+                            الباقة الحالية: <span className="font-bold">{currentPkg.ar}</span> — {currentPkg.descAr}
                         </div>
                     </div>
 
