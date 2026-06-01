@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, findNearestCity } from '../data/mock';
+import { getCurrentPositionSafe } from '../utils/helpers';
 
 /**
  * First-open location prompt. Asked ONCE (the choice is persisted as
@@ -17,31 +18,28 @@ const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [city, setCity] = useState('');
     const [err, setErr] = useState('');
 
-    const useGps = () => {
-        if (!navigator.geolocation) { setMode('manual'); return; }
+    // v11.41 — cross-browser geolocation that never hangs on Safari; on any
+    // failure (declined / unavailable / timeout) we fall back to manual pick.
+    const useGps = async () => {
         setGpsBusy(true);
         setErr('');
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                setGpsBusy(false);
-                const near = findNearestCity(pos.coords.latitude, pos.coords.longitude);
-                if (near) {
-                    setHomeCity({ regionId: near.regionId, cityId: near.id });
-                    onClose();
-                } else {
-                    setMode('manual');
-                }
-            },
-            () => {
-                // Declined or unavailable → fall back to manual city pick.
-                setGpsBusy(false);
+        try {
+            const { lat, lng } = await getCurrentPositionSafe();
+            const near = findNearestCity(lat, lng);
+            if (near) {
+                setHomeCity({ regionId: near.regionId, cityId: near.id });
+                onClose();
+            } else {
                 setMode('manual');
-                setErr(isRTL
-                    ? 'تعذّر تحديد موقعك تلقائياً — اختر مدينتك من القائمة.'
-                    : "Couldn't detect your location — pick your city below.");
-            },
-            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-        );
+            }
+        } catch {
+            setMode('manual');
+            setErr(isRTL
+                ? 'تعذّر تحديد موقعك تلقائياً — اختر مدينتك من القائمة.'
+                : "Couldn't detect your location — pick your city below.");
+        } finally {
+            setGpsBusy(false);
+        }
     };
 
     const confirmManual = () => {

@@ -462,3 +462,97 @@ export const sanitizeDecimalInput = (raw: string): string => {
     }
     return v;
 };
+
+// ============================================================
+// Geolocation — cross-browser, NEVER-hangs (v11.41)
+// ------------------------------------------------------------
+// Safari (esp. desktop / iPad, which has no GPS) frequently HANGS on
+// navigator.geolocation.getCurrentPosition with enableHighAccuracy:true —
+// its built-in `timeout` is unreliable and sometimes NEITHER callback fires,
+// so any UI spinner stays stuck forever. These helpers guarantee the promise
+// always settles (a hard JS timer) and fall back from high → low accuracy so
+// desktop Safari still resolves via Wi-Fi/IP. Use everywhere instead of calling
+// getCurrentPosition directly.
+// ============================================================
+
+export type GeoErrorKind = 'unsupported' | 'denied' | 'unavailable' | 'timeout';
+
+export class GeoError extends Error {
+    kind: GeoErrorKind;
+    constructor(kind: GeoErrorKind) {
+        super(kind);
+        this.kind = kind;
+        this.name = 'GeoError';
+    }
+}
+
+export interface GeoPos { lat: number; lng: number; accuracy: number; }
+
+const mapGeoPositionError = (err: GeolocationPositionError): GeoError => {
+    if (err.code === 1) return new GeoError('denied');
+    if (err.code === 3) return new GeoError('timeout');
+    return new GeoError('unavailable');
+};
+
+// One attempt that ALWAYS settles: a hard JS timer fires even if Safari never
+// calls back. maximumAge lets the low-accuracy pass return a recent cached fix
+// fast (desktop Safari).
+const geoPositionOnce = (enableHighAccuracy: boolean, timeoutMs: number): Promise<GeoPos> =>
+    new Promise<GeoPos>((resolve, reject) => {
+        let settled = false;
+        const finish = (fn: () => void) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            fn();
+        };
+        const guard = setTimeout(() => finish(() => reject(new GeoError('timeout'))), timeoutMs + 2000);
+        try {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => finish(() => resolve({
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                })),
+                (err) => finish(() => reject(mapGeoPositionError(err))),
+                { enableHighAccuracy, timeout: timeoutMs, maximumAge: enableHighAccuracy ? 0 : 120000 },
+            );
+        } catch {
+            finish(() => reject(new GeoError('unavailable')));
+        }
+    });
+
+/**
+ * Cross-browser "where am I" that never hangs. Tries a high-accuracy fix first
+ * (great on phones), then falls back to a fast low-accuracy fix (desktop Safari,
+ * which has no GPS). A hard denial is not retried. Always settles.
+ */
+export const getCurrentPositionSafe = (opts?: { highMs?: number; lowMs?: number }): Promise<GeoPos> => {
+    const highMs = opts?.highMs ?? 8000;
+    const lowMs = opts?.lowMs ?? 8000;
+    if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.geolocation.getCurrentPosition) {
+        return Promise.reject(new GeoError('unsupported'));
+    }
+    return geoPositionOnce(true, highMs).catch((e: unknown) => {
+        const kind = e instanceof GeoError ? e.kind : 'unavailable';
+        if (kind === 'denied' || kind === 'unsupported') throw e;
+        return geoPositionOnce(false, lowMs);
+    });
+};
+
+/** Friendly bilingual message for a GeoError (or any thrown value). */
+export const geoErrorMessage = (e: unknown, isRTL: boolean): string => {
+    const kind = e instanceof GeoError ? e.kind : 'unavailable';
+    if (kind === 'denied') return isRTL
+        ? 'صلاحية الموقع مرفوضة. فعّلها من إعدادات المتصفح/الجهاز ثم أعد المحاولة — أو اضغط على الخريطة لتحديد موقعك يدوياً.'
+        : 'Location permission is denied. Enable it in your browser/device settings and retry — or tap the map to set your location manually.';
+    if (kind === 'unsupported') return isRTL
+        ? 'المتصفح لا يدعم تحديد الموقع — اضغط على الخريطة لتحديد موقعك يدوياً.'
+        : 'This browser does not support geolocation — tap the map to set your location manually.';
+    if (kind === 'timeout') return isRTL
+        ? 'انتهت مهلة تحديد الموقع. تأكد من تفعيل خدمة الموقع، أو اضغط على الخريطة لتحديد موقعك يدوياً.'
+        : 'Location request timed out. Make sure location services are on, or tap the map to set it manually.';
+    return isRTL
+        ? 'تعذّر تحديد الموقع. اضغط على الخريطة لتحديد موقعك يدوياً.'
+        : 'Could not get your location. Tap the map to set it manually.';
+};

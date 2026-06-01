@@ -4,7 +4,7 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
-import { normalizeArabicNumerals } from '../utils/helpers';
+import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
 
 const Profile: React.FC = () => {
@@ -426,28 +426,20 @@ const SmartAlertsCard: React.FC<{
         (filterCategories.length > 0 ? 1 : 0) + (newKeyword.trim() ? 1 : 0) +
         (filterKm && preciseCoords ? 1 : 0);
 
-    const handleCaptureLocation = () => {
-        if (!navigator.geolocation) {
-            customAlert(isRTL
-                ? 'المتصفح لا يدعم تحديد الموقع — اختر مدينة أو منطقة بدلاً منه.'
-                : 'Geolocation unsupported — pick a city/region instead.');
-            return;
-        }
+    // v11.41 — cross-browser geolocation that never hangs on Safari; the
+    // loading flag always resets in `finally`.
+    const handleCaptureLocation = async () => {
+        if (gettingLocation) return;
         setGettingLocation(true);
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                setPreciseCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                setGettingLocation(false);
-                customAlert(isRTL ? '📍 تم تحديد موقعك بدقة' : '📍 Location captured');
-            },
-            () => {
-                setGettingLocation(false);
-                customAlert(isRTL
-                    ? 'تعذر الوصول للموقع. فعّل إذن الموقع من المتصفح، أو اكتفِ بفلتر المدينة/المنطقة.'
-                    : 'Could not access location. Enable browser location permission or use city/region filters instead.');
-            },
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-        );
+        try {
+            const { lat, lng } = await getCurrentPositionSafe();
+            setPreciseCoords({ lat, lng });
+            customAlert(isRTL ? '📍 تم تحديد موقعك بدقة' : '📍 Location captured');
+        } catch (e) {
+            customAlert(geoErrorMessage(e, isRTL));
+        } finally {
+            setGettingLocation(false);
+        }
     };
 
     const [adding, setAdding] = React.useState(false);

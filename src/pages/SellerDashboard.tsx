@@ -15,7 +15,7 @@ import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
-import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput } from '../utils/helpers';
+import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
@@ -1226,56 +1226,29 @@ const SellerDashboard: React.FC = () => {
         }
     };
 
-    const handleLocateMe = () => {
-        if (!navigator.geolocation) {
-            customAlert(isRTL ? 'المتصفح لا يدعم تحديد الموقع' : 'Geolocation not supported');
-            return;
-        }
-
-        // On iPhone/Safari, Geolocation requires HTTPS. Check if we are in a secure context.
+    // v11.41 — geolocation via the cross-browser helper so it NEVER hangs on
+    // Safari (its built-in timeout is unreliable). `locating` always resets in
+    // `finally`, so the button can't get stuck on the "⏳" state.
+    const [locating, setLocating] = useState(false);
+    const handleLocateMe = async () => {
+        if (locating) return;
+        // iOS/Safari requires HTTPS for geolocation.
         if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            customAlert(isRTL 
-                ? '⚠️ تحديد الموقع يتطلب اتصالاً آمناً (HTTPS). يرجى التأكد من تشغيل الموقع عبر رابط آمن على الايفون.' 
-                : '⚠️ Geolocation requires HTTPS. Please ensure you are using a secure connection on iPhone.');
-            // Fallback to default but warn
-            autoUpdateLocation(24.7136, 46.6753);
+            customAlert(isRTL
+                ? '⚠️ تحديد الموقع يتطلب اتصالاً آمناً (HTTPS). أو اضغط على الخريطة لتثبيت الدبوس يدوياً.'
+                : '⚠️ Geolocation requires HTTPS. Or tap the map to drop the pin manually.');
             return;
         }
-        
-        const options = { 
-            enableHighAccuracy: true, 
-            timeout: 15000, 
-            maximumAge: 0
-        };
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                autoUpdateLocation(pos.coords.latitude, pos.coords.longitude);
-                customAlert(isRTL ? '✅ تم تحديد موقعك بدقة!' : '✅ Precise location captured!');
-            },
-            (err) => {
-                console.warn('Geolocation error:', err);
-                let errorMsg = '';
-                if (err.code === 1) {
-                    errorMsg = isRTL 
-                        ? 'يرجى السماح بصلاحية الموقع من إعدادات المتصفح والجهاز.' 
-                        : 'Please enable location permission in browser and device settings.';
-                } else if (err.code === 3) {
-                    errorMsg = isRTL 
-                        ? 'انتهى وقت المحاولة. تأكد من أنك في مكان مفتوح أو مفعل الـ GPS.' 
-                        : 'Location request timed out. Ensure GPS is on and try again.';
-                } else {
-                    errorMsg = isRTL ? 'تعذر الحصول على الموقع بدقة.' : 'Could not get precise location.';
-                }
-                
-                customAlert(errorMsg);
-                // Only fallback to Riyadh if the user is truly lost and has no previous coords
-                if (mapPos[0] === 24.7136 && mapPos[1] === 46.6753) {
-                    autoUpdateLocation(24.7136, 46.6753);
-                }
-            },
-            options
-        );
+        setLocating(true);
+        try {
+            const { lat, lng } = await getCurrentPositionSafe();
+            autoUpdateLocation(lat, lng);
+            customAlert(isRTL ? '✅ تم تحديد موقعك!' : '✅ Location captured!');
+        } catch (e) {
+            customAlert(geoErrorMessage(e, isRTL));
+        } finally {
+            setLocating(false);
+        }
     };
 
     const [productsTab, setProductsTab] = useState<'active' | 'expired'>('active');
@@ -2818,6 +2791,7 @@ const SellerDashboard: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={handleLocateMe}
+                                    disabled={locating}
                                     style={{
                                         flex: 1,
                                         padding: '12px',
@@ -2831,10 +2805,13 @@ const SellerDashboard: React.FC = () => {
                                         justifyContent: 'center',
                                         gap: 8,
                                         boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)',
-                                        cursor: 'pointer'
+                                        cursor: locating ? 'default' : 'pointer',
+                                        opacity: locating ? 0.7 : 1,
                                     }}
                                 >
-                                    📍 {isRTL ? 'تحديد موقعي' : 'Locate Me'}
+                                    {locating
+                                        ? <>⏳ {isRTL ? 'جاري التحديد...' : 'Locating…'}</>
+                                        : <>📍 {isRTL ? 'تحديد موقعي' : 'Locate Me'}</>}
                                 </button>
                                 <button
                                     type="button"

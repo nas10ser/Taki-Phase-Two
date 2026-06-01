@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/helpers';
+import { getDistance, resolveDealLocation, isDealComingSoon, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -311,29 +311,28 @@ const Nearby: React.FC = () => {
                         {nearbyDeals.length} {isRTL ? 'عرض' : 'deals'}
                     </span>
                     <div style={{ flex: 1, minWidth: 10 }} />
-                    <button onClick={() => {
-                        if (navigator.geolocation) {
-                            navigator.geolocation.getCurrentPosition(
-                                pos => {
-                                    setUserLat(pos.coords.latitude);
-                                    setUserLng(pos.coords.longitude);
-                                    // Reset the upper region/city/mall filters too.
-                                    // Otherwise users who'd picked "Makkah → Jeddah" earlier
-                                    // would get 0 results after recentering on their actual
-                                    // location (Dammam), because the region filter was still
-                                    // restricting to Makkah. Tapping "My Location" implies
-                                    // "show me what's around ME" — drop the manual location
-                                    // selection so the radius does the work.
-                                    setSelectedRegion('');
-                                    setSelectedCity('');
-                                    setSelectedLocationId('');
-                                    setLocationType('');
-                                    setRadius(30);
-                                    setFollowMode(true); // re-arm live follow
-                                    customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
-                                },
-                                () => { customAlert(isRTL ? "لا يمكن الوصول للموقع" : "Cannot access location"); }
-                            );
+                    <button onClick={async () => {
+                        // v11.41 — never-hangs cross-browser geolocation (Safari-safe).
+                        try {
+                            const { lat, lng } = await getCurrentPositionSafe();
+                            setUserLat(lat);
+                            setUserLng(lng);
+                            // Reset the upper region/city/mall filters too.
+                            // Otherwise users who'd picked "Makkah → Jeddah" earlier
+                            // would get 0 results after recentering on their actual
+                            // location (Dammam), because the region filter was still
+                            // restricting to Makkah. Tapping "My Location" implies
+                            // "show me what's around ME" — drop the manual location
+                            // selection so the radius does the work.
+                            setSelectedRegion('');
+                            setSelectedCity('');
+                            setSelectedLocationId('');
+                            setLocationType('');
+                            setRadius(30);
+                            setFollowMode(true); // re-arm live follow
+                            customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
+                        } catch (e) {
+                            customAlert(geoErrorMessage(e, isRTL));
                         }
                     }} style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '8px 16px', borderRadius: 12, fontSize: '0.85rem', fontWeight: 800, whiteSpace: 'nowrap', minHeight: 44 }}>
                         {isRTL ? 'موقعي 📍' : 'My Location 📍'}
