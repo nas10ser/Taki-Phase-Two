@@ -7,6 +7,7 @@ import DualCalendarPicker from '../components/DualCalendarPicker';
 import ImageCropEditor from '../components/ImageCropEditor';
 import CameraCapture from '../components/CameraCapture';
 import ReportDialog from '../components/ReportDialog';
+import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -1935,6 +1936,11 @@ const SellerDashboard: React.FC = () => {
                     })}
                 </div>
             </div>
+
+            {/* Subscription status strip (v11.38) — always visible: plan, days
+                left, and a tap-through to the manage page. Hidden in free mode
+                (the card returns null when there's no paid subscription). */}
+            {isPaymentEnabled && <SubscriptionStatusCard compact />}
 
             {/* Pending-orders banner — appears no matter which tab the seller
                 is on, so they never miss a booking that's waiting for receipt

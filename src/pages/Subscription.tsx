@@ -6,6 +6,7 @@ import { paymentService } from '../services/paymentService';
 import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice } from '../data/packages';
+import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 
 // Gold ring that works on light AND dark themes: interior = theme card colour,
 // the 2px border is the gold gradient. Selected cards get a warm glow.
@@ -69,8 +70,10 @@ const Subscription: React.FC = () => {
                 customerName: user.name || '',
             });
             if (response.success) {
-                await subscriptionRepository.updateSubscription(user.id, 'premium', selected.durationDays || 30);
-                await supabase.from('store_profiles').update({ max_branches: selected.max }).eq('store_id', user.id);
+                await subscriptionRepository.updateSubscription(user.id, 'premium', selected.durationDays || 30, {
+                    amount: price,
+                    maxBranches: selected.max,
+                });
                 await customAlert('✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي.');
                 history.push('/seller');
             } else {
@@ -105,8 +108,15 @@ const Subscription: React.FC = () => {
                 <button onClick={() => history.goBack()} className="text-[var(--text-secondary)] font-bold">رجوع →</button>
             </div>
             <p className="text-sm text-[var(--text-secondary)] mb-6">
-                اختر الباقة المناسبة لعدد مواقعك. <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً، ألغِ متى شئت، بدون أي عمولة على الحجوزات.
+                اختر الباقة المناسبة لعدد مواقعك. <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً, ألغِ متى شئت، بدون أي عمولة على الحجوزات.
             </p>
+
+            {/* Current subscription status + cancel/resume (v11.38) */}
+            <SubscriptionStatusCard />
+
+            <h2 className="text-lg font-extrabold text-[var(--text-primary)] mb-3">
+                {currentMax > 0 ? 'الترقية أو تغيير الباقة' : 'اختر باقتك'}
+            </h2>
 
             {loading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
