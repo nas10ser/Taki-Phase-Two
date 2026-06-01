@@ -293,7 +293,11 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات، وفق الباقات والأسعار والشروط المُعلَنة وقت الاشتراك. النموذج العامّ: «ادفع للمدّة المختارة، ألغِ متى تشاء، واستفد حتى نهايتها» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. تتعدّد الباقات <strong>بحسب عدد المواقع (اللوكيشنات)</strong> التي يحتاجها متجرك، وتُعرض أسعارها وتفاصيلها <strong>داخل التطبيق وقت الاشتراك وقد تتغيّر</strong> (لا سعر ثابت مُعلَن مسبقاً). النموذج العامّ: «ادفع للمدّة المختارة، ألغِ متى تشاء، واستفد حتى نهايتها» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+    },
+    {
+        q: 'كم سعر الاشتراك؟ وهل هو ثابت؟',
+        a: <p>لا يوجد سعر واحد ثابت. هناك <strong>عدّة باقات تختلف بحسب عدد المواقع (اللوكيشنات)</strong> التي يَسري عليها نشاطك — كلّما زادت المواقع المطلوبة ارتفعت الباقة. تُعرض أسعار الباقات وتفاصيلها <strong>داخل التطبيق عند الاشتراك</strong>، وقد تُحدِّث الإدارة الأسعار أو الباقات من وقت لآخر، ويسري عليك السعر المُعلَن وقت اشتراكك.</p>,
     },
     {
         q: 'كيف أُضيف عرضاً جديداً؟',
@@ -320,7 +324,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني إدارة فروع متعدّدة؟',
-        a: <p>نعم. من إعدادات المتجر تَستطيع إضافة فروع متعدّدة وربط كلّ عرض بالفرع/الفروع التي يَسري عليها. الباقة الأساسية تتيح عدداً معيّناً من الفروع، والباقات المتقدّمة تَزيد العدد.</p>,
+        a: <p>نعم. من إعدادات المتجر تَستطيع إضافة مواقع متعدّدة وربط كلّ عرض بالموقع/المواقع التي يَسري عليها. <strong>عدد المواقع المسموح يعتمد على باقتك</strong>: هناك عدّة باقات تزيد فيها المواقع المسموحة تدريجياً (باقة أساسية بعددٍ محدود، وباقات أعلى بمواقع أكثر) — وتُعرض تفاصيلها وأسعارها داخل التطبيق.</p>,
     },
     {
         q: 'هل يمكنني الردّ على تقييمات المشترين؟',
@@ -376,7 +380,11 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Is merchant registration paid?',
-        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings, according to the plans, prices and terms published at the time of subscription. The general model is: «Pay for the chosen period, cancel anytime, and benefit until it ends» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings. There are <strong>several packages that differ by the number of locations</strong> your store needs, and their prices and details are shown <strong>inside the app at the time of subscription and may change</strong> (no fixed price announced in advance). The general model is: «Pay for the chosen period, cancel anytime, and benefit until it ends» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+    },
+    {
+        q: 'How much is the subscription? Is it fixed?',
+        a: <p>There is no single fixed price. There are <strong>several packages that differ by the number of locations</strong> your activity covers — the more locations required, the higher the package. Package prices and details are shown <strong>inside the app at the time of subscription</strong>, and the administration may update prices or packages from time to time; the price that applies to you is the one shown when you subscribe.</p>,
     },
     {
         q: 'How do I add a new offer?',
@@ -403,7 +411,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Can I manage multiple branches?',
-        a: <p>Yes. From the store settings you can add multiple branches and link each offer to the branch(es) on which it applies. The basic plan allows a fixed number of branches; advanced plans increase that allowance.</p>,
+        a: <p>Yes. From the store settings you can add multiple locations and link each offer to the location(s) on which it applies. <strong>The number of locations allowed depends on your package</strong>: there are several packages that progressively increase the allowed locations (a basic package with a limited number, and higher packages with more) — their details and prices are shown inside the app.</p>,
     },
     {
         q: 'Can I reply to buyers\' ratings?',
