@@ -30,6 +30,7 @@ import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
+import PackagePricingPanel from '../../components/admin/PackagePricingPanel';
 import { CsvColumn } from '../../utils/csvExport';
 
 const SELLER_CSV_COLUMNS: CsvColumn<AdminUserRow>[] = [
@@ -852,7 +853,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
     const [trialDays, setTrialDays] = useState<number>(14);
     const [gatewayEnabled, setGatewayEnabled] = useState<boolean>(false);
     const [savingAmount, setSavingAmount] = useState(false);
-    const [busyMode, setBusyMode] = useState<null | 'free' | 'paid' | 'trial-paid'>(null);
+    const [busyMode, setBusyMode] = useState<null | 'free' | 'paid' | 'trial-paid' | 'trial-all'>(null);
 
     // Hydrate current settings on mount.
     useEffect(() => {
@@ -1017,6 +1018,51 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         onApplied();
     };
 
+    // 4th mode — grant the trial to EVERYONE (existing sellers too), starting now.
+    const handleTrialForAll = async () => {
+        const ok = await customConfirm(
+            'سيتم:\n' +
+            '• تفعيل بوابة الدفع\n' +
+            `• منح كل التجار (الحاليين والجدد) ${trialDays} يوم تجربة مجانية تبدأ الآن\n` +
+            `• بعد انتهاء التجربة → اشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n\n` +
+            'متابعة؟'
+        );
+        if (!ok) return;
+        setBusyMode('trial-all');
+        let r: { ok: number; failed: number; total: number } | null = null;
+        try {
+            const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
+            if (!settingRes.success) {
+                await customAlert('❌ تعذر تفعيل البوابة: ' + (settingRes.error ?? ''));
+                return;
+            }
+            setGatewayEnabled(true);
+            await Promise.allSettled([
+                adminService.setPlatformSetting('trial_days', trialDays),
+                adminService.setPlatformSetting('basic_plan_price_sar', globalAmount),
+            ]);
+            const expires = new Date(Date.now() + trialDays * 86400000);
+            r = await adminService.bulkSetAllActiveSellers({
+                plan: 'trial',
+                amount: globalAmount,
+                discount: 0,
+                expiresAt: expires,
+                notes: 'Platform mode: trial for everyone (new + existing)',
+            });
+        } catch (e: any) {
+            await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
+            return;
+        } finally {
+            setBusyMode(null);
+        }
+        await customAlert(
+            r.failed === 0
+                ? `🎉 تم منح ${r.ok} متجراً ${trialDays} يوم تجربة مجانية، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+        );
+        onApplied();
+    };
+
     return (
         <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
@@ -1066,8 +1112,8 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 )}
             </div>
 
-            {/* Three platform-mode buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {/* Platform-mode buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <button
                     onClick={handleFreeForAll}
                     disabled={busyMode !== null}
@@ -1089,6 +1135,18 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                         التجار الجدد يجرّبون مجاناً ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر
                     </div>
                     {busyMode === 'trial-paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
+                </button>
+                <button
+                    onClick={handleTrialForAll}
+                    disabled={busyMode !== null}
+                    className="p-4 bg-gradient-to-br from-rose-500 to-pink-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
+                >
+                    <div className="text-2xl mb-1">🎉</div>
+                    <div className="text-sm font-extrabold">{trialDays} يوم تجربة للجميع</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">
+                        منح الجدد <b>والحاليين</b> تجربة تبدأ الآن، ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر
+                    </div>
+                    {busyMode === 'trial-all' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
                 </button>
                 <button
                     onClick={handlePaidForAll}
@@ -1907,6 +1965,10 @@ const AdminSellers: React.FC = () => {
                 the entire site to free / paid in one click. This is the
                 "default" that applies to everyone unless an exception is set. */}
             <GlobalSubscriptionMode onApplied={fetchSellers} />
+
+            {/* Per-package monthly pricing — owner edits every package freely. */}
+            <PackagePricingPanel />
+
 
             {/* Per-store exceptions: pick any subset of sellers and apply ANY
                 plan / dates / amount / discount. */}
