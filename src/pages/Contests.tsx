@@ -29,7 +29,7 @@ const Contests: React.FC = () => {
         return () => { alive = false; };
     }, []);
 
-    if (selected) return <ContestEntry contest={selected} onBack={() => setSelected(null)} prefillName={user?.name} prefillPhone={user?.phone} />;
+    if (selected) return <ContestEntry contest={selected} onBack={() => setSelected(null)} user={user} />;
 
     return (
         <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir="rtl" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}>
@@ -96,9 +96,8 @@ const ContestCard: React.FC<{ contest: Contest; onOpen: () => void }> = ({ conte
     );
 };
 
-const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; prefillName?: string; prefillPhone?: string }> = ({ contest: c, onBack, prefillName, prefillPhone }) => {
-    const [name, setName] = useState(prefillName || '');
-    const [phone, setPhone] = useState(prefillPhone || '');
+const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }> = ({ contest: c, onBack, user }) => {
+    const history = useHistory();
     const [answers, setAnswers] = useState<Record<string, string>>({});
     const [social, setSocial] = useState<Record<string, string>>({});
     const [submitting, setSubmitting] = useState(false);
@@ -108,49 +107,11 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; prefillName
     const setAns = (id: string, v: string) => setAnswers((a) => ({ ...a, [id]: v }));
     const setSoc = (id: string, v: string) => setSocial((s) => ({ ...s, [id]: v }));
 
-    const submit = useCallback(async () => {
-        setError('');
-        if (!name.trim() || !phone.trim()) { setError('الاسم ورقم الجوال مطلوبان'); return; }
-        // required questions
-        for (const q of c.questions) {
-            if (q.required !== false && !((answers[q.id] || '').trim())) { setError('يرجى الإجابة على كل الأسئلة الإلزامية'); return; }
-        }
-        setSubmitting(true);
-        const res = await contestRepository.submit(c.id, name, phone, answers, social);
-        setSubmitting(false);
-        if (!res.success) { setError(res.error || 'تعذّر الإرسال'); return; }
-        setResult({ qualified: !!res.qualified, score: res.score, max: res.max });
-    }, [c, name, phone, answers, social]);
-
+    const accountPhone = String(user?.phone || '').trim();
     const inputCls = 'w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-purple-500';
 
-    if (result) {
-        return (
-            <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir="rtl" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 3rem)' }}>
-                <div className={`text-center rounded-2xl p-8 ${result.qualified ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-amber-50 border-2 border-amber-200'}`}>
-                    <div className="text-5xl mb-3">{result.qualified ? '🎉' : '🙏'}</div>
-                    <div className={`text-xl font-extrabold ${result.qualified ? 'text-emerald-900' : 'text-amber-900'}`}>
-                        {result.qualified ? 'تم تسجيلك في السحب!' : 'شكراً لمشاركتك'}
-                    </div>
-                    <div className={`text-sm mt-2 ${result.qualified ? 'text-emerald-800' : 'text-amber-800'}`}>
-                        {c.pass_mode === 'collect'
-                            ? 'أنت الآن ضمن السحب — بالتوفيق!'
-                            : result.qualified
-                                ? `أجبت بشكل صحيح${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''} ودخلت السحب — بالتوفيق!`
-                                : `بعض الإجابات غير صحيحة${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''}. يمكنك المحاولة مجدداً.`}
-                    </div>
-                    <div className="flex gap-2 mt-5">
-                        {!result.qualified && c.pass_mode !== 'collect' && (
-                            <button onClick={() => setResult(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-[var(--border-color)] text-[var(--text-primary)]">حاول مجدداً</button>
-                        )}
-                        <button onClick={onBack} className="flex-1 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600">العودة للمسابقات</button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    return (
+    // Plain composition (not a nested component) so text inputs never lose focus.
+    const shell = (children: React.ReactNode) => (
         <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir="rtl" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}>
             <div className="flex justify-between items-center gap-3 mb-3">
                 <h1 className="text-2xl font-extrabold text-[var(--text-primary)] truncate">{c.title}</h1>
@@ -158,14 +119,80 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; prefillName
                     <span aria-hidden>→</span> رجوع
                 </button>
             </div>
-            {c.prize && <div className="text-sm text-amber-600 font-bold mb-4">🏆 الجائزة: {c.prize}</div>}
+            {children}
+        </div>
+    );
 
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
-                <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">الاسم *</label><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">رقم الجوال *</label><input className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" placeholder="05XXXXXXXX" /></div>
+    // Gate: must be signed in — name + phone are taken from the account.
+    if (!user) {
+        return shell(
+            <div className="text-center bg-purple-50 border-2 border-purple-200 rounded-2xl p-8">
+                <div className="text-5xl mb-3">🔐</div>
+                <div className="text-lg font-extrabold text-purple-900">سجّل دخولك للمشاركة</div>
+                <div className="text-sm text-purple-800 mt-2 leading-relaxed">نأخذ اسمك ورقم جوالك من حسابك مباشرةً — لا حاجة لكتابتهما، وأكثر أماناً للسحب.</div>
+                <button onClick={() => history.push('/register')} className="w-full mt-5 py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600">تسجيل الدخول / إنشاء حساب</button>
             </div>
+        );
+    }
+    // Gate: account needs a phone for the draw.
+    if (!accountPhone) {
+        return shell(
+            <div className="text-center bg-amber-50 border-2 border-amber-200 rounded-2xl p-8">
+                <div className="text-5xl mb-3">📱</div>
+                <div className="text-lg font-extrabold text-amber-900">أكمل رقم جوالك أولاً</div>
+                <div className="text-sm text-amber-800 mt-2 leading-relaxed">نحتاج رقم جوالك المسجّل في حسابك حتى تدخل السحب على الجوائز.</div>
+                <button onClick={() => history.push('/profile')} className="w-full mt-5 py-3 rounded-xl text-sm font-extrabold text-white bg-amber-500">إكمال بيانات حسابي</button>
+            </div>
+        );
+    }
 
-            {c.questions.length > 0 && (
+    const submit = async () => {
+        setError('');
+        for (const q of c.questions) {
+            if (q.required !== false && !((answers[q.id] || '').trim())) { setError('يرجى الإجابة على كل الأسئلة الإلزامية'); return; }
+        }
+        setSubmitting(true);
+        // name + phone are stamped from the account server-side; sent only for the API shape.
+        const res = await contestRepository.submit(c.id, user.name || '', accountPhone, answers, social);
+        setSubmitting(false);
+        if (!res.success) { setError(res.error || 'تعذّر الإرسال'); return; }
+        setResult({ qualified: !!res.qualified, score: res.score, max: res.max });
+    };
+
+    if (result) {
+        return shell(
+            <div className={`text-center rounded-2xl p-8 ${result.qualified ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-amber-50 border-2 border-amber-200'}`}>
+                <div className="text-5xl mb-3">{result.qualified ? '🎉' : '🙏'}</div>
+                <div className={`text-xl font-extrabold ${result.qualified ? 'text-emerald-900' : 'text-amber-900'}`}>
+                    {result.qualified ? 'تم تسجيلك في السحب!' : 'شكراً لمشاركتك'}
+                </div>
+                <div className={`text-sm mt-2 ${result.qualified ? 'text-emerald-800' : 'text-amber-800'}`}>
+                    {c.pass_mode === 'collect'
+                        ? 'أنت الآن ضمن السحب — بالتوفيق!'
+                        : result.qualified
+                            ? `أجبت بشكل صحيح${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''} ودخلت السحب — بالتوفيق!`
+                            : `بعض الإجابات غير صحيحة${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''}. يمكنك المحاولة مجدداً.`}
+                </div>
+                <div className="flex gap-2 mt-5">
+                    {!result.qualified && c.pass_mode !== 'collect' && (
+                        <button onClick={() => setResult(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-[var(--border-color)] text-[var(--text-primary)]">حاول مجدداً</button>
+                    )}
+                    <button onClick={onBack} className="flex-1 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600">العودة للمسابقات</button>
+                </div>
+            </div>
+        );
+    }
+
+    return shell(<>
+        {c.prize && <div className="text-sm text-amber-600 font-bold mb-4">🏆 الجائزة: {c.prize}</div>}
+
+        {/* Identity comes from the signed-in account — read only, no typing. */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-3">
+            <div className="text-[11px] text-emerald-700 font-bold mb-1">✅ تشارك بحسابك المسجّل</div>
+            <div className="text-sm font-extrabold text-emerald-900">{user.name || 'حسابي'} <span className="font-mono font-normal text-emerald-800" dir="ltr">· {accountPhone}</span></div>
+        </div>
+
+        {c.questions.length > 0 && (
                 <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-4 mt-3">
                     {c.questions.map((q, i) => (
                         <div key={q.id}>
@@ -201,11 +228,10 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; prefillName
 
             {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mt-3">{error}</div>}
 
-            <button onClick={submit} disabled={submitting} className="w-full mt-5 py-4 rounded-2xl text-white font-extrabold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 active:scale-95">
-                {submitting ? 'جاري الإرسال...' : '🎯 إرسال ودخول السحب'}
-            </button>
-        </div>
-    );
+        <button onClick={submit} disabled={submitting} className="w-full mt-5 py-4 rounded-2xl text-white font-extrabold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 active:scale-95">
+            {submitting ? 'جاري الإرسال...' : '🎯 إرسال ودخول السحب'}
+        </button>
+    </>);
 };
 
 export default Contests;
