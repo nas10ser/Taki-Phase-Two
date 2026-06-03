@@ -16,25 +16,25 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "src": "https://taki-test-eight.vercel.app/logo192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "src": "https://taki-test-eight.vercel.app/logo512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "src": "https://taki-test-eight.vercel.app/logo192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png",
+      "src": "https://taki-test-eight.vercel.app/logo512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -46,14 +46,14 @@
       "short_name": "حولي",
       "description": "اكتشف أقرب التخفيضات حولك",
       "url": "./index.html#/nearby",
-      "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png", "sizes": "192x192" }]
+      "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
     },
     {
       "name": "حجوزاتي",
       "short_name": "حجوزاتي",
       "description": "إدارة حجوزاتك النشطة",
       "url": "./index.html#/bookings",
-      "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/1041/1041888.png", "sizes": "192x192" }]
+      "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
     }
   ]
 }

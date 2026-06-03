@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { AppProvider } from './context/AppContext';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initSentry } from './services/sentry';
+
+// Error monitoring — no-op until SENTRY_DSN is configured (see services/sentry.ts).
+initSentry();
 
 // One-time initialization: clear old data on shape changes
 const INIT_KEY = 'taki_initialized_v8';

@@ -32,6 +32,7 @@ const PERMS: PermDef[] = [
     { key: 'tab_analytics', label: '📊 التحليلات',         description: 'مؤشرات لحظية',               group: 'tabs',    defaultOn: false },
     { key: 'tab_tools',     label: '🛠️ الأدوات',          description: 'البنرات والحملات والإعدادات', group: 'tabs',    defaultOn: true  },
     { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة كل المحادثات لحظياً',   group: 'tabs',    defaultOn: false },
+    { key: 'tab_contests',  label: '🎁 المسابقات',         description: 'استبيانات بجوائز + تصحيح + سحب', group: 'tabs', defaultOn: false },
     { key: 'tab_launch',    label: '🚀 الإطلاق',           description: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق', group: 'tabs', defaultOn: false },
     { key: 'action_impersonate',       label: '🔓 دخول كحساب آخر',        description: 'فتح جلسة كاملة كأي مستخدم',     group: 'actions', defaultOn: false },
     { key: 'action_manage_sponsors',   label: '🌟 الرعاة الرسميون',         description: 'منح/إلغاء صفة راعٍ وتحديد الاستهداف', group: 'actions', defaultOn: false },

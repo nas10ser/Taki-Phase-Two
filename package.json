@@ -6,7 +6,7 @@
   "scripts": {
     "start": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
     "dev": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
-    "build": "parcel build index.html --public-url ./ && cp -f robots.txt sitemap.xml dist/ 2>/dev/null || true",
+    "build": "parcel build index.html --public-url ./ && cp -f robots.txt sitemap.xml og-image.png logo192.png logo512.png dist/ 2>/dev/null || true",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist"
   },
@@ -29,6 +29,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@sentry/react": "^8.55.2",
     "@supabase/supabase-js": "^2.45.0",
     "clsx": "^2.1.1",
     "jsqr": "^1.4.0",

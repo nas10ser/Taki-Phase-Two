@@ -43,6 +43,7 @@ export type AdminPermission =
     | 'tab_analytics'
     | 'tab_tools'
     | 'tab_messages'
+    | 'tab_contests'
     | 'tab_launch'
     | 'tab_admins'
     | 'action_impersonate'

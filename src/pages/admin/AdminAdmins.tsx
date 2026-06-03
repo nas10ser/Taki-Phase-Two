@@ -52,6 +52,7 @@ const PERMS: PermDef[] = [
     { key: 'tab_analytics', label: '📊 التحليلات',         description: 'مؤشرات لحظية ورسوم', group: 'tabs' },
     { key: 'tab_tools',     label: '🛠️ الأدوات',          description: 'البنرات والحملات والإعدادات', group: 'tabs' },
     { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة كل المحادثات لحظياً', group: 'tabs' },
+    { key: 'tab_contests',  label: '🎁 المسابقات',         description: 'استبيانات بجوائز + تصحيح + سحب', group: 'tabs' },
     { key: 'tab_launch',    label: '🚀 الإطلاق',           description: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق', group: 'tabs' },
     { key: 'tab_admins',    label: '👑 إدارة المسؤولين',    description: 'هذه الصفحة (super admin فقط)', group: 'tabs', onlySuper: true },
     { key: 'action_impersonate',       label: '🔓 دخول كحساب آخر',        description: 'فتح جلسة كاملة كأي مستخدم', group: 'actions' },

@@ -22,6 +22,7 @@ export type AdminTab =
     | 'reports'
     | 'analytics'
     | 'tools'
+    | 'contests'
     | 'launch'
     | 'messages'
     | 'admins';

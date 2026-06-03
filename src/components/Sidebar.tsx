@@ -48,6 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { id: 'favs', icon: '❤️', ar: 'المفضلة', en: 'Favorites', path: '/profile' },
         ...(!isSellerView ? [{ id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' }] : []),
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
+        { id: 'contests', icon: '🎁', ar: 'المسابقات', en: 'Contests', path: '/contests' },
     ];
     // Seasonal offers section — admin can show/hide globally from
     // platform_settings.seasonal_offers_visible. Hidden by default.
