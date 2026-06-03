@@ -58,3 +58,34 @@ export const packageLabel = (max: number | null | undefined, isRTL: boolean): st
     if (exact) return isRTL ? exact.ar : exact.en;
     return isRTL ? `${m} مواقع` : `${m} locations`;
 };
+
+/** Arabic-Indic digits for display (e.g. 15 → ١٥) so cards never show Latin "0". */
+const arNum = (n: number): string => Math.max(0, Math.round(n)).toLocaleString('ar-SA');
+
+/**
+ * Short branch-count label, grammatically graceful in Arabic
+ * (فرع واحد / فرعان / X فروع / X فرعاً). e.g. branchesShort(15,true) → "١٥ فرعاً".
+ */
+export const branchesShort = (n: number, isRTL: boolean): string => {
+    const m = Math.max(1, Math.round(n));
+    if (!isRTL) return m === 1 ? '1 branch' : `${m} branches`;
+    if (m === 1) return 'فرع واحد';
+    if (m === 2) return 'فرعان';
+    if (m <= 10) return `${arNum(m)} فروع`;
+    return `${arNum(m)} فرعاً`;
+};
+
+/**
+ * Detailed, customer-facing label that spells out a "موقع" = a DISTINCT
+ * geographic branch (Nasser's request — buyers were unsure what a location
+ * meant, and a Latin "0" looked like Arabic "٥"). Always includes the count.
+ * e.g. "١٥ فرعاً (١٥ موقعاً جغرافياً مختلفاً)".
+ */
+export const branchesDetailed = (n: number, isRTL: boolean): string => {
+    const m = Math.max(1, Math.round(n));
+    if (!isRTL) return m === 1 ? '1 branch (1 distinct location)' : `${m} branches (${m} distinct locations)`;
+    if (m === 1) return 'فرع واحد (موقع جغرافي واحد)';
+    if (m === 2) return 'فرعان (موقعان جغرافيان مختلفان)';
+    if (m <= 10) return `${arNum(m)} فروع (${arNum(m)} مواقع جغرافية مختلفة)`;
+    return `${arNum(m)} فرعاً (${arNum(m)} موقعاً جغرافياً مختلفاً)`;
+};

@@ -1698,13 +1698,13 @@ const SponsorsBox: React.FC<{
     const activeCount = rows.filter((r) => r.isActive).length;
 
     return (
-        <section className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl overflow-hidden">
+        <section className="bg-[var(--card-bg)] border border-amber-300 rounded-2xl overflow-hidden">
             <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
-                <span className="font-extrabold text-amber-900 flex items-center gap-2">
+                <span className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
                     🌟 الرعاة والمعلنون
                     <span className="text-[11px] bg-amber-500 text-white rounded-full px-2 py-0.5">{activeCount} نشط</span>
                 </span>
-                <span className="text-amber-700 text-sm">{open ? '▲' : '▼'}</span>
+                <span className="text-[var(--text-secondary)] text-sm">{open ? '▲' : '▼'}</span>
             </button>
             {open && (
                 <div className="px-4 pb-4 space-y-2">
@@ -1712,18 +1712,18 @@ const SponsorsBox: React.FC<{
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         placeholder="🔍 ابحث باسم المتجر الراعي..."
-                        className="w-full px-3 py-2.5 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:border-amber-500"
+                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-amber-500"
                     />
                     {loading ? (
-                        <div className="text-center text-sm text-amber-700 py-4">جاري التحميل...</div>
+                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">جاري التحميل...</div>
                     ) : filtered.length === 0 ? (
-                        <div className="text-center text-sm text-amber-700/80 py-4">
+                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">
                             {rows.length === 0 ? 'لا يوجد رعاة بعد. فعّل راعياً من بطاقة أي تاجر بالأسفل.' : 'لا نتيجة مطابقة.'}
                         </div>
                     ) : (
                         <div className="space-y-2 max-h-80 overflow-y-auto">
                             {filtered.map((r) => (
-                                <div key={r.storeId} className="bg-white rounded-xl border border-amber-100 p-3 flex items-center gap-3">
+                                <div key={r.storeId} className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] p-3 flex items-center gap-3">
                                     <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${r.isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-sm text-[var(--text-primary)] truncate">{r.storeName || r.shop || r.storeId}</div>
@@ -1778,13 +1778,13 @@ const AdminsBox: React.FC = () => {
     }, [rows, q]);
 
     return (
-        <section className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 rounded-2xl overflow-hidden">
+        <section className="bg-[var(--card-bg)] border border-indigo-300 rounded-2xl overflow-hidden">
             <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
-                <span className="font-extrabold text-indigo-900 flex items-center gap-2">
+                <span className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
                     🛡️ حسابات الأدمن
                     <span className="text-[11px] bg-indigo-500 text-white rounded-full px-2 py-0.5">{rows.length}</span>
                 </span>
-                <span className="text-indigo-700 text-sm">{open ? '▲' : '▼'}</span>
+                <span className="text-[var(--text-secondary)] text-sm">{open ? '▲' : '▼'}</span>
             </button>
             {open && (
                 <div className="px-4 pb-4 space-y-2">
@@ -1792,16 +1792,16 @@ const AdminsBox: React.FC = () => {
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         placeholder="🔍 ابحث عن مسؤول..."
-                        className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500"
                     />
                     {loading ? (
-                        <div className="text-center text-sm text-indigo-700 py-4">جاري التحميل...</div>
+                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">جاري التحميل...</div>
                     ) : filtered.length === 0 ? (
-                        <div className="text-center text-sm text-indigo-700/80 py-4">لا نتيجة.</div>
+                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">لا نتيجة.</div>
                     ) : (
                         <div className="space-y-2 max-h-80 overflow-y-auto">
                             {filtered.map((r: any) => (
-                                <div key={r.id} className="bg-white rounded-xl border border-indigo-100 p-3 flex items-center gap-3">
+                                <div key={r.id} className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] p-3 flex items-center gap-3">
                                     <span className="text-lg flex-shrink-0">{r.is_super_admin ? '👑' : '🛡️'}</span>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-sm text-[var(--text-primary)] truncate">
@@ -1818,7 +1818,7 @@ const AdminsBox: React.FC = () => {
                             ))}
                         </div>
                     )}
-                    <div className="text-[11px] text-indigo-700/80 pt-1">لإدارة الصلاحيات افتح تبويب «👑 إدارة المسؤولين».</div>
+                    <div className="text-[11px] text-[var(--text-secondary)] pt-1">لإدارة الصلاحيات افتح تبويب «👑 إدارة المسؤولين».</div>
                 </div>
             )}
         </section>

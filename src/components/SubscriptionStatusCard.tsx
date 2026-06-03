@@ -3,7 +3,7 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { subscriptionRepository, SubscriptionStatus } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
-import { LocationPackage, effectivePrice, packageLabel } from '../data/packages';
+import { LocationPackage, effectivePrice, packageLabel, branchesShort } from '../data/packages';
 
 /**
  * SubscriptionStatusCard (v11.38) — a professional, world-class subscription
@@ -182,7 +182,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
             {/* Details grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                 <Detail label="السعر الشهري" value={`${price.toLocaleString('ar-SA')} ر.س`} />
-                <Detail label="عدد المواقع" value={sub.maxBranches === 1 ? 'موقع واحد' : `حتى ${sub.maxBranches} مواقع`} />
+                <Detail label="عدد الفروع (المواقع)" value={sub.maxBranches === 1 ? 'فرع واحد' : `حتى ${branchesShort(sub.maxBranches, true)}`} />
                 <Detail label="تاريخ البداية" value={fmtDate(sub.startedAt)} />
                 <Detail label="تاريخ الانتهاء" value={fmtDate(sub.expiresAt)} />
                 <Detail

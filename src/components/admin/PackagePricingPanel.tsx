@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { packageRepository } from '../../repositories/packageRepository';
-import { LocationPackage, effectivePrice } from '../../data/packages';
+import { LocationPackage, effectivePrice, branchesShort } from '../../data/packages';
 
 /**
  * Admin panel to edit EVERY subscription package's monthly pricing (v11.36):
@@ -9,6 +9,62 @@ import { LocationPackage, effectivePrice } from '../../data/packages';
  * Gold-themed, light/dark safe (gradient border + var(--card-bg) interior).
  * Saves the whole catalogue to platform_settings.location_packages.
  */
+
+/**
+ * Free-editing number field. The old inputs clamped to `min` on every keystroke
+ * (`Math.max(1, Number(value) || 1)`), so clearing the box snapped it straight
+ * back to 1 — the admin could never type a fresh number. NumField keeps a local
+ * string while focused (so the box can be emptied), pushes valid numbers up live
+ * (so the price preview tracks typing), and only clamps to [min,max] on blur,
+ * falling back to `fallback` when left empty.
+ */
+const NumField: React.FC<{
+    value: number;
+    min?: number;
+    max?: number;
+    fallback: number;
+    onCommit: (n: number) => void;
+    className?: string;
+    'aria-label'?: string;
+}> = ({ value, min = 0, max, fallback, onCommit, className, ...rest }) => {
+    const [text, setText] = useState<string>(String(value));
+    const editing = useRef(false);
+
+    // Reflect external changes (load/save) only when the user isn't typing.
+    useEffect(() => { if (!editing.current) setText(String(value)); }, [value]);
+
+    const clamp = (n: number): number => {
+        let v = Math.round(n);
+        if (!Number.isFinite(v)) v = fallback;
+        v = Math.max(min, v);
+        if (max != null) v = Math.min(max, v);
+        return v;
+    };
+
+    return (
+        <input
+            type="number"
+            inputMode="numeric"
+            value={text}
+            onFocus={() => { editing.current = true; }}
+            onChange={(e) => {
+                const raw = e.target.value;
+                setText(raw);                          // allow an empty box while typing
+                if (raw === '') return;
+                const n = Number(raw);
+                if (Number.isFinite(n)) onCommit(clamp(n));
+            }}
+            onBlur={() => {
+                editing.current = false;
+                const v = text.trim() === '' ? fallback : clamp(Number(text));
+                setText(String(v));
+                onCommit(v);
+            }}
+            className={className}
+            {...rest}
+        />
+    );
+};
 
 // Gold ring that adapts to both themes: the interior is the theme card colour,
 // only the 2px border is the gold gradient.
@@ -55,7 +111,7 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
             return [...prev, {
                 id: nextId, max: lastMax + 5, price: lastPrice + 50, discount: 0, durationDays: 30,
                 ar: `الباقة ${prev.length + 1}`, en: `Package ${prev.length + 1}`,
-                descAr: `حتى ${lastMax + 5} مواقع`, descEn: `up to ${lastMax + 5} locations`, active: true,
+                descAr: `حتى ${branchesShort(lastMax + 5, true)}`, descEn: `up to ${branchesShort(lastMax + 5, false)}`, active: true,
             }];
         });
         setDirty(true);
@@ -76,8 +132,8 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
             // Keep descAr in sync with max so merchant cards read naturally.
             const normalized = pkgs.map((p) => ({
                 ...p,
-                descAr: p.descAr?.trim() || (p.max === 1 ? 'موقع واحد فقط' : `حتى ${p.max} مواقع`),
-                descEn: p.descEn?.trim() || (p.max === 1 ? '1 location only' : `up to ${p.max} locations`),
+                descAr: p.descAr?.trim() || (p.max === 1 ? 'فرع واحد فقط' : `حتى ${branchesShort(p.max, true)}`),
+                descEn: p.descEn?.trim() || (p.max === 1 ? '1 branch only' : `up to ${branchesShort(p.max, false)}`),
             }));
             res = await packageRepository.save(normalized);
         } catch (e: any) {
@@ -142,28 +198,28 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
                                         </div>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                             <label className="block">
-                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">عدد المواقع</span>
-                                                <input type="number" min={1} value={p.max}
-                                                    onChange={(e) => update(i, { max: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
-                                                    className={numInputCls} />
+                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">عدد المواقع (الفروع)</span>
+                                                <NumField value={p.max} min={1} fallback={1}
+                                                    onCommit={(n) => update(i, { max: n })}
+                                                    className={numInputCls} aria-label="عدد المواقع" />
                                             </label>
                                             <label className="block">
                                                 <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">السعر (ر.س/شهر)</span>
-                                                <input type="number" min={0} value={p.price}
-                                                    onChange={(e) => update(i, { price: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
-                                                    className={numInputCls} />
+                                                <NumField value={p.price} min={0} fallback={0}
+                                                    onCommit={(n) => update(i, { price: n })}
+                                                    className={numInputCls} aria-label="السعر الشهري" />
                                             </label>
                                             <label className="block">
                                                 <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">خصم %</span>
-                                                <input type="number" min={0} max={100} value={p.discount}
-                                                    onChange={(e) => update(i, { discount: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })}
-                                                    className={numInputCls} />
+                                                <NumField value={p.discount} min={0} max={100} fallback={0}
+                                                    onCommit={(n) => update(i, { discount: n })}
+                                                    className={numInputCls} aria-label="نسبة الخصم" />
                                             </label>
                                             <label className="block">
                                                 <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">المدة (يوم)</span>
-                                                <input type="number" min={1} value={p.durationDays}
-                                                    onChange={(e) => update(i, { durationDays: Math.max(1, Math.round(Number(e.target.value) || 30)) })}
-                                                    className={numInputCls} />
+                                                <NumField value={p.durationDays} min={1} fallback={30}
+                                                    onCommit={(n) => update(i, { durationDays: n })}
+                                                    className={numInputCls} aria-label="مدة الباقة بالأيام" />
                                             </label>
                                         </div>
                                         <div className="mt-2 text-[11px] font-bold" style={{ color: '#b45309' }}>

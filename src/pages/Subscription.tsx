@@ -5,22 +5,32 @@ import { useApp } from '../context/AppContext';
 import { paymentService } from '../services/paymentService';
 import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
-import { LocationPackage, effectivePrice } from '../data/packages';
+import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 
 // Gold ring that works on light AND dark themes: interior = theme card colour,
-// the 2px border is the gold gradient. Selected cards get a warm glow.
+// the 2px border is the gold gradient. Selected cards get a warm amber tint
+// (layered above card-bg) + lift + glow — reads clearly in both themes.
 const goldRing = (selected: boolean): React.CSSProperties => ({
-    border: '2px solid transparent',
-    borderRadius: 22,
-    backgroundImage:
-        'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)',
+    border: `${selected ? 2.5 : 2}px solid transparent`,
+    borderRadius: 24,
+    backgroundImage: selected
+        ? 'linear-gradient(rgba(245,158,11,0.13), rgba(245,158,11,0.07)), linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)'
+        : 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)',
     backgroundOrigin: 'border-box',
-    backgroundClip: 'padding-box, border-box',
-    boxShadow: selected ? '0 10px 30px rgba(245,158,11,0.45)' : '0 4px 16px rgba(245,158,11,0.15)',
-    transform: selected ? 'translateY(-2px)' : 'none',
+    backgroundClip: selected ? 'padding-box, padding-box, border-box' : 'padding-box, border-box',
+    boxShadow: selected ? '0 14px 34px rgba(245,158,11,0.42)' : '0 4px 18px rgba(245,158,11,0.13)',
+    transform: selected ? 'translateY(-3px)' : 'none',
     transition: 'all 0.2s ease',
 });
+
+// One feature row: a green check chip + adaptive text (light/dark safe).
+const Feature: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="flex items-start gap-2">
+        <span className="mt-[1px] w-[18px] h-[18px] rounded-full bg-emerald-500 text-white text-[11px] font-black flex items-center justify-center shrink-0">✓</span>
+        <span className="text-[12.5px] leading-relaxed font-semibold text-[var(--text-secondary)]">{children}</span>
+    </div>
+);
 
 const Subscription: React.FC = () => {
     const history = useHistory();
@@ -107,8 +117,8 @@ const Subscription: React.FC = () => {
                 <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">باقات الاشتراك 🚀</h1>
                 <button onClick={() => history.goBack()} className="text-[var(--text-secondary)] font-bold">رجوع →</button>
             </div>
-            <p className="text-sm text-[var(--text-secondary)] mb-6">
-                اختر الباقة المناسبة لعدد مواقعك. <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً, ألغِ متى شئت، بدون أي عمولة على الحجوزات.
+            <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
+                اختر الباقة المناسبة لعدد فروعك (مواقعك الجغرافية المختلفة). <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً، ألغِ متى شئت، <b className="text-emerald-600">بصفر عمولة</b> على الحجوزات.
             </p>
 
             {/* Current subscription status + cancel/resume (v11.38) */}
@@ -135,35 +145,41 @@ const Subscription: React.FC = () => {
                                 key={p.id}
                                 onClick={() => setSelectedId(p.id)}
                                 style={goldRing(isSel)}
-                                className="text-right p-5 relative"
+                                className="text-right p-5 relative flex flex-col"
                             >
-                                {isSel && (
-                                    <span
-                                        className="absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-black"
-                                        style={{ background: 'linear-gradient(135deg,#f59e0b,#b45309)' }}
-                                    >✓</span>
-                                )}
-                                {isCurrent && (
-                                    <span className="absolute top-3 right-3 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">باقتك الحالية</span>
-                                )}
-                                <div className="text-lg font-extrabold text-[var(--text-primary)] mt-3">{p.ar}</div>
-                                <div className="text-xs text-[var(--text-secondary)] mt-0.5">
-                                    {p.max === 1 ? 'موقع واحد' : `حتى ${p.max} مواقع`}
+                                {/* Badge row — reserves height so all cards align */}
+                                <div className="flex items-start justify-between gap-2 min-h-[28px] mb-1">
+                                    {isCurrent ? (
+                                        <span className="text-[10px] font-extrabold bg-emerald-500 text-white px-2.5 py-1 rounded-full shadow-sm">باقتك الحالية</span>
+                                    ) : <span />}
+                                    {isSel ? (
+                                        <span
+                                            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-black shrink-0 shadow"
+                                            style={{ background: 'linear-gradient(135deg,#f59e0b,#b45309)' }}
+                                        >✓</span>
+                                    ) : <span className="w-7 h-7 rounded-full border-2 border-amber-300/50 shrink-0" />}
                                 </div>
-                                <div className="flex items-end gap-1 mt-3">
-                                    <span className="text-4xl font-black" style={{ color: '#b45309' }}>{eff.toLocaleString('ar-SA')}</span>
+
+                                <div className="text-xl font-black text-[var(--text-primary)]">{p.ar}</div>
+                                <div className="text-xs font-semibold text-[var(--text-secondary)] mt-1">
+                                    {p.max === 1 ? 'فرع واحد فقط' : `حتى ${branchesShort(p.max, true)}`}
+                                </div>
+
+                                <div className="flex items-end gap-1.5 mt-4">
+                                    <span className="text-[2.6rem] leading-none font-black" style={{ color: '#b45309' }}>{eff.toLocaleString('ar-SA')}</span>
                                     <span className="text-[var(--text-secondary)] font-bold mb-1 text-sm">ر.س / شهرياً</span>
                                 </div>
                                 {p.discount > 0 && (
-                                    <div className="mt-1 flex items-center gap-2">
+                                    <div className="mt-2 flex items-center gap-2">
                                         <span className="text-xs text-[var(--text-secondary)] line-through">{p.price.toLocaleString('ar-SA')} ر.س</span>
-                                        <span className="text-[10px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full">خصم {p.discount}%</span>
+                                        <span className="text-[10px] font-extrabold bg-red-500 text-white px-2 py-0.5 rounded-full">وفّر {p.discount}%</span>
                                     </div>
                                 )}
-                                <div className="mt-3 pt-3 border-t border-amber-200/60 text-[11px] text-[var(--text-secondary)] space-y-1">
-                                    <div>✓ عروض وحجوزات غير محدودة</div>
-                                    <div>✓ 0% عمولة على المبيعات</div>
-                                    <div>✓ {p.max === 1 ? 'موقع واحد' : `تغطي حتى ${p.max} مواقع`}</div>
+
+                                <div className="mt-4 pt-4 border-t border-amber-300/40 space-y-2.5">
+                                    <Feature>عروض وحجوزات غير محدودة</Feature>
+                                    <Feature>صفر عمولة على المبيعات</Feature>
+                                    <Feature>{p.max === 1 ? 'تغطية فرع واحد (موقع جغرافي واحد)' : `تغطية حتى ${branchesDetailed(p.max, true)}`}</Feature>
                                 </div>
                             </button>
                         );
