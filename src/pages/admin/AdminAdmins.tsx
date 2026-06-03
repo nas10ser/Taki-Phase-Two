@@ -52,6 +52,7 @@ const PERMS: PermDef[] = [
     { key: 'tab_analytics', label: '📊 التحليلات',         description: 'مؤشرات لحظية ورسوم', group: 'tabs' },
     { key: 'tab_tools',     label: '🛠️ الأدوات',          description: 'البنرات والحملات والإعدادات', group: 'tabs' },
     { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة كل المحادثات لحظياً', group: 'tabs' },
+    { key: 'tab_launch',    label: '🚀 الإطلاق',           description: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق', group: 'tabs' },
     { key: 'tab_admins',    label: '👑 إدارة المسؤولين',    description: 'هذه الصفحة (super admin فقط)', group: 'tabs', onlySuper: true },
     { key: 'action_impersonate',       label: '🔓 دخول كحساب آخر',        description: 'فتح جلسة كاملة كأي مستخدم', group: 'actions' },
     { key: 'action_manage_sponsors',   label: '🌟 الرعاة الرسميون',         description: 'منح/إلغاء صفة راعٍ وتحديد الاستهداف', group: 'actions' },
@@ -158,7 +159,7 @@ const AdminAdmins: React.FC = () => {
 
     return (
         <div dir="rtl">
-            <div className="bg-gradient-to-l from-amber-50 to-rose-50 border border-amber-200 rounded-2xl p-4 mb-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
                 <div className="flex items-start gap-3">
                     <div className="text-2xl">👑</div>
                     <div className="flex-1">
@@ -213,7 +214,7 @@ const AdminAdmins: React.FC = () => {
                                         )}
                                     </div>
                                     <div className="text-xs text-[var(--text-secondary)] mt-1 font-mono">
-                                        {row.email || row.phone || row.id}
+                                        {isProtected ? '🔒 بيانات المالك مخفية للأمان' : (row.email || row.phone || row.id)}
                                     </div>
                                 </div>
                                 <div className="flex gap-2">

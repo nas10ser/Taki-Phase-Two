@@ -68,20 +68,19 @@ export const botService = {
     },
 
     loginByPhone: async (phone: string): Promise<BotUser | null> => {
+        // v11.43: via SECURITY DEFINER RPC. The users RLS policy no longer exposes
+        // buyer rows to the anon key the bot uses, so a direct cross-user read
+        // would fail for buyers. The RPC looks up by phone safely.
         try {
             const { supabase } = await import('./supabaseClient');
-            const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('phone', phone)
-                .maybeSingle();
+            const { data, error } = await supabase.rpc('bot_login_by_phone', { p_phone: phone });
 
             if (data && !error) {
                 return {
-                    id: data.id,
-                    name: data.name,
-                    phone: data.phone,
-                    userType: data.user_type
+                    id: (data as any).id,
+                    name: (data as any).name,
+                    phone: (data as any).phone,
+                    userType: (data as any).user_type,
                 };
             }
         } catch (e) {

@@ -12,6 +12,10 @@
  *   • Graceful degradation: runs in offline mode if SUPABASE / TELEGRAM env vars are missing
  */
 
+// Load a local .env when present (no-op on hosts like Railway/Render that inject
+// env vars directly, and harmless if dotenv isn't installed).
+try { require('dotenv').config(); } catch { /* dotenv optional */ }
+
 const express = require('express');
 const crypto = require('crypto');
 const { Telegraf, Markup } = require('telegraf');

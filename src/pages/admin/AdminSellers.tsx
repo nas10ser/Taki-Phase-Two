@@ -526,7 +526,7 @@ const SubscriptionModal = memo<{
                     </div>
 
                     {/* ملخّص — بصري */}
-                    <div className="bg-gradient-to-br from-purple-50 via-fuchsia-50 to-pink-50 border border-purple-200 rounded-2xl p-4">
+                    <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
                         <div className="text-xs font-bold text-purple-700 mb-2">💡 ملخّص الاشتراك</div>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                             <div>
@@ -1082,7 +1082,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
     };
 
     return (
-        <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
+        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
                 <div className="text-2xl">💼</div>
                 <div className="flex-1">
@@ -1181,7 +1181,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             </div>
 
             {/* Editable trial duration — affects the trial-then-paid button label & action */}
-            <div className="flex items-center gap-2 mt-3 bg-white/60 rounded-lg p-2 text-[11px]">
+            <div className="flex items-center gap-2 mt-3 bg-[var(--card-bg)] rounded-lg p-2 text-[11px]">
                 <span className="text-amber-800 font-bold">⏱ مدة التجربة:</span>
                 <input
                     type="number"
@@ -1195,7 +1195,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 <span className="text-amber-800">يوم — تطبَّق على زر "تجريبي ثم إلزامي". تُحفظ تلقائياً.</span>
             </div>
 
-            <div className="text-[11px] text-emerald-700 mt-3 leading-relaxed bg-white/60 rounded-lg p-2">
+            <div className="text-[11px] text-emerald-700 mt-3 leading-relaxed bg-[var(--card-bg)] rounded-lg p-2">
                 💡 <strong>للاستثناءات</strong> (إعفاء متجر معين، خصم لمدة محدودة، متاجر VIP) استخدم لوحة "تحكم جماعي قوي" بالأسفل أو اضغط على بطاقة المتجر مباشرة.
             </div>
         </div>
@@ -1372,7 +1372,7 @@ const BulkSubscriptionPanel = memo<{
         return (
             <button
                 onClick={onToggle}
-                className="w-full bg-gradient-to-br from-amber-50 via-orange-50 to-pink-50 border border-amber-200 rounded-2xl p-4 text-right hover:shadow-md transition-all"
+                className="w-full bg-amber-50 border border-amber-200 rounded-2xl p-4 text-right hover:shadow-md transition-all"
             >
                 <div className="flex items-center gap-3">
                     <div className="text-3xl">⚡</div>
@@ -1604,7 +1604,7 @@ const BulkSubscriptionPanel = memo<{
                 </section>
 
                 {/* --- 6) Summary --------------------------------------------- */}
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                     <div className="text-xs text-emerald-700 mb-1">💡 الخلاصة:</div>
                     <div className="text-sm text-[var(--text-primary)]">
                         سيتم تطبيق <strong>{plan === 'free' ? 'باقة مجانية' : plan === 'trial' ? 'باقة تجريبية' : 'باقة مميزة'}</strong>

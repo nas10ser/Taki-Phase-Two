@@ -112,10 +112,20 @@ const Subscription: React.FC = () => {
     }
 
     return (
-        <div className="pb-28 pt-8 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir="rtl">
-            <div className="flex justify-between items-center mb-2">
+        <div
+            className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in"
+            dir="rtl"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}
+        >
+            <div className="flex justify-between items-center gap-3 mb-3">
                 <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">باقات الاشتراك 🚀</h1>
-                <button onClick={() => history.goBack()} className="text-[var(--text-secondary)] font-bold">رجوع →</button>
+                <button
+                    onClick={() => history.goBack()}
+                    className="shrink-0 flex items-center gap-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold text-sm px-4 py-2 rounded-full shadow-sm active:scale-95 transition"
+                    aria-label="رجوع"
+                >
+                    <span aria-hidden>→</span> رجوع
+                </button>
             </div>
             <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
                 اختر الباقة المناسبة لعدد فروعك (مواقعك الجغرافية المختلفة). <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً، ألغِ متى شئت، <b className="text-emerald-600">بصفر عمولة</b> على الحجوزات.

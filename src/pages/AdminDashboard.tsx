@@ -55,7 +55,7 @@ const TABS: TabDef[] = [
     { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة',           permission: 'tab_reports'   },
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
-    { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_tools'     },
+    { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_launch'    },
     { value: 'messages',  label: 'الرسائل',           icon: '💬',  gradient: 'from-cyan-500 to-blue-600',        hint: 'مراقبة كل المحادثات لحظة بلحظة',                     permission: 'tab_messages'  },
     { value: 'admins',    label: 'المسؤولون',         icon: '👑',  gradient: 'from-amber-500 to-orange-600',     hint: 'إدارة الفريق + الصلاحيات (المالك فقط)',              permission: 'tab_admins'    },
 ];
@@ -122,11 +122,11 @@ const TabNav = memo<TabNavProps>(({ active, onChange, onBack, onOpenPalette, rep
                 <button
                     onClick={onOpenPalette}
                     aria-label="فتح البحث السريع"
-                    className="flex-shrink-0 h-10 px-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border border-emerald-200 text-emerald-700 flex items-center gap-1.5 transition-all font-bold text-sm"
+                    className="flex-shrink-0 h-10 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 flex items-center gap-1.5 transition-all font-bold text-sm"
                 >
                     <span className="text-base">🔎</span>
                     <span className="hidden sm:inline">بحث</span>
-                    <kbd className="hidden md:inline-block text-[10px] bg-white/70 border border-emerald-200 px-1.5 py-0.5 rounded">⌘K</kbd>
+                    <kbd className="hidden md:inline-block text-[10px] bg-[var(--card-bg)] border border-emerald-200 px-1.5 py-0.5 rounded">⌘K</kbd>
                 </button>
             </Tooltip>
 
@@ -325,7 +325,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'reports'   && hasPermission('tab_reports')   && <AdminReports />}
                         {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
                         {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
-                        {activeTab === 'launch'    && hasPermission('tab_tools')     && <AdminLaunch />}
+                        {activeTab === 'launch'    && hasPermission('tab_launch')    && <AdminLaunch />}
                         {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}
                         {activeTab === 'admins'    && isSuperAdmin                   && <AdminAdmins />}
                     </Suspense>

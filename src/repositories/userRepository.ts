@@ -208,13 +208,13 @@ export const userRepository = {
      * UI never shows a fake number.
      */
     getFollowerCount: async (storeId: string): Promise<number> => {
+        // v11.43: via SECURITY DEFINER RPC — the users RLS policy no longer lets
+        // anon/buyers be counted directly (PII lockdown), so a table read would
+        // under-count. The RPC counts buyers who follow this store safely.
         try {
-            const { count, error } = await supabase
-                .from('users')
-                .select('id', { count: 'exact', head: true })
-                .contains('followed_merchants', [storeId]);
+            const { data, error } = await supabase.rpc('store_follower_count', { p_store_id: storeId });
             if (error) throw error;
-            return count ?? 0;
+            return Number(data) || 0;
         } catch (e) {
             console.warn('Follower count fetch failed:', e);
             return 0;

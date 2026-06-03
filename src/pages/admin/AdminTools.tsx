@@ -924,7 +924,7 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
     };
 
     return (
-        <div className="bg-gradient-to-br from-pink-50 via-rose-50 to-orange-50 border border-pink-200 rounded-2xl p-4 mb-3">
+        <div className="bg-pink-50 border border-pink-200 rounded-2xl p-4 mb-3">
             <div className="flex items-center justify-between mb-3">
                 <div className="font-bold text-sm text-pink-900 flex items-center gap-2">📝 اكتب حملة بسرعة</div>
                 <button

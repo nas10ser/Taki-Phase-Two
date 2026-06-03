@@ -43,6 +43,7 @@ export type AdminPermission =
     | 'tab_analytics'
     | 'tab_tools'
     | 'tab_messages'
+    | 'tab_launch'
     | 'tab_admins'
     | 'action_impersonate'
     | 'action_view_finance'
@@ -185,40 +186,29 @@ export const authService = {
     },
 
     checkEmailExists: async (email: string): Promise<boolean> => {
-        // Only consult the public users table. The previous fallback used
-        // supabase.auth.signUp() which CREATES a real auth user with a random
-        // password whenever the email didn't already exist — corrupting future
-        // logins. Confirmed users are always written to public.users via the
-        // onAuthStateChange handler, so this single check is authoritative.
+        // v11.43: route through the SECURITY DEFINER `account_exists` RPC instead
+        // of reading public.users directly. The users RLS policy no longer exposes
+        // buyer rows to anon, so a direct table read would always miss buyers.
         try {
-            const { data, error } = await supabase.from('users').select('id').ilike('email', email).maybeSingle();
-            if (!error && data) return true;
+            const { data } = await supabase.rpc('account_exists', { p_email: email });
+            return !!(data && (data as any).email_taken);
         } catch {}
         return false;
     },
 
     /**
      * Combined check: returns which fields are already taken
-     * Used for real-time inline validation during registration
+     * Used for real-time inline validation during registration.
+     * v11.43: backed by the `account_exists` definer RPC (see checkEmailExists).
      */
     checkFieldsAvailability: async (email?: string, phone?: string): Promise<{ emailTaken: boolean; phoneTaken: boolean }> => {
-        let emailTaken = false;
-        let phoneTaken = false;
-
         try {
-            if (email) {
-                const { data } = await supabase.from('users').select('id').ilike('email', email).maybeSingle();
-                emailTaken = !!data;
-            }
-            if (phone) {
-                const { data } = await supabase.from('users').select('id').eq('phone', phone).maybeSingle();
-                phoneTaken = !!data;
-            }
+            const { data } = await supabase.rpc('account_exists', { p_email: email ?? null, p_phone: phone ?? null });
+            if (data) return { emailTaken: !!(data as any).email_taken, phoneTaken: !!(data as any).phone_taken };
         } catch {
             // Silently fail - don't block UX
         }
-
-        return { emailTaken, phoneTaken };
+        return { emailTaken: false, phoneTaken: false };
     },
 
     verifyOtp: async (phoneOrEmail: string, token: string, type: 'sms' | 'email') => {
