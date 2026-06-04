@@ -194,7 +194,7 @@ const AdminReports: React.FC = () => {
                 <SummaryCard
                     label="الإجمالي"
                     value={summary.total}
-                    gradient="bg-gradient-to-br from-[var(--text-secondary)] to-[var(--text-primary)]"
+                    gradient="bg-gradient-to-br from-slate-500 to-slate-700"
                 />
             </div>
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
@@ -53,10 +53,42 @@ const AdminContests: React.FC = () => {
 
     // ---------- editor helpers ----------
     const setField = (patch: Partial<Contest>) => setDraft((d) => ({ ...d, ...patch }));
-    const addQuestion = () => setDraft((d) => ({ ...d, questions: [...(d.questions || []), { id: uid(), type: 'text', prompt: '', correctAnswer: '', points: 1, required: true } as ContestQuestion] }));
+    const addQuestion = () => setDraft((d) => ({ ...d, questions: [...(d.questions || []), { id: uid(), type: 'choice', prompt: '', options: ['', ''], correctAnswer: '', points: 1, required: true } as ContestQuestion] }));
     const updateQuestion = (id: string, patch: Partial<ContestQuestion>) =>
         setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => q.id === id ? { ...q, ...patch } : q) }));
     const removeQuestion = (id: string) => setDraft((d) => ({ ...d, questions: (d.questions || []).filter((q) => q.id !== id) }));
+
+    // Switching the question TYPE resets the fields that don't apply, so the
+    // editor never carries stale options/answers between types.
+    //   نص (text)   = سؤال مفتوح بلا تصحيح  → no correct answer, no options
+    //   فراغ (fill)  = إجابة نصية تُصحّح تلقائياً → correct answer, no options
+    //   اختيارات     = اختيار من متعدد        → options + the correct one
+    const changeQuestionType = (id: string, type: QuestionType) =>
+        updateQuestion(id, type === 'choice'
+            ? { type, options: ['', ''], correctAnswer: '' }
+            : { type, options: undefined, correctAnswer: '' });
+
+    const addOption = (qid: string) =>
+        setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => q.id === qid ? { ...q, options: [...(q.options || []), ''] } : q) }));
+    const updateOption = (qid: string, idx: number, val: string) =>
+        setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => {
+            if (q.id !== qid) return q;
+            const opts = [...(q.options || [])];
+            const prev = opts[idx];
+            opts[idx] = val;
+            // keep the «correct» marker on the same option while its text is edited
+            const correctAnswer = q.correctAnswer && q.correctAnswer === prev ? val : q.correctAnswer;
+            return { ...q, options: opts, correctAnswer };
+        }) }));
+    const removeOption = (qid: string, idx: number) =>
+        setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => {
+            if (q.id !== qid) return q;
+            const removed = (q.options || [])[idx];
+            const opts = (q.options || []).filter((_, i) => i !== idx);
+            const correctAnswer = q.correctAnswer && q.correctAnswer === removed ? '' : q.correctAnswer;
+            return { ...q, options: opts, correctAnswer };
+        }) }));
+    const setCorrectOption = (qid: string, val: string) => updateQuestion(qid, { correctAnswer: val });
     const addTask = () => setDraft((d) => ({ ...d, social_tasks: [...(d.social_tasks || []), { id: uid(), prompt: '' }] }));
     const updateTask = (id: string, prompt: string) => setDraft((d) => ({ ...d, social_tasks: (d.social_tasks || []).map((t) => t.id === id ? { ...t, prompt } : t) }));
     const removeTask = (id: string) => setDraft((d) => ({ ...d, social_tasks: (d.social_tasks || []).filter((t) => t.id !== id) }));
@@ -65,8 +97,28 @@ const AdminContests: React.FC = () => {
     const openEdit = (c: Contest) => { setDraft({ ...c }); setView('edit'); };
 
     const save = async () => {
+        // Normalize questions: trim, drop blank options, and keep the «correct»
+        // marker only if it still matches a real option.
+        const cleaned = (draft.questions || []).map((q) => {
+            const prompt = (q.prompt || '').trim();
+            // Every question is worth 1 point — so a participant's result reads as
+            // «صحيح / عدد الأسئلة» with no confusing weight number to manage.
+            if (q.type === 'choice') {
+                const options = (q.options || []).map((o) => o.trim()).filter(Boolean);
+                const correctAnswer = options.includes((q.correctAnswer || '').trim()) ? (q.correctAnswer || '').trim() : '';
+                return { ...q, prompt, options, correctAnswer, points: 1 };
+            }
+            // نص (open) carries no correct answer; فراغ keeps its graded answer.
+            return { ...q, prompt, options: undefined, correctAnswer: q.type === 'fill' ? (q.correctAnswer || '').trim() : '', points: 1 };
+        });
+        // Validate before hitting the DB so the admin gets a clear, Arabic reason.
+        for (let i = 0; i < cleaned.length; i++) {
+            const q = cleaned[i];
+            if (!q.prompt) { await customAlert(`السؤال رقم ${i + 1}: اكتب نص السؤال.`); return; }
+            if (q.type === 'choice' && (q.options || []).length < 2) { await customAlert(`السؤال رقم ${i + 1}: أضف اختيارين على الأقل.`); return; }
+        }
         setSaving(true);
-        const res = await contestRepository.save(draft);
+        const res = await contestRepository.save({ ...draft, questions: cleaned });
         setSaving(false);
         if (!res.success) { await customAlert('❌ ' + (res.error || 'تعذّر الحفظ')); return; }
         await customAlert('✅ تم حفظ المسابقة.');
@@ -89,15 +141,15 @@ const AdminContests: React.FC = () => {
     if (view === 'list') {
         return (
             <div dir="rtl" className="space-y-3">
-                <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="text-2xl">🎁</div>
-                        <div>
+                <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="text-2xl shrink-0">🎁</div>
+                        <div className="min-w-0">
                             <div className="font-extrabold text-purple-900 text-base">المسابقات والاستبيانات</div>
-                            <div className="text-xs text-purple-700 mt-0.5">أنشئ أسئلة بجوائز، صحّح تلقائياً، ثم اسحب الفائزين بخصوصية.</div>
+                            <div className="text-xs text-purple-700 mt-0.5 leading-relaxed">أنشئ أسئلة بجوائز، صحّح تلقائياً، ثم اسحب الفائزين بخصوصية.</div>
                         </div>
                     </div>
-                    <button onClick={openNew} className="px-4 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600 hover:bg-purple-700 active:scale-95 whitespace-nowrap">➕ مسابقة جديدة</button>
+                    <button onClick={openNew} className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600 hover:bg-purple-700 active:scale-95 whitespace-nowrap">➕ مسابقة جديدة</button>
                 </div>
 
                 {loading ? (
@@ -170,27 +222,53 @@ const AdminContests: React.FC = () => {
                         <div className="font-bold text-[var(--text-primary)] text-sm">📝 الأسئلة</div>
                         <button onClick={addQuestion} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">➕ سؤال</button>
                     </div>
-                    {qs.length === 0 && <div className="text-xs text-[var(--text-secondary)]">لا أسئلة بعد. أضف سؤالاً واترك «الإجابة الصحيحة» فارغة إن كان سؤالاً مفتوحاً بلا تصحيح.</div>}
+                    <div className="text-[11px] text-[var(--text-secondary)] leading-relaxed bg-[var(--body-bg)] rounded-xl p-2.5 border border-[var(--border-color)]">
+                        <b className="text-[var(--text-primary)]">أنواع الأسئلة:</b>{' '}
+                        <b className="text-purple-600">اختيارات</b> = اختيار من متعدد تُحدِّد صحيحه ·{' '}
+                        <b className="text-purple-600">فراغ</b> = إجابة نصية تُصحَّح تلقائياً ·{' '}
+                        <b className="text-purple-600">نص</b> = سؤال مفتوح بلا تصحيح.
+                    </div>
+                    {qs.length === 0 && <div className="text-xs text-[var(--text-secondary)]">لا أسئلة بعد. اضغط «➕ سؤال».</div>}
                     {qs.map((q, i) => (
                         <div key={q.id} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3 space-y-2">
                             <div className="flex items-center gap-2">
-                                <span className="text-xs font-extrabold text-[var(--text-secondary)]">#{i + 1}</span>
-                                <select className="px-2 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-xs text-[var(--text-primary)] outline-none" value={q.type} onChange={(e) => updateQuestion(q.id, { type: e.target.value as QuestionType })}>
-                                    <option value="text">نص</option>
-                                    <option value="fill">فراغ</option>
+                                <span className="text-xs font-extrabold text-[var(--text-secondary)]">سؤال {i + 1}</span>
+                                <select className="px-2 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-xs text-[var(--text-primary)] outline-none" value={q.type} onChange={(e) => changeQuestionType(q.id, e.target.value as QuestionType)}>
                                     <option value="choice">اختيارات</option>
+                                    <option value="fill">فراغ</option>
+                                    <option value="text">نص</option>
                                 </select>
                                 <label className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] mr-auto"><input type="checkbox" checked={q.required !== false} onChange={(e) => updateQuestion(q.id, { required: e.target.checked })} /> إلزامي</label>
                                 <button onClick={() => removeQuestion(q.id)} className="w-7 h-7 rounded-lg bg-red-50 text-red-600 text-sm">🗑</button>
                             </div>
                             <input className={inputCls} placeholder="نص السؤال" value={q.prompt} onChange={(e) => updateQuestion(q.id, { prompt: e.target.value })} />
+
                             {q.type === 'choice' && (
-                                <input className={inputCls} placeholder="الاختيارات مفصولة بفاصلة: أحمر, أخضر, أزرق" value={(q.options || []).join(', ')} onChange={(e) => updateQuestion(q.id, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+                                <div className="space-y-1.5">
+                                    <div className="text-[11px] text-[var(--text-secondary)]">اضغط الدائرة بجانب الإجابة الصحيحة ✅</div>
+                                    {(q.options || []).map((opt, oi) => {
+                                        const isCorrect = !!q.correctAnswer && q.correctAnswer === opt && opt.trim() !== '';
+                                        return (
+                                            <div key={oi} className="flex items-center gap-2">
+                                                <button type="button" onClick={() => opt.trim() && setCorrectOption(q.id, opt)} title="حدّد كإجابة صحيحة"
+                                                    className={`w-7 h-7 shrink-0 rounded-full border-2 flex items-center justify-center text-xs font-extrabold transition-colors ${isCorrect ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-[var(--border-color)] text-transparent hover:border-emerald-400'}`}>✓</button>
+                                                <input className={inputCls} placeholder={`الاختيار ${oi + 1}`} value={opt} onChange={(e) => updateOption(q.id, oi, e.target.value)} />
+                                                <button type="button" onClick={() => removeOption(q.id, oi)} disabled={(q.options || []).length <= 2} title="حذف الاختيار" className="w-9 h-9 shrink-0 rounded-lg bg-red-50 text-red-600 text-sm disabled:opacity-30 disabled:cursor-not-allowed">🗑</button>
+                                            </div>
+                                        );
+                                    })}
+                                    <button type="button" onClick={() => addOption(q.id)} className="w-full py-2 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-dashed border-purple-300">➕ أضف اختيار</button>
+                                    {!q.correctAnswer && <div className="text-[11px] text-amber-600">لم تحدّد الإجابة الصحيحة (بلا تحديد = هذا السؤال بلا تصحيح).</div>}
+                                </div>
                             )}
-                            <div className="grid grid-cols-3 gap-2">
-                                <input className={`${inputCls} col-span-2`} placeholder="الإجابة الصحيحة (اتركها فارغة = بلا تصحيح)" value={q.correctAnswer || ''} onChange={(e) => updateQuestion(q.id, { correctAnswer: e.target.value })} />
-                                <input type="number" min={1} className={inputCls} placeholder="نقاط" value={q.points ?? 1} onChange={(e) => updateQuestion(q.id, { points: Math.max(1, Number(e.target.value) || 1) })} />
-                            </div>
+
+                            {q.type === 'fill' && (
+                                <input className={inputCls} placeholder="الإجابة الصحيحة (تُصحَّح تلقائياً بمطابقة النص)" value={q.correctAnswer || ''} onChange={(e) => updateQuestion(q.id, { correctAnswer: e.target.value })} />
+                            )}
+
+                            {q.type === 'text' && (
+                                <div className="text-[11px] text-[var(--text-secondary)] bg-[var(--card-bg)] border border-dashed border-[var(--border-color)] rounded-lg px-3 py-2">📝 سؤال مفتوح — تُجمع إجابة المشارك بدون تصحيح.</div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -241,12 +319,12 @@ const AdminContests: React.FC = () => {
 
 // ---------- entries + draw sub-view ----------
 const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ contestId, onBack }) => {
-    const { customAlert, customConfirm } = useApp();
+    const { customAlert } = useApp();
     const [contest, setContest] = useState<Contest | null>(null);
     const [entries, setEntries] = useState<ContestEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [drawCount, setDrawCount] = useState(1);
-    const [drawing, setDrawing] = useState(false);
+    const [showDraw, setShowDraw] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -258,15 +336,11 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
     const qualified = entries.filter((e) => e.qualified);
     const winners = entries.filter((e) => e.is_winner);
 
-    const runDraw = async () => {
+    const openDraw = async () => {
         if (qualified.length === 0) { await customAlert('لا يوجد مشاركون مؤهّلون للسحب بعد.'); return; }
-        if (!(await customConfirm(`سحب ${drawCount} فائز(ين) عشوائياً من ${qualified.length} مؤهّل؟`))) return;
-        setDrawing(true);
-        const res = await contestRepository.draw(contestId, drawCount);
-        setDrawing(false);
-        if (!res.success) { await customAlert('❌ ' + (res.error || 'تعذّر السحب')); return; }
-        await customAlert('🎉 تم السحب! الفائزون: ' + (res.winners || []).map((w) => w.name).join('، '));
-        load();
+        const safe = Math.min(Math.max(1, drawCount), qualified.length);
+        if (safe !== drawCount) setDrawCount(safe);
+        setShowDraw(true);
     };
 
     const maskPhone = (p: string) => {
@@ -292,7 +366,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-purple-800 font-bold">عدد الفائزين</span>
                     <input type="number" min={1} max={Math.max(1, qualified.length)} value={drawCount} onChange={(e) => setDrawCount(Math.max(1, Number(e.target.value) || 1))} className="w-20 px-2 py-2 bg-[var(--card-bg)] border border-purple-200 rounded-lg text-center font-bold text-[var(--text-primary)] outline-none" />
-                    <button onClick={runDraw} disabled={drawing} className="px-4 py-2 rounded-lg text-sm font-extrabold text-white bg-purple-600 disabled:opacity-50 mr-auto">{drawing ? 'جاري السحب...' : '🎲 اسحب الآن'}</button>
+                    <button onClick={openDraw} className="px-4 py-2 rounded-lg text-sm font-extrabold text-white bg-purple-600 active:scale-95 mr-auto">🎲 اسحب الآن</button>
                 </div>
                 {winners.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
@@ -325,6 +399,167 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                     ))}
                 </div>
             )}
+
+            {showDraw && contest && (
+                <DrawReel
+                    entries={qualified}
+                    count={drawCount}
+                    revealName={contest.reveal_name !== false}
+                    maskPhone={maskPhone}
+                    drawFn={() => contestRepository.draw(contestId, drawCount)}
+                    onClose={() => { setShowDraw(false); load(); }}
+                />
+            )}
+        </div>
+    );
+};
+
+// ---------- animated winner draw (slot-machine reel) ----------
+// Fairness note: the REAL winners are decided server-side by the
+// `draw_contest_winners` RPC (random + SECURITY DEFINER). The reel is purely
+// cosmetic — it shuffles through participants and, when the admin presses «قف»,
+// decelerates onto the winner the server already chose. (v11.46)
+const CONFETTI = Array.from({ length: 14 }, (_, i) => ({
+    e: ['🎉', '🎊', '⭐', '✨', '🏆', '🎈'][i % 6],
+    left: `${(i * 7 + 4) % 94}%`,
+    size: 14 + (i % 4) * 5,
+    dur: 2.4 + (i % 5) * 0.4,
+    delay: (i % 7) * 0.18,
+}));
+
+const DrawReel: React.FC<{
+    entries: ContestEntry[];
+    count: number;
+    revealName: boolean;
+    maskPhone: (p: string) => string;
+    drawFn: () => Promise<{ success: boolean; winners?: { name: string; phone: string }[]; error?: string }>;
+    onClose: () => void;
+}> = ({ entries, count, revealName, maskPhone, drawFn, onClose }) => {
+    const [phase, setPhase] = useState<'spinning' | 'revealed' | 'error'>('spinning');
+    const [display, setDisplay] = useState<{ id?: string; name: string; phone: string } | null>(entries[0] || null);
+    const [winners, setWinners] = useState<{ name: string; phone: string }[] | null>(null);
+    const [errMsg, setErrMsg] = useState('');
+    const [stopping, setStopping] = useState(false);
+
+    const winnersRef = useRef<{ name: string; phone: string }[] | null>(null);
+    const errRef = useRef<string | null>(null);
+    const spinRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const idxRef = useRef(0);
+
+    useEffect(() => {
+        // Visual spin — cycle fast through the qualified pool.
+        spinRef.current = setInterval(() => {
+            if (entries.length === 0) return;
+            idxRef.current = (idxRef.current + 1) % entries.length;
+            setDisplay(entries[idxRef.current]);
+        }, 70);
+        // Real draw (server-side). Result is stashed for the «قف» handler.
+        drawFn()
+            .then((res) => { if (res.success) winnersRef.current = res.winners || []; else errRef.current = res.error || 'تعذّر السحب'; })
+            .catch((e) => { errRef.current = (e && e.message) || 'تعذّر السحب'; });
+        return () => {
+            if (spinRef.current) clearInterval(spinRef.current);
+            timeoutsRef.current.forEach(clearTimeout);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const decelerate = (wnrs: { name: string; phone: string }[]) => {
+        const target = wnrs[0];
+        const delays = [110, 150, 200, 260, 330, 420, 540, 680];
+        let acc = 0;
+        delays.forEach((d, i) => {
+            acc += d;
+            const t = setTimeout(() => {
+                if (i < delays.length - 1) {
+                    const r = entries[(idxRef.current + i + 1) % Math.max(1, entries.length)];
+                    if (r) setDisplay(r);
+                } else {
+                    if (target) setDisplay({ name: target.name, phone: target.phone });
+                    const reveal = setTimeout(() => { setWinners(wnrs); setPhase('revealed'); }, 380);
+                    timeoutsRef.current.push(reveal);
+                }
+            }, acc);
+            timeoutsRef.current.push(t);
+        });
+    };
+
+    const onStopClick = () => {
+        if (stopping) return;
+        setStopping(true);
+        if (spinRef.current) { clearInterval(spinRef.current); spinRef.current = null; }
+        // Wait for the server result, then decelerate onto the winner.
+        const wait = (tries: number) => {
+            if (winnersRef.current) { decelerate(winnersRef.current); return; }
+            if (errRef.current) { setErrMsg(errRef.current); setPhase('error'); return; }
+            if (tries > 80) { setErrMsg('تأخّر الاتصال — حاول مجدداً'); setPhase('error'); return; }
+            const t = setTimeout(() => wait(tries + 1), 100);
+            timeoutsRef.current.push(t);
+        };
+        wait(0);
+    };
+
+    return (
+        <div dir="rtl" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)' }}>
+            <div className="relative w-full max-w-md bg-[var(--card-bg)] rounded-3xl border border-purple-300 shadow-2xl overflow-hidden">
+                <div className="px-5 py-4 bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white text-center">
+                    <div className="text-base font-extrabold">🎲 سحب الفائزين</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">{count > 1 ? `يُسحب ${count} فائزين` : 'يُسحب فائز واحد'} من {entries.length} مؤهّل</div>
+                </div>
+
+                {phase === 'revealed' && (
+                    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                        {CONFETTI.map((c, i) => (
+                            <span key={i} style={{ position: 'absolute', left: c.left, top: '-8%', fontSize: c.size, animation: `taki-confetti ${c.dur}s linear ${c.delay}s infinite` }}>{c.e}</span>
+                        ))}
+                    </div>
+                )}
+
+                {phase === 'spinning' && (
+                    <div className="p-6 text-center">
+                        <div className="text-xs font-bold text-purple-600 mb-3 animate-pulse">جارٍ خلط المشاركين… 🎲</div>
+                        <div className="relative mx-auto h-28 flex flex-col items-center justify-center rounded-2xl bg-[var(--body-bg)] border border-[var(--border-color)] overflow-hidden">
+                            <div key={(display && display.id) || idxRef.current} className="px-4 w-full animate-taki-pop">
+                                <div className="text-2xl font-extrabold text-[var(--text-primary)] truncate">{revealName ? (display ? display.name : '—') : 'مشارك'}</div>
+                                <div className="text-sm font-mono text-[var(--text-secondary)] mt-1" dir="ltr">{display ? maskPhone(display.phone) : ''}</div>
+                            </div>
+                            <div className="absolute inset-x-0 top-0 h-7 bg-gradient-to-b from-[var(--body-bg)] to-transparent" />
+                            <div className="absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-[var(--body-bg)] to-transparent" />
+                        </div>
+                        <button onClick={onStopClick} disabled={stopping} className="mt-5 w-full py-4 rounded-2xl text-white font-extrabold text-lg bg-gradient-to-r from-red-500 to-rose-600 active:scale-95 disabled:opacity-60 shadow-lg">
+                            {stopping ? '⏳ يُحسم الفائز…' : '🛑 قف'}
+                        </button>
+                        <button onClick={onClose} className="mt-2 w-full py-2 text-xs font-bold text-[var(--text-secondary)]">إلغاء</button>
+                    </div>
+                )}
+
+                {phase === 'revealed' && (
+                    <div className="relative p-6 text-center animate-taki-pop">
+                        <div className="text-5xl mb-2">🎉</div>
+                        <div className="text-lg font-extrabold text-[var(--text-primary)] mb-3">{(winners && winners.length > 1) ? 'الفائزون' : 'الفائز'}</div>
+                        <div className="space-y-2">
+                            {(winners || []).map((w, i) => (
+                                <div key={i} className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+                                    <span className="text-xl">🏆</span>
+                                    <span className="font-extrabold text-emerald-900">{revealName ? w.name : `فائز ${i + 1}`}</span>
+                                    <span className="font-mono text-emerald-800 text-sm mr-auto" dir="ltr">{maskPhone(w.phone)}</span>
+                                </div>
+                            ))}
+                            {(winners || []).length === 0 && <div className="text-sm text-[var(--text-secondary)]">لا يوجد فائزون.</div>}
+                        </div>
+                        <button onClick={onClose} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-purple-600 active:scale-95">✅ تم</button>
+                    </div>
+                )}
+
+                {phase === 'error' && (
+                    <div className="p-6 text-center">
+                        <div className="text-4xl mb-2">⚠️</div>
+                        <div className="text-sm font-bold text-red-600 mb-4">{errMsg}</div>
+                        <button onClick={onClose} className="w-full py-3 rounded-2xl text-white font-extrabold bg-[var(--text-secondary)]">إغلاق</button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

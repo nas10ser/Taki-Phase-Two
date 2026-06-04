@@ -1719,3 +1719,31 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
 .dark-mode .shadow-lg  { box-shadow: 0 10px 24px -6px rgba(0,0,0,.7); }
 .dark-mode .shadow-xl  { box-shadow: 0 20px 40px -10px rgba(0,0,0,.75); }
 .dark-mode .shadow-2xl { box-shadow: 0 30px 60px -12px rgba(0,0,0,.8); }
+
+/* Deep purple "-900/-800" text (contest cards, draw winners) — keep readable
+   on the dark purple tints. (v11.46) */
+.dark-mode .text-purple-900 { color: #ffffff; }
+.dark-mode .text-purple-800 { color: #e9d5ff; }
+
+/* ============================================================
+   v11.46 — chart accent + draw-reel animations
+   ============================================================ */
+/* A violet that reads on BOTH the white card (light) and the slate card (dark).
+   Used by the analytics sparkline via stroke/fill="var(--chart-violet)". */
+:root { --chart-violet: #7c3aed; --chart-violet-soft: rgba(124, 58, 237, 0.30); }
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode) { --chart-violet: #a78bfa; --chart-violet-soft: rgba(167, 139, 250, 0.30); }
+}
+.dark-mode { --chart-violet: #a78bfa; --chart-violet-soft: rgba(167, 139, 250, 0.30); }
+
+@keyframes taki-pop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-taki-pop { animation: taki-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes taki-confetti {
+  0%   { transform: translateY(-10%) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(460%) rotate(560deg); opacity: 0; }
+}

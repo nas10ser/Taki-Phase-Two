@@ -326,16 +326,46 @@ export const adminService = {
         return { success: !!data?.success };
     },
 
-    async getTopSellers(limit = 20) {
-        const { data, error } = await supabase.rpc('admin_top_sellers', { p_limit: limit });
-        if (error) return [];
+    // Top performers — optional [from, to) booking window (null = all-time) and a
+    // caller-chosen count. The window filters which bookings count toward the
+    // ranking; deal counts stay all-time. (v11.46)
+    async getTopSellers(limit = 20, from: Date | null = null, to: Date | null = null) {
+        const { data, error } = await supabase.rpc('admin_top_sellers', {
+            p_limit: limit,
+            p_from: from ? from.toISOString() : null,
+            p_to: to ? to.toISOString() : null,
+        });
+        if (error) { console.error('[adminService.getTopSellers]', error); return []; }
         return data ?? [];
     },
 
-    async getTopBuyers(limit = 20) {
-        const { data, error } = await supabase.rpc('admin_top_buyers', { p_limit: limit });
-        if (error) return [];
+    async getTopBuyers(limit = 20, from: Date | null = null, to: Date | null = null) {
+        const { data, error } = await supabase.rpc('admin_top_buyers', {
+            p_limit: limit,
+            p_from: from ? from.toISOString() : null,
+            p_to: to ? to.toISOString() : null,
+        });
+        if (error) { console.error('[adminService.getTopBuyers]', error); return []; }
         return data ?? [];
+    },
+
+    /**
+     * Custom-period totals between two calendar dates [from, to). Powers the
+     * «تقرير فترة مخصّصة» card so the owner can read exact counts (new buyers /
+     * sellers / bookings / GMV / subscriptions) for any window. (v11.46)
+     */
+    async getRangeSummary(from: Date, to: Date) {
+        const { data, error } = await supabase.rpc('admin_range_summary', {
+            p_from: from.toISOString(),
+            p_to: to.toISOString(),
+        });
+        if (error) { console.error('[adminService.getRangeSummary]', error); return null; }
+        const row = Array.isArray(data) ? data[0] : data;
+        return row as {
+            new_buyers: number; new_sellers: number; new_users: number;
+            bookings: number; completed_bookings: number; cancelled_bookings: number;
+            gmv: number; new_subscriptions: number;
+        } | null;
     },
 
     /**

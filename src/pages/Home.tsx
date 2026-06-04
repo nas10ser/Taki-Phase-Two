@@ -14,6 +14,7 @@ import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
 import BannerSlider from '../components/BannerSlider';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
+import { contestRepository, isContestLive } from '../repositories/contestRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
@@ -41,7 +42,22 @@ const Home: React.FC = () => {
     // hurting perceived speed on resumed tabs.
     useEffect(() => {
         refreshDeals();
-        bannerRepository.getActive('home_top').then(setBanners);
+        // Image banners (admin) + live contests, surfaced together so shoppers
+        // discover contests in the same hero carousel. Contest slides lead.
+        Promise.all([
+            bannerRepository.getActive('home_top'),
+            contestRepository.list(),
+        ]).then(([imgBanners, contests]) => {
+            const contestBanners: Banner[] = contests.filter(isContestLive).map((c) => ({
+                id: `contest-${c.id}`,
+                kind: 'contest' as const,
+                contest: { id: c.id, title: c.title, prize: c.prize },
+                title_ar: c.title, title_en: c.title,
+                image_url: '', target_url: '/contests',
+                position: 'home_top', is_active: true, display_order: -1,
+            }));
+            setBanners([...contestBanners, ...imgBanners]);
+        }).catch(() => { bannerRepository.getActive('home_top').then(setBanners); });
     }, [refreshDeals]);
 
     useEffect(() => {

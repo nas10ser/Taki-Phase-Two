@@ -12,6 +12,13 @@ export interface Banner {
     is_active: boolean;
     display_order: number;
     expires_at?: string;
+    /**
+     * Synthetic slide kind. Image banners come from the `banners` table; contest
+     * slides are generated client-side from live contests so users discover them
+     * in the same carousel (no image — rendered as a gradient card). (v11.46)
+     */
+    kind?: 'image' | 'contest';
+    contest?: { id: string; title: string; prize?: string };
 }
 
 export const bannerRepository = {

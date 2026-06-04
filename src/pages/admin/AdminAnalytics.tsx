@@ -66,18 +66,18 @@ const SparkChart = memo<{
         >
             <defs>
                 <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+                    <stop offset="0%" style={{ stopColor: 'var(--chart-violet)', stopOpacity: 0.38 }} />
+                    <stop offset="100%" style={{ stopColor: 'var(--chart-violet)', stopOpacity: 0 }} />
                 </linearGradient>
             </defs>
             <path d={fillPath} fill="url(#sparkGrad)" />
-            <path d={path} fill="none" stroke="#7c3aed" strokeWidth="0.7" strokeLinejoin="round" />
+            <path d={path} fill="none" strokeWidth="0.7" strokeLinejoin="round" style={{ stroke: 'var(--chart-violet)' }} />
             {data.map((d, i) => {
                 const x = i * stepX;
                 const y = height - (d.count / max) * (height - 30);
                 return (
                     <g key={i}>
-                        <circle cx={x} cy={y} r="0.8" fill="#7c3aed" />
+                        <circle cx={x} cy={y} r="0.8" style={{ fill: 'var(--chart-violet)' }} />
                     </g>
                 );
             })}
@@ -130,6 +130,44 @@ const TOP_PERF_CSV_COLUMNS: CsvColumn<any>[] = [
     { header: 'المعرّف',        accessor: (r: any) => r.id },
 ];
 
+// Local calendar date → YYYY-MM-DD (offset-safe so the picker shows the day
+// the admin actually sees, not a UTC-shifted one).
+const isoDate = (d: Date) => {
+    const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return z.toISOString().slice(0, 10);
+};
+
+interface RangeSummary {
+    new_buyers: number; new_sellers: number; new_users: number;
+    bookings: number; completed_bookings: number; cancelled_bookings: number;
+    gmv: number; new_subscriptions: number;
+}
+
+const RANGE_CSV_COLUMNS: CsvColumn<any>[] = [
+    { header: 'الفترة',          accessor: (r) => r.period ?? '' },
+    { header: 'مشترون جدد',      accessor: (r) => r.new_buyers ?? 0 },
+    { header: 'بائعون جدد',      accessor: (r) => r.new_sellers ?? 0 },
+    { header: 'مستخدمون جدد',    accessor: (r) => r.new_users ?? 0 },
+    { header: 'حجوزات',          accessor: (r) => r.bookings ?? 0 },
+    { header: 'حجوزات مكتملة',   accessor: (r) => r.completed_bookings ?? 0 },
+    { header: 'حجوزات ملغاة',    accessor: (r) => r.cancelled_bookings ?? 0 },
+    { header: 'إجمالي المبيعات', accessor: (r) => r.gmv ?? 0 },
+    { header: 'اشتراكات جديدة',  accessor: (r) => r.new_subscriptions ?? 0 },
+];
+
+const StatBox: React.FC<{ label: string; value: number | string }> = ({ label, value }) => (
+    <div className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3 text-center">
+        <div className="text-xl font-extrabold text-[var(--text-primary)] tabular-nums">{value}</div>
+        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{label}</div>
+    </div>
+);
+
+const RangePreset: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
+    <button onClick={onClick} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-purple-300 transition-colors">
+        {label}
+    </button>
+);
+
 // ============================================================
 // Main Component
 // ============================================================
@@ -143,6 +181,19 @@ const AdminAnalytics: React.FC = () => {
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
     const [auditOnly, setAuditOnly] = useState(false);
+
+    // Top-lists controls — owner-chosen count + optional calendar window. (v11.46)
+    const [topLimit, setTopLimit] = useState(10);
+    const [topMode, setTopMode] = useState<'all' | 'day' | 'range'>('all');
+    const [topDay, setTopDay] = useState('');
+    const [topFrom, setTopFrom] = useState('');
+    const [topTo, setTopTo] = useState('');
+
+    // Custom-period summary report (calendar from → to).
+    const [rangeFrom, setRangeFrom] = useState(() => isoDate(new Date(Date.now() - 29 * 864e5)));
+    const [rangeTo, setRangeTo] = useState(() => isoDate(new Date()));
+    const [rangeData, setRangeData] = useState<RangeSummary | null>(null);
+    const [rangeLoading, setRangeLoading] = useState(false);
 
     // Compute timeline range
     const { from, to, bucket } = useMemo(() => {
@@ -176,21 +227,51 @@ const AdminAnalytics: React.FC = () => {
         setActivity(a);
     }, []);
 
+    // [from, to) booking window for the top lists, derived from the calendar
+    // controls. null = all-time (matches the previous behaviour).
+    const topWindow = useMemo<{ from: Date | null; to: Date | null }>(() => {
+        if (topMode === 'day' && topDay) {
+            const f = new Date(topDay + 'T00:00:00');
+            const t = new Date(f); t.setDate(t.getDate() + 1);
+            return { from: f, to: t };
+        }
+        if (topMode === 'range' && topFrom && topTo) {
+            const f = new Date(topFrom + 'T00:00:00');
+            const t = new Date(topTo + 'T00:00:00'); t.setDate(t.getDate() + 1);
+            return { from: f, to: t };
+        }
+        return { from: null, to: null };
+    }, [topMode, topDay, topFrom, topTo]);
+
     const refreshTops = useCallback(async () => {
         const [s, b] = await Promise.all([
-            adminService.getTopSellers(10),
-            adminService.getTopBuyers(10),
+            adminService.getTopSellers(topLimit, topWindow.from, topWindow.to),
+            adminService.getTopBuyers(topLimit, topWindow.from, topWindow.to),
         ]);
         setTopSellers(s);
         setTopBuyers(b);
-    }, []);
+    }, [topLimit, topWindow]);
 
-    // Initial load
+    const loadRange = useCallback(async () => {
+        if (!rangeFrom || !rangeTo) return;
+        setRangeLoading(true);
+        const f = new Date(rangeFrom + 'T00:00:00');
+        const t = new Date(rangeTo + 'T00:00:00'); t.setDate(t.getDate() + 1);
+        setRangeData(await adminService.getRangeSummary(f, t));
+        setRangeLoading(false);
+    }, [rangeFrom, rangeTo]);
+
+    // Initial load (live + activity)
     useEffect(() => {
         refreshLive();
         refreshActivity();
-        refreshTops();
-    }, [refreshLive, refreshActivity, refreshTops]);
+    }, [refreshLive, refreshActivity]);
+
+    // Top lists re-fetch whenever the count or calendar window changes.
+    useEffect(() => { refreshTops(); }, [refreshTops]);
+
+    // Custom-period report re-fetches whenever the calendar changes.
+    useEffect(() => { loadRange(); }, [loadRange]);
 
     // Live polling (3 ثوانٍ)
     useEffect(() => {
@@ -320,6 +401,87 @@ const AdminAnalytics: React.FC = () => {
                 <SparkChart data={timeline} />
             </div>
 
+            {/* Custom-period report — pick any two calendar dates and read the
+                exact counts for that window (also exportable as CSV). v11.46 */}
+            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🗓️ تقرير فترة مخصّصة</h2>
+                    <ExportButton
+                        rows={rangeData ? [{ ...rangeData, period: `${rangeFrom} → ${rangeTo}` }] : []}
+                        columns={RANGE_CSV_COLUMNS}
+                        filenameStem={`taki-report-${rangeFrom}_${rangeTo}`}
+                        label="تصدير التقرير"
+                        accent="purple"
+                        tooltip="تنزيل أرقام هذه الفترة كملف CSV"
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">من تاريخ</label>
+                        <input type="date" value={rangeFrom} max={rangeTo} onChange={(e) => setRangeFrom(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">إلى تاريخ</label>
+                        <input type="date" value={rangeTo} min={rangeFrom} max={isoDate(new Date())} onChange={(e) => setRangeTo(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    <RangePreset label="اليوم" onClick={() => { const t = isoDate(new Date()); setRangeFrom(t); setRangeTo(t); }} />
+                    <RangePreset label="أمس" onClick={() => { const y = isoDate(new Date(Date.now() - 864e5)); setRangeFrom(y); setRangeTo(y); }} />
+                    <RangePreset label="آخر 7 أيام" onClick={() => { setRangeFrom(isoDate(new Date(Date.now() - 6 * 864e5))); setRangeTo(isoDate(new Date())); }} />
+                    <RangePreset label="آخر 30 يوم" onClick={() => { setRangeFrom(isoDate(new Date(Date.now() - 29 * 864e5))); setRangeTo(isoDate(new Date())); }} />
+                    <RangePreset label="هذا الشهر" onClick={() => { const n = new Date(); setRangeFrom(isoDate(new Date(n.getFullYear(), n.getMonth(), 1))); setRangeTo(isoDate(n)); }} />
+                </div>
+                {rangeLoading ? (
+                    <div className="h-24 bg-[var(--gray-100)] rounded-xl animate-pulse" />
+                ) : rangeData ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <StatBox label="مشترون جدد" value={rangeData.new_buyers} />
+                        <StatBox label="بائعون جدد" value={rangeData.new_sellers} />
+                        <StatBox label="مستخدمون جدد" value={rangeData.new_users} />
+                        <StatBox label="اشتراكات جديدة" value={rangeData.new_subscriptions} />
+                        <StatBox label="حجوزات" value={rangeData.bookings} />
+                        <StatBox label="حجوزات مكتملة" value={rangeData.completed_bookings} />
+                        <StatBox label="حجوزات ملغاة" value={rangeData.cancelled_bookings} />
+                        <StatBox label="إجمالي المبيعات" value={`${Math.round(Number(rangeData.gmv) || 0).toLocaleString('en-US')} ر.س`} />
+                    </div>
+                ) : (
+                    <div className="text-sm text-[var(--gray-400)] text-center py-4">اختر فترة لعرض الأرقام</div>
+                )}
+            </div>
+
+            {/* Top-lists controls — owner-chosen count + optional calendar window */}
+            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🏆 أعلى القوائم</h2>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[var(--text-secondary)]">كم عدد تريد؟</span>
+                        <input type="number" min={1} max={500} value={topLimit} onChange={(e) => setTopLimit(Math.min(500, Math.max(1, Number(e.target.value) || 1)))} className="w-20 px-2 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-center font-bold text-[var(--text-primary)] outline-none" />
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {([['all', 'كل الفترات'], ['day', 'يوم محدّد'], ['range', 'من–إلى']] as const).map(([m, label]) => (
+                        <button key={m} onClick={() => setTopMode(m)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${topMode === m ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow' : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)]'}`}>{label}</button>
+                    ))}
+                </div>
+                {topMode === 'day' && (
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">اليوم</label>
+                        <input type="date" value={topDay} max={isoDate(new Date())} onChange={(e) => setTopDay(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
+                    </div>
+                )}
+                {topMode === 'range' && (
+                    <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">من</label><input type="date" value={topFrom} max={topTo || isoDate(new Date())} onChange={(e) => setTopFrom(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" /></div>
+                        <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">إلى</label><input type="date" value={topTo} min={topFrom} max={isoDate(new Date())} onChange={(e) => setTopTo(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" /></div>
+                    </div>
+                )}
+                <div className="text-[11px] text-[var(--text-secondary)]">
+                    {topMode === 'all' ? 'يشمل كل الفترات' : topMode === 'day' ? (topDay ? `ليوم ${topDay}` : 'اختر يوماً') : (topFrom && topTo ? `من ${topFrom} إلى ${topTo}` : 'اختر بداية ونهاية')}
+                    {` · يعرض ${topLimit} لكل قائمة`}
+                </div>
+            </div>
+
             {/* Two columns: Top Sellers + Top Buyers */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
@@ -429,7 +591,7 @@ const AdminAnalytics: React.FC = () => {
                     filenameStem="taki-top-sellers"
                     label="🏆 تصدير أعلى البائعين"
                     accent="purple"
-                    tooltip="تنزيل قائمة أعلى 10 بائعين الحالية كـCSV"
+                    tooltip={`تنزيل القائمة الظاهرة (${topSellers.length}) كـCSV — حسب العدد والفترة المختارة`}
                 />
                 <ExportButton
                     rows={topBuyers.map((b: any, i: number) => ({ ...b, rank: i + 1 }))}
@@ -443,7 +605,7 @@ const AdminAnalytics: React.FC = () => {
                     filenameStem="taki-top-buyers"
                     label="💎 تصدير أعلى المشترين"
                     accent="blue"
-                    tooltip="تنزيل قائمة أعلى 10 مشترين الحالية كـCSV"
+                    tooltip={`تنزيل القائمة الظاهرة (${topBuyers.length}) كـCSV — حسب العدد والفترة المختارة`}
                 />
             </div>
         </div>

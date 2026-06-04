@@ -63,6 +63,32 @@ export interface ContestEntry {
 
 export interface MaskedWinner { name: string; phone: string | null; }
 
+/**
+ * Is a contest LIVE right now for the public? Must be active AND inside its
+ * scheduled window. A contest scheduled to start later stays invisible until
+ * its `starts_at` passes — even if the admin pressed «تفعيل» early. (v11.46)
+ */
+export const isContestLive = (c: Contest): boolean => {
+    if (c.status !== 'active') return false;
+    const now = Date.now();
+    if (c.starts_at && new Date(c.starts_at).getTime() > now) return false;
+    if (c.ends_at && new Date(c.ends_at).getTime() < now) return false;
+    return true;
+};
+
+/**
+ * Should a contest appear on the public list? Drawn/closed always show (results
+ * / waiting state). An active contest only shows once it has started — a future
+ * `starts_at` keeps it hidden from participants until the moment it begins.
+ */
+export const isContestPubliclyVisible = (c: Contest): boolean => {
+    if (c.status === 'active') {
+        if (c.starts_at && new Date(c.starts_at).getTime() > Date.now()) return false;
+        return true;
+    }
+    return c.status === 'closed' || c.status === 'drawn';
+};
+
 const sanitize = (r: any): Contest => ({
     id: r.id,
     title: r.title || '',

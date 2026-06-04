@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { contestRepository, Contest, MaskedWinner } from '../repositories/contestRepository';
+import { contestRepository, Contest, MaskedWinner, isContestPubliclyVisible } from '../repositories/contestRepository';
 
 /**
  * Public contests/surveys page (v11.44). Anyone can enter with name + phone and
@@ -21,9 +21,11 @@ const Contests: React.FC = () => {
         let alive = true;
         contestRepository.list().then((list) => {
             if (!alive) return;
-            // Public sees active first, then drawn (results), then closed.
+            // Hide contests scheduled to start later — even if «مُفعّلة» — until
+            // their start time passes. Then: active first, drawn (results), closed.
+            const visible = list.filter(isContestPubliclyVisible);
             const order: Record<string, number> = { active: 0, drawn: 1, closed: 2, draft: 9 };
-            setContests([...list].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5)));
+            setContests([...visible].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5)));
             setLoading(false);
         });
         return () => { alive = false; };

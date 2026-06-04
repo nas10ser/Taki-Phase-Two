@@ -22,7 +22,7 @@ interface BannerSliderProps {
  * release we ease with a long decelerate curve. A fast flick (velocity-based)
  * advances even on a short drag, so it feels light and responsive.
  */
-const AUTOPLAY_MS = 4500;
+const AUTOPLAY_MS = 3000;
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';   // easeOutQuint — smooth decelerate
 const DIST_RATIO = 0.16;                          // drag past 16% of width → advance
 const VEL_THRESHOLD = 0.35;                        // px/ms → a flick
@@ -82,7 +82,8 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
 
     const handleBannerClick = (banner: Banner) => {
         if (movedRef.current) { movedRef.current = false; return; } // a swipe is not a tap
-        if (banner.deal_id) history.push(`/deal/${banner.deal_id}`);
+        if (banner.kind === 'contest') history.push('/contests');
+        else if (banner.deal_id) history.push(`/deal/${banner.deal_id}`);
         else if (banner.store_id) history.push(`/store/${banner.store_id}`);
         else if (banner.target_url) {
             if (banner.target_url.startsWith('http')) openExternalUrl(banner.target_url);
@@ -173,27 +174,49 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                         onClick={() => handleBannerClick(banner)}
                         style={{ width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer' }}
                     >
-                        <img
-                            src={banner.image_url}
-                            alt={isRTL ? banner.title_ar : banner.title_en}
-                            width={1200}
-                            height={600}
-                            loading={idx <= 1 ? 'eager' : 'lazy'}
-                            decoding="async"
-                            draggable={false}
-                            {...(idx === 1 ? { fetchpriority: 'high' as 'high' } : {})}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-                        />
-                        {(banner.title_ar || banner.title_en) && (
+                        {banner.kind === 'contest' ? (
                             <div style={{
-                                position: 'absolute', bottom: 0, left: 0, right: 0,
-                                background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
-                                padding: '40px 20px 20px', color: 'white',
+                                width: '100%', height: '100%',
+                                background: 'linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%)',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                textAlign: 'center', padding: '16px 22px', color: 'white',
+                                pointerEvents: 'none',
                             }}>
-                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900 }}>
-                                    {isRTL ? banner.title_ar : banner.title_en}
-                                </h3>
+                                <div style={{ fontSize: '1.9rem', lineHeight: 1 }}>🎁</div>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 800, letterSpacing: 1, opacity: 0.9, marginTop: 5 }}>مسابقة بجوائز</div>
+                                <div style={{ fontSize: '1.15rem', fontWeight: 900, marginTop: 3, maxWidth: '96%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {banner.contest?.title || 'شارك واربح'}
+                                </div>
+                                {banner.contest?.prize && (
+                                    <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: 4 }}>🏆 {banner.contest.prize}</div>
+                                )}
+                                <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 999, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 800 }}>✍️ شارك الآن</div>
                             </div>
+                        ) : (
+                            <>
+                                <img
+                                    src={banner.image_url}
+                                    alt={isRTL ? banner.title_ar : banner.title_en}
+                                    width={1200}
+                                    height={600}
+                                    loading={idx <= 1 ? 'eager' : 'lazy'}
+                                    decoding="async"
+                                    draggable={false}
+                                    {...(idx === 1 ? { fetchpriority: 'high' as 'high' } : {})}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                                />
+                                {(banner.title_ar || banner.title_en) && (
+                                    <div style={{
+                                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                                        background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+                                        padding: '40px 20px 20px', color: 'white',
+                                    }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900 }}>
+                                            {isRTL ? banner.title_ar : banner.title_en}
+                                        </h3>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 ))}
