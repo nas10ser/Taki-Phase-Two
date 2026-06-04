@@ -172,7 +172,11 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                     <div
                         key={`${banner.id}-${idx}`}
                         onClick={() => handleBannerClick(banner)}
-                        style={{ width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer' }}
+                        style={{
+                            width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer',
+                            // Branded fallback so a broken/missing image never shows a black void.
+                            background: banner.kind === 'contest' ? undefined : 'linear-gradient(135deg, #0f766e, #134e4a)',
+                        }}
                     >
                         {banner.kind === 'contest' ? (
                             <div style={{
@@ -203,6 +207,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                                     decoding="async"
                                     draggable={false}
                                     {...(idx === 1 ? { fetchpriority: 'high' as 'high' } : {})}
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                     style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
                                 />
                                 {(banner.title_ar || banner.title_en) && (

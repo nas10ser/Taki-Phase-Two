@@ -14,7 +14,7 @@ import { UserProfile } from '../services/authService';
 import { useEffect } from 'react';
 import BannerSlider from '../components/BannerSlider';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
-import { contestRepository, isContestLive } from '../repositories/contestRepository';
+import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
 
 const Home: React.FC = () => {
     const history = useHistory();
@@ -48,7 +48,9 @@ const Home: React.FC = () => {
             bannerRepository.getActive('home_top'),
             contestRepository.list(),
         ]).then(([imgBanners, contests]) => {
-            const contestBanners: Banner[] = contests.filter(isContestLive).map((c) => ({
+            const contestBanners: Banner[] = contests
+                .filter((c) => isContestLive(c) && contestMatchesAudience(c, user?.userType))
+                .map((c) => ({
                 id: `contest-${c.id}`,
                 kind: 'contest' as const,
                 contest: { id: c.id, title: c.title, prize: c.prize },
@@ -58,7 +60,7 @@ const Home: React.FC = () => {
             }));
             setBanners([...contestBanners, ...imgBanners]);
         }).catch(() => { bannerRepository.getActive('home_top').then(setBanners); });
-    }, [refreshDeals]);
+    }, [refreshDeals, user?.userType]);
 
     useEffect(() => {
         if (!searchQuery.trim()) {

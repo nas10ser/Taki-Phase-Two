@@ -26,7 +26,7 @@ const labelCls = 'block text-xs font-bold text-[var(--text-secondary)] mb-1.5';
 const blankContest = (): Partial<Contest> => ({
     title: '', description: '', prize: '', status: 'draft',
     questions: [], social_tasks: [], pass_mode: 'all_correct',
-    reveal_name: true, reveal_phone: 'last4', starts_at: null, ends_at: null,
+    reveal_name: true, reveal_phone: 'last4', audience: 'all', starts_at: null, ends_at: null,
 });
 
 const AdminContests: React.FC = () => {
@@ -207,6 +207,14 @@ const AdminContests: React.FC = () => {
                         <div><label className={labelCls}>ينتهي في</label><input type="datetime-local" className={inputCls} value={draft.ends_at ? draft.ends_at.slice(0, 16) : ''} onChange={(e) => setField({ ends_at: e.target.value ? new Date(e.target.value).toISOString() : null })} /></div>
                     </div>
                     <div>
+                        <label className={labelCls}>لمن هذه المسابقة؟</label>
+                        <select className={inputCls} value={draft.audience || 'all'} onChange={(e) => setField({ audience: e.target.value as any })}>
+                            <option value="all">الجميع (مشترون + تجار)</option>
+                            <option value="buyers">المشترون فقط</option>
+                            <option value="sellers">التجار فقط</option>
+                        </select>
+                    </div>
+                    <div>
                         <label className={labelCls}>شرط التأهّل للسحب</label>
                         <select className={inputCls} value={draft.pass_mode} onChange={(e) => setField({ pass_mode: e.target.value as any })}>
                             <option value="all_correct">يجب الإجابة على كل الأسئلة المُصحّحة بشكل صحيح</option>
@@ -370,9 +378,9 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                 </div>
                 {winners.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
-                        <div className="text-xs font-bold text-purple-900 mb-1">🏆 الفائزون (كما سيظهرون للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
+                        <div className="text-xs font-bold text-purple-900 mb-1">🏆 الفائزون — الجوال كامل لتتواصل معهم (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
                         {winners.map((w) => (
-                            <div key={w.id} className="text-sm font-bold text-[var(--text-primary)]">🎉 {contest?.reveal_name === false ? 'فائز' : w.name} — <span className="font-mono">{maskPhone(w.phone)}</span></div>
+                            <div key={w.id} className="text-sm font-bold text-[var(--text-primary)]">🎉 {w.name} — <span className="font-mono text-emerald-600" dir="ltr">{w.phone}</span></div>
                         ))}
                     </div>
                 )}
@@ -391,7 +399,6 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                 <div className="font-bold text-sm text-[var(--text-primary)] truncate flex items-center gap-2">
                                     {e.is_winner && <span title="فائز">🏆</span>}{e.name}
                                 </div>
-                                <div className="text-[11px] text-[var(--text-secondary)] font-mono" dir="ltr">{e.phone}</div>
                             </div>
                             <span className="text-[11px] text-[var(--text-secondary)]">{e.score}/{e.max_score}</span>
                             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full text-white ${e.qualified ? 'bg-emerald-500' : 'bg-[var(--gray-400)]'}`}>{e.qualified ? 'مؤهّل' : 'غير مؤهّل'}</span>

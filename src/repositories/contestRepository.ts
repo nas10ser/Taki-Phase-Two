@@ -30,6 +30,7 @@ export interface SocialTask {
 export type ContestStatus = 'draft' | 'active' | 'closed' | 'drawn';
 export type PassMode = 'all_correct' | 'any' | 'collect';
 export type RevealPhone = 'full' | 'last4' | 'hidden';
+export type ContestAudience = 'all' | 'buyers' | 'sellers';
 
 export interface Contest {
     id: string;
@@ -42,6 +43,7 @@ export interface Contest {
     pass_mode: PassMode;
     reveal_name: boolean;
     reveal_phone: RevealPhone;
+    audience: ContestAudience;     // who the contest targets (v11.47)
     starts_at: string | null;
     ends_at: string | null;
     created_at?: string;
@@ -77,16 +79,24 @@ export const isContestLive = (c: Contest): boolean => {
 };
 
 /**
- * Should a contest appear on the public list? Drawn/closed always show (results
- * / waiting state). An active contest only shows once it has started — a future
- * `starts_at` keeps it hidden from participants until the moment it begins.
+ * Should a contest appear on the public list? Only LIVE contests show — once a
+ * contest ends, is stopped (closed), or has been drawn, it disappears entirely
+ * (no «انتهت المسابقة» placeholder). A future `starts_at` also keeps it hidden
+ * until it begins. (v11.47 — owner asked ended contests to vanish.)
  */
-export const isContestPubliclyVisible = (c: Contest): boolean => {
-    if (c.status === 'active') {
-        if (c.starts_at && new Date(c.starts_at).getTime() > Date.now()) return false;
-        return true;
-    }
-    return c.status === 'closed' || c.status === 'drawn';
+export const isContestPubliclyVisible = (c: Contest): boolean => isContestLive(c);
+
+/**
+ * Does this contest target the given user type? `all` → everyone; `sellers` →
+ * sellers only; `buyers` → buyers + guests (potential shoppers). Admins always
+ * see everything (so the owner can preview any audience). (v11.47)
+ */
+export const contestMatchesAudience = (c: Contest, userType?: string | null): boolean => {
+    const aud = c.audience || 'all';
+    if (aud === 'all' || userType === 'admin') return true;
+    if (aud === 'sellers') return userType === 'seller';
+    // buyers: anyone who isn't a seller (registered buyers + guests)
+    return userType !== 'seller';
 };
 
 const sanitize = (r: any): Contest => ({
@@ -100,6 +110,7 @@ const sanitize = (r: any): Contest => ({
     pass_mode: (r.pass_mode as PassMode) || 'all_correct',
     reveal_name: r.reveal_name !== false,
     reveal_phone: (r.reveal_phone as RevealPhone) || 'last4',
+    audience: (r.audience as ContestAudience) || 'all',
     starts_at: r.starts_at ?? null,
     ends_at: r.ends_at ?? null,
     created_at: r.created_at,
@@ -128,6 +139,7 @@ export const contestRepository = {
             pass_mode: c.pass_mode || 'all_correct',
             reveal_name: c.reveal_name !== false,
             reveal_phone: c.reveal_phone || 'last4',
+            audience: c.audience || 'all',
             starts_at: c.starts_at || null,
             ends_at: c.ends_at || null,
             updated_at: new Date().toISOString(),
@@ -183,5 +195,12 @@ export const contestRepository = {
         const { data } = await supabase.rpc('contest_counts', { p_contest_id: contestId });
         const d = data as any;
         return { total: d?.total || 0, qualified: d?.qualified || 0 };
+    },
+
+    /** The signed-in user's OWN entry status (powers the one-entry-per-user UX). */
+    async myEntry(contestId: string): Promise<{ entered: boolean; qualified?: boolean; score?: number; max?: number }> {
+        const { data } = await supabase.rpc('my_contest_entry', { p_contest_id: contestId });
+        const d = data as any;
+        return { entered: !!d?.entered, qualified: d?.qualified, score: d?.score, max: d?.max_score };
     },
 };

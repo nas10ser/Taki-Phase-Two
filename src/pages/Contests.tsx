@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { contestRepository, Contest, MaskedWinner, isContestPubliclyVisible } from '../repositories/contestRepository';
+import { contestRepository, Contest, MaskedWinner, isContestPubliclyVisible, contestMatchesAudience } from '../repositories/contestRepository';
 
 /**
  * Public contests/surveys page (v11.44). Anyone can enter with name + phone and
@@ -33,6 +33,9 @@ const Contests: React.FC = () => {
 
     if (selected) return <ContestEntry contest={selected} onBack={() => setSelected(null)} user={user} />;
 
+    // Only show contests that target this user's type (buyers / sellers / all).
+    const shown = contests.filter((c) => contestMatchesAudience(c, user?.userType));
+
     return (
         <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir="rtl" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}>
             <div className="flex justify-between items-center gap-3 mb-3">
@@ -45,11 +48,11 @@ const Contests: React.FC = () => {
 
             {loading ? (
                 <div className="space-y-3">{[0, 1].map((i) => <div key={i} className="h-32 bg-[var(--gray-100)] rounded-2xl animate-pulse" />)}</div>
-            ) : contests.length === 0 ? (
+            ) : shown.length === 0 ? (
                 <div className="text-center text-[var(--text-secondary)] py-16">لا توجد مسابقات متاحة حالياً. تابعنا قريباً 👀</div>
             ) : (
                 <div className="space-y-3">
-                    {contests.map((c) => <ContestCard key={c.id} contest={c} onOpen={() => setSelected(c)} />)}
+                    {shown.map((c) => <ContestCard key={c.id} contest={c} onOpen={() => setSelected(c)} />)}
                 </div>
             )}
         </div>
@@ -105,12 +108,22 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
     const [submitting, setSubmitting] = useState(false);
     const [result, setResult] = useState<{ qualified: boolean; score?: number; max?: number } | null>(null);
     const [error, setError] = useState('');
+    // Has this user already entered? null = still checking. (one-entry-per-user)
+    const [existing, setExisting] = useState<{ entered: boolean; qualified?: boolean; score?: number; max?: number } | null>(null);
 
     const setAns = (id: string, v: string) => setAnswers((a) => ({ ...a, [id]: v }));
     const setSoc = (id: string, v: string) => setSocial((s) => ({ ...s, [id]: v }));
 
     const accountPhone = String(user?.phone || '').trim();
     const inputCls = 'w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-purple-500';
+
+    // Check whether the signed-in user already participated (server-side, PII-safe).
+    useEffect(() => {
+        if (!user || !accountPhone) { setExisting({ entered: false }); return; }
+        let alive = true;
+        contestRepository.myEntry(c.id).then((e) => { if (alive) setExisting(e); });
+        return () => { alive = false; };
+    }, [c.id, user, accountPhone]);
 
     // Plain composition (not a nested component) so text inputs never lose focus.
     const shell = (children: React.ReactNode) => (
@@ -148,6 +161,28 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
         );
     }
 
+    // Still checking participation — avoid flashing the form.
+    if (existing === null) {
+        return shell(<div className="text-center text-[var(--text-secondary)] py-20">جاري التحميل...</div>);
+    }
+    // Already participated — one entry per user, no re-submission.
+    if (existing.entered && !result) {
+        return shell(
+            <div className={`text-center rounded-2xl p-8 ${existing.qualified ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-amber-50 border-2 border-amber-200'}`}>
+                <div className="text-5xl mb-3">{existing.qualified ? '🎉' : '🙏'}</div>
+                <div className={`text-xl font-extrabold ${existing.qualified ? 'text-emerald-900' : 'text-amber-900'}`}>شاركت مسبقاً في هذه المسابقة</div>
+                <div className={`text-sm mt-2 leading-relaxed ${existing.qualified ? 'text-emerald-800' : 'text-amber-800'}`}>
+                    {c.pass_mode === 'collect'
+                        ? 'أنت ضمن السحب — بالتوفيق! 🍀'
+                        : existing.qualified
+                            ? `أجبت بشكل صحيح${typeof existing.score === 'number' ? ` (${existing.score}/${existing.max})` : ''} ودخلت السحب — بالتوفيق! 🍀`
+                            : `لم تتأهّل هذه المرة${typeof existing.score === 'number' ? ` (${existing.score}/${existing.max})` : ''}. لكل مشارك محاولة واحدة فقط.`}
+                </div>
+                <button onClick={onBack} className="w-full mt-5 py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600">العودة للمسابقات</button>
+            </div>
+        );
+    }
+
     const submit = async () => {
         setError('');
         for (const q of c.questions) {
@@ -173,13 +208,10 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
                         ? 'أنت الآن ضمن السحب — بالتوفيق!'
                         : result.qualified
                             ? `أجبت بشكل صحيح${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''} ودخلت السحب — بالتوفيق!`
-                            : `بعض الإجابات غير صحيحة${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''}. يمكنك المحاولة مجدداً.`}
+                            : `بعض الإجابات غير صحيحة${typeof result.score === 'number' ? ` (${result.score}/${result.max})` : ''}. لكل مشارك محاولة واحدة فقط.`}
                 </div>
-                <div className="flex gap-2 mt-5">
-                    {!result.qualified && c.pass_mode !== 'collect' && (
-                        <button onClick={() => setResult(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-[var(--border-color)] text-[var(--text-primary)]">حاول مجدداً</button>
-                    )}
-                    <button onClick={onBack} className="flex-1 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600">العودة للمسابقات</button>
+                <div className="mt-5">
+                    <button onClick={onBack} className="w-full py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600">العودة للمسابقات</button>
                 </div>
             </div>
         );
