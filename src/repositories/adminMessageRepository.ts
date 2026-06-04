@@ -84,9 +84,19 @@ export const adminMessageRepository = {
         return { success: !!data?.success };
     },
 
-    warnUser: async (userId: string, message: string): Promise<{ success: boolean; error?: string }> => {
-        const { data, error } = await supabase.rpc('admin_warn_user', { p_user_id: userId, p_message: message });
+    warnUser: async (
+        userId: string,
+        message: string,
+        opts?: { role?: string | null; barcode?: string | null; contextMessage?: string | null },
+    ): Promise<{ success: boolean; count?: number; error?: string }> => {
+        const { data, error } = await supabase.rpc('admin_warn_user', {
+            p_user_id: userId,
+            p_message: message,
+            p_role: opts?.role ?? null,
+            p_barcode: opts?.barcode ?? null,
+            p_context_message: opts?.contextMessage ?? null,
+        });
         if (error) return { success: false, error: error.message };
-        return { success: !!data?.success };
+        return { success: !!data?.success, count: (data as any)?.count };
     },
 };

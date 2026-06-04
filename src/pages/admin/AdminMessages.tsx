@@ -87,13 +87,28 @@ const AdminMessages: React.FC = () => {
         }
     };
 
-    const handleWarn = async (userId: string | null, name: string | null) => {
+    const handleWarn = async (
+        userId: string | null,
+        name: string | null,
+        role?: string | null,
+        contextMessage?: string | null,
+    ) => {
         if (!userId) return;
         if (!canModerate) { await customAlert('🚫 لا تملك صلاحية الإنذار'); return; }
-        const msg = await customPrompt(`نص الإنذار لـ "${name || 'المستخدم'}":`);
+        const msg = await customPrompt(
+            contextMessage
+                ? `نص الإنذار لـ "${name || 'المستخدم'}" على الرسالة:\n«${contextMessage.slice(0, 120)}»`
+                : `نص الإنذار لـ "${name || 'المستخدم'}":`,
+        );
         if (!msg || !msg.trim()) return;
-        const res = await adminMessageRepository.warnUser(userId, msg.trim());
-        await customAlert(res.success ? '✅ تم إرسال الإنذار' : '❌ ' + (res.error ?? 'فشل الإرسال'));
+        const res = await adminMessageRepository.warnUser(userId, msg.trim(), {
+            role: role ?? null,
+            barcode: active?.barcode ?? null,
+            contextMessage: contextMessage ?? null,
+        });
+        await customAlert(res.success
+            ? `✅ تم إرسال الإنذار${res.count ? ` — إجمالي إنذاراته: ${res.count}` : ''}`
+            : '❌ ' + (res.error ?? 'فشل الإرسال'));
     };
 
     return (
@@ -170,11 +185,11 @@ const AdminMessages: React.FC = () => {
                                 </div>
                                 {canModerate && (
                                     <div className="flex gap-1.5">
-                                        <button onClick={() => handleWarn(active.buyerId, active.buyerName)}
+                                        <button onClick={() => handleWarn(active.buyerId, active.buyerName, 'buyer')}
                                             className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 text-[11px] font-bold hover:bg-amber-500/25">
                                             ⚠️ إنذار المشتري
                                         </button>
-                                        <button onClick={() => handleWarn(active.sellerId, active.sellerShop || active.sellerName)}
+                                        <button onClick={() => handleWarn(active.sellerId, active.sellerShop || active.sellerName, 'seller')}
                                             className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 text-[11px] font-bold hover:bg-amber-500/25">
                                             ⚠️ إنذار التاجر
                                         </button>
@@ -200,10 +215,16 @@ const AdminMessages: React.FC = () => {
                                                         </span>
                                                         <span className="text-[9px] text-[var(--text-secondary)]">{timeAgo(m.createdAt)}</span>
                                                         {canModerate && (
-                                                            <button onClick={() => handleDelete(m)}
-                                                                className="text-[9px] text-red-500 font-bold hover:underline mr-auto">
-                                                                حذف
-                                                            </button>
+                                                            <span className="flex items-center gap-2 mr-auto">
+                                                                <button onClick={() => handleWarn(m.senderId, m.senderName, m.senderRole, m.body)}
+                                                                    className="text-[9px] text-amber-600 font-bold hover:underline">
+                                                                    ⚠️ إنذار
+                                                                </button>
+                                                                <button onClick={() => handleDelete(m)}
+                                                                    className="text-[9px] text-red-500 font-bold hover:underline">
+                                                                    حذف
+                                                                </button>
+                                                            </span>
                                                         )}
                                                     </div>
                                                     <div className="text-sm text-[var(--text-primary)] whitespace-pre-wrap break-words">{m.body}</div>

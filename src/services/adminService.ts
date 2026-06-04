@@ -117,6 +117,25 @@ export interface AdminComplaintRow {
     target_name: string | null;
 }
 
+export interface WarnedUser {
+    user_id: string;
+    name: string | null;
+    phone: string | null;
+    user_type: string | null;
+    is_suspended: boolean;
+    warn_count: number;
+    last_warned_at: string;
+}
+
+export interface UserWarning {
+    id: string;
+    reason: string;
+    context_barcode: string | null;
+    context_message: string | null;
+    admin_name: string | null;
+    created_at: string;
+}
+
 // ============================================================
 // In-memory cache (TTL based) — يقلل الطلبات بنسبة 90%
 // ============================================================
@@ -366,6 +385,25 @@ export const adminService = {
             bookings: number; completed_bookings: number; cancelled_bookings: number;
             gmv: number; new_subscriptions: number;
         } | null;
+    },
+
+    // ── Warnings (strikes) ──────────────────────────────────────────────
+    /** Warned users with their strike counts. Filter by role, min-count, search. */
+    async listWarnedUsers(filters: { role?: string | null; minCount?: number; search?: string } = {}) {
+        const { data, error } = await supabase.rpc('admin_list_warned_users', {
+            p_role: filters.role ?? null,
+            p_min_count: filters.minCount ?? 1,
+            p_search: filters.search ?? '',
+        });
+        if (error) { console.error('[adminService.listWarnedUsers]', error); return []; }
+        return (data ?? []) as WarnedUser[];
+    },
+
+    /** One user's warnings (reason + the offending thread/message), newest first. */
+    async getUserWarnings(userId: string) {
+        const { data, error } = await supabase.rpc('admin_user_warnings', { p_user_id: userId });
+        if (error) { console.error('[adminService.getUserWarnings]', error); return []; }
+        return (data ?? []) as UserWarning[];
     },
 
     /**

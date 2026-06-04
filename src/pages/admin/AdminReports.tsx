@@ -25,6 +25,8 @@ import {
     adminService,
     AdminReportRow,
     AdminComplaintRow,
+    WarnedUser,
+    UserWarning,
 } from '../../services/adminService';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
@@ -84,9 +86,10 @@ const AdminReports: React.FC = () => {
     const { customConfirm, customAlert } = useApp();
     const history = useHistory();
 
-    const [view, setView] = useState<'reports' | 'complaints'>('reports');
+    const [view, setView] = useState<'reports' | 'complaints' | 'warnings'>('reports');
     const [reports, setReports] = useState<AdminReportRow[]>([]);
     const [complaints, setComplaints] = useState<AdminComplaintRow[]>([]);
+    const [warned, setWarned] = useState<WarnedUser[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [q, setQ] = useState('');
@@ -94,6 +97,7 @@ const AdminReports: React.FC = () => {
     const [rtype, setRtype] = useState<string>('');
     const [days, setDays] = useState<number>(0);
     const [role, setRole] = useState<string>('');
+    const [warnMin, setWarnMin] = useState<number>(1);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -103,12 +107,15 @@ const AdminReports: React.FC = () => {
                 reportedRole: (role || null) as any, days,
             });
             setReports(rows);
-        } else {
+        } else if (view === 'complaints') {
             const rows = await adminService.listComplaints({ query: q, status: status || null });
             setComplaints(rows);
+        } else {
+            const rows = await adminService.listWarnedUsers({ role: role || null, minCount: warnMin, search: q });
+            setWarned(rows);
         }
         setLoading(false);
-    }, [view, q, status, rtype, days, role]);
+    }, [view, q, status, rtype, days, role, warnMin]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -127,6 +134,14 @@ const AdminReports: React.FC = () => {
         const r = await adminService.setComplaintStatus(id, next);
         if (r.success) load();
         else customAlert('❌ تعذّر تحديث الحالة');
+    };
+
+    const toggleSuspend = async (userId: string, suspend: boolean, name: string) => {
+        const ok = await customConfirm(suspend ? `إيقاف حساب «${name}»؟ لن يتمكّن من استخدام المنصّة.` : `إعادة تفعيل حساب «${name}»؟`);
+        if (!ok) return;
+        const r = await adminService.updateUser(userId, { is_suspended: suspend });
+        if (r.success) { await customAlert(suspend ? '⛔ تم إيقاف الحساب' : '✅ تم إعادة التفعيل'); load(); }
+        else customAlert('❌ تعذّر تنفيذ الإجراء');
     };
 
     const openAccount = (id: string, partyRole: string, name?: string) => {
@@ -148,8 +163,14 @@ const AdminReports: React.FC = () => {
         return { open, review, resolved, total: complaints.length };
     }, [view, reports, complaints]);
 
-    const clearFilters = () => { setQ(''); setStatus(''); setRtype(''); setDays(0); setRole(''); };
-    const hasFilters = !!(q || status || rtype || days || role);
+    const warnSummary = useMemo(() => {
+        const danger = warned.filter((w) => w.warn_count >= 3).length;
+        const totalStrikes = warned.reduce((s, w) => s + w.warn_count, 0);
+        return { users: warned.length, danger, totalStrikes };
+    }, [warned]);
+
+    const clearFilters = () => { setQ(''); setStatus(''); setRtype(''); setDays(0); setRole(''); setWarnMin(1); };
+    const hasFilters = !!(q || status || rtype || days || role || (view === 'warnings' && warnMin > 1));
 
     return (
         <div className="space-y-4 animate-fade-in" dir="rtl">
@@ -174,32 +195,40 @@ const AdminReports: React.FC = () => {
             </div>
 
             {/* Summary strip */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <SummaryCard
-                    label="مفتوح / يحتاج مراجعة"
-                    value={summary.open}
-                    gradient="bg-gradient-to-br from-amber-500 to-orange-500"
-                    pulse
-                />
-                <SummaryCard
-                    label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
-                    value={summary.review}
-                    gradient="bg-gradient-to-br from-red-500 to-rose-600"
-                />
-                <SummaryCard
-                    label="تم الحل"
-                    value={summary.resolved}
-                    gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
-                />
-                <SummaryCard
-                    label="الإجمالي"
-                    value={summary.total}
-                    gradient="bg-gradient-to-br from-slate-500 to-slate-700"
-                />
-            </div>
+            {view !== 'warnings' ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <SummaryCard
+                        label="مفتوح / يحتاج مراجعة"
+                        value={summary.open}
+                        gradient="bg-gradient-to-br from-amber-500 to-orange-500"
+                        pulse
+                    />
+                    <SummaryCard
+                        label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
+                        value={summary.review}
+                        gradient="bg-gradient-to-br from-red-500 to-rose-600"
+                    />
+                    <SummaryCard
+                        label="تم الحل"
+                        value={summary.resolved}
+                        gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
+                    />
+                    <SummaryCard
+                        label="الإجمالي"
+                        value={summary.total}
+                        gradient="bg-gradient-to-br from-slate-500 to-slate-700"
+                    />
+                </div>
+            ) : (
+                <div className="grid grid-cols-3 gap-3">
+                    <SummaryCard label="حسابات مُنذرة" value={warnSummary.users} gradient="bg-gradient-to-br from-amber-500 to-orange-500" />
+                    <SummaryCard label="إجمالي الإنذارات" value={warnSummary.totalStrikes} gradient="bg-gradient-to-br from-slate-500 to-slate-700" />
+                    <SummaryCard label="خطر (٣+)" value={warnSummary.danger} gradient="bg-gradient-to-br from-red-500 to-rose-600" pulse />
+                </div>
+            )}
 
-            {/* View toggle: Reports vs Complaints */}
-            <div className="flex gap-2">
+            {/* View toggle: Reports vs Complaints vs Warnings */}
+            <div className="flex flex-wrap gap-2">
                 <button
                     onClick={() => { setView('reports'); setStatus(''); }}
                     className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
@@ -219,6 +248,16 @@ const AdminReports: React.FC = () => {
                     }`}
                 >
                     📣 شكاوى للإدارة
+                </button>
+                <button
+                    onClick={() => { setView('warnings'); setStatus(''); }}
+                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
+                        view === 'warnings'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-300'
+                    }`}
+                >
+                    ⚠️ الإنذارات
                 </button>
             </div>
 
@@ -243,19 +282,43 @@ const AdminReports: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                    {/* Status chips */}
-                    <FilterChip active={!status} onClick={() => setStatus('')} label="كل الحالات" icon="•" />
-                    <FilterChip active={status === 'open'} onClick={() => setStatus('open')} label="مفتوح" icon="🟠" />
-                    <FilterChip
-                        active={status === (view === 'reports' ? 'under_review' : 'reviewing')}
-                        onClick={() => setStatus(view === 'reports' ? 'under_review' : 'reviewing')}
-                        label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
-                        icon="🔴"
-                    />
-                    <FilterChip active={status === 'resolved'} onClick={() => setStatus('resolved')} label="تم الحل" icon="✅" />
-                    <FilterChip active={status === 'dismissed'} onClick={() => setStatus('dismissed')} label="مرفوض" icon="⛔" />
-                </div>
+                {view !== 'warnings' && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {/* Status chips */}
+                        <FilterChip active={!status} onClick={() => setStatus('')} label="كل الحالات" icon="•" />
+                        <FilterChip active={status === 'open'} onClick={() => setStatus('open')} label="مفتوح" icon="🟠" />
+                        <FilterChip
+                            active={status === (view === 'reports' ? 'under_review' : 'reviewing')}
+                            onClick={() => setStatus(view === 'reports' ? 'under_review' : 'reviewing')}
+                            label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
+                            icon="🔴"
+                        />
+                        <FilterChip active={status === 'resolved'} onClick={() => setStatus('resolved')} label="تم الحل" icon="✅" />
+                        <FilterChip active={status === 'dismissed'} onClick={() => setStatus('dismissed')} label="مرفوض" icon="⛔" />
+                    </div>
+                )}
+
+                {view === 'warnings' && (
+                    <>
+                        <div className="flex flex-wrap gap-1.5">
+                            <FilterChip active={!role} onClick={() => setRole('')} label="الكل" icon="👥" />
+                            <FilterChip active={role === 'buyer'} onClick={() => setRole('buyer')} label="مشترون" icon="🛒" />
+                            <FilterChip active={role === 'seller'} onClick={() => setRole('seller')} label="تجار" icon="🏪" />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-bold text-[var(--text-secondary)]">من عدد:</span>
+                            <FilterChip active={warnMin === 1} onClick={() => setWarnMin(1)} label="الكل" icon="•" />
+                            <FilterChip active={warnMin === 2} onClick={() => setWarnMin(2)} label="مرتين فأكثر" icon="⚠️" />
+                            <FilterChip active={warnMin === 3} onClick={() => setWarnMin(3)} label="٣ فأكثر (خطر)" icon="🔴" />
+                            <input
+                                type="number" min={1} value={warnMin}
+                                onChange={(e) => setWarnMin(Math.max(1, Number(e.target.value) || 1))}
+                                title="اكتب رقم الإنذارات — يعرض من هذا العدد فأكثر"
+                                className="w-16 px-2 py-1.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-center text-xs font-bold text-[var(--text-primary)] outline-none"
+                            />
+                        </div>
+                    </>
+                )}
 
                 {view === 'reports' && (
                     <>
@@ -313,7 +376,7 @@ const AdminReports: React.FC = () => {
                         ))}
                     </div>
                 )
-            ) : (
+            ) : view === 'complaints' ? (
                 complaints.length === 0 ? (
                     <EmptyState
                         icon="🎉"
@@ -329,6 +392,20 @@ const AdminReports: React.FC = () => {
                                 onOpenAccount={openAccount}
                                 onStatusChange={changeComplaintStatus}
                             />
+                        ))}
+                    </div>
+                )
+            ) : (
+                warned.length === 0 ? (
+                    <EmptyState
+                        icon="✅"
+                        title={hasFilters ? 'لا حسابات بهذا العدد من الإنذارات' : 'لا توجد حسابات مُنذَرة'}
+                        subtitle={hasFilters ? 'جرّب تقليل العدد أو تغيير الفلتر' : 'كل إنذار تصدره من «مراقبة الرسائل» يظهر هنا مع عدّاده'}
+                    />
+                ) : (
+                    <div className="space-y-3">
+                        {warned.map((w) => (
+                            <WarnedUserCard key={w.user_id} user={w} onSuspendToggle={toggleSuspend} />
                         ))}
                     </div>
                 )
@@ -633,5 +710,88 @@ const PartyButton: React.FC<{
         )}
     </div>
 );
+
+// ============================================================
+// Warned-user card (v11.48) — count badge, suspend, and a drill-down that
+// reads each warning + the offending message it was issued on.
+// ============================================================
+const WarnedUserCard: React.FC<{
+    user: WarnedUser;
+    onSuspendToggle: (id: string, suspend: boolean, name: string) => void;
+}> = ({ user: w, onSuspendToggle }) => {
+    const [open, setOpen] = useState(false);
+    const [warnings, setWarnings] = useState<UserWarning[] | null>(null);
+    const danger = w.warn_count >= 3;
+    const roleLabel = w.user_type === 'seller' ? 'تاجر' : w.user_type === 'buyer' ? 'مشتري' : (w.user_type || '—');
+
+    const toggle = async () => {
+        const next = !open;
+        setOpen(next);
+        if (next && warnings === null) setWarnings(await adminService.getUserWarnings(w.user_id));
+    };
+
+    return (
+        <div className={`bg-[var(--card-bg)] border rounded-2xl p-4 shadow-sm ${danger ? 'border-red-400' : 'border-[var(--border-color)]'}`}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="min-w-0">
+                    <div className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
+                        {w.user_type === 'seller' ? '🏪' : '🛒'} {w.name || '—'}
+                        {w.is_suspended && <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-0.5 rounded-full">موقوف</span>}
+                    </div>
+                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                        {roleLabel}{w.phone ? ` · ${w.phone}` : ''} · آخر إنذار {timeAgo(w.last_warned_at)}
+                    </div>
+                </div>
+                <span className={`text-sm font-extrabold px-3 py-1 rounded-full text-white ${danger ? 'bg-red-600' : w.warn_count === 2 ? 'bg-amber-500' : 'bg-[var(--gray-400)]'}`}>
+                    {w.warn_count} إنذار{danger ? ' 🔴' : ''}
+                </span>
+            </div>
+
+            {danger && (
+                <div className="mt-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    ⚠️ ٣ إنذارات أو أكثر — يُنصح باتخاذ إجراء (إيقاف الحساب).
+                </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 mt-3">
+                <button onClick={toggle} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)]">
+                    {open ? 'إخفاء التفاصيل' : '📄 اقرأ الإنذارات والرسائل'}
+                </button>
+                {w.is_suspended ? (
+                    <button onClick={() => onSuspendToggle(w.user_id, false, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">✅ إعادة تفعيل</button>
+                ) : (
+                    <button onClick={() => onSuspendToggle(w.user_id, true, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-red-50 text-red-600 border border-red-200">⛔ إيقاف الحساب</button>
+                )}
+            </div>
+
+            {open && (
+                <div className="mt-3 space-y-2">
+                    {warnings === null ? (
+                        <div className="text-xs text-[var(--text-secondary)]">جاري التحميل...</div>
+                    ) : warnings.length === 0 ? (
+                        <div className="text-xs text-[var(--text-secondary)]">لا تفاصيل.</div>
+                    ) : warnings.map((wn) => (
+                        <div key={wn.id} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold text-amber-600">⚠️ إنذار</span>
+                                <span className="text-[10px] text-[var(--text-secondary)]">{fmt(wn.created_at)}{wn.admin_name ? ` · ${wn.admin_name}` : ''}</span>
+                            </div>
+                            <div className="text-sm text-[var(--text-primary)] mt-1 whitespace-pre-wrap break-words">{wn.reason}</div>
+                            {wn.context_message && (
+                                <div className="mt-2 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                    <div className="text-[10px] font-bold text-red-700 mb-0.5">الرسالة المخالفة:</div>
+                                    <div className="text-red-900 whitespace-pre-wrap break-words">{wn.context_message}</div>
+                                </div>
+                            )}
+                            {wn.context_barcode && (
+                                <div className="mt-1 text-[10px] text-[var(--text-secondary)]">كود المحادثة: <span className="font-mono">{wn.context_barcode}</span></div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default AdminReports;
