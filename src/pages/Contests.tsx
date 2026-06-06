@@ -67,6 +67,11 @@ const ContestCard: React.FC<{ contest: Contest; onOpen: () => void }> = ({ conte
 
     return (
         <div className="bg-[var(--card-bg)] border-2 border-purple-200 rounded-2xl p-5 shadow-sm">
+            {c.banner_image && (
+                <div className="w-full rounded-xl overflow-hidden mb-3" style={{ aspectRatio: '2 / 1' }}>
+                    <img src={c.banner_image} alt={c.title} draggable={false} className="w-full h-full object-cover" onError={(e) => { const p = e.currentTarget.parentElement as HTMLElement | null; if (p) p.style.display = 'none'; }} />
+                </div>
+            )}
             <div className="text-lg font-extrabold text-[var(--text-primary)]">{c.title}</div>
             {c.prize && <div className="text-sm text-amber-600 font-bold mt-1">🏆 الجائزة: {c.prize}</div>}
             {c.description && <div className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">{c.description}</div>}

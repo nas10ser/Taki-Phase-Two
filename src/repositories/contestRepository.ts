@@ -44,6 +44,7 @@ export interface Contest {
     reveal_name: boolean;
     reveal_phone: RevealPhone;
     audience: ContestAudience;     // who the contest targets (v11.47)
+    banner_image: string | null;   // optional custom hero-banner image (v11.49)
     starts_at: string | null;
     ends_at: string | null;
     created_at?: string;
@@ -111,6 +112,7 @@ const sanitize = (r: any): Contest => ({
     reveal_name: r.reveal_name !== false,
     reveal_phone: (r.reveal_phone as RevealPhone) || 'last4',
     audience: (r.audience as ContestAudience) || 'all',
+    banner_image: r.banner_image ?? null,
     starts_at: r.starts_at ?? null,
     ends_at: r.ends_at ?? null,
     created_at: r.created_at,
@@ -140,6 +142,7 @@ export const contestRepository = {
             reveal_name: c.reveal_name !== false,
             reveal_phone: c.reveal_phone || 'last4',
             audience: c.audience || 'all',
+            banner_image: c.banner_image || null,
             starts_at: c.starts_at || null,
             ends_at: c.ends_at || null,
             updated_at: new Date().toISOString(),
@@ -180,10 +183,22 @@ export const contestRepository = {
         return { success: true, qualified: !!d?.qualified, score: d?.score, max: d?.max_score };
     },
 
+    /**
+     * Draw `count` NEW winners. Winners accumulate across draws and a previous
+     * winner is never picked again — the returned list is only THIS draw's new
+     * winners. (v11.49)
+     */
     async draw(contestId: string, count: number): Promise<{ success: boolean; winners?: { name: string; phone: string }[]; error?: string }> {
         const { data, error } = await supabase.rpc('draw_contest_winners', { p_contest_id: contestId, p_count: count });
         if (error) return { success: false, error: error.message };
         return { success: true, winners: (data as any) || [] };
+    },
+
+    /** Clear all winners so the owner can redo the draw from scratch. (v11.49) */
+    async resetWinners(contestId: string): Promise<{ success: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_reset_contest_winners', { p_contest_id: contestId });
+        if (error) return { success: false, error: error.message };
+        return { success: !!(data as any)?.success };
     },
 
     async publicResults(contestId: string): Promise<MaskedWinner[]> {

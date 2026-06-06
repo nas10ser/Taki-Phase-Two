@@ -11,7 +11,7 @@ import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import BannerSlider from '../components/BannerSlider';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
 import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
@@ -36,14 +36,10 @@ const Home: React.FC = () => {
 
     const isRTL = language === 'ar';
 
-    // Initial fetch on mount. Tab-switch / focus refetching is handled
-    // centrally in realtimeService.handleVisibilityChange — duplicating it
-    // here was firing 4-5 redundant Supabase round-trips per focus event,
-    // hurting perceived speed on resumed tabs.
-    useEffect(() => {
-        refreshDeals();
-        // Image banners (admin) + live contests, surfaced together so shoppers
-        // discover contests in the same hero carousel. Contest slides lead.
+    // Image banners (admin) + live contests, surfaced together so shoppers
+    // discover contests in the same hero carousel. Contest slides lead, and a
+    // contest carries its own banner image when the owner uploaded one. (v11.49)
+    const loadBanners = useCallback(() => {
         Promise.all([
             bannerRepository.getActive('home_top'),
             contestRepository.list(),
@@ -53,14 +49,32 @@ const Home: React.FC = () => {
                 .map((c) => ({
                 id: `contest-${c.id}`,
                 kind: 'contest' as const,
-                contest: { id: c.id, title: c.title, prize: c.prize },
+                contest: { id: c.id, title: c.title, prize: c.prize, banner_image: c.banner_image },
                 title_ar: c.title, title_en: c.title,
                 image_url: '', target_url: '/contests',
                 position: 'home_top', is_active: true, display_order: -1,
             }));
             setBanners([...contestBanners, ...imgBanners]);
         }).catch(() => { bannerRepository.getActive('home_top').then(setBanners); });
-    }, [refreshDeals, user?.userType]);
+    }, [user?.userType]);
+
+    // Initial fetch on mount. Deals tab-switch refetching is handled centrally in
+    // realtimeService; banners/contests are refreshed here on resume too, so an
+    // ended contest drops (and a new one appears) without a hard reload — this is
+    // why «البنر لا يتحدّث عند العودة» happened. (v11.49)
+    useEffect(() => {
+        refreshDeals();
+        loadBanners();
+        const onVisible = () => { if (document.visibilityState === 'visible') loadBanners(); };
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onVisible);
+        window.addEventListener('pageshow', onVisible);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+            window.removeEventListener('pageshow', onVisible);
+        };
+    }, [refreshDeals, loadBanners]);
 
     useEffect(() => {
         if (!searchQuery.trim()) {

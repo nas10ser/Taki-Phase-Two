@@ -78,6 +78,20 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
         return () => cancelAnimationFrame(id);
     }, [animate, pos]);
 
+    // Safety net: if `transitionend` never fires (iOS Safari backgrounding /
+    // bfcache restore), force the clone→real reset so the carousel can never
+    // freeze parked on a clone. Mirrors handleTransitionEnd; the normal path
+    // cancels this via cleanup. (v11.49 — fixes «البنر علق»)
+    useEffect(() => {
+        if (!loop || !animate) return;
+        if (pos !== 0 && pos !== slideCount - 1) return;
+        const id = setTimeout(() => {
+            setAnimate(false);
+            setPos(pos === 0 ? count : 1);
+        }, duration * 1000 + 140);
+        return () => clearTimeout(id);
+    }, [pos, animate, loop, slideCount, count, duration]);
+
     if (count === 0) return null;
 
     const handleBannerClick = (banner: Banner) => {
@@ -174,11 +188,39 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                         onClick={() => handleBannerClick(banner)}
                         style={{
                             width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer',
-                            // Branded fallback so a broken/missing image never shows a black void.
-                            background: banner.kind === 'contest' ? undefined : 'linear-gradient(135deg, #0f766e, #134e4a)',
+                            // Branded fallback so a broken/missing image never shows a black void
+                            // (purple for contests, teal for deal/store banners).
+                            background: banner.kind === 'contest'
+                                ? 'linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%)'
+                                : 'linear-gradient(135deg, #0f766e, #134e4a)',
                         }}
                     >
                         {banner.kind === 'contest' ? (
+                            banner.contest?.banner_image ? (
+                                // Owner-uploaded contest banner image + a light CTA overlay. (v11.49)
+                                <>
+                                    <img
+                                        src={banner.contest.banner_image}
+                                        alt={banner.contest?.title || 'مسابقة'}
+                                        width={1200}
+                                        height={600}
+                                        loading={idx <= 1 ? 'eager' : 'lazy'}
+                                        decoding="async"
+                                        draggable={false}
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                                    />
+                                    <div style={{
+                                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                                        background: 'linear-gradient(to top, rgba(0,0,0,0.78), transparent)',
+                                        padding: '34px 16px 14px', color: 'white', pointerEvents: 'none',
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                    }}>
+                                        <span style={{ fontSize: '1.05rem', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🎁 {banner.contest?.title || 'مسابقة بجوائز'}</span>
+                                        <span style={{ marginInlineStart: 'auto', background: 'rgba(255,255,255,0.22)', borderRadius: 999, padding: '5px 13px', fontSize: '0.75rem', fontWeight: 800, whiteSpace: 'nowrap' }}>✍️ شارك الآن</span>
+                                    </div>
+                                </>
+                            ) : (
                             <div style={{
                                 width: '100%', height: '100%',
                                 background: 'linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%)',
@@ -196,6 +238,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                                 )}
                                 <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 999, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 800 }}>✍️ شارك الآن</div>
                             </div>
+                            )
                         ) : (
                             <>
                                 <img

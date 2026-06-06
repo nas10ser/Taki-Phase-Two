@@ -15,10 +15,11 @@ export interface Banner {
     /**
      * Synthetic slide kind. Image banners come from the `banners` table; contest
      * slides are generated client-side from live contests so users discover them
-     * in the same carousel (no image — rendered as a gradient card). (v11.46)
+     * in the same carousel — rendered as the contest's own banner image when set,
+     * else a branded gradient card. (v11.46 / image v11.49)
      */
     kind?: 'image' | 'contest';
-    contest?: { id: string; title: string; prize?: string };
+    contest?: { id: string; title: string; prize?: string; banner_image?: string | null };
 }
 
 export const bannerRepository = {

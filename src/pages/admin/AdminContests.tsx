@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { storageService } from '../../services/storageService';
 import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
     ContestStatus, QuestionType,
@@ -26,7 +27,7 @@ const labelCls = 'block text-xs font-bold text-[var(--text-secondary)] mb-1.5';
 const blankContest = (): Partial<Contest> => ({
     title: '', description: '', prize: '', status: 'draft',
     questions: [], social_tasks: [], pass_mode: 'all_correct',
-    reveal_name: true, reveal_phone: 'last4', audience: 'all', starts_at: null, ends_at: null,
+    reveal_name: true, reveal_phone: 'last4', audience: 'all', banner_image: null, starts_at: null, ends_at: null,
 });
 
 const AdminContests: React.FC = () => {
@@ -38,6 +39,8 @@ const AdminContests: React.FC = () => {
     const [draft, setDraft] = useState<Partial<Contest>>(blankContest());
     const [saving, setSaving] = useState(false);
     const [manageId, setManageId] = useState<string | null>(null);
+    const [uploadingBanner, setUploadingBanner] = useState(false);
+    const bannerInputRef = useRef<HTMLInputElement | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -53,6 +56,17 @@ const AdminContests: React.FC = () => {
 
     // ---------- editor helpers ----------
     const setField = (patch: Partial<Contest>) => setDraft((d) => ({ ...d, ...patch }));
+
+    // Optional hero-banner image for the contest (shown in the home carousel).
+    // Compressed + uploaded through the shared storage service. (v11.49)
+    const onPickBanner = async (file: File | null) => {
+        if (!file) return;
+        setUploadingBanner(true);
+        const url = await storageService.uploadImage(file);
+        setUploadingBanner(false);
+        if (url) setField({ banner_image: url });
+        else await customAlert('تعذّر رفع الصورة، حاول مجدداً.');
+    };
     const addQuestion = () => setDraft((d) => ({ ...d, questions: [...(d.questions || []), { id: uid(), type: 'choice', prompt: '', options: ['', ''], correctAnswer: '', points: 1, required: true } as ContestQuestion] }));
     const updateQuestion = (id: string, patch: Partial<ContestQuestion>) =>
         setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => q.id === id ? { ...q, ...patch } : q) }));
@@ -215,6 +229,28 @@ const AdminContests: React.FC = () => {
                         </select>
                     </div>
                     <div>
+                        <label className={labelCls}>صورة بنر المسابقة (اختياري)</label>
+                        <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+                            إن أضفت صورة احترافية ستظهر في بنر الصفحة الرئيسية بدل التصميم الافتراضي. إن تركتها فارغة يبقى الشكل الحالي. الأفضل بنسبة 2:1 (عرض ضِعف الطول).
+                        </div>
+                        <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { onPickBanner(e.target.files?.[0] || null); e.target.value = ''; }} />
+                        {draft.banner_image ? (
+                            <div className="space-y-2">
+                                <div className="relative rounded-xl overflow-hidden border border-[var(--border-color)]" style={{ aspectRatio: '2 / 1' }}>
+                                    <img src={draft.banner_image} alt="بنر المسابقة" className="w-full h-full object-cover" />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={uploadingBanner} className="flex-1 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] disabled:opacity-50">{uploadingBanner ? '...جاري الرفع' : '🔄 استبدال الصورة'}</button>
+                                    <button type="button" onClick={() => setField({ banner_image: null })} className="px-3 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200">🗑 إزالة</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={uploadingBanner} className="w-full py-3 rounded-xl text-xs font-bold bg-purple-50 text-purple-700 border border-dashed border-purple-300 disabled:opacity-50">
+                                {uploadingBanner ? '...جاري الرفع' : '🖼️ ارفع صورة البنر'}
+                            </button>
+                        )}
+                    </div>
+                    <div>
                         <label className={labelCls}>شرط التأهّل للسحب</label>
                         <select className={inputCls} value={draft.pass_mode} onChange={(e) => setField({ pass_mode: e.target.value as any })}>
                             <option value="all_correct">يجب الإجابة على كل الأسئلة المُصحّحة بشكل صحيح</option>
@@ -327,12 +363,13 @@ const AdminContests: React.FC = () => {
 
 // ---------- entries + draw sub-view ----------
 const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ contestId, onBack }) => {
-    const { customAlert } = useApp();
+    const { customAlert, customConfirm } = useApp();
     const [contest, setContest] = useState<Contest | null>(null);
     const [entries, setEntries] = useState<ContestEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [drawCount, setDrawCount] = useState(1);
     const [showDraw, setShowDraw] = useState(false);
+    const [resetting, setResetting] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -343,12 +380,24 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
 
     const qualified = entries.filter((e) => e.qualified);
     const winners = entries.filter((e) => e.is_winner);
+    // Only not-yet-winners can be drawn — winners never repeat. (v11.49)
+    const eligible = qualified.filter((e) => !e.is_winner);
+    const remaining = eligible.length;
 
     const openDraw = async () => {
         if (qualified.length === 0) { await customAlert('لا يوجد مشاركون مؤهّلون للسحب بعد.'); return; }
-        const safe = Math.min(Math.max(1, drawCount), qualified.length);
+        if (remaining === 0) { await customAlert('سُحب كل المؤهّلين — لا يوجد متبقّون. لإعادة السحب اضغط «إلغاء الفائزين».'); return; }
+        const safe = Math.min(Math.max(1, drawCount), remaining);
         if (safe !== drawCount) setDrawCount(safe);
         setShowDraw(true);
+    };
+
+    const resetWinners = async () => {
+        if (!(await customConfirm('إلغاء كل الفائزين الحاليين والبدء من جديد؟'))) return;
+        setResetting(true);
+        await contestRepository.resetWinners(contestId);
+        setResetting(false);
+        await load();
     };
 
     const maskPhone = (p: string) => {
@@ -369,16 +418,23 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
             <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                     <div className="font-extrabold text-purple-900 text-sm">🎲 سحب الفائزين</div>
-                    <span className="text-[11px] text-purple-700">({qualified.length} مؤهّل من {entries.length} مشارك)</span>
+                    <span className="text-[11px] text-purple-700">({qualified.length} مؤهّل من {entries.length} مشارك · {winners.length} فاز · {remaining} متبقّ)</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-purple-800 font-bold">عدد الفائزين</span>
-                    <input type="number" min={1} max={Math.max(1, qualified.length)} value={drawCount} onChange={(e) => setDrawCount(Math.max(1, Number(e.target.value) || 1))} className="w-20 px-2 py-2 bg-[var(--card-bg)] border border-purple-200 rounded-lg text-center font-bold text-[var(--text-primary)] outline-none" />
-                    <button onClick={openDraw} className="px-4 py-2 rounded-lg text-sm font-extrabold text-white bg-purple-600 active:scale-95 mr-auto">🎲 اسحب الآن</button>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-purple-800 font-bold">كم فائزاً تسحب الآن؟</span>
+                    <input type="number" min={1} max={Math.max(1, remaining)} value={drawCount} onChange={(e) => setDrawCount(Math.max(1, Math.min(remaining || 1, Number(e.target.value) || 1)))} className="w-20 px-2 py-2 bg-[var(--card-bg)] border border-purple-200 rounded-lg text-center font-bold text-[var(--text-primary)] outline-none disabled:opacity-50" disabled={remaining === 0} />
+                    <button onClick={openDraw} disabled={remaining === 0} className="px-4 py-2 rounded-lg text-sm font-extrabold text-white bg-purple-600 active:scale-95 mr-auto disabled:opacity-50">🎲 اسحب الآن</button>
                 </div>
+                {remaining === 0 && winners.length > 0 && (
+                    <div className="text-[11px] text-purple-700 mt-2">سُحب كل المؤهّلين. لإعادة السحب من البداية اضغط «إلغاء الفائزين» بالأسفل.</div>
+                )}
+                <div className="text-[11px] text-purple-700 mt-2 leading-relaxed">🔒 الفائز السابق لا يتكرّر — كل سحبة تختار من المتبقّين فقط.</div>
                 {winners.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
-                        <div className="text-xs font-bold text-purple-900 mb-1">🏆 الفائزون — الجوال كامل لتتواصل معهم (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="text-xs font-bold text-purple-900">🏆 الفائزون ({winners.length}) — الجوال كامل لتتواصل معهم (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
+                            <button onClick={resetWinners} disabled={resetting} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-600 border border-red-200 disabled:opacity-50">{resetting ? '...' : '♻️ إلغاء الفائزين'}</button>
+                        </div>
                         {winners.map((w) => (
                             <div key={w.id} className="text-sm font-bold text-[var(--text-primary)]">🎉 {w.name} — <span className="font-mono text-emerald-600" dir="ltr">{w.phone}</span></div>
                         ))}
@@ -409,7 +465,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
 
             {showDraw && contest && (
                 <DrawReel
-                    entries={qualified}
+                    entries={eligible}
                     count={drawCount}
                     revealName={contest.reveal_name !== false}
                     maskPhone={maskPhone}
@@ -425,7 +481,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
 // Fairness note: the REAL winners are decided server-side by the
 // `draw_contest_winners` RPC (random + SECURITY DEFINER). The reel is purely
 // cosmetic — it shuffles through participants and, when the admin presses «قف»,
-// decelerates onto the winner the server already chose. (v11.46)
+// stops INSTANTLY on the winner the server already chose. (v11.49)
 const CONFETTI = Array.from({ length: 14 }, (_, i) => ({
     e: ['🎉', '🎊', '⭐', '✨', '🏆', '🎈'][i % 6],
     left: `${(i * 7 + 4) % 94}%`,
@@ -472,33 +528,22 @@ const DrawReel: React.FC<{
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const decelerate = (wnrs: { name: string; phone: string }[]) => {
+    // Sudden stop: the instant the server result is in, freeze on the winner and
+    // reveal — NO slow-down ramp. (v11.49 — owner asked it to stop abruptly.)
+    const snapToWinner = (wnrs: { name: string; phone: string }[]) => {
         const target = wnrs[0];
-        const delays = [110, 150, 200, 260, 330, 420, 540, 680];
-        let acc = 0;
-        delays.forEach((d, i) => {
-            acc += d;
-            const t = setTimeout(() => {
-                if (i < delays.length - 1) {
-                    const r = entries[(idxRef.current + i + 1) % Math.max(1, entries.length)];
-                    if (r) setDisplay(r);
-                } else {
-                    if (target) setDisplay({ name: target.name, phone: target.phone });
-                    const reveal = setTimeout(() => { setWinners(wnrs); setPhase('revealed'); }, 380);
-                    timeoutsRef.current.push(reveal);
-                }
-            }, acc);
-            timeoutsRef.current.push(t);
-        });
+        if (target) setDisplay({ name: target.name, phone: target.phone });
+        setWinners(wnrs);
+        setPhase('revealed');
     };
 
     const onStopClick = () => {
         if (stopping) return;
         setStopping(true);
         if (spinRef.current) { clearInterval(spinRef.current); spinRef.current = null; }
-        // Wait for the server result, then decelerate onto the winner.
+        // Wait only as long as the server needs, then stop instantly on the winner.
         const wait = (tries: number) => {
-            if (winnersRef.current) { decelerate(winnersRef.current); return; }
+            if (winnersRef.current) { snapToWinner(winnersRef.current); return; }
             if (errRef.current) { setErrMsg(errRef.current); setPhase('error'); return; }
             if (tries > 80) { setErrMsg('تأخّر الاتصال — حاول مجدداً'); setPhase('error'); return; }
             const t = setTimeout(() => wait(tries + 1), 100);
