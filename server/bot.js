@@ -228,7 +228,10 @@ if (bot) {
                 Markup.button.callback(lang === 'ar' ? '👤 حسابي' : '👤 Profile', 'menu:profile')
             ],
             [
-                Markup.button.url(lang === 'ar' ? '🌐 افتح التطبيق' : '🌐 Open App', APP_URL),
+                // web_app opens TAKI INSIDE Telegram with auto-login (no link).
+                Markup.button.webApp(lang === 'ar' ? '🚀 افتح TAKI (دخول تلقائي)' : '🚀 Open TAKI (auto sign-in)', APP_URL),
+            ],
+            [
                 Markup.button.callback(lang === 'ar' ? '🆘 مساعدة' : '🆘 Help', 'menu:help')
             ]
         ]);
@@ -374,12 +377,12 @@ if (bot) {
         const lang = detectLang(ctx);
         await ctx.reply(
             lang === 'ar'
-                ? `👤 *حسابك على TAKI*\n\nلتسجيل الدخول الكامل، استخدم التطبيق:\n${escapeMd(APP_URL)}`
-                : `👤 *Your TAKI Account*\n\nFor full sign-in, use the app:\n${escapeMd(APP_URL)}`,
+                ? `👤 *حسابك على TAKI*\n\nافتح التطبيق داخل تيليجرام — سَيُسجّل دخولك *تلقائياً* بهويتك، وكل شيء \\(عروض، حجز، حسابك\\) يعمل من هنا\\.`
+                : `👤 *Your TAKI Account*\n\nOpen the app inside Telegram — you'll be signed in *automatically*, and everything works right here\\.`,
             {
                 parse_mode: 'MarkdownV2',
                 reply_markup: Markup.inlineKeyboard([
-                    [Markup.button.url(lang === 'ar' ? '🌐 افتح التطبيق' : '🌐 Open App', APP_URL)]
+                    [Markup.button.webApp(lang === 'ar' ? '🚀 افتح TAKI (دخول تلقائي)' : '🚀 Open TAKI (auto sign-in)', APP_URL)]
                 ]).reply_markup
             }
         );
@@ -389,12 +392,12 @@ if (bot) {
         const lang = detectLang(ctx);
         ctx.reply(
             lang === 'ar'
-                ? `📝 *للتسجيل في TAKI:*\n\n1\\. افتح التطبيق\n2\\. اختر "إنشاء حساب جديد"\n3\\. أدخل بياناتك\n\n🌐 ${escapeMd(APP_URL)}`
-                : `📝 *Register on TAKI:*\n\n1\\. Open the app\n2\\. Tap "Create Account"\n3\\. Enter your details\n\n🌐 ${escapeMd(APP_URL)}`,
+                ? `📝 *الدخول / إنشاء حساب:*\n\nاضغط الزر بالأسفل — يفتح TAKI داخل تيليجرام ويُنشئ حسابك ويُسجّل دخولك *تلقائياً*\\. لا حاجة لكتابة أي بيانات\\.`
+                : `📝 *Sign in / Create account:*\n\nTap below — TAKI opens inside Telegram and signs you in *automatically*\\. No typing needed\\.`,
             {
                 parse_mode: 'MarkdownV2',
                 reply_markup: Markup.inlineKeyboard([
-                    [Markup.button.url(lang === 'ar' ? '🌐 افتح TAKI' : '🌐 Open TAKI', APP_URL)]
+                    [Markup.button.webApp(lang === 'ar' ? '🚀 افتح TAKI (دخول تلقائي)' : '🚀 Open TAKI (auto sign-in)', APP_URL)]
                 ]).reply_markup
             }
         );
