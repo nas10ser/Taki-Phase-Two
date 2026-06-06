@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { storageService } from '../../services/storageService';
+import BannerImageEditor from '../../components/BannerImageEditor';
 import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
     ContestStatus, QuestionType,
@@ -40,6 +41,7 @@ const AdminContests: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [manageId, setManageId] = useState<string | null>(null);
     const [uploadingBanner, setUploadingBanner] = useState(false);
+    const [bannerEditorSrc, setBannerEditorSrc] = useState<string | null>(null);
     const bannerInputRef = useRef<HTMLInputElement | null>(null);
 
     const load = useCallback(async () => {
@@ -58,9 +60,21 @@ const AdminContests: React.FC = () => {
     const setField = (patch: Partial<Contest>) => setDraft((d) => ({ ...d, ...patch }));
 
     // Optional hero-banner image for the contest (shown in the home carousel).
-    // Compressed + uploaded through the shared storage service. (v11.49)
-    const onPickBanner = async (file: File | null) => {
+    // Pick → open the WYSIWYG positioner (same 2:1 frame as the Tools banner
+    // editor) so the owner sees exactly which part of the image lands in the
+    // banner, then upload the cropped 1200×600 result. (v11.49 / framed v11.50)
+    const onPickBanner = (file: File | null) => {
         if (!file) return;
+        if (!file.type.startsWith('image/')) { customAlert('⚠️ يرجى اختيار صورة'); return; }
+        if (file.size > 12 * 1024 * 1024) { customAlert('⚠️ حجم الصورة أكبر من 12MB'); return; }
+        const reader = new FileReader();
+        reader.onload = () => setBannerEditorSrc(String(reader.result));
+        reader.onerror = () => customAlert('❌ تعذّرت قراءة الصورة. حاول مجدداً.');
+        reader.readAsDataURL(file);
+    };
+
+    const onBannerCropApply = async (file: File) => {
+        setBannerEditorSrc(null);
         setUploadingBanner(true);
         const url = await storageService.uploadImage(file);
         setUploadingBanner(false);
@@ -231,7 +245,7 @@ const AdminContests: React.FC = () => {
                     <div>
                         <label className={labelCls}>صورة بنر المسابقة (اختياري)</label>
                         <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                            إن أضفت صورة احترافية ستظهر في بنر الصفحة الرئيسية بدل التصميم الافتراضي. إن تركتها فارغة يبقى الشكل الحالي. الأفضل بنسبة 2:1 (عرض ضِعف الطول).
+                            إن أضفت صورة احترافية ستظهر في بنر الصفحة الرئيسية بدل التصميم الافتراضي (إن تركتها فارغة يبقى الشكل الحالي). بعد اختيار الصورة يفتح محرّر فيه إطار البنر تماماً — حرّك الصورة وكبّرها لتحدّد الجزء الذي سينزل في البنر.
                         </div>
                         <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { onPickBanner(e.target.files?.[0] || null); e.target.value = ''; }} />
                         {draft.banner_image ? (
@@ -353,6 +367,16 @@ const AdminContests: React.FC = () => {
                     <button onClick={() => setView('list')} className="flex-1 py-3 rounded-xl text-sm font-bold border border-[var(--border-color)] text-[var(--text-secondary)]">إلغاء</button>
                     <button onClick={save} disabled={saving} className="flex-[2] py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600 disabled:opacity-50">{saving ? 'جاري الحفظ...' : '💾 حفظ المسابقة'}</button>
                 </div>
+
+                {/* WYSIWYG banner positioner (2:1 frame) — renders to <body>. */}
+                {bannerEditorSrc && (
+                    <BannerImageEditor
+                        src={bannerEditorSrc}
+                        isRTL
+                        onApply={onBannerCropApply}
+                        onCancel={() => setBannerEditorSrc(null)}
+                    />
+                )}
             </div>
         );
     }
@@ -370,6 +394,14 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
     const [drawCount, setDrawCount] = useState(1);
     const [showDraw, setShowDraw] = useState(false);
     const [resetting, setResetting] = useState(false);
+    // Winner phones are hidden by default (so a glanced/screenshotted screen
+    // never leaks them); revealed per-row on demand to call them. (v11.50)
+    const [revealedPhones, setRevealedPhones] = useState<Set<string>>(new Set());
+    const togglePhone = (id: string) => setRevealedPhones((s) => {
+        const n = new Set(s);
+        n.has(id) ? n.delete(id) : n.add(id);
+        return n;
+    });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -431,13 +463,28 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                 <div className="text-[11px] text-purple-700 mt-2 leading-relaxed">🔒 الفائز السابق لا يتكرّر — كل سحبة تختار من المتبقّين فقط.</div>
                 {winners.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                            <div className="text-xs font-bold text-purple-900">🏆 الفائزون ({winners.length}) — الجوال كامل لتتواصل معهم (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="text-xs font-bold text-purple-900">🏆 الفائزون ({winners.length}) — 🔒 الأرقام مخفية، اضغط «اكشف الرقم» للاتصال (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
                             <button onClick={resetWinners} disabled={resetting} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-600 border border-red-200 disabled:opacity-50">{resetting ? '...' : '♻️ إلغاء الفائزين'}</button>
                         </div>
-                        {winners.map((w) => (
-                            <div key={w.id} className="text-sm font-bold text-[var(--text-primary)]">🎉 {w.name} — <span className="font-mono text-emerald-600" dir="ltr">{w.phone}</span></div>
-                        ))}
+                        <div className="space-y-1.5">
+                            {winners.map((w) => {
+                                const shown = revealedPhones.has(w.id);
+                                return (
+                                    <div key={w.id} className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+                                        <span className="shrink-0">🎉 {w.name}</span>
+                                        {shown ? (
+                                            <a href={`tel:${w.phone}`} className="font-mono text-emerald-600 underline" dir="ltr">{w.phone}</a>
+                                        ) : (
+                                            <span className="font-mono text-[var(--text-secondary)] tracking-widest" dir="ltr">••••••••</span>
+                                        )}
+                                        <button onClick={() => togglePhone(w.id)} className="mr-auto shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            {shown ? '🙈 إخفاء' : '🔓 اكشف الرقم'}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>
@@ -501,6 +548,8 @@ const DrawReel: React.FC<{
     const [phase, setPhase] = useState<'spinning' | 'revealed' | 'error'>('spinning');
     const [display, setDisplay] = useState<{ id?: string; name: string; phone: string } | null>(entries[0] || null);
     const [winners, setWinners] = useState<{ name: string; phone: string }[] | null>(null);
+    // Winners are revealed ONE AT A TIME; this is which one is shown now. (v11.50)
+    const [revealIdx, setRevealIdx] = useState(0);
     const [errMsg, setErrMsg] = useState('');
     const [stopping, setStopping] = useState(false);
 
@@ -510,14 +559,20 @@ const DrawReel: React.FC<{
     const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
     const idxRef = useRef(0);
 
-    useEffect(() => {
-        // Visual spin — cycle fast through the qualified pool.
+    // (Re)start the cosmetic spin through the eligible pool.
+    const startSpin = () => {
+        if (spinRef.current) clearInterval(spinRef.current);
         spinRef.current = setInterval(() => {
             if (entries.length === 0) return;
             idxRef.current = (idxRef.current + 1) % entries.length;
             setDisplay(entries[idxRef.current]);
         }, 70);
-        // Real draw (server-side). Result is stashed for the «قف» handler.
+    };
+
+    useEffect(() => {
+        startSpin();
+        // Real draw (server-side) — all `count` winners are chosen at once, then
+        // revealed one-by-one as the admin stops the reel for each. (v11.50)
         drawFn()
             .then((res) => { if (res.success) winnersRef.current = res.winners || []; else errRef.current = res.error || 'تعذّر السحب'; })
             .catch((e) => { errRef.current = (e && e.message) || 'تعذّر السحب'; });
@@ -528,13 +583,13 @@ const DrawReel: React.FC<{
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Sudden stop: the instant the server result is in, freeze on the winner and
-    // reveal — NO slow-down ramp. (v11.49 — owner asked it to stop abruptly.)
-    const snapToWinner = (wnrs: { name: string; phone: string }[]) => {
-        const target = wnrs[0];
+    // Sudden stop on the CURRENT winner — no slow-down ramp. (v11.49/50)
+    const stopOnCurrent = (wnrs: { name: string; phone: string }[]) => {
+        const target = wnrs[revealIdx];
         if (target) setDisplay({ name: target.name, phone: target.phone });
         setWinners(wnrs);
         setPhase('revealed');
+        setStopping(false);
     };
 
     const onStopClick = () => {
@@ -543,7 +598,7 @@ const DrawReel: React.FC<{
         if (spinRef.current) { clearInterval(spinRef.current); spinRef.current = null; }
         // Wait only as long as the server needs, then stop instantly on the winner.
         const wait = (tries: number) => {
-            if (winnersRef.current) { snapToWinner(winnersRef.current); return; }
+            if (winnersRef.current) { stopOnCurrent(winnersRef.current); return; }
             if (errRef.current) { setErrMsg(errRef.current); setPhase('error'); return; }
             if (tries > 80) { setErrMsg('تأخّر الاتصال — حاول مجدداً'); setPhase('error'); return; }
             const t = setTimeout(() => wait(tries + 1), 100);
@@ -552,12 +607,23 @@ const DrawReel: React.FC<{
         wait(0);
     };
 
+    // Spin for the next winner (winners already chosen server-side).
+    const drawNext = () => {
+        setRevealIdx((i) => i + 1);
+        setPhase('spinning');
+        startSpin();
+    };
+
+    const total = winners ? winners.length : count;
+    const current = winners ? winners[revealIdx] : null;
+    const hasMore = !!winners && revealIdx < winners.length - 1;
+
     return (
         <div dir="rtl" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)' }}>
             <div className="relative w-full max-w-md bg-[var(--card-bg)] rounded-3xl border border-purple-300 shadow-2xl overflow-hidden">
                 <div className="px-5 py-4 bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white text-center">
                     <div className="text-base font-extrabold">🎲 سحب الفائزين</div>
-                    <div className="text-[11px] opacity-90 mt-0.5">{count > 1 ? `يُسحب ${count} فائزين` : 'يُسحب فائز واحد'} من {entries.length} مؤهّل</div>
+                    <div className="text-[11px] opacity-90 mt-0.5">{count > 1 ? `الفائز ${revealIdx + 1} من ${total}` : 'فائز واحد'} · من {entries.length} مؤهّل</div>
                 </div>
 
                 {phase === 'revealed' && (
@@ -570,7 +636,7 @@ const DrawReel: React.FC<{
 
                 {phase === 'spinning' && (
                     <div className="p-6 text-center">
-                        <div className="text-xs font-bold text-purple-600 mb-3 animate-pulse">جارٍ خلط المشاركين… 🎲</div>
+                        <div className="text-xs font-bold text-purple-600 mb-3 animate-pulse">{count > 1 ? `جارٍ اختيار الفائز ${revealIdx + 1}… ` : 'جارٍ خلط المشاركين… '}🎲</div>
                         <div className="relative mx-auto h-28 flex flex-col items-center justify-center rounded-2xl bg-[var(--body-bg)] border border-[var(--border-color)] overflow-hidden">
                             <div key={(display && display.id) || idxRef.current} className="px-4 w-full animate-taki-pop">
                                 <div className="text-2xl font-extrabold text-[var(--text-primary)] truncate">{revealName ? (display ? display.name : '—') : 'مشارك'}</div>
@@ -589,18 +655,21 @@ const DrawReel: React.FC<{
                 {phase === 'revealed' && (
                     <div className="relative p-6 text-center animate-taki-pop">
                         <div className="text-5xl mb-2">🎉</div>
-                        <div className="text-lg font-extrabold text-[var(--text-primary)] mb-3">{(winners && winners.length > 1) ? 'الفائزون' : 'الفائز'}</div>
-                        <div className="space-y-2">
-                            {(winners || []).map((w, i) => (
-                                <div key={i} className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
-                                    <span className="text-xl">🏆</span>
-                                    <span className="font-extrabold text-emerald-900">{revealName ? w.name : `فائز ${i + 1}`}</span>
-                                    <span className="font-mono text-emerald-800 text-sm mr-auto" dir="ltr">{maskPhone(w.phone)}</span>
-                                </div>
-                            ))}
-                            {(winners || []).length === 0 && <div className="text-sm text-[var(--text-secondary)]">لا يوجد فائزون.</div>}
-                        </div>
-                        <button onClick={onClose} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-purple-600 active:scale-95">✅ تم</button>
+                        <div className="text-lg font-extrabold text-[var(--text-primary)] mb-1">{count > 1 ? `الفائز ${revealIdx + 1} من ${total}` : 'الفائز'}</div>
+                        {current ? (
+                            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-3 mt-2">
+                                <span className="text-xl">🏆</span>
+                                <span className="font-extrabold text-emerald-900">{revealName ? current.name : `فائز ${revealIdx + 1}`}</span>
+                                <span className="font-mono text-emerald-800 text-sm mr-auto" dir="ltr">{maskPhone(current.phone)}</span>
+                            </div>
+                        ) : (
+                            <div className="text-sm text-[var(--text-secondary)] mt-2">لا يوجد فائزون.</div>
+                        )}
+                        {hasMore ? (
+                            <button onClick={drawNext} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-gradient-to-r from-purple-600 to-fuchsia-600 active:scale-95">🎲 اسحب الفائز التالي</button>
+                        ) : (
+                            <button onClick={onClose} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-purple-600 active:scale-95">✅ تم</button>
+                        )}
                     </div>
                 )}
 
