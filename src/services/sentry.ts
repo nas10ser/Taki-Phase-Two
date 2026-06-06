@@ -18,6 +18,17 @@ export function initSentry(): void {
             tracesSampleRate: 0.1,
             // Scrub obvious PII from any captured request/headers before sending.
             sendDefaultPii: false,
+            integrations: [
+                // Session Replay — a privacy-safe "video" of what the user did
+                // right before an error. maskAllText + blockAllMedia ensure names,
+                // phones, prices and images are NEVER recorded — only the layout
+                // and the actions (taps/navigation) are. (v11.52)
+                Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+            ],
+            // Capture 100% of sessions that hit an error (the ones worth watching)
+            // + a light 10% sample of normal sessions for context.
+            replaysOnErrorSampleRate: 1.0,
+            replaysSessionSampleRate: 0.1,
         });
         enabled = true;
     } catch {

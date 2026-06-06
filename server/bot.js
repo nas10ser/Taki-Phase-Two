@@ -71,6 +71,10 @@ const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET || '';
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL = process.env.APP_URL || 'https://taki.app';
+// Run mode: 'webhook' (production, needs a public HTTPS URL) or 'polling'
+// (local testing — the bot pulls updates from Telegram itself, so NO public URL
+// is required). Set BOT_MODE=polling in server/.env to try it on your machine.
+const BOT_MODE = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const BOT_VERSION = '7.0.0';
 
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -736,11 +740,20 @@ app.get('/health', (req, res) => {
 // ====================== Boot ======================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 TAKI Bot Server v${BOT_VERSION} active on port ${PORT}`);
+    console.log(`🚀 TAKI Bot Server v${BOT_VERSION} active on port ${PORT} (mode: ${BOT_MODE})`);
     if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN missing — Telegram bot disabled');
     if (!SUPABASE_URL) console.warn('⚠️ SUPABASE_URL missing — running in offline mode');
     if (!WHATSAPP_ACCESS_TOKEN) console.warn('⚠️ WHATSAPP_ACCESS_TOKEN missing — outbound WhatsApp disabled (inbound webhook still works)');
 });
+
+// Local-test mode: pull updates via long-polling (no public URL / webhook needed).
+// launch() auto-deletes any existing webhook first, so it's safe to switch back
+// and forth between local polling and production webhook.
+if (bot && BOT_MODE === 'polling') {
+    bot.launch({ dropPendingUpdates: true })
+        .then(() => console.log('🤖 Telegram bot is LIVE in POLLING mode — message it now to test.'))
+        .catch((err) => console.error('❌ Polling launch failed:', err.message));
+}
 
 // Graceful shutdown
 process.once('SIGINT', () => bot?.stop('SIGINT'));
