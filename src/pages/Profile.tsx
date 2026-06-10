@@ -6,6 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
+import TelegramLinkButton from '../components/TelegramLinkButton';
 
 const Profile: React.FC = () => {
     const history = useHistory();
@@ -276,6 +277,19 @@ const Profile: React.FC = () => {
                             through Supabase auth (email-confirmation hop for
                             new email; in-session reset for password). */}
                         <AccountSettingsCard />
+
+                        {/* Secure Telegram linking — the bot binds to THIS
+                            account via a one-time token minted for the signed-in
+                            user. Lets everything work inside the @TakiKSA_bot. */}
+                        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>{isRTL ? 'بوت تيليجرام 🤖' : 'Telegram Bot 🤖'}</h3>
+                            <p style={{ fontSize: '0.82rem', opacity: 0.7, margin: '0 0 14px', lineHeight: 1.6 }}>
+                                {isRTL
+                                    ? 'اربط حسابك مرة واحدة لتدير كل شيء من داخل تيليجرام: تصفح، حجز، وللتجار إدارة العروض والحجوزات.'
+                                    : 'Link once to manage everything inside Telegram: browse, book, and (for sellers) manage deals & bookings.'}
+                            </p>
+                            <TelegramLinkButton />
+                        </div>
 
                         {displayUserType === 'seller' && (
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
