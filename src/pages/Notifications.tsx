@@ -84,8 +84,9 @@ const Notifications: React.FC = () => {
                                 // Admin booking notifications: if the same person is also
                                 // the seller (storeId === user.id), open the order card
                                 // directly — that's almost always what they want to see.
-                                // Otherwise fall back to the deal page (still informative)
-                                // before /admin?tab=overview.
+                                // Otherwise open the universal booking receipt
+                                // (/booking/:barcode) — full details in-app, and it
+                                // never 404s even after the underlying deal is deleted.
                                 const isBookingNotif = n.type === 'booking';
                                 const audience = (n.metadata as any)?.audience as 'seller' | 'buyer' | 'admin' | undefined;
                                 // Booking-related notifications (creation confirmation, seller
@@ -108,12 +109,16 @@ const Notifications: React.FC = () => {
                                         ? `/bookings?barcode=${barcode}`
                                         : isBookingNotif && audience === 'admin' && storeId === user.id && barcode
                                             ? `/seller?tab=orders&barcode=${barcode}`
-                                            : isBookingNotif && audience === 'admin' && dealId
-                                                ? `/deal/${dealId}${barcode ? `?barcode=${barcode}` : ''}`
+                                            : isBookingNotif && audience === 'admin' && barcode
+                                                // Admin sale alerts open the universal in-app receipt
+                                                // (resolved by barcode). Before v11.57 this branch went to
+                                                // /deal/{id}, which showed "العرض غير موجود" the moment the
+                                                // deal was deleted (a finished promo or a bot test deal).
+                                                ? `/booking/${barcode}`
                                                 : isBookingNotif && audience === 'admin'
                                                     ? '/admin?tab=overview'
                                                     : isBookingNotif && barcode
-                                                        ? `/bookings?barcode=${barcode}`
+                                                        ? `/booking/${barcode}`
                                                         : isBookingNotif
                                                             ? '/bookings'
                                                             : dealId

@@ -11,6 +11,7 @@ import InAppBanner from './components/InAppBanner';
 // hasn't visited (e.g. SellerDashboard's 1124 lines on a buyer's first paint).
 const Home            = lazy(() => import('./pages/Home'));
 const Bookings        = lazy(() => import('./pages/Bookings'));
+const BookingReceipt  = lazy(() => import('./pages/BookingReceipt'));
 const Nearby          = lazy(() => import('./pages/Nearby'));
 const DealDetails     = lazy(() => import('./pages/DealDetails'));
 const DealsList       = lazy(() => import('./pages/DealsList'));
@@ -211,6 +212,7 @@ const App = () => {
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />
                         <Route path="/bookings" component={Bookings} />
+                        <Route path="/booking/:barcode" component={BookingReceipt} />
                         <Route path="/deals" component={DealsList} />
                         <Route path="/deal/:id" component={DealDetails} />
                         <Route path="/profile" component={Profile} />
