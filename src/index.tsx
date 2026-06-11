@@ -36,6 +36,10 @@ const renderApp = () => root.render(
 const wantsTgLink = (() => {
     try { return new URLSearchParams(window.location.search).get('tglink') === '1'; } catch { return false; }
 })();
+// Remember the link intent so that AFTER the user signs in (inside Telegram)
+// the auth redirector sends them to /profile?tglink=1 to finish linking,
+// instead of the normal home/dashboard landing.
+if (wantsTgLink) { try { sessionStorage.setItem('taki_tglink', '1'); } catch { /* ignore */ } }
 if (isTelegramMiniApp() && !wantsTgLink) {
     const safety = new Promise((res) => setTimeout(res, 4000));
     Promise.race([initTelegramMiniApp(), safety]).finally(renderApp);

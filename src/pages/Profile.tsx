@@ -58,6 +58,7 @@ const Profile: React.FC = () => {
                         : (isAr ? '⚠️ تعذّر إنشاء الحساب، حاول مجدداً.' : '⚠️ Could not create the account, try again.'));
                 }
             }
+            try { sessionStorage.removeItem('taki_tglink'); } catch { /* ignore */ }
             try { window.history.replaceState({}, '', '/profile'); } catch { /* ignore */ }
         })();
     }, [isAuthReady, user]);

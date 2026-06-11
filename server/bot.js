@@ -193,7 +193,7 @@ const KB_BACK = () => Markup.inlineKeyboard([[Markup.button.callback('◀️  ر
 function kbGuest() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('🔥  تصفح العروض','browse:menu')],
-        [Markup.button.callback('🔗  ربط حسابي (تاجر / مستخدم)','link:start')],
+        [Markup.button.callback('🔗  دخول وربط حسابي','link:start')],
         [Markup.button.webApp('🚀  دخول سريع (متسوّق)', APP_URL)],
         [Markup.button.callback('🆘  مساعدة','help')]
     ]);
@@ -300,14 +300,15 @@ bot.command('link', ctx => startLink(ctx));
 bot.action('link:start', async ctx => { await ctx.answerCbQuery(); startLink(ctx); });
 async function startLink(ctx) {
     await ctx.reply(
-        `🔗 *ربط حسابك بتاكي*\n${DIV}\n` +
-        `اضغط الزر بالأسفل لفتح *حسابي* داخل تيليجرام — وسيُربط حسابك *تلقائياً* بنقرة واحدة\\.\n` +
-        `وإن لم يكن لديك حساب، سيُنشأ لك حساب فوراً 👌\n\n` +
-        `🔒 الربط آمن تماماً: يتم عبر هويتك في تيليجرام \\(لا أحد يربط حسابك سواك\\)\\.`,
+        `🔗 *الدخول وربط حسابك بتاكي*\n${DIV}\n` +
+        `اضغط الزر بالأسفل لفتح *تاكي داخل تيليجرام* وسجّل دخولك \\(تاجر أو متسوّق\\)\\.\n` +
+        `بمجرد دخولك سيُفتح *حسابي* ويُربط حسابك بتيليجرام *تلقائياً* ✅\n` +
+        `وإن لم يكن لديك حساب، أنشئ حساباً في نفس الصفحة ثم يُربط 👌\n\n` +
+        `🔒 آمن تماماً: الربط بهويتك في تيليجرام بعد دخولك \\(لا أحد يربط حسابك سواك\\)\\.`,
         { parse_mode:'MarkdownV2',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.webApp('🔗  ربط حسابي الآن', W('/profile?tglink=1'))],
-            [Markup.button.webApp('🛍  أو افتح تاكي', APP_URL)],
+            [Markup.button.webApp('🔗  الدخول وربط حسابي', W('/register?tglink=1'))],
+            [Markup.button.webApp('🛍  أو تصفّح كمتسوّق', APP_URL)],
             [Markup.button.callback('◀️  رجوع','menu:back')]
           ]).reply_markup }
     );
@@ -333,7 +334,13 @@ function dealTypeBlock(d){
     else { const r=remainingText(d); lines.push(r ? `⏳ ينتهي خلال: *${md(r)}*` : '⏳ عرض لفترة محدودة'); if(!d.is_unlimited) lines.push(`📦 المتبقّي: *${numEsc(d.quantity??0)}*`); }
     return lines.join('\n');
 }
-function sponsorTag(d){ if(!d.is_sponsored) return ''; return d.sponsor_label==='sponsor' ? '⭐ راعٍ رسمي' : '⭐ عرض مميّز'; }
+function sponsorWord(d){ return d.sponsor_label==='sponsor' ? 'راعٍ رسمي' : 'إعلان مميّز'; }
+function sponsorTag(d){ if(!d.is_sponsored) return ''; return `⭐️ ━━━━━ *${sponsorWord(d)}* ━━━━━ ⭐️`; }
+// Google-Maps place link (tap → opens the deal's exact location).
+function placeLink(d){
+    if(d.map_lat!=null && d.map_lng!=null) return `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}`;
+    return d.google_maps_link || null;
+}
 
 // Google-Maps driving directions link — real turn-by-turn navigation on open.
 function dirLink(d, geo){
@@ -354,14 +361,23 @@ async function driveInfo(geo, d){
     const km=straight*1.3; return { km, min:Math.max(1,Math.round(km/0.6)), straight, est:true };
 }
 
-// One compact card line inside a list.
+// One compact card line inside a list — before/after price, tappable location,
+// and a bold frame for sponsored / ⭐ deals so they really stand out.
 function dealCard(d, n, geo){
-    const star=d.is_sponsored?'⭐ ':'';
-    const dist=(geo && d.distance_km!=null)?`  •  📍 ${numEsc(d.distance_km)} كم`:'';
-    const typ=d.expiry_type==='stock'?stockText(d):(remainingText(d)?`⏳ ${md(remainingText(d))}`:'⏳ لفترة محدودة');
-    return `*${numEsc(n)}\\.* ${star}*${md(d.item_name)}*\n`+
-           `🏪 ${md(d.shop_name)}  •  📍 ${md(d.city||d.region||'—')}${dist}\n`+
-           `🟢 *${money(d.discounted_price)} ر\\.س*  \\(خصم ${numEsc(d.discount_percentage)}%\\)  •  ${typ}\n\n`;
+    const save = Math.max(0, Number(d.original_price) - Number(d.discounted_price));
+    const dist = (geo && d.distance_km!=null) ? `  •  🚗 ${numEsc(d.distance_km)} كم` : '';
+    const pl = placeLink(d);
+    const loc = pl ? `[📍 ${md(d.city||d.region||'الموقع')}](${pl})` : `📍 ${md(d.city||d.region||'—')}`;
+    const typ = d.expiry_type==='stock' ? stockText(d) : (remainingText(d) ? `⏳ ${md(remainingText(d))}` : '⏳ لفترة محدودة');
+    const price = save > 0
+        ? `🟢 *${money(d.discounted_price)} ر\\.س*  \\(قبل ~${money(d.original_price)}~ • خصم ${numEsc(d.discount_percentage)}%\\)`
+        : `🟢 *${money(d.discounted_price)} ر\\.س*`;
+    const head = d.is_sponsored
+        ? `⭐️ *${sponsorWord(d)}* ⭐️\n*${numEsc(n)}\\.* *${md(d.item_name)}*`
+        : `*${numEsc(n)}\\.* *${md(d.item_name)}*`;
+    return `${head}\n`+
+           `🏪 ${md(d.shop_name)}  •  ${loc}${dist}\n`+
+           `${price}  •  ${typ}\n\n`;
 }
 
 bot.command('deals', ctx => showBrowseMenu(ctx));

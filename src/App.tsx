@@ -6,6 +6,15 @@ import { normalizeArabicNumerals } from './utils/helpers';
 import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
 import InAppBanner from './components/InAppBanner';
+import { isTelegramMiniApp } from './services/telegramMiniApp';
+
+// True only inside Telegram AND when the user arrived via the bot's "ربط حسابي"
+// link (index.tsx stamps sessionStorage on ?tglink=1). Used to send the user to
+// the profile linking page right after they authenticate inside Telegram —
+// other browsers keep their normal home/dashboard landing.
+const tgLinkIntent = (): boolean => {
+    try { return isTelegramMiniApp() && sessionStorage.getItem('taki_tglink') === '1'; } catch { return false; }
+};
 
 // Code-split each route. Initial bundle no longer pays for pages the user
 // hasn't visited (e.g. SellerDashboard's 1124 lines on a buyer's first paint).
@@ -74,6 +83,8 @@ const AuthRedirector = () => {
     // (Google/Apple) arrive with no phone/shop, so they must complete
     // their profile before reaching the role-specific dashboard.
     const getPostAuthDestination = async (uType: string): Promise<string> => {
+        // Inside Telegram's link flow → finish on the profile linking page.
+        if (tgLinkIntent()) return '/profile?tglink=1';
         // Direct DB lookup is safer than trusting user_metadata mirrors.
         try {
             const { data: sess } = await supabase.auth.getSession();
@@ -139,6 +150,14 @@ const AuthRedirector = () => {
             // admin is just observing and must NOT be funneled into editing
             // the target's profile. The exit banner is the way back.
             if (impersonating) return;
+
+            // Telegram link flow: once authenticated inside Telegram, finish
+            // linking on the profile page. Other browsers keep their normal
+            // landing (the intent flag is only set inside Telegram).
+            if (tgLinkIntent()) {
+                if (location.pathname !== '/profile') history.replace('/profile?tglink=1');
+                return;
+            }
 
             // Detect OAuth users whose profile is missing required fields.
             // Email/password signups never reach this branch with a missing
