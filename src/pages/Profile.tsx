@@ -7,6 +7,7 @@ import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
 import TelegramLinkButton from '../components/TelegramLinkButton';
+import { isTelegramMiniApp, ensureTelegramLinked } from '../services/telegramMiniApp';
 
 const Profile: React.FC = () => {
     const history = useHistory();
@@ -24,6 +25,32 @@ const Profile: React.FC = () => {
     // stats, no seller-only contact section). The real user.userType
     // stays 'admin' — only the rendered surface flips.
     const displayUserType = effectiveUserType;
+
+    // Auto-link Telegram when opened inside the Mini App via the bot's
+    // "ربط حسابي" button (which targets /profile?tglink=1). Links THIS account
+    // instantly (creating one via Telegram first if the user has none) — no bot
+    // round-trip, no "تعذّر إنشاء رابط الربط" dead-end in the in-app browser.
+    useEffect(() => {
+        if (!isAuthReady) return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('tglink') !== '1' || !isTelegramMiniApp()) return;
+        let cancelled = false;
+        (async () => {
+            const r = await ensureTelegramLinked();
+            if (cancelled) return;
+            const isAr = language === 'ar';
+            if (r === 'linked') {
+                await customAlert(isAr ? '✅ تم ربط حسابك بتيليجرام بنجاح.' : '✅ Your account is now linked to Telegram.');
+            } else if (r === 'failed') {
+                await customAlert(isAr
+                    ? '⚠️ تعذّر الربط التلقائي. اضغط زر «ربط حسابي بتيليجرام» بالأسفل وحاول مجدداً.'
+                    : '⚠️ Auto-link failed. Tap "Link my Telegram" below and retry.');
+            }
+            // Drop the query so a refresh / back doesn't re-trigger linking.
+            try { window.history.replaceState({}, '', '/profile'); } catch { /* ignore */ }
+        })();
+        return () => { cancelled = true; };
+    }, [isAuthReady]);
 
     const myNotifications = useMemo(
         () => notifications.filter(n => n.userId === user?.id).slice().sort((a, b) => b.createdAt - a.createdAt),

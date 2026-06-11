@@ -71,3 +71,67 @@ export async function initTelegramMiniApp(): Promise<boolean> {
         return false;
     }
 }
+
+/** Raw signed initData blob (empty string outside Telegram). */
+export function getInitData(): string {
+    const wa = getWebApp();
+    return wa && typeof wa.initData === 'string' ? wa.initData : '';
+}
+
+/**
+ * Explicit login-or-create via Telegram (no `attempted` guard — this is a
+ * user-initiated action, so it always tries). Creates the account if the user
+ * has none, then signs them in. Resolves true if authenticated afterwards.
+ */
+export async function loginViaTelegram(): Promise<boolean> {
+    const initData = getInitData();
+    if (!initData) return false;
+    try {
+        const { data: sess } = await supabase.auth.getSession();
+        if (sess?.session) return true;
+        const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData } });
+        if (error || !data?.hashed_token) return false;
+        const { error: vErr } = await supabase.auth.verifyOtp({ type: 'magiclink', token_hash: data.hashed_token });
+        return !vErr;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Bind the Telegram identity (from the Mini App's signed initData) to the
+ * CURRENTLY signed-in TAKI account — server-verified, so an existing
+ * seller/admin account can attach Telegram to itself.
+ *   'linked'            — bound to the current account
+ *   'not_authenticated' — no session; caller should create/login then retry
+ *   'not_telegram'      — not inside Telegram
+ *   'failed'            — transient/server error
+ */
+export async function linkTelegramToCurrentUser(): Promise<'linked' | 'not_authenticated' | 'not_telegram' | 'failed'> {
+    const initData = getInitData();
+    if (!initData) return 'not_telegram';
+    try {
+        const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData, mode: 'link' } });
+        if (error) return 'failed';
+        if (data?.success) return 'linked';
+        if (data?.code === 'not_authenticated') return 'not_authenticated';
+        return 'failed';
+    } catch {
+        return 'failed';
+    }
+}
+
+/**
+ * One-tap "make sure my Telegram is linked": links the current account, and if
+ * the user isn't signed in yet, creates/logs them in via Telegram first (then
+ * links). Used by the profile auto-link (?tglink=1) and the link button.
+ */
+export async function ensureTelegramLinked(): Promise<'linked' | 'failed' | 'not_telegram'> {
+    if (!isTelegramMiniApp()) return 'not_telegram';
+    let r = await linkTelegramToCurrentUser();
+    if (r === 'not_authenticated') {
+        const ok = await loginViaTelegram();
+        if (ok) r = await linkTelegramToCurrentUser();
+    }
+    return r === 'linked' ? 'linked' : 'failed';
+}

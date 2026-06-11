@@ -301,15 +301,13 @@ bot.action('link:start', async ctx => { await ctx.answerCbQuery(); startLink(ctx
 async function startLink(ctx) {
     await ctx.reply(
         `🔗 *ربط حسابك بتاكي*\n${DIV}\n` +
-        `للأمان التام، الربط يتم من داخل حسابك في الموقع \\(لا أحد يربط حسابك سواك\\):\n\n` +
-        `1️⃣ افتح تاكي وسجّل دخولك\n` +
-        `2️⃣ اذهب إلى *حسابي* 👤\n` +
-        `3️⃣ اضغط *«ربط حسابي بتيليجرام»*\n\n` +
-        `سيفتح تيليجرام تلقائياً ويربط حسابك فوراً ✅`,
+        `اضغط الزر بالأسفل لفتح *حسابي* داخل تيليجرام — وسيُربط حسابك *تلقائياً* بنقرة واحدة\\.\n` +
+        `وإن لم يكن لديك حساب، سيُنشأ لك حساب فوراً 👌\n\n` +
+        `🔒 الربط آمن تماماً: يتم عبر هويتك في تيليجرام \\(لا أحد يربط حسابك سواك\\)\\.`,
         { parse_mode:'MarkdownV2',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.url('🔐  افتح حسابي في الموقع', W('/profile'))],
-            [Markup.button.webApp('🛍  أو ادخل كمتسوّق سريعاً', APP_URL)],
+            [Markup.button.webApp('🔗  ربط حسابي الآن', W('/profile?tglink=1'))],
+            [Markup.button.webApp('🛍  أو افتح تاكي', APP_URL)],
             [Markup.button.callback('◀️  رجوع','menu:back')]
           ]).reply_markup }
     );
