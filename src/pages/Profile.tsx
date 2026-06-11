@@ -7,7 +7,8 @@ import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
 import TelegramLinkButton from '../components/TelegramLinkButton';
-import { isTelegramMiniApp, linkTelegramToCurrentUser, loginViaTelegram } from '../services/telegramMiniApp';
+import { isTelegramMiniApp, linkTelegramToCurrentUser } from '../services/telegramMiniApp';
+import { supabase } from '../services/supabaseClient';
 
 const Profile: React.FC = () => {
     const history = useHistory();
@@ -41,27 +42,27 @@ const Profile: React.FC = () => {
         tgLinkRan.current = true;
         const isAr = language === 'ar';
         (async () => {
-            if (user) {
+            // Decide by the LIVE Supabase session, NOT the cached `user` (which
+            // can be a stale localStorage value with no valid session behind it —
+            // that mismatch was making the link call fail as "not authenticated").
+            const { data: sess } = await supabase.auth.getSession();
+            if (sess?.session) {
                 const r = await linkTelegramToCurrentUser();
+                try { sessionStorage.removeItem('taki_tglink'); } catch { /* ignore */ }
                 await customAlert(r === 'linked'
                     ? (isAr ? '✅ تم ربط حسابك بتيليجرام بنجاح.' : '✅ Your account is now linked to Telegram.')
-                    : (isAr ? '⚠️ تعذّر الربط، اضغط زر «ربط حسابي بتيليجرام» بالأسفل وحاول مجدداً.' : '⚠️ Could not link — tap the button below and retry.'));
+                    : (isAr ? '⚠️ تعذّر الربط، حاول مرة أخرى بعد قليل.' : '⚠️ Could not link, please try again shortly.'));
+                try { window.history.replaceState({}, '', '/profile'); } catch { /* ignore */ }
             } else {
-                const create = await customConfirm(isAr
-                    ? 'لربط حسابك الحالي: سجّل دخولك أولاً ثم اضغط «ربط حسابي بتيليجرام».\n\nأو هل تريد إنشاء حساب جديد عبر تيليجرام الآن وربطه؟'
-                    : 'To link an existing account, sign in first then tap "Link my Telegram".\n\nOr create a new Telegram account now and link it?');
-                if (create) {
-                    const ok = await loginViaTelegram();
-                    if (ok) await linkTelegramToCurrentUser();
-                    await customAlert(ok
-                        ? (isAr ? '✅ تم إنشاء حسابك وربطه بتيليجرام.' : '✅ Account created and linked to Telegram.')
-                        : (isAr ? '⚠️ تعذّر إنشاء الحساب، حاول مجدداً.' : '⚠️ Could not create the account, try again.'));
-                }
+                // No live session → sign in / register first (merchant or shopper);
+                // the auth redirector returns here afterwards to finish linking.
+                await customAlert(isAr
+                    ? 'سجّل دخولك أو أنشئ حسابك (تاجر أو متسوّق) لإتمام الربط بتيليجرام.'
+                    : 'Sign in or create your account (merchant or shopper) to finish linking with Telegram.');
+                history.push('/register?tglink=1');
             }
-            try { sessionStorage.removeItem('taki_tglink'); } catch { /* ignore */ }
-            try { window.history.replaceState({}, '', '/profile'); } catch { /* ignore */ }
         })();
-    }, [isAuthReady, user]);
+    }, [isAuthReady]);
 
     const myNotifications = useMemo(
         () => notifications.filter(n => n.userId === user?.id).slice().sort((a, b) => b.createdAt - a.createdAt),
