@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v10.0  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.0  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -33,7 +33,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '10.0.0';
+const BOT_VERSION              = '11.0.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -89,6 +89,37 @@ function priceBlock(orig, disc, pct) {
            `🔻 توفيرك: *${money(save)}* ر\\.س \\(${p}%\\)`;
 }
 
+// ── Shared deal helpers (used by BOTH Telegram & WhatsApp flows) ───────────────
+// Saudi-market categories (id → Arabic label + emoji), mirrors src/data/mock.ts.
+const CAT = {
+    all:{ar:'الكل',e:'🔥'}, Fashion_Women:{ar:'فساتين ونساء',e:'👗'}, Fashion_Men:{ar:'ملابس رجالية',e:'👔'},
+    Kids_Infants:{ar:'رضع وحمل',e:'👶'}, Kids_Girls:{ar:'ملابس أطفال',e:'👧'}, Electronics:{ar:'إلكترونيات',e:'📱'},
+    Food:{ar:'مطاعم',e:'🍔'}, Beauty:{ar:'عطور وتجميل',e:'💄'}, MensSalon:{ar:'صالون رجالي',e:'💈'},
+    WomensSalon:{ar:'صالون نسائي',e:'💇‍♀️'}, Sports:{ar:'رياضة',e:'⚽'}, Supermarket:{ar:'سوبرماركت',e:'🛒'},
+    Butcher:{ar:'ملحمة',e:'🥩'}, Sanitary:{ar:'أدوات صحية',e:'🚿'}, Cafe:{ar:'مقاهي',e:'☕'},
+    Home:{ar:'منزل وديكور',e:'🏠'}, Hotels:{ar:'فنادق',e:'🏨'}, CarRentals:{ar:'تأجير سيارات',e:'🚗'},
+    Laundry:{ar:'مغسلة ملابس',e:'🧺'}, MensTailor:{ar:'خياطة رجالية',e:'🧵'}, WomensTailor:{ar:'مشغل نسائي',e:'🪡'},
+    CarWash:{ar:'غسيل سيارات',e:'🧽'}, CarWorkshop:{ar:'ورش سيارات',e:'🔧'}, Amusements:{ar:'ملاهي',e:'🎡'},
+    Gym:{ar:'نادي رياضي',e:'🏋️'}, Library:{ar:'مكتبة',e:'📚'}, Nursery:{ar:'مشاتل',e:'🌱'},
+    Pharmacy:{ar:'صيدلية',e:'💊'}, Clinics:{ar:'عيادات',e:'🩺'}, Online:{ar:'أونلاين',e:'🌐'}, Other:{ar:'أخرى',e:'✨'},
+};
+const catLabel = id => { const c = CAT[id]; return c ? `${c.e} ${c.ar}` : `✨ ${id||'أخرى'}`; };
+function haversineKm(la1,lo1,la2,lo2){ const R=6371, dLa=(la2-la1)*Math.PI/180, dLo=(lo2-lo1)*Math.PI/180, a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
+function fmtKm(km){ return km>=10 ? Math.round(km) : Math.round(km*10)/10; }
+// Time left for a duration/hours deal (clock starts when it goes live).
+function remainingText(d){
+    if(!d.expires_in_minutes) return null;
+    const start=Math.max(Number(d.starts_at)||0, Number(d.created_at)||0);
+    let diff=start + d.expires_in_minutes*60000 - Date.now();
+    if(diff<=0) return null;
+    const day=Math.floor(diff/86400000); diff-=day*86400000;
+    const hr=Math.floor(diff/3600000); diff-=hr*3600000;
+    const mn=Math.floor(diff/60000);
+    if(day>0) return `${day} يوم${hr?` و${hr} ساعة`:''}`;
+    if(hr>0)  return `${hr} ساعة${mn?` و${mn} دقيقة`:''}`;
+    return `${mn} دقيقة`;
+}
+
 // ── Session State ─────────────────────────────────────────────────────────────
 const sessions = new Map();
 const TTL = 30 * 60_000;
@@ -114,15 +145,6 @@ async function rpc(fn, args) {
         if (error) { console.error(`RPC ${fn}:`, error.message); return null; }
         return data;
     } catch(e) { console.error(`RPC ${fn} ex:`, e.message); return null; }
-}
-async function getDeals(limit=8, offset=0) {
-    if (!supabase) return [];
-    try {
-        const { data, error } = await supabase.from('deals')
-            .select('id,item_name,shop_name,original_price,discounted_price,discount_percentage,quantity,is_unlimited,city,region')
-            .eq('status','active').order('created_at',{ascending:false}).range(offset, offset+limit-1);
-        return error ? [] : (data||[]);
-    } catch { return []; }
 }
 
 // ── Upload a Telegram photo → public deal image URL (via secure Edge Fn) ──────
@@ -170,7 +192,7 @@ const KB_BACK = () => Markup.inlineKeyboard([[Markup.button.callback('◀️  ر
 
 function kbGuest() {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('🔥  تصفح العروض','deals:0')],
+        [Markup.button.callback('🔥  تصفح العروض','browse:menu')],
         [Markup.button.callback('🔗  ربط حسابي (تاجر / مستخدم)','link:start')],
         [Markup.button.webApp('🚀  دخول سريع (متسوّق)', APP_URL)],
         [Markup.button.callback('🆘  مساعدة','help')]
@@ -178,7 +200,7 @@ function kbGuest() {
 }
 function kbBuyer() {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('🔥  تصفح العروض','deals:0'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
+        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
         [Markup.button.callback('🔔  تنبيهاتي','buyer:notif'),  Markup.button.callback('👤  حسابي','buyer:profile')],
         [Markup.button.webApp('🚀  فتح تاكي', APP_URL)],
         [Markup.button.callback('🆘  مساعدة','help')]
@@ -293,54 +315,168 @@ async function startLink(ctx) {
     );
 }
 
-// ── Browse deals (paginated) ──────────────────────────────────────────────────
-bot.command('deals', ctx => showDeals(ctx, 0));
-bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); showDeals(ctx, +ctx.match[1]); });
-async function showDeals(ctx, offset=0) {
-    if (!checkRL(`deals:${chatId(ctx)}`)) return;
-    const deals = await getDeals(8, offset);
-    if (!deals.length && offset===0)
-        return ctx.reply(`📭 *لا توجد عروض نشطة حالياً*\nعُد لاحقاً\\!`, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
-    let m = `🔥 *العروض النشطة*\n${DIV}\n\n`;
-    const rows = [];
-    deals.forEach((d,i) => {
-        const pct = d.discount_percentage || Math.round(((d.original_price-d.discounted_price)/d.original_price)*100);
-        const qty = d.is_unlimited ? '∞' : `${d.quantity??0} متبقٍ`;
-        m += `*${offset+i+1}\\.* *${md(d.item_name)}*\n`;
-        m += `🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}\n`;
-        m += `🟢 *${money(d.discounted_price)} ر\\.س*  \\(خصم ${pct}%\\)   📦 ${md(qty)}\n\n`;
-        rows.push([Markup.button.callback(`${offset+i+1}  •  ${String(d.item_name).slice(0,24)}`, `deal:${d.id}`)]);
-    });
-    const nav = [];
-    if (offset > 0) nav.push(Markup.button.callback('◀️ السابق', `deals:${Math.max(0,offset-8)}`));
-    if (deals.length === 8) nav.push(Markup.button.callback('التالي ▶️', `deals:${offset+8}`));
-    if (nav.length) rows.push(nav);
-    rows.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Browse v11 — filters + categories + nearby + rich deal detail
+//  (mirrors the web app: distance & drive-time, sponsors ⭐, deal-type, stock)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SORTMAP     = { p:'popular', d:'discount', n:'newest', s:'sponsored', x:'nearby' };
+const SORT_TITLE  = { popular:'🔥 الأكثر طلباً', discount:'💸 الأكثر خصماً', newest:'🆕 أحدث العروض', sponsored:'⭐ المميّزة والرعاة', nearby:'📍 الأقرب إليك' };
+const SORT_SHORT  = { p:'🔥 الأكثر طلباً', d:'💸 الأكثر خصماً', n:'🆕 الأحدث', x:'📍 الأقرب' };
+const numEsc = v => md(String(v));   // MarkdownV2-safe number (escapes the '.')
+const PAGE   = 6;
+
+function stockText(d){ return d.is_unlimited ? '♾ متوفّر' : `🧮 متبقّي ${d.quantity??0}`; }
+// Full deal-type block: how it ends (days/specific date/quantity) + what's left.
+function dealTypeBlock(d){
+    const lines=[];
+    if(d.expiry_type==='stock'){ lines.push(d.is_unlimited ? '📦 الكمية: غير محدودة' : `📦 المتبقّي: *${numEsc(d.quantity??0)}* قطعة`); }
+    else if(d.expiry_type==='date' && d.expiry_date){ lines.push(`📅 ساري حتى: *${md(d.expiry_date)}*`); if(!d.is_unlimited) lines.push(`📦 المتبقّي: *${numEsc(d.quantity??0)}*`); }
+    else { const r=remainingText(d); lines.push(r ? `⏳ ينتهي خلال: *${md(r)}*` : '⏳ عرض لفترة محدودة'); if(!d.is_unlimited) lines.push(`📦 المتبقّي: *${numEsc(d.quantity??0)}*`); }
+    return lines.join('\n');
+}
+function sponsorTag(d){ if(!d.is_sponsored) return ''; return d.sponsor_label==='sponsor' ? '⭐ راعٍ رسمي' : '⭐ عرض مميّز'; }
+
+// Google-Maps driving directions link — real turn-by-turn navigation on open.
+function dirLink(d, geo){
+    if(d.map_lat==null||d.map_lng==null) return d.google_maps_link||null;
+    const org = geo ? `&origin=${geo.lat},${geo.lng}` : '';
+    return `https://www.google.com/maps/dir/?api=1${org}&destination=${d.map_lat},${d.map_lng}&travelmode=driving`;
+}
+// Real road distance + drive time via OSRM (2.5s budget); straight-line fallback.
+async function driveInfo(geo, d){
+    if(!geo || d.map_lat==null || d.map_lng==null) return null;
+    const straight=haversineKm(geo.lat,geo.lng,d.map_lat,d.map_lng);
+    try{
+        const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),2500);
+        const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${geo.lng},${geo.lat};${d.map_lng},${d.map_lat}?overview=false`,{signal:ctrl.signal});
+        clearTimeout(to); const j=await r.json(); const rt=j&&j.routes&&j.routes[0];
+        if(rt) return { km:rt.distance/1000, min:Math.max(1,Math.round(rt.duration/60)), straight, est:false };
+    }catch{ /* OSRM down / slow → estimate */ }
+    const km=straight*1.3; return { km, min:Math.max(1,Math.round(km/0.6)), straight, est:true };
+}
+
+// One compact card line inside a list.
+function dealCard(d, n, geo){
+    const star=d.is_sponsored?'⭐ ':'';
+    const dist=(geo && d.distance_km!=null)?`  •  📍 ${numEsc(d.distance_km)} كم`:'';
+    const typ=d.expiry_type==='stock'?stockText(d):(remainingText(d)?`⏳ ${md(remainingText(d))}`:'⏳ لفترة محدودة');
+    return `*${numEsc(n)}\\.* ${star}*${md(d.item_name)}*\n`+
+           `🏪 ${md(d.shop_name)}  •  📍 ${md(d.city||d.region||'—')}${dist}\n`+
+           `🟢 *${money(d.discounted_price)} ر\\.س*  \\(خصم ${numEsc(d.discount_percentage)}%\\)  •  ${typ}\n\n`;
+}
+
+bot.command('deals', ctx => showBrowseMenu(ctx));
+bot.action('browse:menu', async ctx => { await ctx.answerCbQuery(); showBrowseMenu(ctx); });
+bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); renderList(ctx,'n','-',+ctx.match[1]); }); // legacy alias
+async function showBrowseMenu(ctx){
+    const s=getSession(tgId(ctx));
+    const near = s.geo ? '📍 العروض الأقرب إليك' : '📍 العروض حولي (شارك موقعك)';
+    await ctx.reply(`🛍 *تصفّح العروض*\n${DIV}\nاختر طريقة العرض التي تناسبك:`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔥 الأكثر طلباً','br:p:-:0'), Markup.button.callback('💸 الأكثر خصماً','br:d:-:0')],
+            [Markup.button.callback('🆕 الأحدث','br:n:-:0'), Markup.button.callback('⭐ المميّزة والرعاة','br:s:-:0')],
+            [Markup.button.callback('📂 حسب التصنيف','browse:cats')],
+            [Markup.button.callback(near,'browse:near')],
+            [Markup.button.callback('◀️ رجوع للقائمة','menu:back')]
+        ]).reply_markup });
+}
+
+// br:<sortLetter>:<category|->:<offset>
+bot.action(/^br:([pdnsx]):([A-Za-z_\-]+):(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderList(ctx, ctx.match[1], ctx.match[2], +ctx.match[3]); });
+async function renderList(ctx, sortLetter, cat, offset){
+    if(!checkRL(`br:${chatId(ctx)}`)) return;
+    const s=getSession(tgId(ctx));
+    const sort=SORTMAP[sortLetter]||'newest';
+    const geo=(sort==='nearby')?s.geo:undefined;
+    if(sort==='nearby' && !geo) return askLocation(ctx);
+    const deals=await rpc('bot_browse_deals',{ p_sort:sort, p_category:(cat&&cat!=='-')?cat:null,
+        p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null, p_limit:PAGE, p_offset:offset })||[];
+    const catName=(cat&&cat!=='-')?`  ·  ${catLabel(cat)}`:'';
+    s.temp.listCb=`br:${sortLetter}:${cat||'-'}:${offset}`;
+    if(!deals.length){
+        const msg=offset===0?`📭 *لا توجد عروض مطابقة*${geo?'\nجرّب توسيع المنطقة أو تصنيفاً آخر\\.':''}`:'📭 *لا مزيد من العروض*';
+        return ctx.reply(`${SORT_TITLE[sort]}${md(catName)}\n${DIV}\n\n${msg}`, { parse_mode:'MarkdownV2',
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+    }
+    let m=`${SORT_TITLE[sort]}${md(catName)}\n${DIV}\n\n`;
+    const rows=[];
+    deals.forEach((d,i)=>{ m+=dealCard(d, offset+i+1, geo); rows.push([Markup.button.callback(`${d.is_sponsored?'⭐ ':''}${offset+i+1} • ${String(d.item_name).slice(0,22)}`,`deal:${d.id}`)]); });
+    const nav=[];
+    if(offset>0) nav.push(Markup.button.callback('◀️ السابق',`br:${sortLetter}:${cat||'-'}:${Math.max(0,offset-PAGE)}`));
+    if(deals.length===PAGE) nav.push(Markup.button.callback('التالي ▶️',`br:${sortLetter}:${cat||'-'}:${offset+PAGE}`));
+    if(nav.length) rows.push(nav);
+    const sw=[];
+    ['p','d','n'].forEach(sl=>{ if(sl!==sortLetter) sw.push(Markup.button.callback(SORT_SHORT[sl],`br:${sl}:${cat||'-'}:0`)); });
+    if(s.geo && sortLetter!=='x') sw.push(Markup.button.callback(SORT_SHORT.x,`br:x:${cat||'-'}:0`));
+    if(sw.length) rows.push(sw);
+    rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup, link_preview_options:{is_disabled:true} });
 }
 
-// ── Deal detail (with photo) ──────────────────────────────────────────────────
+// Category picker (counts respect the user's shared location when available).
+bot.action('browse:cats', async ctx => { await ctx.answerCbQuery(); showCats(ctx); });
+async function showCats(ctx){
+    const s=getSession(tgId(ctx));
+    const cats=await rpc('bot_get_categories',{ p_lat:s.geo?s.geo.lat:null, p_lng:s.geo?s.geo.lng:null, p_radius_km:null })||[];
+    if(!cats.length) return ctx.reply('📭 *لا توجد تصنيفات نشطة حالياً*', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+    const rows=[]; let row=[];
+    cats.forEach(c=>{ row.push(Markup.button.callback(`${catLabel(c.category)} (${c.n})`,`br:n:${c.category}:0`)); if(row.length===2){ rows.push(row); row=[]; } });
+    if(row.length) rows.push(row);
+    rows.push([Markup.button.callback('◀️ القائمة','browse:menu')]);
+    await ctx.reply(`📂 *التصنيفات المتوفّرة*\n${DIV}\nاختر تصنيفاً لعرض عروضه:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+
+// Nearby — ask the user to share their location (Telegram location keyboard).
+bot.action('browse:near', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); if(s.geo) return renderList(ctx,'x','-',0); askLocation(ctx); });
+function askLocation(ctx){
+    return ctx.reply('📍 *العروض حولك*\nشارك موقعك لأرتّب لك العروض حسب الأقرب وأحسب المسافة بالسيارة 🚗', { parse_mode:'MarkdownV2',
+        reply_markup: Markup.keyboard([[Markup.button.locationRequest('📍 مشاركة موقعي الآن')],['❌ إلغاء']]).resize().oneTime().reply_markup });
+}
+bot.on('location', async ctx => {
+    const loc=ctx.message && ctx.message.location; if(!loc) return;
+    const s=getSession(tgId(ctx)); s.geo={ lat:loc.latitude, lng:loc.longitude };
+    await ctx.reply('✅ *تم تحديد موقعك* — إليك الأقرب إليك:', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
+    await renderList(ctx,'x','-',0);
+});
+
+// ── Deal detail (rich: images album + deal-type + distance/drive + sponsor) ────
 bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery();
     const dealId = ctx.match[1];
     const d = await rpc('bot_get_deal', { p_deal_id: dealId });
-    if (!d) return ctx.reply('⚠️ العرض لم يعد متاحاً\\.', { parse_mode:'MarkdownV2' });
-    const pct = d.discount_percentage || Math.round(((d.original_price-d.discounted_price)/d.original_price)*100);
-    const qty = d.is_unlimited ? 'غير محدود' : `${d.quantity??0} قطعة`;
-    const prep = d.prep_time ? `\n⏱ التجهيز: ${md(d.prep_time)}` : '';
-    const desc = d.description ? `\n\n📝 ${md(d.description)}` : '';
-    const caption =
-        `🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}\n\n` +
-        priceBlock(d.original_price, d.discounted_price, pct) +
-        `\n\n📦 المتاح: *${md(qty)}*${prep}${desc}`;
+    if (!d) return ctx.reply('⚠️ العرض لم يعد متاحاً\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع للعروض','browse:menu')]]).reply_markup });
     const s = getSession(tgId(ctx));
     s.temp.dealId = dealId; s.temp.dealName = d.item_name; s.temp.dealQty = 1;
+    const tag  = sponsorTag(d);
+    const cat  = d.category ? `\n🏷 التصنيف: ${md(catLabel(d.category))}` : '';
+    const prep = d.prep_time ? `\n⏱ وقت التجهيز: ${md(d.prep_time)}` : '';
+    const desc = d.description ? `\n\n📝 *الملاحظات:*\n${md(String(d.description).slice(0,500))}` : '';
+    let geoBlock='';
+    const di = await driveInfo(s.geo, d);
+    if (di) geoBlock = `\n📍 المسافة: *${numEsc(fmtKm(di.straight))} كم* \\(مباشرة\\)\n🚗 بالسيارة: *${di.est?'~':''}${numEsc(di.min)} دقيقة* \\(${numEsc(fmtKm(di.km))} كم${di.est?' تقريباً':''}\\)`;
+    else if (d.map_lat!=null) geoBlock = `\n📍 شارك موقعك لمعرفة المسافة والوقت بالسيارة`;
+    const caption =
+        `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}\n\n` +
+        priceBlock(d.original_price, d.discounted_price, d.discount_percentage) +
+        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${desc}`;
     const btns = [];
     if (s.userId && s.userType !== 'seller') btns.push([Markup.button.callback('📥  احجز الآن','book:qty')]);
     else if (!s.userId) btns.push([Markup.button.webApp('🛍  سجّل دخولك لتحجز', APP_URL)]);
-    btns.push([Markup.button.callback('◀️  رجوع للعروض','deals:0')]);
+    const dl = dirLink(d, s.geo);
+    const row2=[];
+    if (dl) row2.push(Markup.button.url('🧭 الاتجاهات', dl));
+    if (!s.geo && d.map_lat!=null) row2.push(Markup.button.callback('📍 احسب المسافة','browse:near'));
+    if (row2.length) btns.push(row2);
+    btns.push([Markup.button.callback('◀️  رجوع للعروض', s.temp.listCb || 'browse:menu')]);
     const extra = { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup };
-    if (d.image) { try { return await ctx.replyWithPhoto(d.image, { caption, ...extra }); } catch { /* fall through */ } }
+    const imgs = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
+    if (imgs.length > 1) {
+        try { await ctx.replyWithMediaGroup(imgs.slice(0,5).map(u => ({ type:'photo', media:u }))); } catch { /* ignore album errors */ }
+        return ctx.reply(caption, { ...extra, link_preview_options:{is_disabled:true} });
+    }
+    const one = imgs[0] || d.image;
+    if (one) { try { return await ctx.replyWithPhoto(one, { caption, ...extra }); } catch { /* fall through to text */ } }
     await ctx.reply(caption, { ...extra, link_preview_options:{is_disabled:true} });
 });
 
@@ -627,6 +763,9 @@ bot.on('text', async ctx => {
     const lc = text.toLowerCase().trim();
     const CANCEL = Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup;
 
+    // Reply-keyboard "إلغاء" (from the share-location prompt) → drop the keyboard.
+    if (text === '❌ إلغاء') { await ctx.reply('تم الإلغاء\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup }); const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
+
     if (s.step === 'await_barcode') { setStep(tgId(ctx),'idle'); return doVerify(ctx, text.trim().toUpperCase()); }
     if (s.step === 'await_book_qty') {
         if (!isQty(text) || +text < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
@@ -659,7 +798,7 @@ bot.on('text', async ctx => {
     }
 
     if (['menu','قائمة','القائمة','ابدأ','start','مرحبا','مرحباً','اهلا','أهلا','السلام عليكم'].includes(lc)) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
-    if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return showDeals(ctx,0);
+    if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return showBrowseMenu(ctx);
     if (['مساعدة','help'].includes(lc)) return showHelp(ctx);
     if (['حجوزاتي','bookings'].includes(lc)) return showBuyerBookings(ctx);
     if (['ربط','link'].includes(lc)) return startLink(ctx);
@@ -719,7 +858,10 @@ if (supabase && bot) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  WhatsApp (minimal)
+//  WhatsApp Cloud API — interactive browse, categories, nearby & deal detail
+//  Mirrors the Telegram browse layer (same RPCs). Booking is completed in the
+//  app via a secure deep-link (no phone-based identity — matches our security
+//  model). All replies are free-form inside the 24h customer-service window.
 // ═══════════════════════════════════════════════════════════════════════════════
 async function sendWA(to, payload) {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) return null;
@@ -731,6 +873,85 @@ async function sendWA(to, payload) {
         return r.json();
     } catch(e) { console.error('WA error:', e.message); return null; }
 }
+
+// Per-user shared location (TTL 30 min) so "nearby" works across messages.
+const waGeo = new Map();
+setInterval(() => { const n=Date.now(); for (const [k,v] of waGeo) if (n-v.t > 30*60_000) waGeo.delete(k); }, 10*60_000).unref?.();
+
+function waText(d, geo) {
+    const L = [];
+    L.push(`🏷 ${d.item_name}`);
+    L.push(`🏪 ${d.shop_name}  •  📍 ${d.city||d.region||'—'}`);
+    L.push(`🟢 ${d.discounted_price} ر.س  (بدل ${d.original_price}) — خصم ${d.discount_percentage}%`);
+    if (d.expiry_type==='stock') L.push(d.is_unlimited ? '📦 متوفّر' : `📦 المتبقّي: ${d.quantity??0} قطعة`);
+    else if (d.expiry_type==='date' && d.expiry_date) L.push(`📅 ساري حتى: ${d.expiry_date}`);
+    else { const r=remainingText(d); if (r) L.push(`⏳ ينتهي خلال: ${r}`); }
+    if (geo && d.distance_km!=null) L.push(`📍 يبعد ${d.distance_km} كم عنك`);
+    if (d.prep_time) L.push(`⏱ التجهيز: ${d.prep_time}`);
+    if (d.description) L.push(`\n📝 ${String(d.description).slice(0,400)}`);
+    L.push(`\n🔗 احجز الآن داخل تطبيق تاكي:\n${APP_URL}/deal/${d.id}`);
+    return L.join('\n');
+}
+function waMainMenu(from) {
+    return sendWA(from, { type:'interactive', interactive:{
+        type:'button',
+        header:{ type:'text', text:'TAKI 🛍️' },
+        body:{ text:'أهلاً بك في تاكي — عروض وتخفيضات السعودية. اختر ما يناسبك:' },
+        action:{ buttons:[
+            { type:'reply', reply:{ id:'wa_deals', title:'🔥 العروض' } },
+            { type:'reply', reply:{ id:'wa_cats',  title:'📂 التصنيفات' } },
+            { type:'reply', reply:{ id:'wa_near',  title:'📍 حولي' } },
+        ]}
+    }});
+}
+function waAskLocation(from) {
+    return sendWA(from, { type:'interactive', interactive:{
+        type:'location_request_message',
+        body:{ text:'📍 شارك موقعك لأرتّب لك العروض حسب الأقرب وأحسب المسافة 🚗' },
+        action:{ name:'send_location' }
+    }});
+}
+async function waBrowse(from, sort, cat) {
+    const geo = (sort==='nearby') ? waGeo.get(from) : null;
+    if (sort==='nearby' && !geo) return waAskLocation(from);
+    const deals = await rpc('bot_browse_deals', { p_sort:sort, p_category:(cat&&cat!=='all')?cat:null,
+        p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null, p_limit:10, p_offset:0 }) || [];
+    if (!deals.length) return sendWA(from, { type:'text', text:{ body:'📭 لا توجد عروض مطابقة حالياً.', preview_url:false } });
+    const TITLE = { popular:'🔥 الأكثر طلباً', discount:'💸 الأكثر خصماً', newest:'🆕 أحدث العروض', sponsored:'⭐ المميّزة والرعاة', nearby:'📍 الأقرب إليك' };
+    const rows = deals.slice(0,10).map(d => ({
+        id:`wa_deal:${d.id}`,
+        title:String(d.item_name).slice(0,24),
+        description:`${d.discounted_price} ر.س • خصم ${d.discount_percentage}%${geo&&d.distance_km!=null?` • ${d.distance_km}كم`:''}`.slice(0,72)
+    }));
+    return sendWA(from, { type:'interactive', interactive:{
+        type:'list',
+        header:{ type:'text', text:(TITLE[sort]||'العروض').slice(0,60) },
+        body:{ text:'اختر عرضاً لعرض تفاصيله وصوره وحجزه 👇' },
+        footer:{ text:'TAKI' },
+        action:{ button:'تصفّح العروض', sections:[{ title:((cat&&cat!=='all')?catLabel(cat):'العروض').slice(0,24), rows }] }
+    }});
+}
+async function waCategories(from) {
+    const geo = waGeo.get(from);
+    const cats = await rpc('bot_get_categories', { p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null }) || [];
+    if (!cats.length) return sendWA(from, { type:'text', text:{ body:'📭 لا توجد تصنيفات نشطة حالياً.', preview_url:false } });
+    const rows = cats.slice(0,10).map(c => ({ id:`wa_cat:${c.category}`, title:catLabel(c.category).slice(0,24), description:`${c.n} عرض متاح`.slice(0,72) }));
+    return sendWA(from, { type:'interactive', interactive:{
+        type:'list', header:{ type:'text', text:'📂 التصنيفات' }, body:{ text:'اختر تصنيفاً لعرض عروضه:' },
+        action:{ button:'التصنيفات', sections:[{ title:'المتوفّرة الآن', rows }] }
+    }});
+}
+async function waDealDetail(from, id) {
+    const d = await rpc('bot_get_deal', { p_deal_id:id });
+    if (!d) return sendWA(from, { type:'text', text:{ body:'⚠️ العرض لم يعد متاحاً.', preview_url:false } });
+    const geo = waGeo.get(from);
+    const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
+    if (img) await sendWA(from, { type:'image', image:{ link:img, caption: waText(d, geo).slice(0,1024) } });
+    else     await sendWA(from, { type:'text',  text:{ body: waText(d, geo), preview_url:true } });
+    const dl = dirLink(d, geo);
+    if (dl) await sendWA(from, { type:'text', text:{ body:`🧭 الاتجاهات بالسيارة:\n${dl}`, preview_url:false } });
+}
+
 app.get('/webhook/whatsapp', (req, res) => {
     if (req.query['hub.mode']==='subscribe' && req.query['hub.verify_token']===WHATSAPP_VERIFY_TOKEN && WHATSAPP_VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     res.status(403).send('Forbidden');
@@ -746,15 +967,25 @@ app.post('/webhook/whatsapp', async (req, res) => {
     try {
         for (const entry of body?.entry||[]) for (const change of entry.changes||[]) for (const msg of change.value?.messages||[]) {
             const from = msg.from; if (!from || !checkRL(`wa:${from}`)) continue;
-            const waMenu = { type:'interactive', interactive:{ type:'button', body:{text:'أهلاً في TAKI 🛍️'}, action:{buttons:[{type:'reply',reply:{id:'wa_deals',title:'🔥 العروض'}},{type:'reply',reply:{id:'wa_help',title:'🆘 مساعدة'}}]} } };
             if (msg.type==='text') {
                 const t = sanitize(msg.text?.body||'',200).toLowerCase();
-                if (['deals','عروض'].some(k=>t.includes(k))) { const deals=await getDeals(3); await sendWA(from,{type:'text',text:{body:deals.length?'🔥 '+deals.map((d,i)=>`${i+1}. ${d.item_name} — ${d.discounted_price} ر.س`).join('\n')+`\n\n${APP_URL}`:'📭 لا عروض.',preview_url:false}}); }
-                else await sendWA(from, waMenu);
+                if (['deal','عرض','عروض','تخفيض','خصم'].some(k=>t.includes(k))) await waBrowse(from,'newest',null);
+                else if (['تصنيف','صنف','فئة','category'].some(k=>t.includes(k))) await waCategories(from);
+                else if (['حول','قرب','أقرب','اقرب','near','موقع'].some(k=>t.includes(k))) await waBrowse(from,'nearby',null);
+                else await waMainMenu(from);
             } else if (msg.type==='interactive') {
-                const id = msg.interactive?.button_reply?.id;
-                if (id==='wa_deals') { const deals=await getDeals(3); await sendWA(from,{type:'text',text:{body:deals.length?'🔥 '+deals.map((d,i)=>`${i+1}. ${d.item_name} — ${d.discounted_price} ر.س`).join('\n')+`\n\n${APP_URL}`:'📭 لا عروض.',preview_url:false}}); }
-                else await sendWA(from,{type:'text',text:{body:'🆘 اكتب "عروض" أو افتح:\n'+APP_URL,preview_url:false}});
+                const ir = msg.interactive || {};
+                const id = (ir.button_reply && ir.button_reply.id) || (ir.list_reply && ir.list_reply.id) || '';
+                if      (id==='wa_deals') await waBrowse(from,'newest',null);
+                else if (id==='wa_cats')  await waCategories(from);
+                else if (id==='wa_near')  { waGeo.get(from) ? await waBrowse(from,'nearby',null) : waAskLocation(from); }
+                else if (id.startsWith('wa_deal:')) await waDealDetail(from, id.slice(8));
+                else if (id.startsWith('wa_cat:'))  await waBrowse(from,'newest', id.slice(7));
+                else await waMainMenu(from);
+            } else if (msg.type==='location' && msg.location) {
+                waGeo.set(from, { lat:msg.location.latitude, lng:msg.location.longitude, t:Date.now() });
+                await sendWA(from, { type:'text', text:{ body:'✅ تم تحديد موقعك — إليك الأقرب إليك:', preview_url:false } });
+                await waBrowse(from,'nearby',null);
             }
         }
     } catch(e) { console.error('WA processing:', e.message); }
