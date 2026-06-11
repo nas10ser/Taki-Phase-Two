@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v11.1  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.2  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -11,7 +11,8 @@
  *
  * الميزات: تصفح + صور + حجز (مدة الاستلام + ملاحظة) + محادثة التاجر (٣+٣) +
  *   تعديل/إلغاء الحجز (مشتري) — إحصائيات + حجوزات + محادثة + تحقق + إتمام +
- *   إضافة/تفعيل/حذف عروض مع صورة (تاجر) — إحصائيات منصة (أدمن).
+ *   إضافة عرض بالأسئلة مع تصنيف وصورة + تعديل عرض (اسم/سعر/كمية/وصف/تصنيف) +
+ *   تفعيل/إيقاف/حذف + الاشتراك في الباقات من تيليجرام (تاجر) — إحصائيات (أدمن).
  */
 
 try { require('dotenv').config(); } catch { /* optional */ }
@@ -34,7 +35,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.1.0';
+const BOT_VERSION              = '11.2.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -108,6 +109,13 @@ const CAT = {
     Pharmacy:{ar:'صيدلية',e:'💊'}, Clinics:{ar:'عيادات',e:'🩺'}, Online:{ar:'أونلاين',e:'🌐'}, Other:{ar:'أخرى',e:'✨'},
 };
 const catLabel = id => { const c = CAT[id]; return c ? `${c.e} ${c.ar}` : `✨ ${id||'أخرى'}`; };
+// Category picker rows (2/row) — `prefix` is prepended to each category id in callback_data.
+function catKeyboard(prefix) {
+    const ids = Object.keys(CAT).filter(k => k !== 'all');
+    const rows = [];
+    for (let i=0;i<ids.length;i+=2) rows.push(ids.slice(i,i+2).map(id => Markup.button.callback(catLabel(id), `${prefix}${id}`)));
+    return rows;
+}
 function haversineKm(la1,lo1,la2,lo2){ const R=6371, dLa=(la2-la1)*Math.PI/180, dLo=(lo2-lo1)*Math.PI/180, a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2; return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); }
 function fmtKm(km){ return km>=10 ? Math.round(km) : Math.round(km*10)/10; }
 // Time left for a duration/hours deal (clock starts when it goes live).
@@ -215,8 +223,9 @@ function kbSeller(s) {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📊  إحصائياتي','seller:stats'), Markup.button.callback(`📦  الحجوزات${pBadge}`,'seller:bookings')],
         [Markup.button.callback('✅  تحقق من حجز','seller:verify'), Markup.button.callback('🏷  عروضي','seller:deals')],
-        [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('👤  حسابي','seller:profile')],
-        [Markup.button.webApp('🚀  لوحة التاجر', W('/seller')), Markup.button.callback('🆘  مساعدة','help')]
+        [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('💳  الاشتراك','seller:sub')],
+        [Markup.button.callback('👤  حسابي','seller:profile'), Markup.button.callback('🆘  مساعدة','help')],
+        [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
     ]);
 }
 function kbAdmin() {
@@ -793,7 +802,7 @@ async function showSellerDeals(ctx) {
         m += `*${i+1}\\.* *${md(d.item_name)}*\n🟢 ${money(d.discounted_price)} ر\\.س \\(${md(d.discount_percentage)}%\\)  📦 ${md(qty)}  ${statusLabel(d.status)}\n\n`;
         const tStatus = d.status==='active' ? 'paused' : 'active';
         const tLabel  = d.status==='active' ? '⏸ إيقاف' : '▶️ تفعيل';
-        btns.push([Markup.button.callback(`${tLabel} «${String(d.item_name).slice(0,14)}»`, `toggle:${d.id}:${tStatus}`), Markup.button.callback('🗑 حذف', `delDeal:${d.id}`)]);
+        btns.push([Markup.button.callback(`${tLabel}`, `toggle:${d.id}:${tStatus}`), Markup.button.callback('✏️ تعديل', `dedit:${d.id}`), Markup.button.callback('🗑 حذف', `delDeal:${d.id}`)]);
     });
     btns.push([Markup.button.callback('➕ إضافة عرض','seller:addDeal')]);
     btns.push([Markup.button.callback('◀️ رجوع للقائمة','menu:back')]);
@@ -822,6 +831,94 @@ bot.action('doDelDeal', async ctx => {
     else { const m = r?.error==='has_bookings' ? `❌ *لا يمكن الحذف*\nيوجد ${r.count} حجز معلق\\. أتمّها أولاً\\.` : '⚠️ تعذّر الحذف\\.'; await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','seller:deals')]]).reply_markup }); }
 });
 
+// ── Seller: edit a deal (name / prices / quantity / description / category) ────
+bot.action(/^dedit:([a-zA-Z0-9_-]+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const id = ctx.match[1];
+    getSession(tgId(ctx)).temp.editDealId = id;
+    await ctx.reply(`✏️ *تعديل العرض*\nوش تبي تعدّل؟`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🏷 الاسم',`de:name:${id}`), Markup.button.callback('💰 الأسعار',`de:price:${id}`)],
+            [Markup.button.callback('📦 الكمية',`de:qty:${id}`), Markup.button.callback('📝 الوصف',`de:desc:${id}`)],
+            [Markup.button.callback('🗂 التصنيف',`de:cat:${id}`)],
+            [Markup.button.callback('◀️ رجوع','seller:deals')]
+        ]).reply_markup });
+});
+bot.action(/^de:name:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editDealId=ctx.match[1]; setStep(tgId(ctx),'await_de_name'); await ctx.reply('🏷 أرسل الاسم الجديد:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup }); });
+bot.action(/^de:price:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editDealId=ctx.match[1]; setStep(tgId(ctx),'await_de_orig'); await ctx.reply('💰 أرسل *السعر الأصلي* الجديد \\(ريال\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup }); });
+bot.action(/^de:qty:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editDealId=ctx.match[1]; setStep(tgId(ctx),'await_de_qty'); await ctx.reply('📦 أرسل الكمية الجديدة \\(0 لغير محدود\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup }); });
+bot.action(/^de:desc:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editDealId=ctx.match[1]; setStep(tgId(ctx),'await_de_desc'); await ctx.reply('📝 أرسل الوصف الجديد:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup }); });
+bot.action(/^de:cat:([a-zA-Z0-9_-]+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const id = ctx.match[1];
+    await ctx.reply('🗂 اختر التصنيف الجديد:', { reply_markup: Markup.inlineKeyboard([...catKeyboard(`dcedit:${id}:`), [Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup });
+});
+bot.action(/^dcedit:(.+):([A-Za-z_]+)$/, async ctx => {
+    await ctx.answerCbQuery('جاري الحفظ…');
+    const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: ctx.match[1], p_category: ctx.match[2] });
+    return afterDealEdit(ctx, r);
+});
+async function afterDealEdit(ctx, r) {
+    if (!r?.success) {
+        const e=r?.error; const msg = e==='invalid_price' ? '❌ السعر بعد الخصم يجب أن يكون أقل من الأصلي\\.' : e==='not_found' ? '❌ العرض غير موجود في متجرك\\.' : e==='not_seller' ? '❗ للتجار فقط\\.' : '⚠️ تعذّر التعديل\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏷 عروضي','seller:deals')]]).reply_markup });
+    }
+    await ctx.reply(`✅ *تم تعديل العرض* \\(الخصم: ${r.discount}%\\)`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏷 عروضي','seller:deals')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+}
+
+// ── Seller: subscription / packages (subscribe from Telegram, simulated payment) ─
+bot.action('seller:sub', async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    if (!s.userId || s.userType!=='seller') return ctx.reply('❗ هذا الخيار للتجار فقط\\.', { parse_mode:'MarkdownV2' });
+    const sub = await rpc('bot_get_subscription', { p_telegram_id: tgId(ctx) });
+    if (!sub?.success) return ctx.reply('⚠️ تعذّر تحميل الاشتراك\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    const planAr = sub.plan==='premium' ? 'مدفوعة (Premium)' : sub.plan==='trial' ? 'تجريبية' : 'مجانية';
+    const exp = sub.expires_at ? fmtDay(sub.expires_at) : '—';
+    const statusLine = sub.active ? '🟢 *فعّال*' : '🔴 *غير فعّال*';
+    await ctx.reply(
+        `💳 *اشتراكك الحالي*\n${DIV}\n🔖 الباقة: *${md(planAr)}*\n${statusLine}\n📍 حد المواقع: *${sub.max_branches}*\n📅 تنتهي: *${md(exp)}*\n${DIV}\n_اختر باقة للاشتراك أو الترقية_`,
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔼 الباقات والاشتراك','seller:packages')],[Markup.button.callback('◀️ رجوع','menu:back')]]).reply_markup });
+});
+bot.action('seller:packages', async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    if (!s.userId || s.userType!=='seller') return;
+    const pkgs = await rpc('bot_list_packages', {});
+    const list = Array.isArray(pkgs) ? pkgs.filter(p => p.active!==false) : [];
+    if (!list.length) return ctx.reply('⚠️ لا توجد باقات متاحة حالياً\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    let m = `📦 *باقات المواقع*\n${DIV}\n_الدفع محاكى حالياً — يُفعّل الاشتراك فوراً_\n\n`;
+    const btns = [];
+    list.forEach(p => {
+        const price = Math.round((p.price||0) * (1 - (p.discount||0)/100));
+        m += `• *${md(p.ar||('باقة '+p.id))}* — حتى *${p.max}* موقع — *${money(price)}* ر\\.س/شهر\n`;
+        btns.push([Markup.button.callback(`${p.ar||('باقة '+p.id)} — ${price} ر.س`, `subpkg:${p.id}`)]);
+    });
+    btns.push([Markup.button.callback('◀️ رجوع','seller:sub')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+});
+bot.action(/^subpkg:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const pkgs = await rpc('bot_list_packages', {});
+    const p = (Array.isArray(pkgs)?pkgs:[]).find(x => String(x.id)===ctx.match[1]);
+    if (!p) return ctx.reply('⚠️ الباقة غير متاحة\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    const price = Math.round((p.price||0) * (1 - (p.discount||0)/100));
+    await ctx.reply(
+        `🧾 *تأكيد الاشتراك*\n${DIV}\n🔖 ${md(p.ar||('باقة '+p.id))}\n📍 حتى *${p.max}* موقع\n💰 *${money(price)}* ر\\.س لمدة *${p.durationDays||30}* يوم\n${DIV}\n_الدفع محاكى — سيُفعّل فوراً_\nهل تؤكّد؟`,
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅ تأكيد واشتراك',`subgo:${p.id}`)],[Markup.button.callback('❌ إلغاء','seller:packages')]]).reply_markup });
+});
+bot.action(/^subgo:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery('جاري التفعيل…');
+    const r = await rpc('bot_subscribe_plan', { p_telegram_id: tgId(ctx), p_package_id: +ctx.match[1] });
+    if (!r?.success) {
+        const e=r?.error; const msg = e==='not_seller' ? '❗ للتجار فقط\\.' : e==='bad_package' ? '⚠️ الباقة غير متاحة\\.' : '⚠️ تعذّر الاشتراك، حاول لاحقاً\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    }
+    await ctx.reply(
+        `🎉 *تم تفعيل اشتراكك\\!*\n${DIV}\n🔖 ${md(r.plan_ar)}\n📍 حد المواقع: *${r.max_branches}*\n💰 *${money(r.price)}* ر\\.س\n📅 ساري حتى: *${md(fmtDay(r.expires_at))}*\n\n_تقدر الآن تنشر عروضك حسب حدّ باقتك ✅_`,
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏷 عروضي','seller:deals'), Markup.button.callback('➕ إضافة عرض','seller:addDeal')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+});
+
 // ── Seller: profile ───────────────────────────────────────────────────────────
 bot.action('seller:profile', async ctx => {
     await ctx.answerCbQuery();
@@ -839,15 +936,22 @@ bot.action('seller:addDeal', async ctx => {
     if (!s.userId || s.userType!=='seller') return;
     s.temp = { images: [] };
     setStep(tgId(ctx),'deal_name');
-    await ctx.reply(`➕ *إضافة عرض جديد*\n${DIV}\n*1 من 6* — اسم المنتج أو الخدمة:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
+    await ctx.reply(`➕ *إضافة عرض جديد*\n${DIV}\n*1 من 7* — اسم المنتج أو الخدمة:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
 });
 bot.action('addDeal:cancel', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'idle'); getSession(tgId(ctx)).temp={}; await ctx.reply('❌ *تم الإلغاء*', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); });
 bot.action('addDeal:skipPhoto', async ctx => { await ctx.answerCbQuery(); await addDealReview(ctx, getSession(tgId(ctx))); });
+bot.action(/^dcat:([A-Za-z_]+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.temp.cat = ctx.match[1];
+    setStep(tgId(ctx),'deal_photo');
+    await ctx.reply('*7 من 7* — أرسل *صورة* للمنتج 📷\n_أو اضغط تخطّي للنشر بدون صورة_', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('⏭ تخطّي بدون صورة','addDeal:skipPhoto')],[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
+});
 bot.action('addDeal:confirm', async ctx => {
     await ctx.answerCbQuery('جاري النشر…');
     const s = getSession(tgId(ctx)), t = s.temp||{};
     if (!t.name) return ctx.reply('⚠️ انتهت الجلسة\\.', { parse_mode:'MarkdownV2' });
-    const r = await rpc('bot_add_deal', { p_telegram_id: tgId(ctx), p_item_name: t.name, p_original_price: t.orig, p_discounted_price: t.disc, p_quantity: t.qty, p_description: t.desc, p_category: 'other', p_images: t.images||[] });
+    const r = await rpc('bot_add_deal', { p_telegram_id: tgId(ctx), p_item_name: t.name, p_original_price: t.orig, p_discounted_price: t.disc, p_quantity: t.qty, p_description: t.desc, p_category: t.cat||'other', p_images: t.images||[] });
     setStep(tgId(ctx),'idle'); s.temp={};
     if (!r?.success) {
         const m = r?.error==='invalid_price' ? '❌ السعر بعد الخصم يجب أن يكون أقل من الأصلي\\.'
@@ -862,7 +966,7 @@ async function addDealReview(ctx, s) {
     const photo = (t.images?.length) ? '\n🖼 صورة: مرفقة ✅' : '\n🖼 صورة: بدون';
     await ctx.reply(
         `📋 *مراجعة العرض*\n${DIV}\n🏷 ${md(t.name)}\n` + priceBlock(t.orig, t.disc, pct) +
-        `\n📦 الكمية: ${t.qty===0?'غير محدودة':md(t.qty)}\n📝 ${md(t.desc)}${photo}\n\n_سيُنشر مباشرةً ويظهر في الموقع_`,
+        `\n📦 الكمية: ${t.qty===0?'غير محدودة':md(t.qty)}\n🗂 التصنيف: ${md(catLabel(t.cat||'Other'))}\n📝 ${md(t.desc)}${photo}\n\n_سيُنشر مباشرةً ويظهر في الموقع_`,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅ نشر العرض','addDeal:confirm')],[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
 }
 
@@ -935,30 +1039,58 @@ bot.on('text', async ctx => {
         const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: s.temp.editBarcode, p_notes: text.slice(0,300) });
         return afterEdit(ctx, r);
     }
+    if (s.step === 'await_de_name') {
+        if (text.length < 3) return ctx.reply('❗ الاسم قصير جداً:');
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_item_name: text.slice(0,120) });
+        return afterDealEdit(ctx, r);
+    }
+    if (s.step === 'await_de_orig') {
+        if (!isPrice(text)) return ctx.reply('❗ أرسل رقماً صحيحاً، مثل: `150`', { parse_mode:'MarkdownV2' });
+        s.temp.deOrig = +text; setStep(tgId(ctx),'await_de_disc');
+        return ctx.reply('💰 الآن أرسل *السعر بعد الخصم* \\(ريال\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:deals')]]).reply_markup });
+    }
+    if (s.step === 'await_de_disc') {
+        if (!isPrice(text) || +text >= s.temp.deOrig) return ctx.reply(`❗ يجب أن يكون أقل من ${s.temp.deOrig} ر\\.س`, { parse_mode:'MarkdownV2' });
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_original_price: s.temp.deOrig, p_discounted_price: +text });
+        return afterDealEdit(ctx, r);
+    }
+    if (s.step === 'await_de_qty') {
+        if (!isQty(text)) return ctx.reply('❗ أرسل رقم الكمية، مثل `10` أو `0`');
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_quantity: +text });
+        return afterDealEdit(ctx, r);
+    }
+    if (s.step === 'await_de_desc') {
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_description: text.slice(0,300) });
+        return afterDealEdit(ctx, r);
+    }
     if (s.step === 'deal_name') {
         if (text.length < 3) return ctx.reply('❗ الاسم قصير جداً:');
         s.temp.name = text; setStep(tgId(ctx),'deal_orig_price');
-        return ctx.reply('*2 من 6* — السعر الأصلي \\(ريال\\):\n_مثال: 250_', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
+        return ctx.reply('*2 من 7* — السعر الأصلي \\(ريال\\):\n_مثال: 250_', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
     }
     if (s.step === 'deal_orig_price') {
         if (!isPrice(text)) return ctx.reply('❗ أرسل رقماً صحيحاً، مثل: `150`', { parse_mode:'MarkdownV2' });
         s.temp.orig = +text; setStep(tgId(ctx),'deal_disc_price');
-        return ctx.reply('*3 من 6* — السعر بعد الخصم \\(ريال\\):', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
+        return ctx.reply('*3 من 7* — السعر بعد الخصم \\(ريال\\):', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
     }
     if (s.step === 'deal_disc_price') {
         if (!isPrice(text) || +text >= s.temp.orig) return ctx.reply(`❗ يجب أن يكون أقل من ${s.temp.orig} ر\\.س`, { parse_mode:'MarkdownV2' });
         s.temp.disc = +text; const pct = Math.round(((s.temp.orig-s.temp.disc)/s.temp.orig)*100);
         setStep(tgId(ctx),'deal_qty');
-        return ctx.reply(`✅ الخصم: *${pct}%*\n\n*4 من 6* — الكمية المتاحة:\n_أرسل 0 لغير محدود_`, { parse_mode:'MarkdownV2', reply_markup: CANCEL });
+        return ctx.reply(`✅ الخصم: *${pct}%*\n\n*4 من 7* — الكمية المتاحة:\n_أرسل 0 لغير محدود_`, { parse_mode:'MarkdownV2', reply_markup: CANCEL });
     }
     if (s.step === 'deal_qty') {
         if (!isQty(text)) return ctx.reply('❗ أرسل رقم الكمية، مثل `10` أو `0`');
         s.temp.qty = +text; setStep(tgId(ctx),'deal_desc');
-        return ctx.reply('*5 من 6* — وصف مختصر للعرض:', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
+        return ctx.reply('*5 من 7* — وصف مختصر للعرض:', { parse_mode:'MarkdownV2', reply_markup: CANCEL });
     }
     if (s.step === 'deal_desc') {
-        s.temp.desc = text.slice(0,300); setStep(tgId(ctx),'deal_photo');
-        return ctx.reply('*6 من 6* — أرسل *صورة* للمنتج 📷\n_أو اضغط تخطّي للنشر بدون صورة_', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('⏭ تخطّي بدون صورة','addDeal:skipPhoto')],[Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
+        s.temp.desc = text.slice(0,300); setStep(tgId(ctx),'deal_cat');
+        return ctx.reply('*6 من 7* — اختر تصنيف العرض:', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([...catKeyboard('dcat:'), [Markup.button.callback('❌ إلغاء','addDeal:cancel')]]).reply_markup });
     }
 
     if (['menu','قائمة','القائمة','ابدأ','start','مرحبا','مرحباً','اهلا','أهلا','السلام عليكم'].includes(lc)) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
