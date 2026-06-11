@@ -218,6 +218,7 @@ function kbSeller(s) {
 function kbAdmin() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📊  إحصائيات المنصة','admin:stats'), Markup.button.callback('🚩  البلاغات','admin:reports')],
+        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
         [Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))],
         [Markup.button.callback('🆘  مساعدة','help')]
     ]);
@@ -257,6 +258,16 @@ bot.telegram.setMyCommands([
     { command:'verify',   description:'تحقق من حجز (تاجر)' },
     { command:'help',     description:'مساعدة' }
 ]).catch(e => console.warn('setMyCommands:', e.message));
+
+// Lazy identity refresh: if we don't yet know who this chat belongs to (e.g. the
+// user just linked their account from the Mini App), load their profile from the
+// DB BEFORE any handler runs — so حجوزاتي / الحجوزات / إلخ recognise them without
+// needing /start first. Once known it's a no-op (no further DB hit).
+bot.use(async (ctx, next) => {
+    try { const id = tgId(ctx); if (id && !getSession(id).userId) await refreshSession(ctx); }
+    catch { /* never block the update */ }
+    return next();
+});
 
 // ── /start (handles deep-link token: /start link_<token>) ─────────────────────
 bot.start(async ctx => {
