@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v11.0  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.1  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -9,8 +9,9 @@
  *   • كل العمليات عبر دوال SECURITY DEFINER بمفتاح anon (لا service-role).
  *   • رفع الصور عبر Edge Function محمية بسرّ مشترك (لا مفاتيح في العميل).
  *
- * الميزات: تصفح + صور + حجز + إلغاء (مشتري) — إحصائيات + حجوزات + تحقق +
- *   إتمام + إضافة/تفعيل/حذف عروض مع صورة (تاجر) — إحصائيات منصة (أدمن).
+ * الميزات: تصفح + صور + حجز (مدة الاستلام + ملاحظة) + محادثة التاجر (٣+٣) +
+ *   تعديل/إلغاء الحجز (مشتري) — إحصائيات + حجوزات + محادثة + تحقق + إتمام +
+ *   إضافة/تفعيل/حذف عروض مع صورة (تاجر) — إحصائيات منصة (أدمن).
  */
 
 try { require('dotenv').config(); } catch { /* optional */ }
@@ -33,7 +34,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.0.0';
+const BOT_VERSION              = '11.1.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -75,6 +76,9 @@ const md = t => t == null ? '' : String(t).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, 
 const fmtDate = d => { try { return new Date(d).toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch { return String(d); } };
 const fmtDay  = d => { try { return new Date(d).toLocaleDateString('ar-SA',{year:'numeric',month:'short',day:'numeric'}); } catch { return String(d); } };
 const money = v => md(Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }));
+const fmtTime = d => { try { return new Date(d).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } };
+// prep_time is stored web-compatibly as 'arrival' or 'NNmin'
+const prepLabel = pt => { if (!pt || pt==='arrival' || pt==='0min' || pt==='0') return 'عند الوصول'; const n=String(pt).replace('min','').trim(); return /^\d+$/.test(n) ? `${n} دقيقة` : String(pt); };
 
 const STATUS = { pending:'⏳ قيد الانتظار', acknowledged:'✅ مؤكد', completed:'🏁 مكتمل', cancelled:'❌ ملغي', active:'🟢 نشط', paused:'⏸ موقوف', draft:'📝 مسودة', expired:'🔴 منتهي' };
 const statusLabel = s => STATUS[s] || md(s);
@@ -518,22 +522,54 @@ bot.action('book:qty', async ctx => {
             [Markup.button.callback('❌  إلغاء','menu:back')]
         ]).reply_markup });
 });
-bot.action(/^bq:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.dealQty = +ctx.match[1]; await bookConfirm(ctx, s); });
+bot.action(/^bq:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.dealQty = +ctx.match[1]; setStep(tgId(ctx),'idle'); await askPrep(ctx, s); });
 bot.action('bq:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_book_qty'); await ctx.reply('✏️ أرسل الكمية المطلوبة:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+
+// Step 2 — pickup / prep time (mirrors the website's prep-time field)
+async function askPrep(ctx, s) {
+    await ctx.reply(`⏱ *متى تستلم طلبك؟*\n📦 الكمية: *${s.temp.dealQty}*`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚶 عند الوصول','prep:arrival'), Markup.button.callback('١٥ دقيقة','prep:15')],
+            [Markup.button.callback('٣٠ دقيقة','prep:30'), Markup.button.callback('٤٥ دقيقة','prep:45')],
+            [Markup.button.callback('٦٠ دقيقة','prep:60'), Markup.button.callback('وقت آخر ✏️','prep:custom')],
+            [Markup.button.callback('❌ إلغاء','menu:back')]
+        ]).reply_markup });
+}
+bot.action('prep:arrival', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.prepTime='arrival'; await askNote(ctx,s); });
+bot.action(/^prep:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.prepTime=`${ctx.match[1]}min`; await askNote(ctx,s); });
+bot.action('prep:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_prep'); await ctx.reply('✏️ أرسل عدد دقائق التجهيز \\(مثل 20\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+
+// Step 3 — optional note to the seller
+async function askNote(ctx, s) {
+    setStep(tgId(ctx),'idle');
+    await ctx.reply(`📝 *ملاحظة للتاجر؟* \\(اختياري\\)\n_مثل: نوع الطلب، تفضيلات معينة…_`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('✏️ أضف ملاحظة','note:add')],
+            [Markup.button.callback('تخطّي والمتابعة ➡️','note:skip')],
+            [Markup.button.callback('❌ إلغاء','menu:back')]
+        ]).reply_markup });
+}
+bot.action('note:add', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_note'); await ctx.reply('✏️ اكتب ملاحظتك \\(حتى 300 حرف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+bot.action('note:skip', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.notes=null; await bookConfirm(ctx,s); });
+
+// Step 4 — confirm (shows quantity + prep + note + total)
 async function bookConfirm(ctx, s) {
+    setStep(tgId(ctx),'idle');
     const d = await rpc('bot_get_deal', { p_deal_id: s.temp.dealId });
     if (!d) return ctx.reply('⚠️ العرض لم يعد متاحاً\\.', { parse_mode:'MarkdownV2' });
     const total = d.discounted_price * s.temp.dealQty;
-    await ctx.reply(
-        `✅ *تأكيد الحجز*\n${DIV}\n🛍 ${md(d.item_name)}\n🏪 ${md(d.shop_name)}\n\n📦 الكمية: *${s.temp.dealQty}*\n💰 الإجمالي: *${money(total)} ر\\.س*\n${DIV}\nهل تؤكّد؟`,
-        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅  نعم، احجز','book:confirm')],[Markup.button.callback('❌  إلغاء','menu:back')]]).reply_markup });
+    let m = `✅ *تأكيد الحجز*\n${DIV}\n🛍 ${md(d.item_name)}\n🏪 ${md(d.shop_name)}\n\n📦 الكمية: *${s.temp.dealQty}*\n⏱ الاستلام: *${md(prepLabel(s.temp.prepTime))}*`;
+    if (s.temp.notes) m += `\n📝 ملاحظتك: _${md(s.temp.notes)}_`;
+    m += `\n💰 الإجمالي: *${money(total)} ر\\.س*\n${DIV}\nهل تؤكّد؟`;
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅  نعم، احجز','book:confirm')],[Markup.button.callback('❌  إلغاء','menu:back')]]).reply_markup });
 }
 bot.action('book:confirm', async ctx => {
     await ctx.answerCbQuery('جاري الحجز…');
     const s = getSession(tgId(ctx));
     if (!s.temp.dealId) return ctx.reply('⚠️ انتهت الجلسة\\.', { parse_mode:'MarkdownV2' });
-    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: null });
-    s.temp.dealId = null; s.temp.dealQty = 1;
+    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival' });
+    const bc = result?.barcode;
+    s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null;
     if (!result?.success) {
         const e = result?.error;
         const m = e==='deal_inactive' ? '⚠️ عذراً، العرض انتهى\\.'
@@ -544,10 +580,9 @@ bot.action('book:confirm', async ctx => {
         return ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     }
     const expiry = result.expiry_at ? fmtDate(result.expiry_at) : '—';
-    const prep   = result.prep_time ? `\n⏱ التجهيز: ${md(result.prep_time)}` : '';
     await ctx.reply(
-        `🎉 *تم الحجز بنجاح\\!*\n${DIV}\n🛍 ${md(result.deal_name)}\n🏪 ${md(result.shop_name)}\n📦 الكمية: *${result.quantity}*${prep}\n\n📋 *باركود حجزك:*\n\n        🔖  \`${result.barcode}\`\n\n${DIV}\n⏰ صالح حتى: ${md(expiry)}\n💡 _أظهر هذا الباركود للبائع عند الاستلام_`,
-        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],[Markup.button.callback('🔥 عروض أخرى','deals:0'), Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+        `🎉 *تم الحجز بنجاح\\!*\n${DIV}\n🛍 ${md(result.deal_name)}\n🏪 ${md(result.shop_name)}\n📦 الكمية: *${result.quantity}*\n⏱ الاستلام: *${md(prepLabel(result.prep_time))}*\n\n📋 *باركود حجزك:*\n\n        🔖  \`${md(bc)}\`\n\n${DIV}\n⏰ صالح حتى: ${md(expiry)}\n💡 _أظهر هذا الباركود للبائع عند الاستلام_`,
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('💬 محادثة التاجر',`chat:${bc}`)],[Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔥 عروض','deals:0')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
 });
 
 // ── Buyer: my bookings ────────────────────────────────────────────────────────
@@ -562,10 +597,16 @@ async function showBuyerBookings(ctx) {
     let m = `🎟 *حجوزاتي* \\(${list.length}\\)\n${DIV}\n\n`;
     const btns = [];
     list.forEach((b,i) => {
-        m += `*${i+1}\\.* *${md(b.deal_name)}*\n🏪 ${md(b.shop_name)}\n📋 \`${md(b.barcode)}\`  📦 ${b.quantity}\n${statusLabel(b.status)}  •  ${md(fmtDay(b.booked_at))}\n\n`;
-        if (b.status==='pending'||b.status==='acknowledged') btns.push([Markup.button.callback(`🚫 إلغاء «${String(b.deal_name).slice(0,18)}»`, `cancel:${b.barcode}`)]);
+        m += `*${i+1}\\.* *${md(b.deal_name)}*\n🏪 ${md(b.shop_name)}\n📋 \`${md(b.barcode)}\`  📦 ${b.quantity}  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  ${md(fmtDay(b.booked_at))}`;
+        if (b.notes) m += `\n📝 _${md(b.notes)}_`;
+        m += `\n\n`;
+        const chatLabel = b.unread>0 ? `💬 محادثة (${b.unread})` : '💬 محادثة';
+        const row = [Markup.button.callback(chatLabel, `chat:${b.barcode}`)];
+        if (b.status==='pending') row.push(Markup.button.callback('✏️ تعديل', `edit:${b.barcode}`));
+        btns.push(row);
+        if (b.status==='pending'||b.status==='acknowledged') btns.push([Markup.button.callback(`🚫 إلغاء «${String(b.deal_name).slice(0,16)}»`, `cancel:${b.barcode}`)]);
     });
-    btns.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
+    btns.push([Markup.button.callback('🔄 تحديث','buyer:bookings'), Markup.button.callback('◀️  القائمة','menu:back')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
 }
 bot.action(/^cancel:(.+)$/, async ctx => {
@@ -579,6 +620,75 @@ bot.action(/^doCancel:(.+)$/, async ctx => {
     if (result?.success) await ctx.reply('✅ *تم إلغاء الحجز*', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
     else { const m = result?.error==='cannot_cancel' ? '❌ لا يمكن إلغاء هذا الحجز\\.' : '⚠️ تعذّر الإلغاء\\.'; await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
 });
+
+// ── Booking chat (buyer ↔ seller, 3 messages each side) ───────────────────────
+bot.action(/^chat:(.+)$/, async ctx => { await ctx.answerCbQuery(); await renderChat(ctx, ctx.match[1]); });
+async function renderChat(ctx, barcode) {
+    const r = await rpc('bot_booking_chat', { p_telegram_id: tgId(ctx), p_barcode: barcode });
+    if (!r?.success) {
+        const e=r?.error; const msg = e==='not_authorized' ? '⚠️ لا تملك صلاحية هذه المحادثة\\.' : e==='not_found' ? '❌ الحجز غير موجود\\.' : e==='not_linked' ? '❗ سجّل دخولك أولاً\\.' : '⚠️ تعذّر فتح المحادثة\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    }
+    let m = `💬 *محادثة الحجز* \`${md(r.barcode)}\`\n🛍 ${md(r.deal_name)} • ${statusLabel(r.status)}\n👤 مع: *${md(r.other_name)}*\n${DIV}\n\n`;
+    const msgs = r.messages || [];
+    if (!msgs.length) m += '_لا توجد رسائل بعد — ابدأ المحادثة 👇_\n';
+    else for (const x of msgs) {
+        const who = x.mine ? '🟢 أنت' : `👤 ${md(r.other_name)}`;
+        m += `${who} _\\(${md(fmtTime(x.at))}\\)_\n${md(x.body)}\n\n`;
+    }
+    m += `${DIV}\n✍️ رسائلك: *${r.my_count}/3*`;
+    const btns = [];
+    const canSend = r.status !== 'cancelled' && r.my_count < 3;
+    if (canSend) btns.push([Markup.button.callback('✏️ اكتب رسالة', `chatmsg:${r.barcode}`)]);
+    else if (r.status !== 'cancelled') m += `\n_🚫 وصلت الحد الأقصى لرسائلك_`;
+    btns.push([Markup.button.callback('🔄 تحديث', `chat:${r.barcode}`), Markup.button.callback('◀️ رجوع', r.role==='seller'?'seller:bookings':'buyer:bookings')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+}
+bot.action(/^chatmsg:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.temp.chatBarcode = ctx.match[1];
+    setStep(tgId(ctx),'await_chat_msg');
+    await ctx.reply('✏️ اكتب رسالتك \\(حتى 500 حرف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء',`chat:${ctx.match[1]}`)]]).reply_markup });
+});
+
+// ── Edit a pending booking (quantity / prep-time / note) ──────────────────────
+bot.action(/^edit:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    getSession(tgId(ctx)).temp.editBarcode = bc;
+    await ctx.reply(`✏️ *تعديل الحجز* \`${md(bc)}\`\nوش تبي تعدّل؟\n_متاح فقط ما دام الحجز «قيد الانتظار»_`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔢 الكمية',`editqty:${bc}`), Markup.button.callback('⏱ وقت الاستلام',`editprep:${bc}`)],
+            [Markup.button.callback('📝 الملاحظة',`editnote:${bc}`)],
+            [Markup.button.callback('◀️ رجوع','buyer:bookings')]
+        ]).reply_markup });
+});
+bot.action(/^editqty:(.+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editBarcode=ctx.match[1]; setStep(tgId(ctx),'await_edit_qty'); await ctx.reply('🔢 أرسل الكمية الجديدة:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','buyer:bookings')]]).reply_markup }); });
+bot.action(/^editnote:(.+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.editBarcode=ctx.match[1]; setStep(tgId(ctx),'await_edit_note'); await ctx.reply('📝 أرسل الملاحظة الجديدة \\(حتى 300 حرف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','buyer:bookings')]]).reply_markup }); });
+bot.action(/^editprep:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    await ctx.reply('⏱ *وقت الاستلام الجديد:*', { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚶 عند الوصول',`eprep:${bc}:arrival`), Markup.button.callback('١٥ د',`eprep:${bc}:15`)],
+            [Markup.button.callback('٣٠ د',`eprep:${bc}:30`), Markup.button.callback('٤٥ د',`eprep:${bc}:45`), Markup.button.callback('٦٠ د',`eprep:${bc}:60`)],
+            [Markup.button.callback('◀️ رجوع','buyer:bookings')]
+        ]).reply_markup });
+});
+bot.action(/^eprep:(.+):(arrival|\d+)$/, async ctx => {
+    await ctx.answerCbQuery('جاري الحفظ…');
+    const pv = ctx.match[2]==='arrival' ? 'arrival' : `${ctx.match[2]}min`;
+    const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1], p_prep_time: pv });
+    return afterEdit(ctx, r);
+});
+async function afterEdit(ctx, r) {
+    if (!r?.success) {
+        const e=r?.error; const msg = e==='not_editable' ? '⚠️ لا يمكن التعديل — الحجز لم يعد «قيد الانتظار»\\.' : e==='no_quantity' ? `⚠️ المتاح: *${r.available??0}* فقط\\.` : e==='not_found' ? '❌ الحجز غير موجود\\.' : '⚠️ تعذّر التعديل\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')]]).reply_markup });
+    }
+    await ctx.reply('✅ *تم تعديل الحجز*', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+}
 bot.action('buyer:notif', async ctx => {
     await ctx.answerCbQuery();
     await ctx.reply(`🔔 *التنبيهات مفعّلة على تيليجرام*\nستصلك تنبيهات العروض الجديدة هنا\\.`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('⚙️ إعدادات التنبيهات', W('/profile'))],[Markup.button.callback('◀️ رجوع','menu:back')]]).reply_markup });
@@ -614,12 +724,13 @@ bot.action('seller:bookings', async ctx => {
     let m = `📦 *الحجوزات الواردة* \\(${list.length}\\)\n${DIV}\n\n`;
     const btns = [];
     list.forEach((b,i) => {
-        m += `*${i+1}\\.* \`${md(b.barcode)}\`\n👤 ${md(b.user_name)}  📞 ${md(b.user_phone)}\n🛍 ${md(b.deal_name)}  📦 ×${b.quantity}\n${statusLabel(b.status)}`;
+        m += `*${i+1}\\.* \`${md(b.barcode)}\`\n👤 ${md(b.user_name)}  📞 ${md(b.user_phone)}\n🛍 ${md(b.deal_name)}  📦 ×${b.quantity}  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}`;
         if (b.notes) m += `  📝 _${md(b.notes)}_`;
         m += `\n⏰ ${md(fmtDate(b.booked_at))}\n\n`;
         const row = [];
         if (b.status==='pending') row.push(Markup.button.callback(`👍 تأكيد`, `ack:${b.barcode}`));
-        row.push(Markup.button.callback(`🏁 إتمام ${b.barcode}`, `complete:${b.barcode}`));
+        row.push(Markup.button.callback(`🏁 إتمام`, `complete:${b.barcode}`));
+        row.push(Markup.button.callback(b.unread>0 ? `💬 (${b.unread})` : '💬', `chat:${b.barcode}`));
         btns.push(row);
     });
     btns.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
@@ -794,7 +905,35 @@ bot.on('text', async ctx => {
     if (s.step === 'await_barcode') { setStep(tgId(ctx),'idle'); return doVerify(ctx, text.trim().toUpperCase()); }
     if (s.step === 'await_book_qty') {
         if (!isQty(text) || +text < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
-        s.temp.dealQty = +text; setStep(tgId(ctx),'idle'); return bookConfirm(ctx, s);
+        s.temp.dealQty = +text; setStep(tgId(ctx),'idle'); return askPrep(ctx, s);
+    }
+    if (s.step === 'await_prep') {
+        if (!isQty(text) || +text < 1 || +text > 1440) return ctx.reply('❗ أرسل عدد دقائق صحيح (مثل 20):');
+        s.temp.prepTime = `${+text}min`; setStep(tgId(ctx),'idle'); return askNote(ctx, s);
+    }
+    if (s.step === 'await_note') {
+        s.temp.notes = text.slice(0,300); setStep(tgId(ctx),'idle'); return bookConfirm(ctx, s);
+    }
+    if (s.step === 'await_chat_msg') {
+        const bc = s.temp.chatBarcode; setStep(tgId(ctx),'idle');
+        if (!bc) return ctx.reply('⚠️ انتهت الجلسة\\.', { parse_mode:'MarkdownV2' });
+        const r = await rpc('bot_send_booking_message', { p_telegram_id: tgId(ctx), p_barcode: bc, p_body: text });
+        if (!r?.success) {
+            const e=r?.error; const msg = e==='cap_reached' ? '🚫 وصلت الحد الأقصى \\(٣ رسائل\\)\\.' : e==='cancelled' ? '⚠️ الحجز ملغى — لا يمكن الإرسال\\.' : e==='bad_length' ? '❗ الرسالة فارغة أو طويلة جداً\\.' : '⚠️ تعذّر الإرسال\\.';
+            await ctx.reply(msg, { parse_mode:'MarkdownV2' });
+        }
+        return renderChat(ctx, bc);
+    }
+    if (s.step === 'await_edit_qty') {
+        if (!isQty(text) || +text < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: s.temp.editBarcode, p_quantity: +text });
+        return afterEdit(ctx, r);
+    }
+    if (s.step === 'await_edit_note') {
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: s.temp.editBarcode, p_notes: text.slice(0,300) });
+        return afterEdit(ctx, r);
     }
     if (s.step === 'deal_name') {
         if (text.length < 3) return ctx.reply('❗ الاسم قصير جداً:');
@@ -880,6 +1019,30 @@ if (supabase && bot) {
             } catch(e) { console.warn('Alert push:', e.message); }
         }).subscribe();
     console.log('📡 Realtime: التنبيهات الذكية مفعّلة');
+}
+
+// Realtime: push new booking-chat messages to the OTHER party on Telegram
+if (supabase && bot) {
+    supabase.channel('bot-booking-msgs')
+        .on('postgres_changes', { event:'INSERT', schema:'public', table:'booking_messages' }, async payload => {
+            const msg = payload.new;
+            try {
+                const { data: b } = await supabase.from('bookings')
+                    .select('barcode, user_id, store_id').eq('barcode', msg.barcode).maybeSingle();
+                if (!b) return;
+                // recipient = the party that did NOT send this message
+                const recipientId = msg.sender_role === 'buyer' ? b.store_id : b.user_id;
+                if (!recipientId || recipientId === msg.sender_id) return;
+                const { data: u } = await supabase.from('users')
+                    .select('telegram_chat_id, notify_via_telegram').eq('id', recipientId).maybeSingle();
+                if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
+                const who = msg.sender_role === 'buyer' ? '👤 المشتري' : '🏪 التاجر';
+                await bot.telegram.sendMessage(u.telegram_chat_id,
+                    `💬 *رسالة جديدة* — حجز \`${md(msg.barcode)}\`\n${who}:\n_${md(msg.body)}_`,
+                    { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('💬 فتح المحادثة', `chat:${msg.barcode}`)]]).reply_markup });
+            } catch(e) { console.warn('Chat push:', e.message); }
+        }).subscribe();
+    console.log('📡 Realtime: محادثات الحجز مفعّلة');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
