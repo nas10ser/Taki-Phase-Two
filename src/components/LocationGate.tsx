@@ -10,7 +10,7 @@ import { getCurrentPositionSafe } from '../utils/helpers';
  * chosen city drives Home's "your city first, then outward" ordering.
  */
 const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { language, setHomeCity } = useApp();
+    const { language, setHomeCity, updateProfile } = useApp();
     const isRTL = language === 'ar';
     const [mode, setMode] = useState<'choose' | 'manual'>('choose');
     const [gpsBusy, setGpsBusy] = useState(false);
@@ -25,6 +25,9 @@ const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         setErr('');
         try {
             const { lat, lng } = await getCurrentPositionSafe();
+            // Persist the precise GPS fix onto the account (no-op if signed out)
+            // so the platform can push "deals near you" by proximity later.
+            updateProfile({ lat, lng }).catch(() => {});
             const near = findNearestCity(lat, lng);
             if (near) {
                 setHomeCity({ regionId: near.regionId, cityId: near.id });

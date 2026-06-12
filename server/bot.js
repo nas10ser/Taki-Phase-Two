@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v11.4  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.68  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -36,7 +36,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.4.0';
+const BOT_VERSION              = '11.68.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -216,7 +216,7 @@ function kbBuyer() {
         [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
         [Markup.button.callback('🔔  تنبيهاتي','buyer:notif'),  Markup.button.callback('👤  حسابي','buyer:profile')],
         [Markup.button.webApp('🚀  فتح تاكي', APP_URL)],
-        [Markup.button.callback('🆘  مساعدة','help')]
+        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]
     ]);
 }
 function kbSeller(s) {
@@ -225,7 +225,8 @@ function kbSeller(s) {
         [Markup.button.callback('📊  إحصائياتي','seller:stats'), Markup.button.callback(`📦  الحجوزات${pBadge}`,'seller:bookings')],
         [Markup.button.callback('✅  تحقق من حجز','seller:verify'), Markup.button.callback('🏷  عروضي','seller:deals')],
         [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('💳  الاشتراك','seller:sub')],
-        [Markup.button.callback('👤  حسابي','seller:profile'), Markup.button.callback('🆘  مساعدة','help')],
+        [Markup.button.callback('🏪  حساب المتجر','seller:profile'), Markup.button.callback('🔔  التنبيهات','alerts:open')],
+        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')],
         [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
     ]);
 }
@@ -233,8 +234,9 @@ function kbAdmin() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📊  إحصائيات المنصة','admin:stats'), Markup.button.callback('🚩  البلاغات','admin:reports')],
         [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
+        [Markup.button.callback('🔔  التنبيهات','alerts:open'), Markup.button.callback('👤  حسابي','buyer:profile')],
         [Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))],
-        [Markup.button.callback('🆘  مساعدة','help')]
+        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]
     ]);
 }
 function roleKb(s) {
@@ -268,8 +270,10 @@ bot.telegram.setMyCommands([
     { command:'deals',    description:'تصفح العروض' },
     { command:'link',     description:'ربط حسابي' },
     { command:'bookings', description:'حجوزاتي' },
+    { command:'alerts',   description:'تنبيهاتي' },
     { command:'stats',    description:'الإحصائيات (تاجر)' },
     { command:'verify',   description:'تحقق من حجز (تاجر)' },
+    { command:'logout',   description:'تسجيل الخروج' },
     { command:'help',     description:'مساعدة' }
 ]).catch(e => console.warn('setMyCommands:', e.message));
 
@@ -314,11 +318,41 @@ async function showHelp(ctx) {
     const s = getSession(tgId(ctx));
     let m = `🆘 *مساعدة TAKI*\n${DIV}\n`;
     if (!s.userId) m += `🔗 اربط حسابك للوصول لكل الميزات: /link\n\n`;
-    m += `📌 *الأوامر:*\n/menu — القائمة\n/deals — العروض\n/link — ربط الحساب\n/bookings — حجوزاتي\n`;
+    m += `📌 *الأوامر:*\n/menu — القائمة\n/deals — تصفّح العروض\n/link — ربط الحساب\n/bookings — حجوزاتي\n/alerts — تنبيهاتي\n`;
     if (s.userType==='seller'||s.isAdmin) m += `/stats — إحصائياتي\n/verify — تحقق من حجز\n`;
-    m += `\n🌐 الموقع: ${APP_URL}`;
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    if (s.userId) m += `/logout — تسجيل الخروج\n`;
+    m += `\n💡 تقدر أيضاً تكتب: عروض، حجوزاتي، تنبيهات، مساعدة\\.`;
+    // NOTE: APP_URL contains '.' and '-' which are MarkdownV2-special — escape it
+    // (an unescaped URL here was making the whole Help message fail to send).
+    m += `\n🌐 الموقع: ${md(APP_URL)}`;
+    const rows = [[Markup.button.webApp('🚀 فتح تاكي', APP_URL)]];
+    if (!s.userId) rows.push([Markup.button.callback('🔗 ربط حسابي','link:start')]);
+    rows.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+
+// ── Logout (unlink this Telegram identity from the account) ───────────────────
+bot.command('logout', ctx => startLogout(ctx));
+bot.action('logout', async ctx => { await ctx.answerCbQuery(); startLogout(ctx); });
+async function startLogout(ctx) {
+    const s = getSession(tgId(ctx));
+    if (!s.userId) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
+    await ctx.reply(
+        `🚪 *تسجيل الخروج*\n${DIV}\nسيُفصل حسابك عن البوت وتتوقف الإشعارات\\.\nتقدر تربطه من جديد في أي وقت ✅\n\nهل أنت متأكد؟`,
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚪 نعم، سجّل خروجي','logout:yes')],
+            [Markup.button.callback('◀️ تراجع','menu:back')]
+        ]).reply_markup });
+}
+bot.action('logout:yes', async ctx => {
+    await ctx.answerCbQuery('جاري تسجيل الخروج…');
+    const r = await rpc('bot_unlink', { p_telegram_id: tgId(ctx) });
+    const s = getSession(tgId(ctx));
+    s.userId=null; s.userType=null; s.isAdmin=false; s.name=null; s.shop=null;
+    s.geo=null; s.pendingBookings=0; s.activeDeals=0; s.temp={}; s.step='idle';
+    await ctx.reply(r?.success ? `✅ *تم تسجيل خروجك بنجاح*\nنتشرّف بعودتك 👋` : `ℹ️ حسابك غير مربوط بالبوت أصلاً\\.`, { parse_mode:'MarkdownV2' });
+    return sendMain(ctx, s);
+});
 
 // ── Link account (secure — token minted in authenticated web session) ─────────
 bot.command('link', ctx => startLink(ctx));
@@ -475,7 +509,11 @@ function askLocation(ctx){
 bot.on('location', async ctx => {
     const loc=ctx.message && ctx.message.location; if(!loc) return;
     const s=getSession(tgId(ctx)); s.geo={ lat:loc.latitude, lng:loc.longitude };
-    await ctx.reply('✅ *تم تحديد موقعك* — إليك الأقرب إليك:', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
+    // Persist onto the linked account (one DB, one source) so we can later push
+    // "عروض حولك" notifications by proximity. Fire-and-forget — never block UX.
+    if (s.userId) rpc('bot_set_location', { p_telegram_id: tgId(ctx), p_lat: loc.latitude, p_lng: loc.longitude });
+    const saved = s.userId ? '\n📌 _حفظنا موقعك لنرسل لك عروض ما حولك_' : '';
+    await ctx.reply(`✅ *تم تحديد موقعك* — إليك الأقرب إليك:${saved}`, { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
     await renderList(ctx,'x','-',0);
 });
 
@@ -658,16 +696,31 @@ bot.action('book:confirm', async ctx => {
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('💬 محادثة التاجر',`chat:${bc}`)],[Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔥 عروض','deals:0')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
 });
 
-// ── Buyer: my bookings ────────────────────────────────────────────────────────
-bot.command('bookings', ctx => showBuyerBookings(ctx));
-bot.action('buyer:bookings', async ctx => { await ctx.answerCbQuery(); showBuyerBookings(ctx); });
-async function showBuyerBookings(ctx) {
+// ── Buyer: my bookings (split: current vs previous) ───────────────────────────
+bot.command('bookings', ctx => buyerBookingsMenu(ctx));
+bot.action('buyer:bookings', async ctx => { await ctx.answerCbQuery(); buyerBookingsMenu(ctx); });
+bot.action('buyer:bk:current',  async ctx => { await ctx.answerCbQuery(); showBuyerBookings(ctx, 'current'); });
+bot.action('buyer:bk:previous', async ctx => { await ctx.answerCbQuery(); showBuyerBookings(ctx, 'previous'); });
+async function buyerBookingsMenu(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply('❗ سجّل دخولك أولاً\\.', { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
-    const list = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx) });
-    if (!list?.length)
-        return ctx.reply(`📭 *لا توجد حجوزات بعد*\nابدأ حجزك الأول\\!`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 تصفح العروض','deals:0')],[Markup.button.callback('◀️ رجوع','menu:back')]]).reply_markup });
-    let m = `🎟 *حجوزاتي* \\(${list.length}\\)\n${DIV}\n\n`;
+    await ctx.reply(`🎟 *حجوزاتي*\n${DIV}\nاختر نوع الحجوزات اللي تبي تشوفها:`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📌 الحالية','buyer:bk:current'), Markup.button.callback('🗂 السابقة','buyer:bk:previous')],
+            [Markup.button.callback('◀️ القائمة','menu:back')]
+        ]).reply_markup });
+}
+// scope: 'current' (قيد الانتظار/مؤكد) | 'previous' (مكتمل/ملغي/منتهٍ)
+async function showBuyerBookings(ctx, scope='current') {
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return ctx.reply('❗ سجّل دخولك أولاً\\.', { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
+    const list = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope: scope });
+    if (!list?.length) {
+        const empty = scope==='previous' ? '🗂 *لا توجد حجوزات سابقة بعد*' : '📭 *لا توجد حجوزات حالية*\nابدأ حجزك الأول\\!';
+        return ctx.reply(empty, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 تصفح العروض','deals:0')],[Markup.button.callback('◀️ رجوع','buyer:bookings')]]).reply_markup });
+    }
+    const title = scope==='previous' ? '🗂 *حجوزاتي السابقة*' : '📌 *حجوزاتي الحالية*';
+    let m = `${title} \\(${list.length}\\)\n${DIV}\n\n`;
     const btns = [];
     list.forEach((b,i) => {
         m += `*${i+1}\\.* *${md(b.deal_name)}*\n🏪 ${md(b.shop_name)}\n📋 \`${md(b.barcode)}\`  📦 ${b.quantity}  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  ${md(fmtDay(b.booked_at))}`;
@@ -680,7 +733,7 @@ async function showBuyerBookings(ctx) {
         btns.push(row);
         if (b.status==='pending'||b.status==='acknowledged') btns.push([Markup.button.callback(`🚫 إلغاء «${String(b.deal_name).slice(0,16)}»`, `cancel:${b.barcode}`)]);
     });
-    btns.push([Markup.button.callback('🔄 تحديث','buyer:bookings'), Markup.button.callback('◀️  القائمة','menu:back')]);
+    btns.push([Markup.button.callback('🔄 تحديث',`buyer:bk:${scope}`), Markup.button.callback('◀️  رجوع','buyer:bookings')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
 }
 bot.action(/^cancel:(.+)$/, async ctx => {
@@ -763,9 +816,44 @@ async function afterEdit(ctx, r) {
     }
     await ctx.reply('✅ *تم تعديل الحجز*', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
 }
-bot.action('buyer:notif', async ctx => {
+// ── Alerts manager — keyword alerts + Telegram on/off (buyer, seller, admin) ──
+bot.command('alerts', ctx => showAlerts(ctx));
+bot.action('buyer:notif', async ctx => { await ctx.answerCbQuery(); showAlerts(ctx); });
+bot.action('alerts:open',  async ctx => { await ctx.answerCbQuery(); showAlerts(ctx); });
+async function showAlerts(ctx) {
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return ctx.reply('❗ سجّل دخولك أولاً عبر «ربط حسابي»\\.', { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
+    const a = await rpc('bot_get_alerts', { p_telegram_id: tgId(ctx) });
+    if (!a?.success) return ctx.reply('⚠️ تعذّر تحميل التنبيهات\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    const kws = Array.isArray(a.keywords) ? a.keywords : [];
+    let m = `🔔 *تنبيهاتي*\n${DIV}\n📲 تنبيهات تيليجرام: *${a.notify_via_telegram ? '🟢 مفعّلة' : '🔴 موقوفة'}*\n`;
+    m += kws.length
+        ? `\n🏷 *كلماتك المفتاحية* \\(${kws.length}\\):\nنرسل لك تنبيهاً فور نزول عرض يطابق إحداها 👇`
+        : `\n_لا توجد كلمات تنبيه بعد — أضف كلمة \\(مثل: عطور، آيفون\\) لتصلك عروضها فور نزولها\\._`;
+    if (a.smart_count>0) m += `\n\n⚙️ لديك *${a.smart_count}* تنبيه ذكي متقدّم \\(منطقة/مسافة/تصنيف\\) — تُدار من الموقع\\.`;
+    const btns = [];
+    kws.forEach((k,i) => btns.push([Markup.button.callback(`🗑  ${String(k).slice(0,30)}`, `alerts:rm:${i}`)]));
+    btns.push([Markup.button.callback('➕ أضف كلمة تنبيه','alerts:add')]);
+    btns.push([Markup.button.callback(a.notify_via_telegram ? '🔕 إيقاف تنبيهات تيليجرام' : '🔔 تفعيل تنبيهات تيليجرام', `alerts:toggle:${a.notify_via_telegram?'0':'1'}`)]);
+    btns.push([Markup.button.webApp('⚙️ تنبيهات متقدّمة', W('/profile'))]);
+    btns.push([Markup.button.callback('◀️ رجوع','menu:back')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+}
+bot.action('alerts:add', async ctx => {
     await ctx.answerCbQuery();
-    await ctx.reply(`🔔 *التنبيهات مفعّلة على تيليجرام*\nستصلك تنبيهات العروض الجديدة هنا\\.`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('⚙️ إعدادات التنبيهات', W('/profile'))],[Markup.button.callback('◀️ رجوع','menu:back')]]).reply_markup });
+    if (!getSession(tgId(ctx)).userId) return;
+    setStep(tgId(ctx),'await_alert_kw');
+    await ctx.reply('✏️ اكتب كلمة التنبيه \\(مثل: عطور، مطاعم، آيفون\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','alerts:open')]]).reply_markup });
+});
+bot.action(/^alerts:rm:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery('جاري الحذف…');
+    await rpc('bot_remove_notif_keyword', { p_telegram_id: tgId(ctx), p_index: +ctx.match[1] });
+    return showAlerts(ctx);
+});
+bot.action(/^alerts:toggle:([01])$/, async ctx => {
+    await ctx.answerCbQuery(ctx.match[1]==='1' ? '🔔 تم التفعيل' : '🔕 تم الإيقاف');
+    await rpc('bot_set_telegram_notif', { p_telegram_id: tgId(ctx), p_enabled: ctx.match[1]==='1' });
+    return showAlerts(ctx);
 });
 bot.action('buyer:profile', async ctx => {
     await ctx.answerCbQuery();
@@ -788,14 +876,31 @@ async function showSellerStats(ctx) {
         { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
 }
 
-// ── Seller: incoming bookings ─────────────────────────────────────────────────
-bot.action('seller:bookings', async ctx => {
-    await ctx.answerCbQuery();
+// ── Seller: bookings (split: active vs previous) ──────────────────────────────
+bot.action('seller:bookings', async ctx => { await ctx.answerCbQuery(); sellerBookingsMenu(ctx); });
+bot.action('seller:bk:current',  async ctx => { await ctx.answerCbQuery(); showSellerBookings(ctx, 'current'); });
+bot.action('seller:bk:previous', async ctx => { await ctx.answerCbQuery(); showSellerBookings(ctx, 'previous'); });
+async function sellerBookingsMenu(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.userId || s.userType!=='seller') return;
-    const list = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx) });
-    if (!list?.length) return ctx.reply('✅ *لا توجد حجوزات معلقة*', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
-    let m = `📦 *الحجوزات الواردة* \\(${list.length}\\)\n${DIV}\n\n`;
+    const p = s.pendingBookings>0 ? `\n⏳ *${s.pendingBookings}* بانتظار التأكيد` : '';
+    await ctx.reply(`📦 *حجوزات متجرك*${p}\n${DIV}\nاختر نوع الحجوزات:`, { parse_mode:'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🟢 النشطة','seller:bk:current'), Markup.button.callback('🗂 السابقة','seller:bk:previous')],
+            [Markup.button.callback('◀️ القائمة','menu:back')]
+        ]).reply_markup });
+}
+// scope: 'current' (قيد الانتظار/مؤكد) | 'previous' (مكتمل/ملغي/منتهٍ)
+async function showSellerBookings(ctx, scope='current') {
+    const s = getSession(tgId(ctx));
+    if (!s.userId || s.userType!=='seller') return;
+    const list = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx), p_scope: scope });
+    if (!list?.length) {
+        const empty = scope==='previous' ? '🗂 *لا توجد حجوزات سابقة بعد*' : '✅ *لا توجد حجوزات نشطة حالياً*';
+        return ctx.reply(empty, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','seller:bookings')]]).reply_markup });
+    }
+    const title = scope==='previous' ? '🗂 *حجوزات سابقة*' : '🟢 *حجوزات نشطة*';
+    let m = `${title} \\(${list.length}\\)\n${DIV}\n\n`;
     const btns = [];
     list.forEach((b,i) => {
         m += `*${i+1}\\.* \`${md(b.barcode)}\`\n👤 ${md(b.user_name)}  📞 ${md(b.user_phone)}\n🛍 ${md(b.deal_name)}  📦 ×${b.quantity}  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}`;
@@ -803,13 +908,13 @@ bot.action('seller:bookings', async ctx => {
         m += `\n⏰ ${md(fmtDate(b.booked_at))}\n\n`;
         const row = [];
         if (b.status==='pending') row.push(Markup.button.callback(`👍 تأكيد`, `ack:${b.barcode}`));
-        row.push(Markup.button.callback(`🏁 إتمام`, `complete:${b.barcode}`));
+        if (b.status==='pending'||b.status==='acknowledged') row.push(Markup.button.callback(`🏁 إتمام`, `complete:${b.barcode}`));
         row.push(Markup.button.callback(b.unread>0 ? `💬 (${b.unread})` : '💬', `chat:${b.barcode}`));
         btns.push(row);
     });
-    btns.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
+    btns.push([Markup.button.callback('🔄 تحديث',`seller:bk:${scope}`), Markup.button.callback('◀️ رجوع','seller:bookings')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
-});
+}
 bot.action(/^ack:(.+)$/, async ctx => {
     await ctx.answerCbQuery('جاري التأكيد…');
     const result = await rpc('bot_acknowledge_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
@@ -1137,6 +1242,17 @@ bot.on('text', async ctx => {
         const r = await rpc('bot_rate_store', { p_telegram_id: tgId(ctx), p_barcode: s.temp.rateBarcode, p_score: s.temp.rateScore, p_comment: text.slice(0,400) });
         return afterRate(ctx, r);
     }
+    if (s.step === 'await_alert_kw') {
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_add_notif_keyword', { p_telegram_id: tgId(ctx), p_keyword: text.slice(0,40) });
+        if (!r?.success) {
+            const e=r?.error; const msg = e==='exists' ? '⚠️ هذه الكلمة مضافة مسبقاً\\.' : e==='too_many' ? '⚠️ وصلت الحد الأقصى \\(20 كلمة\\)\\.' : e==='bad_length' ? '❗ الكلمة قصيرة أو طويلة جداً \\(2–40 حرفاً\\)\\.' : e==='not_linked' ? '❗ سجّل دخولك أولاً\\.' : '⚠️ تعذّر الإضافة\\.';
+            await ctx.reply(msg, { parse_mode:'MarkdownV2' });
+        } else {
+            await ctx.reply('✅ *تمت إضافة الكلمة* — بنرسل لك العروض المطابقة فور نزولها\\.', { parse_mode:'MarkdownV2' });
+        }
+        return showAlerts(ctx);
+    }
     if (s.step === 'deal_name') {
         if (text.length < 3) return ctx.reply('❗ الاسم قصير جداً:');
         s.temp.name = text; setStep(tgId(ctx),'deal_orig_price');
@@ -1166,7 +1282,9 @@ bot.on('text', async ctx => {
     if (['menu','قائمة','القائمة','ابدأ','start','مرحبا','مرحباً','اهلا','أهلا','السلام عليكم'].includes(lc)) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
     if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return showBrowseMenu(ctx);
     if (['مساعدة','help'].includes(lc)) return showHelp(ctx);
-    if (['حجوزاتي','bookings'].includes(lc)) return showBuyerBookings(ctx);
+    if (['حجوزاتي','bookings'].includes(lc)) return buyerBookingsMenu(ctx);
+    if (['تنبيهات','تنبيهاتي','alerts'].includes(lc)) return showAlerts(ctx);
+    if (['خروج','تسجيل الخروج','تسجيل خروج','logout'].includes(lc)) return startLogout(ctx);
     if (['ربط','link'].includes(lc)) return startLink(ctx);
 
     const ns = await refreshSession(ctx);

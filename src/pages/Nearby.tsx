@@ -62,7 +62,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants } = useApp();
+    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, updateProfile } = useApp();
     const [userLat, setUserLat] = useState(USER_LOCATION.lat);
     const [userLng, setUserLng] = useState(USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
@@ -317,6 +317,9 @@ const Nearby: React.FC = () => {
                             const { lat, lng } = await getCurrentPositionSafe();
                             setUserLat(lat);
                             setUserLng(lng);
+                            // Persist onto the account (no-op if signed out) so we
+                            // can push proximity-based "deals near you" notifications.
+                            updateProfile({ lat, lng }).catch(() => {});
                             // Reset the upper region/city/mall filters too.
                             // Otherwise users who'd picked "Makkah → Jeddah" earlier
                             // would get 0 results after recentering on their actual
