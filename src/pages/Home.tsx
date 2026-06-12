@@ -18,9 +18,10 @@ import { contestRepository, isContestLive, contestMatchesAudience } from '../rep
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
+    const [liveBannerDismissed, setLiveBannerDismissed] = useState(false);
     // First-open city prompt: buyers/guests only (sellers & admins have their
     // own dashboards), shown once until a home city is chosen/persisted.
     const isShopper = user?.userType !== 'seller' && user?.userType !== 'admin';
@@ -250,6 +251,37 @@ const Home: React.FC = () => {
                 />
             )}
             <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+
+            {/* Live-location prompt — shoppers only, on entry, while undecided.
+                Once granted, the app-wide tracker follows them and pushes the
+                nearest deals as they move; we never nag a second time. */}
+            {user && user.userType !== 'seller' && locationPermission === 'prompt' && !liveBannerDismissed && (
+                <div className="animate-fade-in" style={{
+                    margin: '10px 16px 0', padding: '12px 14px', borderRadius: 16,
+                    background: 'linear-gradient(135deg, #0ea5e9, #2563eb)', color: '#fff',
+                    display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 8px 22px rgba(37,99,235,0.28)',
+                }}>
+                    <div style={{ fontSize: '1.6rem', lineHeight: 1 }}>📍</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: '0.92rem' }}>
+                            {isRTL ? 'فعّل موقعك المباشر' : 'Turn on live location'}
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: '0.76rem', opacity: 0.92, marginTop: 2, lineHeight: 1.5 }}>
+                            {isRTL ? 'نعرض لك أقرب العروض لحظة بلحظة وأنت تتنقّل.' : 'See the nearest deals in real time as you move.'}
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <button onClick={async () => { const ok = await requestLiveLocation(); if (ok) setLiveBannerDismissed(true); }}
+                            style={{ background: '#fff', color: '#2563eb', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 900, fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 40 }}>
+                            {isRTL ? 'تفعيل' : 'Enable'}
+                        </button>
+                        <button onClick={() => setLiveBannerDismissed(true)}
+                            style={{ background: 'transparent', color: '#fff', border: 'none', padding: '2px', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', opacity: 0.85 }}>
+                            {isRTL ? 'لاحقاً' : 'Later'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Hierarchical Location Filter */}
             <div className="animate-fade-in" style={{ padding: '8px 16px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', transition: 'background 0.3s ease' }}>

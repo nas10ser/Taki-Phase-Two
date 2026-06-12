@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { getDistance, resolveDealLocation, isDealComingSoon, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
+import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/helpers';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -62,7 +62,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { deals, language, customAlert, topLocation, checkMarketingAlerts, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, updateProfile } = useApp();
+    const { deals, language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, requestLiveLocation } = useApp();
     const [userLat, setUserLat] = useState(USER_LOCATION.lat);
     const [userLng, setUserLng] = useState(USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
@@ -86,48 +86,19 @@ const Nearby: React.FC = () => {
     // throttles to whatever the OS allows, but we ask for high accuracy
     // and only react if the new fix moved by ≥ 30 m so we don't redraw
     // the list on every GPS jitter.
+    // Live position is owned by the app-wide tracker (AppContext): a single
+    // watchPosition that follows the shopper everywhere and persists their
+    // location to the DB as they move. Here we just mirror it into the map
+    // center + marker while "follow" is on, so the map tracks the user
+    // second-by-second as they walk/drive. Dragging the map turns follow off
+    // (explore freely); the 📍 button re-arms it. If location is already
+    // granted the fix simply flows in — we never re-ask.
     useEffect(() => {
-        if (!navigator.geolocation || !navigator.geolocation.watchPosition) {
-            return;
+        if (liveLocation && followMode) {
+            setUserLat(liveLocation.lat);
+            setUserLng(liveLocation.lng);
         }
-
-        let lastLat = userLat;
-        let lastLng = userLng;
-        let alertChecked = false;
-
-        const watchId = navigator.geolocation.watchPosition(
-            pos => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                // 6 m guard: kills stationary GPS jitter (so a parked list
-                // doesn't churn) but is small enough that the map + marker
-                // track the user smoothly the moment they actually move —
-                // walking OR driving. The old 30 m gate made the map feel
-                // frozen in a moving car.
-                const moved = getDistance(lastLat, lastLng, lat, lng) * 1000; // meters
-                if (moved < 6 && alertChecked) return;
-                lastLat = lat;
-                lastLng = lng;
-                setUserLat(lat);
-                setUserLng(lng);
-                if (!alertChecked) {
-                    alertChecked = true;
-                    checkMarketingAlerts(lat, lng);
-                }
-            },
-            () => { /* permission denied / unavailable — keep default coords */ },
-            {
-                enableHighAccuracy: true,
-                maximumAge: 1000,    // fresh fixes — we want second-by-second follow
-                timeout: 15000
-            }
-        );
-
-        return () => {
-            try { navigator.geolocation.clearWatch(watchId); } catch {}
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [liveLocation, followMode]);
 
     const nearbyDeals = useMemo(() => {
         return deals.map(deal => {
@@ -312,30 +283,23 @@ const Nearby: React.FC = () => {
                     </span>
                     <div style={{ flex: 1, minWidth: 10 }} />
                     <button onClick={async () => {
-                        // v11.41 — never-hangs cross-browser geolocation (Safari-safe).
-                        try {
-                            const { lat, lng } = await getCurrentPositionSafe();
-                            setUserLat(lat);
-                            setUserLng(lng);
-                            // Persist onto the account (no-op if signed out) so we
-                            // can push proximity-based "deals near you" notifications.
-                            updateProfile({ lat, lng }).catch(() => {});
-                            // Reset the upper region/city/mall filters too.
-                            // Otherwise users who'd picked "Makkah → Jeddah" earlier
-                            // would get 0 results after recentering on their actual
-                            // location (Dammam), because the region filter was still
-                            // restricting to Makkah. Tapping "My Location" implies
-                            // "show me what's around ME" — drop the manual location
-                            // selection so the radius does the work.
+                        // Turn on the app-wide live tracker (Safari-safe, never hangs).
+                        // It persists the fix to the account and keeps following the
+                        // user; the map mirrors `liveLocation` via the effect above.
+                        const ok = await requestLiveLocation();
+                        if (ok) {
+                            // Tapping "My Location" implies "show me what's around ME" —
+                            // drop any manual region/city/mall selection so the radius
+                            // does the work (otherwise an old "Makkah" filter yields 0).
                             setSelectedRegion('');
                             setSelectedCity('');
                             setSelectedLocationId('');
                             setLocationType('');
                             setRadius(30);
                             setFollowMode(true); // re-arm live follow
-                            customAlert(isRTL ? '✅ تم تحديث موقعك المباشر بنجاح!' : '✅ Location updated successfully!');
-                        } catch (e) {
-                            customAlert(geoErrorMessage(e, isRTL));
+                            customAlert(isRTL ? '✅ تم تفعيل موقعك المباشر — الخريطة تتابعك الآن' : '✅ Live location on — the map now follows you');
+                        } else {
+                            customAlert(isRTL ? '📍 فعّل إذن الموقع من إعدادات المتصفح لعرض الأقرب إليك' : '📍 Enable location permission to see what\'s nearest you');
                         }
                     }} style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '8px 16px', borderRadius: 12, fontSize: '0.85rem', fontWeight: 800, whiteSpace: 'nowrap', minHeight: 44 }}>
                         {isRTL ? 'موقعي 📍' : 'My Location 📍'}

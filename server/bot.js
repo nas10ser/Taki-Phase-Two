@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v11.68  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.69  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -36,7 +36,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.68.0';
+const BOT_VERSION              = '11.69.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -1308,45 +1308,81 @@ app.post('/webhook/telegram', (req, res) => {
 //  so a subscriber gets the same alerts whether on the website, app, or bot.
 // ═══════════════════════════════════════════════════════════════════════════════
 const DEBOUNCE = new Map();
+// Emoji prefix per notification type — keeps every alert visually consistent.
+const NOTIF_ICON = { booking:'📦', deal:'🆕', marketing:'📣', system:'🔔', follow:'➕', rating:'⭐', review:'⭐', contest:'🎁', survey:'📝', subscription:'💳', report:'🚩', sponsor:'⭐', campaign:'📣' };
+
+// ── One fan-out for EVERY website notification → all channels the user enabled ──
+// The website, app, Telegram and WhatsApp all read the same `notifications` row,
+// so a user gets the *identical* alert everywhere. Telegram is live now; WhatsApp
+// turns on the instant its creds are set (no code change). Professional, modern,
+// one source of truth.
+async function pushNotification(n) {
+    const aud = n.meta_data?.audience, ev = n.meta_data?.event, bc = n.meta_data?.barcode;
+    // Audience guards (mirror in-app routing): don't bury admins under the
+    // per-event booking firehose, and don't echo the buyer's own "new" booking.
+    if (n.type==='booking') {
+        if (aud==='admin') return;
+        if (ev==='new' && aud!=='seller') return;
+    }
+    // Debounce ONLY the marketing/deal stream (it can burst); every other type is
+    // a discrete event the user should always receive.
+    if (n.type==='deal' || n.type==='marketing') {
+        if (Date.now() - (DEBOUNCE.get(n.user_id)||0) < 20_000) return;
+        DEBOUNCE.set(n.user_id, Date.now());
+    }
+    const { data: u } = await supabase.from('users')
+        .select('telegram_chat_id, notify_via_telegram, whatsapp_chat_id, notify_via_whatsapp, preferred_lang')
+        .eq('id', n.user_id).maybeSingle();
+    if (!u) return;
+    const en    = (u.preferred_lang||'').startsWith('en');
+    const title = (en ? (n.title_en||n.title_ar) : (n.title_ar||n.title_en)) || '';
+    const body  = (en ? (n.body_en ||n.body_ar ) : (n.body_ar ||n.body_en )) || '';
+    const custom= en ? n.meta_data?.bot_message_en : n.meta_data?.bot_message_ar;
+    const icon  = NOTIF_ICON[n.type] || '🔔';
+
+    // Contextual action buttons (Telegram) for booking events.
+    const rows = [];
+    if (n.type==='booking' && bc) {
+        if (aud==='seller' && ev==='new') { rows.push([Markup.button.callback('👍 تأكيد',`ack:${bc}`), Markup.button.callback('🏁 إتمام',`complete:${bc}`)]); rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]); }
+        else if (aud==='buyer' && ev==='completed') rows.push([Markup.button.callback('⭐ قيّم',`rate:${bc}`)]);
+        else if (aud==='buyer' && (ev==='acknowledged' || ev==='warning')) rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
+    }
+    // A "فتح" deep-link for content notifications that point somewhere specific.
+    const dealId = n.meta_data?.deal_id || n.meta_data?.dealId;
+    const storeId = n.meta_data?.store_id || n.meta_data?.storeId;
+    let url = null;
+    if (n.type==='booking' && bc) url = W(`/booking/${bc}`);
+    else if (dealId)  url = W(`/deal/${dealId}`);
+    else if (storeId) url = W(`/store/${storeId}`);
+    else if (n.meta_data?.action_url) url = n.meta_data.action_url;
+
+    // ── Telegram ──
+    if (u.telegram_chat_id && u.notify_via_telegram) {
+        const text = custom ? `${icon} ${md(custom)}` : `${icon} *${md(title)}*\n${md(body)}`;
+        const kbRows = rows.slice();
+        if (!kbRows.length && url) kbRows.push([Markup.button.url(en?'🔗 Open':'🔗 فتح', url)]);
+        try {
+            await bot.telegram.sendMessage(u.telegram_chat_id, text,
+                { parse_mode:'MarkdownV2', link_preview_options:{is_disabled:true},
+                  ...(kbRows.length ? { reply_markup: Markup.inlineKeyboard(kbRows).reply_markup } : {}) });
+        } catch(e) { console.warn('TG notif:', e.message); }
+    }
+    // ── WhatsApp (parity) — live the instant WHATSAPP_* creds are set; sendWA is a
+    //    no-op until then. NB: outside Meta's 24h service window an *approved
+    //    template* is required (free-form text only delivers inside the window).
+    if (u.whatsapp_chat_id && u.notify_via_whatsapp && WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN) {
+        const waBody = `${icon} ${custom || `${title}\n${body}`}${url?`\n\n${url}`:''}`.slice(0,4096);
+        try { await sendWA(u.whatsapp_chat_id, { type:'text', text:{ body: waBody, preview_url:true } }); }
+        catch(e) { console.warn('WA notif:', e.message); }
+    }
+}
+
 if (supabase && bot) {
     supabase.channel('bot-user-notifs')
         .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications' }, async payload => {
-            const n = payload.new;
-            const aud = n.meta_data?.audience, ev = n.meta_data?.event, bc = n.meta_data?.barcode;
-            try {
-                // Smart-alerts / marketing — debounced
-                if (n.type==='deal' || n.type==='marketing') {
-                    if (Date.now() - (DEBOUNCE.get(n.user_id)||0) < 20_000) return;
-                    const { data: u } = await supabase.from('users').select('telegram_chat_id, notify_via_telegram, preferred_lang').eq('id', n.user_id).maybeSingle();
-                    if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
-                    const en = (u.preferred_lang||'').startsWith('en');
-                    const msg = en ? (n.meta_data?.bot_message_en||`${n.title_en}\n\n${n.body_en}`) : (n.meta_data?.bot_message_ar||`${n.title_ar}\n\n${n.body_ar}`);
-                    await bot.telegram.sendMessage(u.telegram_chat_id, msg);
-                    DEBOUNCE.set(n.user_id, Date.now());
-                    return;
-                }
-                // Booking events — push to buyer/seller (skip admins; skip buyer's own "new" echo)
-                if (n.type==='booking') {
-                    if (aud==='admin') return;
-                    if (ev==='new' && aud!=='seller') return;
-                    const { data: u } = await supabase.from('users').select('telegram_chat_id, notify_via_telegram').eq('id', n.user_id).maybeSingle();
-                    if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
-                    const rows = [];
-                    if (bc && aud==='seller' && ev==='new') {
-                        rows.push([Markup.button.callback('👍 تأكيد',`ack:${bc}`), Markup.button.callback('🏁 إتمام',`complete:${bc}`)]);
-                        rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
-                    } else if (bc && aud==='buyer' && ev==='completed') {
-                        rows.push([Markup.button.callback('⭐ قيّم',`rate:${bc}`)]);
-                    } else if (bc && aud==='buyer' && (ev==='acknowledged' || ev==='warning')) {
-                        rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
-                    }
-                    await bot.telegram.sendMessage(u.telegram_chat_id, `${n.title_ar}\n${n.body_ar}`,
-                        rows.length ? { reply_markup: Markup.inlineKeyboard(rows).reply_markup } : undefined);
-                    return;
-                }
-            } catch(e) { console.warn('Notif push:', e.message); }
+            try { await pushNotification(payload.new); } catch(e) { console.warn('Notif push:', e.message); }
         }).subscribe();
-    console.log('📡 Realtime: إشعارات التنبيهات والحجوزات مفعّلة');
+    console.log('📡 Realtime: كل إشعارات الموقع تُحوَّل للبوت (تيليجرام حيّ + واتساب جاهز)');
 }
 
 // Realtime: push new booking-chat messages to the OTHER party on Telegram
@@ -1516,6 +1552,18 @@ app.listen(PORT, () => {
 });
 if (bot && BOT_MODE === 'polling') {
     bot.launch({ dropPendingUpdates: true }).then(() => console.log('🤖 Bot LIVE — polling mode')).catch(e => console.error('❌ Launch failed:', e.message));
+} else if (bot && BOT_MODE === 'webhook') {
+    // Auto-register the Telegram webhook so a fresh cloud deploy (Render / Railway)
+    // is reachable with ZERO manual steps. Render exposes its public URL as
+    // RENDER_EXTERNAL_URL; PUBLIC_URL overrides for any other host.
+    const base = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+    if (base && TELEGRAM_WEBHOOK_SECRET) {
+        bot.telegram.setWebhook(`${base}/webhook/telegram`, { secret_token: TELEGRAM_WEBHOOK_SECRET, drop_pending_updates: true })
+            .then(() => console.log(`🔗 Webhook registered → ${base}/webhook/telegram`))
+            .catch(e => console.error('❌ setWebhook failed:', e.message));
+    } else {
+        console.warn('⚠️  webhook mode but PUBLIC_URL / RENDER_EXTERNAL_URL or TELEGRAM_WEBHOOK_SECRET is missing — webhook NOT registered');
+    }
 }
 process.once('SIGINT',  () => bot?.stop('SIGINT'));
 process.once('SIGTERM', () => bot?.stop('SIGTERM'));

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Deal, getLocation, CITIES } from '../data/mock';
-import { getDistance, normalizeArabicNumerals, generateBarcode, Sponsor } from '../utils/helpers';
+import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
 import { userRepository } from '../repositories/userRepository';
@@ -123,6 +123,9 @@ interface AppContextType {
     updateStoreProfile: (storeId: string, profile: StoreProfile) => void;
     updateProfile: (data: Partial<UserProfile>) => Promise<void>;
     checkMarketingAlerts: (lat?: number, lng?: number) => void;
+    liveLocation: { lat: number; lng: number } | null;
+    locationPermission: 'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported';
+    requestLiveLocation: () => Promise<boolean>;
     darkMode: boolean;
     toggleDarkMode: () => void;
     customAlert: (message: string) => Promise<void>;
@@ -1123,6 +1126,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return () => clearTimeout(t);
     }, [user?.id, checkMarketingAlerts]);
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  Live location (shoppers) — world-class, second-by-second tracking.
+    //  If geolocation is already permitted we track silently on every app
+    //  open (no nagging). Otherwise the UI shows an "enable" prompt. While
+    //  the app is open we follow the user as they walk/drive and persist
+    //  their position to `users.lat/lng` (throttled) so the platform can
+    //  push "deals near you" by proximity — even when they're not looking.
+    // ═══════════════════════════════════════════════════════════════════
+    const liveUserRef = useRef<any>(null);
+    useEffect(() => { liveUserRef.current = user; }, [user]);
+    const checkAlertsRef = useRef(checkMarketingAlerts);
+    useEffect(() => { checkAlertsRef.current = checkMarketingAlerts; }, [checkMarketingAlerts]);
+    const liveWatchRef = useRef<number | null>(null);
+    const lastLiveRef = useRef<{ lat: number; lng: number } | null>(null);
+    const lastSaveRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
+    const liveAlertedRef = useRef(false);
+    const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported'>('unknown');
+
+    // Persist the live fix to the account — throttled so a moving car doesn't
+    // hammer the DB: first fix saves immediately, then only after a real move
+    // (≥75 m) AND ≥60 s, or a 5-min heartbeat. Sellers are skipped (not shoppers).
+    const persistLiveLocation = useCallback(async (lat: number, lng: number) => {
+        const u = liveUserRef.current;
+        if (!u?.id || u.userType === 'seller') return;
+        const last = lastSaveRef.current;
+        if (last) {
+            const movedM = getDistance(last.lat, last.lng, lat, lng) * 1000;
+            const elapsed = Date.now() - last.at;
+            if (!((movedM >= 75 && elapsed >= 60_000) || elapsed >= 300_000)) return;
+        }
+        lastSaveRef.current = { lat, lng, at: Date.now() };
+        try { await supabase.from('users').update({ lat, lng }).eq('id', u.id); } catch { /* best-effort */ }
+    }, []);
+
+    const startLiveWatch = useCallback(() => {
+        if (liveWatchRef.current != null) return;
+        if (!('geolocation' in navigator) || !navigator.geolocation.watchPosition) return;
+        liveWatchRef.current = navigator.geolocation.watchPosition(
+            pos => {
+                const lat = pos.coords.latitude, lng = pos.coords.longitude;
+                const prev = lastLiveRef.current;
+                const moved = prev ? getDistance(prev.lat, prev.lng, lat, lng) * 1000 : Infinity;
+                if (!prev || moved >= 8) { lastLiveRef.current = { lat, lng }; setLiveLocation({ lat, lng }); }
+                persistLiveLocation(lat, lng);
+                if (!liveAlertedRef.current) { liveAlertedRef.current = true; checkAlertsRef.current?.(lat, lng); }
+            },
+            () => { /* transient error — keep last known fix */ },
+            { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+        );
+    }, [persistLiveLocation]);
+
+    const stopLiveWatch = useCallback(() => {
+        if (liveWatchRef.current != null) { navigator.geolocation.clearWatch(liveWatchRef.current); liveWatchRef.current = null; }
+    }, []);
+
+    // Explicit "enable my location" — fires the browser prompt on a user gesture
+    // (Safari-safe), then starts continuous tracking. Returns whether it worked.
+    const requestLiveLocation = useCallback(async (): Promise<boolean> => {
+        if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return false; }
+        try {
+            const { lat, lng } = await getCurrentPositionSafe();
+            lastLiveRef.current = { lat, lng };
+            setLiveLocation({ lat, lng });
+            setLocationPermission('granted');
+            await persistLiveLocation(lat, lng);
+            startLiveWatch();
+            return true;
+        } catch {
+            setLocationPermission('denied');
+            return false;
+        }
+    }, [persistLiveLocation, startLiveWatch]);
+
+    // On app open: a shopper who already granted location is tracked silently
+    // (no re-ask). Otherwise we surface the permission state so the UI prompts.
+    useEffect(() => {
+        const isShopper = !!user && user.userType !== 'seller';
+        if (!isShopper) { stopLiveWatch(); liveAlertedRef.current = false; lastSaveRef.current = null; return; }
+        if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return; }
+        let cancelled = false;
+        let perm: any = null;
+        (async () => {
+            try {
+                if ((navigator as any).permissions?.query) {
+                    perm = await (navigator as any).permissions.query({ name: 'geolocation' });
+                    if (cancelled) return;
+                    setLocationPermission(perm.state);
+                    if (perm.state === 'granted') startLiveWatch();
+                    perm.onchange = () => {
+                        setLocationPermission(perm.state);
+                        if (perm.state === 'granted') startLiveWatch(); else stopLiveWatch();
+                    };
+                } else {
+                    setLocationPermission('prompt'); // older Safari has no Permissions API — CTA requests
+                }
+            } catch { setLocationPermission('prompt'); }
+        })();
+        return () => { cancelled = true; if (perm) perm.onchange = null; };
+    }, [user?.id, user?.userType, startLiveWatch, stopLiveWatch]);
 
     const markNotifRead = useCallback((id: string) => {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
@@ -2318,6 +2421,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        liveLocation, locationPermission, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
@@ -2344,6 +2448,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        liveLocation, locationPermission, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
