@@ -31,12 +31,19 @@ const TelegramLinkButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
         if (busy || linked) return;
         setBusy(true);
         try {
-            // Inside Telegram → direct, instant link (creates the account if none).
+            // Inside Telegram → link THIS signed-in account directly. It never
+            // creates a duplicate account anymore — if no one is signed in we send
+            // the user to the sign-in / create choice instead (v11.71).
             if (isTelegramMiniApp()) {
                 const r = await ensureTelegramLinked();
                 if (r === 'linked') {
                     setLinked(true);
                     customAlert(isAr ? '✅ تم ربط حسابك بتيليجرام بنجاح.' : '✅ Your account is now linked to Telegram.');
+                } else if (r === 'not_authenticated') {
+                    customAlert(isAr
+                        ? 'سجّل دخولك لحسابك (أو أنشئ حساباً) أولاً، ثم سيُربط بتيليجرام تلقائياً.'
+                        : 'Sign in to your account (or create one) first — it will then link to Telegram automatically.');
+                    try { window.location.assign('/register?tglink=1'); } catch { /* ignore */ }
                 } else {
                     customAlert(isAr
                         ? '⚠️ تعذّر الربط داخل تيليجرام. أعد فتح التطبيق من البوت وحاول مجدداً.'

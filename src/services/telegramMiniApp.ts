@@ -79,9 +79,12 @@ export function getInitData(): string {
 }
 
 /**
- * Explicit login-or-create via Telegram (no `attempted` guard — this is a
- * user-initiated action, so it always tries). Creates the account if the user
- * has none, then signs them in. Resolves true if authenticated afterwards.
+ * EXPLICIT "create a new account via Telegram" — only call this when the user
+ * deliberately chose to make a brand-new Telegram account (e.g. tapped a
+ * "متابعة سريعة عبر تيليجرام" button). It passes allowCreate:true, so the Edge
+ * Function will create the account if none exists. NEVER call this implicitly on
+ * app open — that was the forced-new-account bug (v11.71). Resolves true if
+ * authenticated afterwards.
  */
 export async function loginViaTelegram(): Promise<boolean> {
     const initData = getInitData();
@@ -89,7 +92,7 @@ export async function loginViaTelegram(): Promise<boolean> {
     try {
         const { data: sess } = await supabase.auth.getSession();
         if (sess?.session) return true;
-        const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData } });
+        const { data, error } = await supabase.functions.invoke('telegram-auth', { body: { initData, allowCreate: true } });
         if (error || !data?.hashed_token) return false;
         const { error: vErr } = await supabase.auth.verifyOtp({ type: 'magiclink', token_hash: data.hashed_token });
         return !vErr;
@@ -122,16 +125,17 @@ export async function linkTelegramToCurrentUser(): Promise<'linked' | 'not_authe
 }
 
 /**
- * One-tap "make sure my Telegram is linked": links the current account, and if
- * the user isn't signed in yet, creates/logs them in via Telegram first (then
- * links). Used by the profile auto-link (?tglink=1) and the link button.
+ * "Link my Telegram to the CURRENT account." Links only when the user is already
+ * signed in — it does NOT silently create a new account anymore (v11.71). If
+ * nobody is signed in it returns 'not_authenticated' so the caller can send the
+ * user to the sign-in / create-account choice screen instead of forcing a new
+ * Telegram account on them. Used by the profile auto-link (?tglink=1) and the
+ * link button.
  */
-export async function ensureTelegramLinked(): Promise<'linked' | 'failed' | 'not_telegram'> {
+export async function ensureTelegramLinked(): Promise<'linked' | 'not_authenticated' | 'failed' | 'not_telegram'> {
     if (!isTelegramMiniApp()) return 'not_telegram';
-    let r = await linkTelegramToCurrentUser();
-    if (r === 'not_authenticated') {
-        const ok = await loginViaTelegram();
-        if (ok) r = await linkTelegramToCurrentUser();
-    }
-    return r === 'linked' ? 'linked' : 'failed';
+    const r = await linkTelegramToCurrentUser();
+    if (r === 'linked') return 'linked';
+    if (r === 'not_authenticated') return 'not_authenticated';
+    return 'failed';
 }

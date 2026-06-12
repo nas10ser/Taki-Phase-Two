@@ -5,6 +5,7 @@ import { validationService } from '../services/validationService';
 import { authService } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
+import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
 
 const Register: React.FC = () => {
     const history = useHistory();
@@ -43,6 +44,25 @@ const Register: React.FC = () => {
                 ? `⚠️ حدث خطأ: ${e?.message || 'حاول مرة أخرى'}`
                 : `⚠️ Error: ${e?.message || 'try again'}`
             );
+        }
+    }, [customAlert, language]);
+
+    // EXPLICIT "create a new account via Telegram" — only fires when the user
+    // taps the Telegram-only quick button on the landing screen. This is the
+    // opt-in replacement for the old silent auto-create (the forced-new-account
+    // bug). On success the auth listener + AuthRedirector route the user
+    // (to /profile?tglink=1 when linking from the bot, else to home). v11.71
+    const inTelegram = isTelegramMiniApp();
+    const handleTelegramQuickStart = useCallback(async () => {
+        try {
+            const ok = await loginViaTelegram();
+            if (!ok) {
+                await customAlert(language === 'ar'
+                    ? '⚠️ تعذّر إنشاء حساب عبر تيليجرام، حاول مجدداً أو سجّل بالبريد.'
+                    : '⚠️ Could not create a Telegram account, try again or use email.');
+            }
+        } catch {
+            await customAlert(language === 'ar' ? '⚠️ حدث خطأ، حاول لاحقاً.' : '⚠️ Something went wrong, try again later.');
         }
     }, [customAlert, language]);
 
@@ -694,6 +714,22 @@ const Register: React.FC = () => {
                     <button className="auth-btn-secondary" onClick={() => setMode('type')} style={{ ...primaryButtonStyle, background: 'rgba(80, 80, 90, 0.2)', border: '1.5px solid rgba(80, 80, 95, 0.12)', backdropFilter: 'blur(20px)', fontSize: '1.05rem', letterSpacing: 0.3, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                         {t('إنشاء حساب جديد', 'Create Account')}
                     </button>
+                    {inTelegram && (
+                        <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '6px 2px', opacity: 0.4, fontSize: '0.8rem' }}>
+                                <div style={{ flex: 1, height: 1, background: 'currentColor', opacity: 0.3 }} />
+                                {t('أو', 'or')}
+                                <div style={{ flex: 1, height: 1, background: 'currentColor', opacity: 0.3 }} />
+                            </div>
+                            <button className="auth-btn" onClick={handleTelegramQuickStart} style={{ ...primaryButtonStyle, background: 'linear-gradient(135deg, #229ED9 0%, #2AABEE 100%)', boxShadow: '0 4px 20px rgba(34,158,217,0.35)', fontSize: '1.02rem', letterSpacing: 0.3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M9.04 15.47 8.7 19.9c.46 0 .66-.2.9-.43l2.17-2.06 4.5 3.28c.82.45 1.42.21 1.63-.76l2.96-13.9c.27-1.24-.45-1.73-1.26-1.43L2.2 9.86c-1.2.47-1.18 1.14-.2 1.44l4.5 1.4 10.45-6.58c.49-.32.94-.14.57.18z"/></svg>
+                                {t('متابعة سريعة كمتسوّق عبر تيليجرام', 'Quick start as a shopper via Telegram')}
+                            </button>
+                            <div style={{ textAlign: 'center', opacity: 0.4, fontSize: '0.72rem' }}>
+                                {t('يُنشئ حساب متسوّق جديداً فوراً — اختر «تسجيل الدخول» فوق إن كان لديك حساب.', 'Creates a new shopper account instantly — pick "Sign In" above if you already have one.')}
+                            </div>
+                        </>
+                    )}
                     <div style={{ textAlign: 'center', marginTop: 16, opacity: 0.35, fontSize: '0.75rem', lineHeight: 1.6 }}>
                         {t('بالدخول، أنت توافق على الشروط والأحكام', 'By continuing, you agree to our Terms & Privacy Policy')}
                     </div>
