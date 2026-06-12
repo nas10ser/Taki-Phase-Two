@@ -12,15 +12,16 @@
 # IMPORTANT: the bot token can run in ONE place at a time. Once Render is live,
 # stop the local PM2 bot (`pm2 stop taki-bot`) so they don't fight over Telegram.
 #
-# Plan: `starter` (~$7/mo) keeps the bot ALWAYS-ON — required for instant alerts.
-# The `free` plan sleeps after 15 min idle (messages are delayed/dropped on cold
-# start), so it's not suitable for a 24/7 notifications bot.
+# Plan: `free`. Render free sleeps after ~15 min idle, so the bot runs a built-in
+# self-ping keep-alive (hits its own /health every 10 min via RENDER_EXTERNAL_URL)
+# that keeps it awake 24/7 — no paid plan, no external uptime service needed.
+# (One free web service kept awake ≈ 744 h/mo, within the 750 h free allowance.)
 services:
   - type: web
     name: taki-bot
     runtime: node
     rootDir: server
-    plan: starter
+    plan: free
     region: frankfurt
     buildCommand: npm install
     startCommand: node bot.js

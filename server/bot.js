@@ -1565,5 +1565,19 @@ if (bot && BOT_MODE === 'polling') {
         console.warn('⚠️  webhook mode but PUBLIC_URL / RENDER_EXTERNAL_URL or TELEGRAM_WEBHOOK_SECRET is missing — webhook NOT registered');
     }
 }
+
+// ── Keep-alive (free hosting) ──────────────────────────────────────────────────
+// Render's free tier sleeps a web service after ~15 min with no inbound HTTP.
+// We ping our OWN public /health every 10 min (well under that threshold) so the
+// bot NEVER idles into sleep — 24/7 on the free plan, no external uptime service.
+// No-op locally (no public URL), so it only kicks in on the cloud host.
+const KEEPALIVE_URL = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+if (KEEPALIVE_URL) {
+    const selfPing = () => { try { fetch(`${KEEPALIVE_URL}/health`).catch(() => {}); } catch { /* fetch unavailable */ } };
+    setTimeout(selfPing, 30_000);                  // first ping shortly after boot
+    setInterval(selfPing, 10 * 60_000).unref?.();  // then every 10 minutes
+    console.log(`💓 Keep-alive: self-ping every 10 min → ${KEEPALIVE_URL}/health`);
+}
+
 process.once('SIGINT',  () => bot?.stop('SIGINT'));
 process.once('SIGTERM', () => bot?.stop('SIGTERM'));
