@@ -1,5 +1,5 @@
 /**
- * TAKI Bot — v11.2  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.4  |  بوت تاكي الاحترافي الآمن
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -10,7 +10,8 @@
  *   • رفع الصور عبر Edge Function محمية بسرّ مشترك (لا مفاتيح في العميل).
  *
  * الميزات: تصفح + صور + حجز (مدة الاستلام + ملاحظة) + محادثة التاجر (٣+٣) +
- *   تعديل/إلغاء الحجز (مشتري) — إحصائيات + حجوزات + محادثة + تحقق + إتمام +
+ *   تعديل/إلغاء الحجز + تقييم ⭐ + متابعة/حظر المتاجر (مشتري) —
+ *   إحصائيات + حجوزات + محادثة + تحقق + إتمام +
  *   إضافة عرض بالأسئلة مع تصنيف وصورة + تعديل عرض (اسم/سعر/كمية/وصف/تصنيف) +
  *   تفعيل/إيقاف/حذف + الاشتراك في الباقات من تيليجرام (تاجر) — إحصائيات (أدمن).
  */
@@ -35,7 +36,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.2.0';
+const BOT_VERSION              = '11.4.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -482,12 +483,13 @@ bot.on('location', async ctx => {
 bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery();
     const dealId = ctx.match[1];
-    const d = await rpc('bot_get_deal', { p_deal_id: dealId });
+    const d = await rpc('bot_get_deal', { p_deal_id: dealId, p_telegram_id: tgId(ctx) });
     if (!d) return ctx.reply('⚠️ العرض لم يعد متاحاً\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع للعروض','browse:menu')]]).reply_markup });
     const s = getSession(tgId(ctx));
     s.temp.dealId = dealId; s.temp.dealName = d.item_name; s.temp.dealQty = 1;
     const tag  = sponsorTag(d);
     const cat  = d.category ? `\n🏷 التصنيف: ${md(catLabel(d.category))}` : '';
+    const rating = d.rating_count>0 ? `\n⭐ التقييم: *${md(String(d.rating_avg))}* \\(${d.rating_count} تقييم\\)` : '';
     const prep = d.prep_time ? `\n⏱ وقت التجهيز: ${md(d.prep_time)}` : '';
     const desc = d.description ? `\n\n📝 *الملاحظات:*\n${md(String(d.description).slice(0,500))}` : '';
     let geoBlock='';
@@ -495,12 +497,18 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (di) geoBlock = `\n📍 المسافة: *${numEsc(fmtKm(di.straight))} كم* \\(مباشرة\\)\n🚗 بالسيارة: *${di.est?'~':''}${numEsc(di.min)} دقيقة* \\(${numEsc(fmtKm(di.km))} كم${di.est?' تقريباً':''}\\)`;
     else if (d.map_lat!=null) geoBlock = `\n📍 شارك موقعك لمعرفة المسافة والوقت بالسيارة`;
     const caption =
-        `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}\n\n` +
+        `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}${rating}\n\n` +
         priceBlock(d.original_price, d.discounted_price, d.discount_percentage) +
         `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${desc}`;
     const btns = [];
     if (s.userId && s.userType !== 'seller') btns.push([Markup.button.callback('📥  احجز الآن','book:qty')]);
     else if (!s.userId) btns.push([Markup.button.webApp('🛍  سجّل دخولك لتحجز', APP_URL)]);
+    if (d.store_id) {
+        const folRow = [];
+        if (s.userId) folRow.push(Markup.button.callback(d.following ? '✅ متابِع' : '➕ متابعة المتجر', `fol:${d.store_id}`));
+        folRow.push(Markup.button.callback('⭐ التقييمات', `revw:${d.store_id}`));
+        btns.push(folRow);
+    }
     const dl = dirLink(d, s.geo);
     const row2=[];
     if (dl) row2.push(Markup.button.url('🧭 الاتجاهات', dl));
@@ -517,6 +525,62 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (one) { try { return await ctx.replyWithPhoto(one, { caption, ...extra }); } catch { /* fall through to text */ } }
     await ctx.reply(caption, { ...extra, link_preview_options:{is_disabled:true} });
 });
+
+// ── Store: follow / block / reviews ───────────────────────────────────────────
+bot.action(/^fol:(.+)$/, async ctx => {
+    const r = await rpc('bot_toggle_follow', { p_telegram_id: tgId(ctx), p_store_id: ctx.match[1] });
+    if (!r?.success) return ctx.answerCbQuery('❗ سجّل دخولك أولاً', { show_alert:true });
+    return ctx.answerCbQuery(r.following ? '🔔 تابعت المتجر — بتوصلك عروضه الجديدة' : 'تم إلغاء المتابعة', { show_alert:true });
+});
+bot.action(/^blk:(.+)$/, async ctx => {
+    const r = await rpc('bot_toggle_block', { p_telegram_id: tgId(ctx), p_store_id: ctx.match[1] });
+    if (!r?.success) return ctx.answerCbQuery('❗ سجّل دخولك أولاً', { show_alert:true });
+    return ctx.answerCbQuery(r.blocked ? '🚫 تم حظر المتجر — لن تظهر لك عروضه' : '✅ تم إلغاء الحظر', { show_alert:true });
+});
+bot.action(/^revw:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const sid = ctx.match[1];
+    const r = await rpc('bot_get_store_reviews', { p_store_id: sid, p_limit: 6 });
+    if (!r?.success) return ctx.reply('⚠️ تعذّر تحميل التقييمات\\.', { parse_mode:'MarkdownV2' });
+    const stars = n => '⭐'.repeat(Math.max(0, Math.min(5, Math.round(n))));
+    let m = `⭐ *تقييمات المتجر*\n${DIV}\n`;
+    if (r.count>0) m += `التقييم العام: *${md(String(r.avg))}* \\(${r.count} تقييم\\)\n\n`;
+    const revs = r.reviews||[];
+    if (!revs.length) m += '_لا توجد تقييمات بعد_';
+    else for (const v of revs) {
+        m += `${stars(v.score)}  _${md(v.user)}_\n`;
+        if (v.comment) m += `${md(v.comment)}\n`;
+        if (v.reply) m += `↩️ _رد التاجر:_ ${md(v.reply)}\n`;
+        m += `\n`;
+    }
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🚫 حظر المتجر',`blk:${sid}`)],[Markup.button.callback('◀️ رجوع للعروض','browse:menu')]]).reply_markup });
+});
+
+// ── Rate a completed booking (⭐ 1–5 + optional comment) ───────────────────────
+bot.action(/^rate:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    await ctx.reply('⭐ *قيّم تجربتك*\nاختر عدد النجوم:', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('⭐',`rst:${bc}:1`), Markup.button.callback('⭐⭐',`rst:${bc}:2`), Markup.button.callback('⭐⭐⭐',`rst:${bc}:3`)],
+        [Markup.button.callback('⭐⭐⭐⭐',`rst:${bc}:4`), Markup.button.callback('⭐⭐⭐⭐⭐',`rst:${bc}:5`)],
+        [Markup.button.callback('◀️ رجوع','buyer:bookings')]
+    ]).reply_markup });
+});
+bot.action(/^rst:(.+):([1-5])$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.temp.rateBarcode = ctx.match[1]; s.temp.rateScore = +ctx.match[2];
+    setStep(tgId(ctx),'await_rate_comment');
+    await ctx.reply(`${'⭐'.repeat(+ctx.match[2])}\n📝 اكتب تعليقك \\(اختياري\\) أو تخطَّ:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('تخطّي وإرسال ✅','rateskip')],[Markup.button.callback('❌ إلغاء','buyer:bookings')]]).reply_markup });
+});
+bot.action('rateskip', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); setStep(tgId(ctx),'idle'); const r = await rpc('bot_rate_store', { p_telegram_id: tgId(ctx), p_barcode: s.temp.rateBarcode, p_score: s.temp.rateScore, p_comment: null }); return afterRate(ctx, r); });
+async function afterRate(ctx, r) {
+    if (!r?.success) {
+        const e=r?.error; const msg = e==='not_completed' ? '⚠️ تقدر تقيّم بعد إتمام الحجز فقط\\.' : e==='not_found' ? '❌ الحجز غير موجود\\.' : e==='bad_score' ? '❗ التقييم من 1 إلى 5\\.' : e==='not_linked' ? '❗ سجّل دخولك أولاً\\.' : '⚠️ تعذّر التقييم\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')]]).reply_markup });
+    }
+    await ctx.reply(`✅ *شكراً لتقييمك\\!*  ${'⭐'.repeat(r.score||0)}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 حجوزاتي','buyer:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+}
 
 // ── Booking: quantity → confirm → book ────────────────────────────────────────
 bot.action('book:qty', async ctx => {
@@ -612,6 +676,7 @@ async function showBuyerBookings(ctx) {
         const chatLabel = b.unread>0 ? `💬 محادثة (${b.unread})` : '💬 محادثة';
         const row = [Markup.button.callback(chatLabel, `chat:${b.barcode}`)];
         if (b.status==='pending') row.push(Markup.button.callback('✏️ تعديل', `edit:${b.barcode}`));
+        if (b.status==='completed') row.push(Markup.button.callback('⭐ قيّم', `rate:${b.barcode}`));
         btns.push(row);
         if (b.status==='pending'||b.status==='acknowledged') btns.push([Markup.button.callback(`🚫 إلغاء «${String(b.deal_name).slice(0,16)}»`, `cancel:${b.barcode}`)]);
     });
@@ -1067,6 +1132,11 @@ bot.on('text', async ctx => {
         const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_description: text.slice(0,300) });
         return afterDealEdit(ctx, r);
     }
+    if (s.step === 'await_rate_comment') {
+        setStep(tgId(ctx),'idle');
+        const r = await rpc('bot_rate_store', { p_telegram_id: tgId(ctx), p_barcode: s.temp.rateBarcode, p_score: s.temp.rateScore, p_comment: text.slice(0,400) });
+        return afterRate(ctx, r);
+    }
     if (s.step === 'deal_name') {
         if (text.length < 3) return ctx.reply('❗ الاسم قصير جداً:');
         s.temp.name = text; setStep(tgId(ctx),'deal_orig_price');
@@ -1114,43 +1184,51 @@ app.post('/webhook/telegram', (req, res) => {
 } // end if(bot)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Realtime: notify seller on new booking
+//  Realtime: push notifications to Telegram — smart-alerts + ALL booking events
+//  (new / acknowledged / completed / cancelled / expired / 15-min warning).
+//  Everything flows through the single `notifications` table = one DB, one source,
+//  so a subscriber gets the same alerts whether on the website, app, or bot.
 // ═══════════════════════════════════════════════════════════════════════════════
-if (supabase && bot) {
-    supabase.channel('bot-new-bookings')
-        .on('postgres_changes', { event:'INSERT', schema:'public', table:'bookings' }, async payload => {
-            const b = payload.new;
-            if (!b.store_id) return;
-            try {
-                const { data: seller } = await supabase.from('users')
-                    .select('telegram_chat_id').eq('id', b.store_id).eq('notify_via_telegram', true).maybeSingle();
-                if (!seller?.telegram_chat_id) return;
-                await bot.telegram.sendMessage(seller.telegram_chat_id,
-                    `🔔 *حجز جديد وارد\\!*\n${DIV}\n📋 \`${md(b.barcode)}\`\n👤 ${md(b.user_name||'—')}  📞 ${md(b.user_phone||'—')}\n📦 الكمية: ${b.booked_quantity}`,
-                    { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('👍 تأكيد',`ack:${b.barcode}`), Markup.button.callback('🏁 إتمام',`complete:${b.barcode}`)]]).reply_markup });
-            } catch(e) { console.warn('Notify seller:', e.message); }
-        }).subscribe();
-    console.log('📡 Realtime: إشعارات الحجز مفعّلة');
-}
-
-// Realtime: smart-alert push to buyers
 const DEBOUNCE = new Map();
 if (supabase && bot) {
     supabase.channel('bot-user-notifs')
         .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications' }, async payload => {
             const n = payload.new;
-            if (n.type!=='deal' && n.type!=='marketing') return;
-            if (Date.now() - (DEBOUNCE.get(n.user_id)||0) < 20_000) return;
+            const aud = n.meta_data?.audience, ev = n.meta_data?.event, bc = n.meta_data?.barcode;
             try {
-                const { data: u } = await supabase.from('users').select('telegram_chat_id, notify_via_telegram, preferred_lang').eq('id', n.user_id).maybeSingle();
-                if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
-                const en = (u.preferred_lang||'').startsWith('en');
-                const msg = en ? (n.meta_data?.bot_message_en||`${n.title_en}\n\n${n.body_en}`) : (n.meta_data?.bot_message_ar||`${n.title_ar}\n\n${n.body_ar}`);
-                await bot.telegram.sendMessage(u.telegram_chat_id, msg);
-                DEBOUNCE.set(n.user_id, Date.now());
-            } catch(e) { console.warn('Alert push:', e.message); }
+                // Smart-alerts / marketing — debounced
+                if (n.type==='deal' || n.type==='marketing') {
+                    if (Date.now() - (DEBOUNCE.get(n.user_id)||0) < 20_000) return;
+                    const { data: u } = await supabase.from('users').select('telegram_chat_id, notify_via_telegram, preferred_lang').eq('id', n.user_id).maybeSingle();
+                    if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
+                    const en = (u.preferred_lang||'').startsWith('en');
+                    const msg = en ? (n.meta_data?.bot_message_en||`${n.title_en}\n\n${n.body_en}`) : (n.meta_data?.bot_message_ar||`${n.title_ar}\n\n${n.body_ar}`);
+                    await bot.telegram.sendMessage(u.telegram_chat_id, msg);
+                    DEBOUNCE.set(n.user_id, Date.now());
+                    return;
+                }
+                // Booking events — push to buyer/seller (skip admins; skip buyer's own "new" echo)
+                if (n.type==='booking') {
+                    if (aud==='admin') return;
+                    if (ev==='new' && aud!=='seller') return;
+                    const { data: u } = await supabase.from('users').select('telegram_chat_id, notify_via_telegram').eq('id', n.user_id).maybeSingle();
+                    if (!u?.telegram_chat_id || !u.notify_via_telegram) return;
+                    const rows = [];
+                    if (bc && aud==='seller' && ev==='new') {
+                        rows.push([Markup.button.callback('👍 تأكيد',`ack:${bc}`), Markup.button.callback('🏁 إتمام',`complete:${bc}`)]);
+                        rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
+                    } else if (bc && aud==='buyer' && ev==='completed') {
+                        rows.push([Markup.button.callback('⭐ قيّم',`rate:${bc}`)]);
+                    } else if (bc && aud==='buyer' && (ev==='acknowledged' || ev==='warning')) {
+                        rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
+                    }
+                    await bot.telegram.sendMessage(u.telegram_chat_id, `${n.title_ar}\n${n.body_ar}`,
+                        rows.length ? { reply_markup: Markup.inlineKeyboard(rows).reply_markup } : undefined);
+                    return;
+                }
+            } catch(e) { console.warn('Notif push:', e.message); }
         }).subscribe();
-    console.log('📡 Realtime: التنبيهات الذكية مفعّلة');
+    console.log('📡 Realtime: إشعارات التنبيهات والحجوزات مفعّلة');
 }
 
 // Realtime: push new booking-chat messages to the OTHER party on Telegram
