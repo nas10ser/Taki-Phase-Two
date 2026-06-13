@@ -53,6 +53,14 @@ const Register: React.FC = () => {
     // bug). On success the auth listener + AuthRedirector route the user
     // (to /profile?tglink=1 when linking from the bot, else to home). v11.71
     const inTelegram = isTelegramMiniApp();
+    // Did the user arrive from the bot's "link my account" button (/register?tglink=1)?
+    // If so the landing must make the LOGIN-vs-NEW choice explicit and steer an
+    // existing-account owner to «تسجيل الدخول» (the auto-create button was what made
+    // people feel forced into a brand-new account). v11.72
+    const wantsTgLink = React.useMemo(() => {
+        try { return sessionStorage.getItem('taki_tglink') === '1' || new URLSearchParams(window.location.search).get('tglink') === '1'; }
+        catch { return false; }
+    }, []);
     const handleTelegramQuickStart = useCallback(async () => {
         try {
             const ok = await loginViaTelegram();
@@ -702,19 +710,31 @@ const Register: React.FC = () => {
                     <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translateX(-50%)', width: 'clamp(160px, 45vw, 250px)', height: 'clamp(160px, 45vw, 250px)', borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%)', filter: 'blur(50px)', animation: 'floatOrb 18s ease-in-out infinite 3s' }} />
                 </div>
 
-                <div style={{ marginBottom: 48, textAlign: 'center', marginTop: 120, animation: 'fadeUp 0.8s ease-out' }}>
-                    <div style={{ fontSize: '5rem', fontWeight: 900, marginBottom: 4, letterSpacing: -3, background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 50%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 2px 10px var(--primary-glow))' }}>TAKI</div>
-                    <div style={{ fontSize: '1.1rem', opacity: 0.6, fontWeight: 400, letterSpacing: 1 }}>{t('بوابتك للاقتصاد الذكي', 'Your Gateway to Smart Savings')}</div>
+                <div style={{ marginBottom: wantsTgLink ? 26 : 48, textAlign: 'center', marginTop: wantsTgLink ? 92 : 120, animation: 'fadeUp 0.8s ease-out' }}>
+                    <div style={{ fontSize: wantsTgLink ? '4rem' : '5rem', fontWeight: 900, marginBottom: 4, letterSpacing: -3, background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 50%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 2px 10px var(--primary-glow))' }}>TAKI</div>
+                    <div style={{ fontSize: '1.1rem', opacity: 0.6, fontWeight: 400, letterSpacing: 1 }}>{wantsTgLink ? t('ربط حسابك بتيليجرام', 'Link your account to Telegram') : t('بوابتك للاقتصاد الذكي', 'Your Gateway to Smart Savings')}</div>
                 </div>
+                {wantsTgLink && (
+                    <div style={{ width: '100%', maxWidth: 380, marginBottom: 16, padding: '14px 16px', borderRadius: 16, background: 'rgba(34,158,217,0.10)', border: '1px solid rgba(42,171,238,0.28)', animation: 'fadeUp 0.8s ease-out 0.1s both' }}>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 800, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="#2AABEE" aria-hidden><path d="M9.04 15.47 8.7 19.9c.46 0 .66-.2.9-.43l2.17-2.06 4.5 3.28c.82.45 1.42.21 1.63-.76l2.96-13.9c.27-1.24-.45-1.73-1.26-1.43L2.2 9.86c-1.2.47-1.18 1.14-.2 1.44l4.5 1.4 10.45-6.58c.49-.32.94-.14.57.18z"/></svg>
+                            {t('عندك حساب في تاكي؟', 'Already have a TAKI account?')}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', opacity: 0.7, lineHeight: 1.6 }}>
+                            {t('اضغط «تسجيل الدخول» ليُربط حسابك الحالي بتيليجرام — لا داعي لإنشاء حساب جديد. وإن لم يكن لديك حساب، اختر «إنشاء حساب».',
+                               'Tap "Sign In" to link your existing account to Telegram — no need to create a new one. New here? Choose "Create Account".')}
+                        </div>
+                    </div>
+                )}
 
                 <div style={{ width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 14, animation: 'fadeUp 0.8s ease-out 0.2s both' }}>
                     <button className="auth-btn" onClick={() => setMode('login')} style={{ ...primaryButtonStyle, background: 'var(--primary)', boxShadow: '0 4px 20px var(--primary-glow)', fontSize: '1.05rem', letterSpacing: 0.3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
-                        {t('تسجيل الدخول', 'Sign In')}
+                        {wantsTgLink ? t('🔓 لديّ حساب — تسجيل الدخول وربطه', '🔓 I have an account — Sign in & link') : t('تسجيل الدخول', 'Sign In')}
                     </button>
                     <button className="auth-btn-secondary" onClick={() => setMode('type')} style={{ ...primaryButtonStyle, background: 'rgba(80, 80, 90, 0.2)', border: '1.5px solid rgba(80, 80, 95, 0.12)', backdropFilter: 'blur(20px)', fontSize: '1.05rem', letterSpacing: 0.3, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
-                        {t('إنشاء حساب جديد', 'Create Account')}
+                        {wantsTgLink ? t('✨ أنا جديد — إنشاء حساب', '✨ I am new — Create account') : t('إنشاء حساب جديد', 'Create Account')}
                     </button>
-                    {inTelegram && (
+                    {inTelegram && !wantsTgLink && (
                         <>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '6px 2px', opacity: 0.4, fontSize: '0.8rem' }}>
                                 <div style={{ flex: 1, height: 1, background: 'currentColor', opacity: 0.3 }} />
