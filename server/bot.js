@@ -1,5 +1,11 @@
 /**
- * TAKI Bot — v11.74  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.76  |  بوت تاكي الاحترافي الآمن
+ * ═══════════════════════════════════════════════════════
+ * v11.76 (بوت المشتري): صفحة «حولي» كاملة بكل فلاتر الموقع داخل البوت
+ *   (منطقة→مدينة→مول متسلسلة + تصنيف + الأقرب/نطاق كم) عبر bot_browse_deals
+ *   الموسّعة • إصلاح ظهور تفاصيل العرض مع الصور (تهريب «~» في كتلة المسافة +
+ *   إرسال آمن لا يُسقط التفاصيل أبداً) • التنبيهات الذكية للمشتري فقط (أُزيلت من
+ *   التاجر) • معاينة نطاق التنبيه على الخريطة بتظليل فاتح/غامق مطابق للموقع.
  * ═══════════════════════════════════════════════════════
  * v11.74: إصلاح حجز العرض (ازدواجية دالة bot_get_deal) + بحث (عرض/متجر/تاجر) +
  *   بنر ترويجي فوق العروض + مسابقات وجوائز داخل البوت + فتح بروفايل المتجر من
@@ -46,7 +52,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.75.0';
+const BOT_VERSION              = '11.76.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -88,6 +94,25 @@ const { CAT, catLabel, catKeyboard } = C;
 const { haversineKm, fmtKm, placeLink, dirLink, remainingText, durationEndsAt } = G;
 
 const W = path => APP_URL + path;   // web deep-link (BrowserRouter, no #)
+
+// Strip MarkdownV2 markup → plain readable text (removes escape backslashes and
+// the *_` markers) for a safe fallback.
+const stripMd = t => String(t == null ? '' : t)
+    .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1')
+    .replace(/[*`]/g, '')
+    .replace(/__/g, '').replace(/(^|[^_])_([^_]+)_/g, '$1$2');
+// Send a MarkdownV2 message; if Telegram rejects the entities (an unescaped
+// reserved char, a caption that's too long, …) fall back to PLAIN text so the
+// message ALWAYS reaches the user. Prevents the "album shows but the details
+// vanish" class of bugs from ever hiding a deal's info again. v11.76
+async function safeReplyMd(ctx, text, extra = {}) {
+    try { return await ctx.reply(text, { parse_mode: 'MarkdownV2', ...extra }); }
+    catch (e) {
+        console.warn('safeReplyMd fallback:', e.message);
+        const { parse_mode, ...rest } = extra;
+        try { return await ctx.reply(stripMd(text), rest); } catch { /* give up silently */ }
+    }
+}
 
 // Barcodes the bot itself just booked → so the notification outbox doesn't ALSO
 // send the buyer a "booking confirmed" alert (the bot already showed it inline).
@@ -157,7 +182,7 @@ function kbGuest() {
 }
 function kbBuyer() {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  الخريطة','buyer:map')],
+        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  حولي','buyer:nearby')],
         [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔎  بحث','search:start')],
         [Markup.button.callback('🔔  تنبيهاتي الذكية','buyer:notif'),  Markup.button.callback('⭐  متابَعاتي','buyer:following')],
         [Markup.button.callback('🎁  المسابقات','contests:list'), Markup.button.callback('👤  حسابي','buyer:profile')],
@@ -172,15 +197,15 @@ function kbSeller(s) {
         [Markup.button.callback('✅  تحقق من حجز','seller:verify'), Markup.button.callback('🏷  عروضي','seller:deals')],
         [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('📍  مواقعي','seller:branches')],
         [Markup.button.callback('💳  الاشتراك','seller:sub'), Markup.button.callback('🏪  حساب المتجر','seller:profile')],
-        [Markup.button.callback('🔔  التنبيهات','alerts:open'), Markup.button.callback('🆘  مساعدة','help')],
-        [Markup.button.callback('🚪  تسجيل الخروج','logout')],
+        // التنبيهات الذكية ميزة للمتسوّق فقط — التاجر تصله إشعارات الحجوزات تلقائياً. v11.76
+        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')],
         [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
     ]);
 }
 function kbAdmin() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📊  إحصائيات المنصة','admin:stats'), Markup.button.callback('🚩  البلاغات','admin:reports')],
-        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  الخريطة','buyer:map')],
+        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  حولي','buyer:nearby')],
         [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('⭐  متابَعاتي','buyer:following')],
         [Markup.button.callback('🔔  التنبيهات','alerts:open'), Markup.button.callback('👤  حسابي','buyer:profile')],
         [Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))],
@@ -221,6 +246,7 @@ if (bot) {
 bot.telegram.setMyCommands([
     { command:'start',    description:'القائمة الرئيسية' },
     { command:'deals',    description:'تصفح العروض' },
+    { command:'nearby',   description:'حولي — العروض القريبة + الخريطة' },
     { command:'search',   description:'بحث عن عرض/متجر/تاجر' },
     { command:'contests', description:'المسابقات والجوائز' },
     { command:'link',     description:'ربط حسابي' },
@@ -390,14 +416,13 @@ bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); renderList
 async function showBrowseMenu(ctx){
     const s=getSession(tgId(ctx));
     await sendBanners(ctx);   // Task 5a — promotional banner(s) appear ABOVE the offers
-    const near = s.geo ? '📍 العروض الأقرب إليك' : '📍 العروض حولي (شارك موقعك)';
     await ctx.reply(`🛍 *تصفّح العروض*\n${DIV}\nاختر طريقة العرض التي تناسبك:`, { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('🔎 بحث (متجر / عرض / تاجر)','search:start')],
             [Markup.button.callback('🔥 الأكثر طلباً','br:p:-:0'), Markup.button.callback('💸 الأكثر خصماً','br:d:-:0')],
             [Markup.button.callback('🆕 الأحدث','br:n:-:0'), Markup.button.callback('⭐ المميّزة والرعاة','br:s:-:0')],
             [Markup.button.callback('📂 حسب التصنيف','browse:cats')],
-            [Markup.button.callback(near,'browse:near')],
+            [Markup.button.callback('🗺 حولي (منطقة/مدينة/مول/تصنيف/الأقرب)','buyer:nearby')],
             [Markup.button.callback('🎁 المسابقات والجوائز','contests:list')],
             [Markup.button.callback('◀️ رجوع للقائمة','menu:back')]
         ]).reply_markup });
@@ -645,6 +670,13 @@ bot.on('location', async ctx => {
         await ctx.reply('✅ *تم تحديد موقعك*', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
         return showMap(ctx);
     }
+    // v11.76 — sharing a location for the Nearby page (نطاق + الأقرب).
+    if (s.temp.nearbyLocWait) {
+        s.temp.nearbyLocWait = false;
+        const f = nfDraft(s); f.useGeo = true; if(!f.radius) f.radius = 30;
+        await ctx.reply('✅ *تم تحديد موقعك*', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
+        return askNfRadius(ctx);
+    }
     // Persist onto the linked account (one DB, one source) so we can later push
     // "عروض حولك" notifications by proximity. Fire-and-forget — never block UX.
     const saved = s.userId ? '\n📌 _حفظنا موقعك لنرسل لك عروض ما حولك_' : '';
@@ -671,7 +703,11 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (s.geo && d.map_lat!=null && d.map_lng!=null) {
         const straight = haversineKm(s.geo.lat, s.geo.lng, d.map_lat, d.map_lng);
         const km = straight*1.3, min = Math.max(1, Math.round(km/0.6));
-        geoBlock = `\n📍 المسافة: *${numEsc(fmtKm(straight))} كم* \\(مباشرة\\)\n🚗 بالسيارة: *~${numEsc(min)} دقيقة* \\(${numEsc(fmtKm(km))} كم تقريباً\\)`;
+        // NOTE: '~' is MarkdownV2-reserved — it MUST be escaped (\\~) or the
+        // whole caption fails to parse and the details vanish (only the image
+        // album shows). This regressed in v11.74 when the estimate became the
+        // default path (the '~' is now always present in the nearby flow). v11.76
+        geoBlock = `\n📍 المسافة: *${numEsc(fmtKm(straight))} كم* \\(مباشرة\\)\n🚗 بالسيارة: *\\~${numEsc(min)} دقيقة* \\(${numEsc(fmtKm(km))} كم تقريباً\\)`;
     }
     else if (d.map_lat!=null) geoBlock = `\n📍 شارك موقعك لمعرفة المسافة والوقت بالسيارة`;
     const caption =
@@ -696,14 +732,20 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (row2.length) btns.push(row2);
     btns.push([Markup.button.callback('◀️  رجوع للعروض', s.temp.listCb || 'browse:menu')]);
     const extra = { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup };
-    const imgs = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
-    if (imgs.length > 1) {
-        try { await ctx.replyWithMediaGroup(imgs.slice(0,5).map(u => ({ type:'photo', media:u }))); } catch { /* ignore album errors */ }
-        return ctx.reply(caption, { ...extra, link_preview_options:{is_disabled:true} });
+    const imgs   = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
+    const photos = (imgs.length ? imgs : (d.image ? [d.image] : [])).slice(0, 5);
+    // One image + a short caption → attach the details to the photo (compact card).
+    if (photos.length === 1 && caption.length <= 1000) {
+        try { return await ctx.replyWithPhoto(photos[0], { caption, ...extra }); }
+        catch { /* fall through → photo then text, so details always show */ }
     }
-    const one = imgs[0] || d.image;
-    if (one) { try { return await ctx.replyWithPhoto(one, { caption, ...extra }); } catch { /* fall through to text */ } }
-    await ctx.reply(caption, { ...extra, link_preview_options:{is_disabled:true} });
+    // Otherwise: send the image(s) FIRST (album or single, NO caption), then the
+    // full details + booking buttons as a guaranteed text message — mirrors the
+    // website (gallery, then details below). safeReplyMd never lets the details
+    // get lost to a caption-length or MarkdownV2 parse error. v11.76
+    if (photos.length > 1)      { try { await ctx.replyWithMediaGroup(photos.map(u => ({ type:'photo', media:u }))); } catch { /* ignore */ } }
+    else if (photos.length === 1) { try { await ctx.replyWithPhoto(photos[0]); } catch { /* ignore */ } }
+    return safeReplyMd(ctx, caption, { ...extra, link_preview_options:{is_disabled:true} });
 });
 
 // ── Store: follow / block / reviews ───────────────────────────────────────────
@@ -1152,6 +1194,9 @@ bot.action('alerts:open',  async ctx => { await ctx.answerCbQuery(); showAlerts(
 async function showAlerts(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply('❗ سجّل دخولك أولاً عبر «ربط حسابي»\\.', { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
+    // التنبيهات الذكية للمتسوّقين فقط (تطابق الموقع — صفحة «حسابي» للمشتري). التاجر
+    // تصله إشعارات الحجوزات تلقائياً ولا يحتاج تنبيهات عروض. v11.76
+    if (s.userType === 'seller') return ctx.reply(`🔔 *التنبيهات الذكية للمتسوّقين*\n${DIV}\nهذه الميزة لمتابعة العروض التي تهمّك كمتسوّق\\.\nكتاجر، تصلك *إشعارات الحجوزات والطلبات* تلقائياً 📦`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📦 الحجوزات','seller:bookings')],[Markup.button.callback('◀️ رجوع للقائمة','menu:back')]]).reply_markup });
     const a = await rpc('bot_get_alerts', { p_telegram_id: tgId(ctx) });
     if (!a?.success) return ctx.reply('⚠️ تعذّر تحميل التنبيهات\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     const kn = Array.isArray(a.keywords) ? a.keywords.length : 0;
@@ -1241,7 +1286,7 @@ function draftSummary(d){
     if(d.coords && d.radiusKm) parts.push(`📍 ضمن ${numEsc(d.radiusKm)} كم من موقعك`);
     return parts.length ? parts.join('\n') : '_لم تختر معايير بعد_';
 }
-bot.action('smart:new',     async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); if(!s.userId) return; s.temp.alertDraft=newDraft(); showSmartBuilder(ctx); });
+bot.action('smart:new',     async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); if(!s.userId || s.userType==='seller') return showAlerts(ctx); s.temp.alertDraft=newDraft(); showSmartBuilder(ctx); });
 bot.action('smart:builder', async ctx => { await ctx.answerCbQuery(); showSmartBuilder(ctx); });
 bot.action('smart:clear',   async ctx => { await ctx.answerCbQuery('🗑 مُسحت المعايير'); getSession(tgId(ctx)).temp.alertDraft=newDraft(); showSmartBuilder(ctx); });
 async function showSmartBuilder(ctx){
@@ -1386,7 +1431,14 @@ bot.action('sa:map', async ctx => {
     const s=getSession(tgId(ctx)); const d=s.temp.alertDraft;
     if(!d||!d.coords) return showSmartBuilder(ctx);
     try { await ctx.replyWithLocation(d.coords.lat, d.coords.lng); } catch { /* ignore */ }
-    await ctx.reply(`🗺 *موقعك ونطاق ${numEsc(d.radiusKm||0)} كم*\n_سيشمل التنبيه العروض ضمن هذا النطاق حولك\\._`,{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback('✅ متابعة','smart:builder')]]).reply_markup});
+    // Open the website /nearby map seeded with these coords + radius → it renders
+    // the SAME light-circle (inside the radius) / dark-mask (outside) the owner
+    // knows from the site, so the radius is actually visualised. v11.76 (Task 3)
+    const mapUrl = W(`/nearby?lat=${d.coords.lat}&lng=${d.coords.lng}${d.radiusKm?`&radius=${d.radiusKm}`:''}`);
+    await ctx.reply(`🗺 *موقعك ونطاق ${numEsc(d.radiusKm||0)} كم*\n${DIV}\nافتح الخريطة لترى النطاق *مظلَّلاً بلون فاتح* ضمن ${numEsc(d.radiusKm||0)} كم \\(وما خارجه معتّماً\\) — تماماً كما في الموقع\\.\n_سيشمل التنبيه العروض ضمن هذا النطاق حولك\\._`,{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([
+        [Markup.button.webApp('🗺 اعرض النطاق على الخريطة (فاتح/غامق)', mapUrl)],
+        [Markup.button.callback('✅ متابعة','smart:builder')]
+    ]).reply_markup});
 });
 // keyword
 bot.action('sa:add:kw', async ctx => {
@@ -1484,6 +1536,174 @@ async function showMap(ctx){
         catch { await ctx.reply(`📍 *${md(d.item_name)}* — ${md(addr)}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📋 التفاصيل والحجز', `deal:${d.id}`)]]).reply_markup }); }
     }
     await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('🗺 الخريطة الكاملة', W('/nearby'))],[Markup.button.callback('🔄 تحديث','buyer:map'), Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Buyer "Nearby" page — mirrors the website /nearby filters INSIDE the bot:
+//  region → city → mall (cascading, stop at any level), category, radius / nearest,
+//  then the matching deals as cards, plus the full interactive light/dark-mask map
+//  as a web app (also previews the smart-alert radius). v11.76
+// ═══════════════════════════════════════════════════════════════════════════════
+function nfDraft(s){ return s.temp.nf || (s.temp.nf = { region:null, regionName:null, city:null, cityName:null, mall:null, mallName:null, category:null, radius:null, useGeo:false }); }
+function nfSummary(f, s){
+    const lines = [
+        `🗺 المنطقة: *${f.regionName ? md(f.regionName) : 'كل المناطق'}*`,
+        `🏙 المدينة: *${f.cityName ? md(f.cityName) : '—'}*`,
+        `🏬 المول/السوق: *${f.mallName ? md(f.mallName) : '—'}*`,
+        `🏷 التصنيف: *${f.category ? md(catLabel(f.category)) : 'كل التصنيفات'}*`,
+    ];
+    if (f.useGeo && s.geo) lines.push(`📍 النطاق: *${f.radius>0 ? `ضمن ${numEsc(f.radius)} كم من موقعك` : 'الأقرب لموقعك'}*`);
+    else lines.push('📍 النطاق: *—*');
+    return lines.join('\n');
+}
+// Web map URL carrying the chosen filters → the website renders the SAME
+// light-circle / dark-mask the owner knows (Task 3 + full map).
+function nfMapUrl(f, s){
+    const qp = [];
+    if (f.region)   qp.push(`region=${encodeURIComponent(f.region)}`);
+    if (f.city)     qp.push(`city=${encodeURIComponent(f.city)}`);
+    if (f.mall)     qp.push(`mall=${encodeURIComponent(f.mall)}`);
+    if (f.category) qp.push(`cat=${encodeURIComponent(f.category)}`);
+    if (f.useGeo && s.geo){ qp.push(`lat=${s.geo.lat}`, `lng=${s.geo.lng}`); if (f.radius>0) qp.push(`radius=${f.radius}`); }
+    return W('/nearby' + (qp.length ? `?${qp.join('&')}` : ''));
+}
+bot.command('nearby', ctx => showNearbyHub(ctx));
+bot.action('buyer:nearby', async ctx => { await ctx.answerCbQuery(); showNearbyHub(ctx); });
+async function showNearbyHub(ctx){
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    const m = `🗺 *حولي — العروض القريبة منك*\n${DIV}\n*الفلاتر المختارة:*\n${nfSummary(f, s)}\n${DIV}\n_اختر منطقة/مدينة/مول، أو تصنيفاً، أو فعّل «الأقرب لي» بنطاق كم — ثم اعرض العروض 👇_`;
+    const rows = [
+        [Markup.button.callback('📍 المنطقة / المدينة / المول','nf:loc')],
+        [Markup.button.callback('🏷 التصنيف','nf:cat'), Markup.button.callback('🎯 الأقرب لي + نطاق','nf:near')],
+        [Markup.button.callback('🔎 اعرض العروض','nf:go:0')],
+        [Markup.button.webApp('🗺 الخريطة التفاعلية (فاتح/غامق)', nfMapUrl(f, s))],
+        [Markup.button.callback('📌 أقرب العروض كمواقع على الخريطة','buyer:map')],
+    ];
+    if (f.region||f.city||f.mall||f.category||f.useGeo) rows.push([Markup.button.callback('🗑 مسح كل الفلاتر','nf:clear')]);
+    rows.push([Markup.button.callback('◀️ رجوع للقائمة','menu:back')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+bot.action('nf:clear', async ctx => { await ctx.answerCbQuery('🗑 مُسحت الفلاتر'); getSession(tgId(ctx)).temp.nf=null; return showNearbyHub(ctx); });
+bot.action('nf:done',  async ctx => { await ctx.answerCbQuery('✅ تم'); return showNearbyHub(ctx); });
+
+// ── Location cascade: region → city → mall (the user may stop at any level) ────
+bot.action('nf:loc', async ctx => {
+    await ctx.answerCbQuery();
+    const regions = await rpc('bot_geo_regions',{})||[];
+    const s=getSession(tgId(ctx)); s.temp.nfRegions=regions;
+    if(!regions.length) return ctx.reply('⚠️ تعذّر تحميل المناطق\\.',{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','buyer:nearby')]]).reply_markup});
+    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(r.name,`nfl:rg:${r.id}`)));
+    rows.push([Markup.button.callback('🌍 كل المناطق','nfl:rg:_all')]);
+    rows.push([Markup.button.callback('◀️ رجوع','buyer:nearby')]);
+    await ctx.reply('🗺 *اختر المنطقة:*\n_ثم تقدر تكمّل لمدينة فمول، أو تكتفي بالمنطقة_',{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
+});
+bot.action(/^nfl:rg:([A-Za-z0-9_-]+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    if(ctx.match[1]==='_all'){ f.region=f.regionName=f.city=f.cityName=f.mall=f.mallName=null; return showNearbyHub(ctx); }
+    const reg=(s.temp.nfRegions||[]).find(r=>r.id===ctx.match[1]);
+    f.region=ctx.match[1]; f.regionName=reg?reg.name:ctx.match[1]; f.city=f.cityName=f.mall=f.mallName=null;
+    const cities = await rpc('bot_geo_cities',{p_region:f.region})||[]; s.temp.nfCities=cities;
+    if(!cities.length) return showNearbyHub(ctx);
+    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(c.name,`nfl:ct:${c.id}`)));
+    rows.push([Markup.button.callback(`✅ كل مدن ${f.regionName}`,'nf:done')]);
+    rows.push([Markup.button.callback('◀️ المناطق','nf:loc')]);
+    await ctx.reply(`🏙 *${md(f.regionName)} — اختر المدينة* \\(أو اكتفِ بالمنطقة\\):`,{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
+});
+bot.action(/^nfl:ct:([A-Za-z0-9_-]+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    const c=(s.temp.nfCities||[]).find(x=>x.id===ctx.match[1]);
+    f.city=ctx.match[1]; f.cityName=c?c.name:ctx.match[1]; f.mall=f.mallName=null;
+    const locs = await rpc('bot_geo_locations',{p_city:f.city,p_type:null})||[]; s.temp.nfLocs=locs;
+    if(!locs.length) return showNearbyHub(ctx);
+    const typeTag = t => t==='market'?' (سوق)':t==='mall'?' (مول)':t==='store'?' (محل)':'';
+    const rows=locs.slice(0,18).map((l,i)=>[Markup.button.callback(`📍 ${String(l.name).slice(0,30)}${typeTag(l.type)}`,`nfl:ml:${i}`)]);
+    rows.push([Markup.button.callback(`✅ كل ${f.cityName}`,'nf:done')]);
+    rows.push([Markup.button.callback('◀️ المدن','nf:loc')]);
+    await ctx.reply(`🏬 *${md(f.cityName)} — اختر المول/السوق* \\(أو اكتفِ بالمدينة\\):`,{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
+});
+bot.action(/^nfl:ml:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery('✅ تم');
+    const s=getSession(tgId(ctx)); const f=nfDraft(s); const l=(s.temp.nfLocs||[])[+ctx.match[1]];
+    if(l){ f.mall=l.id; f.mallName=l.name; }
+    return showNearbyHub(ctx);
+});
+// ── Category filter ───────────────────────────────────────────────────────────
+bot.action('nf:cat', async ctx => {
+    await ctx.answerCbQuery();
+    const ids = Object.keys(CAT).filter(k=>k!=='all');
+    const rows=[]; for(let i=0;i<ids.length;i+=2) rows.push(ids.slice(i,i+2).map(id=>Markup.button.callback(catLabel(id),`nfcat:${id}`)));
+    rows.push([Markup.button.callback('🌍 كل التصنيفات','nfcat:_all')]);
+    rows.push([Markup.button.callback('◀️ رجوع','buyer:nearby')]);
+    await ctx.reply('🏷 *اختر التصنيف:*',{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
+});
+bot.action(/^nfcat:([A-Za-z_]+)$/, async ctx => {
+    await ctx.answerCbQuery('✅ تم');
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    f.category = ctx.match[1]==='_all' ? null : ctx.match[1];
+    return showNearbyHub(ctx);
+});
+// ── Nearest (share location) + radius ─────────────────────────────────────────
+bot.action('nf:near', async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    if(s.geo){ f.useGeo=true; if(!f.radius) f.radius=30; return askNfRadius(ctx); }
+    s.temp.nearbyLocWait=true;
+    await ctx.reply('📍 شارك موقعك لعرض الأقرب إليك وتحديد النطاق:',{ reply_markup: Markup.keyboard([[Markup.button.locationRequest('📍 مشاركة موقعي الآن')],['❌ إلغاء']]).resize().oneTime().reply_markup });
+});
+function askNfRadius(ctx){
+    return ctx.reply('🎯 *النطاق حول موقعك*\nاختر نصف القطر بالكيلومترات:',{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([
+        [Markup.button.callback('١ كم','nfr:1'),Markup.button.callback('٢ كم','nfr:2'),Markup.button.callback('٥ كم','nfr:5')],
+        [Markup.button.callback('١٠ كم','nfr:10'),Markup.button.callback('٢٠ كم','nfr:20'),Markup.button.callback('٣٠ كم','nfr:30')],
+        [Markup.button.callback('٥٠ كم','nfr:50'),Markup.button.callback('١٠٠ كم','nfr:100'),Markup.button.callback('الكل 🌍','nfr:0')],
+        [Markup.button.callback('◀️ رجوع','buyer:nearby')]
+    ]).reply_markup});
+}
+bot.action(/^nfr:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery('✅ تم');
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    f.radius=+ctx.match[1]; f.useGeo=true;
+    return showNearbyHub(ctx);
+});
+// ── Run the filtered nearby search → cards (same engine as the website) ────────
+bot.action(/^nf:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); return runNearby(ctx, +ctx.match[1]); });
+async function runNearby(ctx, offset){
+    if(!checkRL(`nf:${chatId(ctx)}`)) return;
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    const useGeo = !!(f.useGeo && s.geo);
+    const deals = await rpc('bot_browse_deals',{
+        p_sort: useGeo ? 'nearby' : 'newest',
+        p_category: f.category || null,
+        p_lat: useGeo ? s.geo.lat : null,
+        p_lng: useGeo ? s.geo.lng : null,
+        p_radius_km: (useGeo && f.radius>0) ? f.radius : null,
+        p_limit: PAGE, p_offset: offset,
+        p_region: f.region || null,
+        p_city: f.city || null,
+        p_location_id: f.mall || null,
+    })||[];
+    s.temp.listCb='buyer:nearby';
+    const where  = [f.mallName, f.cityName, f.regionName].filter(Boolean).join(' • ') || (useGeo ? 'حول موقعك' : 'كل المناطق');
+    const catTxt = f.category ? ` · ${catLabel(f.category)}` : '';
+    if(!deals.length){
+        const msg = offset===0 ? '📭 *لا توجد عروض مطابقة لهذه الفلاتر*\nجرّب توسيع النطاق أو إزالة أحد الفلاتر\\.' : '📭 *لا مزيد من العروض*';
+        return ctx.reply(`🗺 *حولي* — ${md(where)}${md(catTxt)}\n${DIV}\n\n${msg}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🗺 تعديل الفلاتر','buyer:nearby')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+    }
+    await ctx.reply(`🗺 *حولي* — ${md(where)}${md(catTxt)}\n${DIV}\n_كل عرض في بطاقة مستقلة — اضغط «التفاصيل والحجز» تحته 👇_`, { parse_mode:'MarkdownV2' });
+    for(let i=0;i<deals.length;i++){
+        const d=deals[i];
+        await safeReplyMd(ctx, browseCard(d, offset+i+1, useGeo?s.geo:null), { link_preview_options:{is_disabled:true},
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(`📋 التفاصيل والحجز${d.is_sponsored?' ⭐':''}`, `deal:${d.id}`)]]).reply_markup });
+    }
+    const nav=[];
+    if(offset>0) nav.push(Markup.button.callback('◀️ السابق',`nf:go:${Math.max(0,offset-PAGE)}`));
+    if(deals.length===PAGE) nav.push(Markup.button.callback('التالي ▶️',`nf:go:${offset+PAGE}`));
+    const rows=[];
+    if(nav.length) rows.push(nav);
+    rows.push([Markup.button.webApp('🗺 الخريطة التفاعلية (فاتح/غامق)', nfMapUrl(f, s))]);
+    rows.push([Markup.button.callback('🗺 تعديل الفلاتر','buyer:nearby'), Markup.button.callback('◀️ القائمة','menu:back')]);
+    await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 
 // ── Seller: stats ─────────────────────────────────────────────────────────────
@@ -1734,7 +1954,7 @@ bot.on('text', async ctx => {
     try { if (await sellerH.handleText(ctx, s, text)) return; } catch (e) { console.warn('sellerText:', e.message); }
 
     // Reply-keyboard "إلغاء" (from the share-location prompt) → drop the keyboard + reset.
-    if (text === '❌ إلغاء') { setStep(tgId(ctx),'idle'); s.temp.locCtx=null; s.temp.alertLocWait=false; s.temp.mapWait=false; await ctx.reply('تم الإلغاء\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup }); const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
+    if (text === '❌ إلغاء') { setStep(tgId(ctx),'idle'); s.temp.locCtx=null; s.temp.alertLocWait=false; s.temp.mapWait=false; s.temp.nearbyLocWait=false; await ctx.reply('تم الإلغاء\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup }); const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
 
     // Session-loss guards: if the edit context vanished (e.g. bot restarted between
     // tapping a field and typing), say so clearly instead of a confusing fall-through. v11.72

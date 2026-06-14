@@ -19,8 +19,8 @@ import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/hel
  * explore); the floating 📍 button flips `follow` back on and re-centers.
  */
 const FollowController = ({
-    lat, lng, follow, onUserDrag,
-}: { lat: number; lng: number; follow: boolean; onUserDrag: () => void }) => {
+    lat, lng, follow, onUserDrag, initZoom = 15,
+}: { lat: number; lng: number; follow: boolean; onUserDrag: () => void; initZoom?: number }) => {
     const map = useMap();
     const didInit = React.useRef(false);
 
@@ -35,7 +35,7 @@ const FollowController = ({
         if (!lat || !lng) return;
         if (!didInit.current) {
             didInit.current = true;
-            map.setView([lat, lng], 15);
+            map.setView([lat, lng], initZoom);
             return;
         }
         if (follow) {
@@ -63,20 +63,57 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 const Nearby: React.FC = () => {
     const history = useHistory();
     const { deals, language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, requestLiveLocation } = useApp();
-    const [userLat, setUserLat] = useState(USER_LOCATION.lat);
-    const [userLng, setUserLng] = useState(USER_LOCATION.lng);
+
+    // Deep-link filters (Telegram bot opens /nearby?lat&lng&radius&region&city&mall&cat).
+    // The bot's Nearby page + smart-alert radius preview reuse THIS exact map so the
+    // owner sees the same light-circle (inside radius) / dark-mask (outside). v11.76
+    const urlParams = useMemo(() => {
+        const p = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+        const numOf = (k: string) => { const v = parseFloat(p.get(k) || ''); return Number.isFinite(v) ? v : null; };
+        const mall = p.get('mall') || '';
+        let city = p.get('city') || '';
+        let region = p.get('region') || '';
+        if (mall && !city) { const l = LOCATIONS.find(x => x.id === mall); if (l) city = l.cityId; }
+        if (city && !region) { const c = CITIES.find(x => x.id === city); if (c) region = c.regionId; }
+        let centerLat = numOf('lat'), centerLng = numOf('lng');
+        if (centerLat == null || centerLng == null) {
+            const l = mall ? LOCATIONS.find(x => x.id === mall) : null;
+            const c = (!l && city) ? CITIES.find(x => x.id === city) : null;
+            const r = (!l && !c && region) ? REGIONS.find(x => x.id === region) : null;
+            const src = l || c || r;
+            if (src && (src as any).lat) { centerLat = (src as any).lat; centerLng = (src as any).lng; }
+        }
+        const radius = numOf('radius');
+        const initRadius = radius != null ? radius : (region && !city && !mall ? 0 : 30);
+        const hasGeo = numOf('lat') != null && numOf('lng') != null;
+        const hasFilter = hasGeo || !!region || !!city || !!mall || !!p.get('cat') || radius != null;
+        return { centerLat, centerLng, initRadius, region, city, mall, cat: p.get('cat') || '', hasFilter };
+    }, []);
+
+    const [userLat, setUserLat] = useState(urlParams.centerLat ?? USER_LOCATION.lat);
+    const [userLng, setUserLng] = useState(urlParams.centerLng ?? USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
     // Live-follow: ON by default so the map tracks the user as they move.
     // Dragging the map turns it off (explore freely); the 📍 button re-arms it.
-    const [followMode, setFollowMode] = useState(true);
-    const [radius, setRadius] = useState(30);
+    // OFF when arriving with deep-link filters so the chosen area/radius stays put.
+    const [followMode, setFollowMode] = useState(!urlParams.hasFilter);
+    const [radius, setRadius] = useState(urlParams.initRadius);
     const [searchQuery, setSearchQuery] = useState('');
-    
-    const [selectedRegion, setSelectedRegion] = useState('');
-    const [selectedCity, setSelectedCity] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('all');
+
+    const [selectedRegion, setSelectedRegion] = useState(urlParams.region);
+    const [selectedCity, setSelectedCity] = useState(urlParams.city);
+    const [selectedCategory, setSelectedCategory] = useState(urlParams.cat || 'all');
     const [locationType, setLocationType] = useState('');
-    const [selectedLocationId, setSelectedLocationId] = useState('');
+    const [selectedLocationId, setSelectedLocationId] = useState(urlParams.mall);
+
+    // Initial zoom so a deep-linked radius circle fits the screen on open.
+    const initZoom = useMemo(() => {
+        if (!urlParams.hasFilter) return 15;
+        const r = urlParams.initRadius;
+        if (!r || r <= 0) return urlParams.region && !urlParams.city ? 8 : 11;
+        if (r <= 2) return 13; if (r <= 5) return 12; if (r <= 10) return 11;
+        if (r <= 20) return 10; if (r <= 50) return 9; return 8;
+    }, [urlParams]);
 
     const isRTL = language === 'ar';
     const locName = topLocation.mall ? (LOCATIONS.find(l => l.id === topLocation.mall)?.name || topLocation.mall) : topLocation.city || topLocation.region || (isRTL ? 'كل المناطق' : 'All Regions');
@@ -337,7 +374,7 @@ const Nearby: React.FC = () => {
                 }}
             >
                 <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                    <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} />
+                    <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     
                     {/* Visual Mask for Selection */}
