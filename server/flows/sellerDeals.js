@@ -31,6 +31,10 @@ let rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK;
 // ── كيبوردات وأدوات صغيرة ───────────────────────────────────────────────────────
 const btn = (t, d) => Markup.button.callback(t, d);
 const kbCancel  = () => Markup.inlineKeyboard([[btn('❌ إلغاء', 'sd:cancel')]]).reply_markup;
+// كيبورد «رجوع + إلغاء» للخطوات النصّية (مهمة ١). الوجهة flow-aware عند اللزوم.
+const kbBack    = backCb => Markup.inlineKeyboard([[btn('◀️ رجوع', backCb), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup;
+const backToExpiry = s => s.temp.flow === 'edit' ? `ede:expiry:${s.temp.editDealId}` : 'adb:expiry';
+const backToQty    = s => s.temp.flow === 'edit' ? `ede:qty:${s.temp.editDealId}`    : 'adb:qty';
 const toDeals   = () => Markup.inlineKeyboard([[btn('🏷 عروضي', 'seller:deals')], [btn('◀️ القائمة', 'menu:back')]]).reply_markup;
 const isSeller  = s => s.userId && s.userType === 'seller';
 const dealEnded = d => d.status !== 'active';
@@ -74,10 +78,25 @@ function register(bot, deps) {
     bot.action('seller:addDeal', async ctx => { await ctx.answerCbQuery(); startAdd(ctx); });
     bot.action(/^adcat:([A-Za-z_]+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return; s.temp.add.category = ctx.match[1]; askGender(ctx); });
     bot.action(/^adgen:([a-z]+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return; s.temp.add.gender = ctx.match[1]; askSize(ctx); });
-    bot.action('ad:skipSize', async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (s.temp.add) s.temp.add.size = null; askDesc(ctx); });
     bot.action('ad:skipDesc', async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (s.temp.add) s.temp.add.desc = ''; askPrice(ctx); });
     bot.action('ad:review',  async ctx => { await ctx.answerCbQuery(); goReview(ctx); });
     bot.action('ad:publish', async ctx => { await ctx.answerCbQuery('جاري النشر…'); doPublish(ctx); });
+
+    // ── المقاس: منتقي سريع (مشترك add+edit) — أزرار جاهزة + كتابة حرّة + بدون + رجوع (مهمة ٢) ──
+    bot.action(/^sz:set:([A-Za-z0-9]{1,12})$/, async ctx => { await ctx.answerCbQuery(); pickedSize(ctx, ctx.match[1]); });
+    bot.action('sz:free', async ctx => { await ctx.answerCbQuery(); askSizeText(ctx); });
+    bot.action('sz:none', async ctx => { await ctx.answerCbQuery(); pickedSize(ctx, null); });
+    bot.action('sz:menu', async ctx => { await ctx.answerCbQuery(); showSizePicker(ctx); });
+
+    // ── رجوع للخطوة السابقة في تدفّق الإضافة (مهمة ١) ──
+    bot.action(/^adb:(name|cat|gender|size|desc|price|expiry|qty|sched|loc)$/, async ctx => {
+        await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return;
+        const map = { name: askName, cat: askCategory, gender: askGender, size: askSize, desc: askDesc, price: askPrice, expiry: askExpiry, qty: askQty, sched: askSchedule, loc: askLocation };
+        const fn = map[ctx.match[1]]; if (fn) return fn(ctx);
+    });
+
+    // ── حفظ الموقع الجديد كموقع دائم للتاجر؟ (مهمة ٣) ──
+    bot.action(/^loc:save:([01])$/, async ctx => { await ctx.answerCbQuery(); finishSaveLocation(ctx, ctx.match[1] === '1'); });
 
     // ════════ تعديل عرض ════════════════════════════════════════════════════════════
     bot.action(/^dedit:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); openEdit(ctx, ctx.match[1]); });
@@ -237,38 +256,73 @@ async function showDeals(ctx, scope) {
 async function startAdd(ctx) {
     const s = getSession(tgId(ctx)); if (!isSeller(s)) return;
     resetTemp(s); s.temp.flow = 'add'; s.temp.add = { images: [] };
+    await reply(ctx, `➕ *إضافة عرض جديد*\n${DIV}`);
+    return askName(ctx);
+}
+async function askName(ctx) {
     setStep(tgId(ctx), 'ad_name');
-    await reply(ctx, `➕ *إضافة عرض جديد*\n${DIV}\n*الخطوة ١* — اكتب اسم المنتج أو الخدمة:`, kbCancel());
+    await reply(ctx, '*الخطوة ١* — اكتب اسم المنتج أو الخدمة:', kbCancel());
 }
 async function askCategory(ctx) {
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, '*الخطوة ٢* — اختر تصنيف العرض:', Markup.inlineKeyboard([...catKeyboard('adcat:'), [btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
+    await reply(ctx, '*الخطوة ٢* — اختر تصنيف العرض:', Markup.inlineKeyboard([...catKeyboard('adcat:'), [btn('◀️ رجوع', 'adb:name'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
 }
 async function askGender(ctx) {
+    setStep(tgId(ctx), 'idle');
     await reply(ctx, '*الخطوة ٣* — الفئة المستهدفة:', Markup.inlineKeyboard([
         [btn(GENDER.all, 'adgen:all'), btn(GENDER.men, 'adgen:men')],
         [btn(GENDER.women, 'adgen:women'), btn(GENDER.kids, 'adgen:kids')],
-        [btn('❌ إلغاء', 'sd:cancel')],
+        [btn('◀️ رجوع', 'adb:cat'), btn('❌ إلغاء', 'sd:cancel')],
     ]).reply_markup);
 }
-async function askSize(ctx) {
-    setStep(tgId(ctx), 'ad_size');
-    await reply(ctx, '*الخطوة ٤* — المقاس \\(اختياري\\)\nاكتب المقاس \\(مثل: S, M, 42\\) أو تخطَّ:', Markup.inlineKeyboard([[btn('⏭ تخطّي المقاس', 'ad:skipSize')], [btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
+// ── المقاس: منتقي سريع مشترك (add + edit) — يضمن ظهور خيارات دائماً (مهمة ٢) ──
+const SIZE_PRESETS = ['S', 'M', 'L', 'XL', 'XXL'];
+function sizePickerKb(isEdit, id) {
+    const rows = [];
+    for (let i = 0; i < SIZE_PRESETS.length; i += 3) rows.push(SIZE_PRESETS.slice(i, i + 3).map(z => btn(z, `sz:set:${z}`)));
+    rows.push([btn('✏️ مقاس آخر', 'sz:free'), btn('🚫 بدون مقاس', 'sz:none')]);
+    rows.push([btn('◀️ رجوع', isEdit ? `dedit:${id}` : 'adb:gender')]);
+    return Markup.inlineKeyboard(rows).reply_markup;
+}
+async function askSize(ctx) { // سياق الإضافة
+    setStep(tgId(ctx), 'idle');
+    await reply(ctx, '*الخطوة ٤* — 📏 *المقاس* \\(اختياري\\)\nاختر مقاساً سريعاً، أو اكتب مقاساً حرّاً، أو «بدون»:', sizePickerKb(false));
+}
+function showSizePicker(ctx) { // مشترك — يُستدعى من sz:menu ومن التعديل
+    const s = getSession(tgId(ctx));
+    if (s.temp.flow === 'edit') {
+        const d = s.temp.editDeal || {};
+        return reply(ctx, `📏 *المقاس الحالي:* ${md(d.size || '—')}\n${DIV}\nاختر مقاساً جديداً أو اكتبه:`, sizePickerKb(true, s.temp.editDealId));
+    }
+    return askSize(ctx);
+}
+async function askSizeText(ctx) {
+    const s = getSession(tgId(ctx));
+    setStep(tgId(ctx), s.temp.flow === 'edit' ? 'ed_size' : 'ad_size');
+    return reply(ctx, '✏️ اكتب المقاس \\(مثل: S, M, 42 أو أي وصف\\):', Markup.inlineKeyboard([[btn('◀️ رجوع', 'sz:menu')]]).reply_markup);
+}
+async function pickedSize(ctx, val) {
+    const s = getSession(tgId(ctx));
+    if (s.temp.flow === 'edit') {
+        const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId, p_size: val || '' });
+        return afterEditSave(ctx, r);
+    }
+    if (s.temp.add) { s.temp.add.size = val || null; return askDesc(ctx); }
 }
 async function askDesc(ctx) {
     setStep(tgId(ctx), 'ad_desc');
-    await reply(ctx, '*الخطوة ٥* — وصف مختصر للعرض \\(اختياري\\):', Markup.inlineKeyboard([[btn('⏭ تخطّي الوصف', 'ad:skipDesc')], [btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
+    await reply(ctx, '*الخطوة ٥* — وصف مختصر للعرض \\(اختياري\\):', Markup.inlineKeyboard([[btn('⏭ تخطّي الوصف', 'ad:skipDesc')], [btn('◀️ رجوع', 'adb:size'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
 }
 async function askPrice(ctx) {
     setStep(tgId(ctx), 'ad_orig');
-    await reply(ctx, '*الخطوة ٦* — السعر الأصلي \\(ريال\\):\n_مثال: 250_', kbCancel());
+    await reply(ctx, '*الخطوة ٦* — السعر الأصلي \\(ريال\\):\n_مثال: 250_', Markup.inlineKeyboard([[btn('◀️ رجوع', 'adb:desc'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
 }
 async function askExpiry(ctx) {
     setStep(tgId(ctx), 'idle');
     await reply(ctx, `*الخطوة ٨* — كيف ينتهي العرض؟ \\(مثل الموقع\\)`, Markup.inlineKeyboard([
         [btn('📦 بالكمية', 'xp:stock'), btn('⏱ بعدد ساعات', 'xp:hours')],
         [btn('📅 بعدد أيام', 'xp:duration'), btn('🗓 بتاريخ محدّد', 'xp:date')],
-        [btn('❌ إلغاء', 'sd:cancel')],
+        [btn('◀️ رجوع', 'adb:price'), btn('❌ إلغاء', 'sd:cancel')],
     ]).reply_markup);
 }
 
@@ -280,8 +334,8 @@ async function pickedExpiryType(ctx, type) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
     t.expiryType = type;
     if (type === 'stock')    { t.expiryHours = null; t.expiryDays = null; t.expiryEndMs = null; t.expiryDateIso = null; return onExpiryChosen(ctx); }
-    if (type === 'hours')    { setStep(tgId(ctx), 'ad_hours'); return reply(ctx, '⏱ كم *ساعة* يستمر العرض؟ \\(مثل: 6\\)', kbCancel()); }
-    if (type === 'duration') { setStep(tgId(ctx), 'ad_days');  return reply(ctx, '📅 كم *يوماً* يستمر العرض؟ \\(مثل: 7\\)', kbCancel()); }
+    if (type === 'hours')    { setStep(tgId(ctx), 'ad_hours'); return reply(ctx, '⏱ كم *ساعة* يستمر العرض؟ \\(مثل: 6\\)', kbBack(backToExpiry(s))); }
+    if (type === 'duration') { setStep(tgId(ctx), 'ad_days');  return reply(ctx, '📅 كم *يوماً* يستمر العرض؟ \\(مثل: 7\\)', kbBack(backToExpiry(s))); }
     return askEndDate(ctx);
 }
 async function askEndDate(ctx) {
@@ -295,7 +349,7 @@ async function askEndDate(ctx) {
 }
 async function pickedEndDate(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_date'); return reply(ctx, '✏️ اكتب تاريخ النهاية \\(مثل: 2026\\-08\\-15 أو 15/8/2026\\):', kbCancel()); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_date'); return reply(ctx, '✏️ اكتب تاريخ النهاية \\(مثل: 2026\\-08\\-15 أو 15/8/2026\\):', kbBack(backToExpiry(s))); }
     const ms = Date.now() + (+key) * DAY_MS;
     t.expiryEndMs = ms; t.expiryDateIso = new Date(ms).toISOString().slice(0, 10);
     return onExpiryChosen(ctx);
@@ -317,12 +371,13 @@ async function askQty(ctx) {
     const stock = t && t.expiryType === 'stock';
     const rows = [[btn('5', 'xq:5'), btn('10', 'xq:10'), btn('20', 'xq:20'), btn('50', 'xq:50')], [btn('✏️ كمية أخرى', 'xq:custom')]];
     if (!stock) rows.splice(1, 0, [btn('♾ غير محدود', 'xq:unlimited')]);
-    rows.push([btn('❌ إلغاء', 'sd:cancel')]);
+    const back = s.temp.flow === 'edit' ? btn('◀️ رجوع', `dedit:${s.temp.editDealId}`) : btn('◀️ رجوع', 'adb:expiry');
+    rows.push([back, btn('❌ إلغاء', 'sd:cancel')]);
     await reply(ctx, `*الخطوة ٩* — الكمية المتاحة${stock ? ' \\(إجباري لعرض الكمية\\)' : ''}:`, Markup.inlineKeyboard(rows).reply_markup);
 }
 async function pickedQty(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_qty'); return reply(ctx, '✏️ اكتب الكمية المتاحة \\(رقم\\):', kbCancel()); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_qty'); return reply(ctx, '✏️ اكتب الكمية المتاحة \\(رقم\\):', kbBack(backToQty(s))); }
     if (key === 'unlimited') { t.unlimited = true; t.qty = null; } else { t.unlimited = false; t.qty = +key; }
     return onQtyChosen(ctx);
 }
@@ -340,7 +395,7 @@ async function askSchedule(ctx) {
     await reply(ctx, `*الخطوة ١٠* — *عرض قادم؟* \\(مجدول\\)\nهل تريد جدولة بدء العرض في وقت لاحق؟`, Markup.inlineKeyboard([
         [btn('🚀 لا، انشره الآن', 'xs:now')],
         [btn('🗓 نعم، جدولة موعد البدء', 'xs:set')],
-        [btn('❌ إلغاء', 'sd:cancel')],
+        [btn('◀️ رجوع', 'adb:qty'), btn('❌ إلغاء', 'sd:cancel')],
     ]).reply_markup);
 }
 async function askStartDate(ctx) {
@@ -352,7 +407,7 @@ async function askStartDate(ctx) {
     ]).reply_markup);
 }
 async function pickedStartDate(ctx, key) {
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_startdate'); return reply(ctx, '✏️ اكتب تاريخ البدء \\(مثل: 2026\\-08\\-01\\):', kbCancel()); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_startdate'); return reply(ctx, '✏️ اكتب تاريخ البدء \\(مثل: 2026\\-08\\-01\\):', kbBack('xs:set')); }
     const ms = Date.now() + (+key) * DAY_MS;
     return onScheduleChosen(ctx, ms, false);
 }
@@ -372,6 +427,12 @@ async function onScheduleChosen(ctx, startsAt, clear) {
 // ════════════════════════════════════════════════════════════════════════════════
 //  منتقي الموقع (مشترك add + edit + branch)
 // ════════════════════════════════════════════════════════════════════════════════
+// رابط خريطة لموقع محفوظ (إحداثيات إن وُجدت، وإلا رابط قوقل المخزّن).
+function chipMapUrl(b) {
+    if (b.map_lat != null && b.map_lng != null) return `https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng}`;
+    return b.google_maps_link || null;
+}
+const mdUrl = u => String(u).replace(/([)\\])/g, '\\$1'); // تهريب آمن لرابط داخل [..](..)
 async function askLocation(ctx, intro) {
     const s = getSession(tgId(ctx));
     setStep(tgId(ctx), 'idle');
@@ -380,13 +441,25 @@ async function askLocation(ctx, intro) {
     s.temp.locChips = chips;
     const cap = r ? `📦 باقتك: ${r.used}/${r.max} موقع نشط` : '';
     const full = r && r.used >= r.max;
+    // قائمة معرّفة لكل موقع محفوظ + رابط خريطة — لتعرف «أين كل موقع» وتختار بثقة (مهمة ٣).
+    let savedList = '';
+    chips.slice(0, 8).forEach((b, i) => {
+        const u = chipMapUrl(b);
+        const place = [b.city, b.region].filter(Boolean).join(' • ');
+        const lk = u ? ` — [🗺 اعرض على الخريطة](${mdUrl(u)})` : '';
+        savedList += `\n*${i + 1}\\.* 📍 *${md(String(b.name || 'موقع').slice(0, 40))}*${b.locked ? ' 🔒' : ''}${place ? ' — ' + md(place) : ''}${lk}`;
+    });
     const rows = [];
-    chips.slice(0, 8).forEach((b, i) => rows.push([btn(`📍 ${String(b.name || 'موقع').slice(0, 32)}${b.locked ? ' 🔒' : ''}`, `loc:pick:${i}`)]));
+    chips.slice(0, 8).forEach((b, i) => rows.push([btn(`${i + 1} • 📍 ${String(b.name || 'موقع').slice(0, 28)}${b.locked ? ' 🔒' : ''}`, `loc:pick:${i}`)]));
     rows.push([btn('🗺 منطقة → مدينة → مول/سوق', 'loc:region')]);
     rows.push([btn('🔗 رابط قوقل / إحداثيات', 'loc:link'), btn('📲 مشاركة موقعي', 'loc:share')]);
-    rows.push([btn(s.temp.flow === 'branch' ? '◀️ مواقعي' : '❌ إلغاء', s.temp.flow === 'branch' ? 'seller:branches' : 'sd:cancel')]);
+    const backBtn = s.temp.flow === 'branch' ? btn('◀️ مواقعي', 'seller:branches')
+        : s.temp.flow === 'add' ? btn('◀️ رجوع', 'adb:sched')
+        : btn('◀️ رجوع', `dedit:${s.temp.editDealId}`);
+    rows.push([backBtn, btn('❌ إلغاء', 'sd:cancel')]);
     const head = intro || (s.temp.flow === 'add' ? '*الخطوة ١١* — 📍 *أين موقع هذا العرض؟*' : '📍 *تغيير الموقع*');
-    await reply(ctx, `${head}\n${cap ? md(cap) + '\n' : ''}${full ? '⚠️ _وصلت حدّ باقتك — اختر موقعاً مستخدماً أو رقِّ باقتك_\n' : ''}اختر موقعاً محفوظاً، أو أضف جديداً 👇`, Markup.inlineKeyboard(rows).reply_markup);
+    const tip = savedList ? `\n\n🗂 *مواقعك المحفوظة* — اضغط الرابط لتشوف مكان كل موقع 👇${savedList}` : '';
+    await reply(ctx, `${head}\n${cap ? md(cap) + '\n' : ''}${full ? '⚠️ _وصلت حدّ باقتك — اختر موقعاً مستخدماً أو رقِّ باقتك_\n' : ''}اختر موقعاً محفوظاً بالأسفل، أو أضف جديداً 👇${tip}`, Markup.inlineKeyboard(rows).reply_markup);
 }
 async function pickSavedLoc(ctx, i) {
     const s = getSession(tgId(ctx)); const b = (s.temp.locChips || [])[i];
@@ -467,19 +540,35 @@ async function onLocationChosen(ctx, loc, isNew) {
     if (s.temp.flow === 'edit') {
         const id = s.temp.editDealId;
         const r = await rpc('bot_set_deal_location', { p_telegram_id: tgId(ctx), p_deal_id: id, p_location_id: loc.location_id || null, p_custom_location_name: loc.custom_location_name || loc.name || null, p_map_lat: loc.map_lat ?? null, p_map_lng: loc.map_lng ?? null, p_region: loc.region || null, p_city: loc.city || null, p_google_maps_link: loc.google || null });
-        if (isNew && r?.success) persistBranch(ctx, loc);
-        if (!r?.success) await reply(ctx, r?.error === 'blocked' ? '⚠️ هذا موقع جديد يتجاوز حدّ باقتك — اختر موقعاً مستخدماً أو رقِّ باقتك\\.' : '⚠️ تعذّر تحديث الموقع\\.', toDeals());
-        else await reply(ctx, '✅ *تم تحديث موقع العرض*');
+        if (!r?.success) { await reply(ctx, r?.error === 'blocked' ? '⚠️ هذا موقع جديد يتجاوز حدّ باقتك — اختر موقعاً مستخدماً أو رقِّ باقتك\\.' : '⚠️ تعذّر تحديث الموقع\\.', toDeals()); return openEdit(ctx, id); }
+        await reply(ctx, '✅ *تم تحديث موقع العرض*');
+        if (isNew) return offerSaveLocation(ctx, loc, 'edit', id);   // مهمة ٣: خيّره يحفظه دائماً
         return openEdit(ctx, id);
     }
     // add
     s.temp.add.loc = loc;
-    if (isNew) persistBranch(ctx, loc);
+    if (isNew) return offerSaveLocation(ctx, loc, 'add', null);       // مهمة ٣
     return askPhotos(ctx);
 }
-// حفظ موقع جديد كفرع ليظهر في «مواقعي» لاحقاً (مثل الموقع). لا يُنتظَر.
-function persistBranch(ctx, loc) {
-    rpc('bot_save_branch', { p_telegram_id: tgId(ctx), p_name: loc.name || loc.custom_location_name || 'موقع', p_region: loc.region || null, p_city: loc.city || null, p_location_id: loc.location_id || null, p_map_lat: loc.map_lat ?? null, p_map_lng: loc.map_lng ?? null, p_google_maps_link: loc.google || null });
+// خيار صريح: حفظ الموقع الجديد كموقع دائم في «مواقعي» (بدل الحفظ الصامت). مهمة ٣.
+function offerSaveLocation(ctx, loc, kind, editId) {
+    const s = getSession(tgId(ctx));
+    s.temp.pendingLoc = loc; s.temp.locSaveCtx = kind; s.temp.locSaveEditId = editId || null;
+    return reply(ctx, '💾 *تحفظه كموقع دائم؟*\nأضِفه إلى «📍 مواقعي» لتعيد استخدامه بسرعة في عروضك القادمة\\.', Markup.inlineKeyboard([
+        [btn('💾 نعم، احفظه دائماً', 'loc:save:1')],
+        [btn('↪️ لا، فقط لهذا العرض', 'loc:save:0')],
+    ]).reply_markup);
+}
+async function finishSaveLocation(ctx, doSave) {
+    const s = getSession(tgId(ctx));
+    const loc = s.temp.pendingLoc; const kind = s.temp.locSaveCtx; const editId = s.temp.locSaveEditId;
+    s.temp.pendingLoc = null; s.temp.locSaveCtx = null; s.temp.locSaveEditId = null;
+    if (doSave && loc) {
+        const r = await rpc('bot_save_branch', { p_telegram_id: tgId(ctx), p_name: loc.name || loc.custom_location_name || 'موقع', p_region: loc.region || null, p_city: loc.city || null, p_location_id: loc.location_id || null, p_map_lat: loc.map_lat ?? null, p_map_lng: loc.map_lng ?? null, p_google_maps_link: loc.google || null });
+        await reply(ctx, r?.success ? '✅ *حُفظ الموقع في «مواقعي»* — جاهز لعروضك القادمة' : '⚠️ تعذّر حفظه كموقع دائم \\(قد تكون وصلت حدّ باقتك\\) — لكنه مُستخدَم في هذا العرض\\.');
+    }
+    if (kind === 'edit' && editId) return openEdit(ctx, editId);
+    return askPhotos(ctx);
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -490,7 +579,8 @@ async function askPhotos(ctx) {
     s.temp.photos = s.temp.photos || [];
     setStep(tgId(ctx), s.temp.flow === 'edit' ? 'ed_photo' : 'ad_photo');
     const head = s.temp.flow === 'edit' ? '🖼 *تغيير صور العرض*\nأرسل صوراً جديدة لتستبدل الحالية' : '*الخطوة ١٢* — 🖼 *صور المنتج*\nأرسل من *١ إلى ٤ صور* \\(إجباري صورة واحدة على الأقل\\)';
-    await reply(ctx, `${head}\n_يمكنك إرسال عدة صور دفعة واحدة 📷_`, kbCancel());
+    const back = s.temp.flow === 'edit' ? `dedit:${s.temp.editDealId}` : 'adb:loc';
+    await reply(ctx, `${head}\n_يمكنك إرسال عدة صور دفعة واحدة 📷_`, kbBack(back));
 }
 function photoProgressKb(n) {
     const rows = [];
@@ -594,7 +684,7 @@ async function editField(ctx, field, id) {
     if (field === 'name')  { setStep(tgId(ctx), 'ed_name');  return reply(ctx, `🏷 *الاسم الحالي:* ${md(d.item_name || '—')}\n${DIV}\nأرسل الاسم الجديد:`, kbCancel()); }
     if (field === 'price') { setStep(tgId(ctx), 'ed_orig');  return reply(ctx, `💰 *الحالي:* ${money(d.original_price)} ← 🟢 ${money(d.discounted_price)} ر\\.س\n${DIV}\nأرسل *السعر الأصلي* الجديد:`, kbCancel()); }
     if (field === 'desc')  { setStep(tgId(ctx), 'ed_desc');  return reply(ctx, `📝 *الوصف الحالي:*\n_${md(d.description || '— لا يوجد —')}_\n${DIV}\nأرسل الوصف الجديد:`, kbCancel()); }
-    if (field === 'size')  { setStep(tgId(ctx), 'ed_size');  return reply(ctx, `📏 *المقاس الحالي:* ${md(d.size || '—')}\n${DIV}\nأرسل المقاس الجديد \\(أو «-» لحذفه\\):`, kbCancel()); }
+    if (field === 'size')  { return showSizePicker(ctx); }
     if (field === 'qty')   { s.temp.edraft = { expiryType: d.expiry_type }; return askQty(ctx); }
     if (field === 'cat')   { return reply(ctx, `🗂 *التصنيف الحالي:* ${md(catLabel(d.category))}\n${DIV}\nاختر التصنيف الجديد:`, Markup.inlineKeyboard([...catKeyboard('adcat:edit:'), [btn('❌ إلغاء', `dedit:${id}`)]]).reply_markup); }
     if (field === 'gender'){ return reply(ctx, `👥 *الفئة الحالية:* ${md(genderLabel(d.gender || 'all'))}\n${DIV}\nاختر الفئة:`, Markup.inlineKeyboard([[btn(GENDER.all, 'adgen:edit:all'), btn(GENDER.men, 'adgen:edit:men')], [btn(GENDER.women, 'adgen:edit:women'), btn(GENDER.kids, 'adgen:edit:kids')], [btn('❌ إلغاء', `dedit:${id}`)]]).reply_markup); }
@@ -715,7 +805,7 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_name') { if (text.length < 3) { await reply(ctx, '❗ الاسم قصير جداً، اكتب اسماً أوضح:'); return true; } a.name = text.slice(0, 120); await askCategory(ctx); return true; }
     if (step === 'ad_size') { a.size = text.slice(0, 40); await askDesc(ctx); return true; }
     if (step === 'ad_desc') { a.desc = text.slice(0, 500); await askPrice(ctx); return true; }
-    if (step === 'ad_orig') { if (!isPrice(text)) { await reply(ctx, '❗ أرسل رقماً صحيحاً، مثل: `150`'); return true; } a.orig = +normalizeDigits(text); setStep(tgId(ctx), 'ad_disc'); await reply(ctx, '*الخطوة ٧* — السعر بعد الخصم \\(ريال\\):', kbCancel()); return true; }
+    if (step === 'ad_orig') { if (!isPrice(text)) { await reply(ctx, '❗ أرسل رقماً صحيحاً، مثل: `150`'); return true; } a.orig = +normalizeDigits(text); setStep(tgId(ctx), 'ad_disc'); await reply(ctx, '*الخطوة ٧* — السعر بعد الخصم \\(ريال\\):', kbBack('adb:price')); return true; }
     if (step === 'ad_disc') { if (!isPrice(text) || +normalizeDigits(text) >= a.orig) { await reply(ctx, `❗ يجب أن يكون أقل من ${md(String(a.orig))} ر\\.س`); return true; } a.disc = +normalizeDigits(text); await askExpiry(ctx); return true; }
     if (step === 'ad_hours') { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 8760) { await reply(ctx, '❗ أرسل عدد ساعات صحيح \\(1 إلى 8760\\):'); return true; } expTarget(s).expiryHours = n; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_days')  { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 365) { await reply(ctx, '❗ أرسل عدد أيام صحيح \\(1 إلى 365\\):'); return true; } expTarget(s).expiryDays = n; await onExpiryChosen(ctx); return true; }

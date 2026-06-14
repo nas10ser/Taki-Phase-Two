@@ -1,5 +1,10 @@
 /**
- * TAKI Bot — v11.73  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.74  |  بوت تاكي الاحترافي الآمن
+ * ═══════════════════════════════════════════════════════
+ * v11.74: إصلاح حجز العرض (ازدواجية دالة bot_get_deal) + بحث (عرض/متجر/تاجر) +
+ *   بنر ترويجي فوق العروض + مسابقات وجوائز داخل البوت + فتح بروفايل المتجر من
+ *   العرض والحجز + أزرار «رجوع» في كل خطوات الحجز والتاجر + تحسين خطوة المقاس
+ *   والموقع (روابط خريطة للمواقع المحفوظة + خيار حفظ الموقع كموقع دائم).
  * ═══════════════════════════════════════════════════════
  * الأمان:
  *   • الهوية عبر telegram_id الذي يضمنه تيليجرام تشفيرياً في كل تحديث.
@@ -41,7 +46,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.73.0';
+const BOT_VERSION              = '11.74.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -153,6 +158,7 @@ function kbGuest() {
 function kbBuyer() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🎟  حجوزاتي','buyer:bookings')],
+        [Markup.button.callback('🔎  بحث','search:start'), Markup.button.callback('🎁  المسابقات','contests:list')],
         [Markup.button.callback('🔔  تنبيهاتي','buyer:notif'),  Markup.button.callback('👤  حسابي','buyer:profile')],
         [Markup.button.webApp('🚀  فتح تاكي', APP_URL)],
         [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]
@@ -213,6 +219,8 @@ if (bot) {
 bot.telegram.setMyCommands([
     { command:'start',    description:'القائمة الرئيسية' },
     { command:'deals',    description:'تصفح العروض' },
+    { command:'search',   description:'بحث عن عرض/متجر/تاجر' },
+    { command:'contests', description:'المسابقات والجوائز' },
     { command:'link',     description:'ربط حسابي' },
     { command:'bookings', description:'حجوزاتي' },
     { command:'alerts',   description:'تنبيهاتي' },
@@ -379,15 +387,176 @@ bot.action('browse:menu', async ctx => { await ctx.answerCbQuery(); showBrowseMe
 bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); renderList(ctx,'n','-',+ctx.match[1]); }); // legacy alias
 async function showBrowseMenu(ctx){
     const s=getSession(tgId(ctx));
+    await sendBanners(ctx);   // Task 5a — promotional banner(s) appear ABOVE the offers
     const near = s.geo ? '📍 العروض الأقرب إليك' : '📍 العروض حولي (شارك موقعك)';
     await ctx.reply(`🛍 *تصفّح العروض*\n${DIV}\nاختر طريقة العرض التي تناسبك:`, { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔎 بحث (متجر / عرض / تاجر)','search:start')],
             [Markup.button.callback('🔥 الأكثر طلباً','br:p:-:0'), Markup.button.callback('💸 الأكثر خصماً','br:d:-:0')],
             [Markup.button.callback('🆕 الأحدث','br:n:-:0'), Markup.button.callback('⭐ المميّزة والرعاة','br:s:-:0')],
             [Markup.button.callback('📂 حسب التصنيف','browse:cats')],
             [Markup.button.callback(near,'browse:near')],
+            [Markup.button.callback('🎁 المسابقات والجوائز','contests:list')],
             [Markup.button.callback('◀️ رجوع للقائمة','menu:back')]
         ]).reply_markup });
+}
+
+// ── Banners shown above the offers (Task 5a) — image cards with a tap action ───
+async function sendBanners(ctx){
+    let banners = [];
+    try { banners = await rpc('bot_active_banners', {}) || []; } catch { banners = []; }
+    for (const b of banners.slice(0,3)){
+        const btns = [];
+        if (b.deal_id)       btns.push([Markup.button.callback('🛍 شوف العرض', `deal:${b.deal_id}`)]);
+        else if (b.store_id) btns.push([Markup.button.callback('🏪 شوف المتجر', `store:${b.store_id}`)]);
+        else if (b.target_url && /^https?:\/\//i.test(b.target_url)) btns.push([Markup.button.url('🔗 التفاصيل', b.target_url)]);
+        const cap = `📣 *${md(b.title)}*`;
+        const rm  = btns.length ? { reply_markup: Markup.inlineKeyboard(btns).reply_markup } : {};
+        if (b.image_url){ try { await ctx.replyWithPhoto(b.image_url, { caption: cap, parse_mode:'MarkdownV2', ...rm }); continue; } catch { /* fall through to text */ } }
+        await ctx.reply(cap, { parse_mode:'MarkdownV2', ...rm });
+    }
+}
+
+// ── Search: deals + stores by keyword (Task 4) — mirrors the website search ────
+bot.command('search', async ctx => { setStep(tgId(ctx),'await_search'); await ctx.reply('🔎 *البحث*\nاكتب ما تبحث عنه \\(اسم عرض، متجر، تاجر، مدينة أو تصنيف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup }); });
+bot.action('search:start', async ctx => {
+    await ctx.answerCbQuery();
+    setStep(tgId(ctx),'await_search');
+    await ctx.reply('🔎 *البحث*\nاكتب ما تبحث عنه \\(اسم عرض، متجر، تاجر، مدينة أو تصنيف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','browse:menu')]]).reply_markup });
+});
+async function runSearch(ctx, q){
+    setStep(tgId(ctx),'idle');
+    const r = await rpc('bot_search', { p_query: q, p_limit: 8 });
+    const deals  = (r && Array.isArray(r.deals))  ? r.deals  : [];
+    const stores = (r && Array.isArray(r.stores)) ? r.stores : [];
+    if (!deals.length && !stores.length){
+        return ctx.reply(`🔎 *لا نتائج لـ* «${md(q)}»\nجرّب كلمة أعمّ أو تصنيفاً مختلفاً\\.`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔎 بحث جديد','search:start'), Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+    }
+    const s = getSession(tgId(ctx));
+    s.temp.listCb = 'browse:menu';
+    await ctx.reply(`🔎 *نتائج البحث عن* «${md(q)}»\n${DIV}\n🛍 عروض: *${numEsc(deals.length)}*  •  🏪 متاجر: *${numEsc(stores.length)}*`, { parse_mode:'MarkdownV2' });
+    for (const st of stores.slice(0,6)){
+        const where = [st.city, st.region].filter(Boolean).join(' • ');
+        await ctx.reply(`🏪 *${md(st.shop_name)}*${where?`\n📍 ${md(where)}`:''}\n🏷 عروض نشطة: *${numEsc(st.deals_n)}*`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏪 صفحة المتجر','store:'+st.store_id)]]).reply_markup });
+    }
+    for (let i=0;i<deals.length;i++){
+        const d = deals[i];
+        await ctx.reply(browseCard(d, i+1, null), { parse_mode:'MarkdownV2', link_preview_options:{is_disabled:true}, reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📋 التفاصيل والحجز', `deal:${d.id}`)]]).reply_markup });
+    }
+    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔎 بحث جديد','search:start'), Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+}
+
+// ── Contests & prizes (Task 5b) — list, details, and in-bot entry (quiz+social) ─
+bot.command('contests', ctx => showContests(ctx));
+bot.action('contests:list', async ctx => { await ctx.answerCbQuery(); showContests(ctx); });
+async function showContests(ctx){
+    const list = await rpc('bot_list_contests', { p_telegram_id: tgId(ctx) }) || [];
+    if (!list.length) return ctx.reply(`🎁 *المسابقات والجوائز*\n${DIV}\nلا توجد مسابقة فعّالة الآن\\.\n_تابعنا — تنزل مسابقات وجوائز قريباً 🎉_`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔄 تحديث','contests:list'), Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+    await ctx.reply(`🎁 *المسابقات والجوائز* \\(${numEsc(list.length)}\\)\n${DIV}\n_شارك واربح — كل مسابقة في بطاقة 👇_`, { parse_mode:'MarkdownV2' });
+    for (const c of list){
+        let m = `🎁 *${md(c.title)}*`;
+        if (c.prize)       m += `\n🏆 الجائزة: *${md(c.prize)}*`;
+        if (c.description) m += `\n${md(String(c.description).slice(0,200))}`;
+        if (c.ends_at)     m += `\n⏰ تنتهي: ${md(fmtDay(c.ends_at))}`;
+        const label = c.entered ? '✅ شاركت — التفاصيل' : '🎁 شارك الآن';
+        await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(label, `contest:open:${c.id}`)]]).reply_markup });
+    }
+    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔄 تحديث','contests:list'), Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+}
+bot.action(/^contest:open:([0-9a-fA-F-]+)$/, async ctx => { await ctx.answerCbQuery(); openContest(ctx, ctx.match[1]); });
+async function openContest(ctx, id){
+    const c = await rpc('bot_get_contest', { p_telegram_id: tgId(ctx), p_contest_id: id });
+    if (!c) return ctx.reply('⚠️ المسابقة غير متاحة\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+    let m = `🎁 *${md(c.title)}*\n${DIV}`;
+    if (c.prize)       m += `\n🏆 الجائزة: *${md(c.prize)}*`;
+    if (c.description) m += `\n\n${md(String(c.description).slice(0,400))}`;
+    if (c.ends_at)     m += `\n\n⏰ تنتهي: ${md(fmtDay(c.ends_at))}`;
+    const qn = Array.isArray(c.questions) ? c.questions.length : 0;
+    const sn = Array.isArray(c.social_tasks) ? c.social_tasks.length : 0;
+    if (qn||sn) m += `\n📝 ${numEsc(qn)} سؤال${sn?` • ${numEsc(sn)} مهمة`:''}`;
+    const btns = [];
+    if (!c.live)          m += '\n\n_⏰ هذه المسابقة لم تعد متاحة._';
+    else if (c.entered)   m += `\n\n✅ *شاركت في هذه المسابقة* — بالتوفيق 🤞`;
+    else if (!c.linked) { m += '\n\n❗ سجّل دخولك لتشارك\\.'; btns.push([Markup.button.callback('🔗 ربط حسابي','link:start')]); }
+    else if (!c.has_phone){ m += '\n\n❗ أضف رقم جوالك في حسابك ثم شارك\\.'; btns.push([Markup.button.webApp('✏️ أكمل جوالك', W('/profile'))]); }
+    else                  btns.push([Markup.button.callback('🎁 ابدأ المشاركة', `contest:go:${id}`)]);
+    btns.push([Markup.button.callback('◀️ المسابقات','contests:list')]);
+    const rm = { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup };
+    if (c.banner_image){ try { return await ctx.replyWithPhoto(c.banner_image, { caption:m, ...rm }); } catch { /* fall through */ } }
+    await ctx.reply(m, rm);
+}
+bot.action(/^contest:go:([0-9a-fA-F-]+)$/, async ctx => { await ctx.answerCbQuery(); startContestQuiz(ctx, ctx.match[1]); });
+async function startContestQuiz(ctx, id){
+    const c = await rpc('bot_get_contest', { p_telegram_id: tgId(ctx), p_contest_id: id });
+    if (!c || !c.live)  return ctx.reply('⚠️ المسابقة لم تعد متاحة\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+    if (c.entered)      return openContest(ctx, id);
+    if (!c.linked)      return ctx.reply('❗ سجّل دخولك أولاً عبر «ربط حسابي»\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔗 ربط حسابي','link:start')]]).reply_markup });
+    if (!c.has_phone)   return ctx.reply('❗ أضف رقم جوالك في حسابك ثم شارك\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('✏️ أكمل جوالك', W('/profile'))]]).reply_markup });
+    const s = getSession(tgId(ctx));
+    s.temp.cwiz = { id, questions: Array.isArray(c.questions)?c.questions:[], social: Array.isArray(c.social_tasks)?c.social_tasks:[], answers:{}, social_answers:{}, qi:0, si:0 };
+    return askContestStep(ctx);
+}
+// Drives the quiz one step at a time: questions first, then social tasks, then submit.
+async function askContestStep(ctx){
+    const s = getSession(tgId(ctx)); const w = s.temp.cwiz; if (!w) return;
+    if (w.qi < w.questions.length){
+        const q = w.questions[w.qi];
+        const prompt = `❓ *سؤال ${numEsc(w.qi+1)}/${numEsc(w.questions.length)}*\n${md(q.prompt||'')}`;
+        if (q.type === 'choice' && Array.isArray(q.options) && q.options.length){
+            const rows = q.options.map((opt,idx) => [Markup.button.callback(String(opt).slice(0,60), `cq:${idx}`)]);
+            if (!q.required) rows.push([Markup.button.callback('⏭ تخطّي','cq:skip')]);
+            rows.push([Markup.button.callback('❌ إلغاء','contests:list')]);
+            setStep(tgId(ctx),'idle');
+            return ctx.reply(prompt, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+        }
+        setStep(tgId(ctx),'await_contest_answer');
+        const rows = [];
+        if (!q.required) rows.push([Markup.button.callback('⏭ تخطّي','cq:skip')]);
+        rows.push([Markup.button.callback('❌ إلغاء','contests:list')]);
+        return ctx.reply(`${prompt}\n\n_اكتب إجابتك:_`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+    }
+    if (w.si < w.social.length){
+        const t = w.social[w.si];
+        setStep(tgId(ctx),'await_contest_social');
+        return ctx.reply(`📲 *مهمة ${numEsc(w.si+1)}/${numEsc(w.social.length)}*\n${md(t.prompt||'')}\n\n_اكتب إجابتك:_`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('⏭ تخطّي','cq:skip')],[Markup.button.callback('❌ إلغاء','contests:list')]]).reply_markup });
+    }
+    return submitContest(ctx);
+}
+bot.action(/^cq:(\d+|skip)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx)); const w = s.temp.cwiz;
+    if (!w) return ctx.reply('⚠️ انتهت جلسة المسابقة — افتحها من جديد\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+    setStep(tgId(ctx),'idle');
+    if (w.qi < w.questions.length){
+        const q = w.questions[w.qi];
+        if (ctx.match[1]==='skip') { if (q) w.answers[q.id]=''; }
+        else if (q && q.type==='choice' && Array.isArray(q.options)) { w.answers[q.id] = String(q.options[+ctx.match[1]] ?? ''); }
+        w.qi++;
+    } else {
+        const t = w.social[w.si]; if (t) w.social_answers[t.id]=''; w.si++;
+    }
+    return askContestStep(ctx);
+});
+async function submitContest(ctx){
+    const s = getSession(tgId(ctx)); const w = s.temp.cwiz; if (!w) return;
+    setStep(tgId(ctx),'idle');
+    const r = await rpc('bot_submit_contest_entry', { p_telegram_id: tgId(ctx), p_contest_id: w.id, p_answers: w.answers, p_social: w.social_answers });
+    s.temp.cwiz = null;
+    if (!r?.success){
+        const e=r?.error;
+        const msg = e==='already_entered' ? '✅ شاركت في هذه المسابقة من قبل — لكل مشارك محاولة واحدة فقط\\.'
+            : e==='no_phone'    ? '❗ أضف رقم جوالك في حسابك ثم شارك\\.'
+            : e==='not_linked'  ? '❗ سجّل دخولك أولاً\\.'
+            : e==='ended'       ? '⏰ انتهت مدة المسابقة\\.'
+            : e==='not_started' ? '⏳ المسابقة لم تبدأ بعد\\.'
+            : e==='not_active'  ? '⚠️ المسابقة غير مفعّلة حالياً\\.'
+            : (e==='sellers_only'||e==='buyers_only') ? '⚠️ هذه المسابقة مخصّصة لفئة مختلفة\\.'
+            : '⚠️ تعذّرت المشاركة، حاول لاحقاً\\.';
+        return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+    }
+    const head  = r.qualified ? '🎉 *تم تسجيل مشاركتك — وتأهّلت\\!*' : '✅ *تم تسجيل مشاركتك بنجاح\\!*';
+    const score = (r.max_score>0) ? `\n📊 نتيجتك: *${numEsc(r.score)}/${numEsc(r.max_score)}*` : '';
+    await ctx.reply(`${head}${score}\n${DIV}\nبالتوفيق 🤞 — تابع إشعاراتك لإعلان الفائزين\\.`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 مسابقات أخرى','contests:list'), Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
 }
 
 // br:<sortLetter>:<category|->:<offset>
@@ -486,6 +655,8 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (s.userId && s.userType !== 'seller') btns.push([Markup.button.callback('📥  احجز الآن','book:qty')]);
     else if (!s.userId) btns.push([Markup.button.webApp('🛍  سجّل دخولك لتحجز', APP_URL)]);
     if (d.store_id) {
+        // Tap the merchant to open their store profile (Task 6).
+        btns.push([Markup.button.callback('🏪 صفحة المتجر / التاجر', `store:${d.store_id}`)]);
         const folRow = [];
         if (s.userId) folRow.push(Markup.button.callback(d.following ? '✅ متابِع — إلغاء' : '➕ متابعة المتجر', d.following ? `folAsk:${d.store_id}` : `fol:${d.store_id}`));
         folRow.push(Markup.button.callback('⭐ التقييمات', `revw:${d.store_id}`));
@@ -551,6 +722,31 @@ bot.action(/^revw:(.+)$/, async ctx => {
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🚫 حظر المتجر',`blkAsk:${sid}`)],[Markup.button.callback('◀️ رجوع للعروض','browse:menu')]]).reply_markup });
 });
 
+// ── Store profile (buyer taps the merchant from a deal/booking) — Task 6 ──────
+bot.action(/^store:(.+)$/, async ctx => { await ctx.answerCbQuery(); await renderStore(ctx, ctx.match[1]); });
+async function renderStore(ctx, storeId) {
+    const s = getSession(tgId(ctx));
+    const st = await rpc('bot_get_store', { p_telegram_id: tgId(ctx), p_store_id: storeId });
+    if (!st) return ctx.reply('⚠️ تعذّر فتح صفحة المتجر — ربما لم يعد متاحاً\\.', { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+    const stars  = st.rating_count>0 ? `\n⭐ التقييم: *${md(String(st.rating_avg))}* \\(${st.rating_count} تقييم\\)` : '\n⭐ لا تقييمات بعد';
+    const where  = [st.city, st.region].filter(Boolean).join(' • ');
+    const loc    = where ? `\n📍 ${md(where)}` : '';
+    const bio    = st.bio ? `\n\n📝 _${md(String(st.bio).slice(0,300))}_` : '';
+    const m = `🏪 *${md(st.name)}*\n${DIV}${stars}${loc}\n🏷 عروض نشطة: *${numEsc(st.active_deals)}*${bio}`;
+    const btns = [];
+    const folRow = [];
+    if (s.userId) folRow.push(Markup.button.callback(st.following ? '✅ متابِع — إلغاء' : '➕ متابعة المتجر', st.following ? `folAsk:${storeId}` : `fol:${storeId}`));
+    folRow.push(Markup.button.callback('⭐ التقييمات', `revw:${storeId}`));
+    btns.push(folRow);
+    const deals = Array.isArray(st.deals) ? st.deals : [];
+    deals.slice(0,8).forEach(d => btns.push([Markup.button.callback(`🏷 ${String(d.item_name).slice(0,26)} — ${(+d.discounted_price)} ر.س`, `deal:${d.id}`)]));
+    btns.push([Markup.button.webApp('🌐 صفحة المتجر كاملة', W(`/store/${storeId}`))]);
+    btns.push([Markup.button.callback('◀️ رجوع للعروض', s.temp.listCb || 'browse:menu')]);
+    const extra = { parse_mode:'MarkdownV2', link_preview_options:{is_disabled:true}, reply_markup: Markup.inlineKeyboard(btns).reply_markup };
+    if (st.avatar) { try { return await ctx.replyWithPhoto(st.avatar, { caption:m, parse_mode:'MarkdownV2', reply_markup: extra.reply_markup }); } catch { /* fall through to text */ } }
+    await ctx.reply(m, extra);
+}
+
 // ── Rate a completed booking (⭐ 1–5 + optional comment) ───────────────────────
 bot.action(/^rate:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
@@ -587,11 +783,11 @@ bot.action('book:qty', async ctx => {
         reply_markup: Markup.inlineKeyboard([
             [1,2,3,5].map(q => Markup.button.callback(`${q}`, `bq:${q}`)),
             [Markup.button.callback('10','bq:10'), Markup.button.callback('كمية أخرى ✏️','bq:custom')],
-            [Markup.button.callback('❌  إلغاء','menu:back')]
+            [Markup.button.callback('◀️ رجوع', s.temp.dealId ? `deal:${s.temp.dealId}` : 'browse:menu'), Markup.button.callback('❌ إلغاء','menu:back')]
         ]).reply_markup });
 });
 bot.action(/^bq:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.dealQty = +ctx.match[1]; setStep(tgId(ctx),'idle'); await askPrep(ctx, s); });
-bot.action('bq:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_book_qty'); await ctx.reply('✏️ أرسل الكمية المطلوبة:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+bot.action('bq:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_book_qty'); await ctx.reply('✏️ أرسل الكمية المطلوبة:', { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','book:qty')]]).reply_markup }); });
 
 // Step 2 — pickup / prep time (mirrors the website's prep-time field)
 async function askPrep(ctx, s) {
@@ -600,12 +796,15 @@ async function askPrep(ctx, s) {
             [Markup.button.callback('🚶 عند الوصول','prep:arrival'), Markup.button.callback('١٥ دقيقة','prep:15')],
             [Markup.button.callback('٣٠ دقيقة','prep:30'), Markup.button.callback('٤٥ دقيقة','prep:45')],
             [Markup.button.callback('٦٠ دقيقة','prep:60'), Markup.button.callback('وقت آخر ✏️','prep:custom')],
-            [Markup.button.callback('❌ إلغاء','menu:back')]
+            [Markup.button.callback('◀️ رجوع','book:qty'), Markup.button.callback('❌ إلغاء','menu:back')]
         ]).reply_markup });
 }
 bot.action('prep:arrival', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.prepTime='arrival'; await askNote(ctx,s); });
 bot.action(/^prep:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.prepTime=`${ctx.match[1]}min`; await askNote(ctx,s); });
-bot.action('prep:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_prep'); await ctx.reply('✏️ أرسل عدد دقائق التجهيز \\(مثل 20\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+bot.action('prep:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_prep'); await ctx.reply('✏️ أرسل عدد دقائق التجهيز \\(مثل 20\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','book:back:prep')]]).reply_markup }); });
+// Back-navigation: re-show the prep / note steps preserving the in-progress booking. (Task 1)
+bot.action('book:back:prep', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); setStep(tgId(ctx),'idle'); await askPrep(ctx, s); });
+bot.action('book:back:note', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); setStep(tgId(ctx),'idle'); await askNote(ctx, s); });
 
 // Step 3 — optional note to the seller
 async function askNote(ctx, s) {
@@ -614,22 +813,29 @@ async function askNote(ctx, s) {
         reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('✏️ أضف ملاحظة','note:add')],
             [Markup.button.callback('تخطّي والمتابعة ➡️','note:skip')],
-            [Markup.button.callback('❌ إلغاء','menu:back')]
+            [Markup.button.callback('◀️ رجوع','book:back:prep'), Markup.button.callback('❌ إلغاء','menu:back')]
         ]).reply_markup });
 }
-bot.action('note:add', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_note'); await ctx.reply('✏️ اكتب ملاحظتك \\(حتى 300 حرف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','menu:back')]]).reply_markup }); });
+bot.action('note:add', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_note'); await ctx.reply('✏️ اكتب ملاحظتك \\(حتى 300 حرف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ رجوع','book:back:note')]]).reply_markup }); });
 bot.action('note:skip', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.notes=null; await bookConfirm(ctx,s); });
 
 // Step 4 — confirm (shows quantity + prep + note + total)
 async function bookConfirm(ctx, s) {
     setStep(tgId(ctx),'idle');
-    const d = await rpc('bot_get_deal', { p_deal_id: s.temp.dealId });
+    // NOTE: pass p_telegram_id so PostgREST resolves the (text,bigint) overload
+    // unambiguously — the bare (text) overload was dropped (v11.74) because the
+    // ambiguity made this call fail with "function is not unique" → the booking
+    // wrongly reported «انتهى هذا العرض أثناء الحجز». (Task 7 fix.)
+    const d = await rpc('bot_get_deal', { p_deal_id: s.temp.dealId, p_telegram_id: tgId(ctx) });
     if (!d) return ctx.reply('⏰ *انتهى هذا العرض* أثناء الحجز ولم يعد متاحاً\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 العروض المتاحة','browse:menu')]]).reply_markup });
     const total = d.discounted_price * s.temp.dealQty;
     let m = `✅ *تأكيد الحجز*\n${DIV}\n🛍 ${md(d.item_name)}\n🏪 ${md(d.shop_name)}\n\n📦 الكمية: *${s.temp.dealQty}*\n⏱ الاستلام: *${md(prepLabel(s.temp.prepTime))}*`;
     if (s.temp.notes) m += `\n📝 ملاحظتك: _${md(s.temp.notes)}_`;
     m += `\n💰 الإجمالي: *${money(total)} ر\\.س*\n${DIV}\nهل تؤكّد؟`;
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅  نعم، احجز','book:confirm')],[Markup.button.callback('❌  إلغاء','menu:back')]]).reply_markup });
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('✅  نعم، احجز','book:confirm')],
+        [Markup.button.callback('◀️ رجوع','book:back:note'), Markup.button.callback('❌  إلغاء','menu:back')]
+    ]).reply_markup });
 }
 bot.action('book:confirm', async ctx => {
     await ctx.answerCbQuery('جاري الحجز…');
@@ -653,7 +859,12 @@ bot.action('book:confirm', async ctx => {
     const expiry = result.expiry_at ? fmtDate(result.expiry_at) : '—';
     await ctx.reply(
         `🎉 *تم الحجز بنجاح\\!*\n${DIV}\n🛍 ${md(result.deal_name)}\n🏪 ${md(result.shop_name)}\n📦 الكمية: *${result.quantity}*\n⏱ الاستلام: *${md(prepLabel(result.prep_time))}*\n\n📋 *باركود حجزك:*\n\n        🔖  \`${md(bc)}\`\n\n${DIV}\n⏰ صالح حتى: ${md(expiry)}\n💡 _أظهر هذا الباركود للبائع عند الاستلام_`,
-        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('💬 محادثة التاجر',`chat:${bc}`)],[Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔥 عروض','deals:0')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+        { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('💬 محادثة التاجر',`chat:${bc}`)],
+            ...(result.store_id ? [[Markup.button.callback('🏪 صفحة المتجر / التاجر',`store:${result.store_id}`)]] : []),
+            [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔥 عروض','deals:0')],
+            [Markup.button.callback('◀️ القائمة','menu:back')]
+        ]).reply_markup });
 });
 
 // ── Buyer: my bookings (split: current vs previous) ───────────────────────────
@@ -698,6 +909,7 @@ async function showBuyerBookings(ctx, scope='current') {
         if (b.status==='pending')   row.push(Markup.button.callback('✏️ تعديل', `edit:${b.barcode}`));
         if (b.status==='completed') row.push(Markup.button.callback('⭐ قيّم', `rate:${b.barcode}`));
         const rows = [row];
+        if (b.store_id) rows.push([Markup.button.callback('🏪 صفحة المتجر / التاجر', `store:${b.store_id}`)]);
         if (b.status==='pending'||b.status==='acknowledged') rows.push([Markup.button.callback('🚫 إلغاء الحجز', `cancel:${b.barcode}`)]);
         await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
     }
@@ -1119,8 +1331,27 @@ bot.on('text', async ctx => {
         }
         return showAlerts(ctx);
     }
+    if (s.step === 'await_search') {                                 // Task 4
+        const q = text.trim().slice(0,60);
+        if (q.length < 2) return ctx.reply('❗ اكتب كلمة بحث أوضح \\(حرفان على الأقل\\):', { parse_mode:'MarkdownV2' });
+        return runSearch(ctx, q);
+    }
+    if (s.step === 'await_contest_answer') {                         // Task 5b — quiz
+        const w = s.temp.cwiz; setStep(tgId(ctx),'idle');
+        if (!w) return ctx.reply('⚠️ انتهت جلسة المسابقة — افتحها من جديد\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+        const q = w.questions[w.qi]; if (q) w.answers[q.id] = text.slice(0,200); w.qi++;
+        return askContestStep(ctx);
+    }
+    if (s.step === 'await_contest_social') {                         // Task 5b — social tasks
+        const w = s.temp.cwiz; setStep(tgId(ctx),'idle');
+        if (!w) return ctx.reply('⚠️ انتهت جلسة المسابقة — افتحها من جديد\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎁 المسابقات','contests:list')]]).reply_markup });
+        const t = w.social[w.si]; if (t) w.social_answers[t.id] = text.slice(0,200); w.si++;
+        return askContestStep(ctx);
+    }
     if (['menu','قائمة','القائمة','ابدأ','start','مرحبا','مرحباً','اهلا','أهلا','السلام عليكم'].includes(lc)) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
     if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return showBrowseMenu(ctx);
+    if (['بحث','search'].includes(lc)) { setStep(tgId(ctx),'await_search'); return ctx.reply('🔎 *البحث*\nاكتب ما تبحث عنه \\(اسم عرض، متجر، تاجر، مدينة أو تصنيف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup }); }
+    if (['مسابقات','مسابقة','جوائز','contests'].some(k=>lc.includes(k))) return showContests(ctx);
     if (['مساعدة','help'].includes(lc)) return showHelp(ctx);
     if (['حجوزاتي','bookings'].includes(lc)) return buyerBookingsMenu(ctx);
     if (['تنبيهات','تنبيهاتي','alerts'].includes(lc)) return showAlerts(ctx);
