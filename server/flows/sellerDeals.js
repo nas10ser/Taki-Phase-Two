@@ -88,11 +88,24 @@ function register(bot, deps) {
     bot.action('sz:none', async ctx => { await ctx.answerCbQuery(); pickedSize(ctx, null); });
     bot.action('sz:menu', async ctx => { await ctx.answerCbQuery(); showSizePicker(ctx); });
 
-    // ── رجوع للخطوة السابقة في تدفّق الإضافة (مهمة ١) ──
+    // ── رجوع للخطوة السابقة في تدفّق الإضافة (مهمة ١/٩) ──
     bot.action(/^adb:(name|cat|gender|size|desc|price|expiry|qty|sched|loc)$/, async ctx => {
         await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return;
         const map = { name: askName, cat: askCategory, gender: askGender, size: askSize, desc: askDesc, price: askPrice, expiry: askExpiry, qty: askQty, sched: askSchedule, loc: askLocation };
         const fn = map[ctx.match[1]]; if (fn) return fn(ctx);
+    });
+    // ── مهمة ٩: «إبقاء والمتابعة» — يبقي القيمة الحالية وينتقل للخطوة التالية ──
+    bot.action(/^adk:(name|cat|gender|size|desc|price)$/, async ctx => {
+        await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return;
+        const next = { name: askCategory, cat: askGender, gender: askSize, size: askDesc, desc: askPrice, price: askExpiry };
+        const fn = next[ctx.match[1]]; if (fn) return fn(ctx);
+    });
+    // ── مهمة ٩: «تعديل» قيمة خطوة نصّية (يعيد طلب الإدخال) ──
+    bot.action(/^ade2:(name|desc|price)$/, async ctx => {
+        await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return;
+        if (ctx.match[1] === 'name')  { setStep(tgId(ctx), 'ad_name'); return reply(ctx, '✏️ اكتب الاسم الجديد للمنتج:', kbBack('adb:name')); }
+        if (ctx.match[1] === 'desc')  { setStep(tgId(ctx), 'ad_desc'); return reply(ctx, '✏️ اكتب الوصف الجديد \\(أو «تخطّي»\\):', Markup.inlineKeyboard([[btn('⏭ بدون وصف', 'ad:skipDesc')], [btn('◀️ رجوع', 'adb:desc')]]).reply_markup); }
+        if (ctx.match[1] === 'price') { setStep(tgId(ctx), 'ad_orig'); return reply(ctx, '✏️ اكتب السعر الأصلي الجديد \\(ريال\\):', kbBack('adb:price')); }
     });
 
     // ── حفظ الموقع الجديد كموقع دائم للتاجر؟ (مهمة ٣) ──
@@ -139,6 +152,8 @@ function register(bot, deps) {
     // ════════ منتقي طريقة الانتهاء (مشترك add+edit) ═══════════════════════════════════
     bot.action(/^xp:(stock|hours|duration|date)$/, async ctx => { await ctx.answerCbQuery(); pickedExpiryType(ctx, ctx.match[1]); });
     bot.action(/^xpd:(\d+|custom)$/, async ctx => { await ctx.answerCbQuery(); pickedEndDate(ctx, ctx.match[1]); });
+    // مهمة ١٠ — تاريخ بداية العرض ضمن خيار «بتاريخ محدّد» (يُسأل قبل النهاية).
+    bot.action(/^xds2:(\d+|custom)$/, async ctx => { await ctx.answerCbQuery(); pickedDealStart(ctx, ctx.match[1]); });
 
     // ════════ منتقي الكمية (مشترك) ═══════════════════════════════════════════════════
     bot.action(/^xq:(\d+|unlimited|custom)$/, async ctx => { await ctx.answerCbQuery(); pickedQty(ctx, ctx.match[1]); });
@@ -259,21 +274,40 @@ async function startAdd(ctx) {
     await reply(ctx, `➕ *إضافة عرض جديد*\n${DIV}`);
     return askName(ctx);
 }
+// مهمة ٩ — عند الرجوع لخطوة فيها قيمة، نعرضها مع «تعديل/متابعة» بدل إعادة السؤال أعمى.
+function addVal(ctx) { return (getSession(tgId(ctx)).temp.add) || {}; }
 async function askName(ctx) {
+    const a = addVal(ctx);
+    if (a.name) {
+        setStep(tgId(ctx), 'idle');
+        return reply(ctx, `*الخطوة ١ — اسم المنتج*\n${DIV}\n📝 الحالي: *${md(a.name)}*`, Markup.inlineKeyboard([
+            [btn('✏️ تعديل الاسم', 'ade2:name'), btn('➡️ متابعة', 'adk:name')],
+            [btn('❌ إلغاء', 'sd:cancel')],
+        ]).reply_markup);
+    }
     setStep(tgId(ctx), 'ad_name');
     await reply(ctx, '*الخطوة ١* — اكتب اسم المنتج أو الخدمة:', kbCancel());
 }
 async function askCategory(ctx) {
+    const a = addVal(ctx);
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, '*الخطوة ٢* — اختر تصنيف العرض:', Markup.inlineKeyboard([...catKeyboard('adcat:'), [btn('◀️ رجوع', 'adb:name'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
+    const cur = a.category ? `\n${DIV}\n🗂 الحالي: *${md(catLabel(a.category))}* — اختر آخر أو تابع:` : '';
+    const rows = [...catKeyboard('adcat:')];
+    if (a.category) rows.push([btn('➡️ متابعة بنفس التصنيف', 'adk:cat')]);
+    rows.push([btn('◀️ رجوع', 'adb:name'), btn('❌ إلغاء', 'sd:cancel')]);
+    await reply(ctx, `*الخطوة ٢* — اختر تصنيف العرض:${cur}`, Markup.inlineKeyboard(rows).reply_markup);
 }
 async function askGender(ctx) {
+    const a = addVal(ctx);
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, '*الخطوة ٣* — الفئة المستهدفة:', Markup.inlineKeyboard([
+    const cur = a.gender ? `\n${DIV}\n👥 الحالية: *${md(genderLabel(a.gender))}* — اختر أخرى أو تابع:` : '';
+    const rows = [
         [btn(GENDER.all, 'adgen:all'), btn(GENDER.men, 'adgen:men')],
         [btn(GENDER.women, 'adgen:women'), btn(GENDER.kids, 'adgen:kids')],
-        [btn('◀️ رجوع', 'adb:cat'), btn('❌ إلغاء', 'sd:cancel')],
-    ]).reply_markup);
+    ];
+    if (a.gender) rows.push([btn('➡️ متابعة بنفس الفئة', 'adk:gender')]);
+    rows.push([btn('◀️ رجوع', 'adb:cat'), btn('❌ إلغاء', 'sd:cancel')]);
+    await reply(ctx, `*الخطوة ٣* — الفئة المستهدفة:${cur}`, Markup.inlineKeyboard(rows).reply_markup);
 }
 // ── المقاس: منتقي سريع مشترك (add + edit) — يضمن ظهور خيارات دائماً (مهمة ٢) ──
 const SIZE_PRESETS = ['S', 'M', 'L', 'XL', 'XXL'];
@@ -285,7 +319,17 @@ function sizePickerKb(isEdit, id) {
     return Markup.inlineKeyboard(rows).reply_markup;
 }
 async function askSize(ctx) { // سياق الإضافة
+    const a = addVal(ctx);
     setStep(tgId(ctx), 'idle');
+    const cur = a.size ? `\n${DIV}\n📏 الحالي: *${md(a.size)}* — غيّره أو تابع:` : '';
+    if (a.size) {
+        const rows = [];
+        for (let i = 0; i < SIZE_PRESETS.length; i += 3) rows.push(SIZE_PRESETS.slice(i, i + 3).map(z => btn(z, `sz:set:${z}`)));
+        rows.push([btn('✏️ مقاس آخر', 'sz:free'), btn('🚫 بدون مقاس', 'sz:none')]);
+        rows.push([btn('➡️ متابعة بنفس المقاس', 'adk:size')]);
+        rows.push([btn('◀️ رجوع', 'adb:gender')]);
+        return reply(ctx, `*الخطوة ٤* — 📏 *المقاس*${cur}`, Markup.inlineKeyboard(rows).reply_markup);
+    }
     await reply(ctx, '*الخطوة ٤* — 📏 *المقاس* \\(اختياري\\)\nاختر مقاساً سريعاً، أو اكتب مقاساً حرّاً، أو «بدون»:', sizePickerKb(false));
 }
 function showSizePicker(ctx) { // مشترك — يُستدعى من sz:menu ومن التعديل
@@ -310,10 +354,27 @@ async function pickedSize(ctx, val) {
     if (s.temp.add) { s.temp.add.size = val || null; return askDesc(ctx); }
 }
 async function askDesc(ctx) {
+    const a = addVal(ctx);
+    if (a.desc) {
+        setStep(tgId(ctx), 'idle');
+        return reply(ctx, `*الخطوة ٥ — وصف العرض*\n${DIV}\n📝 الحالي:\n_${md(a.desc)}_`, Markup.inlineKeyboard([
+            [btn('✏️ تعديل الوصف', 'ade2:desc'), btn('➡️ متابعة', 'adk:desc')],
+            [btn('◀️ رجوع', 'adb:size'), btn('❌ إلغاء', 'sd:cancel')],
+        ]).reply_markup);
+    }
     setStep(tgId(ctx), 'ad_desc');
     await reply(ctx, '*الخطوة ٥* — وصف مختصر للعرض \\(اختياري\\):', Markup.inlineKeyboard([[btn('⏭ تخطّي الوصف', 'ad:skipDesc')], [btn('◀️ رجوع', 'adb:size'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
 }
 async function askPrice(ctx) {
+    const a = addVal(ctx);
+    if (a.orig && a.disc) {
+        setStep(tgId(ctx), 'idle');
+        const pct = Math.round(((a.orig - a.disc) / a.orig) * 100);
+        return reply(ctx, `*الخطوة ٦ — السعر*\n${DIV}\n💵 قبل: *${money(a.orig)}* ← 🟢 بعد: *${money(a.disc)}* ر\\.س \\(${pct}%\\)`, Markup.inlineKeyboard([
+            [btn('✏️ تعديل السعر', 'ade2:price'), btn('➡️ متابعة', 'adk:price')],
+            [btn('◀️ رجوع', 'adb:desc'), btn('❌ إلغاء', 'sd:cancel')],
+        ]).reply_markup);
+    }
     setStep(tgId(ctx), 'ad_orig');
     await reply(ctx, '*الخطوة ٦* — السعر الأصلي \\(ريال\\):\n_مثال: 250_', Markup.inlineKeyboard([[btn('◀️ رجوع', 'adb:desc'), btn('❌ إلغاء', 'sd:cancel')]]).reply_markup);
 }
@@ -333,24 +394,53 @@ function expTarget(s) { return s.temp.flow === 'edit' ? (s.temp.edraft || (s.tem
 async function pickedExpiryType(ctx, type) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
     t.expiryType = type;
+    // غير-تاريخ يُلغي أي بداية مجدولة سبق ضبطها داخل تدفّق التاريخ، حتى لا تُتخطّى
+    // خطوة «عرض قادم» خطأً بعد الرجوع وتغيير النوع (مهمة ١٠).
+    if (type !== 'date' && s.temp.flow === 'add' && s.temp.add) { s.temp.add.scheduleDone = false; s.temp.add.startsAt = null; }
     if (type === 'stock')    { t.expiryHours = null; t.expiryDays = null; t.expiryEndMs = null; t.expiryDateIso = null; return onExpiryChosen(ctx); }
     if (type === 'hours')    { setStep(tgId(ctx), 'ad_hours'); return reply(ctx, '⏱ كم *ساعة* يستمر العرض؟ \\(مثل: 6\\)', kbBack(backToExpiry(s))); }
     if (type === 'duration') { setStep(tgId(ctx), 'ad_days');  return reply(ctx, '📅 كم *يوماً* يستمر العرض؟ \\(مثل: 7\\)', kbBack(backToExpiry(s))); }
+    // date: في الإضافة نسأل تاريخ *البداية* أولاً ثم النهاية (مهمة ١٠). في التعديل
+    // نكتفي بتاريخ النهاية (الجدولة تُعدَّل من زرّها المستقل).
+    if (s.temp.flow === 'add') return askDealStartDate(ctx);
+    return askEndDate(ctx);
+}
+// مهمة ١٠ — موعد بداية العرض (ضمن «بتاريخ محدّد»). أي بداية مستقبلية تُجدول العرض
+// تلقائياً (لا يظهر للمشترين حتى موعده) — تماماً كالموقع.
+async function askDealStartDate(ctx) {
+    setStep(tgId(ctx), 'idle');
+    await reply(ctx, `🗓 *الخطوة ٨أ — تاريخ بداية العرض*\nمتى يبدأ العرض؟ \\(أي بداية مستقبلية تُجدوله تلقائياً\\)`, Markup.inlineKeyboard([
+        [btn('🚀 يبدأ الآن', 'xds2:0')],
+        [btn('غداً', 'xds2:1'), btn('بعد يومين', 'xds2:2'), btn('بعد ٣ أيام', 'xds2:3')],
+        [btn('بعد أسبوع', 'xds2:7'), btn('✏️ تاريخ بدء (اكتبه)', 'xds2:custom')],
+        [btn('◀️ رجوع', 'adb:expiry'), btn('❌ إلغاء', 'sd:cancel')],
+    ]).reply_markup);
+}
+async function pickedDealStart(ctx, key) {
+    const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_dealstart'); return reply(ctx, '✏️ اكتب تاريخ بداية العرض \\(مثل: 2026\\-08\\-01\\):', kbBack('adb:expiry')); }
+    const days = +key;
+    t.startsAt = days > 0 ? Date.now() + days * DAY_MS : null;  // الآن = بلا جدولة
+    t.scheduleDone = true;                                       // البداية حُسمت هنا → تخطّي خطوة «عرض قادم»
     return askEndDate(ctx);
 }
 async function askEndDate(ctx) {
+    const s = getSession(tgId(ctx)); const t = expTarget(s) || {};
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, `🗓 *تاريخ نهاية العرض*\nاختر مدة سريعة أو اكتب تاريخاً محدّداً\\.\n_موعد البدء تحدّده خطوة «عرض قادم»_`, Markup.inlineKeyboard([
+    const startLine = t.startsAt ? `\n📅 يبدأ: *${md(fmtDay(t.startsAt))}* \\(مجدول\\)` : '\n🚀 يبدأ الآن';
+    await reply(ctx, `🗓 *الخطوة ٨ب — تاريخ نهاية العرض*${startLine}\nاختر مدة من تاريخ البداية أو اكتب تاريخاً محدّداً\\.`, Markup.inlineKeyboard([
         [btn('أسبوع', 'xpd:7'), btn('أسبوعين', 'xpd:14')],
         [btn('شهر', 'xpd:30'), btn('شهرين', 'xpd:60'), btn('٣ أشهر', 'xpd:90')],
         [btn('✏️ تاريخ محدّد (اكتبه)', 'xpd:custom')],
-        [btn('❌ إلغاء', 'sd:cancel')],
+        [btn('◀️ رجوع', s.temp.flow === 'add' ? 'adb:expiry' : backToExpiry(s)), btn('❌ إلغاء', 'sd:cancel')],
     ]).reply_markup);
 }
 async function pickedEndDate(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
     if (key === 'custom') { setStep(tgId(ctx), 'ad_date'); return reply(ctx, '✏️ اكتب تاريخ النهاية \\(مثل: 2026\\-08\\-15 أو 15/8/2026\\):', kbBack(backToExpiry(s))); }
-    const ms = Date.now() + (+key) * DAY_MS;
+    // المدد السريعة تُحسب من موعد البداية (إن جُدول) لا من الآن — مطابق للموقع.
+    const anchor = t.startsAt && t.startsAt > Date.now() ? t.startsAt : Date.now();
+    const ms = anchor + (+key) * DAY_MS;
     t.expiryEndMs = ms; t.expiryDateIso = new Date(ms).toISOString().slice(0, 10);
     return onExpiryChosen(ctx);
 }
@@ -384,6 +474,8 @@ async function pickedQty(ctx, key) {
 async function onQtyChosen(ctx) {
     const s = getSession(tgId(ctx));
     if (s.temp.flow === 'edit') return saveEditField(ctx, 'qty');
+    // إذا حُسم موعد البدء ضمن «بتاريخ محدّد» (مهمة ١٠) نتخطّى خطوة «عرض قادم».
+    if (s.temp.add && s.temp.add.scheduleDone) return askLocation(ctx);
     return askSchedule(ctx);
 }
 
@@ -441,25 +533,42 @@ async function askLocation(ctx, intro) {
     s.temp.locChips = chips;
     const cap = r ? `📦 باقتك: ${r.used}/${r.max} موقع نشط` : '';
     const full = r && r.used >= r.max;
-    // قائمة معرّفة لكل موقع محفوظ + رابط خريطة — لتعرف «أين كل موقع» وتختار بثقة (مهمة ٣).
+    // مهمة ٧ — عند بلوغ حدّ الباقة في عرض (إضافة/تعديل) لا نسمح بموقع *جديد*
+    // إطلاقاً (يُرفض لاحقاً عند النشر فيحبط التاجر). نسمح فقط بإعادة استخدام موقع
+    // نشط مسبقاً (🔒 محسوب أصلاً) لأنه لا يزيد عدد المواقع المتميّزة. الفروع لا
+    // تُحسب حتى تُربط بعرض نشط، فلا تُقيَّد.
+    const gateNew = full && s.temp.flow !== 'branch';
+    const pickable = chips.map((b, i) => ({ b, i })).filter(x => !gateNew || x.b.locked);
+    // قائمة معرّفة لكل موقع + رابط خريطة — لتعرف «أين كل موقع» وتختار بثقة.
     let savedList = '';
-    chips.slice(0, 8).forEach((b, i) => {
+    pickable.slice(0, 8).forEach(({ b }, n) => {
         const u = chipMapUrl(b);
         const place = [b.city, b.region].filter(Boolean).join(' • ');
         const lk = u ? ` — [🗺 اعرض على الخريطة](${mdUrl(u)})` : '';
-        savedList += `\n*${i + 1}\\.* 📍 *${md(String(b.name || 'موقع').slice(0, 40))}*${b.locked ? ' 🔒' : ''}${place ? ' — ' + md(place) : ''}${lk}`;
+        savedList += `\n*${n + 1}\\.* 📍 *${md(String(b.name || 'موقع').slice(0, 40))}*${b.locked ? ' 🔒' : ''}${place ? ' — ' + md(place) : ''}${lk}`;
     });
     const rows = [];
-    chips.slice(0, 8).forEach((b, i) => rows.push([btn(`${i + 1} • 📍 ${String(b.name || 'موقع').slice(0, 28)}${b.locked ? ' 🔒' : ''}`, `loc:pick:${i}`)]));
-    rows.push([btn('🗺 منطقة → مدينة → مول/سوق', 'loc:region')]);
-    rows.push([btn('🔗 رابط قوقل / إحداثيات', 'loc:link'), btn('📲 مشاركة موقعي', 'loc:share')]);
+    pickable.slice(0, 8).forEach(({ b, i }, n) => rows.push([btn(`${n + 1} • 📍 ${String(b.name || 'موقع').slice(0, 28)}${b.locked ? ' 🔒' : ''}`, `loc:pick:${i}`)]));
+    if (!gateNew) {
+        rows.push([btn('🗺 منطقة → مدينة → مول/سوق', 'loc:region')]);
+        rows.push([btn('🔗 رابط قوقل / إحداثيات', 'loc:link'), btn('📲 مشاركة موقعي', 'loc:share')]);
+    } else {
+        rows.push([btn('💳 ترقية باقتي لمواقع أكثر', 'seller:packages')]);
+        rows.push([btn('📍 إدارة مواقعي', 'seller:branches')]);
+    }
+    // في تدفّق التاريخ (مهمة ١٠) نتخطّى خطوة «عرض قادم»، فالرجوع يجب أن يعود للكمية
+    // لا لخطوة لم تظهر (وإلا قد يُلغي «انشره الآن» تاريخ البدء المجدول).
+    const addBack = (s.temp.add && s.temp.add.scheduleDone) ? 'adb:qty' : 'adb:sched';
     const backBtn = s.temp.flow === 'branch' ? btn('◀️ مواقعي', 'seller:branches')
-        : s.temp.flow === 'add' ? btn('◀️ رجوع', 'adb:sched')
+        : s.temp.flow === 'add' ? btn('◀️ رجوع', addBack)
         : btn('◀️ رجوع', `dedit:${s.temp.editDealId}`);
     rows.push([backBtn, btn('❌ إلغاء', 'sd:cancel')]);
     const head = intro || (s.temp.flow === 'add' ? '*الخطوة ١١* — 📍 *أين موقع هذا العرض؟*' : '📍 *تغيير الموقع*');
-    const tip = savedList ? `\n\n🗂 *مواقعك المحفوظة* — اضغط الرابط لتشوف مكان كل موقع 👇${savedList}` : '';
-    await reply(ctx, `${head}\n${cap ? md(cap) + '\n' : ''}${full ? '⚠️ _وصلت حدّ باقتك — اختر موقعاً مستخدماً أو رقِّ باقتك_\n' : ''}اختر موقعاً محفوظاً بالأسفل، أو أضف جديداً 👇${tip}`, Markup.inlineKeyboard(rows).reply_markup);
+    const tip = savedList ? `\n\n🗂 *المواقع المتاحة لك* — اضغط الرابط لتشوف مكان كل موقع 👇${savedList}` : '';
+    const fullMsg = gateNew
+        ? '⛔️ *وصلت حدّ باقتك* — كل مواقعك النشطة مستخدمة\\.\nاختر موقعاً نشطاً مسبقاً \\(🔒\\) لإضافة عرض عليه، أو رقِّ باقتك لإضافة موقع جديد 👇\n'
+        : '';
+    await reply(ctx, `${head}\n${cap ? md(cap) + '\n' : ''}${fullMsg}${gateNew ? '' : 'اختر موقعاً محفوظاً بالأسفل، أو أضف جديداً 👇'}${tip}`, Markup.inlineKeyboard(rows).reply_markup);
 }
 async function pickSavedLoc(ctx, i) {
     const s = getSession(tgId(ctx)); const b = (s.temp.locChips || [])[i];
@@ -794,7 +903,7 @@ async function showBranches(ctx) {
 // ════════════════════════════════════════════════════════════════════════════════
 async function handleText(ctx, s, text) {
     const step = s.step || 'idle';
-    const SELLER_STEPS = ['ad_name', 'ad_size', 'ad_desc', 'ad_orig', 'ad_disc', 'ad_hours', 'ad_days', 'ad_date', 'ad_qty', 'ad_startdate', 'loc_link', 'br_name', 'br_rename', 'ed_name', 'ed_orig', 'ed_disc', 'ed_desc', 'ed_size'];
+    const SELLER_STEPS = ['ad_name', 'ad_size', 'ad_desc', 'ad_orig', 'ad_disc', 'ad_hours', 'ad_days', 'ad_date', 'ad_dealstart', 'ad_qty', 'ad_startdate', 'loc_link', 'br_name', 'br_rename', 'ed_name', 'ed_orig', 'ed_disc', 'ed_desc', 'ed_size'];
     if (!SELLER_STEPS.includes(step)) return false;
 
     // إلغاء من كيبورد الرد أثناء أي خطوة تاجر.
@@ -809,7 +918,9 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_disc') { if (!isPrice(text) || +normalizeDigits(text) >= a.orig) { await reply(ctx, `❗ يجب أن يكون أقل من ${md(String(a.orig))} ر\\.س`); return true; } a.disc = +normalizeDigits(text); await askExpiry(ctx); return true; }
     if (step === 'ad_hours') { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 8760) { await reply(ctx, '❗ أرسل عدد ساعات صحيح \\(1 إلى 8760\\):'); return true; } expTarget(s).expiryHours = n; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_days')  { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 365) { await reply(ctx, '❗ أرسل عدد أيام صحيح \\(1 إلى 365\\):'); return true; } expTarget(s).expiryDays = n; await onExpiryChosen(ctx); return true; }
-    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt || dt.ms <= Date.now()) { await reply(ctx, '❗ تاريخ غير صالح أو في الماضي\\. اكتب مثل: `2026-08-15`'); return true; } const tt = expTarget(s); tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
+    // مهمة ١٠ — تاريخ بداية العرض (نصّي) ضمن «بتاريخ محدّد».
+    if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); if (!dt || dt.ms < Date.now() + MIN_LEAD) { await reply(ctx, '❗ يجب أن يكون موعد البدء في المستقبل \\(بعد ١٠ دقائق على الأقل\\)\\. اكتب مثل: `2026-08-01`'); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
+    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (!dt || dt.ms <= anchor) { await reply(ctx, '❗ تاريخ النهاية يجب أن يكون بعد موعد البدء\\. اكتب مثل: `2026-08-15`'); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_qty')   { if (!isQty(text)) { await reply(ctx, '❗ أرسل رقم الكمية، مثل `10`'); return true; } const tq = expTarget(s); tq.qty = +normalizeDigits(text); tq.unlimited = false; await onQtyChosen(ctx); return true; }
     if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); if (!dt || dt.ms < Date.now() + MIN_LEAD) { await reply(ctx, '❗ يجب أن يكون موعد البدء في المستقبل \\(بعد ١٠ دقائق على الأقل\\)\\. اكتب مثل: `2026-08-01`'); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
 

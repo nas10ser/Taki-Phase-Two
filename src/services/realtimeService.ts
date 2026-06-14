@@ -27,6 +27,7 @@ interface RealtimeConfig {
     onBookingChange: EventCallback;
     onBookingMessage?: EventCallback;
     onDealChange: EventCallback;
+    onRatingChange?: EventCallback;
     onUserChange: EventCallback;
     onFavoriteChange: EventCallback;
     onRefreshAll: () => Promise<void>;
@@ -348,6 +349,19 @@ function setupChannels(config: RealtimeConfig) {
         lastActivityAt = Date.now();
         lastSyncAt.deals = Date.now();
         config.onDealChange(payload);
+    });
+
+    // Ratings: a review written anywhere (bot / app / another device) lands in the
+    // shared `ratings` table. Surface it live so the store average + comments
+    // update within seconds instead of waiting for a manual reload (the previous
+    // gap that made bot ratings look like they "took minutes" on the website).
+    globalChannel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'ratings'
+    }, (payload) => {
+        lastActivityAt = Date.now();
+        config.onRatingChange?.(payload);
     });
 
     // Store profiles (sellers)

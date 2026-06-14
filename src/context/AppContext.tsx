@@ -2252,6 +2252,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     }
                 });
             },
+            // A rating written anywhere (bot/app/another device) → re-pull deals so
+            // its ratings (and the store average) surface within seconds, not on the
+            // next manual reload. Ratings are infrequent, so a refetch is cheap.
+            onRatingChange: () => {
+                import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => { if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } }));
+            },
             onUserChange: (payload) => {
                 const newUser = payload.new as any;
                 const oldUser = payload.old as any;
