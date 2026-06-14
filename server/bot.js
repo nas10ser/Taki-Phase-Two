@@ -402,9 +402,15 @@ async function showBrowseMenu(ctx){
 }
 
 // ── Banners shown above the offers (Task 5a) — image cards with a tap action ───
+// Shown once per session (when the buyer opens the offers hub) so back-and-forth
+// navigation doesn't re-spam the same images. A fresh session shows them again.
 async function sendBanners(ctx){
+    const s = getSession(tgId(ctx));
+    if (s.temp.bannersShown) return;
     let banners = [];
     try { banners = await rpc('bot_active_banners', {}) || []; } catch { banners = []; }
+    if (!banners.length) return;
+    s.temp.bannersShown = true;
     for (const b of banners.slice(0,3)){
         const btns = [];
         if (b.deal_id)       btns.push([Markup.button.callback('🛍 شوف العرض', `deal:${b.deal_id}`)]);
