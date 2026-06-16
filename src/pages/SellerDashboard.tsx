@@ -8,6 +8,7 @@ import ImageCropEditor from '../components/ImageCropEditor';
 import CameraCapture from '../components/CameraCapture';
 import ReportDialog from '../components/ReportDialog';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
+import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -105,10 +106,21 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, branches, saveBranch, removeBranch } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
+    // ساعات عمل المحل — تُحفظ في ملف التاجر (ثابتة عبر المنتجات حتى يغيّرها). v11.77
+    const [hoursSaving, setHoursSaving] = useState(false);
+    const myWorkingHours = (storeProfiles[user?.id || ''] as any)?.workingHours ?? (user as any)?.workingHours;
+    const handleSaveHours = useCallback(async (wh: any) => {
+        if (!user) return;
+        setHoursSaving(true);
+        try {
+            updateStoreProfile(user.id, { workingHours: wh } as any);
+            await customAlert(isRTL ? '✅ تم حفظ ساعات العمل' : '✅ Working hours saved');
+        } finally { setHoursSaving(false); }
+    }, [user, updateStoreProfile, customAlert, isRTL]);
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
     // Reviews tab — Facebook-style inline reply state. activeReplyId picks
     // which rating is currently in "compose" mode; replyDrafts holds the
@@ -1983,6 +1995,12 @@ const SellerDashboard: React.FC = () => {
             )}
 
             <div style={{ padding: 16 }}>
+                {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
+                {view === 'form' && user && (
+                    <div style={{ marginBottom: 16 }}>
+                        <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                    </div>
+                )}
                 {view === 'form' && (!isPaymentEnabled || isSubscriptionValid) ? (
                     <form onSubmit={(e) => { e.preventDefault(); submitAction(false); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: '24px 20px', boxShadow: 'var(--shadow-lg)' }}>
                         {submitted && <div style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '12px', borderRadius: 16, marginBottom: 20, textAlign: 'center', fontWeight: 700 }}>✅ {isRTL ? 'تم الحفظ بنجاح' : 'Saved Successfully'}</div>}

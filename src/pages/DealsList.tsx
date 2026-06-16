@@ -6,6 +6,7 @@ import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { getShopStatus } from '../utils/workingHours';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
 
@@ -46,6 +47,8 @@ const DealsList: React.FC = () => {
         type === 'discount' ? 'discount' : type === 'trending' ? 'reliability' : 'reliability'
     );
     const [searchQuery, setSearchQuery] = useState('');
+    // «مفتوح الآن» (العروض الحيّة) هو الافتراضي. v11.77
+    const [openNow, setOpenNow] = useState(true);
 
     // Smooth-scroll to top on type change so navigating between sections doesn't
     // leave the user mid-list.
@@ -82,6 +85,12 @@ const DealsList: React.FC = () => {
         // out-of-region offers when drilling in.
         list = list.filter(d => dealMatchesLocation(d, topLocation));
 
+        // «مفتوح الآن» — العروض الحيّة من محلات مفتوحة الآن (الافتراضي). المحلات
+        // بلا ساعات معلَنة تُعدّ مفتوحة دائماً. لا يُطبَّق على «قادم قريباً». v11.77
+        if (openNow && type !== 'coming_soon') {
+            list = list.filter(d => getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open);
+        }
+
         if (searchQuery.trim()) {
             // Active search => rank by relevance (same engine as Home), best
             // match first, instead of the section's default sort.
@@ -113,7 +122,7 @@ const DealsList: React.FC = () => {
         // Coming-soon view stays ad-free (those deals aren't bookable yet).
         if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
         return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, storeProfiles]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.
@@ -182,6 +191,14 @@ const DealsList: React.FC = () => {
                     ⇅
                 </button>
             </div>
+
+            {/* Open-now toggle (default ON) — يعرض العروض الحيّة من المحلات المفتوحة الآن */}
+            {type !== 'coming_soon' && (
+                <div style={{ display: 'flex', gap: 8, padding: '10px 12px 0', background: 'var(--card-bg)' }}>
+                    <button onClick={() => setOpenNow(true)} className={`filter-chip ${openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🟢 {isRTL ? 'المفتوحة الآن' : 'Open now'}</button>
+                    <button onClick={() => setOpenNow(false)} className={`filter-chip ${!openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🕐 {isRTL ? 'كل الأوقات' : 'All hours'}</button>
+                </div>
+            )}
 
             {/* Filter chips — Brand / Category / Gender, matches Trendyol's look */}
             <div style={{

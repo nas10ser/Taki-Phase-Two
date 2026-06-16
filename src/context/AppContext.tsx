@@ -31,6 +31,7 @@ interface StoreProfile {
     discount_percentage?: number;
     is_pinned?: boolean;
     max_branches?: number;
+    workingHours?: any;   // ساعات العمل (per-day, multi-shift) — see utils/workingHours
 }
 
 interface TopLocation {
@@ -1003,6 +1004,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             avatar_url: (profile as any).avatar_url ?? (profile as any).avatar ?? user.avatar_url,
             bio: profile.bio ?? user.bio,
             address: profile.address ?? user.address,
+            workingHours: (profile as any).workingHours ?? (user as any).workingHours,
         };
         setUser(merged);
         authService.setUser(merged);
@@ -1033,27 +1035,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const now = Date.now();
         const dayMs = 24 * 60 * 60 * 1000;
 
+        // ATOMIC 24h gate — a single conditional UPDATE *claims* the window.
+        // The old read-then-stamp had a race: two near-simultaneous callers (the
+        // sign-in timer racing the location watcher, or web + PWA on two devices)
+        // both read the stale timestamp, both passed, and BOTH created the promo
+        // → it arrived twice on every channel. Now Postgres serialises the row
+        // UPDATE: the first commits the fresh timestamp, the second's WHERE no
+        // longer matches and it gets 0 rows back → it bails. v11.77 (Task 6)
         try {
             const { supabase } = await import('../services/supabaseClient');
-            const { data: throttleRow } = await supabase
+            const cutoffIso = new Date(now - dayMs).toISOString();
+            const { data: claimed, error } = await supabase
                 .from('users')
-                .select('last_promo_check_at')
-                .eq('id', user.id)
-                .maybeSingle();
-            if (throttleRow?.last_promo_check_at) {
-                const last = new Date(throttleRow.last_promo_check_at).getTime();
-                if (now - last < dayMs) return;
-            }
-        } catch {}
-
-        // Stamp BEFORE creating the notification so a slow network can't
-        // bypass the gate. Awaited so the gate is in place before we move on.
-        try {
-            const { supabase } = await import('../services/supabaseClient');
-            await supabase.from('users')
                 .update({ last_promo_check_at: new Date(now).toISOString() })
-                .eq('id', user.id);
-        } catch {}
+                .eq('id', user.id)
+                .or(`last_promo_check_at.is.null,last_promo_check_at.lt.${cutoffIso}`)
+                .select('id');
+            if (error) return;                          // on error, never risk a duplicate
+            if (!claimed || claimed.length === 0) return; // window already claimed → skip
+        } catch { return; }
 
         try {
             // Fetch active campaigns from Supabase for this user type

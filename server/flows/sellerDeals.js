@@ -756,6 +756,15 @@ async function doPublish(ctx) {
     }
     const liveLine = a.startsAt ? '🚀 *عرض قادم* — سيبدأ تلقائياً في موعده\\.' : 'العرض ظاهر الآن في الموقع والتطبيق والبوت ✅';
     await reply(ctx, `🎉 *تم النشر بنجاح\\!*\n${DIV}\nالخصم: *${r.discount}%*\n${liveLine}`, Markup.inlineKeyboard([[btn('🏷 عروضي', 'seller:deals'), btn('➕ عرض آخر', 'seller:addDeal')], [btn('◀️ القائمة', 'menu:back')]]).reply_markup);
+    // Ask for working hours the first time only — once set they stay fixed across
+    // all future products (the seller changes them only from «ساعات العمل»). v11.77
+    try {
+        const hr = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
+        const wh = hr?.working_hours;
+        if (!(wh && wh.enabled && wh.days)) {
+            await reply(ctx, '🕐 *أضف ساعات عمل محلك؟* \\(اختياري\\)\nتظهر للمشترين وتمنع الحجز خارج الدوام وتحذّرهم قبل الإغلاق\\. تُحفظ مرة وتبقى ثابتة لكل عروضك\\.', Markup.inlineKeyboard([[btn('🕐 أضف ساعات العمل', 'seller:hours')], [btn('لاحقاً', 'menu:back')]]).reply_markup);
+        }
+    } catch { /* ignore */ }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

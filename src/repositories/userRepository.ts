@@ -90,6 +90,7 @@ export const userRepository = {
             if (p.lat !== undefined) dbData.lat = p.lat;
             if (p.lng !== undefined) dbData.lng = p.lng;
             if (p.googleMapsLink !== undefined) dbData.google_maps_link = p.googleMapsLink;
+            if (p.workingHours !== undefined) dbData.working_hours = p.workingHours;
 
             // upsert needs the conflict column when the row already exists.
             // Internal 15s ceiling — if the Supabase JS SDK's auth-refresh
@@ -271,6 +272,7 @@ export const userRepository = {
                     lat: data.lat,
                     lng: data.lng,
                     googleMapsLink: data.google_maps_link,
+                    workingHours: data.working_hours,
                     isSuperAdmin: data.is_super_admin === true,
                     adminPermissions: Array.isArray(data.admin_permissions) ? data.admin_permissions : []
                 };
@@ -362,7 +364,8 @@ export const userRepository = {
                     blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
                     lat: d.lat,
                     lng: d.lng,
-                    googleMapsLink: d.google_maps_link
+                    googleMapsLink: d.google_maps_link,
+                    workingHours: d.working_hours
                 }));
             }
         } catch (e) {

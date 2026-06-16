@@ -9,6 +9,7 @@ import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
+import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock } from '../utils/workingHours';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -590,9 +591,14 @@ const DealDetails: React.FC = () => {
     // below so the page can flip to "bookable" automatically the moment
     // the timestamp passes without a refresh.
     const isComingSoon = isDealComingSoon(deal);
-    const canBook = !isSoldOut && !isComingSoon;
+    // ساعات عمل المحل — مغلق يمنع الحجز، وقرب الإغلاق (<ساعتين) يحذّر قبل التأكيد. v11.77
+    const shopWH = (storeProfiles[deal.storeId] as any)?.workingHours;
+    const shopStatus = getShopStatus(shopWH);
+    const shopClosed = shopStatus.configured && !shopStatus.open;
+    const closingSoon = shopStatus.configured && shopStatus.open && (shopStatus.closesInMin ?? 99999) <= 120;
+    const canBook = !isSoldOut && !isComingSoon && !shopClosed;
 
-    const handleBooking = () => {
+    const handleBooking = async () => {
         if (!user) {
             history.push('/register');
             return;
@@ -603,6 +609,21 @@ const DealDetails: React.FC = () => {
         // deal flipped while their modal was already mounted on a previous
         // tab) the booking action stays locked until launch.
         if (isComingSoon) return;
+
+        // Working-hours gate (v11.77). Closed → block with the time to opening.
+        // Closing in <2h → warn (the buyer must still collect within the window).
+        if (shopClosed) {
+            customAlert(isRTL
+                ? `🔒 المحل مغلق الآن${shopStatus.opensInMin != null ? ` — يفتح بعد ${fmtDuration(shopStatus.opensInMin, true)}` : ''}\nلا يمكنك الحجز إلا بعد أن يفتح المحل.`
+                : `🔒 The shop is closed now${shopStatus.opensInMin != null ? ` — opens in ${fmtDuration(shopStatus.opensInMin, false)}` : ''}\nBooking is available once the shop opens.`);
+            return;
+        }
+        if (closingSoon) {
+            const ok = await customConfirm(isRTL
+                ? `⏰ المحل سيغلق بعد ${fmtDuration(shopStatus.closesInMin!, true)}\nتأكد أنك تستطيع استلام طلبك قبل الإغلاق. هل تريد المتابعة بالحجز؟`
+                : `⏰ The shop closes in ${fmtDuration(shopStatus.closesInMin!, false)}\nMake sure you can collect before closing. Continue?`);
+            if (!ok) return;
+        }
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, bookingNotes);
@@ -1027,6 +1048,35 @@ const DealDetails: React.FC = () => {
                     </div>
                 )}
 
+                {/* Working hours (ساعات عمل المحل) — status + today + full week */}
+                {shopStatus.configured && (() => {
+                    const pill = statusPill(shopWH, isRTL);
+                    const bg = pill.tone === 'open' ? 'rgba(16,185,129,0.12)' : pill.tone === 'soon' ? 'rgba(245,158,11,0.14)' : 'rgba(239,68,68,0.12)';
+                    const col = pill.tone === 'open' ? '#10b981' : pill.tone === 'soon' ? '#f59e0b' : '#ef4444';
+                    const dot = pill.tone === 'closed' ? '🔴' : pill.tone === 'soon' ? '🟠' : '🟢';
+                    const week = weekHoursLines(shopWH, isRTL);
+                    return (
+                        <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+                            <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>🕐 {isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                                <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.8rem', padding: '5px 12px', borderRadius: 999 }}>{dot} {pill.text}</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 700 }}>{isRTL ? 'اليوم: ' : 'Today: '}<span style={{ direction: 'ltr', display: 'inline-block' }}>{todayHoursLabel(shopWH, isRTL)}</span></span>
+                            </div>
+                            <details>
+                                <summary style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 800, fontSize: '0.8rem' }}>{isRTL ? 'عرض كل أيام الأسبوع' : 'View all week'}</summary>
+                                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                    {week.map((w, i) => (
+                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.8rem', fontWeight: w.today ? 900 : 700, color: w.today ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                            <span>{w.day}{w.today ? (isRTL ? ' (اليوم)' : ' (today)') : ''}</span>
+                                            <span style={{ direction: 'ltr' }}>{w.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </details>
+                        </div>
+                    );
+                })()}
+
                 {/* Description */}
                 <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
                     <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>{isRTL ? 'الوصف' : 'Description'}</h3>
@@ -1351,29 +1401,49 @@ const DealDetails: React.FC = () => {
                                             : `🔒 Book Now — ${deal.discountedPrice * selectedQuantity} SAR`}
                                     </button>
                                 </div>
+                            ) : shopClosed && !booked ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    <div style={{ background: 'linear-gradient(135deg,#475569,#334155)', color: 'white', borderRadius: 18, padding: '18px 16px', textAlign: 'center', boxShadow: '0 10px 24px rgba(51,65,85,0.35)' }}>
+                                        <div style={{ fontSize: '0.78rem', fontWeight: 800, opacity: 0.9, marginBottom: 6 }}>🔒 {isRTL ? 'المحل مغلق الآن' : 'Shop closed now'}</div>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 950, lineHeight: 1.1 }}>
+                                            {shopStatus.opensInMin != null ? (isRTL ? `يفتح بعد ${fmtDuration(shopStatus.opensInMin, true)}` : `Opens in ${fmtDuration(shopStatus.opensInMin, false)}`) : (isRTL ? 'مغلق' : 'Closed')}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>{isRTL ? 'يفتح الحجز فور فتح المحل' : 'Booking opens when the shop opens'}</div>
+                                    </div>
+                                    <button disabled className="book-btn" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
+                                        {isRTL ? '🔒 المحل مغلق' : '🔒 Shop Closed'}
+                                    </button>
+                                </div>
                             ) : (
-                                <button
-                                    onClick={() => {
-                                        if (!user) {
-                                            history.push('/register');
-                                            return;
-                                        }
-                                        if (booked) {
-                                            history.push('/bookings');
-                                            return;
-                                        }
-                                        setShowBookingModal(true);
-                                    }}
-                                    disabled={isSoldOut && !booked}
-                                    className={`book-btn ${booked ? 'booked' : ''}`}
-                                    style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
-                                >
-                                    {booked
-                                        ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
-                                        : isSoldOut
-                                            ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                            : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
-                                </button>
+                                <>
+                                    {closingSoon && !booked && (
+                                        <div style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid #f59e0b', color: 'var(--text-primary)', borderRadius: 14, padding: '10px 12px', marginBottom: 10, fontSize: '0.8rem', fontWeight: 800, textAlign: 'center' }}>
+                                            ⏰ {isRTL ? `المحل سيغلق بعد ${fmtDuration(shopStatus.closesInMin!, true)} — تأكد أنك تستلم قبل الإغلاق` : `Shop closes in ${fmtDuration(shopStatus.closesInMin!, false)} — collect before closing`}
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            if (!user) {
+                                                history.push('/register');
+                                                return;
+                                            }
+                                            if (booked) {
+                                                history.push('/bookings');
+                                                return;
+                                            }
+                                            setShowBookingModal(true);
+                                        }}
+                                        disabled={isSoldOut && !booked}
+                                        className={`book-btn ${booked ? 'booked' : ''}`}
+                                        style={{ opacity: isSoldOut && !booked ? 0.5 : 1, cursor: booked ? 'pointer' : undefined }}
+                                    >
+                                        {booked
+                                            ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
+                                            : isSoldOut
+                                                ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
+                                                : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
+                                    </button>
+                                </>
                             )}
                         </>
                     )}

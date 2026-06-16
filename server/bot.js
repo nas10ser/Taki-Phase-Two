@@ -1,5 +1,12 @@
 /**
- * TAKI Bot — v11.76  |  بوت تاكي الاحترافي الآمن
+ * TAKI Bot — v11.77  |  بوت تاكي الاحترافي الآمن
+ * ═══════════════════════════════════════════════════════
+ * v11.77 (٦ ملاحظات): أرقام عربية في وقت الاستلام/الكمية (normalizeDigits) •
+ *   إصلاح /start بعد الخروج (نقطة غير مهرّبة في ترحيب الضيف) + sendMain آمن •
+ *   زر رجوع موثوق في الحجوزات السابقة • إشعار «حجز حالي» للتاجر والمشتري عند
+ *   الدخول • ساعات عمل المحل (per-day + فترتين، توقيت الرياض) عبر users.working_hours
+ *   + store_is_open: بوابة حجز (مغلق=منع/قرب الإغلاق=تحذير) + عرض الساعات + فلتر
+ *   «مفتوح الآن» (افتراضي) + إشعار استباقي قبل الإغلاق • منع تكرار الإشعار الترويجي.
  * ═══════════════════════════════════════════════════════
  * v11.76 (بوت المشتري): صفحة «حولي» كاملة بكل فلاتر الموقع داخل البوت
  *   (منطقة→مدينة→مول متسلسلة + تصنيف + الأقرب/نطاق كم) عبر bot_browse_deals
@@ -52,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.76.0';
+const BOT_VERSION              = '11.77.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -89,9 +96,13 @@ const G = require('./lib/geo');
 const { tgId, chatId, getSession, setStep } = require('./lib/session');
 const sellerDeals = require('./flows/sellerDeals');
 
-const { md, money, numEsc, fmtDate, fmtDay, fmtTime, prepLabel, statusLabel, STATUS, DIV, sanitize, isPrice, isQty, priceBlock } = F;
+const { md, money, numEsc, fmtDate, fmtDay, fmtTime, prepLabel, statusLabel, STATUS, DIV, sanitize, isPrice, isQty, priceBlock, normalizeDigits } = F;
+// Convert Arabic/Persian digits → Latin then to Number (user may type ٢٠).
+// `+text` alone yields NaN on ٢٠ → "NaNmin"; always go through this. v11.77
+const numOf = t => +normalizeDigits(t);
 const { CAT, catLabel, catKeyboard } = C;
 const { haversineKm, fmtKm, placeLink, dirLink, remainingText, durationEndsAt } = G;
+const HRS = require('./lib/hours');   // ساعات عمل المحل — تنسيق + أيام الأسبوع
 
 const W = path => APP_URL + path;   // web deep-link (BrowserRouter, no #)
 
@@ -197,6 +208,7 @@ function kbSeller(s) {
         [Markup.button.callback('✅  تحقق من حجز','seller:verify'), Markup.button.callback('🏷  عروضي','seller:deals')],
         [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('📍  مواقعي','seller:branches')],
         [Markup.button.callback('💳  الاشتراك','seller:sub'), Markup.button.callback('🏪  حساب المتجر','seller:profile')],
+        [Markup.button.callback('🕐  ساعات العمل','seller:hours'), Markup.button.callback('👁  معاينة كمشتري',`store:${s.userId}`)],
         // التنبيهات الذكية ميزة للمتسوّق فقط — التاجر تصله إشعارات الحجوزات تلقائياً. v11.76
         [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')],
         [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
@@ -234,10 +246,33 @@ function roleMsg(s) {
            `📍 *عروض قريبة منك* بحسب موقعك\n` +
            `🔔 *تنبيهات ذكية* لما ينزل اللي يهمّك\n\n` +
            `👇 *اضغط «ابدأ» وخلّنا نبدأ\\!*\n` +
-           `_🏪 تاجر؟ اربط حسابك وأدِر متجرك كاملاً من هنا._`;
+           `_🏪 تاجر؟ اربط حسابك وأدِر متجرك كاملاً من هنا\\._`;
 }
+// safeReplyMd: an unescaped '.' inside the guest welcome's italic was making the
+// whole message fail → /start «did nothing» for a guest after logout. The escape
+// above fixes it; safeReplyMd guarantees the main menu always renders. v11.77
 async function sendMain(ctx, s) {
-    await ctx.reply(roleMsg(s), { parse_mode:'MarkdownV2', reply_markup: roleKb(s).reply_markup });
+    await safeReplyMd(ctx, roleMsg(s), { reply_markup: roleKb(s).reply_markup });
+}
+
+// On login/start: surface a CURRENT booking the user may have made on the
+// website/app but hasn't seen in the bot yet — the seller sees pending orders,
+// the buyer sees their active reservation. Shown once per bot session (always
+// right after linking via `force`). v11.77 (Task 4)
+async function notifyPendingOnLogin(ctx, s, force = false) {
+    if (!s || !s.userId) return;
+    if (!force && s.temp.loginBkAlertShown) return;
+    s.temp.loginBkAlertShown = true;
+    try {
+        if (s.userType === 'seller') {
+            const n = s.pendingBookings || 0;
+            if (n > 0) await safeReplyMd(ctx, `🔔 *لديك ${numEsc(n)} طلب بانتظار التأكيد\\!*\n${DIV}\n📦 عميلٌ حجز من متجرك — افتح الطلبات لتأكيدها أو إتمامها\\.`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(`📦 عرض الطلبات (${n})`,'seller:bookings')]]).reply_markup });
+        } else {
+            const list = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope: 'current' }) || [];
+            const n = Array.isArray(list) ? list.length : 0;
+            if (n > 0) await safeReplyMd(ctx, `🔔 *لديك ${numEsc(n)} حجز حالي\\!*\n${DIV}\n🎟 حجزٌ قائم بانتظارك — افتح حجوزاتي لمتابعته \\(الباركود، المحادثة، أو الإلغاء\\)\\.`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(`🎟 حجوزاتي الحالية (${n})`,'buyer:bk:current')]]).reply_markup });
+        }
+    } catch (e) { console.warn('notifyPendingOnLogin:', e.message); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -285,12 +320,14 @@ bot.start(async ctx => {
             s.isAdmin=!!(result.is_super_admin || result.user_type==='admin' || (result.admin_permissions?.length>0));
             if (s.userType==='seller') { const st = await rpc('bot_get_seller_stats',{p_telegram_id:tgId(ctx)}); if (st) { s.pendingBookings=st.pending_bookings||0; s.activeDeals=st.active_deals||0; } }
             await ctx.reply(`✅ *تم ربط حسابك بنجاح\\!*\nأهلاً *${md(s.name)}* 👋`, { parse_mode:'MarkdownV2' });
-            return sendMain(ctx, s);
+            await sendMain(ctx, s);
+            return notifyPendingOnLogin(ctx, s, true);
         }
         await ctx.reply(`⚠️ *رابط الربط غير صالح أو منتهي*\nأنشئ رابطاً جديداً من حسابك في الموقع \\(تنتهي صلاحيته خلال 15 دقيقة\\)\\.`, { parse_mode:'MarkdownV2' });
     }
     const s = await refreshSession(ctx);
     await sendMain(ctx, s);
+    await notifyPendingOnLogin(ctx, s);
 });
 
 bot.command('menu', async ctx => { const s = await refreshSession(ctx); await sendMain(ctx, s); });
@@ -600,14 +637,21 @@ async function renderList(ctx, sortLetter, cat, offset){
     const sort=SORTMAP[sortLetter]||'newest';
     const geo=(sort==='nearby')?s.geo:undefined;
     if(sort==='nearby' && !geo) return askLocation(ctx);
+    if(s.temp.browseOpenNow===undefined) s.temp.browseOpenNow=true;   // العروض الحيّة افتراضياً
+    s.temp.lastBr={ sortLetter, cat, offset };
     const deals=await rpc('bot_browse_deals',{ p_sort:sort, p_category:(cat&&cat!=='-')?cat:null,
-        p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null, p_limit:PAGE, p_offset:offset })||[];
+        p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null, p_limit:PAGE, p_offset:offset,
+        p_open_now:!!s.temp.browseOpenNow })||[];
     const catName=(cat&&cat!=='-')?`  ·  ${catLabel(cat)}`:'';
     s.temp.listCb=`br:${sortLetter}:${cat||'-'}:${offset}`;
     if(!deals.length){
-        const msg=offset===0?`📭 *لا توجد عروض مطابقة*${geo?'\nجرّب توسيع المنطقة أو تصنيفاً آخر\\.':''}`:'📭 *لا مزيد من العروض*';
+        const openHint = (offset===0 && s.temp.browseOpenNow) ? '\nقد تكون بعض المحلات مغلقة الآن — جرّب «عرض كل الأوقات»\\.' : '';
+        const msg=offset===0?`📭 *لا توجد عروض مطابقة*${geo?'\nجرّب توسيع المنطقة أو تصنيفاً آخر\\.':''}${openHint}`:'📭 *لا مزيد من العروض*';
+        const erows=[];
+        if (offset===0 && s.temp.browseOpenNow) erows.push([Markup.button.callback('🕐 عرض كل الأوقات','br:open')]);
+        erows.push([Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
         return ctx.reply(`${SORT_TITLE[sort]}${md(catName)}\n${DIV}\n\n${msg}`, { parse_mode:'MarkdownV2',
-            reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup });
+            reply_markup: Markup.inlineKeyboard(erows).reply_markup });
     }
     // Header, then ONE self-contained card per deal (button attached) — exactly
     // like the deals page, so each deal is its own tappable box. v11.72
@@ -626,9 +670,18 @@ async function renderList(ctx, sortLetter, cat, offset){
     ['p','d','n'].forEach(sl=>{ if(sl!==sortLetter) sw.push(Markup.button.callback(SORT_SHORT[sl],`br:${sl}:${cat||'-'}:0`)); });
     if(s.geo && sortLetter!=='x') sw.push(Markup.button.callback(SORT_SHORT.x,`br:x:${cat||'-'}:0`));
     if(sw.length) rows.push(sw);
+    rows.push([Markup.button.callback(s.temp.browseOpenNow ? '🟢 المفتوحة الآن ✓ (اضغط لعرض الكل)' : '🕐 كل الأوقات ✓ (اضغط للمفتوحة فقط)', 'br:open')]);
     rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
     await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))} • اختر التالي أو رتّب بطريقة أخرى:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+// Toggle "open now" for the browse list, then re-render the same page. v11.77
+bot.action('br:open', async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx));
+    s.temp.browseOpenNow = !s.temp.browseOpenNow;
+    const b = s.temp.lastBr || { sortLetter:'n', cat:'-', offset:0 };
+    return renderList(ctx, b.sortLetter, b.cat, b.offset);
+});
 
 // Category picker (counts respect the user's shared location when available).
 bot.action('browse:cats', async ctx => { await ctx.answerCbQuery(); showCats(ctx); });
@@ -710,12 +763,24 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
         geoBlock = `\n📍 المسافة: *${numEsc(fmtKm(straight))} كم* \\(مباشرة\\)\n🚗 بالسيارة: *\\~${numEsc(min)} دقيقة* \\(${numEsc(fmtKm(km))} كم تقريباً\\)`;
     }
     else if (d.map_lat!=null) geoBlock = `\n📍 شارك موقعك لمعرفة المسافة والوقت بالسيارة`;
+    // ساعات عمل المحل (v11.77) — الحالة محسوبة في قاعدة البيانات (open_status).
+    const os = d.open_status;
+    const shopClosed  = !!(os && os.configured && !os.open);
+    const closingSoon = !!(os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= 120);
+    let hoursBlock = '';
+    if (os && os.configured) {
+        const today = HRS.todayLine(d.working_hours);
+        hoursBlock = `\n🕐 *${md(HRS.statusText(os))}*${today ? `\n_${md(today)}_` : ''}`;
+    }
     const caption =
         `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}${rating}\n\n` +
         priceBlock(d.original_price, d.discounted_price, d.discount_percentage) +
-        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${desc}`;
+        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${hoursBlock}${desc}`;
     const btns = [];
-    if (s.userId && s.userType !== 'seller') btns.push([Markup.button.callback('📥  احجز الآن','book:qty')]);
+    if (s.userId && s.userType !== 'seller') {
+        if (shopClosed) btns.push([Markup.button.callback(`🔒 المحل مغلق${os.opens_in_min!=null?` — يفتح بعد ${HRS.fmtMins(os.opens_in_min)}`:''}`.slice(0,62), `dealclosed:${dealId}`)]);
+        else            btns.push([Markup.button.callback('📥  احجز الآن','book:qty')]);
+    }
     else if (!s.userId) btns.push([Markup.button.webApp('🛍  سجّل دخولك لتحجز', APP_URL)]);
     if (d.store_id) {
         // Tap the merchant to open their store profile (Task 6).
@@ -746,6 +811,16 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (photos.length > 1)      { try { await ctx.replyWithMediaGroup(photos.map(u => ({ type:'photo', media:u }))); } catch { /* ignore */ } }
     else if (photos.length === 1) { try { await ctx.replyWithPhoto(photos[0]); } catch { /* ignore */ } }
     return safeReplyMd(ctx, caption, { ...extra, link_preview_options:{is_disabled:true} });
+});
+
+// Tapped the "shop closed" button → explain when it reopens (v11.77).
+bot.action(/^dealclosed:([a-zA-Z0-9_-]+)$/, async ctx => {
+    const d = await rpc('bot_get_deal', { p_deal_id: ctx.match[1], p_telegram_id: tgId(ctx) });
+    const os = d?.open_status;
+    const msg = (os && os.opens_in_min != null)
+        ? `🔒 المحل مغلق الآن — يفتح بعد ${HRS.fmtMins(os.opens_in_min)}. الحجز متاح فور فتحه.`
+        : '🔒 المحل مغلق حالياً. الحجز متاح فور فتح المحل.';
+    return ctx.answerCbQuery(msg, { show_alert: true });
 });
 
 // ── Store: follow / block / reviews ───────────────────────────────────────────
@@ -969,10 +1044,19 @@ async function bookConfirm(ctx, s) {
     // wrongly reported «انتهى هذا العرض أثناء الحجز». (Task 7 fix.)
     const d = await rpc('bot_get_deal', { p_deal_id: s.temp.dealId, p_telegram_id: tgId(ctx) });
     if (!d) return ctx.reply('⏰ *انتهى هذا العرض* أثناء الحجز ولم يعد متاحاً\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 العروض المتاحة','browse:menu')]]).reply_markup });
+    // ساعات العمل (v11.77): مغلق → امنع الإتمام واعرض وقت الفتح.
+    const os = d.open_status;
+    if (os && os.configured && !os.open) {
+        return ctx.reply(`🔒 *محل التاجر مغلق الآن*\n${DIV}\n${os.opens_in_min!=null?`يفتح بعد *${md(HRS.fmtMins(os.opens_in_min))}*\\.\n`:''}لا يمكنك إتمام الحجز إلا بعد أن يفتح المحل\\.`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 تصفّح العروض','browse:menu')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+    }
     const total = d.discounted_price * s.temp.dealQty;
     let m = `✅ *تأكيد الحجز*\n${DIV}\n🛍 ${md(d.item_name)}\n🏪 ${md(d.shop_name)}\n\n📦 الكمية: *${s.temp.dealQty}*\n⏱ الاستلام: *${md(prepLabel(s.temp.prepTime))}*`;
     if (s.temp.notes) m += `\n📝 ملاحظتك: _${md(s.temp.notes)}_`;
     m += `\n💰 الإجمالي: *${money(total)} ر\\.س*\n${DIV}`;
+    // قرب الإغلاق (<ساعتين) → تحذير واضح قبل الإتمام.
+    if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= 120) {
+        m += `\n⏰ *تنبيه: المحل سيغلق بعد ${md(HRS.fmtMins(os.closes_in_min))}* — تأكد أنك تستلم طلبك قبل الإغلاق\\.\n${DIV}`;
+    }
     // Task 3 — booking duration + liability disclaimer (verbatim from the website).
     m += `\n⏳ *مدة الحجز ساعتان فقط\\.*\nيُرجى استلام طلبك من المتجر خلال ساعتين من تأكيد الحجز\\. وعند انتهاء المهلة دون استلام، يُلغى حجزك تلقائياً ويعود المنتج للبيع — دون أي التزام عليك\\.\n${DIV}\nبتأكيدك أنت موافق على ذلك — هل تؤكّد؟`;
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
@@ -991,6 +1075,7 @@ bot.action('book:confirm', async ctx => {
         const e = result?.error;
         const m = e==='deal_inactive'   ? '⏰ *انتهى هذا العرض* ولم يعد متاحاً للحجز\\.\n_تصفّح عروضاً أخرى متاحة الآن 👇_'
                 : e==='deal_not_found'  ? '❌ *لم نجد هذا العرض* — ربما حُذف\\.\n_تصفّح العروض المتاحة 👇_'
+                : e==='shop_closed'     ? `🔒 *محل التاجر مغلق الآن*${result.opens_in_min!=null?` — يفتح بعد *${md(HRS.fmtMins(result.opens_in_min))}*`:''}\\.\n_الحجز متاح فور فتح المحل\\._`
                 : e==='no_quantity'     ? `⚠️ *نفدت الكمية* — المتاح الآن: *${result.available??0}* فقط\\.`
                 : e==='not_linked'      ? '❗ سجّل دخولك أولاً\\.'
                 : e==='suspended'       ? '🚫 حسابك موقوف\\.'
@@ -1063,9 +1148,12 @@ async function showBuyerBookings(ctx, scope='current') {
         if (active) row3.push(Markup.button.callback('🚫 إلغاء الحجز', `cancel:${b.barcode}`));
         if (b.store_id) row3.push(Markup.button.callback('🚩 إبلاغ', `rep:${b.store_id}`));
         if (row3.length) rows.push(row3);
-        await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+        await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
     }
-    await ctx.reply(`${DIV}${more>0?`\n_يوجد ${more} حجز أقدم غير معروض._`:''}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔄 تحديث',`buyer:bk:${scope}`), Markup.button.callback('◀️ رجوع','buyer:bookings')]]).reply_markup });
+    // safeReplyMd so a single odd card can never abort before this footer — it
+    // carries the «رجوع» button, which was vanishing when >10 bookings made the
+    // footer text fail to parse (unescaped '.'). v11.77
+    await safeReplyMd(ctx, `${DIV}${more>0?`\n_يوجد ${numEsc(more)} حجز أقدم غير معروض_`:''}`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔄 تحديث',`buyer:bk:${scope}`), Markup.button.callback('◀️ رجوع','buyer:bookings')]]).reply_markup });
 }
 bot.action(/^cancel:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
@@ -1544,7 +1632,7 @@ async function showMap(ctx){
 //  then the matching deals as cards, plus the full interactive light/dark-mask map
 //  as a web app (also previews the smart-alert radius). v11.76
 // ═══════════════════════════════════════════════════════════════════════════════
-function nfDraft(s){ return s.temp.nf || (s.temp.nf = { region:null, regionName:null, city:null, cityName:null, mall:null, mallName:null, category:null, radius:null, useGeo:false }); }
+function nfDraft(s){ return s.temp.nf || (s.temp.nf = { region:null, regionName:null, city:null, cityName:null, mall:null, mallName:null, category:null, radius:null, useGeo:false, openNow:true }); }
 function nfSummary(f, s){
     const lines = [
         `🗺 المنطقة: *${f.regionName ? md(f.regionName) : 'كل المناطق'}*`,
@@ -1554,6 +1642,7 @@ function nfSummary(f, s){
     ];
     if (f.useGeo && s.geo) lines.push(`📍 النطاق: *${f.radius>0 ? `ضمن ${numEsc(f.radius)} كم من موقعك` : 'الأقرب لموقعك'}*`);
     else lines.push('📍 النطاق: *—*');
+    lines.push(`🕐 العرض: *${f.openNow ? 'المحلات المفتوحة الآن 🟢' : 'كل الأوقات'}*`);
     return lines.join('\n');
 }
 // Web map URL carrying the chosen filters → the website renders the SAME
@@ -1575,6 +1664,7 @@ async function showNearbyHub(ctx){
     const rows = [
         [Markup.button.callback('📍 المنطقة / المدينة / المول','nf:loc')],
         [Markup.button.callback('🏷 التصنيف','nf:cat'), Markup.button.callback('🎯 الأقرب لي + نطاق','nf:near')],
+        [Markup.button.callback(f.openNow ? '🟢 المفتوحة الآن ✓' : '🟢 المفتوحة الآن', 'nf:open:1'), Markup.button.callback(!f.openNow ? '🕐 كل الأوقات ✓' : '🕐 كل الأوقات', 'nf:open:0')],
         [Markup.button.callback('🔎 اعرض العروض','nf:go:0')],
         [Markup.button.webApp('🗺 الخريطة التفاعلية (فاتح/غامق)', nfMapUrl(f, s))],
         [Markup.button.callback('📌 أقرب العروض كمواقع على الخريطة','buyer:map')],
@@ -1585,6 +1675,7 @@ async function showNearbyHub(ctx){
 }
 bot.action('nf:clear', async ctx => { await ctx.answerCbQuery('🗑 مُسحت الفلاتر'); getSession(tgId(ctx)).temp.nf=null; return showNearbyHub(ctx); });
 bot.action('nf:done',  async ctx => { await ctx.answerCbQuery('✅ تم'); return showNearbyHub(ctx); });
+bot.action(/^nf:open:([01])$/, async ctx => { await ctx.answerCbQuery(); nfDraft(getSession(tgId(ctx))).openNow = ctx.match[1]==='1'; return showNearbyHub(ctx); });
 
 // ── Location cascade: region → city → mall (the user may stop at any level) ────
 bot.action('nf:loc', async ctx => {
@@ -1682,6 +1773,7 @@ async function runNearby(ctx, offset){
         p_region: f.region || null,
         p_city: f.city || null,
         p_location_id: f.mall || null,
+        p_open_now: !!f.openNow,
     })||[];
     s.temp.listCb='buyer:nearby';
     const where  = [f.mallName, f.cityName, f.regionName].filter(Boolean).join(' • ') || (useGeo ? 'حول موقعك' : 'كل المناطق');
@@ -1926,6 +2018,69 @@ bot.action('seller:bio', async ctx => {
     await ctx.reply(`📝 *نبذة المتجر*${cur}\n${DIV}\nاكتب النبذة الجديدة \\(حتى 500 حرف\\) — تظهر للمشترين في صفحتك بالبوت والموقع والتطبيق:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:profile')]]).reply_markup });
 });
 
+// ── Seller working hours (ساعات العمل) — same-for-all / per-day (two shifts) / off
+//    Stored in users.working_hours (same source the website editor uses). v11.77
+const _toMinHr = hhmm => { const [h,m]=String(hhmm).split(':'); return (+h||0)*60+(+m||0); };
+function parseHoursInput(text){
+    const toks = (normalizeDigits(String(text)).match(/\d{1,2}:\d{2}/g) || [])
+        .map(x => { const [h,m]=x.split(':'); return (+h>=0&&+h<=23&&+m>=0&&+m<=59) ? `${String(+h).padStart(2,'0')}:${m}` : null; })
+        .filter(Boolean);
+    if (toks.length < 2 || toks.length % 2 !== 0 || toks.length > 4) return null;
+    const shifts=[];
+    for (let i=0;i<toks.length;i+=2){ if (_toMinHr(toks[i]) >= _toMinHr(toks[i+1])) return null; shifts.push([toks[i], toks[i+1]]); }
+    return shifts;
+}
+async function showSellerHours(ctx){
+    const s=getSession(tgId(ctx));
+    if (!s.userId || s.userType!=='seller') return ctx.reply('❗ للتجار فقط\\.', { parse_mode:'MarkdownV2' });
+    const r = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
+    const wh = r?.working_hours;
+    const lines = HRS.isConfigured(wh) ? HRS.weekLines(wh).map(l=>`• ${md(l)}`).join('\n') : '_لم تُحدَّد بعد — المحل يظهر متاحاً طوال الوقت_';
+    const m = `🕐 *ساعات عمل المحل*\n${DIV}\n${lines}\n${DIV}\n_تظهر للمشترين، وتمنع الحجز خارج الدوام، وتحذّرهم قبل الإغلاق بساعتين\\._`;
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('⏰ نفس الساعات لكل الأيام','sh:all')],
+        [Markup.button.callback('📅 تعديل يوم محدد','sh:day')],
+        [Markup.button.callback('🔕 إيقاف ساعات العمل','sh:off')],
+        [Markup.button.callback('◀️ رجوع','menu:back')],
+    ]).reply_markup });
+}
+bot.command('hours', ctx => showSellerHours(ctx));
+bot.action('seller:hours', async ctx => { await ctx.answerCbQuery(); showSellerHours(ctx); });
+bot.action('sh:all', async ctx => {
+    await ctx.answerCbQuery(); setStep(tgId(ctx),'await_hours_all');
+    await ctx.reply('⏰ *ساعات موحّدة لكل الأيام*\nأرسل وقت الفتح ثم الإغلاق \\(صيغة 24 ساعة\\)، مثال:\n`09:00 22:00`\nوللفترتين \\(صباحي + مسائي\\):\n`08:30 12:30 16:00 23:00`', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء','seller:hours')]]).reply_markup });
+});
+bot.action('sh:day', async ctx => {
+    await ctx.answerCbQuery();
+    const rows=[]; for(let i=0;i<7;i+=2) rows.push([i,i+1].filter(d=>d<7).map(d=>Markup.button.callback(HRS.DAY_AR[d],`sh:d:${d}`)));
+    rows.push([Markup.button.callback('◀️ رجوع','seller:hours')]);
+    await ctx.reply('📅 *اختر اليوم لتعديله:*', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+});
+bot.action(/^sh:d:([0-6])$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); s.temp.hoursDay=+ctx.match[1]; setStep(tgId(ctx),'await_hours_day');
+    await ctx.reply(`📅 *${md(HRS.DAY_AR[+ctx.match[1]])}*\nأرسل ساعات هذا اليوم، مثل:\n\`08:00 22:00\` أو فترتين \`08:30 12:30 16:00 23:00\`\nأو اضغط «إغلاق هذا اليوم»:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔕 إغلاق هذا اليوم',`sh:close:${+ctx.match[1]}`)],[Markup.button.callback('❌ إلغاء','sh:day')]]).reply_markup });
+});
+async function saveDayHours(ctx, day, shifts){
+    const r0 = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
+    const wh = HRS.isConfigured(r0?.working_hours) ? r0.working_hours : { enabled:true, days:{} };
+    wh.enabled = true; wh.days = wh.days || {};
+    wh.days[String(day)] = shifts;
+    const r = await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: wh });
+    return r?.success;
+}
+bot.action(/^sh:close:([0-6])$/, async ctx => {
+    await ctx.answerCbQuery('🔕 تم إغلاق اليوم');
+    setStep(tgId(ctx),'idle');
+    await saveDayHours(ctx, +ctx.match[1], []);
+    return showSellerHours(ctx);
+});
+bot.action('sh:off', async ctx => {
+    await ctx.answerCbQuery('🔕 أُوقفت');
+    await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:false, days:{} } });
+    await ctx.reply('🔕 *أُوقفت ساعات العمل* — المحل يظهر متاحاً طوال الوقت\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🕐 ساعات العمل','seller:hours')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 bot.action('admin:stats', async ctx => {
     await ctx.answerCbQuery();
@@ -1965,12 +2120,14 @@ bot.on('text', async ctx => {
 
     if (s.step === 'await_barcode') { setStep(tgId(ctx),'idle'); return doVerify(ctx, text.trim().toUpperCase()); }
     if (s.step === 'await_book_qty') {
-        if (!isQty(text) || +text < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
-        s.temp.dealQty = +text; setStep(tgId(ctx),'idle'); return askPrep(ctx, s);
+        const q = numOf(text);
+        if (!isQty(text) || q < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
+        s.temp.dealQty = q; setStep(tgId(ctx),'idle'); return askPrep(ctx, s);
     }
     if (s.step === 'await_prep') {
-        if (!isQty(text) || +text < 1 || +text > 1440) return ctx.reply('❗ أرسل عدد دقائق صحيح (مثل 20):');
-        s.temp.prepTime = `${+text}min`; setStep(tgId(ctx),'idle'); return askNote(ctx, s);
+        const mins = numOf(text);
+        if (!isQty(text) || mins < 1 || mins > 1440) return ctx.reply('❗ أرسل عدد دقائق صحيح (مثل 20):');
+        s.temp.prepTime = `${mins}min`; setStep(tgId(ctx),'idle'); return askNote(ctx, s);
     }
     if (s.step === 'await_note') {
         s.temp.notes = text.slice(0,300); setStep(tgId(ctx),'idle'); return bookConfirm(ctx, s);
@@ -1991,9 +2148,10 @@ bot.on('text', async ctx => {
         return doComplete(ctx, bc, text.slice(0,300));
     }
     if (s.step === 'await_edit_qty') {
-        if (!isQty(text) || +text < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
+        const q = numOf(text);
+        if (!isQty(text) || q < 1) return ctx.reply('❗ أرسل رقماً صحيحاً (مثل 2):');
         setStep(tgId(ctx),'idle');
-        const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: s.temp.editBarcode, p_quantity: +text });
+        const r = await rpc('bot_update_booking', { p_telegram_id: tgId(ctx), p_barcode: s.temp.editBarcode, p_quantity: q });
         return afterEdit(ctx, r);
     }
     if (s.step === 'await_edit_note') {
@@ -2044,6 +2202,25 @@ bot.on('text', async ctx => {
         if (!r?.success) return ctx.reply('⚠️ تعذّر حفظ النبذة\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏪 حساب المتجر','seller:profile')]]).reply_markup });
         await ctx.reply('✅ *تم حفظ نبذة المتجر* — تظهر الآن للمشترين في البوت والموقع والتطبيق\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🏪 حساب المتجر','seller:profile')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
         return;
+    }
+    if (s.step === 'await_hours_all') {                              // v11.77 — same hours for all 7 days
+        const shifts = parseHoursInput(text);
+        if (!shifts) { return ctx.reply('❗ صيغة غير صحيحة\\. أرسل مثل: `09:00 22:00` أو `08:30 12:30 16:00 23:00`', { parse_mode:'MarkdownV2' }); }
+        setStep(tgId(ctx),'idle');
+        const days={}; for(let d=0;d<7;d++) days[String(d)]=shifts.map(x=>[x[0],x[1]]);
+        const r = await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:true, days } });
+        if (!r?.success) return ctx.reply('⚠️ تعذّر الحفظ\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🕐 ساعات العمل','seller:hours')]]).reply_markup });
+        await ctx.reply('✅ *تم حفظ ساعات العمل لكل الأيام*', { parse_mode:'MarkdownV2' });
+        return showSellerHours(ctx);
+    }
+    if (s.step === 'await_hours_day') {                              // v11.77 — one specific day
+        const shifts = parseHoursInput(text);
+        if (!shifts) { return ctx.reply('❗ صيغة غير صحيحة\\. أرسل مثل: `08:00 22:00` أو `08:30 12:30 16:00 23:00`', { parse_mode:'MarkdownV2' }); }
+        setStep(tgId(ctx),'idle');
+        const ok = await saveDayHours(ctx, s.temp.hoursDay ?? 0, shifts);
+        if (!ok) return ctx.reply('⚠️ تعذّر الحفظ\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🕐 ساعات العمل','seller:hours')]]).reply_markup });
+        await ctx.reply(`✅ *تم حفظ ساعات ${md(HRS.DAY_AR[s.temp.hoursDay ?? 0])}*`, { parse_mode:'MarkdownV2' });
+        return showSellerHours(ctx);
     }
     if (s.step === 'await_search') {                                 // Task 4
         const q = text.trim().slice(0,60);

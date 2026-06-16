@@ -22,6 +22,7 @@ export interface UserProfile {
     lat?: number;
     lng?: number;
     googleMapsLink?: string;
+    workingHours?: any;   // ساعات عمل المحل (للتاجر) — see utils/workingHours
     // v11.19 — granular admin permissions. Super admin (Nasser) bypasses
     // every check; staff admins (`isSuperAdmin=false`) only see tabs/actions
     // whose key is present in `adminPermissions`. Both fields are loaded

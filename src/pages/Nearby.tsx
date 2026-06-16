@@ -8,6 +8,7 @@ import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
 import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/helpers';
+import { getShopStatus } from '../utils/workingHours';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -105,6 +106,8 @@ const Nearby: React.FC = () => {
     const [selectedCategory, setSelectedCategory] = useState(urlParams.cat || 'all');
     const [locationType, setLocationType] = useState('');
     const [selectedLocationId, setSelectedLocationId] = useState(urlParams.mall);
+    // «مفتوح الآن» (العروض الحيّة) هو الافتراضي — يخفي عروض المحلات المغلقة حالياً. v11.77
+    const [openNow, setOpenNow] = useState(true);
 
     // Initial zoom so a deep-linked radius circle fits the screen on open.
     const initZoom = useMemo(() => {
@@ -169,9 +172,10 @@ const Nearby: React.FC = () => {
             // v11.20 — exclude Coming Soon deals from the Nearby map+list.
             // The map is for "what can I get RIGHT NOW within X km"; a
             // locked future deal would be visual noise here.
-            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
+            const matchesOpen = !openNow || getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open;
+            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && matchesOpen && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
         }).sort((a, b) => a.distance - b.distance);
-    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, blockedMerchants]);
+    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, blockedMerchants, openNow, storeProfiles]);
 
     // Store-by-name results — same shared engine as Home/DealsList so search
     // is consistent on every page (stores aren't geo-bound, so a name match
@@ -343,6 +347,12 @@ const Nearby: React.FC = () => {
                     </button>
                 </div>
                 
+                {/* Open-now filter (default ON) — العروض الحيّة من المحلات المفتوحة الآن */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, background: 'var(--chip-inactive-bg)', padding: 5, borderRadius: 18 }}>
+                    <button onClick={() => setOpenNow(true)} className={`segment-chip${openNow ? ' active' : ''}`}>🟢 {isRTL ? 'المفتوحة الآن' : 'Open now'}</button>
+                    <button onClick={() => setOpenNow(false)} className={`segment-chip${!openNow ? ' active' : ''}`}>🕐 {isRTL ? 'كل الأوقات' : 'All hours'}</button>
+                </div>
+
                 {/* View Mode Toggle */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, background: 'var(--chip-inactive-bg)', padding: 5, borderRadius: 18 }}>
                     <button onClick={() => setViewMode('both')} className={`segment-chip${viewMode === 'both' ? ' active' : ''}`}>{isRTL ? 'خريطة وقائمة' : 'Map & List'}</button>
