@@ -3,6 +3,7 @@ import { Deal, getLocation } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel } from '../utils/helpers';
+import { getShopStatus } from '../utils/workingHours';
 
 interface Props {
     deal: Deal;
@@ -40,7 +41,8 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
 };
 
 const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
-    const { toggleFollowMerchant, followedMerchants, language } = useApp();
+    const { toggleFollowMerchant, followedMerchants, language, storeProfiles } = useApp();
+    const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
     const { average, count } = dealService.calculateRating(deal.ratings);
     const loc = getLocation(deal.locationId);
     const isFollowed = followedMerchants.includes(deal.storeId);
@@ -303,7 +305,17 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
             </div>
 
             <div style={{ padding: '12px 14px' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{deal.shopName}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.shopName}</span>
+                    {shopStatus.configured && (
+                        <span style={{
+                            marginInlineStart: 'auto', flexShrink: 0,
+                            background: shopStatus.open ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)',
+                            color: shopStatus.open ? '#10b981' : '#ef4444',
+                            fontSize: '0.62rem', fontWeight: 900, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap'
+                        }}>{shopStatus.open ? (isRTL ? '🟢 مفتوح' : '🟢 Open') : (isRTL ? '🔴 مغلق' : '🔴 Closed')}</span>
+                    )}
+                </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
                     {deal.itemName}
                 </div>

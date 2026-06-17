@@ -350,7 +350,7 @@ const Nearby: React.FC = () => {
                 {/* Open-now filter (default ON) — العروض الحيّة من المحلات المفتوحة الآن */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, background: 'var(--chip-inactive-bg)', padding: 5, borderRadius: 18 }}>
                     <button onClick={() => setOpenNow(true)} className={`segment-chip${openNow ? ' active' : ''}`}>🟢 {isRTL ? 'المفتوحة الآن' : 'Open now'}</button>
-                    <button onClick={() => setOpenNow(false)} className={`segment-chip${!openNow ? ' active' : ''}`}>🕐 {isRTL ? 'كل الأوقات' : 'All hours'}</button>
+                    <button onClick={() => setOpenNow(false)} className={`segment-chip${!openNow ? ' active' : ''}`}>🏪 {isRTL ? 'جميع المحلات' : 'All shops'}</button>
                 </div>
 
                 {/* View Mode Toggle */}

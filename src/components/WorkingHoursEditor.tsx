@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WorkingHours, Shift, defaultWorkingHours, DAY_NAMES_AR, DAY_NAMES_EN, fmtClock } from '../utils/workingHours';
+import { WorkingHours, Shift, defaultWorkingHours, DAY_NAMES_AR, DAY_NAMES_EN, fmtClock, isValidWorkingHours, statusPill, todayHoursLabel } from '../utils/workingHours';
 
 /**
  * WorkingHoursEditor — Google-Maps-style per-day shop hours (ساعات عمل المحل).
@@ -24,7 +24,12 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
         for (const i of ORDER) d[String(i)] = Array.isArray(init.days[String(i)]) ? init.days[String(i)].map(s => [s[0], s[1]] as Shift) : [];
         return d;
     });
+    // Expanded the first time (no hours yet); collapsed once configured — the seller
+    // taps «تعديل» to re-open it any time. v11.77
+    const [expanded, setExpanded] = useState<boolean>(!isValidWorkingHours(value));
     const dayNames = isRTL ? DAY_NAMES_AR : DAY_NAMES_EN;
+
+    const save = () => { onSave({ enabled, days }); setExpanded(false); };
 
     const setShift = (d: number, idx: number, which: 0 | 1, val: string) => {
         setDays(prev => {
@@ -43,6 +48,32 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
     };
 
     const card: React.CSSProperties = { background: 'var(--card-bg)', borderRadius: 16, padding: 14, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' };
+
+    // Collapsed summary — shown once hours are set; tap «تعديل» to re-open.
+    if (!expanded) {
+        const pill = enabled ? statusPill({ enabled, days }, isRTL) : { tone: 'none' as const, text: isRTL ? 'موقوفة' : 'Off' };
+        const bg = pill.tone === 'open' ? 'rgba(16,185,129,0.12)' : pill.tone === 'soon' ? 'rgba(245,158,11,0.14)' : pill.tone === 'closed' ? 'rgba(239,68,68,0.12)' : 'var(--gray-100)';
+        const col = pill.tone === 'open' ? '#10b981' : pill.tone === 'soon' ? '#f59e0b' : pill.tone === 'closed' ? '#ef4444' : 'var(--gray-500)';
+        const dot = pill.tone === 'closed' ? '🔴' : pill.tone === 'soon' ? '🟠' : pill.tone === 'open' ? '🟢' : '⚪';
+        return (
+            <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span style={{ fontSize: '1.2rem' }}>🕐</span>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                            <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.7rem', padding: '2px 9px', borderRadius: 999 }}>{dot} {pill.text}</span>
+                            {enabled && <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700, direction: 'ltr' }}>{todayHoursLabel({ enabled, days }, isRTL)}</span>}
+                        </div>
+                    </div>
+                </div>
+                <button type="button" onClick={() => setExpanded(true)}
+                    style={{ flexShrink: 0, background: 'var(--gray-100)', color: 'var(--primary)', border: 'none', borderRadius: 10, padding: '8px 14px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    ✏️ {isRTL ? 'تعديل' : 'Edit'}
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div style={card}>
@@ -108,10 +139,18 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                 </div>
             )}
 
-            <button type="button" disabled={saving} onClick={() => onSave({ enabled, days })}
-                style={{ width: '100%', marginTop: 12, padding: '11px', borderRadius: 12, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, fontSize: '0.9rem', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: '0 6px 16px var(--primary-glow)' }}>
-                {saving ? (isRTL ? 'جارٍ الحفظ…' : 'Saving…') : (isRTL ? '💾 حفظ ساعات العمل' : '💾 Save Working Hours')}
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button type="button" disabled={saving} onClick={save}
+                    style={{ flex: 1, padding: '11px', borderRadius: 12, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, fontSize: '0.9rem', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: '0 6px 16px var(--primary-glow)' }}>
+                    {saving ? (isRTL ? 'جارٍ الحفظ…' : 'Saving…') : (isRTL ? '💾 حفظ وتصغير' : '💾 Save')}
+                </button>
+                {isValidWorkingHours(value) && (
+                    <button type="button" onClick={() => setExpanded(false)}
+                        style={{ flexShrink: 0, padding: '11px 16px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-primary)', border: 'none', fontWeight: 900, fontSize: '0.9rem', cursor: 'pointer' }}>
+                        ▲ {isRTL ? 'تصغير' : 'Collapse'}
+                    </button>
+                )}
+            </div>
         </div>
     );
 };

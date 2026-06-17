@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.77.0';
+const BOT_VERSION              = '11.78.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -648,7 +648,7 @@ async function renderList(ctx, sortLetter, cat, offset){
         const openHint = (offset===0 && s.temp.browseOpenNow) ? '\nقد تكون بعض المحلات مغلقة الآن — جرّب «عرض كل الأوقات»\\.' : '';
         const msg=offset===0?`📭 *لا توجد عروض مطابقة*${geo?'\nجرّب توسيع المنطقة أو تصنيفاً آخر\\.':''}${openHint}`:'📭 *لا مزيد من العروض*';
         const erows=[];
-        if (offset===0 && s.temp.browseOpenNow) erows.push([Markup.button.callback('🕐 عرض كل الأوقات','br:open')]);
+        if (offset===0 && s.temp.browseOpenNow) erows.push([Markup.button.callback('🏪 عرض جميع المحلات (مفتوحة + مغلقة)','br:open:0')]);
         erows.push([Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
         return ctx.reply(`${SORT_TITLE[sort]}${md(catName)}\n${DIV}\n\n${msg}`, { parse_mode:'MarkdownV2',
             reply_markup: Markup.inlineKeyboard(erows).reply_markup });
@@ -670,15 +670,19 @@ async function renderList(ctx, sortLetter, cat, offset){
     ['p','d','n'].forEach(sl=>{ if(sl!==sortLetter) sw.push(Markup.button.callback(SORT_SHORT[sl],`br:${sl}:${cat||'-'}:0`)); });
     if(s.geo && sortLetter!=='x') sw.push(Markup.button.callback(SORT_SHORT.x,`br:x:${cat||'-'}:0`));
     if(sw.length) rows.push(sw);
-    rows.push([Markup.button.callback(s.temp.browseOpenNow ? '🟢 المفتوحة الآن ✓ (اضغط لعرض الكل)' : '🕐 كل الأوقات ✓ (اضغط للمفتوحة فقط)', 'br:open')]);
+    // فلتر واضح بزرّين: المفتوحة الآن (الافتراضي) أو جميع المحلات (مفتوحة + مغلقة). v11.77
+    rows.push([
+        Markup.button.callback(s.temp.browseOpenNow ? '🟢 المفتوحة الآن ✅' : '🟢 المفتوحة الآن', 'br:open:1'),
+        Markup.button.callback(!s.temp.browseOpenNow ? '🏪 جميع المحلات ✅' : '🏪 جميع المحلات', 'br:open:0'),
+    ]);
     rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
-    await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))} • اختر التالي أو رتّب بطريقة أخرى:`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+    await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))}\n🟢 المفتوحة الآن = محلات مفتوحة حالياً  •  🏪 جميع المحلات = المفتوحة والمغلقة`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
-// Toggle "open now" for the browse list, then re-render the same page. v11.77
-bot.action('br:open', async ctx => {
+// "Open now" (1) vs "all shops" (0) for the browse list, then re-render. v11.77
+bot.action(/^br:open:([01])$/, async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx));
-    s.temp.browseOpenNow = !s.temp.browseOpenNow;
+    s.temp.browseOpenNow = ctx.match[1]==='1';
     const b = s.temp.lastBr || { sortLetter:'n', cat:'-', offset:0 };
     return renderList(ctx, b.sortLetter, b.cat, b.offset);
 });
@@ -766,7 +770,7 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     // ساعات عمل المحل (v11.77) — الحالة محسوبة في قاعدة البيانات (open_status).
     const os = d.open_status;
     const shopClosed  = !!(os && os.configured && !os.open);
-    const closingSoon = !!(os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= 120);
+    const closingSoon = !!(os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN);
     let hoursBlock = '';
     if (os && os.configured) {
         const today = HRS.todayLine(d.working_hours);
@@ -1054,7 +1058,7 @@ async function bookConfirm(ctx, s) {
     if (s.temp.notes) m += `\n📝 ملاحظتك: _${md(s.temp.notes)}_`;
     m += `\n💰 الإجمالي: *${money(total)} ر\\.س*\n${DIV}`;
     // قرب الإغلاق (<ساعتين) → تحذير واضح قبل الإتمام.
-    if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= 120) {
+    if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN) {
         m += `\n⏰ *تنبيه: المحل سيغلق بعد ${md(HRS.fmtMins(os.closes_in_min))}* — تأكد أنك تستلم طلبك قبل الإغلاق\\.\n${DIV}`;
     }
     // Task 3 — booking duration + liability disclaimer (verbatim from the website).
@@ -1642,7 +1646,7 @@ function nfSummary(f, s){
     ];
     if (f.useGeo && s.geo) lines.push(`📍 النطاق: *${f.radius>0 ? `ضمن ${numEsc(f.radius)} كم من موقعك` : 'الأقرب لموقعك'}*`);
     else lines.push('📍 النطاق: *—*');
-    lines.push(`🕐 العرض: *${f.openNow ? 'المحلات المفتوحة الآن 🟢' : 'كل الأوقات'}*`);
+    lines.push(`🕐 العرض: *${f.openNow ? 'المحلات المفتوحة الآن 🟢' : 'جميع المحلات \\(مفتوحة + مغلقة\\)'}*`);
     return lines.join('\n');
 }
 // Web map URL carrying the chosen filters → the website renders the SAME
@@ -1664,7 +1668,7 @@ async function showNearbyHub(ctx){
     const rows = [
         [Markup.button.callback('📍 المنطقة / المدينة / المول','nf:loc')],
         [Markup.button.callback('🏷 التصنيف','nf:cat'), Markup.button.callback('🎯 الأقرب لي + نطاق','nf:near')],
-        [Markup.button.callback(f.openNow ? '🟢 المفتوحة الآن ✓' : '🟢 المفتوحة الآن', 'nf:open:1'), Markup.button.callback(!f.openNow ? '🕐 كل الأوقات ✓' : '🕐 كل الأوقات', 'nf:open:0')],
+        [Markup.button.callback(f.openNow ? '🟢 المفتوحة الآن ✅' : '🟢 المفتوحة الآن', 'nf:open:1'), Markup.button.callback(!f.openNow ? '🏪 جميع المحلات ✅' : '🏪 جميع المحلات', 'nf:open:0')],
         [Markup.button.callback('🔎 اعرض العروض','nf:go:0')],
         [Markup.button.webApp('🗺 الخريطة التفاعلية (فاتح/غامق)', nfMapUrl(f, s))],
         [Markup.button.callback('📌 أقرب العروض كمواقع على الخريطة','buyer:map')],

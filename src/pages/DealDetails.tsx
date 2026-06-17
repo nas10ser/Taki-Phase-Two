@@ -9,7 +9,7 @@ import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
-import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock } from '../utils/workingHours';
+import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -595,7 +595,7 @@ const DealDetails: React.FC = () => {
     const shopWH = (storeProfiles[deal.storeId] as any)?.workingHours;
     const shopStatus = getShopStatus(shopWH);
     const shopClosed = shopStatus.configured && !shopStatus.open;
-    const closingSoon = shopStatus.configured && shopStatus.open && (shopStatus.closesInMin ?? 99999) <= 120;
+    const closingSoon = shopStatus.configured && shopStatus.open && (shopStatus.closesInMin ?? 99999) <= CLOSING_SOON_MIN;
     const canBook = !isSoldOut && !isComingSoon && !shopClosed;
 
     const handleBooking = async () => {

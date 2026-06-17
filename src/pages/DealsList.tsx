@@ -196,7 +196,7 @@ const DealsList: React.FC = () => {
             {type !== 'coming_soon' && (
                 <div style={{ display: 'flex', gap: 8, padding: '10px 12px 0', background: 'var(--card-bg)' }}>
                     <button onClick={() => setOpenNow(true)} className={`filter-chip ${openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🟢 {isRTL ? 'المفتوحة الآن' : 'Open now'}</button>
-                    <button onClick={() => setOpenNow(false)} className={`filter-chip ${!openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🕐 {isRTL ? 'كل الأوقات' : 'All hours'}</button>
+                    <button onClick={() => setOpenNow(false)} className={`filter-chip ${!openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🏪 {isRTL ? 'جميع المحلات' : 'All shops'}</button>
                 </div>
             )}
 

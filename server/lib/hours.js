@@ -4,6 +4,7 @@
  * كل النصوص عربية بدون رموز MarkdownV2 محجوزة (تُهرَّب عند الإدراج عبر md()).
  */
 const DAY_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const CLOSING_SOON_MIN = 60;   // «يغلق قريباً» = خلال ساعة
 
 const toMin = hhmm => { const [h, m] = String(hhmm).split(':'); return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0); };
 
@@ -39,7 +40,7 @@ function statusText(os) {
     if (!os || !os.configured) return '';
     if (os.open) {
         const c = os.closes_in_min;
-        return (c != null && c <= 120) ? `🟠 يغلق بعد ${fmtMins(c)}` : '🟢 مفتوح الآن';
+        return (c != null && c <= CLOSING_SOON_MIN) ? `🟠 يغلق بعد ${fmtMins(c)}` : '🟢 مفتوح الآن';
     }
     return os.opens_in_min != null ? `🔴 مغلق · يفتح بعد ${fmtMins(os.opens_in_min)}` : '🔴 مغلق الآن';
 }
@@ -55,4 +56,4 @@ function weekLines(wh) {
     return [0, 1, 2, 3, 4, 5, 6].map(d => `${DAY_AR[d]}${d === dow ? ' (اليوم)' : ''}: ${dayShifts(wh.days[String(d)])}`);
 }
 
-module.exports = { fmtMins, fmtClock, dayShifts, statusText, todayLine, weekLines, isConfigured, riyadhDow, DAY_AR };
+module.exports = { fmtMins, fmtClock, dayShifts, statusText, todayLine, weekLines, isConfigured, riyadhDow, DAY_AR, CLOSING_SOON_MIN };

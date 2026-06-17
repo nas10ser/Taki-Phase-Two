@@ -23,6 +23,8 @@ export interface ShopStatus {
     opensInMin?: number;     // when closed (null/undefined = never opens this week)
 }
 
+// «يغلق قريباً» = خلال هذا العدد من الدقائق (ساعة). يُحذّر المشتري عند الحجز. v11.77
+export const CLOSING_SOON_MIN = 60;
 export const DAY_NAMES_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 export const DAY_NAMES_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -132,7 +134,7 @@ export function statusPill(wh: any, isRTL = true, now: Date = new Date()): { ton
     const st = getShopStatus(wh, now);
     if (!st.configured) return { tone: 'none', text: '' };
     if (st.open) {
-        const soon = (st.closesInMin ?? 999) <= 120;
+        const soon = (st.closesInMin ?? 999) <= CLOSING_SOON_MIN;
         if (soon) return { tone: 'soon', text: isRTL ? `يغلق بعد ${fmtDuration(st.closesInMin!, true)}` : `Closes in ${fmtDuration(st.closesInMin!, false)}` };
         return { tone: 'open', text: isRTL ? 'مفتوح الآن' : 'Open now' };
     }

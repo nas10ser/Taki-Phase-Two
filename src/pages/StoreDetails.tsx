@@ -8,6 +8,7 @@ import { SellerTopBar } from '../components/SellerTopBar';
 import { userRepository } from '../repositories/userRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
+import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -488,6 +489,38 @@ const StoreDetails: React.FC = () => {
                     <SellerTopBar storeId={store.id} />
                 </div>
             </div>
+
+            {/* Working hours (ساعات عمل المحل) — visible to buyers on the store page */}
+            {(() => {
+                const wh = (profile as any)?.workingHours;
+                const st = getShopStatus(wh);
+                if (!st.configured) return null;
+                const pill = statusPill(wh, isRTL);
+                const bg = pill.tone === 'open' ? 'rgba(16,185,129,0.12)' : pill.tone === 'soon' ? 'rgba(245,158,11,0.14)' : 'rgba(239,68,68,0.12)';
+                const col = pill.tone === 'open' ? '#10b981' : pill.tone === 'soon' ? '#f59e0b' : '#ef4444';
+                const dot = pill.tone === 'closed' ? '🔴' : pill.tone === 'soon' ? '🟠' : '🟢';
+                const week = weekHoursLines(wh, isRTL);
+                return (
+                    <div style={{ margin: '12px 16px', background: 'var(--card-bg)', borderRadius: 20, padding: 18, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', border: '1px solid var(--border-color)' }}>
+                        <h3 style={{ fontWeight: 900, marginBottom: 10, fontSize: '0.95rem', color: 'var(--text-primary)' }}>🕐 {isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                            <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.8rem', padding: '5px 12px', borderRadius: 999 }}>{dot} {pill.text}</span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 700 }}>{isRTL ? 'اليوم: ' : 'Today: '}<span style={{ direction: 'ltr', display: 'inline-block' }}>{todayHoursLabel(wh, isRTL)}</span></span>
+                        </div>
+                        <details>
+                            <summary style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 800, fontSize: '0.8rem' }}>{isRTL ? 'عرض كل أيام الأسبوع' : 'View all week'}</summary>
+                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {week.map((w, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.8rem', fontWeight: w.today ? 900 : 700, color: w.today ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                        <span>{w.day}{w.today ? (isRTL ? ' (اليوم)' : ' (today)') : ''}</span>
+                                        <span style={{ direction: 'ltr' }}>{w.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </details>
+                    </div>
+                );
+            })()}
 
             {/* Tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: 'var(--card-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
