@@ -94,6 +94,7 @@ interface AppContextType {
     notifications: Notification[];
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
+    markAllNotifsRead: () => void;
     addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean>;
     addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
     toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
@@ -1235,6 +1236,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Sync read status to Supabase
         notificationRepository.markAsRead(id);
     }, []);
+
+    // "قراءة الكل" — mark every unread notification of the signed-in user as read at
+    // once (optimistic locally, then one bulk UPDATE). Used by the buyer (Profile +
+    // /notifications) and the seller (dashboard) notification lists.
+    const markAllNotifsRead = useCallback(() => {
+        const uid = user?.id;
+        if (!uid) return;
+        setNotifications(prev => prev.map(n => (n.userId === uid && !n.isRead) ? { ...n, isRead: true } : n));
+        notificationRepository.markAllAsRead(uid);
+    }, [user]);
 
     const logout = useCallback(async () => {
         // Clear all per-user state instantly so the UI doesn't flash the
@@ -2420,7 +2431,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, addNotification, markNotifRead,
+        notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, refreshDeals,
@@ -2447,7 +2458,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, addNotification, markNotifRead,
+        notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, refreshDeals,

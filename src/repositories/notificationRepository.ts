@@ -67,10 +67,27 @@ export const notificationRepository = {
                 .from('notifications')
                 .update({ is_read: true })
                 .eq('id', id);
-            
+
             if (error) throw error;
         } catch (error) {
             console.warn('❌ Failed to mark notification as read:', error);
+        }
+    },
+
+    // Mark every unread notification for a user as read in one round-trip — powers
+    // the "قراءة الكل / Mark all read" button. RLS (notifs_update_own) restricts the
+    // UPDATE to the caller's own rows, so user_id must be the signed-in user.
+    markAllAsRead: async (userId: string): Promise<void> => {
+        try {
+            const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', userId)
+                .eq('is_read', false);
+
+            if (error) throw error;
+        } catch (error) {
+            console.warn('❌ Failed to mark all notifications as read:', error);
         }
     },
 

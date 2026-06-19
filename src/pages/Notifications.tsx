@@ -9,6 +9,7 @@ const Notifications: React.FC = () => {
     const {
         notifications,
         markNotifRead,
+        markAllNotifsRead,
         language,
         user,
         loading,
@@ -51,6 +52,7 @@ const Notifications: React.FC = () => {
 
     const myNotifications = notifications.filter(n => n.userId === user.id)
         .sort((a, b) => b.createdAt - a.createdAt);
+    const unreadCount = myNotifications.filter(n => !n.isRead).length;
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', paddingBottom: 100, direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -58,12 +60,27 @@ const Notifications: React.FC = () => {
             
             <div style={{ padding: '20px 16px' }}>
                 <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: 20, boxShadow: 'var(--shadow-sm)' }}>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-                        📬 {isRTL ? 'الإشعارات' : 'Notifications'}
-                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>
-                            {myNotifications.length}
-                        </span>
-                    </h1>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: 900, margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+                            📬 {isRTL ? 'الإشعارات' : 'Notifications'}
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>
+                                {myNotifications.length}
+                            </span>
+                        </h1>
+                        {unreadCount > 0 && (
+                            <button
+                                onClick={markAllNotifsRead}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    background: 'var(--primary)', color: '#fff', border: 'none',
+                                    padding: '8px 14px', borderRadius: 14, fontWeight: 800,
+                                    fontSize: '0.85rem', cursor: 'pointer', boxShadow: 'var(--shadow-sm)'
+                                }}
+                            >
+                                ✓✓ {isRTL ? `قراءة الكل (${unreadCount})` : `Mark all read (${unreadCount})`}
+                            </button>
+                        )}
+                    </div>
 
                     {myNotifications.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
