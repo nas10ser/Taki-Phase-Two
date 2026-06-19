@@ -987,6 +987,7 @@ const AdminTools: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [paymentEnabled, setPaymentEnabled] = useState(false);
     const [seasonalVisible, setSeasonalVisible] = useState(false);
+    const [telegramBotEnabled, setTelegramBotEnabled] = useState(true);
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
@@ -999,15 +1000,18 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, seasonalRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, seasonalRes, botRes, bannerRes, campaignRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'seasonal_offers_visible').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
 
         setPaymentEnabled(paymentRes.data?.value === true);
         setSeasonalVisible(seasonalRes.data?.value === true);
+        // Bot defaults ON: enabled unless explicitly turned off (fail-open).
+        setTelegramBotEnabled(botRes.data?.value !== false);
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -1066,6 +1070,27 @@ const AdminTools: React.FC = () => {
             setSeasonalVisible(!newValue);
             await customAlert('❌ ' + error.message);
         }
+    };
+
+    // Single kill-switch for the Telegram bot (request 2). Upsert so the row is
+    // created if missing; the bot polls telegram_bot_enabled (≤45s) and the web
+    // hides the link button via AppContext realtime — both flip from this one toggle.
+    const toggleBot = async () => {
+        const newValue = !telegramBotEnabled;
+        setTelegramBotEnabled(newValue); // optimistic
+        const { error } = await supabase
+            .from('platform_settings')
+            .upsert({ key: 'telegram_bot_enabled', value: newValue, description: 'Enable/disable the Telegram bot platform-wide', updated_at: new Date().toISOString() });
+        if (error) {
+            setTelegramBotEnabled(!newValue); // rollback
+            await customAlert('❌ ' + error.message);
+            return;
+        }
+        await customAlert(
+            newValue
+                ? '✅ تم تفعيل بوت تيليجرام — عاد للعمل وظهر زر الربط في الإعدادات (قد يستغرق التفعيل حتى دقيقة).'
+                : '🔌 تم تعطيل بوت تيليجرام — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة). تقدر تعيد تفعيله بأي وقت بنفس الزر.'
+        );
     };
 
     const deleteBanner = async (id: string) => {
@@ -1206,6 +1231,18 @@ const AdminTools: React.FC = () => {
                         enabled={seasonalVisible}
                         onToggle={toggleSeasonal}
                         color="purple"
+                    />
+                    <ToggleCard
+                        icon="🤖"
+                        title="بوت تيليجرام"
+                        subtitle={
+                            telegramBotEnabled
+                                ? 'مُفعّل — البوت يعمل وزر الربط ظاهر في الإعدادات'
+                                : 'مُعطّل — البوت متوقف عن الرد وزر الربط مخفي'
+                        }
+                        enabled={telegramBotEnabled}
+                        onToggle={toggleBot}
+                        color="blue"
                     />
                 </div>
             </section>

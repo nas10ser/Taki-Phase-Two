@@ -164,7 +164,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean };
+    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean };
     /** Seller's saved branches (store_branches table). Drives the
      *  "📍 لوكيشن سابق" chip picker on Add Deal — each chip lets the
      *  seller adopt that branch's region/city/pin in one tap. */
@@ -382,7 +382,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         seasonalOffersVisible: boolean;
         oauthGoogleEnabled: boolean;
         oauthAppleEnabled: boolean;
-    }>({ seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false });
+        telegramBotEnabled: boolean;
+    }>({ seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true });
 
     // Load platform settings + subscribe to realtime updates so admin toggles
     // propagate to every open tab without requiring a refresh.
@@ -396,6 +397,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setPlatformSettings(prev => ({ ...prev, oauthGoogleEnabled: value === true }));
             } else if (key === 'oauth_apple_enabled') {
                 setPlatformSettings(prev => ({ ...prev, oauthAppleEnabled: value === true }));
+            } else if (key === 'telegram_bot_enabled') {
+                setPlatformSettings(prev => ({ ...prev, telegramBotEnabled: value === true }));
             }
         };
         (async () => {
@@ -403,7 +406,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled']);
+                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);

@@ -140,6 +140,21 @@ async function rpc(fn, args) {
     } catch(e) { console.error(`RPC ${fn} ex:`, e.message); return null; }
 }
 
+// ── Admin kill-switch (request 2) ─────────────────────────────────────────────
+// The bot polls platform_settings.telegram_bot_enabled via a definer RPC, cached
+// ~45s so it's effectively free per update. When OFF the bot stops responding
+// (one polite notice); flipping it back ON from the admin dashboard revives it
+// within the cache window — no redeploy needed. v11.78
+let _botEnabled = true, _botEnabledAt = 0;
+async function botEnabled() {
+    const now = Date.now();
+    if (now - _botEnabledAt < 45_000) return _botEnabled;
+    _botEnabledAt = now;
+    const v = await rpc('bot_is_enabled', {});
+    if (typeof v === 'boolean') _botEnabled = v;   // keep last-known value on a transient RPC failure
+    return _botEnabled;
+}
+
 // ── Upload a Telegram photo → public deal image URL (via secure Edge Fn) ──────
 async function uploadPhoto(ctx, fileId) {
     if (!BOT_GATEWAY_SECRET || !SUPABASE_URL) return null;
@@ -171,6 +186,9 @@ async function refreshSession(ctx) {
         s.name     = user.name;
         s.shop     = user.shop || null;
         s.isAdmin  = !!(user.is_super_admin || user.user_type === 'admin' || (user.admin_permissions?.length > 0));
+        // Restore a previously-saved location so we never re-ask the buyer to share
+        // it every session — «الأقرب» / «حولي» work straight away (request 5).
+        if (!s.geo && user.lat != null && user.lng != null) s.geo = { lat: Number(user.lat), lng: Number(user.lng) };
         rpc('bot_touch_chat', { p_telegram_id: tgId(ctx), p_chat_id: chatId(ctx) }); // keep chat id fresh
         if (s.userType === 'seller') {
             const st = await rpc('bot_get_seller_stats', { p_telegram_id: tgId(ctx) });
@@ -186,6 +204,7 @@ const KB_BACK = () => Markup.inlineKeyboard([[Markup.button.callback('◀️  ر
 function kbGuest() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('🚀  ابدأ الآن — تصفّح العروض','browse:menu')],
+        [Markup.button.callback('🗺  حولي','buyer:nearby'), Markup.button.callback('🔎  بحث','search:start')],
         [Markup.button.callback('🔗  دخول وربط حسابي','link:start')],
         [Markup.button.webApp('🛍  دخول سريع (متسوّق)', APP_URL)],
         [Markup.button.callback('🆘  مساعدة','help')]
@@ -298,6 +317,14 @@ bot.telegram.setMyCommands([
 // DB BEFORE any handler runs — so حجوزاتي / الحجوزات / إلخ recognise them without
 // needing /start first. Once known it's a no-op (no further DB hit).
 bot.use(async (ctx, next) => {
+    // Kill-switch gate — when the admin disables the bot, answer once and stop.
+    if (!(await botEnabled())) {
+        try {
+            if (ctx.updateType === 'callback_query') await ctx.answerCbQuery('🔧 تاكي بوت متوقف مؤقتاً للصيانة — نعود قريباً.', { show_alert: true });
+            else if (ctx.message) await ctx.reply('🔧 تاكي بوت متوقف مؤقتاً للصيانة — نعود قريباً 🙏');
+        } catch { /* ignore */ }
+        return;
+    }
     try { const id = tgId(ctx); if (id && !getSession(id).userId) await refreshSession(ctx); }
     catch { /* never block the update */ }
     return next();
@@ -447,30 +474,24 @@ function browseCard(d, n, geo){
     return `${head}\n🏪 ${md(d.shop_name)}  •  ${loc}${dist}\n${price}\n${browseExpiryLine(d)}`;
 }
 
-bot.command('deals', ctx => showBrowseMenu(ctx));
-bot.action('browse:menu', async ctx => { await ctx.answerCbQuery(); showBrowseMenu(ctx); });
+bot.command('deals', ctx => enterBrowse(ctx));
+bot.action('browse:menu', async ctx => { await ctx.answerCbQuery(); enterBrowse(ctx); });
 bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); renderList(ctx,'n','-',+ctx.match[1]); }); // legacy alias
-async function showBrowseMenu(ctx){
-    const s=getSession(tgId(ctx));
-    await sendBanners(ctx);   // Task 5a — promotional banner(s) appear ABOVE the offers
-    await ctx.reply(`🛍 *تصفّح العروض*\n${DIV}\nاختر طريقة العرض التي تناسبك:`, { parse_mode:'MarkdownV2',
-        reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('🔎 بحث (متجر / عرض / تاجر)','search:start')],
-            [Markup.button.callback('🔥 الأكثر طلباً','br:p:-:0'), Markup.button.callback('💸 الأكثر خصماً','br:d:-:0')],
-            [Markup.button.callback('🆕 الأحدث','br:n:-:0'), Markup.button.callback('⭐ المميّزة والرعاة','br:s:-:0')],
-            [Markup.button.callback('📂 حسب التصنيف','browse:cats')],
-            [Markup.button.callback('🗺 حولي (منطقة/مدينة/مول/تصنيف/الأقرب)','buyer:nearby')],
-            [Markup.button.callback('🎁 المسابقات والجوائز','contests:list')],
-            [Markup.button.callback('◀️ رجوع للقائمة','menu:back')]
-        ]).reply_markup });
+// «تصفّح العروض» → البنر الإعلاني (إن وُجد) ثم قائمة العروض مباشرةً، بفوتر الترتيب
+// والصفحات وزرّي «المفتوحة الآن / جميع المحلات» وزر الرجوع — تماماً كما في لقطة
+// الشاشة. (requests 3 + 4) v11.78
+async function enterBrowse(ctx){
+    await sendBanners(ctx, true);   // البنر يظهر مع كل دخول لـ«تصفح العروض» (request 3)
+    return renderList(ctx, 'n', '-', 0);
 }
 
 // ── Banners shown above the offers (Task 5a) — image cards with a tap action ───
-// Shown once per session (when the buyer opens the offers hub) so back-and-forth
-// navigation doesn't re-spam the same images. A fresh session shows them again.
-async function sendBanners(ctx){
+// Shown on every explicit «تصفح العروض» entry (force=true from enterBrowse) so the
+// owner's promo always greets the buyer there (request 3); pagination/sort within
+// the list do NOT call this, so the images are never re-spammed mid-browse.
+async function sendBanners(ctx, force=false){
     const s = getSession(tgId(ctx));
-    if (s.temp.bannersShown) return;
+    if (!force && s.temp.bannersShown) return;
     let banners = [];
     try { banners = await rpc('bot_active_banners', {}) || []; } catch { banners = []; }
     if (!banners.length) return;
@@ -649,7 +670,7 @@ async function renderList(ctx, sortLetter, cat, offset){
         const msg=offset===0?`📭 *لا توجد عروض مطابقة*${geo?'\nجرّب توسيع المنطقة أو تصنيفاً آخر\\.':''}${openHint}`:'📭 *لا مزيد من العروض*';
         const erows=[];
         if (offset===0 && s.temp.browseOpenNow) erows.push([Markup.button.callback('🏪 عرض جميع المحلات (مفتوحة + مغلقة)','br:open:0')]);
-        erows.push([Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
+        erows.push([Markup.button.callback('📂 تصنيف آخر','browse:cats'),Markup.button.callback('🔙 القائمة','menu:back')]);
         return ctx.reply(`${SORT_TITLE[sort]}${md(catName)}\n${DIV}\n\n${msg}`, { parse_mode:'MarkdownV2',
             reply_markup: Markup.inlineKeyboard(erows).reply_markup });
     }
@@ -675,7 +696,7 @@ async function renderList(ctx, sortLetter, cat, offset){
         Markup.button.callback(s.temp.browseOpenNow ? '🟢 المفتوحة الآن ✅' : '🟢 المفتوحة الآن', 'br:open:1'),
         Markup.button.callback(!s.temp.browseOpenNow ? '🏪 جميع المحلات ✅' : '🏪 جميع المحلات', 'br:open:0'),
     ]);
-    rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('◀️ القائمة','browse:menu')]);
+    rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('🔙 القائمة','menu:back')]);
     await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))}\n🟢 المفتوحة الآن = محلات مفتوحة حالياً  •  🏪 جميع المحلات = المفتوحة والمغلقة`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 // "Open now" (1) vs "all shops" (0) for the browse list, then re-render. v11.77
@@ -703,7 +724,7 @@ async function showCats(ctx){
 // Nearby — ask the user to share their location (Telegram location keyboard).
 bot.action('browse:near', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); if(s.geo) return renderList(ctx,'x','-',0); askLocation(ctx); });
 function askLocation(ctx){
-    return ctx.reply('📍 *العروض حولك*\nشارك موقعك لأرتّب لك العروض حسب الأقرب وأحسب المسافة بالسيارة 🚗', { parse_mode:'MarkdownV2',
+    return ctx.reply('📍 *موقعك*\nشارك موقعك لأرتّب العروض حسب الأقرب وأحسب المسافة 🚗\n💡 أو الصق رابط موقعك من خرائط قوقل وسأحفظه لك\\.', { parse_mode:'MarkdownV2',
         reply_markup: Markup.keyboard([[Markup.button.locationRequest('📍 مشاركة موقعي الآن')],['❌ إلغاء']]).resize().oneTime().reply_markup });
 }
 bot.on('location', async ctx => {
@@ -711,35 +732,35 @@ bot.on('location', async ctx => {
     const s=getSession(tgId(ctx));
     // تدفّق التاجر يلتقط موقعاً (إضافة/تعديل/فرع عبر «مشاركة موقعي»)؟
     try { if (await sellerH.handleLocation(ctx, s, loc.latitude, loc.longitude)) return; } catch (e) { console.warn('loc:', e.message); }
-    s.geo={ lat:loc.latitude, lng:loc.longitude };
-    if (s.userId) rpc('bot_set_location', { p_telegram_id: tgId(ctx), p_lat: loc.latitude, p_lng: loc.longitude });
-    // Task 13 — sharing a location to set a smart-alert radius (not a browse).
+    return handleSharedLocation(ctx, s, loc.latitude, loc.longitude);
+});
+// A location obtained via Telegram share OR a pasted Google-Maps link / "lat,lng"
+// (request 5): save it once (session + the linked account so we never ask again),
+// then resume whatever the user was doing.
+async function handleSharedLocation(ctx, s, lat, lng){
+    s.geo = { lat, lng };
+    if (s.userId) rpc('bot_set_location', { p_telegram_id: tgId(ctx), p_lat: lat, p_lng: lng });
+    const kbOff = { reply_markup: Markup.removeKeyboard().reply_markup };
+    // Smart-alert radius flow.
     if (s.temp.alertLocWait) {
         s.temp.alertLocWait = false;
         const d = s.temp.alertDraft || (s.temp.alertDraft = newDraft());
-        d.coords = { lat: loc.latitude, lng: loc.longitude };
-        await ctx.reply('✅ *تم تحديد موقعك للتنبيه*', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
+        d.coords = { lat, lng };
+        await ctx.reply('✅ *تم تحديد موقعك للتنبيه*', { parse_mode:'MarkdownV2', ...kbOff });
         return askRadius(ctx);
     }
-    // Task 6 — sharing a location to open the map of nearby deals.
-    if (s.temp.mapWait) {
-        s.temp.mapWait = false;
-        await ctx.reply('✅ *تم تحديد موقعك*', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
-        return showMap(ctx);
-    }
-    // v11.76 — sharing a location for the Nearby page (نطاق + الأقرب).
+    // Nearby page: 'pick' → choose the km, 'hub' → back to filters, else show 30 كم now.
     if (s.temp.nearbyLocWait) {
-        s.temp.nearbyLocWait = false;
+        const mode = s.temp.nearbyLocWait; s.temp.nearbyLocWait = false;
         const f = nfDraft(s); f.useGeo = true; if(!f.radius) f.radius = 30;
-        await ctx.reply('✅ *تم تحديد موقعك*', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
-        return askNfRadius(ctx);
+        await ctx.reply('✅ *تم تحديد موقعك*', { parse_mode:'MarkdownV2', ...kbOff });
+        return mode==='pick' ? askNfRadius(ctx) : mode==='hub' ? showNearbyHub(ctx) : runNearby(ctx, 0);
     }
-    // Persist onto the linked account (one DB, one source) so we can later push
-    // "عروض حولك" notifications by proximity. Fire-and-forget — never block UX.
-    const saved = s.userId ? '\n📌 _حفظنا موقعك لنرسل لك عروض ما حولك_' : '';
-    await ctx.reply(`✅ *تم تحديد موقعك* — إليك الأقرب إليك:${saved}`, { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup });
-    await renderList(ctx,'x','-',0);
-});
+    // Default → the nearest-offers list.
+    const saved = s.userId ? '\n📌 _حفظنا موقعك — ما عاد بنطلبه منك كل مرة_' : '';
+    await ctx.reply(`✅ *تم تحديد موقعك* — إليك الأقرب إليك:${saved}`, { parse_mode:'MarkdownV2', ...kbOff });
+    return renderList(ctx,'x','-',0);
+}
 
 // ── Deal detail (rich: images album + deal-type + distance/drive + sponsor) ────
 bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
@@ -1189,7 +1210,8 @@ async function renderOneBooking(ctx, barcode){
     if (b.notes) m += `\n📝 _${md(b.notes)}_`;
     const rows = [[Markup.button.callback(b.unread>0?`💬 محادثة (${b.unread})`:'💬 محادثة', `chat:${b.barcode}`), Markup.button.callback('📞 اتصال', `call:b:${b.barcode}`)]];
     if (seller){
-        const r2=[]; if (b.status==='pending') r2.push(Markup.button.callback('👍 تأكيد',`ack:${b.barcode}`)); if (active) r2.push(Markup.button.callback('🏁 إتمام',`complete:${b.barcode}`)); if (r2.length) rows.push(r2);
+        if (b.status==='pending') rows.push([Markup.button.callback('✅ تأكيد الطلب وبدء التحضير',`ack:${b.barcode}`)]);
+        if (active) rows.push([Markup.button.callback('🏁 إتمام الحجز (تسليم العميل)',`complete:${b.barcode}`)]);
     } else {
         const r2=[]; if (b.status==='pending') r2.push(Markup.button.callback('✏️ تعديل',`edit:${b.barcode}`)); if (b.status==='completed') r2.push(Markup.button.callback('⭐ قيّم',`rate:${b.barcode}`)); if (active && b.expiry_time) r2.push(Markup.button.callback('⏳ العدّاد',`cd:${Number(b.expiry_time)}`)); if (r2.length) rows.push(r2);
         const r3=[]; if (active) r3.push(Markup.button.callback('🚫 إلغاء',`cancel:${b.barcode}`)); if (b.store_id){ r3.push(Markup.button.callback('🏪 المتجر',`store:${b.store_id}`)); r3.push(Markup.button.callback('🚩 إبلاغ',`rep:${b.store_id}`)); } if (r3.length) rows.push(r3);
@@ -1606,29 +1628,9 @@ bot.action(/^unfol:(.+)$/, async ctx => {
     return showFollowing(ctx);
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  Task 6 — buyer map: deals as map pins (tap → details → book) + the full
-//  interactive map (the website's /nearby) as a web app. Telegram can't render a
-//  custom map, so we use native venue pins + the web map for the full experience.
-// ═══════════════════════════════════════════════════════════════════════════════
-bot.action('buyer:map', async ctx => { await ctx.answerCbQuery(); showMap(ctx); });
-async function showMap(ctx){
-    const s=getSession(tgId(ctx));
-    if(!s.geo){ s.temp.mapWait=true; return askLocation(ctx); }
-    const deals = await rpc('bot_browse_deals',{ p_sort:'nearby', p_category:null, p_lat:s.geo.lat, p_lng:s.geo.lng, p_radius_km:null, p_limit:8, p_offset:0 })||[];
-    const pins = deals.filter(d => d.map_lat!=null && d.map_lng!=null);
-    await ctx.reply(`🗺 *العروض على الخريطة*\n${DIV}\nإليك أقرب العروض كنقاط على الخريطة 👇 اضغط أي عرض لتفاصيله وحجزه\\.\n_وللخريطة التفاعلية الكاملة بكل العروض، افتح الزر بالأسفل\\._`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('🗺 الخريطة التفاعلية الكاملة', W('/nearby'))]]).reply_markup });
-    if(!pins.length){
-        return ctx.reply('📭 _لا عروض قريبة بإحداثيات على الخريطة الآن — جرّب الخريطة الكاملة بالأعلى\\._', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔥 تصفّح العروض','browse:menu'), Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
-    }
-    for(const d of pins.slice(0,6)){
-        const save = Math.max(0, Number(d.original_price)-Number(d.discounted_price));
-        const addr = `${d.shop_name} • ${d.discounted_price} ر.س${save>0?` (خصم ${d.discount_percentage}%)`:''}${d.distance_km!=null?` • ${d.distance_km}كم`:''}`;
-        try { await ctx.replyWithVenue(d.map_lat, d.map_lng, String(d.item_name).slice(0,60), addr.slice(0,100), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📋 التفاصيل والحجز', `deal:${d.id}`)]]).reply_markup }); }
-        catch { await ctx.reply(`📍 *${md(d.item_name)}* — ${md(addr)}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📋 التفاصيل والحجز', `deal:${d.id}`)]]).reply_markup }); }
-    }
-    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.webApp('🗺 الخريطة الكاملة', W('/nearby'))],[Markup.button.callback('🔄 تحديث','buyer:map'), Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
-}
+// «أقرب العروض كمواقع على الخريطة» (نقاط Venue على شكل دبابيس) أُزيلت بطلب المالك
+// (request 6) — تجربة «حولي» صارت قائمة عروض ضمن نطاق كم، ويبقى زر الخريطة التفاعلية
+// الكاملة للموقع متاحاً داخل صفحة «حولي» لمن يريدها. v11.78
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Buyer "Nearby" page — mirrors the website /nearby filters INSIDE the bot:
@@ -1664,15 +1666,17 @@ bot.command('nearby', ctx => showNearbyHub(ctx));
 bot.action('buyer:nearby', async ctx => { await ctx.answerCbQuery(); showNearbyHub(ctx); });
 async function showNearbyHub(ctx){
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    const m = `🗺 *حولي — العروض القريبة منك*\n${DIV}\n*الفلاتر المختارة:*\n${nfSummary(f, s)}\n${DIV}\n_اختر منطقة/مدينة/مول، أو تصنيفاً، أو فعّل «الأقرب لي» بنطاق كم — ثم اعرض العروض 👇_`;
+    const hasGeo = !!s.geo;
+    const m = `🗺 *حولي — العروض القريبة منك*\n${DIV}\n*الفلاتر المختارة:*\n${nfSummary(f, s)}\n${DIV}\n_اختر منطقة/مدينة/مول أو تصنيفاً، أو «الأقرب لي» — ثم اعرض العروض 👇_`;
     const rows = [
         [Markup.button.callback('📍 المنطقة / المدينة / المول','nf:loc')],
-        [Markup.button.callback('🏷 التصنيف','nf:cat'), Markup.button.callback('🎯 الأقرب لي + نطاق','nf:near')],
+        [Markup.button.callback('🏷 التصنيف','nf:cat')],
+        [Markup.button.callback('🎯 الأقرب لي (٣٠ كم)','nf:near'), Markup.button.callback('📏 الأقرب لي + تحديد الكيلومترات','nf:nearkm')],
         [Markup.button.callback(f.openNow ? '🟢 المفتوحة الآن ✅' : '🟢 المفتوحة الآن', 'nf:open:1'), Markup.button.callback(!f.openNow ? '🏪 جميع المحلات ✅' : '🏪 جميع المحلات', 'nf:open:0')],
         [Markup.button.callback('🔎 اعرض العروض','nf:go:0')],
         [Markup.button.webApp('🗺 الخريطة التفاعلية (فاتح/غامق)', nfMapUrl(f, s))],
-        [Markup.button.callback('📌 أقرب العروض كمواقع على الخريطة','buyer:map')],
     ];
+    if (hasGeo) rows.push([Markup.button.callback('📍 تغيير موقعي','nf:setloc')]);
     if (f.region||f.city||f.mall||f.category||f.useGeo) rows.push([Markup.button.callback('🗑 مسح كل الفلاتر','nf:clear')]);
     rows.push([Markup.button.callback('◀️ رجوع للقائمة','menu:back')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
@@ -1736,16 +1740,55 @@ bot.action('nf:cat', async ctx => {
 bot.action(/^nfcat:([A-Za-z_]+)$/, async ctx => {
     await ctx.answerCbQuery('✅ تم');
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    f.category = ctx.match[1]==='_all' ? null : ctx.match[1];
-    return showNearbyHub(ctx);
+    if (ctx.match[1]==='_all'){ f.category=null; return showNearbyHub(ctx); }
+    f.category = ctx.match[1];
+    // request 6: بعد اختيار التصنيف، اسأل كيف يُعرض — الأقرب ضمن ٣٠ كم أو كل العروض.
+    return ctx.reply(`🏷 *${md(catLabel(f.category))}*\n${DIV}\nكيف تحب نعرض عروض هذا التصنيف؟`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('📍 الأقرب ضمن ٣٠ كم','nfcatmode:near')],
+        [Markup.button.callback('🌍 كل العروض','nfcatmode:all')],
+        [Markup.button.callback('◀️ رجوع','buyer:nearby')]
+    ]).reply_markup });
+});
+// التصنيف ضمن ٣٠ كم من الموقع (يُطلب الموقع مرة واحدة إن لزم) أو كل العروض. (request 6)
+bot.action('nfcatmode:near', async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    f.useGeo=true; f.radius=30;
+    if(s.geo) return runNearby(ctx, 0);
+    s.temp.nearbyLocWait='go';
+    return askLocation(ctx);
+});
+bot.action('nfcatmode:all', async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    f.useGeo=false; f.radius=null;
+    return runNearby(ctx, 0);
 });
 // ── Nearest (share location) + radius ─────────────────────────────────────────
+// «الأقرب لي (٣٠ كم)» — النطاق الافتراضي مباشرةً (request 6). إن كان الموقع محفوظاً
+// عرضنا فوراً بلا طلب مشاركة (request 5)؛ وإلا طلبناه مرة واحدة ثم عرضنا.
 bot.action('nf:near', async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    if(s.geo){ f.useGeo=true; if(!f.radius) f.radius=30; return askNfRadius(ctx); }
-    s.temp.nearbyLocWait=true;
-    await ctx.reply('📍 شارك موقعك لعرض الأقرب إليك وتحديد النطاق:',{ reply_markup: Markup.keyboard([[Markup.button.locationRequest('📍 مشاركة موقعي الآن')],['❌ إلغاء']]).resize().oneTime().reply_markup });
+    f.useGeo=true; f.radius=30;
+    if(s.geo) return runNearby(ctx, 0);
+    s.temp.nearbyLocWait='go';
+    return askLocation(ctx);
+});
+// «الأقرب لي + تحديد الكيلومترات» — يختار المستخدم نصف القطر ثم نعرض (request 6).
+bot.action('nf:nearkm', async ctx => {
+    await ctx.answerCbQuery();
+    const s=getSession(tgId(ctx)); const f=nfDraft(s);
+    f.useGeo=true; if(!f.radius) f.radius=30;
+    if(s.geo) return askNfRadius(ctx);
+    s.temp.nearbyLocWait='pick';
+    return askLocation(ctx);
+});
+// «تغيير موقعي» — يعيد طلب الموقع (مشاركة أو رابط قوقل) ثم يرجع لصفحة الفلاتر (request 5).
+bot.action('nf:setloc', async ctx => {
+    await ctx.answerCbQuery();
+    getSession(tgId(ctx)).temp.nearbyLocWait='hub';
+    return askLocation(ctx);
 });
 function askNfRadius(ctx){
     return ctx.reply('🎯 *النطاق حول موقعك*\nاختر نصف القطر بالكيلومترات:',{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([
@@ -1759,7 +1802,7 @@ bot.action(/^nfr:(\d+)$/, async ctx => {
     await ctx.answerCbQuery('✅ تم');
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
     f.radius=+ctx.match[1]; f.useGeo=true;
-    return showNearbyHub(ctx);
+    return runNearby(ctx, 0);   // أظهر النتائج فوراً بعد اختيار النطاق (request 6)
 });
 // ── Run the filtered nearby search → cards (same engine as the website) ────────
 bot.action(/^nf:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); return runNearby(ctx, +ctx.match[1]); });
@@ -1851,11 +1894,12 @@ async function showSellerBookings(ctx, scope='current') {
         let m = `*${i+1}\\.* 📋 \`${md(b.barcode)}\`\n👤 *${md(b.user_name)}*  📞 ${md(b.user_phone)}\n🛍 ${md(b.deal_name)}  •  📦 ×${b.quantity}  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDate(b.booked_at))}`;
         if (active && b.expiry_time) m += `\n⏰ *ينتهي الحجز:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
         if (b.notes) m += `\n📝 _${md(b.notes)}_`;
+        const rows = [];
+        if (b.status==='pending') rows.push([Markup.button.callback('✅ تأكيد الطلب وبدء التحضير', `ack:${b.barcode}`)]);
         const row = [];
-        if (b.status==='pending') row.push(Markup.button.callback('👍 تأكيد', `ack:${b.barcode}`));
         if (active) row.push(Markup.button.callback('🏁 إتمام', `complete:${b.barcode}`));
         row.push(Markup.button.callback(b.unread>0 ? `💬 محادثة (${b.unread})` : '💬 محادثة', `chat:${b.barcode}`));
-        const rows = [row];
+        rows.push(row);
         const row2 = [Markup.button.callback('📞 اتصال بالعميل', `call:b:${b.barcode}`)];
         if (active && b.expiry_time) row2.push(Markup.button.callback('⏳ العدّاد', `cd:${Number(b.expiry_time)}`));
         rows.push(row2);
@@ -1864,10 +1908,17 @@ async function showSellerBookings(ctx, scope='current') {
     await ctx.reply(`${DIV}${more>0?`\n_يوجد ${more} حجز أقدم غير معروض._`:''}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🔄 تحديث',`seller:bk:${scope}`), Markup.button.callback('◀️ رجوع','seller:bookings')]]).reply_markup });
 }
 bot.action(/^ack:(.+)$/, async ctx => {
-    await ctx.answerCbQuery('جاري التأكيد…');
+    await ctx.answerCbQuery('جاري تأكيد الطلب…');
     const result = await rpc('bot_acknowledge_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
-    if (result?.success) await ctx.reply(`👍 *تم تأكيد الاستلام*\nالعميل: *${md(result.user_name)}*`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📦 الحجوزات','seller:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
-    else await ctx.reply('⚠️ تعذّر التأكيد\\.', { parse_mode:'MarkdownV2' });
+    if (result?.success) await ctx.reply(`✅ *تم تأكيد الطلب — ابدأ التحضير*\n👤 العميل: *${md(result.user_name)}*\n_أبلغنا العميل أن طلبه مؤكَّد وقيد التحضير\\._`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📦 الحجوزات','seller:bookings')],[Markup.button.callback('◀️ القائمة','menu:back')]]).reply_markup });
+    else {
+        const e = result?.error;
+        const m = e==='wrong_status' ? '⚠️ هذا الطلب مؤكَّد مسبقاً أو لم يعد بانتظار التأكيد\\.'
+            : e==='not_found'  ? '❌ هذا الطلب غير موجود في متجرك\\.'
+            : e==='not_seller' ? '⚠️ هذا الحساب ليس متجراً — لا يمكنه تأكيد الطلبات\\.'
+            : '⚠️ تعذّر تأكيد الطلب، حاول مرة أخرى\\.';
+        await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('📦 الحجوزات','seller:bookings')]]).reply_markup });
+    }
 });
 // Completing a booking offers an OPTIONAL message to the buyer (delivered to
 // web + app + bot, same instant — mirrors the app's delivery note). v11.72
@@ -1932,7 +1983,7 @@ async function doVerify(ctx, barcode) {
     let m = `${ok?'✅':'⚠️'} *نتيجة التحقق*\n${DIV}\n📋 \`${md(r.barcode)}\`\n👤 *${md(r.user_name)}*  📞 ${md(r.user_phone)}\n🛍 ${md(r.deal_name)}  📦 ${r.quantity}\n${statusLabel(r.status)}\n⏰ ${md(fmtDate(r.booked_at))}`;
     if (r.notes) m += `\n📝 ${md(r.notes)}`;
     const btns = [];
-    if (ok && r.status==='pending') btns.push([Markup.button.callback('👍 تأكيد الاستلام', `ack:${r.barcode}`)]);
+    if (ok && r.status==='pending') btns.push([Markup.button.callback('✅ تأكيد الطلب وبدء التحضير', `ack:${r.barcode}`)]);
     if (ok) btns.push([Markup.button.callback('🏁 إتمام الحجز', `complete:${r.barcode}`)]);
     btns.push([Markup.button.callback('◀️ رجوع','menu:back')]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
@@ -2113,7 +2164,22 @@ bot.on('text', async ctx => {
     try { if (await sellerH.handleText(ctx, s, text)) return; } catch (e) { console.warn('sellerText:', e.message); }
 
     // Reply-keyboard "إلغاء" (from the share-location prompt) → drop the keyboard + reset.
-    if (text === '❌ إلغاء') { setStep(tgId(ctx),'idle'); s.temp.locCtx=null; s.temp.alertLocWait=false; s.temp.mapWait=false; s.temp.nearbyLocWait=false; await ctx.reply('تم الإلغاء\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup }); const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
+    if (text === '❌ إلغاء') { setStep(tgId(ctx),'idle'); s.temp.locCtx=null; s.temp.alertLocWait=false; s.temp.nearbyLocWait=false; await ctx.reply('تم الإلغاء\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.removeKeyboard().reply_markup }); const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
+
+    // Google-Maps link or "lat,lng" pasted as text → treat it as a shared location
+    // (request 5). Guarded to idle / awaiting-location so it never hijacks a note,
+    // search query, rating comment, etc.
+    if (s.step === 'idle' || s.temp.nearbyLocWait || s.temp.alertLocWait) {
+        let g = G.parseLatLng(text) || G.extractFromMapsUrl(text);
+        if (!g && /^https?:\/\//i.test(text) && /(google\.[a-z.]+\/maps|goo\.gl|maps\.app\.goo\.gl|\/maps\b|[?&](?:q|ll|center|destination|daddr)=)/i.test(text)) {
+            await ctx.reply('🔎 جاري قراءة موقعك من الرابط…');
+            g = await G.resolveGoogleLocation(text);
+        }
+        if (g) return handleSharedLocation(ctx, s, g.lat, g.lng);
+        if ((s.temp.nearbyLocWait || s.temp.alertLocWait) && /^https?:\/\//i.test(text)) {
+            return ctx.reply('⚠️ تعذّر قراءة الموقع من هذا الرابط\\.\nجرّب زر «📍 مشاركة موقعي» أو الصق رابط خرائط قوقل لموقعٍ محدّد\\.', { parse_mode:'MarkdownV2' });
+        }
+    }
 
     // Session-loss guards: if the edit context vanished (e.g. bot restarted between
     // tapping a field and typing), say so clearly instead of a confusing fall-through. v11.72
@@ -2244,7 +2310,7 @@ bot.on('text', async ctx => {
         return askContestStep(ctx);
     }
     if (['menu','قائمة','القائمة','ابدأ','start','مرحبا','مرحباً','اهلا','أهلا','السلام عليكم'].includes(lc)) { const ns = await refreshSession(ctx); return sendMain(ctx, ns); }
-    if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return showBrowseMenu(ctx);
+    if (['عروض','deals','تخفيضات'].some(k=>lc.includes(k))) return enterBrowse(ctx);
     if (['بحث','search'].includes(lc)) { setStep(tgId(ctx),'await_search'); return ctx.reply('🔎 *البحث*\nاكتب ما تبحث عنه \\(اسم عرض، متجر، تاجر، مدينة أو تصنيف\\):', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('◀️ القائمة','browse:menu')]]).reply_markup }); }
     if (['مسابقات','مسابقة','جوائز','contests'].some(k=>lc.includes(k))) return showContests(ctx);
     if (['مساعدة','help'].includes(lc)) return showHelp(ctx);
@@ -2310,7 +2376,7 @@ async function deliverNotification(n) {
     const rows = [];
     if (n.type==='booking' && bc) {
         if (isMsg) rows.push([Markup.button.callback('💬 فتح المحادثة',`chat:${bc}`)]);
-        else if (aud==='seller' && ev==='new') { rows.push([Markup.button.callback('👍 تأكيد',`ack:${bc}`), Markup.button.callback('🏁 إتمام',`complete:${bc}`)]); rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]); }
+        else if (aud==='seller' && ev==='new') { rows.push([Markup.button.callback('✅ تأكيد الطلب وبدء التحضير',`ack:${bc}`)]); rows.push([Markup.button.callback('🏁 إتمام',`complete:${bc}`), Markup.button.callback('💬 محادثة',`chat:${bc}`)]); }
         else if (aud==='buyer'  && ev==='completed') rows.push([Markup.button.callback('⭐ قيّم',`rate:${bc}`)]);
         else if (aud==='buyer'  && ev==='new') rows.push([Markup.button.callback('🎟 حجوزاتي','buyer:bookings'), Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
         else if (aud==='buyer'  && (ev==='acknowledged' || ev==='warning')) rows.push([Markup.button.callback('💬 محادثة',`chat:${bc}`)]);
@@ -2364,11 +2430,15 @@ if (supabase && bot) {
     async function drainOutbox() {
         if (outboxBusy) return;            // never overlap polls
         outboxBusy = true;
+        // When the admin disables the bot we still advance the outbox cursor but send
+        // NOTHING — so the kill-switch silences notifications too, with no stale flood
+        // when it's switched back on (request 2).
+        const enabled = await botEnabled();
         try {
             let batch;
             do {
                 batch = await rpc('bot_pull_outbox', { p_limit: 25 });
-                if (Array.isArray(batch) && batch.length) {
+                if (enabled && Array.isArray(batch) && batch.length) {
                     for (const n of batch) { try { await deliverNotification(n); } catch(e) { console.warn('deliver:', e.message); } }
                 }
             } while (Array.isArray(batch) && batch.length === 25);   // drain a backlog fast

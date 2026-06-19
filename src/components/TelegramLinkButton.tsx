@@ -22,10 +22,14 @@ import { isTelegramMiniApp, ensureTelegramLinked } from '../services/telegramMin
 const BOT_USERNAME = 'TakiKSA_bot';
 
 const TelegramLinkButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
-    const { language, customAlert } = useApp();
+    const { language, customAlert, platformSettings } = useApp();
     const isAr = language !== 'en';
     const [busy, setBusy] = useState(false);
     const [linked, setLinked] = useState(false);
+
+    // Admin kill-switch: when the Telegram bot is disabled platform-wide, hide the
+    // linking entry point entirely (request 2). Re-enabling restores it live.
+    if (!platformSettings.telegramBotEnabled) return null;
 
     const handleLink = async () => {
         if (busy || linked) return;
