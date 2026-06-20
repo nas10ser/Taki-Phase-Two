@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.80.0';
+const BOT_VERSION              = '11.81.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -697,7 +697,10 @@ async function renderList(ctx, sortLetter, cat, offset){
         Markup.button.callback(!s.temp.browseOpenNow ? '🏪 جميع المحلات ✅' : '🏪 جميع المحلات', 'br:open:0'),
     ]);
     rows.push([Markup.button.callback('📂 التصنيفات','browse:cats'),Markup.button.callback('🔙 القائمة','menu:back')]);
-    await ctx.reply(`${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))}\n🟢 المفتوحة الآن = محلات مفتوحة حالياً  •  🏪 جميع المحلات = المفتوحة والمغلقة`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+    // فوتر التنقّل/الترتيب: «=» محرف محجوز في MarkdownV2 — بدون تهريبه يرفض
+    // تيليجرام الرسالة بصمت فتختفي أزرار «التالي/التصنيفات». نهرّبه + safeReplyMd
+    // (احتياط نصّ عادي) كي لا يختفي الفوتر مهما حدث. v11.81
+    await safeReplyMd(ctx, `${DIV}\n📄 صفحة ${md(String(Math.floor(offset/PAGE)+1))}\n🟢 المفتوحة الآن \\= محلات مفتوحة حالياً  •  🏪 جميع المحلات \\= المفتوحة والمغلقة`, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 // "Open now" (1) vs "all shops" (0) for the browse list, then re-render. v11.77
 bot.action(/^br:open:([01])$/, async ctx => {
