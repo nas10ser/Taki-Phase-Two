@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.81.0';
+const BOT_VERSION              = '11.82.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -176,6 +176,12 @@ async function uploadPhoto(ctx, fileId) {
     } catch (e) { console.warn('uploadPhoto:', e.message); return null; }
 }
 
+// An account can OWN a store while still being typed 'admin' (Nasser runs shop
+// «تاكي» as an admin). Every store-management feature must accept a store-owner,
+// not just user_type==='seller' — the JS twin of the v11.79 SQL identity fix.
+// `shop` is non-null only for store-owners (bot_get_user), so it's the signal. v11.81
+const ownsStore = s => s.userType === 'seller' || !!s.shop;
+
 // ── Load/refresh session from DB (identity = telegram_id) ─────────────────────
 async function refreshSession(ctx) {
     const s = getSession(tgId(ctx));
@@ -190,7 +196,7 @@ async function refreshSession(ctx) {
         // it every session — «الأقرب» / «حولي» work straight away (request 5).
         if (!s.geo && user.lat != null && user.lng != null) s.geo = { lat: Number(user.lat), lng: Number(user.lng) };
         rpc('bot_touch_chat', { p_telegram_id: tgId(ctx), p_chat_id: chatId(ctx) }); // keep chat id fresh
-        if (s.userType === 'seller') {
+        if (ownsStore(s)) {
             const st = await rpc('bot_get_seller_stats', { p_telegram_id: tgId(ctx) });
             if (st) { s.pendingBookings = st.pending_bookings || 0; s.activeDeals = st.active_deals || 0; }
         }
@@ -233,18 +239,25 @@ function kbSeller(s) {
         [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
     ]);
 }
-function kbAdmin() {
-    return Markup.inlineKeyboard([
+function kbAdmin(s = {}) {
+    const rows = [
         [Markup.button.callback('📊  إحصائيات المنصة','admin:stats'), Markup.button.callback('🚩  البلاغات','admin:reports')],
         [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  حولي','buyer:nearby')],
         [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('⭐  متابَعاتي','buyer:following')],
         [Markup.button.callback('🔔  التنبيهات','alerts:open'), Markup.button.callback('👤  حسابي','buyer:profile')],
-        [Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))],
-        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]
-    ]);
+    ];
+    // الأدمن قد يكون مالكاً لمتجر («تاكي») — يحتاج إدارة طلبات متجره من البوت لا أن
+    // يصله الإشعار فقط؛ بدون هذا الزر لا منفذ لقائمة طلبات المتجر إطلاقاً. v11.81
+    if (ownsStore(s)) {
+        const pBadge = s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : '';
+        rows.push([Markup.button.callback(`📦  طلبات متجري${pBadge}`,'seller:bookings'), Markup.button.webApp('🏪  لوحة متجري', W('/seller'))]);
+    }
+    rows.push([Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))]);
+    rows.push([Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]);
+    return Markup.inlineKeyboard(rows);
 }
 function roleKb(s) {
-    if (s.isAdmin)                 return kbAdmin();
+    if (s.isAdmin)                 return kbAdmin(s);
     if (s.userType === 'seller')   return kbSeller(s);
     if (s.userType === 'buyer')    return kbBuyer();
     return kbGuest();
@@ -283,7 +296,7 @@ async function notifyPendingOnLogin(ctx, s, force = false) {
     if (!force && s.temp.loginBkAlertShown) return;
     s.temp.loginBkAlertShown = true;
     try {
-        if (s.userType === 'seller') {
+        if (ownsStore(s)) {
             const n = s.pendingBookings || 0;
             if (n > 0) await safeReplyMd(ctx, `🔔 *لديك ${numEsc(n)} طلب بانتظار التأكيد\\!*\n${DIV}\n📦 عميلٌ حجز من متجرك — افتح الطلبات لتأكيدها أو إتمامها\\.`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(`📦 عرض الطلبات (${n})`,'seller:bookings')]]).reply_markup });
         } else {
@@ -345,7 +358,7 @@ bot.start(async ctx => {
             const s = getSession(tgId(ctx));
             s.userId=result.id; s.userType=result.user_type; s.name=result.name; s.shop=result.shop||null;
             s.isAdmin=!!(result.is_super_admin || result.user_type==='admin' || (result.admin_permissions?.length>0));
-            if (s.userType==='seller') { const st = await rpc('bot_get_seller_stats',{p_telegram_id:tgId(ctx)}); if (st) { s.pendingBookings=st.pending_bookings||0; s.activeDeals=st.active_deals||0; } }
+            if (ownsStore(s)) { const st = await rpc('bot_get_seller_stats',{p_telegram_id:tgId(ctx)}); if (st) { s.pendingBookings=st.pending_bookings||0; s.activeDeals=st.active_deals||0; } }
             await ctx.reply(`✅ *تم ربط حسابك بنجاح\\!*\nأهلاً *${md(s.name)}* 👋`, { parse_mode:'MarkdownV2' });
             await sendMain(ctx, s);
             return notifyPendingOnLogin(ctx, s, true);
@@ -941,7 +954,7 @@ function callReply(ctx, r, backCb) {
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('✅ تم', backCb)]]).reply_markup });
 }
 bot.action(/^call:s:(.+)$/, async ctx => { await ctx.answerCbQuery(); const r = await rpc('bot_store_contact', { p_telegram_id: tgId(ctx), p_store_id: ctx.match[1] }); return callReply(ctx, r, `store:${ctx.match[1]}`); });
-bot.action(/^call:b:(.+)$/, async ctx => { await ctx.answerCbQuery(); const r = await rpc('bot_booking_contact', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] }); const s=getSession(tgId(ctx)); return callReply(ctx, r, (s.userType==='seller'?'seller:bookings':'buyer:bookings')); });
+bot.action(/^call:b:(.+)$/, async ctx => { await ctx.answerCbQuery(); const r = await rpc('bot_booking_contact', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] }); const s=getSession(tgId(ctx)); return callReply(ctx, r, (ownsStore(s)?'seller:bookings':'buyer:bookings')); });
 
 const REPORT_TYPES = [
     ['scam','احتيال أو نصب'], ['no_show','لم يحضر / لم يلتزم'], ['harassment','تحرّش أو إساءة'],
@@ -1200,9 +1213,21 @@ bot.action(/^bkOne:(.+)$/, async ctx => { await ctx.answerCbQuery(); await rende
 async function renderOneBooking(ctx, barcode){
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply('❗ سجّل دخولك أولاً\\.', { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
-    const seller = s.userType==='seller';
-    const list = await rpc(seller?'bot_get_seller_bookings':'bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope:'all' }) || [];
-    const b = (Array.isArray(list)?list:[]).find(x => String(x.barcode).toUpperCase()===String(barcode).toUpperCase());
+    const bc = String(barcode).toUpperCase();
+    // A store-owner (incl. an admin who owns a store) is the SELLER on their store's
+    // booking — search the store list first, then fall back to the buyer list, so a
+    // booking is always found. Was: user_type==='seller' only, which made the admin-
+    // owner query the BUYER list (empty) → «لم نعد نجد هذا الحجز» on chat «back». v11.81
+    let b = null, seller = false;
+    if (ownsStore(s)) {
+        const sl = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx), p_scope:'all' }) || [];
+        b = (Array.isArray(sl)?sl:[]).find(x => String(x.barcode).toUpperCase()===bc);
+        if (b) seller = true;
+    }
+    if (!b) {
+        const bl = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope:'all' }) || [];
+        b = (Array.isArray(bl)?bl:[]).find(x => String(x.barcode).toUpperCase()===bc);
+    }
     const listCb = seller?'seller:bookings':'buyer:bookings';
     if (!b) return ctx.reply('⚠️ لم نعد نجد هذا الحجز\\.', { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback('🎟 الحجوزات', listCb)]]).reply_markup });
     const active = b.status==='pending'||b.status==='acknowledged';
@@ -1869,7 +1894,7 @@ bot.action('seller:bk:current',  async ctx => { await ctx.answerCbQuery(); showS
 bot.action('seller:bk:previous', async ctx => { await ctx.answerCbQuery(); showSellerBookings(ctx, 'previous'); });
 async function sellerBookingsMenu(ctx) {
     const s = getSession(tgId(ctx));
-    if (!s.userId || s.userType!=='seller') return;
+    if (!s.userId || !ownsStore(s)) return;
     const p = s.pendingBookings>0 ? `\n⏳ *${s.pendingBookings}* بانتظار التأكيد` : '';
     await ctx.reply(`📦 *حجوزات متجرك*${p}\n${DIV}\nاختر نوع الحجوزات:`, { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
@@ -1880,7 +1905,7 @@ async function sellerBookingsMenu(ctx) {
 // scope: 'current' (قيد الانتظار/مؤكد) | 'previous' (مكتمل/ملغي/منتهٍ)
 async function showSellerBookings(ctx, scope='current') {
     const s = getSession(tgId(ctx));
-    if (!s.userId || s.userType!=='seller') return;
+    if (!s.userId || !ownsStore(s)) return;
     const list = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx), p_scope: scope });
     if (!list?.length) {
         const empty = scope==='previous' ? '🗂 *لا توجد حجوزات سابقة بعد*' : '✅ *لا توجد حجوزات نشطة حالياً*';
