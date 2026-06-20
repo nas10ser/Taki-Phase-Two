@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.82.0';
+const BOT_VERSION              = '11.83.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -191,6 +191,7 @@ async function refreshSession(ctx) {
         s.userType = user.user_type;
         s.name     = user.name;
         s.shop     = user.shop || null;
+        s.lang     = user.bot_lang || s.lang || 'ar';
         s.isAdmin  = !!(user.is_super_admin || user.user_type === 'admin' || (user.admin_permissions?.length > 0));
         // Restore a previously-saved location so we never re-ask the buyer to share
         // it every session — «الأقرب» / «حولي» work straight away (request 5).
@@ -204,81 +205,85 @@ async function refreshSession(ctx) {
     return s;
 }
 
-// ── Keyboards ─────────────────────────────────────────────────────────────────
-const KB_BACK = () => Markup.inlineKeyboard([[Markup.button.callback('◀️  رجوع للقائمة','menu:back')]]);
+// ── i18n: per-user language (ar default, en additive). Missing key/lang → Arabic,
+// so the Arabic experience is byte-for-byte unchanged («بدون تغيير أي شي»). v11.83
+const I18N = require('./lib/i18n');
+const tr = (s, key, ...a) => I18N.t(s && s.lang ? s.lang : 'ar', key, ...a);
+// Language toggle button — shows the OTHER language (tap to switch). Plain text.
+const langBtn = s => (s && s.lang === 'en')
+    ? Markup.button.callback('🌐 العربية', 'lang:set:ar')
+    : Markup.button.callback('🌐 English', 'lang:set:en');
 
-function kbGuest() {
+// ── Keyboards ─────────────────────────────────────────────────────────────────
+const KB_BACK = (s) => Markup.inlineKeyboard([[Markup.button.callback(tr(s,'menu_back'),'menu:back')]]);
+
+function kbGuest(s) {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('🚀  ابدأ الآن — تصفّح العروض','browse:menu')],
-        [Markup.button.callback('🗺  حولي','buyer:nearby'), Markup.button.callback('🔎  بحث','search:start')],
-        [Markup.button.callback('🔗  دخول وربط حسابي','link:start')],
-        [Markup.button.webApp('🛍  دخول سريع (متسوّق)', APP_URL)],
-        [Markup.button.callback('🆘  مساعدة','help')]
+        [Markup.button.callback(tr(s,'menu_browse_start'),'browse:menu')],
+        [Markup.button.callback(tr(s,'menu_nearby'),'buyer:nearby'), Markup.button.callback(tr(s,'menu_search'),'search:start')],
+        [Markup.button.callback(tr(s,'menu_login_link'),'link:start')],
+        [Markup.button.webApp(tr(s,'menu_quick_login'), APP_URL)],
+        [Markup.button.callback(tr(s,'menu_help'),'help'), langBtn(s)]
     ]);
 }
-function kbBuyer() {
+function kbBuyer(s) {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  حولي','buyer:nearby')],
-        [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('🔎  بحث','search:start')],
-        [Markup.button.callback('🔔  تنبيهاتي الذكية','buyer:notif'),  Markup.button.callback('⭐  متابَعاتي','buyer:following')],
-        [Markup.button.callback('🎁  المسابقات','contests:list'), Markup.button.callback('👤  حسابي','buyer:profile')],
-        [Markup.button.webApp('🚀  فتح تاكي', APP_URL)],
-        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]
+        [Markup.button.callback(tr(s,'menu_browse'),'browse:menu'), Markup.button.callback(tr(s,'menu_nearby'),'buyer:nearby')],
+        [Markup.button.callback(tr(s,'menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr(s,'menu_search'),'search:start')],
+        [Markup.button.callback(tr(s,'menu_smart_alerts'),'buyer:notif'),  Markup.button.callback(tr(s,'menu_follows'),'buyer:following')],
+        [Markup.button.callback(tr(s,'menu_contests'),'contests:list'), Markup.button.callback(tr(s,'menu_account'),'buyer:profile')],
+        [Markup.button.webApp(tr(s,'menu_open_taki'), APP_URL)],
+        [Markup.button.callback(tr(s,'menu_help'),'help'), Markup.button.callback(tr(s,'menu_logout'),'logout')],
+        [langBtn(s)]
     ]);
 }
 function kbSeller(s) {
     const pBadge = s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : '';
     return Markup.inlineKeyboard([
-        [Markup.button.callback('📊  إحصائياتي','seller:stats'), Markup.button.callback(`📦  الحجوزات${pBadge}`,'seller:bookings')],
-        [Markup.button.callback('✅  تحقق من حجز','seller:verify'), Markup.button.callback('🏷  عروضي','seller:deals')],
-        [Markup.button.callback('➕  إضافة عرض','seller:addDeal'), Markup.button.callback('📍  مواقعي','seller:branches')],
-        [Markup.button.callback('💳  الاشتراك','seller:sub'), Markup.button.callback('🏪  حساب المتجر','seller:profile')],
-        [Markup.button.callback('🕐  ساعات العمل','seller:hours'), Markup.button.callback('👁  معاينة كمشتري',`store:${s.userId}`)],
+        [Markup.button.callback(tr(s,'menu_seller_stats'),'seller:stats'), Markup.button.callback(tr(s,'menu_seller_bookings')+pBadge,'seller:bookings')],
+        [Markup.button.callback(tr(s,'menu_verify_booking'),'seller:verify'), Markup.button.callback(tr(s,'menu_seller_deals'),'seller:deals')],
+        [Markup.button.callback(tr(s,'menu_add_deal'),'seller:addDeal'), Markup.button.callback(tr(s,'menu_my_locations'),'seller:branches')],
+        [Markup.button.callback(tr(s,'menu_subscription'),'seller:sub'), Markup.button.callback(tr(s,'menu_store_account'),'seller:profile')],
+        [Markup.button.callback(tr(s,'menu_working_hours'),'seller:hours'), Markup.button.callback(tr(s,'menu_preview_buyer'),`store:${s.userId}`)],
         // التنبيهات الذكية ميزة للمتسوّق فقط — التاجر تصله إشعارات الحجوزات تلقائياً. v11.76
-        [Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')],
-        [Markup.button.webApp('🚀  لوحة التاجر', W('/seller'))]
+        [Markup.button.callback(tr(s,'menu_help'),'help'), Markup.button.callback(tr(s,'menu_logout'),'logout')],
+        [Markup.button.webApp(tr(s,'menu_seller_dashboard'), W('/seller')), langBtn(s)]
     ]);
 }
 function kbAdmin(s = {}) {
     const rows = [
-        [Markup.button.callback('📊  إحصائيات المنصة','admin:stats'), Markup.button.callback('🚩  البلاغات','admin:reports')],
-        [Markup.button.callback('🔥  تصفح العروض','browse:menu'), Markup.button.callback('🗺  حولي','buyer:nearby')],
-        [Markup.button.callback('🎟  حجوزاتي','buyer:bookings'), Markup.button.callback('⭐  متابَعاتي','buyer:following')],
-        [Markup.button.callback('🔔  التنبيهات','alerts:open'), Markup.button.callback('👤  حسابي','buyer:profile')],
+        [Markup.button.callback(tr(s,'menu_platform_stats'),'admin:stats'), Markup.button.callback(tr(s,'menu_reports'),'admin:reports')],
+        [Markup.button.callback(tr(s,'menu_browse'),'browse:menu'), Markup.button.callback(tr(s,'menu_nearby'),'buyer:nearby')],
+        [Markup.button.callback(tr(s,'menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr(s,'menu_follows'),'buyer:following')],
+        [Markup.button.callback(tr(s,'menu_alerts'),'alerts:open'), Markup.button.callback(tr(s,'menu_account'),'buyer:profile')],
     ];
     // الأدمن قد يكون مالكاً لمتجر («تاكي») — يحتاج إدارة طلبات متجره من البوت لا أن
     // يصله الإشعار فقط؛ بدون هذا الزر لا منفذ لقائمة طلبات المتجر إطلاقاً. v11.81
     if (ownsStore(s)) {
         const pBadge = s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : '';
-        rows.push([Markup.button.callback(`📦  طلبات متجري${pBadge}`,'seller:bookings'), Markup.button.webApp('🏪  لوحة متجري', W('/seller'))]);
+        rows.push([Markup.button.callback(tr(s,'menu_store_orders')+pBadge,'seller:bookings'), Markup.button.webApp(tr(s,'menu_store_dashboard'), W('/seller'))]);
     }
-    rows.push([Markup.button.webApp('🛡  لوحة الإدارة الكاملة', W('/admin'))]);
-    rows.push([Markup.button.callback('🆘  مساعدة','help'), Markup.button.callback('🚪  تسجيل الخروج','logout')]);
+    rows.push([Markup.button.webApp(tr(s,'menu_full_admin'), W('/admin'))]);
+    rows.push([Markup.button.callback(tr(s,'menu_help'),'help'), Markup.button.callback(tr(s,'menu_logout'),'logout')]);
+    rows.push([langBtn(s)]);
     return Markup.inlineKeyboard(rows);
 }
 function roleKb(s) {
     if (s.isAdmin)                 return kbAdmin(s);
     if (s.userType === 'seller')   return kbSeller(s);
-    if (s.userType === 'buyer')    return kbBuyer();
-    return kbGuest();
+    if (s.userType === 'buyer')    return kbBuyer(s);
+    return kbGuest(s);
 }
 function roleMsg(s) {
     if (s.isAdmin)
-        return `🛡 *لوحة الأدمن — TAKI*\n${DIV}\nمرحباً *${md(s.name)}* 👋\n\n📌 اختر من الأزرار:`;
+        return tr(s,'menu_msg_admin', DIV, md(s.name));
     if (s.userType === 'seller') {
-        const p = s.pendingBookings > 0 ? `\n⏳ *لديك ${s.pendingBookings} حجز بانتظار التأكيد*` : '\n✅ لا حجوزات معلقة';
-        return `🏪 *لوحة التاجر — ${md(s.shop||s.name)}*\n${DIV}${p}\n🏷 عروض نشطة: ${s.activeDeals}\n\n📌 اختر من الأزرار:`;
+        const p = s.pendingBookings > 0 ? tr(s,'menu_seller_pending', s.pendingBookings) : tr(s,'menu_seller_no_pending');
+        return tr(s,'menu_msg_seller', md(s.shop||s.name), DIV, p, s.activeDeals);
     }
     if (s.userType === 'buyer')
-        return `👋 *أهلاً ${md(s.name)}*\n${DIV}\n🛍 تصفّح العروض، احجز، وتابع حجوزاتك\\.\n\n📌 اختر من الأزرار:`;
-    return `✨🛍️ *أهلاً بك في تاكي* 🛍️✨\n${DIV}\n` +
-           `منصة الحجز الذكي لأقوى العروض والتخفيضات في السعودية 🇸🇦\n\n` +
-           `🔥 *تصفّح مئات العروض* بالصور والأسعار\n` +
-           `⚡️ *احجز بضغطة واحدة* — والباركود يوصلك فوراً\n` +
-           `📍 *عروض قريبة منك* بحسب موقعك\n` +
-           `🔔 *تنبيهات ذكية* لما ينزل اللي يهمّك\n\n` +
-           `👇 *اضغط «ابدأ» وخلّنا نبدأ\\!*\n` +
-           `_🏪 تاجر؟ اربط حسابك وأدِر متجرك كاملاً من هنا\\._`;
+        return tr(s,'menu_msg_buyer', md(s.name), DIV);
+    return tr(s,'menu_msg_guest', DIV);
 }
 // safeReplyMd: an unescaped '.' inside the guest welcome's italic was making the
 // whole message fail → /start «did nothing» for a guest after logout. The escape
@@ -356,7 +361,7 @@ bot.start(async ctx => {
         const result = await rpc('bot_consume_link_token', { p_token: token, p_telegram_id: tgId(ctx), p_chat_id: chatId(ctx) });
         if (result?.success) {
             const s = getSession(tgId(ctx));
-            s.userId=result.id; s.userType=result.user_type; s.name=result.name; s.shop=result.shop||null;
+            s.userId=result.id; s.userType=result.user_type; s.name=result.name; s.shop=result.shop||null; s.lang=result.bot_lang||s.lang||'ar';
             s.isAdmin=!!(result.is_super_admin || result.user_type==='admin' || (result.admin_permissions?.length>0));
             if (ownsStore(s)) { const st = await rpc('bot_get_seller_stats',{p_telegram_id:tgId(ctx)}); if (st) { s.pendingBookings=st.pending_bookings||0; s.activeDeals=st.active_deals||0; } }
             await ctx.reply(`✅ *تم ربط حسابك بنجاح\\!*\nأهلاً *${md(s.name)}* 👋`, { parse_mode:'MarkdownV2' });
@@ -372,6 +377,14 @@ bot.start(async ctx => {
 
 bot.command('menu', async ctx => { const s = await refreshSession(ctx); await sendMain(ctx, s); });
 bot.action('menu:back', async ctx => { await ctx.answerCbQuery(); const s = await refreshSession(ctx); await sendMain(ctx, s); });
+// 🌐 language toggle — persist per-user (if linked) + re-render the main menu. v11.83
+bot.action(/^lang:set:(ar|en)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.lang = ctx.match[1];
+    if (s.userId) await rpc('bot_set_lang', { p_telegram_id: tgId(ctx), p_lang: s.lang });
+    await sendMain(ctx, s);
+});
 
 // ── Help ──────────────────────────────────────────────────────────────────────
 bot.command('help', ctx => showHelp(ctx));
