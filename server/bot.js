@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.83.0';
+const BOT_VERSION              = '11.84.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -391,19 +391,19 @@ bot.command('help', ctx => showHelp(ctx));
 bot.action('help', async ctx => { await ctx.answerCbQuery(); showHelp(ctx); });
 async function showHelp(ctx) {
     const s = getSession(tgId(ctx));
-    let m = `🆘 *مساعدة TAKI*\n${DIV}\n`;
-    if (!s.userId) m += `🔗 اربط حسابك للوصول لكل الميزات: /link\n\n`;
-    m += `📌 *الأوامر:*\n/menu — القائمة\n/deals — تصفّح العروض\n/link — ربط الحساب\n/bookings — حجوزاتي\n/alerts — تنبيهاتي\n`;
-    if (s.userType==='seller'||s.isAdmin) m += `/stats — إحصائياتي\n/verify — تحقق من حجز\n`;
-    if (s.userId) m += `/logout — تسجيل الخروج\n`;
-    m += `\n💡 تقدر أيضاً تكتب: عروض، حجوزاتي، تنبيهات، مساعدة\\.`;
-    // NOTE: APP_URL contains '.' and '-' which are MarkdownV2-special — escape it
-    // (an unescaped URL here was making the whole Help message fail to send).
-    m += `\n🌐 الموقع: ${md(APP_URL)}`;
-    const rows = [[Markup.button.webApp('🚀 فتح تاكي', APP_URL)]];
-    if (!s.userId) rows.push([Markup.button.callback('🔗 ربط حسابي','link:start')]);
-    rows.push([Markup.button.callback('◀️  رجوع للقائمة','menu:back')]);
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+    let m = tr(s,'help_title', DIV);
+    if (!s.userId) m += tr(s,'help_link_hint');
+    m += tr(s,'help_commands');
+    if (s.userType==='seller'||s.isAdmin) m += tr(s,'help_commands_seller');
+    if (s.userId) m += tr(s,'help_logout');
+    m += tr(s,'help_type_hint');
+    // NOTE: APP_URL contains '.' and '-' which are MarkdownV2-special — md() escapes it
+    // (an unescaped URL here once made the whole Help message fail to send).
+    m += tr(s,'help_website', md(APP_URL));
+    const rows = [[Markup.button.webApp(tr(s,'help_open_taki'), APP_URL)]];
+    if (!s.userId) rows.push([Markup.button.callback(tr(s,'help_link_btn'),'link:start')]);
+    rows.push([Markup.button.callback(tr(s,'menu_back'),'menu:back')]);
+    await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 
 // ── Logout (unlink this Telegram identity from the account) ───────────────────
