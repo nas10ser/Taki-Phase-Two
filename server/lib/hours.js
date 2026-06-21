@@ -3,6 +3,7 @@
  * البيانات (store_is_open / open_status)؛ هنا فقط التنسيق + أيام الأسبوع. v11.77
  * كل النصوص عربية بدون رموز MarkdownV2 محجوزة (تُهرَّب عند الإدراج عبر md()).
  */
+const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
 const DAY_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const CLOSING_SOON_MIN = 60;   // «يغلق قريباً» = خلال ساعة
 
@@ -12,19 +13,19 @@ const toMin = hhmm => { const [h, m] = String(hhmm).split(':'); return (parseInt
 function fmtMins(min) {
     if (min == null) return '';
     const h = Math.floor(min / 60), m = min % 60;
-    if (h <= 0) return `${m} دقيقة`;
-    const hh = h === 1 ? 'ساعة' : h === 2 ? 'ساعتين' : `${h} ساعات`;
-    return m ? `${hh} و${m} دقيقة` : hh;
+    if (h <= 0) return tr('hrs_minutes', m);
+    const hh = h === 1 ? tr('hrs_hour_one') : h === 2 ? tr('hrs_hour_two') : tr('hrs_hours_many', h);
+    return m ? tr('hrs_h_and_m', hh, m) : hh;
 }
 // ساعة 12 بصيغة "7:00 ص".
 function fmtClock(hhmm) {
     const t = toMin(hhmm); let h = Math.floor(t / 60); const mm = t % 60;
     const am = h < 12; const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${h12}:${String(mm).padStart(2, '0')} ${am ? 'ص' : 'م'}`;
+    return `${h12}:${String(mm).padStart(2, '0')} ${am ? tr('clock_am') : tr('clock_pm')}`;
 }
 // فترات يوم: "7:00 ص – 10:00 م" أو "8:30 ص – 12:30 م، 4:00 م – 11:00 م" أو "مغلق".
 function dayShifts(shifts) {
-    if (!Array.isArray(shifts) || !shifts.length) return 'مغلق';
+    if (!Array.isArray(shifts) || !shifts.length) return tr('day_closed');
     return shifts.map(s => `${fmtClock(s[0])} – ${fmtClock(s[1])}`).join('، ');
 }
 // يوم الأسبوع الحالي بتوقيت الرياض (0=الأحد).
@@ -40,20 +41,20 @@ function statusText(os) {
     if (!os || !os.configured) return '';
     if (os.open) {
         const c = os.closes_in_min;
-        return (c != null && c <= CLOSING_SOON_MIN) ? `🟠 يغلق بعد ${fmtMins(c)}` : '🟢 مفتوح الآن';
+        return (c != null && c <= CLOSING_SOON_MIN) ? tr('hrs_closing_in', fmtMins(c)) : tr('hrs_open_now');
     }
-    return os.opens_in_min != null ? `🔴 مغلق · يفتح بعد ${fmtMins(os.opens_in_min)}` : '🔴 مغلق الآن';
+    return os.opens_in_min != null ? tr('hrs_closed_opens', fmtMins(os.opens_in_min)) : tr('hrs_closed_now');
 }
 // سطر «اليوم: …» لساعات اليوم الحالي.
 function todayLine(wh) {
     if (!isConfigured(wh)) return '';
-    return `اليوم: ${dayShifts(wh.days[String(riyadhDow())])}`;
+    return tr('hrs_today', dayShifts(wh.days[String(riyadhDow())]));
 }
 // أسطر الأسبوع كاملاً (الأحد→السبت) مع تمييز اليوم.
 function weekLines(wh) {
     if (!isConfigured(wh)) return [];
     const dow = riyadhDow();
-    return [0, 1, 2, 3, 4, 5, 6].map(d => `${DAY_AR[d]}${d === dow ? ' (اليوم)' : ''}: ${dayShifts(wh.days[String(d)])}`);
+    return [0, 1, 2, 3, 4, 5, 6].map(d => `${tr('day_' + d)}${d === dow ? tr('hrs_today_tag') : ''}: ${dayShifts(wh.days[String(d)])}`);
 }
 
 module.exports = { fmtMins, fmtClock, dayShifts, statusText, todayLine, weekLines, isConfigured, riyadhDow, DAY_AR, CLOSING_SOON_MIN };

@@ -3,6 +3,8 @@
  * أدوات نقيّة بلا حالة، يستعملها البوت وكل التدفّقات. مستخرَجة من bot.js v11.72.
  */
 
+const { tr, lang } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
+
 // إزالة وسوم HTML + قصّ الطول (حماية من الإدخال الضار).
 const sanitize = (s, max = 400) => (!s || typeof s !== 'string') ? '' : s.replace(/<[^>]*>/gm, '').trim().slice(0, max);
 
@@ -18,25 +20,26 @@ const isQty   = q => /^\d+$/.test(normalizeDigits(q).trim()) && +normalizeDigits
 const md = t => t == null ? '' : String(t).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
 const numEsc = v => md(String(v)); // رقم آمن للـ MarkdownV2 (يهرب النقطة)
 
-const fmtDate = d => { try { return new Date(d).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return String(d); } };
-const fmtDay  = d => { try { return new Date(d).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return String(d); } };
-const fmtTime = d => { try { return new Date(d).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+const _loc = () => lang() === 'en' ? 'en-GB' : 'ar-SA';   // date locale follows the user's language
+const fmtDate = d => { try { return new Date(d).toLocaleDateString(_loc(), { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return String(d); } };
+const fmtDay  = d => { try { return new Date(d).toLocaleDateString(_loc(), { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return String(d); } };
+const fmtTime = d => { try { return new Date(d).toLocaleTimeString(_loc(), { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
 const money   = v => md(Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }));
 
 // prep_time مخزَّن متوافقاً مع الويب: 'arrival' أو 'NNmin'.
-const prepLabel = pt => { if (!pt || pt === 'arrival' || pt === '0min' || pt === '0') return 'عند الوصول'; const n = String(pt).replace('min', '').trim(); return /^\d+$/.test(n) ? `${n} دقيقة` : String(pt); };
+const prepLabel = pt => { if (!pt || pt === 'arrival' || pt === '0min' || pt === '0') return tr('prep_on_arrival'); const n = String(pt).replace('min', '').trim(); return /^\d+$/.test(n) ? tr('prep_minutes', n) : String(pt); };
 
 const STATUS = { pending: '⏳ قيد الانتظار', acknowledged: '✅ مؤكد', completed: '🏁 مكتمل', cancelled: '❌ ملغي', active: '🟢 نشط', paused: '⏸ موقوف', draft: '📝 مسودة', expired: '🔴 منتهي' };
-const statusLabel = s => STATUS[s] || md(s);
+const statusLabel = s => STATUS[s] ? tr('status_' + s) : md(s);   // ar/en via tr; unknown → escaped raw
 const DIV = '━━━━━━━━━━━━━━━━━━';
 
 // كتلة السعر الواضحة (قبل/بعد/التوفير) — تُرجع نصاً MarkdownV2.
 function priceBlock(orig, disc, pct) {
     const save = Math.max(0, Number(orig) - Number(disc));
     const p = pct || (orig > 0 ? Math.round((save / orig) * 100) : 0);
-    return `💵 السعر قبل: *${money(orig)}* ر\\.س\n` +
-           `🟢 بعد الخصم: *${money(disc)}* ر\\.س\n` +
-           `🔻 توفيرك: *${money(save)}* ر\\.س \\(${p}%\\)`;
+    return tr('price_before', money(orig)) + '\n' +
+           tr('price_after', money(disc)) + '\n' +
+           tr('price_savings', money(save), p);
 }
 
 // تحليل تاريخ مكتوب بمرونة → { iso:'YYYY-MM-DD', ms } أو null.

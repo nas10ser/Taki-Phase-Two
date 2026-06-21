@@ -3,6 +3,8 @@
  * وحساب المتبقّي زمنياً للعروض. أدوات نقيّة مستخرَجة من bot.js v11.72.
  */
 
+const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
+
 function haversineKm(la1, lo1, la2, lo2) {
     const R = 6371, dLa = (la2 - la1) * Math.PI / 180, dLo = (lo2 - lo1) * Math.PI / 180,
         a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
@@ -78,9 +80,9 @@ function remainingText(d) {
     const day = Math.floor(diff / 86400000); diff -= day * 86400000;
     const hr = Math.floor(diff / 3600000); diff -= hr * 3600000;
     const mn = Math.floor(diff / 60000);
-    if (day > 0) return `${day} يوم${hr ? ` و${hr} ساعة` : ''}`;
-    if (hr > 0)  return `${hr} ساعة${mn ? ` و${mn} دقيقة` : ''}`;
-    return `${mn} دقيقة`;
+    if (day > 0) return tr('dur_day', day) + (hr ? tr('dur_join_hour', hr) : '');
+    if (hr > 0)  return tr('dur_hour', hr) + (mn ? tr('dur_join_min', mn) : '');
+    return tr('dur_min', mn);
 }
 // لحظة الانتهاء الدقيقة لعرض مدّة (لعرض التاريخ+الوقت الحقيقي للانتهاء).
 function durationEndsAt(d) {

@@ -2,6 +2,7 @@
  * lib/catalog.js — تصنيفات السوق السعودي (تطابق src/data/mock.ts) + منتقي أزرار.
  */
 const { Markup } = require('telegraf');
+const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
 
 const CAT = {
     all: { ar: 'الكل', e: '🔥' }, Fashion_Women: { ar: 'فساتين ونساء', e: '👗' }, Fashion_Men: { ar: 'ملابس رجالية', e: '👔' },
@@ -15,7 +16,7 @@ const CAT = {
     Gym: { ar: 'نادي رياضي', e: '🏋️' }, Library: { ar: 'مكتبة', e: '📚' }, Nursery: { ar: 'مشاتل', e: '🌱' },
     Pharmacy: { ar: 'صيدلية', e: '💊' }, Clinics: { ar: 'عيادات', e: '🩺' }, Online: { ar: 'أونلاين', e: '🌐' }, Other: { ar: 'أخرى', e: '✨' },
 };
-const catLabel = id => { const c = CAT[id]; return c ? `${c.e} ${c.ar}` : `✨ ${id || 'أخرى'}`; };
+const catLabel = id => { const c = CAT[id]; return c ? `${c.e} ${tr('cat_' + id)}` : `✨ ${id || tr('cat_fallback_other')}`; };
 
 // صفوف أزرار التصنيف (2/صف) — `prefix` يُلصق قبل معرّف التصنيف في callback_data.
 function catKeyboard(prefix) {
@@ -27,6 +28,6 @@ function catKeyboard(prefix) {
 
 // الفئة المستهدفة (gender) — تطابق الموقع.
 const GENDER = { all: '👥 الجميع', men: '👔 رجال', women: '👗 نساء', kids: '🧒 أطفال' };
-const genderLabel = g => GENDER[g] || GENDER.all;
+const genderLabel = g => GENDER[g] ? tr('gender_' + g) : tr('gender_all');
 
 module.exports = { CAT, catLabel, catKeyboard, GENDER, genderLabel };
