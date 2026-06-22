@@ -59,7 +59,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.87.0';
+const BOT_VERSION              = '11.89.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -213,6 +213,9 @@ const tr = I18N.tr;   // request-scoped translate — language resolved from ALS
 const langBtn = () => (I18N.lang() === 'en')
     ? Markup.button.callback('🌐 العربية', 'lang:set:ar')
     : Markup.button.callback('🌐 English', 'lang:set:en');
+// أسماء الجغرافيا بالإنجليزي (نفس ترجمة الموقع) — تتبع لغة الطلب عبر ALS. v11.89
+const GEO_EN = require('./lib/geoNames.json');
+const geoLabel = item => (I18N.lang()==='en' && item && GEO_EN[item.id]) ? GEO_EN[item.id] : (item ? item.name : '');
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
 const KB_BACK = (s) => Markup.inlineKeyboard([[Markup.button.callback(tr('menu_back'),'menu:back')]]);
@@ -1478,7 +1481,7 @@ bot.action('sa:add:rg', async ctx => {
     const regions = await rpc('bot_geo_regions',{})||[];
     const s=getSession(tgId(ctx)); s.temp.saRegions=regions;
     if(!regions.length) return ctx.reply(tr('b1482_regions_load_failed'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1482_back'),'smart:builder')]]).reply_markup});
-    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(r.name,`sa:rg:${r.id}`)));
+    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(geoLabel(r),`sa:rg:${r.id}`)));
     rows.push([Markup.button.callback(tr('b1484_back'),'smart:builder')]);
     await ctx.reply(tr('b1485_choose_region'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
@@ -1486,7 +1489,7 @@ bot.action(/^sa:rg:([A-Za-z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery(tr('cm_added_f'));
     const s=getSession(tgId(ctx)); const d=s.temp.alertDraft||(s.temp.alertDraft=newDraft());
     const reg=(s.temp.saRegions||[]).find(r=>r.id===ctx.match[1]);
-    if(!d.regions.includes(ctx.match[1])){ d.regions.push(ctx.match[1]); d.labels.regions.push(reg?reg.name:ctx.match[1]); }
+    if(!d.regions.includes(ctx.match[1])){ d.regions.push(ctx.match[1]); d.labels.regions.push(reg?geoLabel(reg):ctx.match[1]); }
     return showSmartBuilder(ctx);
 });
 // city (region → city)
@@ -1495,7 +1498,7 @@ bot.action('sa:add:ct', async ctx => {
     const regions = await rpc('bot_geo_regions',{})||[];
     const s=getSession(tgId(ctx)); s.temp.saRegions=regions;
     if(!regions.length) return ctx.reply(tr('b1499_regions_load_failed'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1499_back'),'smart:builder')]]).reply_markup});
-    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(r.name,`sac:rg:${r.id}`)));
+    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(geoLabel(r),`sac:rg:${r.id}`)));
     rows.push([Markup.button.callback(tr('b1501_back'),'smart:builder')]);
     await ctx.reply(tr('b1502_choose_region_first'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
@@ -1504,7 +1507,7 @@ bot.action(/^sac:rg:([A-Za-z0-9_-]+)$/, async ctx => {
     const cities = await rpc('bot_geo_cities',{p_region:ctx.match[1]})||[];
     const s=getSession(tgId(ctx)); s.temp.saCities=cities;
     if(!cities.length) return ctx.reply(tr('b1508_no_cities_region'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1508_back'),'sa:add:ct')]]).reply_markup});
-    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(c.name,`sa:ct:${c.id}`)));
+    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(geoLabel(c),`sa:ct:${c.id}`)));
     rows.push([Markup.button.callback(tr('b1510_back'),'sa:add:ct')]);
     await ctx.reply(tr('b1511_choose_city'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
@@ -1512,7 +1515,7 @@ bot.action(/^sa:ct:([A-Za-z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery(tr('cm_added_f'));
     const s=getSession(tgId(ctx)); const d=s.temp.alertDraft||(s.temp.alertDraft=newDraft());
     const c=(s.temp.saCities||[]).find(x=>x.id===ctx.match[1]);
-    if(!d.cities.includes(ctx.match[1])){ d.cities.push(ctx.match[1]); d.labels.cities.push(c?c.name:ctx.match[1]); }
+    if(!d.cities.includes(ctx.match[1])){ d.cities.push(ctx.match[1]); d.labels.cities.push(c?geoLabel(c):ctx.match[1]); }
     return showSmartBuilder(ctx);
 });
 // mall/market (region → city → type → location)
@@ -1521,7 +1524,7 @@ bot.action('sa:add:ml', async ctx => {
     const regions = await rpc('bot_geo_regions',{})||[];
     const s=getSession(tgId(ctx)); s.temp.saRegions=regions;
     if(!regions.length) return ctx.reply(tr('b1525_regions_load_failed'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1525_back'),'smart:builder')]]).reply_markup});
-    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(r.name,`sam:rg:${r.id}`)));
+    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(geoLabel(r),`sam:rg:${r.id}`)));
     rows.push([Markup.button.callback(tr('b1527_back'),'smart:builder')]);
     await ctx.reply(tr('b1528_mall_choose_region'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
@@ -1530,7 +1533,7 @@ bot.action(/^sam:rg:([A-Za-z0-9_-]+)$/, async ctx => {
     const cities = await rpc('bot_geo_cities',{p_region:ctx.match[1]})||[];
     const s=getSession(tgId(ctx)); s.temp.saCities=cities;
     if(!cities.length) return ctx.reply(tr('b1534_no_cities_region'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1534_back'),'sa:add:ml')]]).reply_markup});
-    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(c.name,`sam:ct:${c.id}`)));
+    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(geoLabel(c),`sam:ct:${c.id}`)));
     rows.push([Markup.button.callback(tr('b1536_back'),'sa:add:ml')]);
     await ctx.reply(tr('b1537_choose_city'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
@@ -1548,14 +1551,14 @@ bot.action(/^sam:tp:(mall|market)$/, async ctx => {
     const locs = await rpc('bot_geo_locations',{p_city:s.temp.saCity,p_type:ctx.match[1]})||[];
     s.temp.saLocs=locs;
     if(!locs.length) return ctx.reply(tr('b1552_no_locations', (ctx.match[1]==='mall'?tr('b1552_malls'):tr('b1552_markets'))),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1552_back'),'sa:add:ml')]]).reply_markup});
-    const rows=locs.slice(0,16).map((l,i)=>[Markup.button.callback(`📍 ${String(l.name).slice(0,34)}`,`sa:ml:${i}`)]);
+    const rows=locs.slice(0,16).map((l,i)=>[Markup.button.callback(`📍 ${String(geoLabel(l)).slice(0,34)}`,`sa:ml:${i}`)]);
     rows.push([Markup.button.callback(tr('cm_back'),'sa:add:ml')]);
     await ctx.reply(`${ctx.match[1]==='mall'?tr('q1555_choose_mall'):tr('q1555_choose_market')}`,{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
 });
 bot.action(/^sa:ml:(\d+)$/, async ctx => {
     await ctx.answerCbQuery(tr('cm_added_m'));
     const s=getSession(tgId(ctx)); const d=s.temp.alertDraft||(s.temp.alertDraft=newDraft()); const l=(s.temp.saLocs||[])[+ctx.match[1]];
-    if(l && !d.malls.includes(l.id)){ d.malls.push(l.id); d.labels.malls.push(l.name); }
+    if(l && !d.malls.includes(l.id)){ d.malls.push(l.id); d.labels.malls.push(geoLabel(l)); }
     return showSmartBuilder(ctx);
 });
 // my location + radius
@@ -1734,7 +1737,7 @@ bot.action('nf:loc', async ctx => {
     const regions = await rpc('bot_geo_regions',{})||[];
     const s=getSession(tgId(ctx)); s.temp.nfRegions=regions;
     if(!regions.length) return ctx.reply(tr('b1737_load_regions_failed'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard([[Markup.button.callback(tr('b1737_back'),'buyer:nearby')]]).reply_markup});
-    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(r.name,`nfl:rg:${r.id}`)));
+    const rows=[]; for(let i=0;i<regions.length;i+=2) rows.push(regions.slice(i,i+2).map(r=>Markup.button.callback(geoLabel(r),`nfl:rg:${r.id}`)));
     rows.push([Markup.button.callback(tr('b1739_all_regions'),'nfl:rg:_all')]);
     rows.push([Markup.button.callback(tr('b1740_back'),'buyer:nearby')]);
     await ctx.reply(tr('b1741_choose_region'),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
@@ -1744,10 +1747,10 @@ bot.action(/^nfl:rg:([A-Za-z0-9_-]+)$/, async ctx => {
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
     if(ctx.match[1]==='_all'){ f.region=f.regionName=f.city=f.cityName=f.mall=f.mallName=null; return showNearbyHub(ctx); }
     const reg=(s.temp.nfRegions||[]).find(r=>r.id===ctx.match[1]);
-    f.region=ctx.match[1]; f.regionName=reg?reg.name:ctx.match[1]; f.city=f.cityName=f.mall=f.mallName=null;
+    f.region=ctx.match[1]; f.regionName=reg?geoLabel(reg):ctx.match[1]; f.city=f.cityName=f.mall=f.mallName=null;
     const cities = await rpc('bot_geo_cities',{p_region:f.region})||[]; s.temp.nfCities=cities;
     if(!cities.length) return showNearbyHub(ctx);
-    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(c.name,`nfl:ct:${c.id}`)));
+    const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(geoLabel(c),`nfl:ct:${c.id}`)));
     rows.push([Markup.button.callback(tr('b1752_all_cities_in_region',f.regionName),'nf:done')]);
     rows.push([Markup.button.callback(tr('b1753_regions'),'nf:loc')]);
     await ctx.reply(tr('b1754_choose_city',md(f.regionName)),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
@@ -1756,11 +1759,11 @@ bot.action(/^nfl:ct:([A-Za-z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
     const c=(s.temp.nfCities||[]).find(x=>x.id===ctx.match[1]);
-    f.city=ctx.match[1]; f.cityName=c?c.name:ctx.match[1]; f.mall=f.mallName=null;
+    f.city=ctx.match[1]; f.cityName=c?geoLabel(c):ctx.match[1]; f.mall=f.mallName=null;
     const locs = await rpc('bot_geo_locations',{p_city:f.city,p_type:null})||[]; s.temp.nfLocs=locs;
     if(!locs.length) return showNearbyHub(ctx);
     const typeTag = t => t==='market'?tr('q1766_tag_market'):t==='mall'?tr('q1766_tag_mall'):t==='store'?tr('q1766_tag_store'):'';
-    const rows=locs.slice(0,18).map((l,i)=>[Markup.button.callback(`📍 ${String(l.name).slice(0,30)}${typeTag(l.type)}`,`nfl:ml:${i}`)]);
+    const rows=locs.slice(0,18).map((l,i)=>[Markup.button.callback(`📍 ${String(geoLabel(l)).slice(0,30)}${typeTag(l.type)}`,`nfl:ml:${i}`)]);
     rows.push([Markup.button.callback(tr('b1765_all_in_city',f.cityName),'nf:done')]);
     rows.push([Markup.button.callback(tr('b1766_cities'),'nf:loc')]);
     await ctx.reply(tr('b1767_choose_mall',md(f.cityName)),{parse_mode:'MarkdownV2',reply_markup:Markup.inlineKeyboard(rows).reply_markup});
@@ -1768,7 +1771,7 @@ bot.action(/^nfl:ct:([A-Za-z0-9_-]+)$/, async ctx => {
 bot.action(/^nfl:ml:(\d+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1770_done'));
     const s=getSession(tgId(ctx)); const f=nfDraft(s); const l=(s.temp.nfLocs||[])[+ctx.match[1]];
-    if(l){ f.mall=l.id; f.mallName=l.name; }
+    if(l){ f.mall=l.id; f.mallName=geoLabel(l); }
     return showNearbyHub(ctx);
 });
 // ── Category filter ───────────────────────────────────────────────────────────
