@@ -252,7 +252,7 @@ async function showDeals(ctx, scope) {
     for (let i = 0; i < shown.length; i++) {
         const d = shown[i];
         const qty = d.is_unlimited ? tr('sd254_unlimited') : tr('sd254_pieces', (d.quantity ?? '—'));
-        let m = `*${i + 1}\\.* 🏷 *${md(d.item_name)}*\n${statusLabel(d.status)}\n💵 ${money(d.original_price)} ← 🟢 *${money(d.discounted_price)}* ر\\.س \\(${md(d.discount_percentage)}%\\)\n📦 ${md(qty)}`;
+        let m = `*${i + 1}\\.* 🏷 *${md(d.item_name)}*\n${statusLabel(d.status)}\n💵 ${money(d.original_price)} ← 🟢 *${money(d.discounted_price)}* ${tr('cm_sar')} \\(${md(d.discount_percentage)}%\\)\n📦 ${md(qty)}`;
         if (d.category) m += `  •  🗂 ${md(catLabel(d.category))}`;
         const exp = dealCardExpiry(d); if (exp) m += `\n${exp}`;
         if (d.bookings_count) m += tr('sd258_bookings_count', d.bookings_count);
@@ -545,7 +545,7 @@ async function askLocation(ctx, intro) {
     pickable.slice(0, 8).forEach(({ b }, n) => {
         const u = chipMapUrl(b);
         const place = [b.city, b.region].filter(Boolean).join(' • ');
-        const lk = u ? ` — [🗺 اعرض على الخريطة](${mdUrl(u)})` : '';
+        const lk = u ? tr('sd548_show_on_map_link', mdUrl(u)) : '';
         savedList += `\n*${n + 1}\\.* 📍 *${md(String(b.name || tr('cm_location')).slice(0, 40))}*${b.locked ? ' 🔒' : ''}${place ? ' — ' + md(place) : ''}${lk}`;
     });
     const rows = [];
@@ -719,11 +719,11 @@ async function goReview(ctx) {
     const s = getSession(tgId(ctx)); const a = s.temp.add; if (!a) return;
     setStep(tgId(ctx), 'idle');
     const pct = Math.round(((a.orig - a.disc) / a.orig) * 100);
-    const qty = a.unlimited ? 'غير محدودة' : md(String(a.qty));
-    const loc = a.loc ? (a.loc.name || a.loc.custom_location_name || (a.loc.city || 'موقع مخصّص')) : 'بدون';
-    const sched = a.startsAt ? `\n🚀 عرض قادم — يبدأ: *${md(fmtDate(a.startsAt))}*` : '';
-    const size = a.size ? `\n📏 المقاس: ${md(a.size)}` : '';
-    const desc = a.desc ? `\n📝 ${md(a.desc)}` : '';
+    const qty = a.unlimited ? tr('w722_qty_unlimited') : md(String(a.qty));
+    const loc = a.loc ? (a.loc.name || a.loc.custom_location_name || (a.loc.city || tr('w723_custom_location'))) : tr('w723_none');
+    const sched = a.startsAt ? tr('w724_sched_upcoming', md(fmtDate(a.startsAt))) : '';
+    const size = a.size ? tr('w725_size', md(a.size)) : '';
+    const desc = a.desc ? tr('w726_desc', md(a.desc)) : '';
     await reply(ctx,
         tr('sd727_review', DIV, md(a.name), md(catLabel(a.category)), md(genderLabel(a.gender)), size, priceBlock(a.orig, a.disc, pct), expirySummary(a), qty, sched, md(loc), a.images.length, desc),
         Markup.inlineKeyboard([[btn(tr('sd731_publish'), 'ad:publish')], [btn(tr('sd731_cancel'), 'sd:cancel')]]).reply_markup);
@@ -775,10 +775,10 @@ async function openEdit(ctx, id) {
     const d = await getDeal(ctx, id);
     if (!d) return reply(ctx, tr('sd778_deal_not_found'), Markup.inlineKeyboard([[btn(tr('sd778_my_deals'), 'seller:deals')]]).reply_markup);
     s.temp.editDealId = id; s.temp.editDeal = d; s.temp.flow = 'edit'; s.temp.edraft = {};
-    const qty = d.is_unlimited ? '♾ غير محدود' : md(String(d.quantity ?? '—'));
-    const exp = d.expiry_type === 'date' && d.expiry_date ? `🗓 حتى ${md(fmtDay(d.expiry_date))}` : d.expiry_type === 'stock' ? '📦 بالكمية' : (remainingText(d) ? `⏳ ${md(remainingText(d))}` : '—');
-    const sched = d.starts_at && Number(d.starts_at) > Date.now() ? `\n🚀 مجدول: ${md(fmtDate(Number(d.starts_at)))}` : '';
-    const cur = `${DIV}\n🏷 *${md(d.item_name)}*  •  ${statusLabel(d.status)}\n💵 ${money(d.original_price)} ← 🟢 ${money(d.discounted_price)} ر\\.س \\(${md(d.discount_percentage)}%\\)\n📦 ${qty}  •  🗂 ${md(catLabel(d.category))}  •  ${md(genderLabel(d.gender || 'all'))}\n📏 المقاس: ${md(d.size || '—')}  •  🖼 الصور: ${Array.isArray(d.images) ? d.images.length : 0}\n⏳ ${exp}${sched}`;
+    const qty = d.is_unlimited ? tr('w778_qty_unlimited') : md(String(d.quantity ?? '—'));
+    const exp = d.expiry_type === 'date' && d.expiry_date ? tr('w779_exp_until', md(fmtDay(d.expiry_date))) : d.expiry_type === 'stock' ? tr('w779_exp_stock') : (remainingText(d) ? tr('w779_exp_remaining', md(remainingText(d))) : '—');
+    const sched = d.starts_at && Number(d.starts_at) > Date.now() ? tr('w780_sched', md(fmtDate(Number(d.starts_at)))) : '';
+    const cur = tr('w781_edit_current', DIV, md(d.item_name), statusLabel(d.status), money(d.original_price), money(d.discounted_price), md(d.discount_percentage), qty, md(catLabel(d.category)), md(genderLabel(d.gender || 'all')), md(d.size || '—'), (Array.isArray(d.images) ? d.images.length : 0), exp, sched);
     const rows = [
         [btn(tr('sd785_edit_name'), `ede:name:${id}`), btn(tr('sd785_edit_price'), `ede:price:${id}`)],
         [btn(tr('sd786_edit_qty'), `ede:qty:${id}`), btn(tr('sd786_edit_desc'), `ede:desc:${id}`)],
@@ -858,7 +858,7 @@ async function previewImagesThen(ctx, d, next) {
 }
 async function previewDeal(ctx, d) {
     const imgs = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
-    const cap = `${tr('sd863_preview_header')}\n${DIV}\n🏷 *${md(d.item_name)}*\n` + priceBlock(d.original_price, d.discounted_price, d.discount_percentage) + `\n📦 ${d.is_unlimited ? 'غير محدود' : md(String(d.quantity ?? '—'))}${d.size ? `\n📏 ${md(d.size)}` : ''}${d.description ? `\n📝 ${md(String(d.description).slice(0, 300))}` : ''}`;
+    const cap = `${tr('sd863_preview_header')}\n${DIV}\n🏷 *${md(d.item_name)}*\n` + priceBlock(d.original_price, d.discounted_price, d.discount_percentage) + `\n📦 ${d.is_unlimited ? tr('sd861_unlimited') : md(String(d.quantity ?? '—'))}${d.size ? `\n📏 ${md(d.size)}` : ''}${d.description ? `\n📝 ${md(String(d.description).slice(0, 300))}` : ''}`;
     const back = Markup.inlineKeyboard([[btn(tr('sd864_btn_back_to_edit'), `dedit:${d.id}`)]]).reply_markup;
     if (imgs.length > 1) { try { await ctx.replyWithMediaGroup(imgs.slice(0, 4).map(u => ({ type: 'photo', media: u }))); } catch { /* ignore */ } return reply(ctx, cap, back); }
     if (imgs[0]) { try { return await ctx.replyWithPhoto(imgs[0], { caption: cap, parse_mode: 'MarkdownV2', reply_markup: back }); } catch { /* fall through */ } }
@@ -869,8 +869,8 @@ async function previewDeal(ctx, d) {
 //  مواقعي (الفروع) — كل المواقع (محفوظة + مواقع عروض) مع وسم وإتاحة حذف/تعديل
 // ════════════════════════════════════════════════════════════════════════════════
 function branchPlace(b) {
-    if (b.map_lat != null && b.map_lng != null) return `[🗺 الموقع على الخريطة](https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng})`;
-    if (b.google_maps_link) return `[🗺 الموقع](${b.google_maps_link})`;
+    if (b.map_lat != null && b.map_lng != null) return `[🗺 ${tr('sd872_map_location')}](https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng})`;
+    if (b.google_maps_link) return `[🗺 ${tr('sd873_location')}](${b.google_maps_link})`;
     return '';
 }
 function branchWhere(b) { const p = [b.city, b.region].filter(Boolean); return p.length ? md(p.join(' • ')) : tr('sd878_custom_location'); }
