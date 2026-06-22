@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Deal, getLocation } from '../data/mock';
+import { Deal, getLocation , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel } from '../utils/helpers';
@@ -299,7 +299,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap' as const
                     }}>
-                        📍 {loc.name}
+                        📍 {geoName(loc, language)}
                     </div>
                 )}
             </div>

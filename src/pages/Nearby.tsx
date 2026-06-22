@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { LOCATIONS, getLocation, USER_LOCATION } from '../data/mock';
+import { LOCATIONS, getLocation, USER_LOCATION , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 'react-leaflet';
 import { REGIONS, CITIES } from '../data/mock';
@@ -235,7 +235,7 @@ const Nearby: React.FC = () => {
                             }}
                         >
                             <option value="">{isRTL ? 'كل المناطق' : 'All Regions'}</option>
-                            {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                         </select>
                         <select 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
@@ -253,7 +253,7 @@ const Nearby: React.FC = () => {
                             }}
                         >
                             <option value="">{isRTL ? 'كل المدن' : 'All Cities'}</option>
-                            {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
                         </select>
                         <select 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
@@ -288,7 +288,7 @@ const Nearby: React.FC = () => {
                         >
                             <option value="">{isRTL ? 'اختر المكان...' : 'Select Place...'}</option>
                             {LOCATIONS.filter(l => (!selectedCity || l.cityId === selectedCity) && (!locationType || l.type === locationType)).map(l => (
-                                <option key={l.id} value={l.id}>{l.name}</option>
+                                <option key={l.id} value={l.id}>{geoName(l, language)}</option>
                             ))}
                         </select>
                     </div>

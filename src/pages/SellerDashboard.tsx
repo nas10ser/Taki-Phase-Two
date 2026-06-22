@@ -9,7 +9,7 @@ import CameraCapture from '../components/CameraCapture';
 import ReportDialog from '../components/ReportDialog';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
@@ -867,11 +867,11 @@ const SellerDashboard: React.FC = () => {
         if (d.locationId && typeof d.locationId === 'string'
             && !d.locationId.startsWith('custom_') && d.locationId !== 'other') {
             const loc = LOCATIONS.find(l => l.id === d.locationId);
-            if (loc) return loc.name;
+            if (loc) return geoName(loc, language);
         }
         if (d.city) {
             const city = CITIES.find(c => c.id === d.city);
-            if (city) return city.name;
+            if (city) return geoName(city, language);
         }
         if (d.mapLocation?.lat && d.mapLocation?.lng) {
             return `${d.mapLocation.lat.toFixed(3)}, ${d.mapLocation.lng.toFixed(3)}`;
@@ -2544,7 +2544,7 @@ const SellerDashboard: React.FC = () => {
                             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                                 <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedRegion} onChange={e => { setSelectedRegion(e.target.value); setSelectedCity(''); }}>
                                     <option value="">{isRTL ? 'اختر المنطقة' : 'Region'}</option>
-                                    {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                    {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                                 </select>
                                 <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedCity} onChange={e => {
                                     const val = e.target.value;
@@ -2555,7 +2555,7 @@ const SellerDashboard: React.FC = () => {
                                     }
                                 }}>
                                     <option value="">{isRTL ? 'اختر المدينة' : 'City'}</option>
-                                    {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
                                     <option value="other">{isRTL ? 'أخرى' : 'Other'}</option>
                                 </select>
                             </div>
@@ -2577,7 +2577,7 @@ const SellerDashboard: React.FC = () => {
                                 }}>
                                     <option value="">{isRTL ? 'اختر المكان...' : 'Select Location...'}</option>
                                     {LOCATIONS.filter(l => l.cityId === selectedCity && l.type === locationType).map(l => (
-                                        <option key={l.id} value={l.id}>{l.name}</option>
+                                        <option key={l.id} value={l.id}>{geoName(l, language)}</option>
                                     ))}
                                     <option value="other">{isRTL ? 'أخرى (منطقة مخصصة)' : 'Other'}</option>
                                 </select>

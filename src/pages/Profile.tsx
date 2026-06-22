@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
-import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
@@ -581,14 +581,14 @@ const SmartAlertsCard: React.FC<{
                     onChange={e => { setFilterRegion(e.target.value); setFilterCity(''); setFilterMall(''); }}
                     style={{ flex: 1, minWidth: 130, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem' }}>
                     <option value="">{isRTL ? 'المنطقة (اختياري)' : 'Region (Opt)'}</option>
-                    {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, isRTL ? 'ar' : 'en')}</option>)}
                 </select>
                 <select value={filterCity}
                     onChange={e => { setFilterCity(e.target.value); setFilterMall(''); }}
                     style={{ flex: 1, minWidth: 130, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem' }}>
                     <option value="">{isRTL ? 'المدينة (اختياري)' : 'City (Opt)'}</option>
                     {CITIES.filter(c => !filterRegion || c.regionId === filterRegion).map(c =>
-                        <option key={c.id} value={c.id}>{c.name}</option>)}
+                        <option key={c.id} value={c.id}>{geoName(c, isRTL ? 'ar' : 'en')}</option>)}
                 </select>
             </div>
 
@@ -598,7 +598,7 @@ const SmartAlertsCard: React.FC<{
                     style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem', marginBottom: 10 }}>
                     <option value="">{isRTL ? 'مول/سوق محدد (اختياري)' : 'Specific mall/market (Opt)'}</option>
                     {LOCATIONS.filter(l => l.cityId === filterCity).map(l =>
-                        <option key={l.id} value={l.id}>{l.name}</option>)}
+                        <option key={l.id} value={l.id}>{geoName(l, isRTL ? 'ar' : 'en')}</option>)}
                 </select>
             )}
 

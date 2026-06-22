@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, Deal } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, Deal , geoName } from '../data/mock';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
@@ -294,7 +294,7 @@ const Home: React.FC = () => {
                             style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.85rem', fontWeight: 700, appearance: 'none', minHeight: 38, color: 'var(--text-primary)' }}
                         >
                             <option value="">{isRTL ? 'كل المناطق' : 'All Regions'}</option>
-                            {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                         </select>
                         <select
                             value={topLocation.city}
@@ -303,7 +303,7 @@ const Home: React.FC = () => {
                             style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: !topLocation.region ? 'var(--gray-100)' : 'var(--card-bg)', fontSize: '0.85rem', fontWeight: 700, appearance: 'none', opacity: !topLocation.region ? 0.6 : 1, minHeight: 38, color: 'var(--text-primary)' }}
                         >
                             <option value="">{isRTL ? 'كل المدن' : 'All Cities'}</option>
-                            {filteredCities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            {filteredCities.map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
                         </select>
                     </div>
                     <select
@@ -313,7 +313,7 @@ const Home: React.FC = () => {
                         style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: !topLocation.city ? 'var(--gray-100)' : 'var(--card-bg)', fontSize: '0.85rem', fontWeight: 700, appearance: 'none', opacity: !topLocation.city ? 0.6 : 1, minHeight: 38, color: 'var(--text-primary)' }}
                     >
                         <option value="">{isRTL ? 'كل المولات والأسواق' : 'All Malls & Markets'}</option>
-                        {filteredLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        {filteredLocations.map(l => <option key={l.id} value={l.id}>{geoName(l, language)}</option>)}
                     </select>
                 </div>
             </div>

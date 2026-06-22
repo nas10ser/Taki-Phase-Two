@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { REGIONS, CITIES, findNearestCity } from '../data/mock';
+import { REGIONS, CITIES, findNearestCity , geoName } from '../data/mock';
 import { getCurrentPositionSafe } from '../utils/helpers';
 
 /**
@@ -127,7 +127,7 @@ const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                 }}
                             >
                                 <option value="">{isRTL ? 'اختر المنطقة' : 'Select region'}</option>
-                                {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                             </select>
                             <select
                                 value={city}
@@ -143,7 +143,7 @@ const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             >
                                 <option value="">{isRTL ? 'اختر مدينتك' : 'Select your city'}</option>
                                 {CITIES.filter(c => !region || c.regionId === region).map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                    <option key={c.id} value={c.id}>{geoName(c, language)}</option>
                                 ))}
                             </select>
                             <button
