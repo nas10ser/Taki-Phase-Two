@@ -24,6 +24,7 @@
 const C      = require('../lib/catalog');
 const G      = require('../lib/geo');
 const F      = require('../lib/format');
+const HRS    = require('../lib/hours');
 const I18N   = require('../lib/i18n');
 const GEO_EN = require('../lib/geoNames.json');
 const { getSession } = require('../lib/session');
@@ -222,8 +223,12 @@ function create(deps) {
         else { const r = remainingText(d); if (r) L.push(tr('q2527_wa_ends_in', r)); }
         if (geo && d.distance_km != null) L.push(tr('q2528_wa_distance', d.distance_km));
         if (d.prep_time) L.push(tr('q2529_wa_prep', d.prep_time));
+        // حالة المحل (مفتوح/مغلق + وقت الفتح) — نفس مصدر الموقع (open_status). الحجز يتم
+        // عبر رابط التطبيق الذي يمنع حجز المحل المغلق ويعرض وقت الفتح. v11.92
+        const os = d.open_status;
+        if (os && os.configured) L.push(HRS.statusText(os));
         if (d.description) L.push(tr('q2530_wa_description', String(d.description).slice(0, 400)));
-        L.push(tr('wa_book_on_app', `${APP_URL}/deal/${d.id}`));
+        L.push(os && os.configured && !os.open ? tr('wa_book_when_open', `${APP_URL}/deal/${d.id}`) : tr('wa_book_on_app', `${APP_URL}/deal/${d.id}`));
         return L.join('\n');
     }
 

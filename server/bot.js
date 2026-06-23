@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.91.0';
+const BOT_VERSION              = '11.92.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -282,6 +282,8 @@ function kbAdmin(s = {}) {
     if (ownsStore(s)) {
         const pBadge = s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : '';
         rows.push([Markup.button.callback(tr('menu_store_orders')+pBadge,'seller:bookings'), Markup.button.webApp(tr('menu_store_dashboard'), W('/seller'))]);
+        // الأدمن-المالك يحتاج إدارة اشتراك/باقات متجره من البوت أيضاً (نفس مصدر الموقع). v11.91
+        rows.push([Markup.button.callback(tr('menu_subscription'),'seller:sub')]);
     }
     rows.push([Markup.button.webApp(tr('menu_full_admin'), W('/admin'))]);
     rows.push([Markup.button.callback(tr('menu_help'),'help'), Markup.button.callback(tr('menu_logout'),'logout')]);
@@ -517,7 +519,11 @@ function browseCard(d, n, geo){
     const head = d.is_sponsored
         ? tr('q501_head_sponsored', sponsorWord(d), numEsc(n), md(d.item_name))
         : tr('q502_head_plain', numEsc(n), md(d.item_name));
-    return tr('q503_browse_card', head, md(d.shop_name), loc, dist, price, browseExpiryLine(d));
+    // حالة المحل (مفتوح/مغلق + وقت الفتح) داخل نفس الكرت — تظهر خصوصاً في «جميع المحلات»
+    // حيث تظهر المحلات المغلقة أيضاً. الحالة محسوبة في bot_browse_deals (open_status). v11.92
+    const os = d.open_status;
+    const statusLine = (os && os.configured) ? `\n${md(HRS.statusText(os))}` : '';
+    return tr('q503_browse_card', head, md(d.shop_name), loc, dist, price, browseExpiryLine(d), statusLine);
 }
 
 bot.command('deals', ctx => enterBrowse(ctx));
@@ -1122,7 +1128,7 @@ async function bookConfirm(ctx, s) {
     // ساعات العمل (v11.77): مغلق → امنع الإتمام واعرض وقت الفتح.
     const os = d.open_status;
     if (os && os.configured && !os.open) {
-        return ctx.reply(tr('b1107_store_closed_now', DIV, os.opens_in_min!=null?tr('b1107_opens_in', md(HRS.fmtMins(os.opens_in_min))):''), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1107_browse_offers'),'browse:menu')],[Markup.button.callback(tr('b1107_menu'),'menu:back')]]).reply_markup });
+        return safeReplyMd(ctx, tr('b1107_store_closed_now', DIV, os.opens_in_min!=null?tr('b1107_opens_in', md(HRS.fmtMins(os.opens_in_min))):''), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1107_browse_offers'),'browse:menu')],[Markup.button.callback(tr('b1107_menu'),'menu:back')]]).reply_markup });
     }
     const total = d.discounted_price * s.temp.dealQty;
     let m = tr('q1110_confirm_booking_head', DIV, md(d.item_name), md(d.shop_name), s.temp.dealQty, md(prepLabel(s.temp.prepTime)));
@@ -1155,7 +1161,7 @@ bot.action('book:confirm', async ctx => {
                 : e==='not_linked'      ? tr('b1137_login_first')
                 : e==='suspended'       ? tr('b1138_account_suspended')
                 : tr('b1139_booking_failed');
-        return ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1140_browse_deals'),'browse:menu')],[Markup.button.callback(tr('b1140_menu'),'menu:back')]]).reply_markup });
+        return safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1140_browse_deals'),'browse:menu')],[Markup.button.callback(tr('b1140_menu'),'menu:back')]]).reply_markup });
     }
     // Mark this barcode so the outbox skips the duplicate "confirmed" alert below.
     if (bc) botBookedBarcodes.add(bc);
@@ -1372,7 +1378,7 @@ async function showAlerts(ctx) {
     if (!s.userId) return ctx.reply(tr('b1354_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
     // التنبيهات الذكية للمتسوّقين فقط (تطابق الموقع — صفحة «حسابي» للمشتري). التاجر
     // تصله إشعارات الحجوزات تلقائياً ولا يحتاج تنبيهات عروض. v11.76
-    if (s.userType === 'seller') return ctx.reply(tr('b1357_smart_alerts_shoppers', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1357_bookings'),'seller:bookings')],[Markup.button.callback(tr('b1357_back_to_menu'),'menu:back')]]).reply_markup });
+    if (s.userType === 'seller') return safeReplyMd(ctx, tr('b1357_smart_alerts_shoppers', DIV), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1357_bookings'),'seller:bookings')],[Markup.button.callback(tr('b1357_back_to_menu'),'menu:back')]]).reply_markup });
     const a = await rpc('bot_get_alerts', { p_telegram_id: tgId(ctx) });
     if (!a?.success) return ctx.reply(tr('b1359_alerts_load_failed'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     const kn = Array.isArray(a.keywords) ? a.keywords.length : 0;
@@ -1384,7 +1390,8 @@ async function showAlerts(ctx) {
         [Markup.button.callback(a.notify_via_telegram ? tr('b1366_disable_tg_alerts') : tr('b1366_enable_tg_alerts'), `alerts:toggle:${a.notify_via_telegram?'0':'1'}`)],
         [Markup.button.callback(tr('b1367_back'),'menu:back')],
     ];
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+    // safeReplyMd: لو بقي محرف MarkdownV2 غير مهرَّب يُعرض النص عادياً بدل أن تختفي الشاشة. v11.92
+    await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(btns).reply_markup });
 }
 // ── Keyword alerts (each in its own box, like the website) ────────────────────
 bot.action('alerts:kw', async ctx => { await ctx.answerCbQuery(); showKeywords(ctx); });
@@ -1396,7 +1403,7 @@ async function showKeywords(ctx){
     kws.forEach((k,i) => btns.push([Markup.button.callback(`🗑  ${String(k).slice(0,30)}`, `alerts:rm:${i}`)]));
     btns.push([Markup.button.callback(tr('b1379_add_keyword'),'alerts:add')]);
     btns.push([Markup.button.callback(tr('b1380_back'),'alerts:open')]);
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+    await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(btns).reply_markup });
 }
 bot.action('alerts:add', async ctx => {
     await ctx.answerCbQuery();
@@ -1434,12 +1441,12 @@ async function showSmartAlerts(ctx){
     const r = await rpc('bot_get_smart_alerts', { p_telegram_id: tgId(ctx) });
     if (!r?.success) return ctx.reply(tr('b1417_smart_load_failed'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1417_back'),'alerts:open')]]).reply_markup });
     const alerts = Array.isArray(r.alerts) ? r.alerts : [];
-    if (!alerts.length) return ctx.reply(tr('b1419_no_smart_alerts', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1419_new_smart_alert'),'smart:new')],[Markup.button.callback(tr('b1419_back'),'alerts:open')]]).reply_markup });
-    await ctx.reply(tr('b1420_smart_alerts_header', numEsc(alerts.length), DIV), { parse_mode:'MarkdownV2' });
+    if (!alerts.length) return safeReplyMd(ctx, tr('b1419_no_smart_alerts', DIV), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1419_new_smart_alert'),'smart:new')],[Markup.button.callback(tr('b1419_back'),'alerts:open')]]).reply_markup });
+    await safeReplyMd(ctx, tr('b1420_smart_alerts_header', numEsc(alerts.length), DIV));
     for (let i=0;i<alerts.length;i++){
-        await ctx.reply(describeRule(alerts[i], i+1), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1422_delete_this_alert'),`smart:rm:${i}`)]]).reply_markup });
+        await safeReplyMd(ctx, describeRule(alerts[i], i+1), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1422_delete_this_alert'),`smart:rm:${i}`)]]).reply_markup });
     }
-    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1424_new_smart_alert'),'smart:new')],[Markup.button.callback(tr('b1424_back'),'alerts:open')]]).reply_markup });
+    await safeReplyMd(ctx, `${DIV}`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1424_new_smart_alert'),'smart:new')],[Markup.button.callback(tr('b1424_back'),'alerts:open')]]).reply_markup });
 }
 bot.action(/^smart:rm:(\d+)$/, async ctx => {
     await ctx.answerCbQuery(tr('cm_deleting'));
@@ -2061,7 +2068,8 @@ async function doVerify(ctx, barcode) {
 bot.action('seller:sub', async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));
-    if (!s.userId || s.userType!=='seller') return ctx.reply(tr('b2040_option_sellers_only'), { parse_mode:'MarkdownV2' });
+    // الأدمن-المالك للمتجر «تاكي» يُعدّ بائعاً لأغراض إدارة المتجر (ownsStore). v11.91
+    if (!s.userId || !ownsStore(s)) return ctx.reply(tr('b2040_option_sellers_only'), { parse_mode:'MarkdownV2' });
     const sub = await rpc('bot_get_subscription', { p_telegram_id: tgId(ctx) });
     if (!sub?.success) return ctx.reply(tr('b2042_subscription_load_failed'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     const planAr = sub.plan==='premium' ? tr('q2046_plan_premium') : sub.plan==='trial' ? tr('q2046_plan_trial') : tr('q2046_plan_free');
@@ -2071,31 +2079,52 @@ bot.action('seller:sub', async ctx => {
         tr('b2047_current_subscription', DIV, md(planAr), statusLine, sub.max_branches, md(exp)),
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2048_packages_and_sub'),'seller:packages')],[Markup.button.callback(tr('b2048_back'),'menu:back')]]).reply_markup });
 });
+// كل باقة في صندوق مستقل (طلب ناصر) — الاسم/السعر/الخصم/عدد المواقع كلها تُقرأ مباشرةً
+// من `platform_settings.location_packages` عبر RPC، أي تعديل من لوحة الأدمن ينعكس فوراً. v11.91
 bot.action('seller:packages', async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));
-    if (!s.userId || s.userType!=='seller') return;
+    if (!s.userId || !ownsStore(s)) return;
     const pkgs = await rpc('bot_list_packages', {});
     const list = Array.isArray(pkgs) ? pkgs.filter(p => p.active!==false) : [];
     if (!list.length) return ctx.reply(tr('b2056_no_packages'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
-    let m = tr('b2057_locations_packages', DIV);
-    const btns = [];
-    list.forEach(p => {
-        const price = Math.round((p.price||0) * (1 - (p.discount||0)/100));
-        m += `• *${md(p.ar||tr('q2060_package_fallback', p.id))}* ${tr('q2064_up_to_locations_price', p.max, money(price))}\n`;
-        btns.push([Markup.button.callback(tr('q2061_package_button', p.ar||tr('q2061_package_fallback', p.id), price), `subpkg:${p.id}`)]);
-    });
-    btns.push([Markup.button.callback(tr('b2064_back'),'seller:sub')]);
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+    // باقة المتجر الحالية → نُعلّم الباقة المطابقة بشارة «باقتك الحالية».
+    const sub = await rpc('bot_get_subscription', { p_telegram_id: tgId(ctx) });
+    const curMax = (sub && sub.success) ? Number(sub.max_branches)||0 : 0;
+    const en = I18N.lang()==='en';
+    // رأس الصفحة (صندوق منفصل).
+    const curLine = curMax>0 ? tr('pkg_hub_current', numEsc(curMax)) : tr('pkg_hub_none');
+    await safeReplyMd(ctx, tr('pkg_hub_header', DIV, curLine));
+    // صندوق لكل باقة، بزر اشتراك ملتصق به.
+    for (const p of list) {
+        const name  = (en ? (p.en||p.ar) : (p.ar||p.en)) || tr('q2060_package_fallback', p.id);
+        const max   = Math.max(1, Number(p.max)||1);
+        const disc  = Math.min(100, Math.max(0, Number(p.discount)||0));
+        const price = Math.round((Number(p.price)||0) * (1 - disc/100));
+        const isCur = curMax>0 && max===curMax;
+        let m = `💎 *${md(name)}*${isCur?tr('pkg_c_current_badge'):''}`;
+        m += `\n${max<=1 ? tr('pkg_c_loc_one') : tr('pkg_c_loc_many', numEsc(max))}`;
+        m += `\n${tr('pkg_c_price', money(price))}`;
+        if (disc>0) m += `\n${tr('pkg_c_discount', money(Number(p.price)||0), numEsc(disc))}`;
+        m += `\n${tr('pkg_c_duration', numEsc(Number(p.durationDays)||30))}`;
+        m += `\n${tr('pkg_c_feat')}`;
+        await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('pkg_c_subscribe_btn', price), `subpkg:${p.id}`)]
+        ]).reply_markup });
+    }
+    // فوتر (صندوق منفصل) يحمل زر الرجوع — دائماً يصل عبر safeReplyMd.
+    await safeReplyMd(ctx, tr('pkg_hub_footer', DIV), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2064_back'),'seller:sub')]]).reply_markup });
 });
 bot.action(/^subpkg:(\d+)$/, async ctx => {
     await ctx.answerCbQuery();
     const pkgs = await rpc('bot_list_packages', {});
     const p = (Array.isArray(pkgs)?pkgs:[]).find(x => String(x.id)===ctx.match[1]);
     if (!p) return ctx.reply(tr('cm_plan_unavailable'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
-    const price = Math.round((p.price||0) * (1 - (p.discount||0)/100));
+    const en = I18N.lang()==='en';
+    const name = (en ? (p.en||p.ar) : (p.ar||p.en)) || tr('q2073_package_fallback', p.id);
+    const price = Math.round((Number(p.price)||0) * (1 - (Number(p.discount)||0)/100));
     await ctx.reply(
-        tr('b2074_confirm_subscription', DIV, md(p.ar||tr('q2073_package_fallback', p.id)), p.max, money(price), p.durationDays||30),
+        tr('b2074_confirm_subscription', DIV, md(name), numEsc(Math.max(1,Number(p.max)||1)), money(price), numEsc(Number(p.durationDays)||30)),
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2075_confirm_and_subscribe'),`subgo:${p.id}`)],[Markup.button.callback(tr('b2075_cancel'),'seller:packages')]]).reply_markup });
 });
 bot.action(/^subgo:(\d+)$/, async ctx => {
