@@ -7,6 +7,7 @@ import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
 import TelegramLinkButton from '../components/TelegramLinkButton';
+import WhatsAppLinkButton from '../components/WhatsAppLinkButton';
 import { isTelegramMiniApp, linkTelegramToCurrentUser } from '../services/telegramMiniApp';
 import { supabase } from '../services/supabaseClient';
 
@@ -17,7 +18,7 @@ const Profile: React.FC = () => {
         smartAlerts, addSmartAlert, removeSmartAlert,
         notifications, markNotifRead, bookings,
         storeProfiles, updateStoreProfile, updateProfile, customAlert, customConfirm,
-        isAuthReady, effectiveUserType
+        isAuthReady, effectiveUserType, platformSettings
     } = useApp();
 
     // Honour admin "view-as" impersonation. When an admin previews as
@@ -329,6 +330,21 @@ const Profile: React.FC = () => {
                             </p>
                             <TelegramLinkButton />
                         </div>
+
+                        {/* Secure WhatsApp linking — same one-time-token model as
+                            Telegram (no phone claiming). Stays hidden until the
+                            admin sets whatsapp_bot_enabled + whatsapp_bot_number. */}
+                        {platformSettings.whatsappBotEnabled && platformSettings.whatsappBotNumber && (
+                        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>{isRTL ? 'بوت واتساب 💬' : 'WhatsApp Bot 💬'}</h3>
+                            <p style={{ fontSize: '0.82rem', opacity: 0.7, margin: '0 0 14px', lineHeight: 1.6 }}>
+                                {isRTL
+                                    ? 'اربط حسابك مرة واحدة لتدير كل شيء من واتساب: تصفح، حجز، وللتجار إدارة العروض والحجوزات.'
+                                    : 'Link once to manage everything from WhatsApp: browse, book, and (for sellers) manage deals & bookings.'}
+                            </p>
+                            <WhatsAppLinkButton />
+                        </div>
+                        )}
 
                         {displayUserType === 'seller' && (
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>

@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.90.0';
+const BOT_VERSION              = '11.91.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -152,6 +152,10 @@ async function rpc(fn, args) {
         return data;
     } catch(e) { console.error(`RPC ${fn} ex:`, e.message); return null; }
 }
+
+// ── WhatsApp channel (flows/whatsapp.js) — مستقلّ، يعيد استخدام نفس RPCs/i18n ──
+// خامل تماماً حتى تُضبط WHATSAPP_* في البيئة (sendWA يصبح no-op قبلها). v11.91
+const WA = require('./flows/whatsapp').create({ rpc, APP_URL, botBookedBarcodes });
 
 // ── Admin kill-switch (request 2) ─────────────────────────────────────────────
 // The bot polls platform_settings.telegram_bot_enabled via a definer RPC, cached
@@ -2473,9 +2477,9 @@ async function deliverNotification(n) {
     // ── WhatsApp (parity) — live the instant WHATSAPP_* creds are set; sendWA is a
     //    no-op until then. NB: outside Meta's 24h service window an *approved
     //    template* is required (free-form text only delivers inside the window).
-    if (n.whatsapp_chat_id && n.notify_via_whatsapp && WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN) {
+    if (n.whatsapp_chat_id && n.notify_via_whatsapp && WA.enabled()) {
         const waBody = `${icon} ${custom || `${title}\n${body}`}${url?`\n\n${url}`:''}`.slice(0,4096);
-        try { await sendWA(n.whatsapp_chat_id, { type:'text', text:{ body: waBody, preview_url:true } }); }
+        try { await WA.sendWA(n.whatsapp_chat_id, { type:'text', text:{ body: waBody, preview_url:true } }); }
         catch(e) { console.warn('WA notif:', e.message); }
     }
 }
@@ -2515,100 +2519,11 @@ if (supabase && bot) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  WhatsApp Cloud API — interactive browse, categories, nearby & deal detail
-//  Mirrors the Telegram browse layer (same RPCs). Booking is completed in the
-//  app via a secure deep-link (no phone-based identity — matches our security
-//  model). All replies are free-form inside the 24h customer-service window.
+//  WhatsApp Cloud API — منطق القناة كاملاً في flows/whatsapp.js (الكائن WA أعلاه).
+//  bot.js يملك هنا النقل فقط: تحقّق webhook (GET) + توقيع HMAC (POST)، ثم يفوّض كل
+//  رسالة واردة إلى WA.handleMessage. كل المنطق والـi18n والهوية في الوحدة (لا دين تقني).
+//  v11.91: مشتري+تاجر بالتطابق مع تيليجرام، خامل حتى تُضبط WHATSAPP_* في البيئة.
 // ═══════════════════════════════════════════════════════════════════════════════
-async function sendWA(to, payload) {
-    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) return null;
-    try {
-        const r = await fetch(`https://graph.facebook.com/v22.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
-            method:'POST', headers:{ Authorization:`Bearer ${WHATSAPP_ACCESS_TOKEN}`, 'Content-Type':'application/json' },
-            body: JSON.stringify({ messaging_product:'whatsapp', recipient_type:'individual', to, ...payload }) });
-        if (!r.ok) { console.warn('WA send:', r.status); return null; }
-        return r.json();
-    } catch(e) { console.error('WA error:', e.message); return null; }
-}
-
-// Per-user shared location (TTL 30 min) so "nearby" works across messages.
-const waGeo = new Map();
-setInterval(() => { const n=Date.now(); for (const [k,v] of waGeo) if (n-v.t > 30*60_000) waGeo.delete(k); }, 10*60_000).unref?.();
-
-function waText(d, geo) {
-    const L = [];
-    L.push(`🏷 ${d.item_name}`);
-    L.push(tr('q2523_wa_shop_city', d.shop_name, (d.city||d.region||'—')));
-    L.push(tr('q2524_wa_price', d.discounted_price, d.original_price, d.discount_percentage));
-    if (d.expiry_type==='stock') L.push(d.is_unlimited ? tr('q2525_wa_available') : tr('q2525_wa_remaining', (d.quantity??0)));
-    else if (d.expiry_type==='date' && d.expiry_date) L.push(tr('q2526_wa_valid_until', d.expiry_date));
-    else { const r=remainingText(d); if (r) L.push(tr('q2527_wa_ends_in', r)); }
-    if (geo && d.distance_km!=null) L.push(tr('q2528_wa_distance', d.distance_km));
-    if (d.prep_time) L.push(tr('q2529_wa_prep', d.prep_time));
-    if (d.description) L.push(tr('q2530_wa_description', String(d.description).slice(0,400)));
-    L.push(`\n🔗 احجز الآن داخل تطبيق تاكي:\n${APP_URL}/deal/${d.id}`);
-    return L.join('\n');
-}
-function waMainMenu(from) {
-    return sendWA(from, { type:'interactive', interactive:{
-        type:'button',
-        header:{ type:'text', text:'TAKI 🛍️' },
-        body:{ text:'أهلاً بك في تاكي — عروض وتخفيضات السعودية. اختر ما يناسبك:' },
-        action:{ buttons:[
-            { type:'reply', reply:{ id:'wa_deals', title:'🔥 العروض' } },
-            { type:'reply', reply:{ id:'wa_cats',  title:'📂 التصنيفات' } },
-            { type:'reply', reply:{ id:'wa_near',  title:'📍 حولي' } },
-        ]}
-    }});
-}
-function waAskLocation(from) {
-    return sendWA(from, { type:'interactive', interactive:{
-        type:'location_request_message',
-        body:{ text:'📍 شارك موقعك لأرتّب لك العروض حسب الأقرب وأحسب المسافة 🚗' },
-        action:{ name:'send_location' }
-    }});
-}
-async function waBrowse(from, sort, cat) {
-    const geo = (sort==='nearby') ? waGeo.get(from) : null;
-    if (sort==='nearby' && !geo) return waAskLocation(from);
-    const deals = await rpc('bot_browse_deals', { p_sort:sort, p_category:(cat&&cat!=='all')?cat:null,
-        p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null, p_limit:10, p_offset:0 }) || [];
-    if (!deals.length) return sendWA(from, { type:'text', text:{ body:'📭 لا توجد عروض مطابقة حالياً.', preview_url:false } });
-    const TITLE = { popular:'🔥 الأكثر طلباً', discount:'💸 الأكثر خصماً', newest:'🆕 أحدث العروض', sponsored:'⭐ المميّزة والرعاة', nearby:'📍 الأقرب إليك' };
-    const rows = deals.slice(0,10).map(d => ({
-        id:`wa_deal:${d.id}`,
-        title:String(d.item_name).slice(0,24),
-        description:`${d.discounted_price} ر.س • خصم ${d.discount_percentage}%${geo&&d.distance_km!=null?` • ${d.distance_km}كم`:''}`.slice(0,72)
-    }));
-    return sendWA(from, { type:'interactive', interactive:{
-        type:'list',
-        header:{ type:'text', text:(TITLE[sort]||'العروض').slice(0,60) },
-        body:{ text:'اختر عرضاً لعرض تفاصيله وصوره وحجزه 👇' },
-        footer:{ text:'TAKI' },
-        action:{ button:'تصفّح العروض', sections:[{ title:((cat&&cat!=='all')?catLabel(cat):'العروض').slice(0,24), rows }] }
-    }});
-}
-async function waCategories(from) {
-    const geo = waGeo.get(from);
-    const cats = await rpc('bot_get_categories', { p_lat:geo?geo.lat:null, p_lng:geo?geo.lng:null, p_radius_km:null }) || [];
-    if (!cats.length) return sendWA(from, { type:'text', text:{ body:'📭 لا توجد تصنيفات نشطة حالياً.', preview_url:false } });
-    const rows = cats.slice(0,10).map(c => ({ id:`wa_cat:${c.category}`, title:catLabel(c.category).slice(0,24), description:`${c.n} عرض متاح`.slice(0,72) }));
-    return sendWA(from, { type:'interactive', interactive:{
-        type:'list', header:{ type:'text', text:'📂 التصنيفات' }, body:{ text:'اختر تصنيفاً لعرض عروضه:' },
-        action:{ button:'التصنيفات', sections:[{ title:'المتوفّرة الآن', rows }] }
-    }});
-}
-async function waDealDetail(from, id) {
-    const d = await rpc('bot_get_deal', { p_deal_id:id });
-    if (!d) return sendWA(from, { type:'text', text:{ body:'⚠️ العرض لم يعد متاحاً.', preview_url:false } });
-    const geo = waGeo.get(from);
-    const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
-    if (img) await sendWA(from, { type:'image', image:{ link:img, caption: waText(d, geo).slice(0,1024) } });
-    else     await sendWA(from, { type:'text',  text:{ body: waText(d, geo), preview_url:true } });
-    const dl = dirLink(d, geo);
-    if (dl) await sendWA(from, { type:'text', text:{ body:`🧭 الاتجاهات بالسيارة:\n${dl}`, preview_url:false } });
-}
-
 app.get('/webhook/whatsapp', (req, res) => {
     if (req.query['hub.mode']==='subscribe' && req.query['hub.verify_token']===WHATSAPP_VERIFY_TOKEN && WHATSAPP_VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     res.status(403).send('Forbidden');
@@ -2624,26 +2539,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     try {
         for (const entry of body?.entry||[]) for (const change of entry.changes||[]) for (const msg of change.value?.messages||[]) {
             const from = msg.from; if (!from || !checkRL(`wa:${from}`)) continue;
-            if (msg.type==='text') {
-                const t = sanitize(msg.text?.body||'',200).toLowerCase();
-                if (['deal','عرض','عروض','تخفيض','خصم'].some(k=>t.includes(k))) await waBrowse(from,'newest',null);
-                else if (['تصنيف','صنف','فئة','category'].some(k=>t.includes(k))) await waCategories(from);
-                else if (['حول','قرب','أقرب','اقرب','near','موقع'].some(k=>t.includes(k))) await waBrowse(from,'nearby',null);
-                else await waMainMenu(from);
-            } else if (msg.type==='interactive') {
-                const ir = msg.interactive || {};
-                const id = (ir.button_reply && ir.button_reply.id) || (ir.list_reply && ir.list_reply.id) || '';
-                if      (id==='wa_deals') await waBrowse(from,'newest',null);
-                else if (id==='wa_cats')  await waCategories(from);
-                else if (id==='wa_near')  { waGeo.get(from) ? await waBrowse(from,'nearby',null) : waAskLocation(from); }
-                else if (id.startsWith('wa_deal:')) await waDealDetail(from, id.slice(8));
-                else if (id.startsWith('wa_cat:'))  await waBrowse(from,'newest', id.slice(7));
-                else await waMainMenu(from);
-            } else if (msg.type==='location' && msg.location) {
-                waGeo.set(from, { lat:msg.location.latitude, lng:msg.location.longitude, t:Date.now() });
-                await sendWA(from, { type:'text', text:{ body:'✅ تم تحديد موقعك — إليك الأقرب إليك:', preview_url:false } });
-                await waBrowse(from,'nearby',null);
-            }
+            await WA.handleMessage(from, msg);
         }
     } catch(e) { console.error('WA processing:', e.message); }
 });
