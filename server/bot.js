@@ -46,6 +46,19 @@ const crypto   = require('crypto');
 const { Telegraf, Markup } = require('telegraf');
 const { createClient }     = require('@supabase/supabase-js');
 
+// ── Crash guards (v11.90) ───────────────────────────────────────────────────────
+// A 24/7 Telegram bot must NEVER die from one bad update or one bad notification.
+// Without these, ANY unhandled async error exits the process with status 1 → Render's
+// free tier restarts it (≈30-60s of cold start) → every button hangs ("يتم التحميل…")
+// for everyone during that window. We log loudly (Render captures stderr) and keep
+// running, so a single unforeseen glitch degrades ONE tap instead of the whole bot.
+process.on('unhandledRejection', (reason) => {
+    console.error('⚠️  unhandledRejection (bot kept alive):', reason?.stack || reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('⚠️  uncaughtException (bot kept alive):', err?.stack || err?.message || err);
+});
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL             = process.env.SUPABASE_URL;
 const SUPABASE_KEY             = process.env.SUPABASE_ANON_KEY || '';
@@ -59,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.89.0';
+const BOT_VERSION              = '11.90.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -1933,7 +1946,7 @@ async function showSellerBookings(ctx, scope='current') {
     const shown = list.slice(0, 10);
     const more  = list.length - shown.length;
     // One self-contained card per booking — buttons attached, never detached. v11.70
-    await ctx.reply(`${title} \\(${list.length}${more>0?tr('w1186_latest_n', shown.length):''}\\)\n${DIV}\n${tr('w1186_each_booking_own_card')}`, { parse_mode:'MarkdownV2' });
+    await safeReplyMd(ctx, `${title} \\(${list.length}${more>0?tr('w1186_latest_n', shown.length):''}\\)\n${DIV}\n${tr('w1186_each_booking_own_card')}`);
     for (let i=0;i<shown.length;i++){
         const b = shown[i];
         const active = b.status==='pending'||b.status==='acknowledged';
@@ -1949,9 +1962,14 @@ async function showSellerBookings(ctx, scope='current') {
         const row2 = [Markup.button.callback(tr('b1947_call_customer'), `call:b:${b.barcode}`)];
         if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${Number(b.expiry_time)}`));
         rows.push(row2);
-        await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+        // safeReplyMd so one odd card (a name/note Telegram rejects) can never abort the
+        // loop before the footer below — the footer carries the «رجوع» button. v11.90
+        await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
     }
-    await ctx.reply(`${DIV}${more>0?tr('b1952_older_hidden', more):''}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1952_refresh'),`seller:bk:${scope}`), Markup.button.callback(tr('b1952_back'),'seller:bookings')]]).reply_markup });
+    // The «رجوع» footer was vanishing when a card failed MarkdownV2 and threw — now both
+    // cards and footer use safeReplyMd, so the back button ALWAYS arrives (matches the
+    // buyer-side v11.77 fix that the seller render had missed). v11.90
+    await safeReplyMd(ctx, `${DIV}${more>0?tr('b1952_older_hidden', numEsc(more)):''}`, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1952_refresh'),`seller:bk:${scope}`), Markup.button.callback(tr('b1952_back'),'seller:bookings')]]).reply_markup });
 }
 bot.action(/^ack:(.+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1955_confirming_order'));
@@ -2374,7 +2392,8 @@ bot.catch((err,ctx) => console.error(`Bot error [${ctx?.updateType}]:`, err?.mes
 app.post('/webhook/telegram', (req, res) => {
     if (!TELEGRAM_WEBHOOK_SECRET) return res.status(503).json({ error:'not configured' });
     if (req.headers['x-telegram-bot-api-secret-token'] !== TELEGRAM_WEBHOOK_SECRET) return res.status(403).json({ error:'Forbidden' });
-    bot.handleUpdate(req.body, res);
+    // Never let a rejected update escape as an unhandled rejection (→ status-1 crash). v11.90
+    Promise.resolve(bot.handleUpdate(req.body, res)).catch(e => console.error('handleUpdate:', e?.message || e));
 });
 
 } // end if(bot)
