@@ -19,6 +19,12 @@ const isQty   = q => /^\d+$/.test(normalizeDigits(q).trim()) && +normalizeDigits
 // MarkdownV2 escape — إلزامي لكل نص يُرسل بـ parse_mode:'MarkdownV2'.
 const md = t => t == null ? '' : String(t).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
 const numEsc = v => md(String(v)); // رقم آمن للـ MarkdownV2 (يهرب النقطة)
+// عكس md للنص العادي: لو رفض تيليجرام كيانات MarkdownV2 نعيد الإرسال بعد إزالة الوسوم
+// (نفس منطق safeReplyMd في bot.js) — مشترك مع التدفّقات (sellerDeals/whatsapp). v11.93
+const stripMd = t => String(t == null ? '' : t)
+    .replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1')
+    .replace(/[*`]/g, '')
+    .replace(/__/g, '').replace(/(^|[^_])_([^_]+)_/g, '$1$2');
 
 const _loc = () => lang() === 'en' ? 'en-GB' : 'ar-SA';   // date locale follows the user's language
 const fmtDate = d => { try { return new Date(d).toLocaleDateString(_loc(), { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return String(d); } };
@@ -61,7 +67,7 @@ function parseFlexibleDate(text) {
 }
 
 module.exports = {
-    sanitize, normalizeDigits, isPrice, isQty, md, numEsc,
+    sanitize, normalizeDigits, isPrice, isQty, md, numEsc, stripMd,
     fmtDate, fmtDay, fmtTime, money, prepLabel,
     STATUS, statusLabel, DIV, priceBlock, parseFlexibleDate,
 };

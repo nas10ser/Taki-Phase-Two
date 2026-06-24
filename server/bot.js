@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.92.0';
+const BOT_VERSION              = '11.93.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -351,6 +351,44 @@ bot.telegram.setMyCommands([
     { command:'logout',   description:'تسجيل الخروج' },
     { command:'help',     description:'مساعدة' }
 ]).catch(e => console.warn('setMyCommands:', e.message));
+
+// ── حصانة عامة ضدّ «اختفاء الرسالة» / تعليق الأزرار (v11.93) ────────────────────
+// كان أي محرف MarkdownV2 محجوز غير مهرَّب في أي نص يجعل تيليجرام يرفض الرسالة كاملةً،
+// فتختفي الشاشة ويبدو الزر «معلّقاً». بدل ملاحقة ٢٠٠ نداء ctx.reply يدوياً، نلفّ
+// ctx.reply/ctx.replyWithPhoto مرّة واحدة لكل تحديث: عند فشل تحليل MarkdownV2 تُعاد
+// الرسالة تلقائياً نصاً عادياً (md مُزال) — فلا تختفي أي شاشة في كل أزرار البوت بعد اليوم.
+const MD_PARSE_ERR = /can't parse entities|can't find end|byte offset|reserved|entities/i;
+bot.use((ctx, next) => {
+    if (ctx && typeof ctx.reply === 'function') {
+        const _reply = ctx.reply.bind(ctx);
+        ctx.reply = async (text, extra) => {
+            try { return await _reply(text, extra); }
+            catch (e) {
+                if (extra && extra.parse_mode && MD_PARSE_ERR.test(e && e.message || '')) {
+                    console.warn('reply MarkdownV2 fallback:', e.message);
+                    const { parse_mode, ...rest } = extra;
+                    return _reply(stripMd(text), rest);
+                }
+                throw e;
+            }
+        };
+        if (typeof ctx.replyWithPhoto === 'function') {
+            const _photo = ctx.replyWithPhoto.bind(ctx);
+            ctx.replyWithPhoto = async (photo, extra) => {
+                try { return await _photo(photo, extra); }
+                catch (e) {
+                    if (extra && extra.parse_mode && MD_PARSE_ERR.test(e && e.message || '')) {
+                        console.warn('replyWithPhoto MarkdownV2 fallback:', e.message);
+                        const { parse_mode, caption, ...rest } = extra;
+                        return _photo(photo, { ...rest, caption: caption ? stripMd(caption) : caption });
+                    }
+                    throw e;
+                }
+            };
+        }
+    }
+    return next();
+});
 
 // Lazy identity refresh: if we don't yet know who this chat belongs to (e.g. the
 // user just linked their account from the Mini App), load their profile from the
@@ -808,7 +846,8 @@ async function handleSharedLocation(ctx, s, lat, lng){
     // Nearby page: 'pick' → choose the km, 'hub' → back to filters, else show 30 كم now.
     if (s.temp.nearbyLocWait) {
         const mode = s.temp.nearbyLocWait; s.temp.nearbyLocWait = false;
-        const f = nfDraft(s); f.useGeo = true; if(!f.radius) f.radius = 30;
+        // لا نفرض ٣٠ كم بعد الآن — «الأقرب» = الأقرب فالأقرب بلا حدّ (وضع pick يختار الكم لاحقاً). v11.93
+        const f = nfDraft(s); f.useGeo = true;
         await ctx.reply(tr('b788_location_set'), { parse_mode:'MarkdownV2', ...kbOff });
         return mode==='pick' ? askNfRadius(ctx) : mode==='hub' ? showNearbyHub(ctx) : runNearby(ctx, 0);
     }
@@ -1823,7 +1862,8 @@ bot.action(/^nfcat:([A-Za-z_]+)$/, async ctx => {
 bot.action('nfcatmode:near', async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    f.useGeo=true; f.radius=30;
+    // الأقرب فالأقرب بلا حدّ مسافة (طلب ناصر) — radius=null. v11.93
+    f.useGeo=true; f.radius=null;
     if(s.geo) return runNearby(ctx, 0);
     s.temp.nearbyLocWait='go';
     return askLocation(ctx);
@@ -1840,7 +1880,8 @@ bot.action('nfcatmode:all', async ctx => {
 bot.action('nf:near', async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    f.useGeo=true; f.radius=30;
+    // «الأقرب لي» = الأقرب فالأقرب بلا حدّ مسافة (طلب ناصر) — radius=null → بلا فلتر نطاق. v11.93
+    f.useGeo=true; f.radius=null;
     if(s.geo) return runNearby(ctx, 0);
     s.temp.nearbyLocWait='go';
     return askLocation(ctx);
