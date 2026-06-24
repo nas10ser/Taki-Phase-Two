@@ -27,9 +27,27 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
     // Expanded the first time (no hours yet); collapsed once configured — the seller
     // taps «تعديل» to re-open it any time. v11.77
     const [expanded, setExpanded] = useState<boolean>(!isValidWorkingHours(value));
+    const [err, setErr] = useState<string>('');
     const dayNames = isRTL ? DAY_NAMES_AR : DAY_NAMES_EN;
 
-    const save = () => { onSave({ enabled, days }); setExpanded(false); };
+    // تحقّق: داخل كل فترة البداية قبل النهاية، والفترة الثانية تبدأ بعد نهاية الأولى
+    // (بلا تداخل) — نفس قاعدة البوت. يمنع مثل «٧:٠٠ ثم ٤:٣٠» الذي قصده ناصر. v11.95
+    const toMin = (hhmm: string) => { const [h, m] = String(hhmm).split(':'); return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0); };
+    const save = () => {
+        if (enabled) {
+            for (const i of ORDER) {
+                let prevEnd = -1;
+                for (const sh of (days[String(i)] || [])) {
+                    const a = toMin(sh[0]), b = toMin(sh[1]);
+                    if (a >= b) { setErr(isRTL ? `يوم ${dayNames[i]}: وقت البداية يجب أن يكون قبل وقت النهاية.` : `${dayNames[i]}: start time must be before end time.`); return; }
+                    if (a < prevEnd) { setErr(isRTL ? `يوم ${dayNames[i]}: الفترة الثانية يجب أن تبدأ بعد نهاية الأولى (مثلاً ٧:٠٠ص ثم ٤:٣٠م).` : `${dayNames[i]}: the second shift must start after the first ends.`); return; }
+                    prevEnd = b;
+                }
+            }
+        }
+        setErr('');
+        onSave({ enabled, days }); setExpanded(false);
+    };
 
     const setShift = (d: number, idx: number, which: 0 | 1, val: string) => {
         setDays(prev => {
@@ -139,6 +157,11 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                 </div>
             )}
 
+            {err && (
+                <div role="alert" style={{ marginTop: 10, padding: '9px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.6 }}>
+                    ❗ {err}
+                </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button type="button" disabled={saving} onClick={save}
                     style={{ flex: 1, padding: '11px', borderRadius: 12, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, fontSize: '0.9rem', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: '0 6px 16px var(--primary-glow)' }}>
