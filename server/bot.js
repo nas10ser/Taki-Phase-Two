@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.93.0';
+const BOT_VERSION              = '11.94.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -2548,8 +2548,8 @@ async function deliverNotification(n) {
     //    no-op until then. NB: outside Meta's 24h service window an *approved
     //    template* is required (free-form text only delivers inside the window).
     if (n.whatsapp_chat_id && n.notify_via_whatsapp && WA.enabled()) {
-        const waBody = `${icon} ${custom || `${title}\n${body}`}${url?`\n\n${url}`:''}`.slice(0,4096);
-        try { await WA.sendWA(n.whatsapp_chat_id, { type:'text', text:{ body: waBody, preview_url:true } }); }
+        // الوحدة تبني الرسالة + أزرار الإجراء (تأكيد/محادثة/تقييم) بلغة المستلم. v11.94
+        try { await WA.deliverNotification(n); }
         catch(e) { console.warn('WA notif:', e.message); }
     }
 }
