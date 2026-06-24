@@ -538,11 +538,14 @@ function create(deps) {
     async function startSearch(from, s) { s.step = 'await_search'; await sendText(from, tr('wa_search_prompt')); }
     async function runSearch(from, s, q) {
         s.step = 'idle';
-        const res = await rpc('bot_search', { p_query: q, p_limit: 9 }) || [];
-        if (!res.length) return sendButtons(from, { body: tr('wa_search_none', q), buttons: [{ id: 'wa:search', title: tr('menu_search') }, menuBtn()] });
-        const rows = res.slice(0, 9).map(x => (x.kind === 'store')
-            ? row(`wa:store:${x.id}`, `🏬 ${x.name || x.item_name || ''}`, x.subtitle || '')
-            : row(`wa:deal:${x.id}`, x.item_name || x.name || '', x.discounted_price != null ? `${money(x.discounted_price)} ${cur()}` : (x.subtitle || '')));
+        // bot_search يُرجع كائناً { deals, stores } لا مصفوفة — نقرأ الحقلين. v11.95
+        const r = await rpc('bot_search', { p_query: q, p_limit: 9 }) || {};
+        const deals = Array.isArray(r.deals) ? r.deals : [];
+        const stores = Array.isArray(r.stores) ? r.stores : [];
+        if (!deals.length && !stores.length) return sendButtons(from, { body: tr('wa_search_none', q), buttons: [{ id: 'wa:search', title: tr('menu_search') }, menuBtn()] });
+        const rows = [];
+        stores.slice(0, 3).forEach(st => rows.push(row(`wa:store:${st.store_id}`, `🏬 ${st.shop_name || ''}`, [st.city, st.region].filter(Boolean).join(' • '))));
+        deals.slice(0, Math.max(0, 9 - rows.length)).forEach(d => rows.push(row(`wa:deal:${d.id}`, d.item_name || '', `${money(d.discounted_price)} ${cur()} • -${d.discount_percentage || 0}%`)));
         rows.push(menuRow());
         await sendList(from, { header: '🔎', body: tr('wa_search_results', q), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
@@ -802,6 +805,7 @@ function create(deps) {
     }
     async function toggleDeal(from, s, id, status) {
         const r = await rpc('bot_toggle_deal', aid(from, { p_deal_id: id, p_status: status }));
+        if (r && r.error === 'no_subscription') return sendButtons(from, { body: tr('wa_publish_no_sub'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, { id: 'wa:s:deals', title: tr('wa_back') }] });
         await sendText(from, (r && r.success) ? (status === 'active' ? tr('wa_s_deal_activated') : tr('wa_s_deal_paused')) : tr('wa_edit_fail'));
         s.temp.sdCache = {};
         return sellerDealDetail(from, s, id);
@@ -1071,8 +1075,10 @@ function create(deps) {
         s.step = 'idle'; const ok = r && r.success; s.temp = {};
         if (!ok) {
             const overCap = r && r.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r.detail || ''));
-            const m = r && r.error === 'invalid_price' ? tr('wa_publish_invalid_price') : overCap ? tr('wa_publish_overcap') : tr('wa_publish_fail');
-            return sendButtons(from, { body: m, buttons: [{ id: 'wa:s:branches', title: tr('menu_my_locations') }, { id: 'wa:s:sub', title: tr('menu_subscription') }, menuBtn()] });
+            const m = r && r.error === 'invalid_price' ? tr('wa_publish_invalid_price')
+                : r && r.error === 'no_subscription' ? tr('wa_publish_no_sub')
+                : overCap ? tr('wa_publish_overcap') : tr('wa_publish_fail');
+            return sendButtons(from, { body: m, buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, { id: 'wa:s:branches', title: tr('menu_my_locations') }, menuBtn()] });
         }
         await sendButtons(from, { body: tr('wa_publish_ok', r.discount), buttons: [{ id: 'wa:s:deals', title: tr('menu_seller_deals') }, { id: 'wa:s:add', title: tr('wa_add_another') }, menuBtn()] });
         // اقترح ساعات العمل أول مرة فقط
@@ -1122,25 +1128,51 @@ function create(deps) {
         if (!sellerGate(from, s)) return;
         const r = await rpc('bot_get_store_hours', aid(from));
         const wh = r && r.working_hours;
-        const summary = (wh && wh.enabled && wh.days) ? HRS.weekLines(wh).join('\n') : tr('wa_hours_none');
-        await sendButtons(from, { body: tr('wa_hours_title', summary), buttons: [{ id: 'wa:hall', title: tr('wa_hours_set_all') }, { id: 'wa:hoff', title: tr('wa_hours_off') }, menuBtn()] });
+        const hasDays = !!(wh && wh.days && Object.keys(wh.days).length);
+        const enabled = !!(wh && wh.enabled);
+        const summary = (enabled && hasDays) ? HRS.weekLines(wh).join('\n') : (!enabled && hasDays) ? tr('wa_hours_off_24_7') : tr('wa_hours_none');
+        const btns = [{ id: 'wa:hall', title: tr('wa_hours_set_all') }];
+        if (enabled) btns.push({ id: 'wa:hoff', title: tr('wa_hours_off') });
+        else if (hasDays) btns.push({ id: 'wa:hrestore', title: tr('wa_hours_restore') });
+        btns.push(menuBtn());
+        await sendButtons(from, { body: tr('wa_hours_title', summary), buttons: btns.slice(0, 3) });
+    }
+    async function confirmDisableHours(from, s) {
+        await sendButtons(from, { body: tr('wa_hours_disable_confirm'), buttons: [{ id: 'wa:hoffyes', title: tr('wa_hours_disable_yes') }, { id: 'wa:s:hours', title: tr('wa_back') }] });
+    }
+    async function restoreHours(from, s) {
+        const r0 = await rpc('bot_get_store_hours', aid(from));
+        const wh = (r0 && r0.working_hours) || {};
+        if (!(wh.days && Object.keys(wh.days).length)) return showHours(from, s);
+        await rpc('bot_set_store_hours', aid(from, { p_hours: { enabled: true, days: wh.days } }));
+        await sendText(from, tr('wa_hours_restored'));
+        return showHours(from, s);
     }
     async function promptHoursAll(from, s) { s.step = 'await_hours_all'; await sendText(from, tr('wa_hours_all_prompt')); }
+    const _toMin = hhmm => { const [h, m] = String(hhmm).split(':'); return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0); };
     function parseHours(text) {
-        // يقبل "09:00-23:00" أو "09:00-12:00,16:00-23:00"
-        const shifts = [];
-        for (const part of String(text).split(/[,،]/)) {
-            const m = part.trim().match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
-            if (!m) return null;
+        // يقبل "09:00-23:00" أو فترتين "09:00-12:00,16:00-23:00" — مع تحقّق:
+        // البداية قبل النهاية داخل الفترة، والفترة الثانية تبدأ بعد نهاية الأولى. v11.95
+        const shifts = []; let prevEnd = -1;
+        const parts = String(normalizeDigits(text)).split(/[,،]/).map(p => p.trim()).filter(Boolean);
+        if (!parts.length || parts.length > 2) return { error: 'format' };
+        for (const part of parts) {
+            const m = part.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
+            if (!m) return { error: 'format' };
             const h1 = +m[1], m1 = +m[2], h2 = +m[3], m2 = +m[4];
-            if (h1 > 23 || h2 > 23 || m1 > 59 || m2 > 59) return null;
+            if (h1 > 23 || h2 > 23 || m1 > 59 || m2 > 59) return { error: 'format' };
+            const a = h1 * 60 + m1, b = h2 * 60 + m2;
+            if (a >= b) return { error: 'shift_range' };          // البداية قبل النهاية
+            if (a < prevEnd) return { error: 'sequence' };        // الثانية بعد نهاية الأولى (بلا تداخل)
+            prevEnd = b;
             shifts.push([`${String(h1).padStart(2, '0')}:${m[2]}`, `${String(h2).padStart(2, '0')}:${m[4]}`]);
         }
-        return shifts.length ? shifts : null;
+        return { shifts };
     }
     async function saveHoursAll(from, s, text) {
-        const shifts = parseHours(text);
-        if (!shifts) { await sendText(from, tr('wa_hours_bad')); return; }
+        const pr = parseHours(text);
+        if (pr.error) { await sendText(from, tr(pr.error === 'sequence' ? 'wa_hours_not_seq' : pr.error === 'shift_range' ? 'wa_hours_shift_range' : 'wa_hours_bad')); return; }
+        const shifts = pr.shifts;
         s.step = 'idle';
         const days = {}; for (let d = 0; d < 7; d++) days[String(d)] = shifts;
         const r = await rpc('bot_set_store_hours', aid(from, { p_hours: { enabled: true, days } }));
@@ -1148,7 +1180,11 @@ function create(deps) {
         return showHours(from, s);
     }
     async function disableHours(from, s) {
-        await rpc('bot_set_store_hours', aid(from, { p_hours: { enabled: false, days: {} } }));
+        // نُطفئ التفعيل مع *حفظ* الأيام لتُستعاد لاحقاً (لا نمسحها). v11.95
+        const r0 = await rpc('bot_get_store_hours', aid(from));
+        const wh = (r0 && r0.working_hours) || {};
+        const days = (wh.days && Object.keys(wh.days).length) ? wh.days : {};
+        await rpc('bot_set_store_hours', aid(from, { p_hours: { enabled: false, days } }));
         await sendText(from, tr('wa_hours_disabled'));
         return showHours(from, s);
     }
@@ -1377,7 +1413,9 @@ function create(deps) {
         // ساعات / اشتراك / نبذة
         if (id === 'wa:s:hours') return showHours(from, s);
         if (id === 'wa:hall') return promptHoursAll(from, s);
-        if (id === 'wa:hoff') return disableHours(from, s);
+        if (id === 'wa:hoff') return confirmDisableHours(from, s);
+        if (id === 'wa:hoffyes') return disableHours(from, s);
+        if (id === 'wa:hrestore') return restoreHours(from, s);
         if (id === 'wa:s:sub') return showSubscription(from, s);
         if (id === 'wa:subpk') return showPackages(from, s);
         if (k === 'subgo') return subscribe(from, s, p[2]);

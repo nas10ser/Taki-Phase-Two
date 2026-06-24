@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.94.0';
+const BOT_VERSION              = '11.95.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -605,9 +605,24 @@ bot.action('search:start', async ctx => {
     setStep(tgId(ctx),'await_search');
     await ctx.reply(tr('b545_search_prompt'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b545_back'),'browse:menu')]]).reply_markup });
 });
+// التصنيفات أكواد إنجليزية في DB؛ نُطابق نصّ البحث على تسميات التصنيف (عربي/إنجليزي)
+// ونمرّر الأكواد فيبحث RPC بها أيضاً — فيشتغل البحث بـ«مقاهي» مثلاً. v11.94
+function matchCategoryCodes(q){
+    const norm = String(q||'').trim().toLowerCase();
+    if (norm.length < 2) return [];
+    const out = [];
+    for (const code of Object.keys(CAT)){
+        if (code === 'all') continue;
+        const ar = String(CAT[code].ar||'').toLowerCase();
+        const en = String(I18N.t('en','cat_'+code)||'').toLowerCase();
+        if (code.toLowerCase()===norm || ar===norm || en===norm || (ar && (ar.includes(norm)||norm.includes(ar))) || (en && (en.includes(norm)||norm.includes(en)))) out.push(code);
+    }
+    return out;
+}
 async function runSearch(ctx, q){
     setStep(tgId(ctx),'idle');
-    const r = await rpc('bot_search', { p_query: q, p_limit: 8 });
+    const cats = matchCategoryCodes(q);
+    const r = await rpc('bot_search', { p_query: q, p_limit: 8, p_categories: cats.length ? cats : null });
     const deals  = (r && Array.isArray(r.deals))  ? r.deals  : [];
     const stores = (r && Array.isArray(r.stores)) ? r.stores : [];
     if (!deals.length && !stores.length){
@@ -1472,7 +1487,11 @@ function describeRule(rule, n){
     if (Array.isArray(rule.cities)  && rule.cities.length)  parts.push(tr('q1408_cities_line', lbl(L.cities,rule.cities).map(md).join(tr('cm_sep'))));
     if (Array.isArray(rule.malls)   && rule.malls.length)   parts.push(tr('q1409_malls_line', lbl(L.malls,[tr('cm_location')]).map(md).join(tr('cm_sep'))));
     if (Array.isArray(rule.keywords)&& rule.keywords.length)parts.push(tr('q1410_keywords_line', rule.keywords.map(md).join(tr('cm_sep'))));
-    if (rule.coords && rule.radiusKm) parts.push(tr('q1411_within_km_of_you', numEsc(rule.radiusKm)));
+    // عند وجود موقع للتنبيه: أظهر النطاق + رابطاً لقوقل ماب يفتح موقع التنبيه نفسه (طلب ناصر). v11.94
+    if (rule.coords && rule.coords.lat!=null && rule.coords.lng!=null) {
+        const g = `https://www.google.com/maps/search/?api=1&query=${rule.coords.lat},${rule.coords.lng}`;
+        parts.push(tr('q1411_within_km_link', numEsc(rule.radiusKm||0), g));
+    }
     return tr('q1412_alert_box', numEsc(n), (parts.length ? parts.join('\n') : '—'));
 }
 bot.action('smart:list', async ctx => { await ctx.answerCbQuery(); showSmartAlerts(ctx); });
@@ -1652,7 +1671,9 @@ bot.action('sa:map', async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const d=s.temp.alertDraft;
     if(!d||!d.coords) return showSmartBuilder(ctx);
-    try { await ctx.replyWithLocation(d.coords.lat, d.coords.lng); } catch { /* ignore */ }
+    // رابط خرائط قوقل (نصّ عادي → يفتح Google Maps لا خرائط آبل على iPhone). طلب ناصر. v11.95
+    const gmap = `https://www.google.com/maps/search/?api=1&query=${d.coords.lat},${d.coords.lng}`;
+    try { await ctx.reply(`${tr('b1595_alert_map')}\n${gmap}`); } catch { /* ignore */ }
     // Open the website /nearby map seeded with these coords + radius → it renders
     // the SAME light-circle (inside the radius) / dark-mask (outside) the owner
     // knows from the site, so the radius is actually visualised. v11.76 (Task 3)
@@ -2214,28 +2235,43 @@ bot.action('seller:bio', async ctx => {
 // ── Seller working hours (ساعات العمل) — same-for-all / per-day (two shifts) / off
 //    Stored in users.working_hours (same source the website editor uses). v11.77
 const _toMinHr = hhmm => { const [h,m]=String(hhmm).split(':'); return (+h||0)*60+(+m||0); };
+// يُرجِع { shifts } عند النجاح أو { error } مع سبب واضح. الفترتان يجب أن تكونا
+// متتاليتين بلا تداخل (بداية الثانية بعد نهاية الأولى) — تنبيه ناصر: «٤:٣٠» تُفهَم
+// ٤:٣٠ صباحاً في صيغة ٢٤ ساعة، فالعصر يُكتب ١٦:٣٠. v11.94
 function parseHoursInput(text){
     const toks = (normalizeDigits(String(text)).match(/\d{1,2}:\d{2}/g) || [])
         .map(x => { const [h,m]=x.split(':'); return (+h>=0&&+h<=23&&+m>=0&&+m<=59) ? `${String(+h).padStart(2,'0')}:${m}` : null; })
         .filter(Boolean);
-    if (toks.length < 2 || toks.length % 2 !== 0 || toks.length > 4) return null;
+    if (toks.length < 2 || toks.length % 2 !== 0 || toks.length > 4) return { error:'format' };
     const shifts=[];
-    for (let i=0;i<toks.length;i+=2){ if (_toMinHr(toks[i]) >= _toMinHr(toks[i+1])) return null; shifts.push([toks[i], toks[i+1]]); }
-    return shifts;
+    for (let i=0;i<toks.length;i+=2){
+        if (_toMinHr(toks[i]) >= _toMinHr(toks[i+1])) return { error:'shift_range' };   // داخل الفترة: البداية قبل النهاية
+        shifts.push([toks[i], toks[i+1]]);
+    }
+    if (shifts.length===2 && _toMinHr(shifts[1][0]) < _toMinHr(shifts[0][1])) return { error:'sequence' };  // الفترة الثانية بعد الأولى
+    return { shifts };
 }
+const hoursErrKey = e => e==='sequence' ? 'b2323_hours_not_sequential' : e==='shift_range' ? 'b2324_hours_shift_range' : 'b2322_hours_bad_format';
 async function showSellerHours(ctx){
     const s=getSession(tgId(ctx));
-    if (!s.userId || s.userType!=='seller') return ctx.reply(tr('b2134_sellers_only'), { parse_mode:'MarkdownV2' });
+    if (!s.userId || !ownsStore(s)) return ctx.reply(tr('b2134_sellers_only'), { parse_mode:'MarkdownV2' });
     const r = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
     const wh = r?.working_hours;
-    const lines = HRS.isConfigured(wh) ? HRS.weekLines(wh).map(l=>`• ${md(l)}`).join('\n') : tr('b2137_no_hours_set');
+    const hasDays = !!(wh && wh.days && Object.keys(wh.days).length);
+    const enabled = !!(wh && wh.enabled);
+    // ساعات موقوفة لكن محفوظة (يمكن استعادتها) ↔ ٢٤ ساعة. v11.94
+    const lines = (enabled && HRS.isConfigured(wh)) ? HRS.weekLines(wh).map(l=>`• ${md(l)}`).join('\n')
+                : (!enabled && hasDays) ? tr('b2137_hours_off_24_7')
+                : tr('b2137_no_hours_set');
     const m = tr('b2138_shop_hours', DIV, lines);
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+    const rows = [
         [Markup.button.callback(tr('b2140_same_hours_all_days'),'sh:all')],
         [Markup.button.callback(tr('b2141_edit_specific_day'),'sh:day')],
-        [Markup.button.callback(tr('b2142_disable_hours'),'sh:off')],
-        [Markup.button.callback(tr('b2143_back'),'menu:back')],
-    ]).reply_markup });
+    ];
+    if (enabled)        rows.push([Markup.button.callback(tr('b2142_disable_hours'),'sh:off')]);
+    else if (hasDays)   rows.push([Markup.button.callback(tr('b2142_restore_hours'),'sh:restore')]);
+    rows.push([Markup.button.callback(tr('b2143_back'),'menu:back')]);
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 bot.command('hours', ctx => showSellerHours(ctx));
 bot.action('seller:hours', async ctx => { await ctx.answerCbQuery(); showSellerHours(ctx); });
@@ -2268,10 +2304,31 @@ bot.action(/^sh:close:([0-6])$/, async ctx => {
     await saveDayHours(ctx, +ctx.match[1], []);
     return showSellerHours(ctx);
 });
+// إيقاف ساعات العمل: تأكيد أولاً (طلب ناصر) — ثم نُطفئ التفعيل مع *حفظ* الأيام
+// ليتسنّى استعادتها لاحقاً، بدل مسحها. v11.94
 bot.action('sh:off', async ctx => {
+    await ctx.answerCbQuery();
+    await ctx.reply(tr('b2179_disable_confirm', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('b2179_yes_disable'),'sh:off:yes')],
+        [Markup.button.callback(tr('b2179_cancel'),'seller:hours')],
+    ]).reply_markup });
+});
+bot.action('sh:off:yes', async ctx => {
     await ctx.answerCbQuery(tr('b2178_disabled'));
-    await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:false, days:{} } });
-    await ctx.reply(tr('b2180_hours_disabled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2180_working_hours'),'seller:hours')],[Markup.button.callback(tr('b2180_menu'),'menu:back')]]).reply_markup });
+    const r0 = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
+    const wh = (r0 && r0.working_hours) || {};
+    const days = (wh.days && Object.keys(wh.days).length) ? wh.days : {};   // احفظ الجدول للاستعادة
+    await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:false, days } });
+    await ctx.reply(tr('b2180_hours_disabled', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2180_working_hours'),'seller:hours')],[Markup.button.callback(tr('b2180_menu'),'menu:back')]]).reply_markup });
+});
+bot.action('sh:restore', async ctx => {
+    await ctx.answerCbQuery();
+    const r0 = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
+    const wh = (r0 && r0.working_hours) || {};
+    if (!(wh.days && Object.keys(wh.days).length)) return showSellerHours(ctx);
+    await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:true, days: wh.days } });
+    await ctx.reply(tr('b2181_hours_restored'), { parse_mode:'MarkdownV2' });
+    return showSellerHours(ctx);
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
@@ -2412,8 +2469,9 @@ bot.on('text', async ctx => {
         return;
     }
     if (s.step === 'await_hours_all') {                              // v11.77 — same hours for all 7 days
-        const shifts = parseHoursInput(text);
-        if (!shifts) { return ctx.reply(tr('b2322_hours_bad_format'), { parse_mode:'MarkdownV2' }); }
+        const pr = parseHoursInput(text);
+        if (pr.error) { return ctx.reply(tr(hoursErrKey(pr.error)), { parse_mode:'MarkdownV2' }); }
+        const shifts = pr.shifts;
         setStep(tgId(ctx),'idle');
         const days={}; for(let d=0;d<7;d++) days[String(d)]=shifts.map(x=>[x[0],x[1]]);
         const r = await rpc('bot_set_store_hours', { p_telegram_id: tgId(ctx), p_hours: { enabled:true, days } });
@@ -2422,8 +2480,9 @@ bot.on('text', async ctx => {
         return showSellerHours(ctx);
     }
     if (s.step === 'await_hours_day') {                              // v11.77 — one specific day
-        const shifts = parseHoursInput(text);
-        if (!shifts) { return ctx.reply(tr('b2332_hours_bad_format'), { parse_mode:'MarkdownV2' }); }
+        const pr = parseHoursInput(text);
+        if (pr.error) { return ctx.reply(tr(hoursErrKey(pr.error)), { parse_mode:'MarkdownV2' }); }
+        const shifts = pr.shifts;
         setStep(tgId(ctx),'idle');
         const ok = await saveDayHours(ctx, s.temp.hoursDay ?? 0, shifts);
         if (!ok) return ctx.reply(tr('b2335_save_failed'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2335_working_hours_btn'),'seller:hours')]]).reply_markup });

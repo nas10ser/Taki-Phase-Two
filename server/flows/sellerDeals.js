@@ -142,6 +142,7 @@ function register(bot, deps) {
         const [, id, st] = ctx.match;
         const r = await rpc('bot_toggle_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_status: st });
         if (r?.success) await reply(ctx, st === 'active' ? tr('sd134_activated') : tr('sd134_paused'), toDeals());
+        else if (r?.error === 'no_subscription') await reply(ctx, tr('sd752_no_subscription', DIV), Markup.inlineKeyboard([[btn(tr('sd756_subscription'), 'seller:sub')], [btn(tr('sd827_btn_back'), 'seller:deals')]]).reply_markup);
         else if (r?.error === 'blocked') await reply(ctx, tr('sd135_blocked'), KB_BACK().reply_markup);
         else await reply(ctx, tr('sd136_updatefail'), KB_BACK().reply_markup);
     });
@@ -759,6 +760,7 @@ async function doPublish(ctx) {
     if (!ok) {
         const overCap = r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || ''));
         const m = r?.error === 'invalid_price' ? tr('sd753_invalid_price')
+            : r?.error === 'no_subscription' ? tr('sd752_no_subscription', DIV)   // T6: يلزم اشتراك فعّال لنشر المنتجات
             : overCap ? tr('sd754_over_cap')
             : r?.error === 'blocked' ? tr('sd755_publish_blocked') : tr('sd755_publish_fail');
         return reply(ctx, m, Markup.inlineKeyboard([[btn(tr('sd756_my_locations'), 'seller:branches'), btn(tr('sd756_subscription'), 'seller:sub')], [btn(tr('sd756_menu'), 'menu:back')]]).reply_markup);
@@ -831,6 +833,7 @@ function registerEditPickers(bot) {
 async function reactivate(ctx, id) {
     const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_status: 'active' });
     if (r?.success) { await reply(ctx, tr('sd825_reactivated')); return openEdit(ctx, id); }
+    if (r?.error === 'no_subscription') return reply(ctx, tr('sd752_no_subscription', DIV), Markup.inlineKeyboard([[btn(tr('sd827_btn_subscription'), 'seller:sub')], [btn(tr('sd827_btn_back'), `dedit:${id}`)]]).reply_markup);
     const overCap = r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || ''));
     return reply(ctx, overCap ? tr('sd827_over_location_limit') : tr('sd827_reactivate_failed'), Markup.inlineKeyboard([[btn(tr('sd827_btn_subscription'), 'seller:sub'), btn(tr('sd827_btn_my_locations'), 'seller:branches')], [btn(tr('sd827_btn_back'), `dedit:${id}`)]]).reply_markup);
 }
@@ -909,9 +912,11 @@ async function showBranches(ctx) {
         await reply(ctx, m, kb);
     }
     if (!branches.length) await reply(ctx, tr('sd903_no_locations_yet'));
+    // «إدارة على الخريطة» يجب أن يكون زرّ WebApp (يفتح لوحة التاجر) — كان callback بمعطى
+    // URL بلا معالِج فيعلّق («يتم التحميل…») بلا نهاية. v11.94
     await reply(ctx, `${DIV}`, Markup.inlineKeyboard([
         [btn(tr('sd905_btn_add_location'), 'brAdd')],
-        [btn(tr('sd906_btn_manage_on_map'), W('/seller')), btn(tr('sd906_btn_menu'), 'menu:back')],
+        [Markup.button.webApp(tr('sd906_btn_manage_on_map'), W('/seller')), btn(tr('sd906_btn_menu'), 'menu:back')],
     ]).reply_markup);
 }
 
@@ -944,9 +949,20 @@ async function handleText(ctx, s, text) {
 
     // ── موقع (رابط/إحداثيات) — مشترك ──
     if (step === 'loc_link') {
+        const raw = text.trim(); const isUrl = /^https?:\/\//i.test(raw);
         const g = await resolveGoogleLocation(text);
-        if (!g) { await reply(ctx, tr('sd940_location_not_understood')); return true; }
-        await onLocationChosen(ctx, { location_id: null, custom_location_name: null, map_lat: g.lat, map_lng: g.lng, region: null, city: null, google: /^https?:\/\//i.test(text.trim()) ? text.trim() : null, name: 'موقع مخصّص' }, true);
+        if (g) {
+            await onLocationChosen(ctx, { location_id: null, custom_location_name: null, map_lat: g.lat, map_lng: g.lng, region: null, city: null, google: isUrl ? raw : null, name: tr('cm_custom_location') }, true);
+            return true;
+        }
+        // روابط مشاركة مكان من iOS (maps.app.goo.gl) تُحمَّل إحداثياتها بالـJS فلا تُستخرج —
+        // فنحفظ الموقع بالرابط (يفتح المكان في قوقل ماب) ونوجّه للأدقّ. بدل رفضه كلياً. v11.94
+        if (isUrl && /(google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google|g\.co\/kgs)/i.test(raw)) {
+            await reply(ctx, tr('sd941_link_saved_no_coords'));
+            await onLocationChosen(ctx, { location_id: null, custom_location_name: null, map_lat: null, map_lng: null, region: null, city: null, google: raw, name: tr('cm_custom_location') }, true);
+            return true;
+        }
+        await reply(ctx, tr('sd940_location_not_understood'));
         return true;
     }
     // ── فروع ──

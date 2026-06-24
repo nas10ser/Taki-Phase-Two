@@ -18,26 +18,34 @@ function parseLatLng(text) {
     if (m) { const la = +m[1], ln = +m[2]; if (Math.abs(la) <= 90 && Math.abs(ln) <= 180) return { lat: la, lng: ln }; }
     return null;
 }
-// استخراج إحداثيات من رابط قوقل ماب (عدة أنماط).
+// استخراج إحداثيات من رابط قوقل ماب (عدة أنماط — تشمل أنماط الروابط المختصرة بعد الفكّ).
 function extractFromMapsUrl(url) {
     try {
         const u = decodeURIComponent(String(url));
-        let m = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                                  if (m) return { lat: +m[1], lng: +m[2] };
-        m = u.match(/[?&](?:q|query|destination|center|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);  if (m) return { lat: +m[1], lng: +m[2] };
-        m = u.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                                  if (m) return { lat: +m[1], lng: +m[2] };
-        m = u.match(/(-?\d{1,2}\.\d{4,}),(-?\d{1,3}\.\d{4,})/);                          if (m) return { lat: +m[1], lng: +m[2] };
+        let m = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                                                     if (m) return { lat: +m[1], lng: +m[2] };
+        m = u.match(/[?&](?:q|query|destination|center|ll|sll|saddr|daddr|viewpoint)=(-?\d+\.\d+),(-?\d+\.\d+)/); if (m) return { lat: +m[1], lng: +m[2] };
+        m = u.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                                                     if (m) return { lat: +m[1], lng: +m[2] };
+        m = u.match(/!8m2!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);                                                 if (m) return { lat: +m[1], lng: +m[2] };
+        m = u.match(/\[(-?\d{1,2}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})\]/);                                     if (m) return { lat: +m[1], lng: +m[2] };  // JSON array in page body
+        m = u.match(/(-?\d{1,2}\.\d{4,}),(-?\d{1,3}\.\d{4,})/);                                            if (m) return { lat: +m[1], lng: +m[2] };
     } catch { /* ignore */ }
     return null;
 }
-// يقبل إحداثيات مباشرة، رابط ماب كامل، أو رابط قصير (يتبعه ويحلّله).
+// يقبل إحداثيات مباشرة، رابط ماب كامل، أو رابط قصير (maps.app.goo.gl / goo.gl/maps —
+// يتبعه ويحلّله). v11.95: مهلة أطول + ترويسات تتجاوز صفحة الموافقة (consent) +
+// تحليل final URL ثم جسم الصفحة، لأن الروابط المختصرة كانت تفشل في تيليجرام.
 async function resolveGoogleLocation(text) {
     const t = String(text || '').trim();
     const direct = parseLatLng(t);       if (direct) return direct;
     const inUrl  = extractFromMapsUrl(t); if (inUrl) return inUrl;
     if (/^https?:\/\//i.test(t)) {
         try {
-            const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 5000);
-            const r = await fetch(t, { redirect: 'follow', signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 8000);
+            const r = await fetch(t, { redirect: 'follow', signal: ctrl.signal, headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+                'Cookie': 'CONSENT=YES+cb',   // يتجاوز صفحة موافقة قوقل في بعض المناطق
+            } });
             clearTimeout(to);
             const fromFinal = extractFromMapsUrl(r.url || t); if (fromFinal) return fromFinal;
             const body = await r.text().catch(() => '');
