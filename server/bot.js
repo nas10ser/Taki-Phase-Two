@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.95.0';
+const BOT_VERSION              = '11.96.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -2281,14 +2281,14 @@ bot.action('sh:all', async ctx => {
 });
 bot.action('sh:day', async ctx => {
     await ctx.answerCbQuery();
-    const rows=[]; for(let i=0;i<7;i+=2) rows.push([i,i+1].filter(d=>d<7).map(d=>Markup.button.callback(HRS.DAY_AR[d],`sh:d:${d}`)));
+    const rows=[]; for(let i=0;i<7;i+=2) rows.push([i,i+1].filter(d=>d<7).map(d=>Markup.button.callback(tr('day_'+d),`sh:d:${d}`)));
     rows.push([Markup.button.callback(tr('b2155_back'),'seller:hours')]);
     await ctx.reply(tr('b2156_pick_day_to_edit'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 });
 bot.action(/^sh:d:([0-6])$/, async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); s.temp.hoursDay=+ctx.match[1]; setStep(tgId(ctx),'await_hours_day');
-    await ctx.reply(tr('b2161_day_hours_prompt', md(HRS.DAY_AR[+ctx.match[1]])), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2161_close_this_day'),`sh:close:${+ctx.match[1]}`)],[Markup.button.callback(tr('b2161_cancel'),'sh:day')]]).reply_markup });
+    await ctx.reply(tr('b2161_day_hours_prompt', md(tr('day_'+ctx.match[1]))), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2161_close_this_day'),`sh:close:${+ctx.match[1]}`)],[Markup.button.callback(tr('b2161_cancel'),'sh:day')]]).reply_markup });
 });
 async function saveDayHours(ctx, day, shifts){
     const r0 = await rpc('bot_get_store_hours', { p_telegram_id: tgId(ctx) });
@@ -2486,7 +2486,7 @@ bot.on('text', async ctx => {
         setStep(tgId(ctx),'idle');
         const ok = await saveDayHours(ctx, s.temp.hoursDay ?? 0, shifts);
         if (!ok) return ctx.reply(tr('b2335_save_failed'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2335_working_hours_btn'),'seller:hours')]]).reply_markup });
-        await ctx.reply(tr('b2336_hours_saved_day', md(HRS.DAY_AR[s.temp.hoursDay ?? 0])), { parse_mode:'MarkdownV2' });
+        await ctx.reply(tr('b2336_hours_saved_day', md(tr('day_'+(s.temp.hoursDay ?? 0)))), { parse_mode:'MarkdownV2' });
         return showSellerHours(ctx);
     }
     if (s.step === 'await_search') {                                 // Task 4

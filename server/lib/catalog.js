@@ -7,7 +7,7 @@ const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v1
 const CAT = {
     all: { ar: 'الكل', e: '🔥' }, Fashion_Women: { ar: 'فساتين ونساء', e: '👗' }, Fashion_Men: { ar: 'ملابس رجالية', e: '👔' },
     Kids_Infants: { ar: 'رضع وحمل', e: '👶' }, Kids_Girls: { ar: 'ملابس أطفال', e: '👧' }, Electronics: { ar: 'إلكترونيات', e: '📱' },
-    Food: { ar: 'مطاعم', e: '🍔' }, Beauty: { ar: 'عطور وتجميل', e: '💄' }, MensSalon: { ar: 'صالون رجالي', e: '💈' },
+    Food: { ar: 'مطاعم', e: '🍔' }, Beauty: { ar: 'عطور وتجميل', e: '💄' }, Glasses: { ar: 'نظارات', e: '👓' }, MensSalon: { ar: 'صالون رجالي', e: '💈' },
     WomensSalon: { ar: 'صالون نسائي', e: '💇‍♀️' }, Sports: { ar: 'رياضة', e: '⚽' }, Supermarket: { ar: 'سوبرماركت', e: '🛒' },
     Butcher: { ar: 'ملحمة', e: '🥩' }, Sanitary: { ar: 'أدوات صحية', e: '🚿' }, Cafe: { ar: 'مقاهي', e: '☕' },
     Home: { ar: 'منزل وديكور', e: '🏠' }, Hotels: { ar: 'فنادق', e: '🏨' }, CarRentals: { ar: 'تأجير سيارات', e: '🚗' },

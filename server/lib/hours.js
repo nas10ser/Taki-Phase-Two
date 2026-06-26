@@ -26,7 +26,8 @@ function fmtClock(hhmm) {
 // فترات يوم: "7:00 ص – 10:00 م" أو "8:30 ص – 12:30 م، 4:00 م – 11:00 م" أو "مغلق".
 function dayShifts(shifts) {
     if (!Array.isArray(shifts) || !shifts.length) return tr('day_closed');
-    return shifts.map(s => `${fmtClock(s[0])} – ${fmtClock(s[1])}`).join('، ');
+    // فاصل حسب اللغة (، عربي / , إنجليزي) بدل فاصلة عربية ثابتة. v11.96
+    return shifts.map(s => `${fmtClock(s[0])} – ${fmtClock(s[1])}`).join(tr('cm_sep'));
 }
 // يوم الأسبوع الحالي بتوقيت الرياض (0=الأحد).
 function riyadhDow() {

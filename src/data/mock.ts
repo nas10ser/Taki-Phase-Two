@@ -6,6 +6,7 @@ export type Category =
     | 'Electronics'
     | 'Food'
     | 'Beauty'
+    | 'Glasses'
     | 'MensSalon'
     | 'WomensSalon'
     | 'Sports'
@@ -152,6 +153,7 @@ export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: 
     { id: 'Electronics', ar: 'إلكترونيات', en: 'Electronics', emoji: '📱' },
     { id: 'Food', ar: 'مطاعم', en: 'Food', emoji: '🍔' },
     { id: 'Beauty', ar: 'عطور وتجميل', en: 'Beauty', emoji: '💄' },
+    { id: 'Glasses', ar: 'نظارات', en: 'Eyewear', emoji: '👓' },
     { id: 'MensSalon', ar: 'صالون رجالي', en: 'Barbershop', emoji: '💈' },
     { id: 'WomensSalon', ar: 'صالون نسائي', en: "Women's Salon", emoji: '💇‍♀️' },
     { id: 'Sports', ar: 'رياضة', en: 'Sports', emoji: '⚽' },
