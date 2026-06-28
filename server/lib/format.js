@@ -48,6 +48,20 @@ function priceBlock(orig, disc, pct) {
            tr('price_savings', money(save), p);
 }
 
+// سطر مصداقية العرض (تصويت المشترين حقيقي/وهمي) — نصّ عادي، لغة المستخدم.
+// 🔵 حقيقي / 🟡 وهمي (لا أخضر/أحمر، فهما لحالة فتح/إغلاق المحل). فارغ بلا أصوات.
+// تيليجرام يغلّفه بـ md()، واتساب يستخدمه مباشرة. v11.98
+function authText(real, fake) {
+    const r = Math.max(0, +real || 0);
+    const f = Math.max(0, +fake || 0);
+    const total = r + f;
+    if (total <= 0) return '';
+    const realPct = Math.round((r / total) * 100);
+    const isReal = r >= f;                      // التعادل لصالح «حقيقي»
+    const pct = isReal ? realPct : 100 - realPct;
+    return `${isReal ? '🔵' : '🟡'} ${isReal ? tr('auth_real') : tr('auth_fake')} ${pct}% (${tr('auth_votes', total)})`;
+}
+
 // تحليل تاريخ مكتوب بمرونة → { iso:'YYYY-MM-DD', ms } أو null.
 // يقبل: 2026-07-15 · 15/7/2026 · 15-7-2026 · 2026/7/15 (بعد تطبيع الأرقام).
 function parseFlexibleDate(text) {
@@ -69,5 +83,5 @@ function parseFlexibleDate(text) {
 module.exports = {
     sanitize, normalizeDigits, isPrice, isQty, md, numEsc, stripMd,
     fmtDate, fmtDay, fmtTime, money, prepLabel,
-    STATUS, statusLabel, DIV, priceBlock, parseFlexibleDate,
+    STATUS, statusLabel, DIV, priceBlock, parseFlexibleDate, authText,
 };

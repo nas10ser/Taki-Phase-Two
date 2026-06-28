@@ -2654,15 +2654,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         boxShadow: '0 24px 60px rgba(0,0,0,0.4)', overflow: 'hidden',
                     }}>
                         <div style={{
+                            // Authenticity header is BLUE (matches the real/fake blue/yellow
+                            // scheme); green/red are reserved for shop open/closed. v11.98
                             background: ratingStep === 'auth'
-                                ? 'linear-gradient(135deg, #0e7490, #155e75)'
-                                : ratingStep === 'done'
-                                    ? 'linear-gradient(135deg, #15803d, #166534)'
-                                    : 'linear-gradient(135deg, #0f172a, #334155)',
+                                ? 'linear-gradient(135deg, #1d4ed8, #1e40af)'
+                                : 'linear-gradient(135deg, #0f172a, #334155)',
                             color: '#fff', padding: '22px 20px 18px', textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '2.2rem', marginBottom: 4 }}>
-                                {ratingStep === 'auth' ? '🛡️' : ratingStep === 'done' ? '✅' : '⭐'}
+                                {ratingStep === 'auth' ? '🛡️' : ratingStep === 'done' ? '🙏' : '⭐'}
                             </div>
                             <div style={{ fontSize: '1.12rem', fontWeight: 900 }}>
                                 {ratingStep === 'auth'
@@ -2706,16 +2706,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             }}
                                             style={{
                                                 width: '100%', padding: 16, borderRadius: 16, border: 'none',
+                                                // BLUE = real, YELLOW = fake (green/red reserved for
+                                                // shop open/closed). Yellow needs dark text. v11.98
                                                 background: isReal
-                                                    ? 'linear-gradient(135deg, #16a34a, #22c55e)'
-                                                    : 'linear-gradient(135deg, #dc2626, #ef4444)',
-                                                color: '#fff', fontWeight: 900, fontSize: '1rem',
+                                                    ? 'linear-gradient(135deg, #1d4ed8, #2563eb)'
+                                                    : 'linear-gradient(135deg, #facc15, #eab308)',
+                                                color: isReal ? '#fff' : '#713f12', fontWeight: 900, fontSize: '1rem',
                                                 cursor: authVoting ? 'default' : 'pointer', opacity: authVoting ? 0.7 : 1,
                                             }}
                                         >
                                             {isReal
-                                                ? (language === 'ar' ? '✅ عرض حقيقي' : '✅ Real offer')
-                                                : (language === 'ar' ? '⚠️ عرض وهمي' : '⚠️ Fake offer')}
+                                                ? (language === 'ar' ? '🔵 عرض حقيقي' : '🔵 Real offer')
+                                                : (language === 'ar' ? '🟡 عرض وهمي' : '🟡 Fake offer')}
                                         </button>
                                     ))}
                                     <button

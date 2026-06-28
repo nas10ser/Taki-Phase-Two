@@ -584,18 +584,18 @@ export const getAuthenticityBadge = (real = 0, fake = 0, isRTL = true): Authenti
     const isReal = r >= f;                 // ties resolve to "real"
     const pct = isReal ? realPct : 100 - realPct;
     const label = isReal
-        ? `${isRTL ? '✅ عرض حقيقي' : '✅ Real'} ${pct}%`
-        : `${isRTL ? '⚠️ عرض وهمي' : '⚠️ Fake'} ${pct}%`;
-    // Solid white-on-color pill — high contrast on BOTH light and dark cards
-    // (the translucent variant left the safety-critical red «وهمي» dim on dark
-    // surfaces). green-700 / red-700 keep AA contrast with white text. v11.97b
+        ? `${isRTL ? '🔵 عرض حقيقي' : '🔵 Real'} ${pct}%`
+        : `${isRTL ? '🟡 عرض وهمي' : '🟡 Fake'} ${pct}%`;
+    // BLUE (real) / YELLOW (fake) — NOT green/red, which are reserved for shop
+    // open/closed status (owner's rule, v11.98). Yellow needs DARK text for AA
+    // contrast; blue keeps white. Solid pill → readable on light + dark cards.
     return {
         show: true,
         real: isReal,
         pct,
         total,
         label,
-        color: '#ffffff',
-        bg: isReal ? '#15803d' : '#b91c1c',
+        color: isReal ? '#ffffff' : '#713f12',
+        bg: isReal ? '#1d4ed8' : '#facc15',
     };
 };

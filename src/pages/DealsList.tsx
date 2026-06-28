@@ -5,7 +5,7 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus } from '../utils/workingHours';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
@@ -49,6 +49,9 @@ const DealsList: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     // «مفتوح الآن» (العروض الحيّة) هو الافتراضي. v11.77
     const [openNow, setOpenNow] = useState(true);
+    // «عروض حقيقية» — يُظهر فقط العروض التي صوّت المشترون أنها حقيقية (أغلبية).
+    // اختياري (افتراضياً مُطفأ) ليشجّع التجار على عروض صادقة. v11.98
+    const [verifiedOnly, setVerifiedOnly] = useState(false);
 
     // Smooth-scroll to top on type change so navigating between sections doesn't
     // leave the user mid-list.
@@ -91,6 +94,14 @@ const DealsList: React.FC = () => {
             list = list.filter(d => getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open);
         }
 
+        // «عروض حقيقية» — يبقي فقط ما صوّت المشترون أنه حقيقي (أغلبية + صوت واحد على الأقل).
+        if (verifiedOnly) {
+            list = list.filter(d => {
+                const b = getAuthenticityBadge(d.authReal, d.authFake, isRTL);
+                return b.show && b.real;
+            });
+        }
+
         if (searchQuery.trim()) {
             // Active search => rank by relevance (same engine as Home), best
             // match first, instead of the section's default sort.
@@ -122,7 +133,7 @@ const DealsList: React.FC = () => {
         // Coming-soon view stays ad-free (those deals aren't bookable yet).
         if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
         return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, storeProfiles]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.
@@ -194,9 +205,11 @@ const DealsList: React.FC = () => {
 
             {/* Open-now toggle (default ON) — يعرض العروض الحيّة من المحلات المفتوحة الآن */}
             {type !== 'coming_soon' && (
-                <div style={{ display: 'flex', gap: 8, padding: '10px 12px 0', background: 'var(--card-bg)' }}>
+                <div style={{ display: 'flex', gap: 8, padding: '10px 12px 0', background: 'var(--card-bg)', overflowX: 'auto' }} className="hide-scrollbar">
                     <button onClick={() => setOpenNow(true)} className={`filter-chip ${openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🟢 {isRTL ? 'المفتوحة الآن' : 'Open now'}</button>
                     <button onClick={() => setOpenNow(false)} className={`filter-chip ${!openNow ? 'active' : ''}`} style={{ flexShrink: 0 }}>🏪 {isRTL ? 'جميع المحلات' : 'All shops'}</button>
+                    {/* «عروض حقيقية» — يصفّي على العروض الموثّقة بتصويت المشترين. v11.98 */}
+                    <button onClick={() => setVerifiedOnly(v => !v)} className={`filter-chip ${verifiedOnly ? 'active' : ''}`} style={{ flexShrink: 0 }}>🔵 {isRTL ? 'عروض حقيقية' : 'Verified real'}</button>
                 </div>
             )}
 

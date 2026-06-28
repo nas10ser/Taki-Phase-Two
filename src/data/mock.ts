@@ -482,6 +482,208 @@ export const LOCATIONS: Location[] = [
     { id: 'tariq_souq', name: 'سوق طارق', nameEn: "Tariq Souq", type: 'market', cityId: 'khobar', lat: 26.2800, lng: 50.2100 },
     { id: 'suwaileh_souq', name: 'أسواق السويلم', nameEn: "Al Suwailem Markets", type: 'market', cityId: 'riyadh_city', lat: 24.6300, lng: 46.7120 },
     { id: 'ahsa_souq', name: 'سوق السويق بالاحساء', nameEn: "Al Suwaiq Souq in Al Ahsa", type: 'market', cityId: 'hafuf', lat: 25.3780, lng: 49.5880 },
+    // ===== توسعة المولات والأسواق v11.98 — مصدر موثّق + تحقّق مسافة من مركز المدينة =====
+    // ++ abha
+    { id: 'haraj_abha', name: "حراج أبها", nameEn: "Haraj Abha", type: 'market', cityId: 'abha', lat: 18.24865, lng: 42.52805 },
+    { id: 'lavanda_park', name: "لافندا بارك", nameEn: "Lavanda Park", type: 'mall', cityId: 'abha', lat: 18.24006, lng: 42.60378 },
+    // ++ abu_arish
+    { id: 'forsatak_shopping', name: "فرصتك للتسوق", nameEn: "Forsatak Shopping Mall", type: 'mall', cityId: 'abu_arish', lat: 16.96142, lng: 42.82163 },
+    { id: 'the_region', name: "ذي ريجن مول", nameEn: "The Region Mall", type: 'mall', cityId: 'abu_arish', lat: 16.96051, lng: 42.82166 },
+    // ++ arar
+    { id: 'arar_vegetable', name: "سوق الخضار بعرعر", nameEn: "Arar Vegetable Market", type: 'market', cityId: 'arar', lat: 30.97687, lng: 41.01281 },
+    { id: 'valley', name: "فالي مول", nameEn: "Valley Mall", type: 'mall', cityId: 'arar', lat: 30.96629, lng: 41.02432 },
+    // ++ badr
+    { id: 'abdullah_al_othaim_markets', name: "أسواق عبدالله العثيم", nameEn: "Abdullah Al Othaim Markets", type: 'market', cityId: 'badr', lat: 23.78007, lng: 38.79702 },
+    // ++ baha_city
+    { id: 'ghoneim_mall', name: "الغنيم مول", nameEn: "Al Ghoneim Mall", type: 'mall', cityId: 'baha_city', lat: 20.00719, lng: 41.45171 },
+    // ++ baljurashi
+    { id: 'baljurashi_mall', name: "بلجرشي مول", nameEn: "Baljurashi Mall", type: 'mall', cityId: 'baljurashi', lat: 19.88378, lng: 41.56766 },
+    // ++ baqaa
+    { id: 'vegetable_market_baqaa', name: "سوق الخضار (بقعاء)", nameEn: "Vegetable Market (Baqaa)", type: 'market', cityId: 'baqaa', lat: 27.9027, lng: 42.3944 },
+    // ++ bariq
+    { id: 'souq_al_ajamah', name: "سوق العجمة", nameEn: "Souq Al Ajamah", type: 'market', cityId: 'bariq', lat: 19.01128, lng: 41.87948 },
+    { id: 'souq_al_rubu', name: "سوق الربوع", nameEn: "Souq Al Rubu", type: 'market', cityId: 'bariq', lat: 18.9285, lng: 41.91195 },
+    // ++ bukayriah
+    { id: 'al_bukayriyah', name: "مول البكيرية", nameEn: "Al Bukayriyah Mall", type: 'mall', cityId: 'bukayriah', lat: 26.14386, lng: 43.65071 },
+    { id: 'monday_popular', name: "سوق الاثنين الشعبي", nameEn: "Monday Popular Market", type: 'market', cityId: 'bukayriah', lat: 26.12278, lng: 43.67721 },
+    // ++ bukayriyah_q
+    { id: 'al_bukayriyah_bukayriyah_q', name: "مول البكيرية", nameEn: "Al Bukayriyah Mall", type: 'mall', cityId: 'bukayriyah_q', lat: 26.14386, lng: 43.65071 },
+    { id: 'monday_popular_bukayriyah_q', name: "سوق الاثنين الشعبي", nameEn: "Monday Popular Market", type: 'market', cityId: 'bukayriyah_q', lat: 26.12278, lng: 43.67721 },
+    // ++ buraidah
+    { id: 'al_faiziah', name: "مول الفايزية", nameEn: "Al Faiziah Mall", type: 'mall', cityId: 'buraidah', lat: 26.38628, lng: 43.96259 },
+    { id: 'al_rashid', name: "الراشد مول", nameEn: "Al Rashid Mall", type: 'mall', cityId: 'buraidah', lat: 26.36763, lng: 43.94281 },
+    { id: 'alhasson', name: "الحسون سنتر", nameEn: "Alhasson Center", type: 'mall', cityId: 'buraidah', lat: 26.36686, lng: 43.94225 },
+    { id: 'aljedaie', name: "الجديعي مول", nameEn: "Aljedaie Mall", type: 'mall', cityId: 'buraidah', lat: 26.3741, lng: 43.93634 },
+    { id: 'birds', name: "سوق الطيور", nameEn: "Birds Market", type: 'market', cityId: 'buraidah', lat: 26.35468, lng: 44.0461 },
+    { id: 'central_dates', name: "سوق التمور المركزي", nameEn: "Central Dates Market", type: 'market', cityId: 'buraidah', lat: 26.3135, lng: 43.98242 },
+    { id: 'vegetable_and_fruit', name: "سوق الخضار والفواكه", nameEn: "Vegetable and Fruit Market", type: 'market', cityId: 'buraidah', lat: 26.3123, lng: 43.97844 },
+    // ++ dammam
+    { id: 'dammam_fish', name: "سوق السمك بالدمام", nameEn: "Dammam Fish Market", type: 'market', cityId: 'dammam', lat: 26.44576, lng: 50.06573 },
+    { id: 'marina_mall_dammam', name: "مارينا مول الدمام", nameEn: "Marina Mall Dammam", type: 'mall', cityId: 'dammam', lat: 26.45508, lng: 50.10569 },
+    // ++ dawadmi
+    { id: 'othaim', name: "سوق العثيم", nameEn: "Othaim Market", type: 'market', cityId: 'dawadmi', lat: 24.516, lng: 44.4103 },
+    // ++ diriyah
+    { id: 'al_makan', name: "المكان مول", nameEn: "Al Makan Mall", type: 'mall', cityId: 'diriyah', lat: 24.79055, lng: 46.61177 },
+    { id: 'lumiere', name: "لوميير مول", nameEn: "Lumiere Mall", type: 'mall', cityId: 'diriyah', lat: 24.75987, lng: 46.60362 },
+    { id: 'riyadh_park_diriyah', name: "الرياض بارك", nameEn: "Riyadh Park", type: 'mall', cityId: 'diriyah', lat: 24.75677, lng: 46.62987 },
+    { id: 'u_walk', name: "يو ووك", nameEn: "U Walk", type: 'mall', cityId: 'diriyah', lat: 24.73804, lng: 46.62882 },
+    // ++ dumat_jandal
+    { id: 'arena_al_jouf', name: "مول أرينا الجوف", nameEn: "Arena Al Jouf Mall", type: 'mall', cityId: 'dumat_jandal', lat: 29.79867, lng: 39.8535 },
+    // ++ hafar_al_batin
+    { id: 'al_othaim_mall_hafar_al_batin', name: "العثيم مول حفر الباطن", nameEn: "Al Othaim Mall Hafar Al Batin", type: 'mall', cityId: 'hafar_al_batin', lat: 28.3186, lng: 45.95045 },
+    { id: 'hala', name: "هلا مول", nameEn: "Hala Mall", type: 'mall', cityId: 'hafar_al_batin', lat: 28.41218, lng: 45.99798 },
+    { id: 'sarh_al_muslim', name: "صرح المسلم مول", nameEn: "Sarh Al Muslim Mall", type: 'mall', cityId: 'hafar_al_batin', lat: 28.40919, lng: 45.97097 },
+    // ++ hafuf
+    { id: 'al_haraj_souq_mubarraz', name: "سوق الحراج بالمبرز", nameEn: "Al Haraj Souq Mubarraz", type: 'market', cityId: 'hafuf', lat: 25.39579, lng: 49.5936 },
+    { id: 'al_othaim_mall_mubarraz', name: "العثيم مول المبرز", nameEn: "Al Othaim Mall Mubarraz", type: 'mall', cityId: 'hafuf', lat: 25.40022, lng: 49.57793 },
+    { id: 'al_soni_electronics', name: "سوق السوني للإلكترونيات", nameEn: "Al Soni Electronics Souq", type: 'market', cityId: 'hafuf', lat: 25.38062, lng: 49.58997 },
+    { id: 'nakheel_plaza_hofuf', name: "النخيل بلازا", nameEn: "Nakheel Plaza Hofuf", type: 'mall', cityId: 'hafuf', lat: 25.35966, lng: 49.54755 },
+    // ++ hail_city
+    { id: 'centrepoint_hail', name: "سنتر بوينت حائل", nameEn: "Centrepoint Hail", type: 'mall', cityId: 'hail_city', lat: 27.50929, lng: 41.69929 },
+    { id: 'garden_mall_mango_garden', name: "الحديقة مول (مانجو جاردن مول)", nameEn: "Garden Mall (MANGO Garden Mall)", type: 'mall', cityId: 'hail_city', lat: 27.55437, lng: 41.68155 },
+    { id: 'grand', name: "جراند مول", nameEn: "Grand Mall", type: 'mall', cityId: 'hail_city', lat: 27.47394, lng: 41.67696 },
+    { id: 'hail_square', name: "مجمع حائل سكوير", nameEn: "Hail Square", type: 'mall', cityId: 'hail_city', lat: 27.4999, lng: 41.67051 },
+    { id: 'othaim_mall_hail', name: "العثيم مول حائل", nameEn: "Othaim Mall Hail", type: 'mall', cityId: 'hail_city', lat: 27.47404, lng: 41.67665 },
+    // ++ haql
+    { id: 'othaim_markets', name: "أسواق العثيم", nameEn: "Othaim Markets", type: 'market', cityId: 'haql', lat: 29.28114, lng: 34.93833 },
+    // ++ jazan_city
+    { id: 'vegetable_and_fruit_jazan_city', name: "سوق الخضار والفواكه", nameEn: "Vegetable and Fruit Market", type: 'market', cityId: 'jazan_city', lat: 16.90174, lng: 42.54598 },
+    // ++ jeddah
+    { id: 'hera', name: "حراء مول", nameEn: "Hera Mall", type: 'mall', cityId: 'jeddah', lat: 21.61092, lng: 39.13918 },
+    { id: 'jeddah_park', name: "جدة بارك", nameEn: "Jeddah Park", type: 'mall', cityId: 'jeddah', lat: 21.55622, lng: 39.18497 },
+    { id: 'le_prestige', name: "لو بريستيج مول", nameEn: "Le Prestige Mall", type: 'mall', cityId: 'jeddah', lat: 21.56564, lng: 39.12501 },
+    { id: 'souq_al_alawi_al_balad', name: "سوق العلوي (البلد)", nameEn: "Souq Al Alawi (Al Balad)", type: 'market', cityId: 'jeddah', lat: 21.48421, lng: 39.1875 },
+    // ++ khafji
+    { id: 'al_othaim_mall_khafji', name: "العثيم مول الخفجي", nameEn: "Al Othaim Mall Khafji", type: 'mall', cityId: 'khafji', lat: 28.42172, lng: 48.48063 },
+    // ++ khamis_mushait
+    { id: 'asdaf', name: "أصداف مول", nameEn: "Asdaf Mall", type: 'mall', cityId: 'khamis_mushait', lat: 18.306, lng: 42.73223 },
+    // ++ kharj
+    { id: 'al_wahah', name: "الواحة مول", nameEn: "Al Wahah Mall", type: 'mall', cityId: 'kharj', lat: 24.12969, lng: 47.26459 },
+    { id: 'al_warood', name: "الورود بلازا", nameEn: "Al Warood Plaza", type: 'mall', cityId: 'kharj', lat: 24.15889, lng: 47.29999 },
+    { id: 'jaw', name: "جو مول", nameEn: "Jaw Mall", type: 'mall', cityId: 'kharj', lat: 24.16612, lng: 47.33396 },
+    // ++ khaybar
+    { id: 'al_muthallath_shopping', name: "مركز المثلث للتسويق", nameEn: "Al Muthallath Shopping Center", type: 'market', cityId: 'khaybar', lat: 25.69404, lng: 39.29546 },
+    { id: 'al_takamul_shopping', name: "التكامل للتسوق", nameEn: "Al Takamul Shopping Center", type: 'market', cityId: 'khaybar', lat: 25.69192, lng: 39.29413 },
+    // ++ laith
+    { id: 'souq_mugaybil', name: "سوق مقيبل", nameEn: "Souq Mugaybil", type: 'market', cityId: 'laith', lat: 20.14874, lng: 40.27905 },
+    // ++ madinah_city
+    { id: 'al_jabri', name: "مجمع الجابري", nameEn: "Al Jabri Mall", type: 'mall', cityId: 'madinah_city', lat: 24.45801, lng: 39.61439 },
+    { id: 'al_jazira_shopping', name: "مجمع الجزيرة للتسوق", nameEn: "Al Jazira Shopping Mall", type: 'mall', cityId: 'madinah_city', lat: 24.46393, lng: 39.61504 },
+    { id: 'al_madinah', name: "المدينة سنتر", nameEn: "Al Madinah Center", type: 'mall', cityId: 'madinah_city', lat: 24.45744, lng: 39.59598 },
+    { id: 'al_madinah_international', name: "سوق المدينة الدولي", nameEn: "Al Madinah International Souq", type: 'market', cityId: 'madinah_city', lat: 24.48355, lng: 39.59765 },
+    { id: 'al_qarat', name: "مجمع القارات", nameEn: "Al Qarat Mall", type: 'mall', cityId: 'madinah_city', lat: 24.49415, lng: 39.60089 },
+    { id: 'al_rashed', name: "الراشد مول", nameEn: "Al Rashed Mall", type: 'mall', cityId: 'madinah_city', lat: 24.48731, lng: 39.64953 },
+    { id: 'centre_point', name: "سنتر بوينت", nameEn: "Centre Point", type: 'mall', cityId: 'madinah_city', lat: 24.46382, lng: 39.61196 },
+    { id: 'hassan', name: "حسن مول", nameEn: "Hassan Mall", type: 'mall', cityId: 'madinah_city', lat: 24.49799, lng: 39.6185 },
+    { id: 'j_walk', name: "جي ووك", nameEn: "J Walk", type: 'mall', cityId: 'madinah_city', lat: 24.45791, lng: 39.54429 },
+    { id: 'mazaia', name: "مزايا مول", nameEn: "Mazaia Mall", type: 'mall', cityId: 'madinah_city', lat: 24.48476, lng: 39.61045 },
+    { id: 'namia', name: "مركز نامية", nameEn: "Namia Center", type: 'mall', cityId: 'madinah_city', lat: 24.47195, lng: 39.61277 },
+    { id: 'new_bilal', name: "سوق بلال الجديد", nameEn: "New Bilal Market", type: 'market', cityId: 'madinah_city', lat: 24.46187, lng: 39.61181 },
+    { id: 'new_dates', name: "سوق التمور الجديد", nameEn: "New Dates Market", type: 'market', cityId: 'madinah_city', lat: 24.41674, lng: 39.61705 },
+    { id: 'qurban', name: "قربان مول", nameEn: "Qurban Mall", type: 'mall', cityId: 'madinah_city', lat: 24.45376, lng: 39.61994 },
+    { id: 'rotana', name: "روتانا مول", nameEn: "Rotana Mall", type: 'mall', cityId: 'madinah_city', lat: 24.45845, lng: 39.6664 },
+    { id: 'space', name: "سبيس مول", nameEn: "Space Mall", type: 'mall', cityId: 'madinah_city', lat: 24.48584, lng: 39.58935 },
+    // ++ mahad_adh_dhahab
+    { id: 'abdullah_al_othaim_markets_mahad_adh_dhahab', name: "أسواق عبدالله العثيم", nameEn: "Abdullah Al Othaim Markets", type: 'market', cityId: 'mahad_adh_dhahab', lat: 23.50642, lng: 40.88548 },
+    // ++ mahail_asir
+    { id: 'oasis_al_waha', name: "الواحة مول", nameEn: "Oasis (Al Waha) Mall", type: 'mall', cityId: 'mahail_asir', lat: 18.55198, lng: 42.04006 },
+    // ++ majmaah
+    { id: 'majmaah', name: "مول المجمعة", nameEn: "Majmaah Mall", type: 'mall', cityId: 'majmaah', lat: 25.90935, lng: 45.34319 },
+    { id: 'othaim_majmaah', name: "العثيم مول", nameEn: "Othaim Mall", type: 'mall', cityId: 'majmaah', lat: 25.90262, lng: 45.35489 },
+    // ++ makkah_city
+    { id: 'souq_al_arab', name: "سوق العرب", nameEn: "Souq Al Arab", type: 'market', cityId: 'makkah_city', lat: 21.44615, lng: 39.85599 },
+    { id: 'souq_al_khalil', name: "سوق الخليل", nameEn: "Souq Al Khalil", type: 'market', cityId: 'makkah_city', lat: 21.42122, lng: 39.82186 },
+    { id: 'souq_al_tamr_dates', name: "سوق التمور", nameEn: "Souq Al Tamr (Dates Market)", type: 'market', cityId: 'makkah_city', lat: 21.37039, lng: 39.80595 },
+    // ++ muznib
+    { id: 'al_muznib_old_heritage', name: "سوق المذنب القديم التراثي", nameEn: "Al Muznib Old Heritage Market", type: 'market', cityId: 'muznib', lat: 25.86836, lng: 44.22761 },
+    // ++ nairyah
+    { id: 'nairyah_popular', name: "سوق النعيرية الشعبي", nameEn: "Nairyah Popular Souq", type: 'market', cityId: 'nairyah', lat: 27.465, lng: 48.4806 },
+    // ++ najran_city
+    { id: 'al_azzam', name: "العزّام مول", nameEn: "Al-Azzam Mall", type: 'mall', cityId: 'najran_city', lat: 17.53926, lng: 44.21432 },
+    { id: 'al_faisaliah_market_for_vegetables_fruit', name: "سوق الفيصلية للخضار والفواكه واللحوم", nameEn: "Al-Faisaliah Market for Vegetables, Fruits and Meat", type: 'market', cityId: 'najran_city', lat: 17.52588, lng: 44.20105 },
+    { id: 'najran_royal', name: "نجران رويال مول", nameEn: "Najran Royal Mall", type: 'mall', cityId: 'najran_city', lat: 17.55017, lng: 44.25779 },
+    { id: 'suq_al_haraj_wa_al_aghnam_popular_livest', name: "سوق الحراج والأغنام (سوق الجنابي الشعبي)", nameEn: "Suq Al-Haraj wa Al-Aghnam (popular livestock market)", type: 'market', cityId: 'najran_city', lat: 17.49389, lng: 44.15213 },
+    // ++ namas
+    { id: 'al_namas', name: "النماص مول", nameEn: "Al Namas Mall", type: 'mall', cityId: 'namas', lat: 19.11868, lng: 42.13088 },
+    // ++ qatif
+    { id: 'city_mall_qatif', name: "مجمع سيتي مول بالقطيف", nameEn: "City Mall Qatif", type: 'mall', cityId: 'qatif', lat: 26.55785, lng: 50.0377 },
+    { id: 'qatif', name: "مجمع القطيف بلازا", nameEn: "Qatif Plaza", type: 'mall', cityId: 'qatif', lat: 26.5509, lng: 50.01545 },
+    { id: 'qatif_central_fish', name: "سوق السمك المركزي بالقطيف", nameEn: "Qatif Central Fish Market", type: 'market', cityId: 'qatif', lat: 26.55533, lng: 50.00797 },
+    { id: 'qatif_thursday', name: "سوق الخميس بالقطيف", nameEn: "Qatif Thursday Souq", type: 'market', cityId: 'qatif', lat: 26.55686, lng: 49.99917 },
+    // ++ qurayyat
+    { id: 'al_wisam_discount', name: "مركز الوسام للتخفيضات", nameEn: "Al Wisam Discount Center", type: 'mall', cityId: 'qurayyat', lat: 31.31927, lng: 37.35733 },
+    // ++ rabigh
+    { id: 'rabigh', name: "رابغ مول", nameEn: "Rabigh Mall", type: 'mall', cityId: 'rabigh', lat: 22.78871, lng: 39.03258 },
+    { id: 'rabigh_livestock', name: "سوق رابغ للمواشي", nameEn: "Rabigh Livestock Market", type: 'market', cityId: 'rabigh', lat: 22.77047, lng: 39.05598 },
+    // ++ rafha
+    { id: 'rafha_shopping', name: "مركز تسوق رفحاء", nameEn: "Rafha Shopping Center", type: 'market', cityId: 'rafha', lat: 29.6177, lng: 43.5263 },
+    // ++ rass
+    { id: 'al_deira', name: "الديرة مول", nameEn: "Al Deira Mall", type: 'mall', cityId: 'rass', lat: 25.86894, lng: 43.50871 },
+    { id: 'al_othaim_mall_al_rass', name: "العثيم مول الرس", nameEn: "Al Othaim Mall Al Rass", type: 'mall', cityId: 'rass', lat: 25.8976, lng: 43.4719 },
+    { id: 'al_rass_vegetable_and_fruit', name: "سوق الخضار والفواكه بالرس", nameEn: "Al Rass Vegetable and Fruit Market", type: 'market', cityId: 'rass', lat: 25.87303, lng: 43.50978 },
+    { id: 'city', name: "سيتي سنتر", nameEn: "City Center", type: 'mall', cityId: 'rass', lat: 25.86832, lng: 43.50466 },
+    { id: 'sahara', name: "صحارى مول", nameEn: "Sahara Mall", type: 'mall', cityId: 'rass', lat: 25.86681, lng: 43.50653 },
+    // ++ riyadh_al_khabra
+    { id: 'riyadh_al_khabra_local_dates', name: "سوق رياض الخبراء للتمور المحلية", nameEn: "Riyadh Al Khabra Local Dates Market", type: 'market', cityId: 'riyadh_al_khabra', lat: 26.05628, lng: 43.56225 },
+    // ++ sabya
+    { id: 'al_qahtani_commercial_complex', name: "مجمع القحطاني التجاري", nameEn: "Al Qahtani Commercial Complex", type: 'market', cityId: 'sabya', lat: 17.10284, lng: 42.65453 },
+    { id: 'al_salwa_commercial_complex', name: "مجمع السلوى التجاري", nameEn: "Al Salwa Commercial Complex", type: 'market', cityId: 'sabya', lat: 17.08745, lng: 42.64619 },
+    { id: 'tuesday', name: "سوق الثلاثاء", nameEn: "Tuesday Market", type: 'market', cityId: 'sabya', lat: 17.21531, lng: 42.6438 },
+    // ++ sakaka
+    { id: 'al_hassoun', name: "مول الحسون", nameEn: "Al Hassoun Mall", type: 'mall', cityId: 'sakaka', lat: 29.95443, lng: 40.19022 },
+    { id: 'ala_kefak', name: "على كيفك", nameEn: "Ala Kefak Mall", type: 'mall', cityId: 'sakaka', lat: 29.97625, lng: 40.21262 },
+    { id: 'downtown', name: "سوق داون تاون", nameEn: "Downtown Market", type: 'market', cityId: 'sakaka', lat: 29.95638, lng: 40.20963 },
+    { id: 'jouf_square', name: "سكوير الجوف", nameEn: "Jouf Square", type: 'mall', cityId: 'sakaka', lat: 29.97628, lng: 40.21388 },
+    { id: 'samina', name: "سوق سمينا", nameEn: "Samina Market", type: 'market', cityId: 'sakaka', lat: 29.95852, lng: 40.19388 },
+    // ++ samitah
+    { id: 'al_burhan', name: "البرهان مول", nameEn: "Al Burhan Mall", type: 'mall', cityId: 'samitah', lat: 16.60476, lng: 42.93732 },
+    // ++ shakra
+    { id: 'al_andalus_commercial', name: "سوق الأندلس التجاري", nameEn: "Al Andalus Commercial Market", type: 'market', cityId: 'shakra', lat: 25.24348, lng: 45.25844 },
+    { id: 'shaqra_commercial', name: "سوق شقراء التجاري", nameEn: "Shaqra Commercial Souq", type: 'mall', cityId: 'shakra', lat: 25.25182, lng: 45.25584 },
+    { id: 'vegetable_and_meat', name: "سوق الخضار واللحوم", nameEn: "Vegetable and Meat Market", type: 'market', cityId: 'shakra', lat: 25.24551, lng: 45.2601 },
+    // ++ tabuk_city
+    { id: 'al_hokair', name: "الحكير مول", nameEn: "Al Hokair Mall", type: 'mall', cityId: 'tabuk_city', lat: 28.39513, lng: 36.54863 },
+    { id: 'al_raqi', name: "الراقي مول", nameEn: "Al Raqi Mall", type: 'mall', cityId: 'tabuk_city', lat: 28.36265, lng: 36.56715 },
+    { id: 'al_sannabel', name: "السنابل مول", nameEn: "Al Sannabel Mall", type: 'mall', cityId: 'tabuk_city', lat: 28.38679, lng: 36.56383 },
+    { id: 'central_marketplace', name: "السوق المركزي (سوق شعبي)", nameEn: "Central Marketplace", type: 'market', cityId: 'tabuk_city', lat: 28.40525, lng: 36.53974 },
+    { id: 'park_mall_tabuk_park', name: "بارك مول", nameEn: "Park Mall (Tabuk Park)", type: 'mall', cityId: 'tabuk_city', lat: 28.42928, lng: 36.57293 },
+    { id: 'vegetable_market_souk_khodra', name: "سوق الخضار", nameEn: "Vegetable Market (Souk Khodra)", type: 'market', cityId: 'tabuk_city', lat: 28.40407, lng: 36.53963 },
+    // ++ taif
+    { id: 'central_fish', name: "سوق السمك المركزي", nameEn: "Central Fish Market", type: 'market', cityId: 'taif', lat: 21.27214, lng: 40.4063 },
+    { id: 'souq_al_anqari', name: "سوق العنقري", nameEn: "Souq Al Anqari", type: 'market', cityId: 'taif', lat: 21.27306, lng: 40.43041 },
+    { id: 'souq_al_obeikan', name: "سوق العبيكان", nameEn: "Souq Al Obeikan", type: 'market', cityId: 'taif', lat: 21.27395, lng: 40.42407 },
+    { id: 'taif_international', name: "سوق الطائف الدولي", nameEn: "Taif International Mall", type: 'mall', cityId: 'taif', lat: 21.27248, lng: 40.43202 },
+    { id: 'tera', name: "تيرا مول", nameEn: "Tera Mall", type: 'mall', cityId: 'taif', lat: 21.27955, lng: 40.44451 },
+    // ++ turayf
+    { id: 'othaim_markets_turaif', name: "أسواق العثيم طريف", nameEn: "Othaim Markets Turaif", type: 'market', cityId: 'turayf', lat: 31.67789, lng: 38.67636 },
+    // ++ ula
+    { id: 'vegetable_market_alula', name: "سوق الخضار", nameEn: "Vegetable Market (AlUla)", type: 'market', cityId: 'ula', lat: 26.60796, lng: 37.92485 },
+    // ++ umluj
+    { id: 'al_olayan', name: "سوق العليان", nameEn: "Al Olayan Market", type: 'market', cityId: 'umluj', lat: 25.03464, lng: 37.26026 },
+    // ++ unaizah
+    { id: 'al_othaim_mall_unaizah', name: "العثيم مول عنيزة", nameEn: "Al Othaim Mall Unaizah", type: 'mall', cityId: 'unaizah', lat: 26.10741, lng: 43.9946 },
+    { id: 'onaizah_dates', name: "سوق التمور بعنيزة", nameEn: "Onaizah Dates Market", type: 'market', cityId: 'unaizah', lat: 26.11218, lng: 44.02987 },
+    { id: 'onaizah_friday', name: "سوق الجمعة بعنيزة", nameEn: "Onaizah Friday Market", type: 'market', cityId: 'unaizah', lat: 26.11258, lng: 44.02515 },
+    // ++ uwayqilah
+    { id: 'abdullah_al_othaim_markets_uwayqilah', name: "أسواق عبدالله العثيم العويقيلة", nameEn: "Abdullah Al-Othaim Markets Uwayqilah", type: 'market', cityId: 'uwayqilah', lat: 30.3504, lng: 42.2441 },
+    // ++ wadi_ad_dawasir
+    { id: 'al_liddam_general', name: "سوق اللدام العام", nameEn: "Al Liddam General Souq", type: 'market', cityId: 'wadi_ad_dawasir', lat: 20.46834, lng: 44.79115 },
+    { id: 'dates', name: "سوق التمور", nameEn: "Dates Souq", type: 'market', cityId: 'wadi_ad_dawasir', lat: 20.46767, lng: 44.7904 },
+    { id: 'popular', name: "السوق الشعبي", nameEn: "Popular Souq", type: 'market', cityId: 'wadi_ad_dawasir', lat: 20.4678, lng: 44.79102 },
+    { id: 'sahara_central_markets', name: "أسواق الصحارى المركزية", nameEn: "Sahara Central Markets", type: 'market', cityId: 'wadi_ad_dawasir', lat: 20.46119, lng: 44.78082 },
+    { id: 'vegetable_and_fruit_wadi_ad_dawasir', name: "سوق الخضار والفواكه", nameEn: "Vegetable and Fruit Market", type: 'market', cityId: 'wadi_ad_dawasir', lat: 20.46936, lng: 44.78333 },
+    // ++ yanbu
+    { id: 'al_jawhara', name: "الجوهرة مول", nameEn: "Al Jawhara Mall", type: 'mall', cityId: 'yanbu', lat: 24.01506, lng: 38.19835 },
+    { id: 'al_nakheel', name: "سوق النخيل", nameEn: "Al Nakheel Market", type: 'market', cityId: 'yanbu', lat: 24.01428, lng: 38.19323 },
+    { id: 'al_rabiah', name: "الرابية مول", nameEn: "Al Rabiah Mall", type: 'mall', cityId: 'yanbu', lat: 24.10258, lng: 38.03175 },
+    { id: 'dana', name: "دانا مول", nameEn: "Dana Mall", type: 'mall', cityId: 'yanbu', lat: 24.03318, lng: 38.19359 },
+    { id: 'fish', name: "سوق السمك", nameEn: "Fish Market", type: 'market', cityId: 'yanbu', lat: 24.07426, lng: 38.05381 },
+    { id: 'miro', name: "ميرو مول", nameEn: "Miro Mall", type: 'mall', cityId: 'yanbu', lat: 24.02461, lng: 38.22315 },
+    { id: 'royal_plaza_shopping', name: "مركز تسوق رويال بلازا", nameEn: "Royal Plaza Shopping Center", type: 'mall', cityId: 'yanbu', lat: 24.08543, lng: 38.05612 },
+    // ++ zulfi
+    { id: 'central', name: "السوق المركزي", nameEn: "Central Market", type: 'market', cityId: 'zulfi', lat: 26.29625, lng: 44.80762 },
+    { id: 'city_zulfi', name: "ستي مول", nameEn: "City Mall", type: 'mall', cityId: 'zulfi', lat: 26.29335, lng: 44.80743 },
+    { id: 'vegetable_and_dates', name: "سوق الخضار والتمور", nameEn: "Vegetable and Dates Market", type: 'market', cityId: 'zulfi', lat: 26.29472, lng: 44.8086 },
 ];
 
 // ============================================================

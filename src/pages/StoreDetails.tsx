@@ -9,6 +9,7 @@ import { userRepository } from '../repositories/userRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
+import { getAuthenticityBadge } from '../utils/helpers';
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -284,6 +285,18 @@ const StoreDetails: React.FC = () => {
         return dealService.calculateRating(allRatings);
     }, [deals, id]);
 
+    // Overall authenticity across the store's offers — sum of buyer real/fake
+    // votes, fed to the same badge helper as the cards. v11.98
+    const storeAuth = useMemo(() => {
+        let real = 0, fake = 0;
+        for (const d of deals) {
+            if (d.storeId !== id) continue;
+            real += d.authReal || 0;
+            fake += d.authFake || 0;
+        }
+        return getAuthenticityBadge(real, fake, isRTL);
+    }, [deals, id, isRTL]);
+
     if (loadingStore) {
         return (
             <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--body-bg)' }}>
@@ -370,6 +383,13 @@ const StoreDetails: React.FC = () => {
                                 </span>
                             )}
                         </span>
+                        {/* Overall offer authenticity (blue real / yellow fake) — v11.98 */}
+                        {storeAuth.show && (
+                            <span style={{ background: storeAuth.bg, color: storeAuth.color, padding: '8px 16px', borderRadius: 14, fontSize: '0.95rem', fontWeight: 900 }}
+                                title={isRTL ? `${storeAuth.total} صوت على مصداقية العروض` : `${storeAuth.total} authenticity votes`}>
+                                {storeAuth.label}
+                            </span>
+                        )}
                         <div style={{ background: 'rgba(80, 80, 90, 0.3)', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 14 }}>
                             <span style={{ color: '#fff', fontSize: '1rem', fontWeight: 900 }}>
                                 👥 {followerCount === null ? '…' : followerCount.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}
@@ -494,7 +514,20 @@ const StoreDetails: React.FC = () => {
             {(() => {
                 const wh = (profile as any)?.workingHours;
                 const st = getShopStatus(wh);
-                if (!st.configured) return null;
+                // No hours set → professional 24h/always-available card instead of
+                // hiding it entirely (owner request v11.98). store_is_open treats
+                // unconfigured stores as always-open, so this is accurate.
+                if (!st.configured) {
+                    return (
+                        <div style={{ margin: '12px 16px', background: 'var(--card-bg)', borderRadius: 20, padding: 18, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', border: '1px solid var(--border-color)' }}>
+                            <h3 style={{ fontWeight: 900, marginBottom: 10, fontSize: '0.95rem', color: 'var(--text-primary)' }}>🕐 {isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                <span style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', fontWeight: 900, fontSize: '0.8rem', padding: '5px 12px', borderRadius: 999 }}>🟢 {isRTL ? 'متاح على مدار الساعة' : 'Open 24 hours'}</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 700 }}>{isRTL ? 'لم يحدّد المتجر ساعات عمل — متاح طوال الوقت.' : 'No specific hours set — available anytime.'}</span>
+                            </div>
+                        </div>
+                    );
+                }
                 const pill = statusPill(wh, isRTL);
                 const bg = pill.tone === 'open' ? 'rgba(16,185,129,0.12)' : pill.tone === 'soon' ? 'rgba(245,158,11,0.14)' : 'rgba(239,68,68,0.12)';
                 const col = pill.tone === 'open' ? '#10b981' : pill.tone === 'soon' ? '#f59e0b' : '#ef4444';

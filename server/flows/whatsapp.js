@@ -27,7 +27,7 @@ const { getSession } = require('../lib/session');
 const { catLabel, CAT, genderLabel, GENDER } = C;
 const { dirLink, remainingText, resolveGoogleLocation } = G;
 const { sanitize, money, prepLabel, statusLabel, fmtDate, fmtDay, DIV,
-        normalizeDigits, isPrice, isQty, parseFlexibleDate, priceBlock } = F;
+        normalizeDigits, isPrice, isQty, parseFlexibleDate, priceBlock, authText } = F;
 const tr = I18N.tr;
 const numOf = txt => +normalizeDigits(txt);
 
@@ -259,6 +259,14 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     //  التصفّح / التصنيفات / تفاصيل العرض / حولي / المتجر
     // ════════════════════════════════════════════════════════════════════════
+    // عدّاد تنازلي مختصر (يي سس / سس دد / دد) لبطاقة «قادم قريباً». v11.98
+    function waCountdown(ms) {
+        const mins = Math.max(0, Math.floor(ms / 60000));
+        const dd = Math.floor(mins / 1440), hh = Math.floor((mins % 1440) / 60), mm = mins % 60;
+        if (dd > 0) return `${tr('dur_d', dd)} ${tr('dur_h', hh)}`;
+        if (hh > 0) return `${tr('dur_h', hh)} ${tr('dur_m', mm)}`;
+        return tr('dur_m', mm);
+    }
     function dealText(d, geo) {
         const L = [];
         L.push(`🏷 *${d.item_name}*`);
@@ -271,6 +279,10 @@ function create(deps) {
         if (d.prep_time) L.push(tr('q2529_wa_prep', prepLabel(d.prep_time)));
         const os = d.open_status;
         if (os && os.configured) L.push(HRS.statusText(os));
+        const at = authText(d.auth_real, d.auth_fake);   // مصداقية العرض (حقيقي/وهمي %)
+        if (at) L.push(at);
+        const startsMs = d.starts_at ? Number(d.starts_at) : 0;
+        if (startsMs > Date.now()) L.push('⏳ ' + tr('soon_starts_in', waCountdown(startsMs - Date.now())));
         if (d.description) L.push(tr('q2530_wa_description', String(d.description).slice(0, 400)));
         return L.join('\n');
     }
@@ -281,7 +293,9 @@ function create(deps) {
         const deals = await rpc('bot_browse_deals', {
             p_sort: sort, p_category: (cat && cat !== 'all') ? cat : null,
             p_lat: geo ? geo.lat : null, p_lng: geo ? geo.lng : null,
-            p_radius_km: null, p_limit: 9, p_offset: offset, p_open_now: true,
+            // p_open_now=false: لا نُخفي المحلات المغلقة (كانت تُفرّغ القائمة خارج
+            // الدوام). حالة كل محل تظهر داخل بطاقته على أي حال. v11.98
+            p_radius_km: null, p_limit: 9, p_offset: offset, p_open_now: false,
         }) || [];
         if (!deals.length) { if (offset > 0) return browseMenu(from, s); return sendButtons(from, { body: tr('wa_no_deals'), buttons: [{ id: 'wa:cats', title: tr('wa_row_cats') }, menuBtn()] }); }
         const rows = deals.slice(0, 9).map(d => row(`wa:deal:${d.id}`, String(d.item_name),
@@ -297,9 +311,24 @@ function create(deps) {
             row('wa:br:popular', tr('sort_t_popular'), ''),
             row('wa:br:discount', tr('sort_t_discount'), ''),
             row('wa:near', tr('sort_t_nearby'), ''),
+            row('wa:soon', tr('menu_coming_soon'), ''),
             row('wa:cats', tr('wa_row_cats'), ''),
             menuRow(),
         ] }] });
+    }
+    // العروض القادمة — عروض مجدولة تبدأ خلال ٧ أيام (p_upcoming). v11.98
+    async function browseUpcoming(from, s, offset) {
+        offset = offset || 0;
+        const deals = await rpc('bot_browse_deals', { p_sort: 'newest', p_limit: 9, p_offset: offset, p_upcoming: true }) || [];
+        if (!deals.length) { if (offset > 0) return browseMenu(from, s); return sendButtons(from, { body: tr('soon_none'), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] }); }
+        const rows = deals.slice(0, 9).map(d => {
+            const startsMs = d.starts_at ? Number(d.starts_at) : 0;
+            const sub = startsMs > Date.now() ? tr('soon_starts_in', waCountdown(startsMs - Date.now())) : `${d.discounted_price} ${cur()}`;
+            return row(`wa:deal:${d.id}`, String(d.item_name), sub);
+        });
+        if (deals.length >= 9) rows.push(row(`wa:soonmore:${offset + 9}`, tr('wa_more_deals'), ''));
+        rows.push(menuRow());
+        return sendList(from, { header: tr('soon_title').replace(/\*/g, ''), body: tr('wa_browse_body'), footer: 'TAKI', button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function categories(from, s) {
         const geo = s.geo;
@@ -317,10 +346,13 @@ function create(deps) {
         const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
         if (img) await sendImage(from, img, dealText(d, geo));
         else await sendText(from, dealText(d, geo));
-        const btns = [{ id: `wa:book:${d.id}`, title: tr('wa_book_now') }];
+        // «قادم قريباً» — لا يمكن الحجز قبل بدء العرض (يطابق الموقع). v11.98
+        const comingSoon = d.starts_at && Number(d.starts_at) > Date.now();
+        const btns = [];
+        if (!comingSoon) btns.push({ id: `wa:book:${d.id}`, title: tr('wa_book_now') });
         if (d.store_id) btns.push({ id: `wa:store:${d.store_id}`, title: tr('wa_store_btn') });
         btns.push(menuBtn());
-        await sendButtons(from, { body: `*${d.item_name}*`, buttons: btns });
+        await sendButtons(from, { body: comingSoon ? tr('soon_locked') : `*${d.item_name}*`, buttons: btns });
         const dl = dirLink(d, geo);
         if (dl) await sendText(from, tr('wa_directions', dl));
     }
@@ -330,6 +362,19 @@ function create(deps) {
         const place = [st.city, st.region].filter(Boolean).join(' • ') || '—';
         let body = tr('wa_store_head', st.name, place, st.rating_avg || 0, st.rating_count || 0, st.active_deals || 0);
         if (st.bio) body += tr('wa_store_bio', String(st.bio).slice(0, 200));
+        // نسبة مصداقية عروض المتجر (إجمالي تصويت المشترين). v11.98
+        const stAuth = authText(st.auth_real, st.auth_fake);
+        if (stAuth) body += `\n${stAuth}`;
+        // ساعات العمل — مع صيغة احترافية لـ«٢٤ ساعة/لم تُحدَّد». v11.98
+        const sos = st.open_status;
+        body += `\n\n${tr('store_hours_label')}`;
+        if (sos && sos.configured) {
+            body += `\n🕐 ${HRS.statusText(sos)}`;
+            const today = HRS.todayLine(st.working_hours);
+            if (today) body += `\n${today}`;
+        } else {
+            body += `\n${tr('hrs_always_open')}\n${tr('hrs_not_set')}`;
+        }
         const btns = [];
         if (s.userId) btns.push({ id: `wa:fol:${storeId}`, title: st.following ? tr('wa_unfollow') : tr('wa_follow') });
         btns.push(menuBtn());
@@ -521,8 +566,21 @@ function create(deps) {
     }
 
     // ── تقييم ──
+    // Step 1 — authenticity «هل العرض حقيقي؟» (every purchase), then the stars. v11.98
     async function startRate(from, s, bc) {
         s.temp.rateBarcode = bc;
+        await sendButtons(from, { body: tr('av_question'), buttons: [
+            { id: `wa:av:${bc}:1`, title: tr('av_real_btn') }, { id: `wa:av:${bc}:0`, title: tr('av_fake_btn') }, { id: `wa:bk1:${bc}`, title: tr('wa_back') },
+        ] });
+    }
+    // Record the real/fake vote (barcode proves the completed purchase), then stars.
+    async function castWaAuthVote(from, s, bc, isReal) {
+        s.temp.rateBarcode = bc;
+        const r = await rpc('bot_cast_authenticity_vote', aid(from, { p_deal_id: null, p_is_real: isReal, p_barcode: bc }));
+        await sendText(from, (r && r.success) ? tr('av_thanks') : tr('av_error'));
+        return showRateStars(from, s, bc);
+    }
+    async function showRateStars(from, s, bc) {
         await sendButtons(from, { body: tr('wa_rate_prompt'), buttons: [
             { id: `wa:rst:${bc}:5`, title: '⭐⭐⭐⭐⭐' }, { id: `wa:rst:${bc}:4`, title: '⭐⭐⭐⭐' }, { id: `wa:rst:${bc}:3`, title: '⭐⭐⭐' },
         ] });
@@ -1314,6 +1372,8 @@ function create(deps) {
         if (id === 'wa:browse') return browse(from, s, 'newest', null);
         if (id === 'wa:cats') return categories(from, s);
         if (id === 'wa:near') return nearbyEntry(from, s);
+        if (id === 'wa:soon') return browseUpcoming(from, s, 0);
+        if (id.startsWith('wa:soonmore:')) return browseUpcoming(from, s, +p[2] || 0);
         if (id === 'wa:search') return startSearch(from, s);
         if (id === 'wa:link') return linkInstructions(from);
         if (id === 'wa:lang') return toggleLang(from, s);
@@ -1356,6 +1416,7 @@ function create(deps) {
         if (id.startsWith('wa:enote:')) return promptEditNote(from, s, id.slice(9));
         if (id === 'wa:rskip') return submitRate(from, s, null);
         if (id.startsWith('wa:rate:')) return startRate(from, s, id.slice(8));
+        if (k === 'av') return castWaAuthVote(from, s, p[2], p[3] === '1');
         if (k === 'rst') return setRate(from, s, p[2], +p[3] || 5);
         if (id.startsWith('wa:call:')) return bookingContact(from, s, id.slice(8));
         // تنبيهات

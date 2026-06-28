@@ -109,7 +109,7 @@ const G = require('./lib/geo');
 const { tgId, chatId, getSession, setStep } = require('./lib/session');
 const sellerDeals = require('./flows/sellerDeals');
 
-const { md, money, numEsc, fmtDate, fmtDay, fmtTime, prepLabel, statusLabel, STATUS, DIV, sanitize, isPrice, isQty, priceBlock, normalizeDigits } = F;
+const { md, money, numEsc, fmtDate, fmtDay, fmtTime, prepLabel, statusLabel, STATUS, DIV, sanitize, isPrice, isQty, priceBlock, normalizeDigits, authText } = F;
 // Convert Arabic/Persian digits → Latin then to Number (user may type ٢٠).
 // `+text` alone yields NaN on ٢٠ → "NaNmin"; always go through this. v11.77
 const numOf = t => +normalizeDigits(t);
@@ -241,6 +241,7 @@ function kbGuest(s) {
     return Markup.inlineKeyboard([
         [Markup.button.callback(tr('menu_browse_start'),'browse:menu')],
         [Markup.button.callback(tr('menu_nearby'),'buyer:nearby'), Markup.button.callback(tr('menu_search'),'search:start')],
+        [Markup.button.callback(tr('menu_coming_soon'),'browse:soon')],
         [Markup.button.callback(tr('menu_login_link'),'link:start')],
         [Markup.button.webApp(tr('menu_quick_login'), APP_URL)],
         [Markup.button.callback(tr('menu_help'),'help'), langBtn()]
@@ -249,9 +250,10 @@ function kbGuest(s) {
 function kbBuyer(s) {
     return Markup.inlineKeyboard([
         [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('menu_nearby'),'buyer:nearby')],
-        [Markup.button.callback(tr('menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr('menu_search'),'search:start')],
-        [Markup.button.callback(tr('menu_smart_alerts'),'buyer:notif'),  Markup.button.callback(tr('menu_follows'),'buyer:following')],
-        [Markup.button.callback(tr('menu_contests'),'contests:list'), Markup.button.callback(tr('menu_account'),'buyer:profile')],
+        [Markup.button.callback(tr('menu_coming_soon'),'browse:soon'), Markup.button.callback(tr('menu_search'),'search:start')],
+        [Markup.button.callback(tr('menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr('menu_smart_alerts'),'buyer:notif')],
+        [Markup.button.callback(tr('menu_follows'),'buyer:following'), Markup.button.callback(tr('menu_contests'),'contests:list')],
+        [Markup.button.callback(tr('menu_account'),'buyer:profile')],
         [Markup.button.webApp(tr('menu_open_taki'), APP_URL)],
         [Markup.button.callback(tr('menu_help'),'help'), Markup.button.callback(tr('menu_logout'),'logout')],
         [langBtn()]
@@ -561,7 +563,9 @@ function browseCard(d, n, geo){
     // حيث تظهر المحلات المغلقة أيضاً. الحالة محسوبة في bot_browse_deals (open_status). v11.92
     const os = d.open_status;
     const statusLine = (os && os.configured) ? `\n${md(HRS.statusText(os))}` : '';
-    return tr('q503_browse_card', head, md(d.shop_name), loc, dist, price, browseExpiryLine(d), statusLine);
+    const at = authText(d.auth_real, d.auth_fake);
+    const authLn = at ? `\n${md(at)}` : '';
+    return tr('q503_browse_card', head, md(d.shop_name), loc, dist, price, browseExpiryLine(d), statusLine) + authLn;
 }
 
 bot.command('deals', ctx => enterBrowse(ctx));
@@ -808,6 +812,45 @@ async function renderList(ctx, sortLetter, cat, offset){
     // (احتياط نصّ عادي) كي لا يختفي الفوتر مهما حدث. v11.81
     await safeReplyMd(ctx, tr('b732_page_footer', DIV, md(String(Math.floor(offset/PAGE)+1))), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+// ── العروض القادمة (Coming Soon) — عروض مجدولة تبدأ خلال ٧ أيام، بعدّاد بدل الحجز.
+//    تُجلب بوضع p_upcoming:true (يطابق نافذة الموقع 7 أيام). v11.98 ────────────────
+function soonCard(d, n){
+    const save = Math.max(0, Number(d.original_price) - Number(d.discounted_price));
+    const pl = placeLink(d);
+    const loc = pl ? `[📍 ${md(d.city||d.region||tr('q496_location'))}](${pl})` : `📍 ${md(d.city||d.region||'—')}`;
+    const price = save > 0
+        ? tr('q498_price_with_save', money(d.discounted_price), money(d.original_price), numEsc(d.discount_percentage))
+        : tr('q499_price_only', money(d.discounted_price));
+    const startsMs = d.starts_at ? Number(d.starts_at) : 0;
+    const soon = startsMs>Date.now() ? `\n⏳ ${md(tr('soon_starts_in', fmtSoonCountdown(startsMs-Date.now())))}` : '';
+    return `${tr('q502_head_plain', numEsc(n), md(d.item_name))}\n🏪 ${md(d.shop_name)}   ${loc}\n${price}${soon}`;
+}
+async function renderUpcoming(ctx, offset){
+    if(!checkRL(`soon:${chatId(ctx)}`)) return;
+    const s=getSession(tgId(ctx));
+    const deals=await rpc('bot_browse_deals',{ p_sort:'newest', p_limit:PAGE, p_offset:offset, p_upcoming:true })||[];
+    s.temp.listCb='browse:soon';
+    if(!deals.length){
+        return safeReplyMd(ctx, `${tr('soon_title')}\n${DIV}\n\n${tr('soon_none')}`, {
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b728_menu'),'menu:back')]]).reply_markup });
+    }
+    await ctx.reply(`${tr('soon_title')}\n${DIV}`, { parse_mode:'MarkdownV2' });
+    for(let i=0;i<deals.length;i++){
+        const d=deals[i];
+        await safeReplyMd(ctx, soonCard(d, offset+i+1), { link_preview_options:{is_disabled:true},
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book'), `deal:${d.id}`)]]).reply_markup });
+    }
+    const nav=[];
+    if(offset>0) nav.push(Markup.button.callback(tr('b716_previous'),`soon:go:${Math.max(0,offset-PAGE)}`));
+    if(deals.length===PAGE) nav.push(Markup.button.callback(tr('b717_next'),`soon:go:${offset+PAGE}`));
+    const rows=[];
+    if(nav.length) rows.push(nav);
+    rows.push([Markup.button.callback(tr('b728_menu'),'menu:back')]);
+    await safeReplyMd(ctx, tr('b732_page_footer', DIV, md(String(Math.floor(offset/PAGE)+1))), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+bot.action('browse:soon', async ctx => { await ctx.answerCbQuery(); await renderUpcoming(ctx, 0); });
+bot.action(/^soon:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderUpcoming(ctx, +ctx.match[1]); });
+
 // "Open now" (1) vs "all shops" (0) for the browse list, then re-render. v11.77
 bot.action(/^br:open:([01])$/, async ctx => {
     await ctx.answerCbQuery();
@@ -872,6 +915,16 @@ async function handleSharedLocation(ctx, s, lat, lng){
     return renderList(ctx,'x','-',0);
 }
 
+// عدّاد تنازلي مختصر (يي سس / سس دد / دد) — لبطاقة «قادم قريباً».
+// (مختلف عن fmtCountdown أدناه الخاص بعدّاد الحجز HH:MM:SS). v11.98
+function fmtSoonCountdown(ms) {
+    const mins = Math.max(0, Math.floor(ms / 60000));
+    const dd = Math.floor(mins / 1440), hh = Math.floor((mins % 1440) / 60), mm = mins % 60;
+    if (dd > 0) return `${tr('dur_d', dd)} ${tr('dur_h', hh)}`;
+    if (hh > 0) return `${tr('dur_h', hh)} ${tr('dur_m', mm)}`;
+    return tr('dur_m', mm);
+}
+
 // ── Deal detail (rich: images album + deal-type + distance/drive + sponsor) ────
 bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery();
@@ -883,6 +936,9 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     const tag  = sponsorTag(d);
     const cat  = d.category ? tr('b806_category_line', md(catLabel(d.category))) : '';
     const rating = d.rating_count>0 ? tr('b807_rating_line', md(String(d.rating_avg)), d.rating_count) : '';
+    // مصداقية العرض (تصويت المشترين حقيقي/وهمي) — سطر مستقل، MarkdownV2-safe. v11.98
+    const at = authText(d.auth_real, d.auth_fake);
+    const authBlock = at ? `\n${md(at)}` : '';
     const prep = d.prep_time ? tr('b808_prep_time_line', md(d.prep_time)) : '';
     const desc = d.description ? tr('b809_notes_line', md(String(d.description).slice(0,500))) : '';
     let geoBlock='';
@@ -907,14 +963,19 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
         const today = HRS.todayLine(d.working_hours);
         hoursBlock = `\n🕐 *${md(HRS.statusText(os))}*${today ? `\n_${md(today)}_` : ''}`;
     }
+    // «قادم قريباً» — لم يبدأ العرض بعد: نعرض العدّاد ونمنع الحجز. v11.98
+    const startsMs = d.starts_at ? Number(d.starts_at) : 0;
+    const comingSoon = startsMs > Date.now();
+    const soonBlock = comingSoon ? `\n⏳ *${md(tr('soon_starts_in', fmtSoonCountdown(startsMs - Date.now())))}*` : '';
     const caption =
-        `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}${rating}\n\n` +
+        `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}${rating}${authBlock}\n\n` +
         priceBlock(d.original_price, d.discounted_price, d.discount_percentage) +
-        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${hoursBlock}${desc}`;
+        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${hoursBlock}${soonBlock}${desc}`;
     const btns = [];
     if (s.userId && s.userType !== 'seller') {
-        if (shopClosed) btns.push([Markup.button.callback(tr('b838_shop_closed_btn', os.opens_in_min!=null?tr('b838_opens_in', HRS.fmtMins(os.opens_in_min)):'').slice(0,62), `dealclosed:${dealId}`)]);
-        else            btns.push([Markup.button.callback(tr('b839_book_now'),'book:qty')]);
+        if (comingSoon)      btns.push([Markup.button.callback(tr('soon_locked').slice(0,62), `dealsoon:${dealId}`)]);
+        else if (shopClosed) btns.push([Markup.button.callback(tr('b838_shop_closed_btn', os.opens_in_min!=null?tr('b838_opens_in', HRS.fmtMins(os.opens_in_min)):'').slice(0,62), `dealclosed:${dealId}`)]);
+        else                 btns.push([Markup.button.callback(tr('b839_book_now'),'book:qty')]);
     }
     else if (!s.userId) btns.push([Markup.button.webApp(tr('b841_login_to_book'), APP_URL)]);
     if (d.store_id) {
@@ -946,6 +1007,16 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (photos.length > 1)      { try { await ctx.replyWithMediaGroup(photos.map(u => ({ type:'photo', media:u }))); } catch { /* ignore */ } }
     else if (photos.length === 1) { try { await ctx.replyWithPhoto(photos[0]); } catch { /* ignore */ } }
     return safeReplyMd(ctx, caption, { ...extra, link_preview_options:{is_disabled:true} });
+});
+
+// Tapped the locked "coming soon" button → explain it hasn't started yet. v11.98
+bot.action(/^dealsoon:([a-zA-Z0-9_-]+)$/, async ctx => {
+    const d = await rpc('bot_get_deal', { p_deal_id: ctx.match[1], p_telegram_id: tgId(ctx) });
+    const startsMs = d && d.starts_at ? Number(d.starts_at) : 0;
+    const msg = startsMs > Date.now()
+        ? `${tr('soon_locked')} ${tr('soon_starts_in', fmtSoonCountdown(startsMs - Date.now()))}`
+        : tr('soon_locked');
+    return ctx.answerCbQuery(msg, { show_alert: true });
 });
 
 // Tapped the "shop closed" button → explain when it reopens (v11.77).
@@ -1011,7 +1082,18 @@ async function renderStore(ctx, storeId) {
     const where  = [st.city, st.region].filter(Boolean).join(' • ');
     const loc    = where ? `\n📍 ${md(where)}` : '';
     const bio    = st.bio ? `\n\n📝 _${md(String(st.bio).slice(0,300))}_` : '';
-    const m = tr('q936_store_card', md(st.name), DIV, stars, loc, numEsc(st.active_deals), bio);
+    let m = tr('q936_store_card', md(st.name), DIV, stars, loc, numEsc(st.active_deals), bio);
+    // نسبة مصداقية عروض المتجر (إجمالي تصويت المشترين). v11.98
+    const stAuth = authText(st.auth_real, st.auth_fake);
+    if (stAuth) m += `\n${md(stAuth)}`;
+    // ساعات العمل — مع صيغة احترافية لـ«٢٤ ساعة/لم تُحدَّد». v11.98
+    const sos = st.open_status;
+    if (sos && sos.configured) {
+        const today = HRS.todayLine(st.working_hours);
+        m += `\n\n${tr('store_hours_label')}\n🕐 *${md(HRS.statusText(sos))}*${today ? `\n_${md(today)}_` : ''}`;
+    } else {
+        m += `\n\n${tr('store_hours_label')}\n${md(tr('hrs_always_open'))}\n_${md(tr('hrs_not_set'))}_`;
+    }
     const btns = [];
     const folRow = [];
     if (s.userId) folRow.push(Markup.button.callback(st.following ? tr('b939_following_cancel') : tr('b939_follow_store'), st.following ? `folAsk:${storeId}` : `fol:${storeId}`));
@@ -1071,11 +1153,22 @@ bot.action(/^rept:(.+):([a-z_]+)$/, async ctx => {
     await ctx.reply(tr('b993_report_details', md(label), DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b993_cancel'), `store:${ctx.match[1]}`)]]).reply_markup });
 });
 
-// ── Rate a completed booking (⭐ 1–5 + optional comment) ───────────────────────
+// ── Rate a completed booking — Step 1: authenticity «هل العرض حقيقي؟» (every
+//    purchase), then ⭐ 1–5 + optional comment. v11.98 ──────────────────────────
 bot.action(/^rate:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
     const bc = ctx.match[1];
-    await ctx.reply(tr('b1000_rate_experience'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+    await ctx.reply(tr('av_question'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('av_real_btn'),`av:${bc}:1`), Markup.button.callback(tr('av_fake_btn'),`av:${bc}:0`)],
+        [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
+    ]).reply_markup });
+});
+// Record the real/fake vote (barcode proves the completed purchase), then stars.
+bot.action(/^av:(.+):([01])$/, async ctx => {
+    const bc = ctx.match[1], isReal = ctx.match[2] === '1';
+    const r = await rpc('bot_cast_authenticity_vote', { p_deal_id: null, p_is_real: isReal, p_telegram_id: tgId(ctx), p_barcode: bc });
+    await ctx.answerCbQuery(r && r.success ? tr('av_thanks') : tr('av_error'));
+    return ctx.reply(tr('b1000_rate_experience'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback('⭐',`rst:${bc}:1`), Markup.button.callback('⭐⭐',`rst:${bc}:2`), Markup.button.callback('⭐⭐⭐',`rst:${bc}:3`)],
         [Markup.button.callback('⭐⭐⭐⭐',`rst:${bc}:4`), Markup.button.callback('⭐⭐⭐⭐⭐',`rst:${bc}:5`)],
         [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
@@ -1767,7 +1860,9 @@ bot.action(/^unfol:(.+)$/, async ctx => {
 //  then the matching deals as cards, plus the full interactive light/dark-mask map
 //  as a web app (also previews the smart-alert radius). v11.76
 // ═══════════════════════════════════════════════════════════════════════════════
-function nfDraft(s){ return s.temp.nf || (s.temp.nf = { region:null, regionName:null, city:null, cityName:null, mall:null, mallName:null, category:null, radius:null, useGeo:false, openNow:true }); }
+// openNow افتراضياً OFF: تصفّح المنطقة/المدينة نيّةُ استكشاف؛ فلترة «المفتوح الآن»
+// كانت تُفرّغ مناطق فيها عروض فعلاً (محلات مغلقة خارج الدوام) فيظنّها فارغة. v11.98
+function nfDraft(s){ return s.temp.nf || (s.temp.nf = { region:null, regionName:null, city:null, cityName:null, mall:null, mallName:null, category:null, radius:null, useGeo:false, openNow:false }); }
 function nfSummary(f, s){
     const lines = [
         tr('q1690_summary_region', f.regionName ? md(f.regionName) : tr('q1690b_all_regions')),
@@ -1814,6 +1909,8 @@ async function showNearbyHub(ctx){
 bot.action('nf:clear', async ctx => { await ctx.answerCbQuery(tr('b1728_filters_cleared')); getSession(tgId(ctx)).temp.nf=null; return showNearbyHub(ctx); });
 bot.action('nf:done',  async ctx => { await ctx.answerCbQuery(tr('b1729_done')); return showNearbyHub(ctx); });
 bot.action(/^nf:open:([01])$/, async ctx => { await ctx.answerCbQuery(); nfDraft(getSession(tgId(ctx))).openNow = ctx.match[1]==='1'; return showNearbyHub(ctx); });
+// «عرض كل المتاجر» من الحالة الفارغة — يُطفئ فلتر المفتوح-الآن ويعيد العرض. v11.98
+bot.action('nf:showall', async ctx => { await ctx.answerCbQuery(); nfDraft(getSession(tgId(ctx))).openNow = false; return runNearby(ctx, 0); });
 
 // ── Location cascade: region → city → mall (the user may stop at any level) ────
 bot.action('nf:loc', async ctx => {
@@ -1959,7 +2056,14 @@ async function runNearby(ctx, offset){
     const catTxt = f.category ? ` · ${catLabel(f.category)}` : '';
     if(!deals.length){
         const msg = offset===0 ? tr('b1873_no_matching_deals') : tr('b1873_no_more_deals');
-        return ctx.reply(tr('b1874_nearby_header', md(where), md(catTxt), DIV, msg), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1874_edit_filters'),'buyer:nearby')],[Markup.button.callback(tr('b1874_menu'),'menu:back')]]).reply_markup });
+        // If the empty list is because open-now hid closed shops, say so + offer
+        // a one-tap «show all shops» that re-runs with the gate off. v11.98
+        const erows = [];
+        if (offset===0 && f.openNow) erows.push([Markup.button.callback(tr('b701_show_all_shops'),'nf:showall')]);
+        erows.push([Markup.button.callback(tr('b1874_edit_filters'),'buyer:nearby')]);
+        erows.push([Markup.button.callback(tr('b1874_menu'),'menu:back')]);
+        const hint = (offset===0 && f.openNow) ? ('\n' + tr('b698_some_shops_closed')) : '';
+        return ctx.reply(tr('b1874_nearby_header', md(where), md(catTxt), DIV, msg) + hint, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(erows).reply_markup });
     }
     await ctx.reply(tr('b1876_nearby_cards_intro', md(where), md(catTxt), DIV), { parse_mode:'MarkdownV2' });
     for(let i=0;i<deals.length;i++){
