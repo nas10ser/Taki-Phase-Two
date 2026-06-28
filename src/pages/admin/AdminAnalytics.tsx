@@ -18,6 +18,7 @@ import { Tooltip } from '../../components/admin/Tooltip';
 import { CsvColumn } from '../../utils/csvExport';
 import { AdvancedAnalytics } from '../../components/admin/AdvancedAnalytics';
 import { InvestorPack } from '../../components/admin/InvestorPack';
+import { BotAnalytics } from '../../components/admin/BotAnalytics';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -318,6 +319,12 @@ const AdminAnalytics: React.FC = () => {
                 funnel, heatmap, churn, lifecycle, browse-no-book, etc. */}
             <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
                 <AdvancedAnalytics />
+            </div>
+
+            {/* Bot analytics — links the admin center to the Telegram + WhatsApp
+                bots: adoption + true channel attribution of bookings/deals. (v12.00) */}
+            <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
+                <BotAnalytics />
             </div>
 
             {/* Live Counters */}

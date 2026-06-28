@@ -9,6 +9,7 @@ import CameraCapture from '../components/CameraCapture';
 import ReportDialog from '../components/ReportDialog';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
+import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -3359,77 +3360,7 @@ const SellerDashboard: React.FC = () => {
                         )}
                     </div>
                 ) : view === 'insights' ? (
-                    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        {/* Summary Cards */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <div style={{ background: 'var(--card-bg)', padding: 20, borderRadius: 24, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)' }}>
-                                <div style={{ fontSize: '1.8rem', marginBottom: 4 }}>👁️</div>
-                                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                                    {myDeals.reduce((acc, d) => acc + (d.views || 0), 0)}
-                                </div>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                                    {isRTL ? 'إجمالي المشاهدات' : 'Total Views'}
-                                </div>
-                            </div>
-                            <div style={{ background: 'var(--card-bg)', padding: 20, borderRadius: 24, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)' }}>
-                                <div style={{ fontSize: '1.8rem', marginBottom: 4 }}>🎟️</div>
-                                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                                    {myOrders.length}
-                                </div>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                                    {isRTL ? 'إجمالي الحجوزات' : 'Total Bookings'}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Conversion Card */}
-                        <div style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', padding: 24, borderRadius: 24, color: 'white', position: 'relative', overflow: 'hidden' }}>
-                            <div style={{ position: 'absolute', top: -20, right: -20, width: 100, height: 100, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
-                            <div style={{ position: 'relative', zIndex: 1 }}>
-                                <div style={{ fontSize: '0.85rem', fontWeight: 800, opacity: 0.9, marginBottom: 8 }}>
-                                    {isRTL ? 'معدل التحويل الإجمالي' : 'Overall Conversion Rate'}
-                                </div>
-                                <div style={{ fontSize: '2rem', fontWeight: 900 }}>
-                                    {(() => {
-                                        const views = myDeals.reduce((acc, d) => acc + (d.views || 0), 0);
-                                        return views > 0 ? ((myOrders.length / views) * 100).toFixed(1) : '0';
-                                    })()}%
-                                </div>
-                                <div style={{ marginTop: 12, height: 6, background: 'rgba(255,255,255,0.2)', borderRadius: 3 }}>
-                                    <div style={{ 
-                                        width: `${Math.min(100, (myDeals.reduce((acc, d) => acc + (d.views || 0), 0) > 0 ? (myOrders.length / myDeals.reduce((acc, d) => acc + (d.views || 0), 0)) * 100 : 0))}%`, 
-                                        height: '100%', background: 'white', borderRadius: 3, boxShadow: '0 0 10px white' 
-                                    }} />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Detailed Table */}
-                        <div style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                            <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16 }}>{isRTL ? 'أداء العروض' : 'Deals Performance'}</h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                {myDeals.sort((a, b) => (b.views || 0) - (a.views || 0)).map(deal => {
-                                    const dealBookings = myOrders.filter(b => b.deal.id === deal.id).length;
-                                    const conversion = (deal.views || 0) > 0 ? ((dealBookings / (deal.views || 1)) * 100).toFixed(1) : '0';
-                                    return (
-                                        <div key={deal.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--gray-50)' }}>
-                                            <img src={deal.images[0]} style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover' }} />
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 2 }}>{deal.itemName}</div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                                    {isRTL ? 'المشاهدات:' : 'Views:'} {deal.views || 0} | {isRTL ? 'الحجوزات:' : 'Bookings:'} {dealBookings}
-                                                </div>
-                                            </div>
-                                            <div style={{ textAlign: 'end' }}>
-                                                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--primary)' }}>{conversion}%</div>
-                                                <div style={{ fontSize: '0.65rem', color: 'var(--gray-400)', fontWeight: 700 }}>{isRTL ? 'تحويل' : 'Conv.'}</div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </div>
+                    <SellerAnalytics myDeals={myDeals} myOrders={myOrders} isRTL={isRTL} />
                 ) : view === 'reviews' ? (
                     // Reviews tab — aggregates every rating across this
                     // seller's deals into one feed with a Facebook-style

@@ -31,6 +31,19 @@ export interface LiveStats {
     as_of: string;
 }
 
+export interface ChannelSplit { web: number; telegram: number; whatsapp: number; }
+export interface BotAnalytics {
+    tg_linked: number;
+    wa_linked: number;
+    both_linked: number;
+    total_users: number;
+    lang_ar: number;
+    lang_en: number;
+    bookings_total: ChannelSplit;
+    bookings_30d: ChannelSplit;
+    deals_total: ChannelSplit;
+}
+
 export interface TimelinePoint {
     bucket: string;
     count: number;
@@ -545,6 +558,13 @@ export const adminService = {
             month_key: string; month_label: string;
             paid_amount: number; paid_count: number; refunded_amount: number;
         }>;
+    },
+
+    // Bot adoption + channel attribution (web vs telegram vs whatsapp).
+    async getBotAnalytics() {
+        const { data, error } = await supabase.rpc('admin_bot_analytics');
+        if (error) { console.error('[adminService.getBotAnalytics]', error); return null; }
+        return (data ?? null) as BotAnalytics | null;
     },
 
     async getSubscriptionLifecycle() {
