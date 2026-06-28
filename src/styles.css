@@ -1325,6 +1325,14 @@ textarea:focus {
   .deal-card-img { height: 220px; }
 }
 
+/* Home hero banner aspect-ratio: tall 2:1 on phones. Declared here (not
+   inline on the element) so the desktop tier below — later in source order,
+   equal specificity — can flatten it to a slim strip. (v11.97) */
+.banner-slider-card { aspect-ratio: 2 / 1; }
+/* Side gutters live in CSS (not inline) so the desktop centering override
+   below needs no !important. (v11.97b) */
+.home-banner-wrap { margin: 16px 16px 8px; }
+
 /* ---------------------------------------------------------------------
  * TIER 6 — Desktop / large tablet (≥1024px).
  * ------------------------------------------------------------------- */
@@ -1348,6 +1356,15 @@ textarea:focus {
     margin-inline: auto;
     border-radius: 0 0 32px 32px;
   }
+  /* Home hero banner — on laptop the phone-first 2:1 ratio renders a huge
+     vertical wall (≈540px on a 1080px width). Cap the width to match the page
+     and flatten the ratio to a slim strip so it reads like a billboard, not a
+     full-screen poster. (Nasser's laptop screenshot — v11.97) */
+  .home-banner-wrap {
+    max-width: 1080px;
+    margin: 16px auto 8px;
+  }
+  .banner-slider-card { aspect-ratio: 3.4 / 1; }
 }
 
 /* ---------------------------------------------------------------------

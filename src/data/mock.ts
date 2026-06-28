@@ -142,6 +142,14 @@ export interface Deal {
     views?: number;
     /** Aggregated click-throughs — incremented by RPC `increment_deal_click`. */
     clicks?: number;
+    /** v11.97 — buyer authenticity votes for THIS offer (deal_authenticity_votes).
+     *  Buyers who completed a purchase vote «عرض حقيقي / وهمي»; the green/red badge
+     *  + percentage on the card and details page derives from these counts. */
+    authReal?: number;
+    authFake?: number;
+    /** The signed-in buyer's own vote on this deal: true=real, false=fake,
+     *  null/undefined = hasn't voted. Used to skip re-asking after purchase. */
+    myAuthVote?: boolean | null;
 }
 
 export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: string }[] = [

@@ -53,6 +53,20 @@ function create(deps) {
     const enabled = () => !!(PHONE_ID && TOKEN);
     const W = path => APP_URL + path;
 
+    // ── مفتاح إيقاف الأدمن (DB) — نظير bot_is_enabled لتيليجرام ────────────────
+    // يُستفتى wa_bot_is_enabled() مع تخزين ~45s فهو شبه مجاني. عند الإيقاف يتوقّف
+    // البوت عن الرد، وإعادة التفعيل من لوحة التحكم تُحييه ضمن نافذة التخزين بلا نشر.
+    // الافتراضي خامل (false) لأن واتساب اختياري؛ نُبقي آخر قيمة معروفة عند فشل عابر. v11.97
+    let _waEnabled = false, _waEnabledAt = 0;
+    async function killSwitchOn() {
+        const now = Date.now();
+        if (now - _waEnabledAt < 45_000) return _waEnabled;
+        _waEnabledAt = now;
+        try { const v = await rpc('wa_bot_is_enabled', {}); if (typeof v === 'boolean') _waEnabled = v; }
+        catch { /* keep last-known on a transient RPC failure */ }
+        return _waEnabled;
+    }
+
     // ── الإرسال منخفض المستوى (no-op حتى تُضبط البيانات) ──────────────────────
     async function sendWA(to, payload) {
         if (!enabled()) return null;
@@ -1439,6 +1453,8 @@ function create(deps) {
 
     // ── نقطة الدخول من webhook: رسالة واحدة ──
     async function handleMessage(from, msg) {
+        // Admin kill-switch: when WhatsApp is disabled platform-wide, stay silent.
+        if (!(await killSwitchOn())) return;
         const s = waSess(from);
         if (!s.userId) await waRefresh(from);
         const lang = s.lang || 'ar';
@@ -1460,7 +1476,7 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     const NOTIF_ICON = { booking: '📦', deal: '🆕', marketing: '📣', system: '🔔', follow: '➕', rating: '⭐', review: '⭐', contest: '🎁', survey: '📝', subscription: '💳', report: '🚩', sponsor: '⭐', campaign: '📣', analytics: '📊' };
     async function deliverNotification(n) {
-        const to = n.whatsapp_chat_id; if (!to || !enabled()) return;
+        const to = n.whatsapp_chat_id; if (!to || !enabled() || !(await killSwitchOn())) return;
         const en = (n.preferred_lang || '').startsWith('en');
         return I18N.withLang(en ? 'en' : 'ar', async () => {
             const icon = NOTIF_ICON[n.type] || '🔔';

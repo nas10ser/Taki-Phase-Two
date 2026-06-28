@@ -8,7 +8,7 @@ import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
@@ -574,6 +574,10 @@ const DealDetails: React.FC = () => {
         .flatMap(d => (d.ratings || []).map(r => ({ ...r, dealId: d.id, itemName: d.itemName })))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const { average, count } = dealService.calculateRating(storeReviews);
+    // v11.97 — one rating per STORE per buyer (anti-inflation: a merchant on a
+    // buyer account can't keep re-rating). If they already rated, we show that
+    // review (it's in the list) + a follow option instead of an add-review form.
+    const myStoreReview = user ? storeReviews.find(r => r.userId === user.id) : undefined;
     const loc = getLocation(deal.locationId);
     const booked = isBooked(deal.id);
     const images = deal.images.length > 0 ? deal.images : ['https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=800'];
@@ -669,9 +673,23 @@ const DealDetails: React.FC = () => {
             history.push('/register');
             return;
         }
+        // Defensive: one rating per store (anti-inflation). The UI hides the
+        // form when myStoreReview exists, but guard the action too. v11.97
+        if (myStoreReview) {
+            setShowReviewForm(false);
+            customAlert(isRTL ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.' : 'You already rated this store — one rating per store is allowed.');
+            return;
+        }
         setSubmittingReview(true);
         const ok = await addRating(deal.id, { score: reviewScore, comment: reviewComment });
         setSubmittingReview(false);
+        if (ok === 'duplicate') {
+            setShowReviewForm(false);
+            customAlert(isRTL
+                ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.'
+                : 'You already rated this store — one rating per store is allowed.');
+            return;
+        }
         if (!ok) {
             customAlert(isRTL
                 ? '❌ تعذّر إرسال التقييم. تحقق من الاتصال وحاول مرة أخرى.'
@@ -1021,6 +1039,16 @@ const DealDetails: React.FC = () => {
                         <span style={{ background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 800 }}>
                             ★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')} {count > 0 && `(${count} ${isRTL ? 'تعليق' : 'reviews'})`}
                         </span>
+                        {/* Authenticity badge from buyer real/fake votes. v11.97 */}
+                        {(() => {
+                            const ab = getAuthenticityBadge(deal.authReal, deal.authFake, isRTL);
+                            if (!ab.show) return null;
+                            return (
+                                <span style={{ background: ab.bg, color: ab.color, padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900 }}>
+                                    {ab.label} <span style={{ opacity: 0.7, fontWeight: 700 }}>({ab.total} {isRTL ? 'صوت' : 'votes'})</span>
+                                </span>
+                            );
+                        })()}
                         <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                             📦 {(() => {
                                 if (deal.quantity === 'unlimited') return isRTL ? 'كمية لا محدودة' : 'Unlimited quantity';
@@ -1126,18 +1154,20 @@ const DealDetails: React.FC = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <h3 style={{ fontWeight: 800, fontSize: '0.95rem' }}>{isRTL ? 'التعليقات والآراء' : 'Reviews & Feedback'} ({count})</h3>
                         {user && user.userType === 'buyer' && (
-                            <button onClick={() => {
-                                const userBooking = bookings.find((b) => b.deal.id === deal.id && b.userId === user.id && b.status === 'completed');
-                                if (userBooking) {
-                                    setShowReviewForm(!showReviewForm);
-                                } else {
-                                    // Allow review even without completed booking for now (MVP)
-                                    setShowReviewForm(!showReviewForm);
-                                }
-                            }}
-                                style={{ background: 'var(--dark)', color: 'white', padding: '8px 16px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, border: 'none' }}>
-                                {isRTL ? '✍️ أضف تعليق' : '✍️ Add Review'}
-                            </button>
+                            myStoreReview ? (
+                                // Already rated this store → no second rating. Offer follow.
+                                <button onClick={() => toggleFollowMerchant(deal.storeId)}
+                                    style={{ background: isFollowed ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'var(--primary)', color: 'white', padding: '8px 16px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, border: 'none' }}>
+                                    {isFollowed
+                                        ? (isRTL ? '✅ تتابع المتجر' : '✅ Following')
+                                        : (isRTL ? '➕ متابعة المتجر' : '➕ Follow store')}
+                                </button>
+                            ) : (
+                                <button onClick={() => setShowReviewForm(!showReviewForm)}
+                                    style={{ background: 'var(--dark)', color: 'white', padding: '8px 16px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, border: 'none' }}>
+                                    {isRTL ? '✍️ أضف تعليق' : '✍️ Add Review'}
+                                </button>
+                            )
                         )}
                     </div>
 

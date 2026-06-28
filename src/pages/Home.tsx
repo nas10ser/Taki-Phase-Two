@@ -321,7 +321,7 @@ const Home: React.FC = () => {
             {/* Banner Slider Section — inset card with side margins (NOT
                 full-bleed): trimmed from both edges to match the rest of the page. */}
             {banners.length > 0 && (
-                <div style={{ margin: '16px 16px 8px' }}>
+                <div className="home-banner-wrap">
                     <BannerSlider banners={banners} isRTL={isRTL} />
                 </div>
             )}

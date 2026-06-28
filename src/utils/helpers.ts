@@ -556,3 +556,46 @@ export const geoErrorMessage = (e: unknown, isRTL: boolean): string => {
         ? 'تعذّر تحديد الموقع. اضغط على الخريطة لتحديد موقعك يدوياً.'
         : 'Could not get your location. Tap the map to set it manually.';
 };
+
+/**
+ * Authenticity badge derived from buyer «real vs fake» votes on an offer.
+ * Green «عرض حقيقي N%» when most buyers confirmed it's real, red «عرض وهمي N%»
+ * when most flagged it fake. `show` is false until at least one vote exists so
+ * brand-new deals don't carry a misleading badge. v11.97
+ */
+export interface AuthenticityBadge {
+    show: boolean;
+    real: boolean;   // true → green (real), false → red (fake)
+    pct: number;     // dominant side percentage (0-100)
+    total: number;   // total votes
+    label: string;   // localized "عرض حقيقي 85%" / "Real 85%"
+    color: string;   // text/icon color
+    bg: string;      // pill background
+}
+
+export const getAuthenticityBadge = (real = 0, fake = 0, isRTL = true): AuthenticityBadge => {
+    const r = Math.max(0, real || 0);
+    const f = Math.max(0, fake || 0);
+    const total = r + f;
+    if (total <= 0) {
+        return { show: false, real: true, pct: 0, total: 0, label: '', color: '', bg: '' };
+    }
+    const realPct = Math.round((r / total) * 100);
+    const isReal = r >= f;                 // ties resolve to "real"
+    const pct = isReal ? realPct : 100 - realPct;
+    const label = isReal
+        ? `${isRTL ? '✅ عرض حقيقي' : '✅ Real'} ${pct}%`
+        : `${isRTL ? '⚠️ عرض وهمي' : '⚠️ Fake'} ${pct}%`;
+    // Solid white-on-color pill — high contrast on BOTH light and dark cards
+    // (the translucent variant left the safety-critical red «وهمي» dim on dark
+    // surfaces). green-700 / red-700 keep AA contrast with white text. v11.97b
+    return {
+        show: true,
+        real: isReal,
+        pct,
+        total,
+        label,
+        color: '#ffffff',
+        bg: isReal ? '#15803d' : '#b91c1c',
+    };
+};

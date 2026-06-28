@@ -41,6 +41,19 @@ export const dealRepository = {
                             d.ratings = byDeal[d.id] || [];
                         }
                     }
+                    // Hydrate real/fake authenticity vote counts (+ caller's own
+                    // vote) in one round trip via the DEFINER RPC. Best-effort:
+                    // a failure just leaves the badge hidden. v11.97
+                    try {
+                        const { authenticityRepository } = await import('./authenticityRepository');
+                        const counts = await authenticityRepository.counts(ids);
+                        for (const d of mappedData) {
+                            const c = counts[d.id];
+                            if (c) { d.authReal = c.realCount; d.authFake = c.fakeCount; d.myAuthVote = c.myVote; }
+                        }
+                    } catch (e) {
+                        logger.log('authenticity counts skipped:', (e as any)?.message);
+                    }
                 }
                 logger.log('📡 Fetched deals from remote:', mappedData.length);
                 return mappedData;
@@ -265,6 +278,9 @@ export const dealRepository = {
             quantity: d.is_unlimited ? 'unlimited' : (d.quantity ?? 0),
             initialQuantity: d.is_unlimited ? 'unlimited' : (d.initial_quantity ?? d.quantity ?? 0),
             ratings: [],
+            authReal: 0,
+            authFake: 0,
+            myAuthVote: null,
             prepTime: d.prep_time || undefined,
             status: (d.status === 'expired' ? 'expired' : (d.status === 'paused' ? 'paused' : (d.status === 'deleted' ? 'deleted' as any : 'active'))),
             createdAt: isNaN(Number(d.created_at)) ? new Date(d.created_at).getTime() : Number(d.created_at)

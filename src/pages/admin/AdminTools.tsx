@@ -988,6 +988,9 @@ const AdminTools: React.FC = () => {
     const [paymentEnabled, setPaymentEnabled] = useState(false);
     const [seasonalVisible, setSeasonalVisible] = useState(false);
     const [telegramBotEnabled, setTelegramBotEnabled] = useState(true);
+    const [whatsappBotEnabled, setWhatsappBotEnabled] = useState(false);
+    const [whatsappBotNumber, setWhatsappBotNumber] = useState('');
+    const [savingWaNumber, setSavingWaNumber] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
@@ -1000,10 +1003,12 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, seasonalRes, botRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, seasonalRes, botRes, waBotRes, waNumRes, bannerRes, campaignRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'seasonal_offers_visible').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_number').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
@@ -1012,6 +1017,9 @@ const AdminTools: React.FC = () => {
         setSeasonalVisible(seasonalRes.data?.value === true);
         // Bot defaults ON: enabled unless explicitly turned off (fail-open).
         setTelegramBotEnabled(botRes.data?.value !== false);
+        // WhatsApp defaults OFF (dormant until enabled + number set).
+        setWhatsappBotEnabled(waBotRes.data?.value === true);
+        setWhatsappBotNumber(typeof waNumRes.data?.value === 'string' ? waNumRes.data.value : '');
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -1091,6 +1099,44 @@ const AdminTools: React.FC = () => {
                 ? '✅ تم تفعيل بوت تيليجرام — عاد للعمل وظهر زر الربط في الإعدادات (قد يستغرق التفعيل حتى دقيقة).'
                 : '🔌 تم تعطيل بوت تيليجرام — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة). تقدر تعيد تفعيله بأي وقت بنفس الزر.'
         );
+    };
+
+    // Kill-switch for the WhatsApp bot — mirrors Telegram. The WA server polls
+    // wa_bot_is_enabled() (≤45s) and stops replying when OFF; the web hides the
+    // WhatsApp link section via AppContext realtime. v11.97
+    const toggleWhatsappBot = async () => {
+        const newValue = !whatsappBotEnabled;
+        setWhatsappBotEnabled(newValue); // optimistic
+        const { error } = await supabase
+            .from('platform_settings')
+            .upsert({ key: 'whatsapp_bot_enabled', value: newValue, description: 'Enable/disable the WhatsApp bot platform-wide', updated_at: new Date().toISOString() });
+        if (error) {
+            setWhatsappBotEnabled(!newValue); // rollback
+            await customAlert('❌ ' + error.message);
+            return;
+        }
+        await customAlert(
+            newValue
+                ? '✅ تم تفعيل بوت واتساب — سيعمل ويظهر زر الربط في الإعدادات بمجرد إدخال رقم الواتساب أدناه.'
+                : '🔌 تم تعطيل بوت واتساب — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة).'
+        );
+    };
+
+    // The bot's public WhatsApp Business number — drives the wa.me deep link. The
+    // link section in settings stays hidden until BOTH the toggle is ON and this
+    // number is set (digits only). v11.97
+    const saveWhatsappNumber = async () => {
+        const digits = whatsappBotNumber.replace(/\D/g, '');
+        setSavingWaNumber(true);
+        const { error } = await supabase
+            .from('platform_settings')
+            .upsert({ key: 'whatsapp_bot_number', value: digits, description: 'Public WhatsApp Business number (digits only) for the bot deep link', updated_at: new Date().toISOString() });
+        setSavingWaNumber(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        setWhatsappBotNumber(digits);
+        await customAlert(digits
+            ? `✅ تم حفظ رقم واتساب: ${digits}`
+            : '✅ تم مسح رقم واتساب — زر الربط سيبقى مخفياً حتى تُدخل رقماً.');
     };
 
     const deleteBanner = async (id: string) => {
@@ -1244,6 +1290,41 @@ const AdminTools: React.FC = () => {
                         onToggle={toggleBot}
                         color="blue"
                     />
+                    <ToggleCard
+                        icon="💬"
+                        title="بوت واتساب"
+                        subtitle={
+                            whatsappBotEnabled
+                                ? 'مُفعّل — البوت يعمل وزر الربط يظهر في الإعدادات (يلزم إدخال الرقم أدناه)'
+                                : 'مُعطّل — البوت متوقف عن الرد وزر الربط مخفي'
+                        }
+                        enabled={whatsappBotEnabled}
+                        onToggle={toggleWhatsappBot}
+                        color="green"
+                    />
+                    {whatsappBotEnabled && (
+                        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">📱 رقم واتساب الرسمي للبوت</label>
+                            <p className="text-xs text-[var(--gray-400)] mb-2">أرقام فقط مع رمز الدولة (مثال: 9665XXXXXXXX). زر الربط لن يظهر في الإعدادات حتى تُدخل رقماً صحيحاً.</p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="tel"
+                                    dir="ltr"
+                                    value={whatsappBotNumber}
+                                    onChange={e => setWhatsappBotNumber(e.target.value.replace(/\D/g, ''))}
+                                    placeholder="9665XXXXXXXX"
+                                    className="flex-1 px-3 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
+                                />
+                                <button
+                                    onClick={saveWhatsappNumber}
+                                    disabled={savingWaNumber}
+                                    className="px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
+                                >
+                                    {savingWaNumber ? '⏳' : '💾 حفظ'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </section>
 

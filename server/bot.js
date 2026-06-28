@@ -2592,8 +2592,9 @@ async function deliverNotification(n) {
     else if (storeId) url = W(`/store/${storeId}`);
     else if (n.meta_data?.action_url) url = n.meta_data.action_url;
 
-    // ── Telegram ──
-    if (n.telegram_chat_id && n.notify_via_telegram) {
+    // ── Telegram ── (gated by the admin kill-switch for parity with WhatsApp:
+    //    a disabled bot stops OUTBOUND notifications too, not just inbound. v11.97b)
+    if (n.telegram_chat_id && n.notify_via_telegram && await botEnabled()) {
         const text = custom ? `${icon} ${md(custom)}` : `${icon} *${md(title)}*\n${md(body)}`;
         const kbRows = rows.slice();
         if (!kbRows.length && url) kbRows.push([Markup.button.url(tr('b2445_open_link'), url)]);

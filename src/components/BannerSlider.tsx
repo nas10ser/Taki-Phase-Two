@@ -156,9 +156,13 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
     return (
         <div
             ref={wrapRef}
+            className="banner-slider-card"
             style={{
                 // Inset card: rounded corners + side margins (set by the Home wrapper).
-                position: 'relative', width: '100%', aspectRatio: '2 / 1',
+                // aspect-ratio lives in CSS (.banner-slider-card) so we can make the
+                // banner much shorter on laptop/desktop without a tall 2:1 wall —
+                // mobile keeps 2:1, desktop drops to a slim ~3.4:1 strip. (v11.97)
+                position: 'relative', width: '100%',
                 borderRadius: 20, overflow: 'hidden', touchAction: 'pan-y',
                 boxShadow: 'var(--shadow-lg)',
             }}

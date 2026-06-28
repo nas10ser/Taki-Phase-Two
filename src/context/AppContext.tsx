@@ -95,7 +95,7 @@ interface AppContextType {
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
     markAllNotifsRead: () => void;
-    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean>;
+    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean | 'duplicate'>;
     addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
     toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
     removeRating: (dealId: string, ratingId: string) => Promise<void>;
@@ -294,7 +294,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // their booking is marked completed (seller scanned the QR). Distinct
     // from the (removed) booking spam box — this is a one-time "rate the
     // store" prompt the owner explicitly asked for.
-    const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeName: string } | null>(null);
+    const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeId: string; storeName: string } | null>(null);
+    // Two-step post-purchase flow (v11.97): 'auth' asks «is this offer real?»
+    // first, then either 'rate' (first time rating this store) or 'done' (already
+    // rated → show the previous rating + a follow option, never re-rate).
+    const [ratingStep, setRatingStep] = useState<'auth' | 'rate' | 'done'>('auth');
+    const [prevReview, setPrevReview] = useState<{ score: number; comment: string } | null>(null);
+    const [authVoting, setAuthVoting] = useState(false);
     const promptedRatingRef = useRef<Set<string>>(new Set());
     const [ratingStars, setRatingStars] = useState(5);
     const [ratingComment, setRatingComment] = useState('');
@@ -1650,7 +1656,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // toast. Previously this returned void and any RLS/network failure
     // looked identical to success — the form closed, no error was raised,
     // and the buyer wondered why their review never appeared.
-    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }): Promise<boolean> => {
+    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }): Promise<boolean | 'duplicate'> => {
         const dealToUpdate = deals.find(d => d.id === dealId);
         if (!dealToUpdate || !user) return false;
 
@@ -1662,6 +1668,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             score: ratingData.score,
             comment: ratingData.comment,
         });
+        // DB blocked a second rating of this store (anti-inflation backstop). v11.97b
+        if (created === 'duplicate') return 'duplicate';
         if (!created) return false;
 
         const local = {
@@ -1690,6 +1698,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // — that silent RLS rejection is exactly why this never arrived.
         return true;
     }, [deals, user]);
+
+    // Buyer authenticity vote («عرض حقيقي / وهمي») — one per deal, re-voting
+    // updates. Optimistically adjusts the deal's real/fake counters so the
+    // green/red badge reflects the new vote instantly. v11.97
+    const recordAuthVote = useCallback(async (dealId: string, isReal: boolean): Promise<boolean> => {
+        if (!user) return false;
+        const { authenticityRepository } = await import('../repositories/authenticityRepository');
+        const ok = await authenticityRepository.vote(dealId, isReal);
+        if (!ok) return false;
+        setDeals(prev => prev.map(d => {
+            if (d.id !== dealId) return d;
+            const prevVote = d.myAuthVote;
+            let real = d.authReal || 0;
+            let fake = d.authFake || 0;
+            if (prevVote === true) real -= 1;
+            else if (prevVote === false) fake -= 1;
+            if (isReal) real += 1; else fake += 1;
+            return { ...d, authReal: Math.max(0, real), authFake: Math.max(0, fake), myAuthVote: isReal };
+        }));
+        return true;
+    }, [user]);
 
     const addReply = useCallback(async (dealId: string, ratingId: string, reply: string) => {
         const { ratingRepository } = await import('../repositories/ratingRepository');
@@ -2206,22 +2235,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         }
                         return prev;
                     });
-                    // Purchase just completed for THIS buyer → ask them to
-                    // rate the store (once, and only if they haven't already).
+                    // Purchase just completed for THIS buyer → first ask whether
+                    // the OFFER was real/fake, then rate the store ONCE (re-rating
+                    // is blocked — a previous rating is shown instead). v11.97
                     if (updated.status === 'completed'
                         && updated.user_id && updated.user_id === user?.id
                         && !promptedRatingRef.current.has(updated.barcode)) {
+                        // Mark handled exactly ONCE up-front — even if the deal
+                        // isn't loaded (deleted / not yet hydrated) we must not
+                        // re-evaluate this booking on every realtime tick. v11.97b
+                        promptedRatingRef.current.add(updated.barcode);
                         const d = dealsRef.current.find(x => x.id === updated.deal_id);
-                        const alreadyRated = !!(d?.ratings || []).some((r: any) => r.userId === user?.id);
-                        if (!alreadyRated) {
-                            promptedRatingRef.current.add(updated.barcode);
-                            setRatingStars(5);
-                            setRatingComment('');
-                            setRatingPrompt({
-                                barcode: updated.barcode,
-                                dealId: updated.deal_id,
-                                storeName: d?.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
-                            });
+                        if (d) {
+                            const storeId = d.storeId;
+                            // Has the buyer rated ANY deal of this store before?
+                            const myStoreReview = dealsRef.current
+                                .filter(x => x.storeId === storeId)
+                                .flatMap(x => x.ratings || [])
+                                .find((r: any) => r.userId === user?.id);
+                            const alreadyRatedStore = !!myStoreReview;
+                            const hasVotedThisDeal = d.myAuthVote === true || d.myAuthVote === false;
+                            // Nothing left to ask → don't pop a useless modal.
+                            if (!(hasVotedThisDeal && alreadyRatedStore)) {
+                                setRatingStars(5);
+                                setRatingComment('');
+                                setPrevReview(myStoreReview ? { score: myStoreReview.score, comment: myStoreReview.comment || '' } : null);
+                                // Skip the auth step only if they already voted this deal.
+                                setRatingStep(hasVotedThisDeal ? (alreadyRatedStore ? 'done' : 'rate') : 'auth');
+                                setRatingPrompt({
+                                    barcode: updated.barcode,
+                                    dealId: updated.deal_id,
+                                    storeId,
+                                    storeName: d.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
+                                });
+                            }
                         }
                     }
                 } else if (payload.eventType === 'DELETE') {
@@ -2593,7 +2640,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 </button>
             )}
 
-            {/* Post-purchase store rating box (buyer) */}
+            {/* Post-purchase flow (buyer): step 1 «is the offer real?», then
+                step 2 rate the store ONCE (or show the previous rating). v11.97 */}
             {ratingPrompt && (
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 99990,
@@ -2606,80 +2654,197 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         boxShadow: '0 24px 60px rgba(0,0,0,0.4)', overflow: 'hidden',
                     }}>
                         <div style={{
-                            background: 'linear-gradient(135deg, #0f172a, #334155)', color: '#fff',
-                            padding: '22px 20px 18px', textAlign: 'center',
+                            background: ratingStep === 'auth'
+                                ? 'linear-gradient(135deg, #0e7490, #155e75)'
+                                : ratingStep === 'done'
+                                    ? 'linear-gradient(135deg, #15803d, #166534)'
+                                    : 'linear-gradient(135deg, #0f172a, #334155)',
+                            color: '#fff', padding: '22px 20px 18px', textAlign: 'center',
                         }}>
-                            <div style={{ fontSize: '2.2rem', marginBottom: 4 }}>⭐</div>
+                            <div style={{ fontSize: '2.2rem', marginBottom: 4 }}>
+                                {ratingStep === 'auth' ? '🛡️' : ratingStep === 'done' ? '✅' : '⭐'}
+                            </div>
                             <div style={{ fontSize: '1.12rem', fontWeight: 900 }}>
-                                {language === 'ar' ? 'نرجو تقييم المتجر' : 'Please rate the store'}
+                                {ratingStep === 'auth'
+                                    ? (language === 'ar' ? 'هل هذا العرض حقيقي؟' : 'Is this offer real?')
+                                    : ratingStep === 'done'
+                                        ? (language === 'ar' ? 'شكراً لك 🙏' : 'Thank you 🙏')
+                                        : (language === 'ar' ? 'نرجو تقييم المتجر' : 'Please rate the store')}
                             </div>
                             <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: 0.9, marginTop: 5, lineHeight: 1.6 }}>
-                                {language === 'ar'
-                                    ? `تقييمك يهمّنا 🙏 — كيف كانت تجربتك مع «${ratingPrompt.storeName}»؟`
-                                    : `Your feedback matters 🙏 — how was your experience with “${ratingPrompt.storeName}”?`}
+                                {ratingStep === 'auth'
+                                    ? (language === 'ar'
+                                        ? `ساعد بقية المشترين — هل كان عرض «${ratingPrompt.storeName}» مطابقاً للواقع؟`
+                                        : `Help other buyers — was the offer at “${ratingPrompt.storeName}” as described?`)
+                                    : ratingStep === 'done'
+                                        ? (language === 'ar'
+                                            ? `لقد قيّمت «${ratingPrompt.storeName}» سابقاً.`
+                                            : `You already rated “${ratingPrompt.storeName}”.`)
+                                        : (language === 'ar'
+                                            ? `تقييمك يهمّنا 🙏 — كيف كانت تجربتك مع «${ratingPrompt.storeName}»؟`
+                                            : `Your feedback matters 🙏 — how was your experience with “${ratingPrompt.storeName}”?`)}
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
-                                {[1, 2, 3, 4, 5].map(star => (
+                            {/* STEP 1 — authenticity vote (real / fake) */}
+                            {ratingStep === 'auth' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {([true, false] as const).map(isReal => (
+                                        <button
+                                            key={String(isReal)}
+                                            disabled={authVoting}
+                                            onClick={async () => {
+                                                if (authVoting) return;
+                                                setAuthVoting(true);
+                                                const ok = await recordAuthVote(ratingPrompt.dealId, isReal);
+                                                setAuthVoting(false);
+                                                if (!ok) {
+                                                    customAlert(language === 'ar' ? '❌ تعذّر تسجيل تصويتك، حاول لاحقاً' : '❌ Could not record your vote, try later');
+                                                    return;
+                                                }
+                                                setRatingStep(prevReview ? 'done' : 'rate');
+                                            }}
+                                            style={{
+                                                width: '100%', padding: 16, borderRadius: 16, border: 'none',
+                                                background: isReal
+                                                    ? 'linear-gradient(135deg, #16a34a, #22c55e)'
+                                                    : 'linear-gradient(135deg, #dc2626, #ef4444)',
+                                                color: '#fff', fontWeight: 900, fontSize: '1rem',
+                                                cursor: authVoting ? 'default' : 'pointer', opacity: authVoting ? 0.7 : 1,
+                                            }}
+                                        >
+                                            {isReal
+                                                ? (language === 'ar' ? '✅ عرض حقيقي' : '✅ Real offer')
+                                                : (language === 'ar' ? '⚠️ عرض وهمي' : '⚠️ Fake offer')}
+                                        </button>
+                                    ))}
                                     <button
-                                        key={star}
-                                        type="button"
-                                        aria-label={`${star}`}
-                                        onClick={() => setRatingStars(star)}
+                                        onClick={() => setRatingPrompt(null)}
                                         style={{
-                                            fontSize: '2rem', background: 'none', border: 'none',
-                                            cursor: 'pointer', padding: 2,
-                                            filter: star <= ratingStars ? 'none' : 'grayscale(1)',
-                                            opacity: star <= ratingStars ? 1 : 0.35,
-                                            transition: 'opacity 0.15s ease',
+                                            width: '100%', padding: 10, marginTop: 2, background: 'none',
+                                            border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
+                                            fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline',
                                         }}
-                                    >⭐</button>
-                                ))}
-                            </div>
-                            <textarea
-                                value={ratingComment}
-                                onChange={e => setRatingComment(e.target.value)}
-                                placeholder={language === 'ar' ? 'اكتب تعليقك عن المتجر (اختياري)...' : 'Write your comment about the store (optional)…'}
-                                style={{
-                                    width: '100%', padding: 14, borderRadius: 14, minHeight: 84,
-                                    border: '1.5px solid var(--border-color)', background: 'var(--body-bg)',
-                                    color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none',
-                                    resize: 'none', marginBottom: 16, fontFamily: 'inherit',
-                                }}
-                            />
-                            <button
-                                onClick={async () => {
-                                    if (ratingSubmitting) return;
-                                    setRatingSubmitting(true);
-                                    const ok = await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
-                                    setRatingSubmitting(false);
-                                    setRatingPrompt(null);
-                                    if (!ok) {
-                                        customAlert(language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later');
-                                    }
-                                }}
-                                disabled={ratingSubmitting}
-                                style={{
-                                    width: '100%', padding: 15, borderRadius: 16, border: 'none',
-                                    background: 'var(--primary)', color: '#fff', fontWeight: 900,
-                                    fontSize: '0.98rem', cursor: ratingSubmitting ? 'default' : 'pointer',
-                                }}
-                            >
-                                {ratingSubmitting
-                                    ? (language === 'ar' ? '⏳ جاري الإرسال...' : '⏳ Submitting…')
-                                    : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
-                            </button>
-                            <button
-                                onClick={() => setRatingPrompt(null)}
-                                style={{
-                                    width: '100%', padding: 10, marginTop: 10, background: 'none',
-                                    border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
-                                    fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline',
-                                }}
-                            >
-                                {language === 'ar' ? 'لاحقاً' : 'Later'}
-                            </button>
+                                    >
+                                        {language === 'ar' ? 'لاحقاً' : 'Later'}
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* STEP 2a — rate the store (first time only) */}
+                            {ratingStep === 'rate' && (
+                                <>
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
+                                        {[1, 2, 3, 4, 5].map(star => (
+                                            <button
+                                                key={star}
+                                                type="button"
+                                                aria-label={`${star}`}
+                                                onClick={() => setRatingStars(star)}
+                                                style={{
+                                                    fontSize: '2rem', background: 'none', border: 'none',
+                                                    cursor: 'pointer', padding: 2,
+                                                    filter: star <= ratingStars ? 'none' : 'grayscale(1)',
+                                                    opacity: star <= ratingStars ? 1 : 0.35,
+                                                    transition: 'opacity 0.15s ease',
+                                                }}
+                                            >⭐</button>
+                                        ))}
+                                    </div>
+                                    <textarea
+                                        value={ratingComment}
+                                        onChange={e => setRatingComment(e.target.value)}
+                                        placeholder={language === 'ar' ? 'اكتب تعليقك عن المتجر (اختياري)...' : 'Write your comment about the store (optional)…'}
+                                        style={{
+                                            width: '100%', padding: 14, borderRadius: 14, minHeight: 84,
+                                            border: '1.5px solid var(--border-color)', background: 'var(--body-bg)',
+                                            color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none',
+                                            resize: 'none', marginBottom: 16, fontFamily: 'inherit',
+                                        }}
+                                    />
+                                    <button
+                                        onClick={async () => {
+                                            if (ratingSubmitting) return;
+                                            setRatingSubmitting(true);
+                                            const ok = await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
+                                            setRatingSubmitting(false);
+                                            setRatingPrompt(null);
+                                            if (ok === 'duplicate') {
+                                                customAlert(language === 'ar' ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.' : 'You already rated this store — one rating per store is allowed.');
+                                            } else if (!ok) {
+                                                customAlert(language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later');
+                                            }
+                                        }}
+                                        disabled={ratingSubmitting}
+                                        style={{
+                                            width: '100%', padding: 15, borderRadius: 16, border: 'none',
+                                            background: 'var(--primary)', color: '#fff', fontWeight: 900,
+                                            fontSize: '0.98rem', cursor: ratingSubmitting ? 'default' : 'pointer',
+                                        }}
+                                    >
+                                        {ratingSubmitting
+                                            ? (language === 'ar' ? '⏳ جاري الإرسال...' : '⏳ Submitting…')
+                                            : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
+                                    </button>
+                                    <button
+                                        onClick={() => setRatingPrompt(null)}
+                                        style={{
+                                            width: '100%', padding: 10, marginTop: 10, background: 'none',
+                                            border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
+                                            fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline',
+                                        }}
+                                    >
+                                        {language === 'ar' ? 'لاحقاً' : 'Later'}
+                                    </button>
+                                </>
+                            )}
+
+                            {/* STEP 2b — already rated this store: show it, offer follow */}
+                            {ratingStep === 'done' && (
+                                <>
+                                    {prevReview && (
+                                        <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                                            <div style={{ color: '#f59e0b', fontSize: '1.6rem', letterSpacing: 2 }}>
+                                                {'★'.repeat(prevReview.score)}{'☆'.repeat(5 - prevReview.score)}
+                                            </div>
+                                            {prevReview.comment && (
+                                                <p style={{ marginTop: 8, fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                                                    “{prevReview.comment}”
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 14, textAlign: 'center' }}>
+                                        {language === 'ar'
+                                            ? 'حفاظاً على عدالة التقييمات، يُسمح بتقييم واحد لكل متجر. تابع المتجر لمتابعة جديد عروضه.'
+                                            : 'To keep ratings fair, one rating per store is allowed. Follow the store to track its new offers.'}
+                                    </p>
+                                    <button
+                                        onClick={() => toggleFollowMerchant(ratingPrompt.storeId)}
+                                        style={{
+                                            width: '100%', padding: 14, borderRadius: 16, border: 'none',
+                                            background: followedMerchants.includes(ratingPrompt.storeId)
+                                                ? 'linear-gradient(135deg, #16a34a, #22c55e)'
+                                                : 'var(--primary)',
+                                            color: '#fff', fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer',
+                                        }}
+                                    >
+                                        {followedMerchants.includes(ratingPrompt.storeId)
+                                            ? (language === 'ar' ? '✅ تتابع هذا المتجر' : '✅ Following this store')
+                                            : (language === 'ar' ? '➕ متابعة المتجر' : '➕ Follow store')}
+                                    </button>
+                                    <button
+                                        onClick={() => setRatingPrompt(null)}
+                                        style={{
+                                            width: '100%', padding: 10, marginTop: 10, background: 'none',
+                                            border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
+                                            fontSize: '0.85rem', cursor: 'pointer',
+                                        }}
+                                    >
+                                        {language === 'ar' ? 'إغلاق' : 'Close'}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

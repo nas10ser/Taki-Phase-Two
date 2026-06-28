@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Deal, getLocation , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel } from '../utils/helpers';
+import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus } from '../utils/workingHours';
 
 interface Props {
@@ -44,6 +44,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     const { toggleFollowMerchant, followedMerchants, language, storeProfiles } = useApp();
     const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
     const { average, count } = dealService.calculateRating(deal.ratings);
+    const authBadge = getAuthenticityBadge(deal.authReal, deal.authFake, language === 'ar');
     const loc = getLocation(deal.locationId);
     const isFollowed = followedMerchants.includes(deal.storeId);
 
@@ -324,6 +325,21 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     <span style={{ fontSize: '1.2rem', fontWeight: 950, color: 'var(--danger)' }}>{deal.discountedPrice} ر.س</span>
                     <span style={{ fontSize: '0.85rem', color: 'var(--gray-400)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
                 </div>
+
+                {/* Authenticity badge — green «عرض حقيقي N%» / red «عرض وهمي N%»
+                    from buyer votes. Hidden until at least one buyer voted. v11.97 */}
+                {authBadge.show && (
+                    <div style={{
+                        marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5,
+                        background: authBadge.bg, color: authBadge.color,
+                        padding: '3px 9px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 900,
+                    }}>
+                        {authBadge.label}
+                        <span style={{ opacity: 0.7, fontWeight: 700 }}>
+                            ({authBadge.total} {isRTL ? 'صوت' : 'votes'})
+                        </span>
+                    </div>
+                )}
 
                 <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 800 }}>

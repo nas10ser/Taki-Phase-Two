@@ -72,7 +72,7 @@ export const ratingRepository = {
         userName: string;
         score: number;
         comment: string;
-    }): Promise<Rating | null> => {
+    }): Promise<Rating | 'duplicate' | null> => {
         const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
             ? (crypto as any).randomUUID()
             : `rt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -86,6 +86,10 @@ export const ratingRepository = {
         };
         const { data, error } = await supabase.from('ratings').insert(row).select().maybeSingle();
         if (error) {
+            // 23505 = unique violation. The DB enforces ONE active rating per
+            // (store, user) [ratings_store_user_active_uq] AND per (deal, user];
+            // either means the buyer already rated this store. v11.97b
+            if ((error as any).code === '23505') return 'duplicate';
             console.error('Rating insert failed:', error.message);
             return null;
         }

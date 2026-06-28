@@ -320,7 +320,10 @@ const Profile: React.FC = () => {
 
                         {/* Secure Telegram linking — the bot binds to THIS
                             account via a one-time token minted for the signed-in
-                            user. Lets everything work inside the @TakiKSA_bot. */}
+                            user. Lets everything work inside the @TakiKSA_bot.
+                            v11.97 — the WHOLE section is hidden when the admin
+                            disables the Telegram bot (not just the button). */}
+                        {platformSettings.telegramBotEnabled && (
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
                             <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>{isRTL ? 'بوت تيليجرام 🤖' : 'Telegram Bot 🤖'}</h3>
                             <p style={{ fontSize: '0.82rem', opacity: 0.7, margin: '0 0 14px', lineHeight: 1.6 }}>
@@ -330,6 +333,7 @@ const Profile: React.FC = () => {
                             </p>
                             <TelegramLinkButton />
                         </div>
+                        )}
 
                         {/* Secure WhatsApp linking — same one-time-token model as
                             Telegram (no phone claiming). Stays hidden until the
