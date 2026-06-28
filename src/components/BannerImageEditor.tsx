@@ -2,13 +2,13 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * BannerImageEditor — WYSIWYG banner positioner (v11.30).
+ * BannerImageEditor — WYSIWYG banner positioner (v11.30; ratio 2.5:1 v11.99).
  *
- * The banner is rendered everywhere at a fixed 2:1 aspect ratio. A raw photo
- * is rarely 2:1, so the admin needs to choose WHICH horizontal band of the
- * image shows. This editor presents the exact banner frame (2:1), lets the
+ * The banner is rendered everywhere at a fixed 2.5:1 aspect ratio. A raw photo
+ * is rarely 2.5:1, so the admin needs to choose WHICH horizontal band of the
+ * image shows. This editor presents the exact banner frame (2.5:1), lets the
  * admin drag the image up/down/left/right inside it and zoom in, then renders
- * the visible window to a 1200×600 canvas and hands back a ready JPEG File.
+ * the visible window to a 1200×480 canvas and hands back a ready JPEG File.
  *
  * Because output is pre-cropped to the banner ratio, the result looks
  * identical in the admin preview, the home slider, and on every device —
@@ -22,7 +22,7 @@ import { createPortal } from 'react-dom';
 type Props = {
     src: string;                 // data: or blob: URL (never a remote http URL → no taint)
     isRTL: boolean;
-    aspect?: number;             // width / height — default 2 (the banner ratio)
+    aspect?: number;             // width / height — default 2.5 (the banner ratio)
     outWidth?: number;           // output width in px — default 1200
     onApply: (file: File) => void;
     onCancel: () => void;
@@ -32,7 +32,7 @@ const PAD = 22;          // breathing room around the frame inside the stage
 const MAX_ZOOM = 3;
 
 export const BannerImageEditor: React.FC<Props> = ({
-    src, isRTL, aspect = 2, outWidth = 1200, onApply, onCancel,
+    src, isRTL, aspect = 2.5, outWidth = 1200, onApply, onCancel,
 }) => {
     const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
     const [loadErr, setLoadErr] = useState(false);
@@ -87,7 +87,7 @@ export const BannerImageEditor: React.FC<Props> = ({
         };
     }, []);
 
-    // ===== Frame geometry: the largest 2:1 frame that fits the padded stage =====
+    // ===== Frame geometry: the largest 2.5:1 frame that fits the padded stage =====
     const availW = Math.max(0, stage.w - PAD * 2);
     const availH = Math.max(0, stage.h - PAD * 2);
     let frameW = availW;
@@ -252,7 +252,7 @@ export const BannerImageEditor: React.FC<Props> = ({
                             }}
                         />
 
-                        {/* Dim everything outside the 2:1 frame + draw the frame & guide lines */}
+                        {/* Dim everything outside the 2.5:1 frame + draw the frame & guide lines */}
                         <div
                             aria-hidden="true"
                             style={{

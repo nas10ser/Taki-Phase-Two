@@ -159,9 +159,9 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
             className="banner-slider-card"
             style={{
                 // Inset card: rounded corners + side margins (set by the Home wrapper).
-                // aspect-ratio lives in CSS (.banner-slider-card) so we can make the
-                // banner much shorter on laptop/desktop without a tall 2:1 wall —
-                // mobile keeps 2:1, desktop drops to a slim ~3.4:1 strip. (v11.97)
+                // aspect-ratio lives in CSS (.banner-slider-card): a slim 2.5:1 strip
+                // on every screen, matching the 2.5:1 crop tool exactly. On laptop the
+                // wrapper caps the width so it's a tidy centered card, not edge-to-edge. (v11.99)
                 position: 'relative', width: '100%',
                 borderRadius: 20, overflow: 'hidden', touchAction: 'pan-y',
                 boxShadow: 'var(--shadow-lg)',
@@ -207,7 +207,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                                         src={banner.contest.banner_image}
                                         alt={banner.contest?.title || 'مسابقة'}
                                         width={1200}
-                                        height={600}
+                                        height={480}
                                         loading={idx <= 1 ? 'eager' : 'lazy'}
                                         decoding="async"
                                         draggable={false}
@@ -249,7 +249,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
                                     src={banner.image_url}
                                     alt={isRTL ? banner.title_ar : banner.title_en}
                                     width={1200}
-                                    height={600}
+                                    height={480}
                                     loading={idx <= 1 ? 'eager' : 'lazy'}
                                     decoding="async"
                                     draggable={false}

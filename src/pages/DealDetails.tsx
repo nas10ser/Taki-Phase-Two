@@ -372,9 +372,9 @@ const ImageZoomViewer: React.FC<{
                         transform: `translate(${offset.x + swipeOffsetX}px, ${offset.y}px) scale(${scale})`,
                         transformOrigin: 'center center',
                         // No transition mid-swipe / mid-pinch — both must follow
-                        // the finger in real-time. Spring back on release uses
-                        // the same 0.18s cubic.
-                        transition: (lastTouchDist.current || isSwiping) ? 'none' : 'transform 0.18s cubic-bezier(0.4,0,0.2,1)',
+                        // the finger in real-time. Snappier 0.13s settle on release
+                        // so flicking through images feels instant. (v11.99)
+                        transition: (lastTouchDist.current || isSwiping) ? 'none' : 'transform 0.13s cubic-bezier(0.33,0,0.2,1)',
                         cursor: scale > 1 ? 'grab' : 'zoom-in',
                         userSelect: 'none', touchAction: 'none',
                         boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
@@ -549,6 +549,15 @@ const DealDetails: React.FC = () => {
             incrementDealView(id);
         }
     }, [id]);
+
+    // Pre-decode every gallery image the moment the deal is known, so tapping a
+    // thumbnail/dot swaps the hero INSTANTLY with no per-image fetch+decode lag.
+    // (Nasser: «التنقل بين الصور بطيء أريده سريع جداً» — v11.99) */
+    React.useEffect(() => {
+        const imgs = deal?.images;
+        if (!imgs || imgs.length < 2) return;
+        imgs.forEach((src) => { try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch { /* ignore */ } });
+    }, [deal?.id]);
 
     if (!deal) {
         return (
@@ -738,9 +747,9 @@ const DealDetails: React.FC = () => {
             {/* Image Gallery */}
             <div className="animate-fade-in" style={{ position: 'relative' }}>
                 <img src={images[currentImage]} loading="eager" decoding="async" alt={deal.itemName}
-                    width={800} height={320}
+                    width={800} height={400}
+                    className="deal-hero-img"
                     onClick={() => setZoomOpen(true)}
-                    style={{ width: '100%', height: 320, objectFit: 'cover', cursor: 'zoom-in' }}
                     onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=800'; }} />
                 <button
                     onClick={() => setZoomOpen(true)}

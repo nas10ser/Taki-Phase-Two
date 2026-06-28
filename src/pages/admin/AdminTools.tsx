@@ -300,8 +300,8 @@ const BannerModal: React.FC<{
                 <div className="p-5 space-y-4">
                     {form.image_url && (
                         <div className="rounded-2xl overflow-hidden border border-[var(--border-color)] relative">
-                            {/* WYSIWYG preview — exactly the 2:1 shape shown on the home page */}
-                            <div className="relative w-full" style={{ aspectRatio: '2 / 1', background: 'var(--gray-100)' }}>
+                            {/* WYSIWYG preview — exactly the 2.5:1 shape shown on the home page */}
+                            <div className="relative w-full" style={{ aspectRatio: '2.5 / 1', background: 'var(--gray-100)' }}>
                                 <img
                                     src={form.image_url}
                                     alt=""
@@ -309,7 +309,7 @@ const BannerModal: React.FC<{
                                     onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
                                 />
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-3 py-2 pointer-events-none">
-                                    <span className="text-[10px] font-bold text-white/90">معاينة كما سيظهر في الرئيسية (2:1)</span>
+                                    <span className="text-[10px] font-bold text-white/90">معاينة كما سيظهر في الرئيسية تماماً (2.5:1)</span>
                                 </div>
                             </div>
                             <button
@@ -348,23 +348,26 @@ const BannerModal: React.FC<{
                             صورة البانر <span className="text-red-500">*</span>
                         </label>
                         <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                            📐 المقاس المثالي <b>1200×600</b> بكسل (نسبة 2:1). بعد اختيار الصورة ستفتح أداة تتيح لك تحريك الصورة واختيار الجزء الظاهر بالضبط.
+                            📐 المقاس المثالي <b>1200×480</b> بكسل (نسبة 2.5:1). بعد اختيار الصورة ستفتح أداة تتيح لك تحريك الصورة واختيار الجزء الظاهر بالضبط.
                         </div>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFilePick}
-                            className="hidden"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
-                            className="w-full px-3 py-3 bg-orange-50 hover:bg-orange-100 border-2 border-dashed border-orange-300 text-orange-700 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
+                        {/* A native <label> opens the file picker on click WITHOUT a
+                            programmatic fileInputRef.click() — that path silently failed
+                            on some desktop browsers («الرفع لا يعمل من اللابتوب»). The
+                            input is visually hidden but kept in the DOM (not display:none,
+                            which can swallow .click()). Works on web + PWA, mobile + laptop. */}
+                        <label
+                            className={`w-full px-3 py-3 bg-orange-50 hover:bg-orange-100 border-2 border-dashed border-orange-300 text-orange-700 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}
                         >
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleFilePick}
+                                disabled={uploading}
+                                style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}
+                            />
                             {uploading ? '⏳ جاري الرفع...' : '📤 رفع صورة من الجهاز'}
-                        </button>
+                        </label>
                         <div className="text-[11px] text-[var(--text-secondary)] text-center my-1.5">— أو —</div>
                         <input
                             type="text"

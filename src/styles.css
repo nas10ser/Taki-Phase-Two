@@ -1325,13 +1325,23 @@ textarea:focus {
   .deal-card-img { height: 220px; }
 }
 
-/* Home hero banner aspect-ratio: tall 2:1 on phones. Declared here (not
-   inline on the element) so the desktop tier below — later in source order,
-   equal specificity — can flatten it to a slim strip. (v11.97) */
-.banner-slider-card { aspect-ratio: 2 / 1; }
+/* Home hero banner aspect-ratio: a slim 2.5:1 billboard on EVERY screen so
+   what the admin crops in «ضبط الجزء الظاهر» (also 2.5:1) is EXACTLY what
+   shows here — true WYSIWYG, no per-device re-crop surprise. Declared here
+   (not inline) so the desktop tier below can cap the width. (v11.99) */
+.banner-slider-card { aspect-ratio: 2.5 / 1; }
 /* Side gutters live in CSS (not inline) so the desktop centering override
    below needs no !important. (v11.97b) */
 .home-banner-wrap { margin: 16px 16px 8px; }
+
+/* Deal-detail HERO image (product page). A 320px band suits phones, but the
+   page widens to ~1080px on tablet/laptop, where a fixed 320px crops the
+   product into a thin strip. Grow the height on bigger screens so the product
+   shows large and clear — the banner shrink only ever targeted the home page.
+   (Nasser: «أعِد حجم صور صفحة المنتج كما كانت» — v11.99) */
+.deal-hero-img { width: 100%; height: 320px; object-fit: cover; display: block; cursor: zoom-in; }
+@media (min-width: 768px)  { .deal-hero-img { height: 440px; } }
+@media (min-width: 1024px) { .deal-hero-img { height: 500px; } }
 
 /* ---------------------------------------------------------------------
  * TIER 6 — Desktop / large tablet (≥1024px).
@@ -1356,15 +1366,15 @@ textarea:focus {
     margin-inline: auto;
     border-radius: 0 0 32px 32px;
   }
-  /* Home hero banner — on laptop the phone-first 2:1 ratio renders a huge
-     vertical wall (≈540px on a 1080px width). Cap the width to match the page
-     and flatten the ratio to a slim strip so it reads like a billboard, not a
-     full-screen poster. (Nasser's laptop screenshot — v11.97) */
+  /* Home hero banner — on laptop, cap the width to a tidy centered card so the
+     banner stays small and proportionate instead of stretching edge-to-edge.
+     The ratio is kept at the SAME 2.5:1 as mobile + the crop tool, so the
+     banner is consistent everywhere and the cropped image shows in full with
+     no extra cropping. (Nasser: «صغّر العرض أكثر وخلّه متناسق» — v11.99) */
   .home-banner-wrap {
-    max-width: 1080px;
-    margin: 16px auto 8px;
+    max-width: 760px;
+    margin: 16px auto 10px;
   }
-  .banner-slider-card { aspect-ratio: 3.4 / 1; }
 }
 
 /* ---------------------------------------------------------------------
