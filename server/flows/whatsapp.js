@@ -1172,7 +1172,7 @@ function create(deps) {
         }));
         s.step = 'idle'; const ok = r && r.success; s.temp = {};
         if (!ok) {
-            const overCap = r && r.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r.detail || ''));
+            const overCap = (r && r.error === 'location_limit') || (r && r.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r.detail || '')));
             const m = r && r.error === 'invalid_price' ? tr('wa_publish_invalid_price')
                 : r && r.error === 'no_subscription' ? tr('wa_publish_no_sub')
                 : overCap ? tr('wa_publish_overcap') : tr('wa_publish_fail');
@@ -1215,7 +1215,7 @@ function create(deps) {
         const chip = (s.temp.locChips || [])[i];
         if (!chip) return showBranches(from, s);
         const r = await rpc('bot_save_branch', aid(from, { p_name: chip.name || tr('cm_location'), p_region: chip.region || null, p_city: chip.city || null, p_location_id: chip.location_id || null, p_map_lat: chip.map_lat ?? null, p_map_lng: chip.map_lng ?? null, p_google_maps_link: chip.google_maps_link || null }));
-        await sendText(from, (r && r.success) ? tr('wa_branch_saved') : tr('wa_edit_fail'));
+        await sendText(from, (r && r.success) ? tr('wa_branch_saved') : (r && r.error === 'location_limit') ? tr('wa_publish_overcap') : tr('wa_edit_fail'));
         return showBranches(from, s);
     }
 

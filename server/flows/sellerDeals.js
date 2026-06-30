@@ -225,7 +225,7 @@ function register(bot, deps) {
         const s = getSession(tgId(ctx)); const chip = (s.temp.locChips || [])[+ctx.match[1]];
         if (!chip) return reply(ctx, tr('sd215_session_expired'), Markup.inlineKeyboard([[btn(tr('sd215_my_locations'), 'seller:branches')]]).reply_markup);
         const r = await rpc('bot_save_branch', { p_telegram_id: tgId(ctx), p_name: chip.name || tr('cm_location'), p_region: chip.region || null, p_city: chip.city || null, p_location_id: chip.location_id || null, p_map_lat: chip.map_lat ?? null, p_map_lng: chip.map_lng ?? null, p_google_maps_link: chip.google_maps_link || null });
-        await reply(ctx, r?.success ? tr('sd217_branch_saved') : tr('sd217_save_failed'));
+        await reply(ctx, r?.success ? tr('sd217_branch_saved') : (r?.error === 'location_limit' ? tr('sd754_over_cap') : tr('sd217_save_failed')));
         return showBranches(ctx);
     });
 
@@ -655,7 +655,7 @@ async function onLocationChosen(ctx, loc, isNew) {
     if (s.temp.flow === 'branch') {
         const name = s.temp.branchMove ? null : (s.temp.branchName || loc.name || loc.custom_location_name || tr('cm_location'));
         const r = await rpc('bot_save_branch', { p_telegram_id: tgId(ctx), p_branch_id: s.temp.branchId || null, p_name: name, p_region: loc.region || null, p_city: loc.city || null, p_location_id: loc.location_id || null, p_map_lat: loc.map_lat ?? null, p_map_lng: loc.map_lng ?? null, p_google_maps_link: loc.google || null });
-        await reply(ctx, r?.success ? tr('sd647_branch_saved', md(r.name || name || tr('cm_location'))) : tr('sd647_branch_save_fail'));
+        await reply(ctx, r?.success ? tr('sd647_branch_saved', md(r.name || name || tr('cm_location'))) : (r?.error === 'location_limit' ? tr('sd754_over_cap') : tr('sd647_branch_save_fail')));
         return showBranches(ctx);
     }
     if (s.temp.flow === 'edit') {
@@ -686,7 +686,7 @@ async function finishSaveLocation(ctx, doSave) {
     s.temp.pendingLoc = null; s.temp.locSaveCtx = null; s.temp.locSaveEditId = null;
     if (doSave && loc) {
         const r = await rpc('bot_save_branch', { p_telegram_id: tgId(ctx), p_name: loc.name || loc.custom_location_name || tr('cm_location'), p_region: loc.region || null, p_city: loc.city || null, p_location_id: loc.location_id || null, p_map_lat: loc.map_lat ?? null, p_map_lng: loc.map_lng ?? null, p_google_maps_link: loc.google || null });
-        await reply(ctx, r?.success ? tr('sd678_saved_ok') : tr('sd678_saved_fail'));
+        await reply(ctx, r?.success ? tr('sd678_saved_ok') : (r?.error === 'location_limit' ? tr('sd754_over_cap') : tr('sd678_saved_fail')));
     }
     if (kind === 'edit' && editId) return openEdit(ctx, editId);
     return askPhotos(ctx);
@@ -758,7 +758,7 @@ async function doPublish(ctx) {
     });
     setStep(tgId(ctx), 'idle'); const ok = r?.success; resetTemp(s);
     if (!ok) {
-        const overCap = r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || ''));
+        const overCap = r?.error === 'location_limit' || (r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || '')));
         const m = r?.error === 'invalid_price' ? tr('sd753_invalid_price')
             : r?.error === 'no_subscription' ? tr('sd752_no_subscription', DIV)   // T6: يلزم اشتراك فعّال لنشر المنتجات
             : overCap ? tr('sd754_over_cap')
@@ -834,7 +834,7 @@ async function reactivate(ctx, id) {
     const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_status: 'active' });
     if (r?.success) { await reply(ctx, tr('sd825_reactivated')); return openEdit(ctx, id); }
     if (r?.error === 'no_subscription') return reply(ctx, tr('sd752_no_subscription', DIV), Markup.inlineKeyboard([[btn(tr('sd827_btn_subscription'), 'seller:sub')], [btn(tr('sd827_btn_back'), `dedit:${id}`)]]).reply_markup);
-    const overCap = r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || ''));
+    const overCap = r?.error === 'location_limit' || (r?.error === 'blocked' && /LOCATION_LIMIT/i.test(String(r?.detail || '')));
     return reply(ctx, overCap ? tr('sd827_over_location_limit') : tr('sd827_reactivate_failed'), Markup.inlineKeyboard([[btn(tr('sd827_btn_subscription'), 'seller:sub'), btn(tr('sd827_btn_my_locations'), 'seller:branches')], [btn(tr('sd827_btn_back'), `dedit:${id}`)]]).reply_markup);
 }
 // حفظ حقل تعديل عام ثم العودة لقائمة التعديل.
