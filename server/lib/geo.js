@@ -56,13 +56,19 @@ async function resolveGoogleLocation(text) {
 }
 
 // رابط مكان قوقل (فتح موقع العرض). يقبل صف عرض أو {map_lat,map_lng,google_maps_link}.
+// نُفضّل رابط البحث بالاسم (مثل «اسم المول + المدينة») على الإحداثيات التقريبية —
+// فقوقل يثبّت المكان الحقيقي بدقة بدل دبّوس مركز المدينة. v12.04
 function placeLink(d) {
+    if (d.google_maps_link) return d.google_maps_link;
     if (d.map_lat != null && d.map_lng != null) return `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}`;
-    return d.google_maps_link || null;
+    return null;
 }
 // رابط اتجاهات قيادة قوقل (ملاحة فعلية عند الفتح).
 function dirLink(d, geo) {
-    if (d.map_lat == null || d.map_lng == null) return d.google_maps_link || null;
+    // رابط الاسم الدقيق أفضل من اتجاهات لإحداثيات تقريبية (يفتح المكان الصحيح ثم
+    // يبدأ المستخدم الملاحة منه). v12.04
+    if (d.google_maps_link) return d.google_maps_link;
+    if (d.map_lat == null || d.map_lng == null) return null;
     const org = geo ? `&origin=${geo.lat},${geo.lng}` : '';
     return `https://www.google.com/maps/dir/?api=1${org}&destination=${d.map_lat},${d.map_lng}&travelmode=driving`;
 }

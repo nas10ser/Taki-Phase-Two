@@ -1145,6 +1145,9 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
                         <button type="button" onClick={() => {
+                            // Prefer the precise name-search link (malls resolve to the REAL
+                            // place on Google) over approximate stored coordinates. v12.04
+                            if (deal.googleMapsLink) { openExternalUrl(deal.googleMapsLink); return; }
                             const lat = deal.mapLocation?.lat || loc?.lat || 0;
                             const lng = deal.mapLocation?.lng || loc?.lng || 0;
                             if(lat && lng) {

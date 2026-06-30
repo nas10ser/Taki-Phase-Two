@@ -533,8 +533,9 @@ async function onScheduleChosen(ctx, startsAt, clear) {
 // ════════════════════════════════════════════════════════════════════════════════
 // رابط خريطة لموقع محفوظ (إحداثيات إن وُجدت، وإلا رابط قوقل المخزّن).
 function chipMapUrl(b) {
+    if (b.google_maps_link) return b.google_maps_link;   // name-search → precise place. v12.04
     if (b.map_lat != null && b.map_lng != null) return `https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng}`;
-    return b.google_maps_link || null;
+    return null;
 }
 const mdUrl = u => String(u).replace(/([)\\])/g, '\\$1'); // تهريب آمن لرابط داخل [..](..)
 async function askLocation(ctx, intro) {
@@ -882,8 +883,8 @@ async function previewDeal(ctx, d) {
 //  مواقعي (الفروع) — كل المواقع (محفوظة + مواقع عروض) مع وسم وإتاحة حذف/تعديل
 // ════════════════════════════════════════════════════════════════════════════════
 function branchPlace(b) {
+    if (b.google_maps_link) return `[🗺 ${tr('sd873_location')}](${b.google_maps_link})`;   // name-search → precise. v12.04
     if (b.map_lat != null && b.map_lng != null) return `[🗺 ${tr('sd872_map_location')}](https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng})`;
-    if (b.google_maps_link) return `[🗺 ${tr('sd873_location')}](${b.google_maps_link})`;
     return '';
 }
 function branchWhere(b) { const p = [b.city, b.region].filter(Boolean); return p.length ? md(p.join(' • ')) : tr('sd878_custom_location'); }
