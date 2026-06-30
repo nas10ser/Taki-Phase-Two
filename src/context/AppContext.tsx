@@ -2723,6 +2723,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             {/* STEP 1 — authenticity vote (real / fake) */}
                             {ratingStep === 'auth' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {/* Tiny, plain-language explainer so the buyer knows what they're voting on. */}
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.7, background: 'var(--gray-100)', borderRadius: 12, padding: '10px 12px', textAlign: language === 'ar' ? 'right' : 'left' }}>
+                                        {language === 'ar'
+                                            ? <>🔵 <b>حقيقي</b>: خصم فعلي على السعر.<br />🟡 <b>وهمي</b>: لا يوجد تخفيض حقيقي (نفس السعر، أو السعر الأصلي مبالغ فيه).</>
+                                            : <>🔵 <b>Real</b>: a genuine price cut.<br />🟡 <b>Fake</b>: no real discount (same price, or an inflated original price).</>}
+                                    </div>
                                     {([true, false] as const).map(isReal => (
                                         <button
                                             key={String(isReal)}
