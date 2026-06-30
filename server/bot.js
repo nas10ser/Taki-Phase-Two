@@ -276,14 +276,19 @@ function kbAdmin(s = {}) {
     const rows = [
         [Markup.button.callback(tr('menu_platform_stats'),'admin:stats'), Markup.button.callback(tr('menu_reports'),'admin:reports')],
         [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('menu_nearby'),'buyer:nearby')],
-        [Markup.button.callback(tr('menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr('menu_follows'),'buyer:following')],
+        // Store owners don't book — show «طلبات متجري» (store orders) here instead
+        // of the buyer «حجوزاتي» which would just be empty + confusing. v12.02
+        [ownsStore(s)
+            ? Markup.button.callback(tr('menu_store_orders') + (s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : ''), 'seller:bookings')
+            : Markup.button.callback(tr('menu_bookings_buyer'), 'buyer:bookings'),
+          Markup.button.callback(tr('menu_follows'),'buyer:following')],
         [Markup.button.callback(tr('menu_alerts'),'alerts:open'), Markup.button.callback(tr('menu_account'),'buyer:profile')],
     ];
     // الأدمن قد يكون مالكاً لمتجر («تاكي») — يحتاج إدارة طلبات متجره من البوت لا أن
     // يصله الإشعار فقط؛ بدون هذا الزر لا منفذ لقائمة طلبات المتجر إطلاقاً. v11.81
     if (ownsStore(s)) {
-        const pBadge = s.pendingBookings > 0 ? `  •  ${s.pendingBookings}` : '';
-        rows.push([Markup.button.callback(tr('menu_store_orders')+pBadge,'seller:bookings'), Markup.button.webApp(tr('menu_store_dashboard'), W('/seller'))]);
+        // «طلبات متجري» تظهر أعلاه الآن بدل «حجوزاتي» (v12.02) — هنا لوحة المتجر + الاشتراك.
+        rows.push([Markup.button.webApp(tr('menu_store_dashboard'), W('/seller'))]);
         // الأدمن-المالك يحتاج إدارة اشتراك/باقات متجره من البوت أيضاً (نفس مصدر الموقع). v11.91
         rows.push([Markup.button.callback(tr('menu_subscription'),'seller:sub')]);
     }
@@ -570,7 +575,7 @@ function browseCard(d, n, geo){
 
 bot.command('deals', ctx => enterBrowse(ctx));
 bot.action('browse:menu', async ctx => { await ctx.answerCbQuery(); enterBrowse(ctx); });
-bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); renderList(ctx,'n','-',+ctx.match[1]); }); // legacy alias
+bot.action(/^deals:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const off=+ctx.match[1]; if(off===0) await sendBanners(ctx, true); renderList(ctx,'n','-',off); }); // entry shows the promo banner too (request: banner on every browse). v12.02
 // «تصفّح العروض» → البنر الإعلاني (إن وُجد) ثم قائمة العروض مباشرةً، بفوتر الترتيب
 // والصفحات وزرّي «المفتوحة الآن / جميع المحلات» وزر الرجوع — تماماً كما في لقطة
 // الشاشة. (requests 3 + 4) v11.78
@@ -1158,22 +1163,43 @@ bot.action(/^rept:(.+):([a-z_]+)$/, async ctx => {
 bot.action(/^rate:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
     const bc = ctx.match[1];
+    const s = getSession(tgId(ctx));
+    let st = null;
+    try { st = await rpc('bot_rating_status', { p_telegram_id: tgId(ctx), p_barcode: bc }); } catch { st = null; }
+    s.temp.rateStatus = (st && st.ok) ? st : null;
+    // Already voted authenticity on THIS product → don't ask again (one vote per
+    // product; the count is DB-protected by UNIQUE(deal_id,user_id)). Go straight
+    // to the store-rating step. v12.02
+    if (st && st.ok && st.voted_auth) return proceedStoreRating(ctx, bc, st);
     await ctx.reply(tr('av_question'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(tr('av_real_btn'),`av:${bc}:1`), Markup.button.callback(tr('av_fake_btn'),`av:${bc}:0`)],
         [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
     ]).reply_markup });
 });
-// Record the real/fake vote (barcode proves the completed purchase), then stars.
+// Record the real/fake vote (barcode proves the completed purchase), then store rating.
 bot.action(/^av:(.+):([01])$/, async ctx => {
     const bc = ctx.match[1], isReal = ctx.match[2] === '1';
     const r = await rpc('bot_cast_authenticity_vote', { p_deal_id: null, p_is_real: isReal, p_telegram_id: tgId(ctx), p_barcode: bc });
     await ctx.answerCbQuery(r && r.success ? tr('av_thanks') : tr('av_error'));
+    return proceedStoreRating(ctx, bc, getSession(tgId(ctx)).temp.rateStatus);
+});
+// Store-rating step: if the buyer already rated this STORE, SHOW their previous
+// stars+comment (no «تعذّر التقييم»); otherwise prompt for stars. v12.02
+async function proceedStoreRating(ctx, bc, st){
+    if (st && st.prev_score) {
+        const stars = '⭐'.repeat(st.prev_score);
+        const cmt = st.prev_comment ? `\n💬 ${md(st.prev_comment)}` : '';
+        return ctx.reply(tr('b_already_rated_store', md(st.shop_name||''), stars, cmt), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('b1019_my_bookings'),'buyer:bookings')],
+            [Markup.button.callback(tr('b1019_menu'),'menu:back')]
+        ]).reply_markup });
+    }
     return ctx.reply(tr('b1000_rate_experience'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback('⭐',`rst:${bc}:1`), Markup.button.callback('⭐⭐',`rst:${bc}:2`), Markup.button.callback('⭐⭐⭐',`rst:${bc}:3`)],
         [Markup.button.callback('⭐⭐⭐⭐',`rst:${bc}:4`), Markup.button.callback('⭐⭐⭐⭐⭐',`rst:${bc}:5`)],
         [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
     ]).reply_markup });
-});
+}
 bot.action(/^rst:(.+):([1-5])$/, async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));
@@ -1907,7 +1933,9 @@ async function showNearbyHub(ctx){
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
 bot.action('nf:clear', async ctx => { await ctx.answerCbQuery(tr('b1728_filters_cleared')); getSession(tgId(ctx)).temp.nf=null; return showNearbyHub(ctx); });
-bot.action('nf:done',  async ctx => { await ctx.answerCbQuery(tr('b1729_done')); return showNearbyHub(ctx); });
+// «كل مدن المنطقة» / «كل المولات في المدينة» → اعرض العروض مباشرةً بدل العودة للوحة
+// الفلاتر (كان أكبر سبب لشكوى «اخترت المنطقة/المدينة وما ظهرت عروض»). v12.02
+bot.action('nf:done',  async ctx => { await ctx.answerCbQuery(tr('b1729_done')); return runNearby(ctx, 0); });
 bot.action(/^nf:open:([01])$/, async ctx => { await ctx.answerCbQuery(); nfDraft(getSession(tgId(ctx))).openNow = ctx.match[1]==='1'; return showNearbyHub(ctx); });
 // «عرض كل المتاجر» من الحالة الفارغة — يُطفئ فلتر المفتوح-الآن ويعيد العرض. v11.98
 bot.action('nf:showall', async ctx => { await ctx.answerCbQuery(); nfDraft(getSession(tgId(ctx))).openNow = false; return runNearby(ctx, 0); });
@@ -1926,11 +1954,11 @@ bot.action('nf:loc', async ctx => {
 bot.action(/^nfl:rg:([A-Za-z0-9_-]+)$/, async ctx => {
     await ctx.answerCbQuery();
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
-    if(ctx.match[1]==='_all'){ f.region=f.regionName=f.city=f.cityName=f.mall=f.mallName=null; return showNearbyHub(ctx); }
+    if(ctx.match[1]==='_all'){ f.region=f.regionName=f.city=f.cityName=f.mall=f.mallName=null; return runNearby(ctx, 0); }
     const reg=(s.temp.nfRegions||[]).find(r=>r.id===ctx.match[1]);
     f.region=ctx.match[1]; f.regionName=reg?geoLabel(reg):ctx.match[1]; f.city=f.cityName=f.mall=f.mallName=null;
     const cities = await rpc('bot_geo_cities',{p_region:f.region})||[]; s.temp.nfCities=cities;
-    if(!cities.length) return showNearbyHub(ctx);
+    if(!cities.length) return runNearby(ctx, 0);
     const rows=[]; for(let i=0;i<cities.length;i+=2) rows.push(cities.slice(i,i+2).map(c=>Markup.button.callback(geoLabel(c),`nfl:ct:${c.id}`)));
     rows.push([Markup.button.callback(tr('b1752_all_cities_in_region',f.regionName),'nf:done')]);
     rows.push([Markup.button.callback(tr('b1753_regions'),'nf:loc')]);
@@ -1942,7 +1970,9 @@ bot.action(/^nfl:ct:([A-Za-z0-9_-]+)$/, async ctx => {
     const c=(s.temp.nfCities||[]).find(x=>x.id===ctx.match[1]);
     f.city=ctx.match[1]; f.cityName=c?geoLabel(c):ctx.match[1]; f.mall=f.mallName=null;
     const locs = await rpc('bot_geo_locations',{p_city:f.city,p_type:null})||[]; s.temp.nfLocs=locs;
-    if(!locs.length) return showNearbyHub(ctx);
+    // City has no registered malls/markets → show its deals directly (don't dump
+    // the user back on the filter hub with nothing). v12.02
+    if(!locs.length) return runNearby(ctx, 0);
     const typeTag = t => t==='market'?tr('q1766_tag_market'):t==='mall'?tr('q1766_tag_mall'):t==='store'?tr('q1766_tag_store'):'';
     const rows=locs.slice(0,18).map((l,i)=>[Markup.button.callback(`📍 ${String(geoLabel(l)).slice(0,30)}${typeTag(l.type)}`,`nfl:ml:${i}`)]);
     rows.push([Markup.button.callback(tr('b1765_all_in_city',f.cityName),'nf:done')]);
@@ -1953,7 +1983,7 @@ bot.action(/^nfl:ml:(\d+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1770_done'));
     const s=getSession(tgId(ctx)); const f=nfDraft(s); const l=(s.temp.nfLocs||[])[+ctx.match[1]];
     if(l){ f.mall=l.id; f.mallName=geoLabel(l); }
-    return showNearbyHub(ctx);
+    return runNearby(ctx, 0);   // picked a specific mall → show its deals now. v12.02
 });
 // ── Category filter ───────────────────────────────────────────────────────────
 bot.action('nf:cat', async ctx => {

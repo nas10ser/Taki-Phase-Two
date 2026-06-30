@@ -21,7 +21,16 @@ const Home: React.FC = () => {
     const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
-    const [liveBannerDismissed, setLiveBannerDismissed] = useState(false);
+    // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
+    // (Once permission is granted, locationPermission flips to 'granted' and the
+    // banner hides on its own anyway.) v12.02
+    const [liveBannerDismissed, setLiveBannerDismissed] = useState<boolean>(() => {
+        try { return localStorage.getItem('taki_live_loc_dismissed') === '1'; } catch { return false; }
+    });
+    const dismissLiveBanner = () => {
+        try { localStorage.setItem('taki_live_loc_dismissed', '1'); } catch { /* ignore */ }
+        setLiveBannerDismissed(true);
+    };
     // First-open city prompt: buyers/guests only (sellers & admins have their
     // own dashboards), shown once until a home city is chosen/persisted.
     const isShopper = user?.userType !== 'seller' && user?.userType !== 'admin';
@@ -271,11 +280,11 @@ const Home: React.FC = () => {
                         </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <button onClick={async () => { const ok = await requestLiveLocation(); if (ok) setLiveBannerDismissed(true); }}
+                        <button onClick={async () => { const ok = await requestLiveLocation(); if (ok) dismissLiveBanner(); }}
                             style={{ background: '#fff', color: '#2563eb', border: 'none', padding: '8px 14px', borderRadius: 10, fontWeight: 900, fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 40 }}>
                             {isRTL ? 'تفعيل' : 'Enable'}
                         </button>
-                        <button onClick={() => setLiveBannerDismissed(true)}
+                        <button onClick={dismissLiveBanner}
                             style={{ background: 'transparent', color: '#fff', border: 'none', padding: '2px', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', opacity: 0.85 }}>
                             {isRTL ? 'لاحقاً' : 'Later'}
                         </button>

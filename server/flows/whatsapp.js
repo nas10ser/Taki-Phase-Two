@@ -305,6 +305,17 @@ function create(deps) {
         const secTitle = (cat && cat !== 'all') ? catLabel(cat) : tr('sort_t_' + sort);
         return sendList(from, { header: tr('sort_t_' + sort), body: tr('wa_browse_body'), footer: 'TAKI', button: tr('wa_menu_btn'), sections: [{ title: trunc(secTitle, LIM.rowTitle), rows }] });
     }
+    // Promo banner(s) on every «تصفّح العروض» entry — parity with Telegram. v12.02
+    async function sendWaBanners(from) {
+        try {
+            const banners = await rpc('bot_active_banners', {}) || [];
+            for (const b of banners.slice(0, 2)) {
+                const cap = b.title || '';
+                if (b.image_url) { try { await sendImage(from, b.image_url, cap); continue; } catch { /* fall through */ } }
+                if (cap) await sendText(from, cap);
+            }
+        } catch { /* banners are best-effort */ }
+    }
     async function browseMenu(from, s) {
         await sendList(from, { header: tr('wa_menu_title'), body: tr('wa_browse_pick'), button: tr('wa_menu_btn'), sections: [{ rows: [
             row('wa:br:newest', tr('sort_t_newest'), ''),
@@ -569,15 +580,30 @@ function create(deps) {
     // Step 1 — authenticity «هل العرض حقيقي؟» (every purchase), then the stars. v11.98
     async function startRate(from, s, bc) {
         s.temp.rateBarcode = bc;
+        let st = null;
+        try { st = await rpc('bot_rating_status', aid(from, { p_barcode: bc })); } catch { st = null; }
+        s.temp.rateStatus = (st && st.ok) ? st : null;
+        // Already voted on this product → skip the authenticity question. v12.02
+        if (st && st.ok && st.voted_auth) return proceedWaStoreRating(from, s, bc);
         await sendButtons(from, { body: tr('av_question'), buttons: [
             { id: `wa:av:${bc}:1`, title: tr('av_real_btn') }, { id: `wa:av:${bc}:0`, title: tr('av_fake_btn') }, { id: `wa:bk1:${bc}`, title: tr('wa_back') },
         ] });
     }
-    // Record the real/fake vote (barcode proves the completed purchase), then stars.
+    // Record the real/fake vote (barcode proves the completed purchase), then store rating.
     async function castWaAuthVote(from, s, bc, isReal) {
         s.temp.rateBarcode = bc;
         const r = await rpc('bot_cast_authenticity_vote', aid(from, { p_deal_id: null, p_is_real: isReal, p_barcode: bc }));
         await sendText(from, (r && r.success) ? tr('av_thanks') : tr('av_error'));
+        return proceedWaStoreRating(from, s, bc);
+    }
+    // Already rated this STORE → show the previous stars+comment (no «تعذّر»). v12.02
+    async function proceedWaStoreRating(from, s, bc) {
+        const st = s.temp.rateStatus;
+        if (st && st.prev_score) {
+            const stars = '⭐'.repeat(st.prev_score);
+            const cmt = st.prev_comment ? `\n💬 ${st.prev_comment}` : '';
+            return sendButtons(from, { body: tr('b_already_rated_store', st.shop_name || '', stars, cmt), buttons: [{ id: 'wa:bookings', title: tr('menu_bookings_buyer') }, menuBtn()] });
+        }
         return showRateStars(from, s, bc);
     }
     async function showRateStars(from, s, bc) {
@@ -1369,7 +1395,7 @@ function create(deps) {
         const k = p[1];
         // قائمة / تنقّل عام
         if (id === 'wa:menu' || id === 'm') return mainMenu(from, s);
-        if (id === 'wa:browse') return browse(from, s, 'newest', null);
+        if (id === 'wa:browse') { await sendWaBanners(from); return browse(from, s, 'newest', null); }
         if (id === 'wa:cats') return categories(from, s);
         if (id === 'wa:near') return nearbyEntry(from, s);
         if (id === 'wa:soon') return browseUpcoming(from, s, 0);
