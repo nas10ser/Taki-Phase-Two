@@ -708,6 +708,21 @@ export const getLocation = (id: string): Location | undefined => LOCATIONS.find(
 export const getCity = (id: string): City | undefined => CITIES.find(c => c.id === id);
 export const getRegion = (id: string): Region | undefined => REGIONS.find(r => r.id === id);
 
+/**
+ * Hydrate the malls/markets list from the DB (admin-managed via the «إدارة
+ * المولات والأسواق» tool). The exported LOCATIONS array is mutated IN PLACE so
+ * every module that already imported it — getLocation, helpers, all pickers —
+ * sees the curated list without re-importing. AppContext calls this on startup
+ * and after an admin edit, then bumps a version so the tree re-reads. We never
+ * blank the list on an empty/failed fetch (the bundled list stays as fallback).
+ * (v12.01)
+ */
+export const replaceLocations = (next: Location[]): void => {
+    if (!Array.isArray(next) || next.length === 0) return;
+    LOCATIONS.length = 0;
+    LOCATIONS.push(...next);
+};
+
 // Localized display name for a geography item (region/city/mall). Falls back to the
 // Arabic name when English is unavailable, so nothing ever shows blank. v11.88
 export const geoName = (

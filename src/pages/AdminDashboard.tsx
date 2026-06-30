@@ -30,6 +30,7 @@ const AdminBuyers    = lazy(() => import('./admin/AdminBuyers'));
 const AdminSellers   = lazy(() => import('./admin/AdminSellers'));
 const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics'));
 const AdminTools     = lazy(() => import('./admin/AdminTools'));
+const AdminLocations = lazy(() => import('./admin/AdminLocations'));
 const AdminContests  = lazy(() => import('./admin/AdminContests'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
@@ -56,6 +57,7 @@ const TABS: TabDef[] = [
     { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة',           permission: 'tab_reports'   },
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
+    { value: 'locations', label: 'المولات والأسواق',  icon: '🏬',  gradient: 'from-teal-500 to-emerald-600',     hint: 'إضافة وتعديل وحذف المولات والأسواق (الموقع + البوتين)', permission: 'tab_tools'     },
     { value: 'contests',  label: 'المسابقات',         icon: '🎁',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'استبيانات بجوائز + تصحيح تلقائي + سحب',              permission: 'tab_contests'  },
     { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_launch'    },
     { value: 'messages',  label: 'الرسائل',           icon: '💬',  gradient: 'from-cyan-500 to-blue-600',        hint: 'مراقبة كل المحادثات لحظة بلحظة',                     permission: 'tab_messages'  },
@@ -327,6 +329,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'reports'   && hasPermission('tab_reports')   && <AdminReports />}
                         {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
                         {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
+                        {activeTab === 'locations' && hasPermission('tab_tools')     && <AdminLocations />}
                         {activeTab === 'contests'  && hasPermission('tab_contests')  && <AdminContests />}
                         {activeTab === 'launch'    && hasPermission('tab_launch')    && <AdminLaunch />}
                         {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}

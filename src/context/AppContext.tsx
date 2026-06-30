@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Deal, getLocation, CITIES } from '../data/mock';
+import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } from '../data/mock';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
@@ -72,6 +72,10 @@ interface Notification {
 interface AppContextType {
     language: 'ar' | 'en';
     setLanguage: (lang: 'ar' | 'en') => void;
+    /** Bumps whenever the DB-managed malls/markets list is (re)loaded — lets
+     *  consumers that read the bundled LOCATIONS array re-render. (v12.01) */
+    geoVersion: number;
+    reloadGeo: () => Promise<void>;
     deals: Deal[];
     loading: boolean;
     /** True once the initial Supabase auth check resolves. Use this in
@@ -2479,8 +2483,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [branches]);
 
     // Memoize the context value to prevent unnecessary re-renders
+    // ===== Malls/markets hydrated from the DB (admin-managed) =====
+    // The bots already read public.locations live; here we pull the same curated
+    // list into the app and mutate the bundled LOCATIONS array in place, then bump
+    // geoVersion so the whole tree re-reads it. So edits in «إدارة المولات» reflect
+    // on the website too — one source of truth. Falls back to the bundled list if
+    // the fetch is empty/fails. (v12.01)
+    const [geoVersion, setGeoVersion] = useState(0);
+    const reloadGeo = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('locations')
+                .select('id,name,name_en,type,city_id,lat,lng');
+            if (error || !data || data.length === 0) return;
+            const mapped: GeoLocation[] = data.map((r: any) => ({
+                id: String(r.id),
+                name: r.name,
+                nameEn: r.name_en || undefined,
+                type: r.type === 'market' ? 'market' : 'mall',
+                cityId: r.city_id,
+                lat: Number(r.lat),
+                lng: Number(r.lng),
+            }));
+            replaceLocations(mapped);
+            setGeoVersion(v => v + 1);
+        } catch { /* keep the bundled fallback list */ }
+    }, []);
+    useEffect(() => { reloadGeo(); }, [reloadGeo]);
+
     const contextValue = useMemo(() => ({
         language, setLanguage,
+        geoVersion, reloadGeo,
         deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
@@ -2508,6 +2541,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         branches, saveBranch, removeBranch,
     }), [
         language, setLanguage,
+        geoVersion, reloadGeo,
         deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,

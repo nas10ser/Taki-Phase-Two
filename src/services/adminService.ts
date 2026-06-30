@@ -560,6 +560,30 @@ export const adminService = {
         }>;
     },
 
+    // ===== Malls/markets (locations) management =====
+    async listLocations() {
+        const { data, error } = await supabase
+            .from('locations')
+            .select('id,name,name_en,type,city_id,lat,lng');
+        if (error) { console.error('[adminService.listLocations]', error); return []; }
+        return (data ?? []) as Array<{ id: string; name: string; name_en: string | null; type: 'mall' | 'market'; city_id: string; lat: number; lng: number }>;
+    },
+
+    async upsertLocation(p: { id?: string; name: string; name_en?: string; type: 'mall' | 'market'; city_id: string; lat: number; lng: number }) {
+        const { data, error } = await supabase.rpc('admin_upsert_location', {
+            p_id: p.id ?? null, p_name: p.name, p_name_en: p.name_en ?? null,
+            p_type: p.type, p_city_id: p.city_id, p_lat: p.lat, p_lng: p.lng,
+        });
+        if (error) { console.error('[adminService.upsertLocation]', error); return { success: false, error: error.message }; }
+        return data as { success: boolean; id?: string; error?: string };
+    },
+
+    async deleteLocation(id: string) {
+        const { data, error } = await supabase.rpc('admin_delete_location', { p_id: id });
+        if (error) { console.error('[adminService.deleteLocation]', error); return { success: false, error: error.message }; }
+        return data as { success: boolean };
+    },
+
     // Bot adoption + channel attribution (web vs telegram vs whatsapp).
     async getBotAnalytics() {
         const { data, error } = await supabase.rpc('admin_bot_analytics');
