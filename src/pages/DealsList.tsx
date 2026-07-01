@@ -5,7 +5,8 @@ import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal, getAuthenticityBadge } from '../utils/helpers';
+import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, interleaveSponsored, DisplayDeal, getAuthenticityBadge } from '../utils/helpers';
+import { useNowTick } from '../utils/useNowTick';
 import { getShopStatus } from '../utils/workingHours';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
@@ -52,6 +53,9 @@ const DealsList: React.FC = () => {
     // «عروض حقيقية» — يُظهر فقط العروض التي صوّت المشترون أنها حقيقية (أغلبية).
     // اختياري (افتراضياً مُطفأ) ليشجّع التجار على عروض صادقة. v11.98
     const [verifiedOnly, setVerifiedOnly] = useState(false);
+    // Re-evaluate the list every ~15s so time-expired deals fall off on their
+    // own without needing a data change. v12.06
+    const nowTick = useNowTick(15000);
 
     // Smooth-scroll to top on type change so navigating between sections doesn't
     // leave the user mid-list.
@@ -74,7 +78,9 @@ const DealsList: React.FC = () => {
         let list = deals.filter(d => {
             if (d.status !== 'active' || !hasStock(d)) return false;
             if (type === 'coming_soon') return isDealVisibleComingSoon(d);
-            return !isDealComingSoon(d);
+            // Time-expired offers drop out here, live by the clock — not
+            // waiting on the DB status field to flip. v12.06
+            return !isDealComingSoon(d) && !isDealExpiredByTime(d);
         });
 
         if (activeCategory !== 'all') {
@@ -133,7 +139,7 @@ const DealsList: React.FC = () => {
         // Coming-soon view stays ad-free (those deals aren't bookable yet).
         if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
         return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles, nowTick]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.

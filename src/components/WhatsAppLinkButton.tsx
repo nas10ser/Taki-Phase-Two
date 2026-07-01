@@ -22,11 +22,17 @@ const WhatsAppLinkButton: React.FC<{ compact?: boolean }> = ({ compact }) => {
     const [busy, setBusy] = useState(false);
 
     const number = (platformSettings.whatsappBotNumber || '').replace(/\D/g, '');
-    // Dormant until the bot's WhatsApp number is configured & the channel enabled.
-    if (!platformSettings.whatsappBotEnabled || !number) return null;
+    // Show whenever the channel is enabled (parity with Telegram). The actual
+    // link needs the official WhatsApp number; until the admin sets it we show a
+    // friendly "coming soon" instead of hiding the whole section. v12.06
+    if (!platformSettings.whatsappBotEnabled) return null;
 
     const handleLink = async () => {
         if (busy) return;
+        if (!number) {
+            customAlert(isAr ? '🟢 ربط واتساب قيد التفعيل — سيتوفّر قريباً.' : '🟢 WhatsApp linking is coming soon.');
+            return;
+        }
         setBusy(true);
         try {
             const { data, error } = await supabase.rpc('bot_create_link_token');

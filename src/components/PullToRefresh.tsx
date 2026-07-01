@@ -110,14 +110,16 @@ const PullToRefresh: React.FC<Props> = ({
             if (distance >= triggerDistance) {
                 setRefreshing(true);
                 setPullDistance(triggerDistance);
-                // Cap the visible spinner at 700 ms so it ALWAYS feels
-                // instant. Kick off the actual refresh in the background
-                // and don't block the UI on it — on a slow link the data
-                // will still update via the realtime channels seconds
-                // later, no need to keep spinning at the user.
+                // Keep the spinner up until the refresh ACTUALLY finishes, so
+                // the user sees the new products land under a live spinner
+                // instead of the indicator vanishing after 700 ms while the
+                // list quietly updates seconds later ("it did nothing"). We
+                // still enforce a 500 ms floor (no flicker on a warm cache)
+                // and a 7 s ceiling (never spin forever on a dead link). v12.06
                 const fired = Promise.resolve(onRefresh()).catch(() => {});
-                const capped = new Promise(r => setTimeout(r, 700));
-                await Promise.race([fired, capped]);
+                const minVisible = new Promise(r => setTimeout(r, 500));
+                const maxWait = new Promise(r => setTimeout(r, 7000));
+                await Promise.race([Promise.all([fired, minVisible]), maxWait]);
                 setRefreshing(false);
                 setPullDistance(0);
             } else {

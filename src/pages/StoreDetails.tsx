@@ -373,73 +373,98 @@ const StoreDetails: React.FC = () => {
                     <div style={{ fontSize: '1rem', opacity: 0.9, fontWeight: 700, marginBottom: 4 }}>📍 {profile.address || store.address}</div>
                     <div style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600, marginBottom: 16 }}>📅 {isRTL ? 'تاريخ الانضمام: ' : 'Joined: '} {new Date().getFullYear()}/01</div>
                     
-                    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                        <span style={{ background: 'rgba(245,158,11,0.2)', color: '#fbbf24', padding: '8px 16px', borderRadius: 14, fontSize: '1rem', fontWeight: 900 }}
-                            title={isRTL ? `${storeRating.count} تقييم` : `${storeRating.count} reviews`}>
-                            ★ {storeRating.count > 0 ? storeRating.average : (isRTL ? 'جديد' : 'New')}
-                            {storeRating.count > 0 && (
-                                <span style={{ fontSize: '0.7rem', opacity: 0.85, marginInlineStart: 6, fontWeight: 700 }}>
-                                    ({storeRating.count})
-                                </span>
-                            )}
-                        </span>
-                        {/* Overall offer authenticity (blue real / yellow fake) — v11.98 */}
-                        {storeAuth.show && (
-                            <span style={{ background: storeAuth.bg, color: storeAuth.color, padding: '8px 16px', borderRadius: 14, fontSize: '0.95rem', fontWeight: 900 }}
-                                title={isRTL ? `${storeAuth.total} صوت على مصداقية العروض` : `${storeAuth.total} authenticity votes`}>
-                                {storeAuth.label}
-                            </span>
-                        )}
-                        <div style={{ background: 'rgba(80, 80, 90, 0.3)', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 14 }}>
-                            <span style={{ color: '#fff', fontSize: '1rem', fontWeight: 900 }}>
-                                👥 {followerCount === null ? '…' : followerCount.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}
-                            </span>
-                            {user?.id !== store.id && (
-                                <>
-                                    <button onClick={toggleFollow}
-                                        aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
-                                        title={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة المتجر' : 'Follow store')}
-                                        style={{
-                                            background: isFollowed ? '#ef4444' : 'rgba(80, 80, 95, 0.2)',
-                                            color: 'white',
-                                            border: 'none', borderRadius: '50%', width: 28, height: 28,
-                                            fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            transition: 'all 0.2s ease', cursor: 'pointer'
-                                        }}>
-                                        {isFollowed ? '❤️' : '🤍'}
-                                    </button>
-                                    <button onClick={toggleBlock}
-                                        aria-label={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر' : 'Block store')}
-                                        title={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر — إخفاء عروضه وتنبيهاته' : 'Block store — hide its deals & alerts')}
-                                        style={{
-                                            background: isBlocked ? '#ef4444' : 'rgba(80, 80, 95, 0.2)',
-                                            color: 'white',
-                                            border: 'none', borderRadius: '50%', width: 28, height: 28,
-                                            fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            transition: 'all 0.2s ease', cursor: 'pointer',
-                                            marginInlineStart: 6
-                                        }}>
-                                        🚫
-                                    </button>
-                                    {effectiveUserType === 'buyer' && (
-                                        <button onClick={() => setShowReport(true)}
-                                            aria-label={isRTL ? 'إبلاغ عن المتجر' : 'Report store'}
-                                            title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
-                                            style={{
-                                                background: 'rgba(80, 80, 95, 0.2)',
-                                                color: 'white',
-                                                border: 'none', borderRadius: '50%', width: 28, height: 28,
-                                                fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                transition: 'all 0.2s ease', cursor: 'pointer',
-                                                marginInlineStart: 6
-                                            }}>
-                                            🚩
-                                        </button>
-                                    )}
-                                </>
+                    {/* Stats strip — three clean metric cells (rating · authenticity ·
+                        followers) separated by hairline dividers, instead of the old
+                        cramped pills-plus-icons row. v12.06 */}
+                    {(() => {
+                        const cell: React.CSSProperties = { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '2px 4px', minWidth: 0 };
+                        const value: React.CSSProperties = { fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.1, whiteSpace: 'nowrap' };
+                        const label: React.CSSProperties = { fontSize: '0.68rem', fontWeight: 700, opacity: 0.65, whiteSpace: 'nowrap' };
+                        const divider = <div aria-hidden style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.12)', margin: '4px 0' }} />;
+                        return (
+                            <div style={{
+                                display: 'flex', alignItems: 'stretch', justifyContent: 'center',
+                                maxWidth: 380, margin: '0 auto',
+                                background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.08)',
+                                borderRadius: 18, padding: '12px 6px',
+                            }}>
+                                {/* Rating */}
+                                <div style={cell}>
+                                    <div style={{ ...value, color: '#fbbf24' }}>★ {storeRating.count > 0 ? storeRating.average : (isRTL ? 'جديد' : 'New')}</div>
+                                    <div style={label}>{storeRating.count > 0 ? (isRTL ? `${storeRating.count} تقييم` : `${storeRating.count} reviews`) : (isRTL ? 'التقييم' : 'Rating')}</div>
+                                </div>
+
+                                {/* Authenticity (only once buyers have voted) */}
+                                {storeAuth.show && (
+                                    <>
+                                        {divider}
+                                        <div style={cell} title={isRTL ? `${storeAuth.total} صوت على مصداقية العروض` : `${storeAuth.total} authenticity votes`}>
+                                            <div style={{ ...value, color: storeAuth.real ? '#60a5fa' : '#facc15' }}>
+                                                {storeAuth.real ? '🔵' : '🟡'} {storeAuth.pct}%
+                                            </div>
+                                            <div style={label}>{storeAuth.real ? (isRTL ? 'عروض حقيقية' : 'Real offers') : (isRTL ? 'عروض وهمية' : 'Fake offers')}</div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {divider}
+
+                                {/* Followers */}
+                                <div style={cell}>
+                                    <div style={{ ...value, color: '#fff' }}>👥 {followerCount === null ? '…' : followerCount.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}</div>
+                                    <div style={label}>{isRTL ? 'متابِع' : 'Followers'}</div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Action row — a prominent Follow button, with Block & Report as
+                        quiet ghost icons beside it. Shown to everyone except the
+                        owner viewing their own store. */}
+                    {user?.id !== store.id && (
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'stretch', maxWidth: 380, margin: '12px auto 0' }}>
+                            <button onClick={toggleFollow}
+                                aria-label={isFollowed ? (isRTL ? 'إلغاء المتابعة' : 'Unfollow') : (isRTL ? 'متابعة' : 'Follow')}
+                                style={{
+                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                    background: isFollowed ? 'rgba(239,68,68,0.14)' : '#ffffff',
+                                    color: isFollowed ? '#fecaca' : '#0f172a',
+                                    border: isFollowed ? '1px solid rgba(239,68,68,0.45)' : 'none',
+                                    borderRadius: 14, padding: '12px 14px', fontSize: '0.92rem', fontWeight: 900,
+                                    cursor: 'pointer', boxShadow: isFollowed ? 'none' : '0 6px 18px rgba(0,0,0,0.18)',
+                                    transition: 'all 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                }}>
+                                <span style={{ fontSize: '1.05rem' }}>{isFollowed ? '❤️' : '🤍'}</span>
+                                {isFollowed ? (isRTL ? 'متابَع' : 'Following') : (isRTL ? 'متابعة' : 'Follow')}
+                            </button>
+
+                            <button onClick={toggleBlock}
+                                aria-label={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر' : 'Block store')}
+                                title={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر — إخفاء عروضه وتنبيهاته' : 'Block store — hide its deals & alerts')}
+                                style={{
+                                    width: 48, minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: isBlocked ? 'rgba(239,68,68,0.28)' : 'rgba(255,255,255,0.1)',
+                                    color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 14,
+                                    fontSize: '1.05rem', cursor: 'pointer', transition: 'all 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                }}>
+                                🚫
+                            </button>
+
+                            {effectiveUserType === 'buyer' && (
+                                <button onClick={() => setShowReport(true)}
+                                    aria-label={isRTL ? 'إبلاغ عن المتجر' : 'Report store'}
+                                    title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
+                                    style={{
+                                        width: 48, minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        background: 'rgba(255,255,255,0.1)', color: '#fff',
+                                        border: '1px solid rgba(255,255,255,0.14)', borderRadius: 14,
+                                        fontSize: '1.05rem', cursor: 'pointer', transition: 'all 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                    }}>
+                                    🚩
+                                </button>
                             )}
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* About & Contact Section */}

@@ -6,7 +6,8 @@ import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { useNowTick } from '../utils/useNowTick';
 import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
 import { userRepository } from '../repositories/userRepository';
@@ -43,6 +44,9 @@ const Home: React.FC = () => {
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
     const [matchingStores, setMatchingStores] = useState<UserProfile[]>([]);
     const [banners, setBanners] = useState<Banner[]>([]);
+    // Advances every ~15s while visible so time-expired deals drop out of the
+    // live lists on their own — no data change or refetch needed. v12.06
+    const nowTick = useNowTick(15000);
 
     const isRTL = language === 'ar';
 
@@ -134,7 +138,11 @@ const Home: React.FC = () => {
     // while each section still ranks by its own metric within a tier.
     // v11.20 — every "live" section excludes Coming Soon deals; they live
     // exclusively in the dedicated "العروض القادمة" carousel below.
-    const isLive = (d: Deal) => !isDealComingSoon(d);
+    // "Live" = bookable right now: not scheduled for the future AND not past
+    // its lifespan. Checking expiry HERE (by the clock) — instead of trusting
+    // the DB `status` — is what stops expired offers from lingering when the
+    // background status-flip tick was paused (iOS) or the server cron lagged.
+    const isLive = (d: Deal) => !isDealComingSoon(d) && !isDealExpiredByTime(d);
 
     const trendingDeals = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
@@ -149,7 +157,7 @@ const Home: React.FC = () => {
         // v11.25 — sponsors lead this carousel too (gold first, then every 5),
         // then cap at 8 cards so the section stays a tidy horizontal strip.
         return interleaveSponsored(list, sponsors).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors]);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick]);
 
     const bestDiscounts = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
@@ -162,7 +170,7 @@ const Home: React.FC = () => {
             return b.discountPercentage - a.discountPercentage;
         });
         return interleaveSponsored(list, sponsors).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors]);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick]);
 
     // v11.20 — Coming Soon carousel. Same look as trending/discount, but
     // ONLY deals whose startsAt is in the future AND inside the 7-day
@@ -232,16 +240,18 @@ const Home: React.FC = () => {
         // rotating across all active sponsors (targeting + expiry respected
         // inside interleaveSponsored).
         return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants]);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants, nowTick]);
 
     return (
         <>
         {showLocationGate && <LocationGate onClose={() => setGateClosed(true)} />}
         <PullToRefresh isRTL={isRTL} onRefresh={() => {
-            // Fire-and-forget: PullToRefresh caps the spinner regardless,
-            // and the realtime channels will deliver any updates we miss.
-            refreshDeals();
-            return Promise.resolve();
+            // Return the REAL fetch promise so the spinner stays until the new
+            // products actually land (PullToRefresh caps it at ~7s as a
+            // safety). Previously this was fire-and-forget and the spinner
+            // vanished after 700ms while the list updated seconds later —
+            // which read as "the refresh did nothing". v12.06
+            return refreshDeals();
         }}>
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
             {/* No more full-screen blocker — modern apps show content shells while

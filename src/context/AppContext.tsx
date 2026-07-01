@@ -528,6 +528,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return () => clearInterval(interval);
     }, []);
 
+    // Freshness poll — while the app is in the FOREGROUND, re-pull deals every
+    // 30s so a deal published/updated from the bot (or another device) shows up
+    // even if its realtime packet was dropped. The deals websocket is dropped
+    // silently on iOS Safari far more often than the notifications/bookings
+    // ones, and the heartbeat can't tell (any realtime event keeps it "alive").
+    // Deals-only = one small query, and it's PAUSED entirely while backgrounded
+    // so it costs nothing in the user's pocket. v12.06
+    useEffect(() => {
+        let cancelled = false;
+        const poll = () => {
+            if (document.visibilityState !== 'visible') return;
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+            dealRepository.getAll()
+                .then(fresh => { if (!cancelled && fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } })
+                .catch(() => { /* transient — the next tick retries */ });
+        };
+        const interval = setInterval(poll, 30000);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, []);
+
     // Note: REAL-TIME DEAL MATCHING ENGINE moved lower to avoid initialization errors.
 
     useEffect(() => {

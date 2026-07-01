@@ -278,6 +278,18 @@ export const dealExpiryTs = (deal: Deal): number => {
     return dealLifespanStart(deal) + (deal.expiresInMinutes || 0) * 60 * 1000;
 };
 
+/** True the instant a deal's lifespan has elapsed — computed live from the
+ *  clock, NOT from the DB `status` field. This is what makes expired offers
+ *  vanish immediately on every render instead of lingering until the 30s
+ *  status-flip tick runs or the server cron catches up. Defaults to a 120-min
+ *  lifespan to mirror the expiry tick (see AppContext) so the two never
+ *  disagree. Coming-soon deals (future startsAt) are never expired — their
+ *  lifespan clock hasn't started, so lifespanStart is in the future. */
+export const isDealExpiredByTime = (deal: Deal): boolean => {
+    const mins = deal.expiresInMinutes || 120;
+    return Date.now() > dealLifespanStart(deal) + mins * 60 * 1000;
+};
+
 /** Format the remaining time until startsAt — same shape as the live-deal
  *  countdown so the two read consistently. */
 export const formatComingSoonRemaining = (

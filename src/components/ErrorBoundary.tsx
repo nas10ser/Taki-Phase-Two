@@ -9,27 +9,60 @@ interface State {
   hasError: boolean;
   error: Error | null;
   componentStack: string | null;
+  autoRecovering: boolean;
 }
+
+// A stale build trying to lazy-load a chunk that the new deploy renamed.
+const isChunkError = (err?: Error | null): boolean =>
+  err?.name === 'ChunkLoadError' ||
+  /Loading chunk|Failed to fetch dynamically imported module|error loading dynamically imported module/i.test(err?.message ?? '');
+
+// Guard so a genuinely broken build can't reload-loop forever. If we already
+// auto-recovered within this window and STILL hit a chunk error, we stop and
+// show the manual button instead of thrashing.
+const RECOVER_KEY = 'TAKI_CHUNK_AUTO_RECOVER_AT';
+const RECOVER_COOLDOWN_MS = 25_000;
 
 class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
     componentStack: null,
+    autoRecovering: false,
   };
 
   public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, componentStack: null };
+    // For a chunk error we've almost certainly just deployed — recover
+    // automatically instead of parking the user on a manual "reload" screen,
+    // UNLESS we already tried very recently (loop protection).
+    let recentlyRecovered = false;
+    try {
+      const last = Number(sessionStorage.getItem(RECOVER_KEY) || '0');
+      recentlyRecovered = Date.now() - last < RECOVER_COOLDOWN_MS;
+    } catch { /* private mode */ }
+    const autoRecovering = isChunkError(error) && !recentlyRecovered;
+    return { hasError: true, error, componentStack: null, autoRecovering };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
-    captureError(error, { componentStack: errorInfo.componentStack });
+    // Chunk errors are an expected side effect of shipping a new build while
+    // someone has the app open — not a real bug. Don't page Sentry for them.
+    if (!isChunkError(error)) {
+      captureError(error, { componentStack: errorInfo.componentStack });
+    }
     this.setState({ componentStack: errorInfo.componentStack ?? null });
+
+    if (this.state.autoRecovering) {
+      try { sessionStorage.setItem(RECOVER_KEY, String(Date.now())); } catch { /* ignore */ }
+      // Purge caches + swap the service worker, then reload to the fresh
+      // build — the same thing the manual button did, just done for the user.
+      this.handleHardRefresh();
+    }
   }
 
   private handleReset = () => {
-    this.setState({ hasError: false, error: null, componentStack: null });
+    this.setState({ hasError: false, error: null, componentStack: null, autoRecovering: false });
   };
 
   private handleHardRefresh = async () => {
@@ -50,8 +83,24 @@ class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       const err = this.state.error;
-      const isChunkLoadError = err?.name === 'ChunkLoadError' ||
-        /Loading chunk|Failed to fetch dynamically imported module/i.test(err?.message ?? '');
+      const isChunkLoadError = isChunkError(err);
+
+      // Silent auto-recovery in progress — show a calm "updating" splash
+      // instead of the technical reload screen. handleHardRefresh() is
+      // already clearing caches + reloading in the background. v12.06
+      if (this.state.autoRecovering) {
+        return (
+          <div style={{ padding: 20, background: 'var(--body-bg)', color: 'var(--text-primary)', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', direction: 'rtl' }}>
+            <div style={{ width: 46, height: 46, border: '4px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'taki-eb-spin 0.9s linear infinite' }} />
+            <style>{`@keyframes taki-eb-spin{to{transform:rotate(360deg)}}`}</style>
+            <h1 style={{ fontSize: '1.25rem', marginTop: 22, fontWeight: 800 }}>جاري تحديث التطبيق…</h1>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: 8, maxWidth: 360 }}>
+              وصلت نسخة جديدة — نحمّلها لك تلقائياً خلال لحظات.
+            </p>
+          </div>
+        );
+      }
+
       return (
         <div style={{ padding: 20, background: 'var(--body-bg)', color: 'var(--text-primary)', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', direction: 'rtl' }}>
           <div style={{ fontSize: '4rem', marginBottom: 12 }}>{isChunkLoadError ? '🔄' : '⚠️'}</div>
