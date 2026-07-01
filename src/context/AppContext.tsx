@@ -1762,23 +1762,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
     }, [deals, user]);
 
-    // Buyer authenticity vote («عرض حقيقي / وهمي») — one per deal, re-voting
-    // updates. Optimistically adjusts the deal's real/fake counters so the
-    // green/red badge reflects the new vote instantly. v11.97
+    // Buyer authenticity vote («عرض حقيقي / وهمي») — ONE per deal and the first
+    // vote is FINAL (v12.10). A buyer who already voted can't flip real↔fake on
+    // a re-purchase, matching the DB (cast_authenticity_vote is now immutable).
     const recordAuthVote = useCallback(async (dealId: string, isReal: boolean): Promise<boolean> => {
         if (!user) return false;
+        // Already voted on this deal? Keep it as-is — don't call the RPC and
+        // don't touch the counters. Their original vote stands.
+        const current = dealsRef.current.find(d => d.id === dealId);
+        if (current && (current.myAuthVote === true || current.myAuthVote === false)) {
+            return true;
+        }
         const { authenticityRepository } = await import('../repositories/authenticityRepository');
         const ok = await authenticityRepository.vote(dealId, isReal);
         if (!ok) return false;
         setDeals(prev => prev.map(d => {
             if (d.id !== dealId) return d;
-            const prevVote = d.myAuthVote;
-            let real = d.authReal || 0;
-            let fake = d.authFake || 0;
-            if (prevVote === true) real -= 1;
-            else if (prevVote === false) fake -= 1;
-            if (isReal) real += 1; else fake += 1;
-            return { ...d, authReal: Math.max(0, real), authFake: Math.max(0, fake), myAuthVote: isReal };
+            // Guard again against a stale render — never overwrite an existing vote.
+            if (d.myAuthVote === true || d.myAuthVote === false) return d;
+            const real = (d.authReal || 0) + (isReal ? 1 : 0);
+            const fake = (d.authFake || 0) + (isReal ? 0 : 1);
+            return { ...d, authReal: real, authFake: fake, myAuthVote: isReal };
         }));
         return true;
     }, [user]);
@@ -2378,7 +2382,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                         setDeals(prev => {
                             const exists = prev.find(d => d.id === mapped.id);
-                            if (exists) return prev.map(d => d.id === mapped.id ? { ...d, ...mapped } : d);
+                            // mapRowToDeal returns authReal/authFake=0 and
+                            // myAuthVote=null (the realtime row doesn't carry the
+                            // per-user vote — those are hydrated separately in
+                            // getAll). Merging naively wiped the buyer's own
+                            // authenticity vote on every deal tick, so the
+                            // post-purchase modal re-asked and a re-vote could
+                            // flip real↔fake. Preserve the hydrated values. v12.10
+                            if (exists) return prev.map(d => d.id === mapped.id ? {
+                                ...d, ...mapped,
+                                authReal: d.authReal ?? mapped.authReal,
+                                authFake: d.authFake ?? mapped.authFake,
+                                myAuthVote: (d.myAuthVote === true || d.myAuthVote === false) ? d.myAuthVote : mapped.myAuthVote,
+                            } : d);
                             return [mapped, ...prev];
                         });
                     } else if (payload.eventType === 'DELETE') {
