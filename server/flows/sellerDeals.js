@@ -26,6 +26,26 @@ const YEAR_MIN   = 525600;            // مدة افتراضية لعرض «با
 const DAY_MS     = 86400000;
 const MIN_LEAD   = 10 * 60_000;       // العرض القادم: ١٠ دقائق على الأقل من الآن
 
+// Format a timestamp as DD-MM-YYYY (the natural Gulf format the seller types).
+// UTC to match parseFlexibleDate, which anchors dates at 12:00 UTC. v12.08
+const dmy = (ms) => {
+    const d = new Date(ms);
+    return `${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${d.getUTCFullYear()}`;
+};
+// Return a SPECIFIC, human error for a start-date entry, or null if it's valid.
+// The old code lumped everything into "must be 10 minutes in the future", so a
+// PAST date (e.g. a June date entered in July) showed a confusing 10-minute
+// message. Now we say exactly why: unreadable vs past (with today's date) vs
+// too-soon. v12.08
+const startDateError = (dt) => {
+    const now = Date.now();
+    const example = dmy(now + 7 * DAY_MS);
+    if (!dt) return tr('sd_date_unparseable', example);
+    if (dt.ms < now) return tr('sd_date_past', dmy(now), example);
+    if (dt.ms < now + MIN_LEAD) return tr('sd_date_soon');
+    return null;
+};
+
 // ── deps المحقونة من bot.js ────────────────────────────────────────────────────
 let rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK;
 
@@ -199,21 +219,25 @@ function register(bot, deps) {
         setStep(tgId(ctx), 'br_name');
         await reply(ctx, tr('sd189_add_branch', DIV), kbCancel());
     });
-    bot.action(/^brEdit:([A-Za-z0-9_-]+)$/, async ctx => {
+    // NOTE: branch ids look like `br_1782839502.457497d1a0ef` — they contain a
+    // DOT. The old regex `[A-Za-z0-9_-]+` excluded `.`, so NONE of these branch
+    // buttons (rename/move/delete) ever fired — tapping «حذف» did nothing. The
+    // charset now includes `.`. v12.08
+    bot.action(/^brEdit:([A-Za-z0-9_.-]+)$/, async ctx => {
         await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.branchId = ctx.match[1];
         setStep(tgId(ctx), 'br_rename');
         await reply(ctx, tr('sd194_branch_rename'), kbCancel());
     });
-    bot.action(/^brMove:([A-Za-z0-9_-]+)$/, async ctx => {
+    bot.action(/^brMove:([A-Za-z0-9_.-]+)$/, async ctx => {
         await ctx.answerCbQuery(); const s = getSession(tgId(ctx));
         resetTemp(s); s.temp.flow = 'branch'; s.temp.branchId = ctx.match[1]; s.temp.branchMove = true;
         askLocation(ctx, tr('sd199_update_branch_loc'));
     });
-    bot.action(/^brDel:([A-Za-z0-9_-]+)$/, async ctx => {
+    bot.action(/^brDel:([A-Za-z0-9_.-]+)$/, async ctx => {
         await ctx.answerCbQuery();
         await reply(ctx, tr('sd203_confirm_del_branch'), Markup.inlineKeyboard([[btn(tr('sd203_yes_delete'), `brDelYes:${ctx.match[1]}`)], [btn(tr('sd203_no'), 'seller:branches')]]).reply_markup);
     });
-    bot.action(/^brDelYes:([A-Za-z0-9_-]+)$/, async ctx => {
+    bot.action(/^brDelYes:([A-Za-z0-9_.-]+)$/, async ctx => {
         await ctx.answerCbQuery(tr('cm_deleting'));
         const r = await rpc('bot_remove_branch', { p_telegram_id: tgId(ctx), p_branch_id: ctx.match[1] });
         if (r?.success) await reply(ctx, tr('sd208_branch_deleted'));
@@ -943,10 +967,10 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_hours') { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 8760) { await reply(ctx, tr('sd929_valid_hours')); return true; } expTarget(s).expiryHours = n; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_days')  { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 365) { await reply(ctx, tr('sd930_valid_days')); return true; } expTarget(s).expiryDays = n; await onExpiryChosen(ctx); return true; }
     // مهمة ١٠ — تاريخ بداية العرض (نصّي) ضمن «بتاريخ محدّد».
-    if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); if (!dt || dt.ms < Date.now() + MIN_LEAD) { await reply(ctx, tr('sd_date_future')); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
-    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (!dt || dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start')); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
+    if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
+    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt) { await reply(ctx, tr('sd_date_unparseable', dmy(Date.now() + 7 * DAY_MS))); return true; } const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start')); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_qty')   { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } const tq = expTarget(s); tq.qty = +normalizeDigits(text); tq.unlimited = false; await onQtyChosen(ctx); return true; }
-    if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); if (!dt || dt.ms < Date.now() + MIN_LEAD) { await reply(ctx, tr('sd_date_future')); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
+    if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
 
     // ── موقع (رابط/إحداثيات) — مشترك ──
     if (step === 'loc_link') {

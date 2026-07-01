@@ -1186,6 +1186,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const liveAlertedRef = useRef(false);
     const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported'>('unknown');
+    // Once a shopper turns live location ON we remember it here. iOS Safari has
+    // NO usable Permissions API for geolocation, so on every relaunch the state
+    // fell back to 'prompt' and the «فعّل موقعك» banner nagged again — even
+    // though the OS still trusts the site. This flag lets us resume tracking
+    // silently on open (and hide the banner) until an actual denial clears it.
+    // v12.08
+    const LIVE_LOC_KEY = 'taki_live_loc_on';
 
     // Persist the live fix to the account — throttled so a moving car doesn't
     // hammer the DB: first fix saves immediately, then only after a real move
@@ -1212,10 +1219,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const prev = lastLiveRef.current;
                 const moved = prev ? getDistance(prev.lat, prev.lng, lat, lng) * 1000 : Infinity;
                 if (!prev || moved >= 8) { lastLiveRef.current = { lat, lng }; setLiveLocation({ lat, lng }); }
+                setLocationPermission('granted');
                 persistLiveLocation(lat, lng);
                 if (!liveAlertedRef.current) { liveAlertedRef.current = true; checkAlertsRef.current?.(lat, lng); }
             },
-            () => { /* transient error — keep last known fix */ },
+            (err) => {
+                // A real permission DENIAL (code 1) must surface so the CTA
+                // comes back and the persisted "on" flag is cleared. Other
+                // codes (position unavailable / timeout) are transient — keep
+                // the last known fix and keep tracking. v12.08
+                if (err && err.code === 1) {
+                    setLocationPermission('denied');
+                    try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ }
+                    stopLiveWatch();
+                }
+            },
             { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
         );
     }, [persistLiveLocation]);
@@ -1233,11 +1251,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             lastLiveRef.current = { lat, lng };
             setLiveLocation({ lat, lng });
             setLocationPermission('granted');
+            try { localStorage.setItem(LIVE_LOC_KEY, '1'); } catch { /* ignore */ }
             await persistLiveLocation(lat, lng);
             startLiveWatch();
             return true;
         } catch {
             setLocationPermission('denied');
+            try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ }
             return false;
         }
     }, [persistLiveLocation, startLiveWatch]);
@@ -1250,21 +1270,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return; }
         let cancelled = false;
         let perm: any = null;
+        // If the shopper already turned live location ON in a previous session,
+        // resume tracking SILENTLY and treat it as granted so the banner stays
+        // hidden. watchPosition itself re-validates: if the OS actually revoked
+        // access, its error callback (code 1) flips us back to 'denied' and
+        // clears the flag. This is the path that makes iOS "remember" it. v12.08
+        let savedOn = false;
+        try { savedOn = localStorage.getItem(LIVE_LOC_KEY) === '1'; } catch { /* ignore */ }
+        if (savedOn) { setLocationPermission('granted'); startLiveWatch(); }
         (async () => {
             try {
                 if ((navigator as any).permissions?.query) {
                     perm = await (navigator as any).permissions.query({ name: 'geolocation' });
                     if (cancelled) return;
-                    setLocationPermission(perm.state);
-                    if (perm.state === 'granted') startLiveWatch();
+                    // Don't let a stale 'prompt' from the Permissions API override
+                    // a live "on" flag — only downgrade on a real denial.
+                    if (perm.state === 'denied') {
+                        setLocationPermission('denied');
+                        try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ }
+                        stopLiveWatch();
+                    } else if (perm.state === 'granted') {
+                        setLocationPermission('granted');
+                        startLiveWatch();
+                    } else if (!savedOn) {
+                        setLocationPermission('prompt');
+                    }
                     perm.onchange = () => {
-                        setLocationPermission(perm.state);
-                        if (perm.state === 'granted') startLiveWatch(); else stopLiveWatch();
+                        if (perm.state === 'denied') { try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ } setLocationPermission('denied'); stopLiveWatch(); }
+                        else if (perm.state === 'granted') { setLocationPermission('granted'); startLiveWatch(); }
+                        else setLocationPermission(savedOn ? 'granted' : 'prompt');
                     };
-                } else {
+                } else if (!savedOn) {
                     setLocationPermission('prompt'); // older Safari has no Permissions API — CTA requests
                 }
-            } catch { setLocationPermission('prompt'); }
+            } catch { if (!savedOn) setLocationPermission('prompt'); }
         })();
         return () => { cancelled = true; if (perm) perm.onchange = null; };
     }, [user?.id, user?.userType, startLiveWatch, stopLiveWatch]);
