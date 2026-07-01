@@ -37,6 +37,8 @@ const trunc = (s, n) => { s = String(s == null ? '' : s); return s.length <= n ?
 const cur = () => (I18N.lang() === 'en' ? 'SAR' : 'ر.س');           // عملة حسب اللغة
 const MAX_IMAGES = 4;
 const YEAR_MIN = 525600, DAY_MS = 86400000, MIN_LEAD = 10 * 60_000;
+// DD-MM-YYYY in Riyadh time (UTC+3) for dynamic, never-stale date examples. v12.09
+const dmyWA = (ms) => { const d = new Date(ms + 3 * 3600_000); return `${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${d.getUTCFullYear()}`; };
 
 /**
  * إنشاء قناة واتساب. deps: { rpc, APP_URL, botBookedBarcodes }.
@@ -1009,7 +1011,7 @@ function create(deps) {
         if (type === 'stock') { t0.expiryHours = null; t0.expiryDays = null; t0.expiryEndMs = null; t0.expiryDateIso = null; return onExpiryChosen(from, s); }
         if (type === 'hours') { s.step = 'ad_hours'; return sendText(from, tr('wa_exp_hours_prompt')); }
         if (type === 'duration') { s.step = 'ad_days'; return sendText(from, tr('wa_exp_days_prompt')); }
-        s.step = 'ad_date'; return sendText(from, tr('wa_exp_date_prompt'));
+        s.step = 'ad_date'; return sendText(from, tr('wa_exp_date_prompt', dmyWA(Date.now() + 14 * DAY_MS)));
     }
     async function onExpiryChosen(from, s) { if (s.temp.flow === 'edit') return saveEditExpiry(from, s); return askQtyStep(from, s); }
     async function askQtyStep(from, s) {

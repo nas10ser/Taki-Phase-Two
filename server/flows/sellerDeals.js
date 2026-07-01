@@ -26,12 +26,17 @@ const YEAR_MIN   = 525600;            // مدة افتراضية لعرض «با
 const DAY_MS     = 86400000;
 const MIN_LEAD   = 10 * 60_000;       // العرض القادم: ١٠ دقائق على الأقل من الآن
 
-// Format a timestamp as DD-MM-YYYY (the natural Gulf format the seller types).
-// UTC to match parseFlexibleDate, which anchors dates at 12:00 UTC. v12.08
+// Format a timestamp as DD-MM-YYYY in RIYADH time (UTC+3) — so "today" and the
+// dynamic examples always match the seller's real Saudi calendar date, never a
+// day off near midnight. Saudi has no DST, so a flat +3h shift is exact. v12.09
+const RIYADH_MS = 3 * 3600_000;
 const dmy = (ms) => {
-    const d = new Date(ms);
+    const d = new Date(ms + RIYADH_MS);
     return `${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${d.getUTCFullYear()}`;
 };
+// A real, always-in-the-future example date to show in prompts (never a stale
+// hardcoded month). v12.09
+const exampleFuture = (days = 7) => dmy(Date.now() + days * DAY_MS);
 // Return a SPECIFIC, human error for a start-date entry, or null if it's valid.
 // The old code lumped everything into "must be 10 minutes in the future", so a
 // PAST date (e.g. a June date entered in July) showed a confusing 10-minute
@@ -454,7 +459,7 @@ async function askDealStartDate(ctx) {
 }
 async function pickedDealStart(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_dealstart'); return reply(ctx, tr('sd422_custom_start_prompt'), kbBack('adb:expiry')); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_dealstart'); return reply(ctx, tr('sd422_custom_start_prompt', exampleFuture(7)), kbBack('adb:expiry')); }
     const days = +key;
     t.startsAt = days > 0 ? Date.now() + days * DAY_MS : null;  // الآن = بلا جدولة
     t.scheduleDone = true;                                       // البداية حُسمت هنا → تخطّي خطوة «عرض قادم»
@@ -473,7 +478,7 @@ async function askEndDate(ctx) {
 }
 async function pickedEndDate(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_date'); return reply(ctx, tr('sd441_custom_end_prompt'), kbBack(backToExpiry(s))); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_date'); return reply(ctx, tr('sd441_custom_end_prompt', exampleFuture(14)), kbBack(backToExpiry(s))); }
     // المدد السريعة تُحسب من موعد البداية (إن جُدول) لا من الآن — مطابق للموقع.
     const anchor = t.startsAt && t.startsAt > Date.now() ? t.startsAt : Date.now();
     const ms = anchor + (+key) * DAY_MS;
@@ -535,7 +540,7 @@ async function askStartDate(ctx) {
     ]).reply_markup);
 }
 async function pickedStartDate(ctx, key) {
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_startdate'); return reply(ctx, tr('sd503_type_start_date'), kbBack('xs:set')); }
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_startdate'); return reply(ctx, tr('sd503_type_start_date', exampleFuture(7)), kbBack('xs:set')); }
     const ms = Date.now() + (+key) * DAY_MS;
     return onScheduleChosen(ctx, ms, false);
 }
@@ -968,7 +973,7 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_days')  { const n = +normalizeDigits(text); if (!isQty(text) || n < 1 || n > 365) { await reply(ctx, tr('sd930_valid_days')); return true; } expTarget(s).expiryDays = n; await onExpiryChosen(ctx); return true; }
     // مهمة ١٠ — تاريخ بداية العرض (نصّي) ضمن «بتاريخ محدّد».
     if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
-    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt) { await reply(ctx, tr('sd_date_unparseable', dmy(Date.now() + 7 * DAY_MS))); return true; } const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start')); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
+    if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt) { await reply(ctx, tr('sd_date_unparseable', dmy(Date.now() + 7 * DAY_MS))); return true; } const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start', dmy(anchor + 7 * DAY_MS))); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_qty')   { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } const tq = expTarget(s); tq.qty = +normalizeDigits(text); tq.unlimited = false; await onQtyChosen(ctx); return true; }
     if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
 
