@@ -839,7 +839,22 @@ function create(deps) {
         if (b.status === 'pending' || b.status === 'acknowledged') btns.push({ id: `wa:done:${bc}`, title: tr('wa_complete') });
         btns.push({ id: `wa:chat:${bc}`, title: tr('wa_chat_btn') });
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
-        await sendButtons(from, { body: '—', buttons: [{ id: `wa:call:${bc}`, title: tr('wa_bk_call') }, { id: 'wa:s:orders', title: tr('menu_seller_bookings') }] });
+        // التاجر يقدر يلغي حجز المشتري (كان ناقصاً). v12.07
+        const row2 = [{ id: `wa:call:${bc}`, title: tr('wa_bk_call') }];
+        if (b.status === 'pending' || b.status === 'acknowledged') row2.push({ id: `wa:scancel:${bc}`, title: tr('wa_bk_cancel') });
+        row2.push({ id: 'wa:s:orders', title: tr('menu_seller_bookings') });
+        await sendButtons(from, { body: '—', buttons: row2.slice(0, 3) });
+    }
+    async function askSellerCancel(from, s, bc) {
+        await sendButtons(from, { body: tr('wa_cancel_confirm', bc), buttons: [
+            { id: `wa:sdcancel:${bc}`, title: tr('wa_cancel_yes') }, { id: `wa:so1:${bc}`, title: tr('wa_back') },
+        ] });
+    }
+    async function doSellerCancel(from, s, bc) {
+        const r = await rpc('bot_cancel_booking', aid(from, { p_barcode: bc }));
+        await sendText(from, (r && r.success) ? tr('wa_cancel_ok') : tr('wa_cancel_fail'));
+        s.temp.soCache = {};
+        return showSellerOrders(from, s, 'current');
     }
     async function ackOrder(from, s, bc) {
         const r = await rpc('bot_acknowledge_booking', aid(from, { p_barcode: bc }));
@@ -1471,6 +1486,8 @@ function create(deps) {
         if (id === 'wa:so:cur') return showSellerOrders(from, s, 'current');
         if (id === 'wa:so:prev') return showSellerOrders(from, s, 'previous');
         if (id.startsWith('wa:so1:')) return sellerOrderDetail(from, s, id.slice(7));
+        if (id.startsWith('wa:scancel:')) return askSellerCancel(from, s, id.slice(11));
+        if (id.startsWith('wa:sdcancel:')) return doSellerCancel(from, s, id.slice(12));
         if (id.startsWith('wa:ack:')) return ackOrder(from, s, id.slice(7));
         if (id.startsWith('wa:done:')) { const bc = id.slice(8); return completeOrder(from, s, bc, null); }
         if (id === 'wa:s:verify') return startVerify(from, s);

@@ -1346,6 +1346,8 @@ bot.action('book:confirm', async ctx => {
             [Markup.button.callback(tr('b1149_chat_merchant'),`chat:${bc}`), Markup.button.callback(tr('b1149_call_merchant'),`call:b:${bc}`)],
             ...(expiryMs ? [[Markup.button.callback(tr('b1150_countdown'),`cd:${expiryMs}`)]] : []),
             ...(result.store_id ? [[Markup.button.callback(tr('b1151_store_page'),`store:${result.store_id}`)]] : []),
+            // إلغاء الحجز مباشرةً من كرت التأكيد (كان ناقصاً — المشتري ما يقدر يلغي إلا من قائمة الحجوزات). v12.07
+            ...(bc ? [[Markup.button.callback(tr('b1205_cancel_booking'),`cancel:${bc}`)]] : []),
             [Markup.button.callback(tr('b1152_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('b1152_deals'),'deals:0')],
             [Markup.button.callback(tr('b1153_menu'),'menu:back')]
         ]).reply_markup });
@@ -1418,6 +1420,20 @@ bot.action(/^doCancel:(.+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1221_cancelling'));
     const result = await rpc('bot_cancel_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
     if (result?.success) await ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1223_my_bookings'),'buyer:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
+    else { const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed'); await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
+});
+// Seller-side cancel — same RPC (now authorizes the store owner), but the
+// confirm «no» and the success screen route back to SELLER bookings, not the
+// buyer list. v12.07
+bot.action(/^scancel:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    await ctx.reply(tr('b1218_confirm_cancel', md(bc)), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1218_yes_cancel'),'sdoCancel:'+bc)],[Markup.button.callback(tr('b1218_no'),'seller:bookings')]]).reply_markup });
+});
+bot.action(/^sdoCancel:(.+)$/, async ctx => {
+    await ctx.answerCbQuery(tr('b1221_cancelling'));
+    const result = await rpc('bot_cancel_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
+    if (result?.success) await ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('menu_seller_bookings'),'seller:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
     else { const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed'); await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
 });
 
@@ -2169,6 +2185,9 @@ async function showSellerBookings(ctx, scope='current') {
         const row2 = [Markup.button.callback(tr('b1947_call_customer'), `call:b:${b.barcode}`)];
         if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${Number(b.expiry_time)}`));
         rows.push(row2);
+        // التاجر يقدر يلغي حجز المشتري من عنده (كان ناقصاً في البوت). مسار scancel يرجّع
+        // لقائمة حجوزات التاجر بدل حجوزات المشتري. v12.07
+        if (active) rows.push([Markup.button.callback(tr('b1205_cancel_booking'), `scancel:${b.barcode}`)]);
         // safeReplyMd so one odd card (a name/note Telegram rejects) can never abort the
         // loop before the footer below — the footer carries the «رجوع» button. v11.90
         await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
@@ -2708,9 +2727,9 @@ async function deliverNotification(n) {
     const rows = [];
     if (n.type==='booking' && bc) {
         if (isMsg) rows.push([Markup.button.callback(tr('nt_open_chat'),`chat:${bc}`)]);
-        else if (aud==='seller' && ev==='new') { rows.push([Markup.button.callback(tr('nt_confirm_start'),`ack:${bc}`)]); rows.push([Markup.button.callback(tr('nt_complete'),`complete:${bc}`), Markup.button.callback(tr('cm_chat'),`chat:${bc}`)]); }
+        else if (aud==='seller' && ev==='new') { rows.push([Markup.button.callback(tr('nt_confirm_start'),`ack:${bc}`)]); rows.push([Markup.button.callback(tr('nt_complete'),`complete:${bc}`), Markup.button.callback(tr('cm_chat'),`chat:${bc}`)]); rows.push([Markup.button.callback(tr('b1205_cancel_booking'),`scancel:${bc}`)]); }
         else if (aud==='buyer'  && ev==='completed') rows.push([Markup.button.callback(tr('nt_rate'),`rate:${bc}`)]);
-        else if (aud==='buyer'  && ev==='new') rows.push([Markup.button.callback(tr('cm_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('cm_chat'),`chat:${bc}`)]);
+        else if (aud==='buyer'  && ev==='new') { rows.push([Markup.button.callback(tr('cm_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('cm_chat'),`chat:${bc}`)]); rows.push([Markup.button.callback(tr('b1205_cancel_booking'),`cancel:${bc}`)]); }
         else if (aud==='buyer'  && (ev==='acknowledged' || ev==='warning')) rows.push([Markup.button.callback(tr('cm_chat'),`chat:${bc}`)]);
         else rows.push([Markup.button.callback(tr('cm_bookings'), aud==='seller'?'seller:bookings':'buyer:bookings')]);
     }

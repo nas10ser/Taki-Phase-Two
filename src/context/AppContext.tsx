@@ -1904,14 +1904,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string) => {
         const barcode = generateBarcode(8);
 
-        // Bookings always expire within 2 hours of creation, regardless of how
-        // long the deal itself stays live. If the deal expires sooner, we cap to
-        // its actual end so a buyer can never hold a slot past the deal window.
+        // Bookings get a full 2-hour pickup hold from the moment they're made.
+        // v12.07 — we used to cap this to the deal's own end time, which meant
+        // booking a deal near the end of its lifespan produced a hold of only a
+        // few minutes; expire_due_bookings then auto-cancelled it almost
+        // immediately (the "my booking cancelled itself after 2 minutes" bug).
+        // Once a unit is claimed, the buyer's hold is independent of how long
+        // the OFFER stays visible to others.
         const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
         const now = Date.now();
-        const dealLifespanMs = (deal.expiresInMinutes || 120) * 60 * 1000;
-        const dealEndsAt = (deal.createdAt || now) + dealLifespanMs;
-        const expiryTime = Math.min(now + TWO_HOURS_MS, dealEndsAt);
+        const expiryTime = now + TWO_HOURS_MS;
 
         const booking = {
             deal,
