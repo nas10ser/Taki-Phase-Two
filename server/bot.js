@@ -2149,6 +2149,10 @@ bot.action('seller:bk:previous', async ctx => { await ctx.answerCbQuery(); showS
 async function sellerBookingsMenu(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.userId || !ownsStore(s)) return;
+    // Refresh the pending count LIVE from the DB — the cached s.pendingBookings
+    // lagged after a cancel/complete, so the header said «1 بانتظار التأكيد»
+    // while the active list was already empty. v12.11
+    try { const st = await rpc('bot_get_seller_stats', { p_telegram_id: tgId(ctx) }); if (st) { s.pendingBookings = st.pending_bookings || 0; s.activeDeals = st.active_deals || 0; } } catch { /* keep cached on transient error */ }
     const p = s.pendingBookings>0 ? tr('b1914_pending_count', s.pendingBookings) : '';
     await ctx.reply(tr('b1915_store_bookings', p, DIV), { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
