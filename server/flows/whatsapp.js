@@ -200,11 +200,12 @@ function create(deps) {
             o.push(row('wa:s:branches', tr('menu_my_locations'), tr('wa_row_branches_desc')));
             o.push(row('wa:s:hours', tr('menu_working_hours'), tr('wa_row_hours_desc')));
             o.push(row('wa:s:sub', tr('menu_subscription'), tr('wa_row_sub_desc')));
+            // سقف واتساب الصارم ١٠ صفوف للقائمة كلها: قسم المتجر ٨ (+١ للأدمن) + «حساب المتجر» = ٩/١٠.
+            // اللغة وتسجيل الخروج داخل شاشة «حساب المتجر» — كانا صفّين إضافيين يُقتطعان بصمت. v12.14
             sections = [
                 { title: trunc(tr('wa_sec_store'), LIM.rowTitle), rows: o },
                 { title: trunc(tr('wa_sec_account'), LIM.rowTitle), rows: [
                     row('wa:s:profile', tr('menu_store_account'), tr('wa_row_account_desc')),
-                    langRow, row('wa:logout', tr('menu_logout'), tr('wa_row_logout_desc')),
                 ] },
             ];
         } else {
@@ -214,8 +215,9 @@ function create(deps) {
                 row('wa:alerts', tr('menu_smart_alerts'), tr('wa_row_alerts_desc')),
                 row('wa:follows', tr('menu_follows'), tr('wa_row_follows_desc')),
                 row('wa:contests', tr('menu_contests'), tr('wa_row_contests_desc')),
+                // تسجيل الخروج داخل بطاقة «حسابي» — القائمة كانت ١١ صفاً فيُقتطع آخر صف بصمت (سقف ١٠). v12.14
                 row('wa:account', tr('menu_account'), tr('wa_row_account_desc')),
-                langRow, row('wa:logout', tr('menu_logout'), tr('wa_row_logout_desc')),
+                langRow,
             ] }];
         }
         // الأدمن المالك: أضف إحصائيات المنصّة كصفّ أول.
@@ -253,7 +255,7 @@ function create(deps) {
         if (!s.userId) return linkInstructions(from);
         const role = s.isAdmin ? tr('wa_role_admin') : ownsStore(s) ? tr('wa_role_seller') : tr('wa_role_buyer');
         await sendButtons(from, { body: tr('wa_account_card', s.name || '—', s.phone || '—', role), buttons: [
-            { id: 'wa:logout', title: tr('menu_logout') }, menuBtn(),
+            { id: 'wa:logout', title: tr('menu_logout') }, { id: 'wa:lang', title: tr('wa_row_lang') }, menuBtn(),
         ] });
     }
     async function help(from, s) { await sendButtons(from, { body: tr('wa_help_body'), buttons: [menuBtn()] }); }
@@ -1332,6 +1334,8 @@ function create(deps) {
         const st = await rpc('bot_get_store', aid(from, { p_store_id: s.userId }));
         const bio = (st && st.bio) ? String(st.bio).slice(0, 300) : tr('wa_none');
         await sendButtons(from, { body: tr('wa_profile_title', (st && st.name) || s.shop || s.name || '', (st && st.rating_avg) || 0, (st && st.rating_count) || 0, bio), buttons: [{ id: 'wa:bio', title: tr('wa_profile_edit_bio') }, { id: `wa:store:${s.userId}`, title: tr('wa_store_btn') }, menuBtn()] });
+        // اللغة + تسجيل الخروج للتاجر يعيشان هنا (القائمة الرئيسية بلغت سقف الـ١٠ صفوف). v12.14
+        await sendButtons(from, { body: '—', buttons: [{ id: 'wa:lang', title: tr('wa_row_lang') }, { id: 'wa:logout', title: tr('menu_logout') }] });
     }
     async function promptBio(from, s) { s.step = 'await_bio'; await sendText(from, tr('wa_bio_prompt')); }
     async function saveBio(from, s, text) {
