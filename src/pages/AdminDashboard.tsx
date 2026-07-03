@@ -34,6 +34,7 @@ const AdminLocations = lazy(() => import('./admin/AdminLocations'));
 const AdminContests  = lazy(() => import('./admin/AdminContests'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
+const AdminTax       = lazy(() => import('./admin/AdminTax'));
 const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
 const AdminAdmins    = lazy(() => import('./admin/AdminAdmins'));
 
@@ -60,6 +61,7 @@ const TABS: TabDef[] = [
     { value: 'locations', label: 'المولات والأسواق',  icon: '🏬',  gradient: 'from-teal-500 to-emerald-600',     hint: 'إضافة وتعديل وحذف المولات والأسواق (الموقع + البوتين)', permission: 'tab_tools'     },
     { value: 'contests',  label: 'المسابقات',         icon: '🎁',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'استبيانات بجوائز + تصحيح تلقائي + سحب',              permission: 'tab_contests'  },
     { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_launch'    },
+    { value: 'tax',       label: 'الزكاة والضريبة',   icon: '🧾',  gradient: 'from-teal-600 to-emerald-700',     hint: 'عدّاد التسجيل الضريبي + جدول شهري + فواتير جاهزة',   permission: 'tab_launch'    },
     { value: 'messages',  label: 'الرسائل',           icon: '💬',  gradient: 'from-cyan-500 to-blue-600',        hint: 'مراقبة كل المحادثات لحظة بلحظة',                     permission: 'tab_messages'  },
     { value: 'admins',    label: 'المسؤولون',         icon: '👑',  gradient: 'from-amber-500 to-orange-600',     hint: 'إدارة الفريق + الصلاحيات (المالك فقط)',              permission: 'tab_admins'    },
 ];
@@ -332,6 +334,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'locations' && hasPermission('tab_tools')     && <AdminLocations />}
                         {activeTab === 'contests'  && hasPermission('tab_contests')  && <AdminContests />}
                         {activeTab === 'launch'    && hasPermission('tab_launch')    && <AdminLaunch />}
+                        {activeTab === 'tax'       && hasPermission('tab_launch')    && <AdminTax />}
                         {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}
                         {activeTab === 'admins'    && isSuperAdmin                   && <AdminAdmins />}
                     </Suspense>

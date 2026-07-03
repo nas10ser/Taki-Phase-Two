@@ -164,14 +164,26 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
 
     return (
         <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* KPI grid */}
+            {/* KPI grid — كل مؤشر معه شرح مبسّط بلغة التاجر (طلب ناصر v12.15) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                <Kpi emoji="👁️" value={nf(totals.views)} label={t('المشاهدات', 'Views')} accent={C.blue} />
-                <Kpi emoji="🎟️" value={nf(totals.bookings)} label={t('الحجوزات', 'Bookings')} accent={C.violet} />
-                <Kpi emoji="📈" value={`${totals.conv.toFixed(1)}%`} label={t('التحويل', 'Conversion')} accent={C.teal} />
-                <Kpi emoji="💰" value={money(totals.revenue)} label={t('المبيعات', 'Revenue')} accent={C.green} small />
-                <Kpi emoji="🏷️" value={money(totals.savings)} label={t('وفّرته للعملاء', 'Savings given')} accent={C.amber} small />
-                <Kpi emoji="✅" value={`${nf(totals.completed)}/${nf(totals.bookings)}`} label={t('مكتملة', 'Completed')} accent={C.primary} small />
+                <Kpi emoji="👁️" value={nf(totals.views)} label={t('المشاهدات', 'Views')} accent={C.blue}
+                    hint={t('كم مرة فتح المتسوقون عروضك', 'Times shoppers opened your deals')} />
+                <Kpi emoji="🎟️" value={nf(totals.bookings)} label={t('الحجوزات', 'Bookings')} accent={C.violet}
+                    hint={t('كل الحجوزات على عروضك (بدون الملغاة)', 'All bookings except cancelled')} />
+                <Kpi emoji="📈" value={`${totals.conv.toFixed(1)}%`} label={t('التحويل', 'Conversion')} accent={C.teal}
+                    hint={t('من كل ١٠٠ مشاهدة، كم صارت حجزاً', 'Of 100 views, how many booked')} />
+                <Kpi emoji="💰" value={money(totals.revenue)} label={t('المبيعات', 'Revenue')} accent={C.green} small
+                    hint={t('سعرك بعد الخصم × الكمية لكل الحجوزات', 'Discounted price × qty, all bookings')} />
+                <Kpi emoji="🏷️" value={money(totals.savings)} label={t('وفّرته للعملاء', 'Savings given')} accent={C.amber} small
+                    hint={t('(السعر قبل الخصم − بعده) × الكمية — هذا ما كسبه عملاؤك منك', '(Original − discounted) × qty your customers saved')} />
+                <Kpi emoji="✅" value={`${nf(totals.completed)}/${nf(totals.bookings)}`} label={t('مكتملة', 'Completed')} accent={C.primary} small
+                    hint={t('حجوزات استلمها العميل فعلاً من المجموع', 'Bookings actually picked up, of total')} />
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8, background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: 14, padding: '10px 14px' }}>
+                💡 {t(
+                    '«المبيعات» = قيمة كل الحجوزات غير الملغاة بسعرك المخفَّض (تشمل ما لم يُستلم بعد). «وفّرته للعملاء» = فرق التخفيض الذي قدّمته — رقم تسويقي قوي يبيّن قيمة متجرك للمتسوقين.',
+                    '"Revenue" = value of all non-cancelled bookings at your discounted price (includes not-yet-picked-up). "Savings given" = the discount value you handed customers — a strong marketing number.'
+                )}
             </div>
 
             {/* Trend */}
@@ -260,11 +272,12 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
 /* Presentational helpers                                              */
 /* ------------------------------------------------------------------ */
 
-const Kpi: React.FC<{ emoji: string; value: string; label: string; accent: string; small?: boolean }> = ({ emoji, value, label, accent, small }) => (
+const Kpi: React.FC<{ emoji: string; value: string; label: string; accent: string; small?: boolean; hint?: string }> = ({ emoji, value, label, accent, small, hint }) => (
     <div style={{ background: 'var(--card-bg)', padding: '14px 10px', borderRadius: 18, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)', borderTop: `3px solid ${accent}` }}>
         <div style={{ fontSize: '1.25rem', marginBottom: 3 }}>{emoji}</div>
         <div style={{ fontSize: small ? '0.82rem' : '1.15rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.15 }}>{value}</div>
         <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 3 }}>{label}</div>
+        {hint && <div style={{ fontSize: '0.56rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
     </div>
 );
 

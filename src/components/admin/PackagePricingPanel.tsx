@@ -23,10 +23,12 @@ const NumField: React.FC<{
     min?: number;
     max?: number;
     fallback: number;
+    /** عدد الخانات العشرية المسموحة — 0 (افتراضي) للأعداد الصحيحة، 2 للأسعار (299.99). v12.15 */
+    decimals?: number;
     onCommit: (n: number) => void;
     className?: string;
     'aria-label'?: string;
-}> = ({ value, min = 0, max, fallback, onCommit, className, ...rest }) => {
+}> = ({ value, min = 0, max, fallback, decimals = 0, onCommit, className, ...rest }) => {
     const [text, setText] = useState<string>(String(value));
     const editing = useRef(false);
 
@@ -34,7 +36,8 @@ const NumField: React.FC<{
     useEffect(() => { if (!editing.current) setText(String(value)); }, [value]);
 
     const clamp = (n: number): number => {
-        let v = Math.round(n);
+        const f = Math.pow(10, decimals);
+        let v = Math.round(n * f) / f;
         if (!Number.isFinite(v)) v = fallback;
         v = Math.max(min, v);
         if (max != null) v = Math.min(max, v);
@@ -44,7 +47,8 @@ const NumField: React.FC<{
     return (
         <input
             type="number"
-            inputMode="numeric"
+            step={decimals > 0 ? String(1 / Math.pow(10, decimals)) : '1'}
+            inputMode={decimals > 0 ? 'decimal' : 'numeric'}
             value={text}
             onFocus={() => { editing.current = true; }}
             onChange={(e) => {
@@ -205,7 +209,7 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
                                             </label>
                                             <label className="block">
                                                 <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">السعر (ر.س/شهر)</span>
-                                                <NumField value={p.price} min={0} fallback={0}
+                                                <NumField value={p.price} min={0} fallback={0} decimals={2}
                                                     onCommit={(n) => update(i, { price: n })}
                                                     className={numInputCls} aria-label="السعر الشهري" />
                                             </label>

@@ -273,6 +273,8 @@ function create(deps) {
     }
     function dealText(d, geo) {
         const L = [];
+        // شارة ذهبية أعلى بطاقة الراعي/الإعلان — نظير sponsorTag في تيليجرام. v12.15
+        if (d.is_sponsored) L.push(`⭐️ ━━ *${tr(d.sponsor_label === 'sponsor' ? 'q472_official_sponsor' : 'q472_featured_ad')}* ━━ ⭐️`);
         L.push(`🏷 *${d.item_name}*`);
         L.push(tr('q2523_wa_shop_city', d.shop_name, (geoLabel({ id: d.city, name: d.city }) || d.city || d.region || '—')));
         L.push(tr('q2524_wa_price', d.discounted_price, d.original_price, d.discount_percentage));
@@ -302,8 +304,14 @@ function create(deps) {
             p_radius_km: null, p_limit: 9, p_offset: offset, p_open_now: false,
         }) || [];
         if (!deals.length) { if (offset > 0) return browseMenu(from, s); return sendButtons(from, { body: tr('wa_no_deals'), buttons: [{ id: 'wa:cats', title: tr('wa_row_cats') }, menuBtn()] }); }
-        const rows = deals.slice(0, 9).map(d => row(`wa:deal:${d.id}`, String(d.item_name),
-            `${d.discounted_price} ${cur()} • ${d.discount_percentage}%${geo && d.distance_km != null ? ` • ${d.distance_km}كم` : ''}`));
+        // الرعاة/الإعلانات تتصدّر القائمة (ترتيب bot_browse_deals v12.15) بشكل ذهبي مميز:
+        // 👑 راعٍ رسمي / ⭐ إعلان مميّز — نفس قانون الموقع بغضّ النظر عن المسافة.
+        const rows = deals.slice(0, 9).map(d => {
+            const spTag = d.is_sponsored ? (d.sponsor_label === 'sponsor' ? '👑 ' : '⭐ ') : '';
+            const spWord = d.is_sponsored ? `${tr(d.sponsor_label === 'sponsor' ? 'q472_official_sponsor' : 'q472_featured_ad')} • ` : '';
+            return row(`wa:deal:${d.id}`, `${spTag}${d.item_name}`,
+                `${spWord}${d.discounted_price} ${cur()} • ${d.discount_percentage}%${geo && d.distance_km != null ? ` • ${d.distance_km}كم` : ''}`);
+        });
         if (deals.length >= 9) rows.push(row(`wa:more:${sort}:${cat || '-'}:${offset + 9}`, tr('wa_more_deals'), ''));
         rows.push(menuRow());
         const secTitle = (cat && cat !== 'all') ? catLabel(cat) : tr('sort_t_' + sort);
@@ -325,6 +333,7 @@ function create(deps) {
             row('wa:br:newest', tr('sort_t_newest'), ''),
             row('wa:br:popular', tr('sort_t_popular'), ''),
             row('wa:br:discount', tr('sort_t_discount'), ''),
+            row('wa:br:real', tr('sort_t_real'), ''),
             row('wa:near', tr('sort_t_nearby'), ''),
             row('wa:soon', tr('menu_coming_soon'), ''),
             row('wa:cats', tr('wa_row_cats'), ''),
@@ -1318,7 +1327,7 @@ function create(deps) {
         s.temp.pkgs = list0;
         const en = I18N.lang() === 'en';
         const rows = list0.slice(0, 9).map(p => {
-            const price = Math.round((p.price || 0) * (1 - (p.discount || 0) / 100));
+            const price = Math.round((p.price || 0) * (1 - (p.discount || 0) / 100) * 100) / 100;   // خانتان عشريتان. v12.15
             return row(`wa:subgo:${p.id}`, (en ? (p.en || p.ar) : p.ar) || `#${p.id}`, tr('wa_sub_pkg_row', p.max, price, cur()));
         });
         rows.push(row('wa:s:sub', tr('wa_back'), ''), menuRow());

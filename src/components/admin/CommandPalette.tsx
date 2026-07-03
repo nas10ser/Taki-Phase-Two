@@ -25,6 +25,7 @@ export type AdminTab =
     | 'locations'
     | 'contests'
     | 'launch'
+    | 'tax'
     | 'messages'
     | 'admins';
 
@@ -90,6 +91,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
         { kind: 'nav', id: 'nav-locations', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
         { kind: 'nav', id: 'nav-launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
+        { kind: 'nav', id: 'nav-tax',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
     ], []);
 
     const actionCommands: ActionCommand[] = useMemo(() => [

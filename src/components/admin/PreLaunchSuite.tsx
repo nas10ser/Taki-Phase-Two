@@ -876,7 +876,9 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
     { id: 'contact',         category: 'legal',    status: 'ready',       label: 'صفحة «اتصل بنا»',                            detail: '/contact' },
     { id: 'crm',             category: 'business', status: 'manual',      label: 'وثيقة عمل حر أو سجل تجاري + بنك',           detail: 'مطلوب من بوابات الدفع — وثيقة العمل الحر تكفي لـMoyasar' },
     { id: 'maroof',          category: 'legal',    status: 'manual',      label: 'تسجيل في منصة «معروف»',                     detail: 'maroof.sa — يزيد ثقة المشتري' },
-    { id: 'vat',             category: 'legal',    status: 'manual',      label: 'تسجيل ضريبي (لو الدخل > 375K ر.س/سنة)',    detail: 'تحت الحد: لا حاجة' },
+    { id: 'vat',             category: 'legal',    status: 'manual',      label: 'التسجيل في ضريبة القيمة المضافة',           detail: 'إلزامي إذا تجاوزت الإيرادات ٣٧٥ ألف ر.س في ١٢ شهراً — تابع العدّاد التلقائي في تبويب «الزكاة والضريبة»' },
+    { id: 'zakat',           category: 'legal',    status: 'manual',      label: 'تسجيل الزكاة + الإقرار السنوي',             detail: 'كل سجل تجاري يُسجَّل لدى هيئة الزكاة والضريبة والجمارك ويقدّم إقراراً زكوياً خلال ١٢٠ يوماً من نهاية السنة المالية' },
+    { id: 'tax-system',      category: 'legal',    status: 'ready',       label: 'نظام الزكاة والضريبة والفواتير',            detail: 'تبويب «الزكاة والضريبة» يحسب تلقائياً ويُصدر فواتير قابلة للطباعة (v12.15)' },
 
     // ───── Tech (تقني) ─────
     { id: 'sw',              category: 'tech',     status: 'ready',       label: 'Service Worker + cache versioning',         detail: 'CACHE_NAME يُرفع كل deploy' },
@@ -888,7 +890,7 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
     { id: '404',             category: 'tech',     status: 'ready',       label: 'صفحة 404 مخصصة',                            detail: 'NotFound.tsx — تظهر لأي رابط غير معروف' },
     { id: 'sitemap',         category: 'tech',     status: 'ready',       label: 'sitemap.xml + robots.txt',                  detail: 'منشوران في الجذر للـSEO' },
     { id: 'og',              category: 'tech',     status: 'ready',       label: 'Open Graph + Twitter Card',                 detail: 'بطاقات معاينة جميلة في WhatsApp/Twitter' },
-    { id: 'sentry',          category: 'tech',     status: 'manual',      label: 'Error monitoring خارجي (Sentry)',           detail: 'مفيد لاكتشاف الأخطاء قبل ما يبلّغها المستخدم' },
+    { id: 'sentry',          category: 'tech',     status: 'ready',       label: 'Error monitoring خارجي (Sentry)',           detail: 'مفعّل ويستقبل الأخطاء منذ v11.51 — يلتقط أخطاء المستخدمين لحظياً' },
     { id: 'uptime',          category: 'tech',     status: 'manual',      label: 'Uptime monitoring (UptimeRobot)',           detail: 'تنبيه فوري لو الموقع نزل' },
     { id: 'load-test',       category: 'tech',     status: 'manual',      label: 'Load test 1M طلب على staging',              detail: 'استخدم الدليل أسفل هذا التاب' },
     { id: 'lighthouse',      category: 'tech',     status: 'manual',      label: 'Lighthouse score ≥ 90',                     detail: 'Chrome DevTools → Lighthouse → audit موبايل' },

@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.14.0';
+const BOT_VERSION              = '12.15.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -526,7 +526,7 @@ async function startLink(ctx) {
 //  (mirrors the web app: distance & drive-time, sponsors ⭐, deal-type, stock)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SORTMAP     = { p:'popular', d:'discount', n:'newest', s:'sponsored', x:'nearby' };
+const SORTMAP     = { p:'popular', d:'discount', n:'newest', s:'sponsored', x:'nearby', r:'real' };
 // دوال وقت-التشغيل (لا خرائط ثابتة) كي يتبع النصّ لغة المستخدم عبر ALS. v11.87
 const SORT_TITLE  = sort => tr('sort_t_' + sort);   // 🔥/💸/🆕/⭐/📍
 const SORT_SHORT  = sl   => tr('sort_s_' + sl);
@@ -772,7 +772,7 @@ async function submitContest(ctx){
 }
 
 // br:<sortLetter>:<category|->:<offset>
-bot.action(/^br:([pdnsx]):([A-Za-z_\-]+):(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderList(ctx, ctx.match[1], ctx.match[2], +ctx.match[3]); });
+bot.action(/^br:([pdnsxr]):([A-Za-z_\-]+):(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderList(ctx, ctx.match[1], ctx.match[2], +ctx.match[3]); });
 async function renderList(ctx, sortLetter, cat, offset){
     if(!checkRL(`br:${chatId(ctx)}`)) return;
     const s=getSession(tgId(ctx));
@@ -809,7 +809,7 @@ async function renderList(ctx, sortLetter, cat, offset){
     if(deals.length===PAGE) nav.push(Markup.button.callback(tr('b717_next'),`br:${sortLetter}:${cat||'-'}:${offset+PAGE}`));
     if(nav.length) rows.push(nav);
     const sw=[];
-    ['p','d','n'].forEach(sl=>{ if(sl!==sortLetter) sw.push(Markup.button.callback(SORT_SHORT(sl),`br:${sl}:${cat||'-'}:0`)); });
+    ['p','d','n','r'].forEach(sl=>{ if(sl!==sortLetter) sw.push(Markup.button.callback(SORT_SHORT(sl),`br:${sl}:${cat||'-'}:0`)); });
     if(s.geo && sortLetter!=='x') sw.push(Markup.button.callback(SORT_SHORT('x'),`br:x:${cat||'-'}:0`));
     // زرّان كحدّ أقصى في الصف حتى لا يقتصّ تيليجرام «الأكثر خصماً» على الشاشات الضيقة. v11.87
     for(let i=0;i<sw.length;i+=2) rows.push(sw.slice(i,i+2));
@@ -2326,7 +2326,7 @@ bot.action('seller:packages', async ctx => {
         const name  = (en ? (p.en||p.ar) : (p.ar||p.en)) || tr('q2060_package_fallback', p.id);
         const max   = Math.max(1, Number(p.max)||1);
         const disc  = Math.min(100, Math.max(0, Number(p.discount)||0));
-        const price = Math.round((Number(p.price)||0) * (1 - disc/100));
+        const price = Math.round((Number(p.price)||0) * (1 - disc/100) * 100) / 100;   // خانتان عشريتان (299.99). v12.15
         const isCur = curMax>0 && max===curMax;
         let m = `💎 *${md(name)}*${isCur?tr('pkg_c_current_badge'):''}`;
         m += `\n${max<=1 ? tr('pkg_c_loc_one') : tr('pkg_c_loc_many', numEsc(max))}`;
@@ -2348,7 +2348,7 @@ bot.action(/^subpkg:(\d+)$/, async ctx => {
     if (!p) return ctx.reply(tr('cm_plan_unavailable'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     const en = I18N.lang()==='en';
     const name = (en ? (p.en||p.ar) : (p.ar||p.en)) || tr('q2073_package_fallback', p.id);
-    const price = Math.round((Number(p.price)||0) * (1 - (Number(p.discount)||0)/100));
+    const price = Math.round((Number(p.price)||0) * (1 - (Number(p.discount)||0)/100) * 100) / 100;   // خانتان عشريتان. v12.15
     await ctx.reply(
         tr('b2074_confirm_subscription', DIV, md(name), numEsc(Math.max(1,Number(p.max)||1)), money(price), numEsc(Number(p.durationDays)||30)),
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2075_confirm_and_subscribe'),`subgo:${p.id}`)],[Markup.button.callback(tr('b2075_cancel'),'seller:packages')]]).reply_markup });

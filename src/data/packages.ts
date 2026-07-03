@@ -36,9 +36,9 @@ export const LOCATION_PACKAGES: LocationPackage[] = DEFAULT_LOCATION_PACKAGES;
 
 export const DEFAULT_MAX_LOCATIONS = 3;
 
-/** Monthly price after the package's own discount, rounded to whole SAR. */
+/** Monthly price after the package's own discount — keeps 2 decimals (299.99 stays 299.99). v12.15 */
 export const effectivePrice = (p: { price: number; discount?: number }): number =>
-    Math.max(0, Math.round((Number(p.price) || 0) * (1 - (Number(p.discount) || 0) / 100)));
+    Math.max(0, Math.round((Number(p.price) || 0) * (1 - (Number(p.discount) || 0) / 100) * 100) / 100);
 
 export const maxForPackage = (id: number): number =>
     LOCATION_PACKAGES.find(p => p.id === id)?.max ?? DEFAULT_MAX_LOCATIONS;
