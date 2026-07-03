@@ -23,6 +23,7 @@ import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
+import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid } from '../../utils/invoice';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
 interface TaxSettings {
@@ -70,8 +71,7 @@ const EXPENSE_CATS = [
     { id: 'other', label: '📦 أخرى' },
 ];
 
-const isPaid = (p: PaymentRow): boolean =>
-    !!p.paid_at || ['paid', 'succeeded', 'success', 'completed'].includes(String(p.status || '').toLowerCase());
+const isPaid = invoiceIsPaid;   // المصدر الموحّد في utils/invoice (v12.17)
 const fmt = (n: number): string => n.toLocaleString('ar-SA', { maximumFractionDigits: 2 });
 const catLabel = (id: string | null): string => EXPENSE_CATS.find(c => c.id === id)?.label || '📦 أخرى';
 
@@ -88,33 +88,6 @@ function lastQuarters(): Quarter[] {
     }
     return out;
 }
-
-// ZATCA TLV (المرحلة الأولى) — Tag1..5 ثم base64.
-function zatcaTlvBase64(seller: string, vat: string, iso: string, total: string, vatAmt: string): string {
-    const enc = new TextEncoder();
-    const parts: number[] = [];
-    [seller, vat, iso, total, vatAmt].forEach((v, i) => {
-        const bytes = enc.encode(v);
-        parts.push(i + 1, bytes.length, ...Array.from(bytes));
-    });
-    let bin = '';
-    for (const b of parts) bin += String.fromCharCode(b);
-    try { return btoa(bin); } catch { return ''; }
-}
-
-const PRINT_CSS = `
- body{font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:32px;color:#111;background:#fff}
- .inv{max-width:640px;margin:0 auto 24px;border:1px solid #ddd;border-radius:14px;padding:28px}
- .pb{page-break-after:always}
- h1{font-size:20px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:18px}
- table{width:100%;border-collapse:collapse;margin:14px 0} td,th{border:1px solid #e5e5e5;padding:8px 10px;font-size:13px;text-align:right}
- th{background:#f8f8f8} .tot td{font-weight:800;background:#fffbe6} .ref td{font-weight:800;background:#ecfdf5}
- .meta{font-size:12px;color:#444;line-height:2}
- .qr{margin-top:14px;font-size:10px;color:#777;word-break:break-all;border:1px dashed #ccc;border-radius:8px;padding:8px}
- .foot{margin-top:16px;font-size:11px;color:#888;text-align:center}
- .badge{display:inline-block;background:#0d9488;color:#fff;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:700}
- @media print{body{padding:0}.noprint{display:none}.inv{border:none}}
-`;
 
 // ─── المكوّن ─────────────────────────────────────────────────────────────────
 const AdminTax: React.FC = () => {
@@ -267,49 +240,18 @@ const AdminTax: React.FC = () => {
         load();
     };
 
-    // ─── الطباعة ─────────────────────────────────────────────────────────────
-    const invoiceHtml = (p: PaymentRow, pageBreak: boolean): string => {
-        const gross = Number(p.amount) || 0;
-        const vat = vatOf(gross);
-        const net = settings.prices_include_vat ? gross - vat : gross;
-        const total = settings.prices_include_vat ? gross : gross + vat;
-        const dt = new Date(p.paid_at || p.created_at);
-        const isTax = settings.vat_enabled && !!settings.vat_number;
-        const tlv = isTax ? zatcaTlvBase64(settings.entity_name, settings.vat_number, dt.toISOString(), total.toFixed(2), vat.toFixed(2)) : '';
-        const merchant = names[p.merchant_id] || p.merchant_id;
-        const period = p.period_start && p.period_end
-            ? `${new Date(p.period_start).toLocaleDateString('ar-SA')} ← ${new Date(p.period_end).toLocaleDateString('ar-SA')}` : '—';
-        return `<div class="inv${pageBreak ? ' pb' : ''}">
- <h1>🧾 ${isTax ? 'فاتورة ضريبية مبسطة' : 'فاتورة'} <span class="badge">${isPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
- <div class="sub">${settings.entity_name}${settings.cr_number ? ' — سجل/وثيقة: ' + settings.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + settings.vat_number : ''}</div>
- <div class="meta">رقم الفاتورة: <b>INV-${p.id}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
-  العميل (التاجر): <b>${merchant}</b><br>البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''} — الفترة: ${period}</div>
- <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
-  <tr><td>قيمة الاشتراك${settings.prices_include_vat && isTax ? ' (قبل الضريبة)' : ''}</td><td>${net.toFixed(2)}</td></tr>
-  ${isTax ? `<tr><td>ضريبة القيمة المضافة ${settings.vat_rate}٪</td><td>${vat.toFixed(2)}</td></tr>` : ''}
-  <tr class="tot"><td>الإجمالي${isTax ? ' شامل الضريبة' : ''}</td><td>${total.toFixed(2)}</td></tr></table>
- ${isTax ? `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${tlv}</div>` : '<div class="qr">منشأة غير مسجلة في ضريبة القيمة المضافة بعد — لا تُحصَّل ضريبة على هذه الفاتورة.</div>'}
- <div class="foot">فاتورة صادرة إلكترونياً من منصة تاكي</div></div>`;
+    // ─── الطباعة (المولّد المشترك utils/invoice — نفسه في صفحة التاجر) ───────
+    const print = (title: string, bodyHtml: string) => {
+        if (!openPrintWindow(title, bodyHtml)) customAlert('السماح بالنوافذ المنبثقة مطلوب للطباعة.');
     };
-
-    const openPrintWindow = (title: string, bodyHtml: string) => {
-        const w = window.open('', '_blank');
-        if (!w) { customAlert('السماح بالنوافذ المنبثقة مطلوب للطباعة.'); return; }
-        w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><style>${PRINT_CSS}</style></head><body>
-${bodyHtml}
-<div class="noprint" style="text-align:center;margin:14px"><button onclick="window.print()" style="padding:10px 26px;border-radius:10px;border:0;background:#0d9488;color:#fff;font-weight:800;font-size:14px">🖨 طباعة / حفظ PDF</button></div>
-</body></html>`);
-        w.document.close();
-    };
-
-    const openInvoice = (p: PaymentRow) => openPrintWindow(`فاتورة ${p.id}`, invoiceHtml(p, false));
+    const openInvoice = (p: PaymentRow) => print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false));
 
     // زر واحد: كل فواتير العملاء في الفترة المختارة (فاتورة لكل صفحة).
     const printAllInvoices = () => {
         const inQ = paid.filter(p => { const t = new Date(p.paid_at || p.created_at).getTime(); return t >= quarter.start && t < quarter.end; });
         if (!inQ.length) { customAlert(`لا توجد فواتير مدفوعة في ${quarter.label}.`); return; }
-        const html = inQ.map((p, i) => invoiceHtml(p, i < inQ.length - 1)).join('\n');
-        openPrintWindow(`فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
+        const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1)).join('\n');
+        print(`فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
     };
 
     // زر واحد: تقرير الإقرار الضريبي بصيغة بنود نموذج الهيئة.
@@ -337,7 +279,7 @@ ${bodyHtml}
  </div>
  <div class="foot">أُنشئ آلياً من منصة تاكي — انسخ الأرقام إلى نموذج الإقرار في بوابة الهيئة (دقائق)، أو سلّمه لمحاسبك.</div>
 </div>`;
-        openPrintWindow(`إقرار ${quarter.label}`, html);
+        print(`إقرار ${quarter.label}`, html);
     };
 
     // ─── CSV ─────────────────────────────────────────────────────────────────
