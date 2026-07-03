@@ -72,10 +72,17 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '11.96.0';
+const BOT_VERSION              = '12.12.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
-const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+// Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
+// gate (_bot_gate_ok) verifies this header so the sensitive bot_* functions
+// can't be called by anyone else holding the public anon key (impersonation /
+// PII drain). One client → covers Telegram + WhatsApp + sellerDeals. v12.12
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
+    ? createClient(SUPABASE_URL, SUPABASE_KEY,
+        BOT_GATEWAY_SECRET ? { global: { headers: { 'x-bot-secret': BOT_GATEWAY_SECRET } } } : undefined)
+    : null;
 const bot = TELEGRAM_TOKEN ? new Telegraf(TELEGRAM_TOKEN) : null;
 
 // ── Express ───────────────────────────────────────────────────────────────────
