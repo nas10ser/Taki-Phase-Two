@@ -216,6 +216,13 @@ function register(bot, deps) {
     bot.action('ph:done',  async ctx => { await ctx.answerCbQuery(); onPhotosDone(ctx); });
     bot.action('ph:reset', async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.photos = []; await reply(ctx, tr('sd181_photos_reset'), kbCancel()); });
 
+    // ════════ مدير صور التعديل: حذف صورة محددة / إضافة / استبدال الكل / حفظ (v12.18) ════
+    bot.action(/^phm:del:(\d+)$/, async ctx => { await ctx.answerCbQuery(); phmDelete(ctx, +ctx.match[1]); });
+    bot.action('phm:add',     async ctx => { await ctx.answerCbQuery(); phmAskAdd(ctx); });
+    bot.action('phm:replace', async ctx => { await ctx.answerCbQuery(); phmReplace(ctx); });
+    bot.action('phm:menu',    async ctx => { await ctx.answerCbQuery(); renderPhotoManager(ctx, true); });
+    bot.action('phm:save',    async ctx => { await ctx.answerCbQuery(tr('cm_saving')); phmSave(ctx); });
+
     // ════════ مواقعي (الفروع) ═════════════════════════════════════════════════════════
     bot.action('seller:branches', async ctx => { await ctx.answerCbQuery(); showBranches(ctx); });
     bot.action('brAdd', async ctx => {
@@ -420,12 +427,27 @@ async function askPrice(ctx) {
     await reply(ctx, tr('sd380_step6_orig_prompt'), Markup.inlineKeyboard([[btn(tr('sd380_back'), 'adb:desc'), btn(tr('sd380_cancel'), 'sd:cancel')]]).reply_markup);
 }
 async function askExpiry(ctx) {
+    const s = getSession(tgId(ctx));
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, tr('sd384_step8_expiry'), Markup.inlineKeyboard([
+    // في التعديل: نعرض الطريقة الحالية أولاً (بدل عنوان «الخطوة ٨» الخاص بالإضافة)،
+    // والرجوع يعود لقائمة التعديل — زرّ adb:price لا يعمل خارج تدفّق الإضافة. v12.18
+    const isEdit = s.temp.flow === 'edit';
+    const head = isEdit ? tr('sd384_expiry_edit', currentExpiryText(s.temp.editDeal || {}), DIV) : tr('sd384_step8_expiry');
+    await reply(ctx, head, Markup.inlineKeyboard([
         [btn(tr('sd385_by_stock'), 'xp:stock'), btn(tr('sd385_by_hours'), 'xp:hours')],
         [btn(tr('sd386_by_days'), 'xp:duration'), btn(tr('sd386_by_date'), 'xp:date')],
-        [btn(tr('sd387_back'), 'adb:price'), btn(tr('sd387_cancel'), 'sd:cancel')],
+        [btn(tr('sd387_back'), isEdit ? `dedit:${s.temp.editDealId}` : 'adb:price'), btn(tr('sd387_cancel'), 'sd:cancel')],
     ]).reply_markup);
+}
+// وصف القيمة الحالية (انتهاء/كمية) لعرضها أعلى شاشة التعديل قبل الاختيار. v12.18
+function currentExpiryText(d) {
+    if (d.expiry_type === 'date' && d.expiry_date) return tr('w779_exp_until', md(fmtDay(d.expiry_date)));
+    if (d.expiry_type === 'stock') return tr('w779_exp_stock');
+    const r = remainingText(d);
+    return r ? tr('w779_exp_remaining', md(r)) : '—';
+}
+function currentQtyText(d) {
+    return d.is_unlimited ? tr('w778_qty_unlimited') : md(String(d.quantity ?? '—'));
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -504,7 +526,12 @@ async function askQty(ctx) {
     if (!stock) rows.splice(1, 0, [btn(tr('sd464_unlimited'), 'xq:unlimited')]);
     const back = s.temp.flow === 'edit' ? btn(tr('sd465_back'), `dedit:${s.temp.editDealId}`) : btn(tr('sd465_back'), 'adb:expiry');
     rows.push([back, btn(tr('sd466_cancel'), 'sd:cancel')]);
-    await reply(ctx, tr('sd467_step9_qty', stock ? tr('sd467_qty_required') : ''), Markup.inlineKeyboard(rows).reply_markup);
+    // في التعديل نعرض الكمية الحالية قبل الاختيار (بدل عنوان «الخطوة ٩»). v12.18
+    const req = stock ? tr('sd467_qty_required') : '';
+    const head = s.temp.flow === 'edit'
+        ? tr('sd467_qty_edit', currentQtyText(s.temp.editDeal || {}), DIV, req)
+        : tr('sd467_step9_qty', req);
+    await reply(ctx, head, Markup.inlineKeyboard(rows).reply_markup);
 }
 async function pickedQty(ctx, key) {
     const s = getSession(tgId(ctx)); const t = expTarget(s); if (!t) return;
@@ -754,6 +781,67 @@ async function onPhotosDone(ctx) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+//  مدير صور التعديل (v12.18) — يعرض الصور الحالية مرقّمة، ويتيح حذف صورة محددة
+//  (مثلاً حذف ٢ من ٣ وإبقاء واحدة)، إضافة صور للحالية، أو استبدال الكل، ثم حفظ.
+// ════════════════════════════════════════════════════════════════════════════════
+async function openPhotoManager(ctx, d) {
+    const s = getSession(tgId(ctx));
+    s.temp.phEdit = (Array.isArray(d.images) ? d.images.filter(Boolean) : []).slice(0, MAX_IMAGES);
+    s.temp.phDirty = false;
+    return renderPhotoManager(ctx, true);
+}
+async function renderPhotoManager(ctx, sendAlbum) {
+    const s = getSession(tgId(ctx)); const id = s.temp.editDealId;
+    const imgs = s.temp.phEdit || [];
+    setStep(tgId(ctx), 'idle');
+    if (sendAlbum && imgs.length) {
+        // نعيد إرسال الصور بعد كل تغيير كي يطابق الترقيم ما تبقّى دائماً.
+        try {
+            if (imgs.length === 1) await ctx.replyWithPhoto(imgs[0], { caption: tr('sd_phm_caption', 1, 1) });
+            else await ctx.replyWithMediaGroup(imgs.map((u, i) => ({ type: 'photo', media: u, caption: tr('sd_phm_caption', i + 1, imgs.length) })));
+        } catch { /* ignore */ }
+    }
+    const rows = [];
+    for (let i = 0; i < imgs.length; i += 2)
+        rows.push(imgs.slice(i, i + 2).map((_, j) => btn(tr('sd_phm_del_btn', i + j + 1), `phm:del:${i + j}`)));
+    if (imgs.length < MAX_IMAGES) rows.push([btn(tr('sd_phm_add_btn'), 'phm:add')]);
+    rows.push([btn(tr('sd_phm_replace_btn'), 'phm:replace')]);
+    if (s.temp.phDirty) rows.push([btn(tr('sd_phm_save_btn'), 'phm:save')]);
+    rows.push([btn(tr('cm_back'), `dedit:${id}`), btn(tr('sd34_cancel'), 'sd:cancel')]);
+    await reply(ctx, tr('sd_phm_head', imgs.length, MAX_IMAGES, DIV, s.temp.phDirty ? tr('sd_phm_unsaved') : ''), Markup.inlineKeyboard(rows).reply_markup);
+}
+async function phmDelete(ctx, i) {
+    const s = getSession(tgId(ctx)); const imgs = s.temp.phEdit || [];
+    if (i < 0 || i >= imgs.length) return renderPhotoManager(ctx, false);
+    if (imgs.length <= 1) { await reply(ctx, tr('sd_phm_need_one')); return renderPhotoManager(ctx, false); }
+    imgs.splice(i, 1); s.temp.phDirty = true;
+    return renderPhotoManager(ctx, true);
+}
+function phmAddKb() {
+    return Markup.inlineKeyboard([[btn(tr('sd_phm_add_done'), 'phm:menu')], [btn(tr('sd34_cancel'), 'sd:cancel')]]).reply_markup;
+}
+async function phmAskAdd(ctx) {
+    const s = getSession(tgId(ctx)); const imgs = s.temp.phEdit || [];
+    if (imgs.length >= MAX_IMAGES) { await reply(ctx, tr('sd961_max_images', MAX_IMAGES)); return renderPhotoManager(ctx, false); }
+    setStep(tgId(ctx), 'ed_phadd');
+    await reply(ctx, tr('sd_phm_add_prompt', MAX_IMAGES - imgs.length), phmAddKb());
+}
+async function phmReplace(ctx) {
+    const s = getSession(tgId(ctx));
+    s.temp.photos = [];   // التدفّق القديم: الصور الجديدة تستبدل الكل عند «تم»
+    return askPhotos(ctx);
+}
+async function phmSave(ctx) {
+    const s = getSession(tgId(ctx)); const id = s.temp.editDealId; const imgs = s.temp.phEdit || [];
+    if (!imgs.length) return reply(ctx, tr('sd703_need_one_photo'), kbCancel());
+    const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_images: imgs });
+    if (!r?.success) return reply(ctx, tr('sd707_photos_save_fail'), toDeals());
+    s.temp.phEdit = null; s.temp.phDirty = false;
+    await reply(ctx, tr('sd708_photos_updated', imgs.length));
+    return openEdit(ctx, id);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
 //  مراجعة ونشر
 // ════════════════════════════════════════════════════════════════════════════════
 async function goReview(ctx) {
@@ -817,6 +905,7 @@ async function openEdit(ctx, id) {
     const d = await getDeal(ctx, id);
     if (!d) return reply(ctx, tr('sd778_deal_not_found'), Markup.inlineKeyboard([[btn(tr('sd778_my_deals'), 'seller:deals')]]).reply_markup);
     s.temp.editDealId = id; s.temp.editDeal = d; s.temp.flow = 'edit'; s.temp.edraft = {};
+    s.temp.phEdit = null; s.temp.phDirty = false;   // صفّر مدير الصور عند فتح قائمة التعديل
     const qty = d.is_unlimited ? tr('w778_qty_unlimited') : md(String(d.quantity ?? '—'));
     const exp = d.expiry_type === 'date' && d.expiry_date ? tr('w779_exp_until', md(fmtDay(d.expiry_date))) : d.expiry_type === 'stock' ? tr('w779_exp_stock') : (remainingText(d) ? tr('w779_exp_remaining', md(remainingText(d))) : '—');
     const sched = d.starts_at && Number(d.starts_at) > Date.now() ? tr('w780_sched', md(fmtDate(Number(d.starts_at)))) : '';
@@ -848,9 +937,22 @@ async function editField(ctx, field, id) {
     if (field === 'cat')   { return reply(ctx, tr('sd808_edit_cat_prompt', md(catLabel(d.category)), DIV), Markup.inlineKeyboard([...catKeyboard('adcat:edit:'), [btn(tr('sd808_cancel'), `dedit:${id}`)]]).reply_markup); }
     if (field === 'gender'){ return reply(ctx, tr('sd809_edit_gender_prompt', md(genderLabel(d.gender || 'all')), DIV), Markup.inlineKeyboard([[btn(GENDER.all, 'adgen:edit:all'), btn(GENDER.men, 'adgen:edit:men')], [btn(GENDER.women, 'adgen:edit:women'), btn(GENDER.kids, 'adgen:edit:kids')], [btn(tr('sd809_cancel'), `dedit:${id}`)]]).reply_markup); }
     if (field === 'expiry'){ return askExpiry(ctx); }
-    if (field === 'sched') { return reply(ctx, tr('sd811_sched_title'), Markup.inlineKeyboard([[btn(tr('sd811_publish_now'), 'xs:clear')], [btn(tr('sd811_schedule'), 'xs:set')], [btn(tr('sd811_back'), `dedit:${id}`)]]).reply_markup); }
-    if (field === 'photos'){ return previewImagesThen(ctx, d, () => askPhotos(ctx)); }
-    if (field === 'loc')   { return askLocation(ctx, tr('sd813_change_loc')); }
+    if (field === 'sched') {
+        // نعرض وضع الجدولة الحالي (منشور الآن / مجدول لموعد) قبل الاختيار. v12.18
+        const curSched = d.starts_at && Number(d.starts_at) > Date.now()
+            ? tr('sd811_cur_scheduled', md(fmtDate(Number(d.starts_at))))
+            : tr('sd811_cur_live');
+        return reply(ctx, tr('sd811_sched_title2', curSched, DIV), Markup.inlineKeyboard([[btn(tr('sd811_publish_now'), 'xs:clear')], [btn(tr('sd811_schedule'), 'xs:set')], [btn(tr('sd811_back'), `dedit:${id}`)]]).reply_markup);
+    }
+    if (field === 'photos'){ return openPhotoManager(ctx, d); }
+    if (field === 'loc')   {
+        // نعرض الموقع الحالي المستخدم في العرض (اسم + مدينة + رابط خريطة) قبل التغيير. v12.18
+        const u = chipMapUrl(d);
+        const place = [d.city, d.region].filter(Boolean).join(' • ');
+        const nm = String(d.custom_location_name || place || tr('cm_custom_location')).slice(0, 40);
+        const curLoc = `📍 *${md(nm)}*${place && place !== nm ? ' — ' + md(place) : ''}${u ? tr('sd548_show_on_map_link', mdUrl(u)) : ''}`;
+        return askLocation(ctx, tr('sd813_change_loc2', curLoc, DIV));
+    }
     if (field === 'reactivate') { return reactivate(ctx, id); }
     if (field === 'preview')    { return previewDeal(ctx, d); }
 }
@@ -893,11 +995,6 @@ async function afterEditSave(ctx, r) {
     s.temp.editDeal = null; // أعد الجلب لإظهار القيمة المحدّثة
     await reply(ctx, tr('sd853_saved'));
     return openEdit(ctx, id);
-}
-async function previewImagesThen(ctx, d, next) {
-    const imgs = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
-    if (imgs.length) { try { await ctx.replyWithMediaGroup(imgs.slice(0, 4).map(u => ({ type: 'photo', media: u }))); } catch { /* ignore */ } }
-    return next();
 }
 async function previewDeal(ctx, d) {
     const imgs = Array.isArray(d.images) ? d.images.filter(Boolean) : [];
@@ -1008,6 +1105,19 @@ async function handleText(ctx, s, text) {
     return false;
 }
 async function handlePhoto(ctx, s) {
+    // إضافة صور للصور الحالية من مدير الصور (v12.18) — تُلحق بدل أن تستبدل.
+    if (s.step === 'ed_phadd') {
+        const imgs = s.temp.phEdit || (s.temp.phEdit = []);
+        const ps = ctx.message.photo || [];
+        const fid = ps[ps.length - 1]?.file_id;
+        if (imgs.length >= MAX_IMAGES) { await reply(ctx, tr('sd961_max_images', MAX_IMAGES), phmAddKb()); return true; }
+        if (!fid) { await reply(ctx, tr('sd962_image_read_failed')); return true; }
+        await ctx.reply(tr('sd963_uploading_image')).catch(() => {});
+        const u = await uploadPhoto(ctx, fid);
+        if (u) { imgs.push(u); s.temp.phDirty = true; await reply(ctx, tr('sd965_image_uploaded', imgs.length, MAX_IMAGES), phmAddKb()); }
+        else await reply(ctx, tr('sd966_image_upload_failed'), phmAddKb());
+        return true;
+    }
     if (s.step !== 'ad_photo' && s.step !== 'ed_photo') return false;
     const photos = ctx.message.photo || [];
     const fileId = photos[photos.length - 1]?.file_id;

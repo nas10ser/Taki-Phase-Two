@@ -950,13 +950,16 @@ function create(deps) {
         const d = sdVal(s, id) || await rpc('bot_get_seller_deal', aid(from, { p_deal_id: id }));
         if (!d) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:deals', title: tr('menu_seller_deals') }] });
         s.temp.sdCache = s.temp.sdCache || {}; s.temp.sdCache[id] = d; s.temp.editDealId = id;
+        // v12.18: صفّا «طريقة الانتهاء» و«الموقع» جديدان — المجموع ١٠ صفوف بالضبط (سقف واتساب).
         await sendList(from, { header: tr('wa_ed_title', d.item_name), body: tr('wa_ed_pick'), button: tr('wa_menu_btn'), sections: [{ rows: [
             row(`wa:ded:name:${id}`, tr('wa_ed_name'), ''),
             row(`wa:ded:price:${id}`, tr('wa_ed_price'), ''),
             row(`wa:ded:qty:${id}`, tr('wa_ed_qty'), ''),
             row(`wa:ded:desc:${id}`, tr('wa_ed_desc'), ''),
             row(`wa:ded:cat:${id}`, tr('wa_ed_cat'), ''),
+            row(`wa:ded:expiry:${id}`, tr('wa_ed_expiry'), ''),
             row(`wa:ded:photos:${id}`, tr('wa_ed_photos'), ''),
+            row(`wa:ded:loc:${id}`, tr('wa_ed_loc'), ''),
             row(`wa:sd1:${id}`, tr('wa_back'), ''), menuRow(),
         ] }] });
     }
@@ -967,10 +970,30 @@ function create(deps) {
         s.temp.sdCache = s.temp.sdCache || {}; s.temp.sdCache[id] = d;
         if (field === 'name')  { s.step = 'ed_name'; return sendText(from, tr('wa_ed_name_prompt', d.item_name || '—')); }
         if (field === 'price') { s.step = 'ed_orig'; return sendText(from, tr('wa_ed_orig_prompt', money(d.original_price), money(d.discounted_price))); }
-        if (field === 'desc')  { s.step = 'ed_desc'; return sendText(from, tr('wa_ed_desc_prompt')); }
+        if (field === 'desc')  { s.step = 'ed_desc'; return sendText(from, tr('wa_ed_desc_prompt2', String(d.description || '—').slice(0, 300))); }
         if (field === 'qty')   { s.temp.flow = 'edit'; s.temp.edraft = { expiryType: d.expiry_type }; return askQtyStep(from, s); }
-        if (field === 'cat')   { const rows = Object.keys(CAT).filter(k => k !== 'all').slice(0, 9).map(k => row(`wa:edcat:${k}`, catLabel(k), '')); rows.push(row(`wa:sd1:${id}`, tr('wa_back'), '')); return sendList(from, { header: tr('wa_ed_cat'), body: tr('wa_pick_category'), button: tr('wa_menu_btn'), sections: [{ rows }] }); }
-        if (field === 'photos') { s.temp.flow = 'edit'; s.temp.photos = []; return askPhotos(from, s); }
+        if (field === 'cat')   { const rows = Object.keys(CAT).filter(k => k !== 'all').slice(0, 9).map(k => row(`wa:edcat:${k}`, catLabel(k), '')); rows.push(row(`wa:sd1:${id}`, tr('wa_back'), '')); return sendList(from, { header: tr('wa_ed_cat'), body: tr('wa_ed_cat_cur', catLabel(d.category)), button: tr('wa_menu_btn'), sections: [{ rows }] }); }
+        if (field === 'expiry') { s.temp.edraft = {}; return askExpiryEdit(from, s, d); }
+        if (field === 'loc')    { return askLocEdit(from, s, d); }
+        if (field === 'photos') { return waPhotoManager(from, s, d); }
+    }
+    // v12.18 — تعديل طريقة الانتهاء من واتساب مع عرض الطريقة الحالية أولاً.
+    function waCurrentExpiry(d) {
+        if (d.expiry_type === 'date' && d.expiry_date) return tr('wa_exp_sum_date', fmtDay(d.expiry_date));
+        if (d.expiry_type === 'stock') return tr('wa_exp_sum_stock');
+        return remainingText(d) || '—';
+    }
+    async function askExpiryEdit(from, s, d) {
+        s.step = 'idle';
+        await sendButtons(from, { body: tr('wa_ed_expiry_cur', waCurrentExpiry(d)), buttons: [{ id: 'wa:adexp:stock', title: tr('wa_exp_stock') }, { id: 'wa:adexp:hours', title: tr('wa_exp_hours') }, { id: 'wa:adexp:duration', title: tr('wa_exp_days') }] });
+        await sendButtons(from, { body: '—', buttons: [{ id: 'wa:adexp:date', title: tr('wa_exp_date') }, { id: `wa:ded:menu:${s.temp.editDealId}`, title: tr('wa_back') }] });
+    }
+    // v12.18 — تغيير موقع العرض من واتساب مع عرض الموقع الحالي المستخدم أولاً.
+    async function askLocEdit(from, s, d) {
+        const place = [d.city, d.region].filter(Boolean).join(' • ');
+        const nm = d.custom_location_name || place || tr('wa_custom_location');
+        const link = d.google_maps_link || ((d.map_lat != null && d.map_lng != null) ? `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}` : '');
+        return askLocationStep(from, s, tr('wa_ed_loc_cur', nm, place && place !== nm ? ` — ${place}` : '', link ? `\n🗺 ${link}` : ''));
     }
     async function editCat(from, s, cat) { const r = await rpc('bot_update_deal', aid(from, { p_deal_id: s.temp.editDealId, p_category: cat })); return afterDealEdit(from, s, r); }
     async function afterDealEdit(from, s, r) {
@@ -1030,8 +1053,13 @@ function create(deps) {
         const t0 = expTarget(s); const stock = t0 && t0.expiryType === 'stock';
         const rows = [row('wa:adqty:5', '5', ''), row('wa:adqty:10', '10', ''), row('wa:adqty:20', '20', ''), row('wa:adqty:50', '50', ''), row('wa:adqty:custom', tr('wa_add_qty_custom'), '')];
         if (!stock) rows.unshift(row('wa:adqty:unlimited', tr('wa_add_qty_unlimited'), ''));
+        // v12.18: في التعديل نعرض الكمية الحالية + زرّ رجوع لقائمة التعديل.
+        const isEdit = s.temp.flow === 'edit';
+        if (isEdit) rows.push(row(`wa:ded:menu:${s.temp.editDealId}`, tr('wa_back'), ''));
         rows.push(row('wa:adcancel', tr('wa_cancel'), ''));
-        await sendList(from, { header: '9/10', body: tr('wa_add_qty'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+        const d = isEdit ? (sdVal(s, s.temp.editDealId) || {}) : null;
+        const body = isEdit ? tr('wa_ed_qty_cur', d.is_unlimited ? tr('wa_unlimited') : String(d.quantity ?? '—')) : tr('wa_add_qty');
+        await sendList(from, { header: isEdit ? tr('wa_ed_qty') : '9/10', body, button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function pickQty(from, s, key) {
         const t0 = expTarget(s);
@@ -1039,7 +1067,9 @@ function create(deps) {
         if (key === 'unlimited') { t0.unlimited = true; t0.qty = null; } else { t0.unlimited = false; t0.qty = +key; }
         return onQtyChosen(from, s);
     }
-    async function onQtyChosen(from, s) { if (s.temp.flow === 'edit') return saveEditQty(from, s); return askLocation(from, s); }
+    // v12.18: كان يستدعي askLocation (طلب مشاركة GPS) بدل قائمة المواقع، فيضيع
+    // اختيار الموقع في تدفّق الإضافة — الصحيح منتقي المواقع الكامل askLocationStep.
+    async function onQtyChosen(from, s) { if (s.temp.flow === 'edit') return saveEditQty(from, s); return askLocationStep(from, s); }
     async function saveEditExpiry(from, s) {
         const t0 = s.temp.edraft || {}; const id = s.temp.editDealId; const d = sdVal(s, id) || {};
         const anchor = (d.starts_at && Number(d.starts_at) > Date.now()) ? Number(d.starts_at) : Date.now();
@@ -1080,7 +1110,8 @@ function create(deps) {
         const back = s.temp.flow === 'branch' ? 'wa:s:branches' : s.temp.flow === 'edit' ? `wa:sd1:${s.temp.editDealId}` : 'wa:adcancel';
         rows.push(row(back, tr('wa_back'), ''));
         const head = intro || (gateNew ? tr('wa_loc_full') : tr('wa_add_loc'));
-        await sendList(from, { header: s.temp.flow === 'branch' ? tr('menu_my_locations') : '🔟', body: head, button: tr('wa_menu_btn'), sections: [{ rows }] });
+        const header = s.temp.flow === 'branch' ? tr('menu_my_locations') : s.temp.flow === 'edit' ? tr('wa_ed_loc') : '🔟';
+        await sendList(from, { header, body: head, button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function pickSavedLoc(from, s, i) {
         const b = (s.temp.locChips || [])[i];
@@ -1138,9 +1169,59 @@ function create(deps) {
     async function askPhotos(from, s) {
         s.temp.photos = s.temp.photos || [];
         s.step = s.temp.flow === 'edit' ? 'ed_photo' : 'ad_photo';
-        await sendButtons(from, { body: tr('wa_add_photos'), buttons: [{ id: 'wa:adcancel', title: tr('wa_cancel') }] });
+        await sendButtons(from, { body: s.temp.flow === 'edit' ? tr('wa_ed_photos_replace') : tr('wa_add_photos'), buttons: [{ id: 'wa:adcancel', title: tr('wa_cancel') }] });
+    }
+    // ── مدير صور التعديل (v12.18): يعرض الصور الحالية مرقّمة، حذف صورة محددة،
+    //    إضافة للصور الحالية، أو استبدال الكل — ثم حفظ. ──
+    async function waPhotoManager(from, s, d) {
+        s.temp.phEdit = (Array.isArray(d && d.images) ? d.images.filter(Boolean) : []).slice(0, MAX_IMAGES);
+        s.temp.phDirty = false;
+        return waRenderPhotos(from, s, true);
+    }
+    async function waRenderPhotos(from, s, sendPics) {
+        const id = s.temp.editDealId; const imgs = s.temp.phEdit || [];
+        s.step = 'idle';
+        if (sendPics) for (let i = 0; i < imgs.length; i++) { try { await sendImage(from, imgs[i], tr('wa_phm_caption', i + 1, imgs.length)); } catch { /* ignore */ } }
+        const rows = imgs.map((_, i) => row(`wa:phm:del:${i}`, tr('wa_phm_del_row', i + 1), ''));
+        if (imgs.length < MAX_IMAGES) rows.push(row('wa:phm:add', tr('wa_phm_add_row'), ''));
+        rows.push(row('wa:phm:replace', tr('wa_phm_replace_row'), ''));
+        if (s.temp.phDirty) rows.push(row('wa:phm:save', tr('wa_phm_save_row'), ''));
+        rows.push(row(`wa:ded:menu:${id}`, tr('wa_back'), ''));
+        await sendList(from, { header: tr('wa_phm_header'), body: tr('wa_phm_body', imgs.length, MAX_IMAGES) + (s.temp.phDirty ? tr('wa_phm_unsaved') : ''), button: tr('wa_menu_btn'), sections: [{ rows }] });
+    }
+    async function waPhmDelete(from, s, i) {
+        const imgs = s.temp.phEdit || [];
+        if (i < 0 || i >= imgs.length) return waRenderPhotos(from, s, false);
+        if (imgs.length <= 1) { await sendText(from, tr('wa_phm_need_one')); return waRenderPhotos(from, s, false); }
+        imgs.splice(i, 1); s.temp.phDirty = true;
+        return waRenderPhotos(from, s, true);   // نعيد إرسال الصور كي يطابق الترقيم ما تبقّى
+    }
+    async function waPhmAdd(from, s) {
+        const imgs = s.temp.phEdit || (s.temp.phEdit = []);
+        if (imgs.length >= MAX_IMAGES) { await sendText(from, tr('wa_photo_max', MAX_IMAGES)); return waRenderPhotos(from, s, false); }
+        s.step = 'ed_phadd';
+        await sendButtons(from, { body: tr('wa_phm_add_prompt', MAX_IMAGES - imgs.length), buttons: [{ id: 'wa:phm:menu', title: tr('wa_phm_done_btn') }] });
+    }
+    async function waPhmSave(from, s) {
+        const imgs = s.temp.phEdit || [];
+        if (!imgs.length) { await sendText(from, tr('wa_photo_need_one')); return waRenderPhotos(from, s, false); }
+        const r = await rpc('bot_update_deal', aid(from, { p_deal_id: s.temp.editDealId, p_images: imgs }));
+        s.temp.phEdit = null; s.temp.phDirty = false;
+        return afterDealEdit(from, s, r);
     }
     async function onPhoto(from, s, imageMsg) {
+        // إضافة صور للصور الحالية من مدير الصور (v12.18) — تُلحق بدل أن تستبدل.
+        if (s.step === 'ed_phadd') {
+            const imgs = s.temp.phEdit || (s.temp.phEdit = []);
+            if (imgs.length >= MAX_IMAGES) { await sendButtons(from, { body: tr('wa_photo_max', MAX_IMAGES), buttons: [{ id: 'wa:phm:menu', title: tr('wa_phm_done_btn') }] }); return true; }
+            const mid = imageMsg && imageMsg.id;
+            if (!mid) { await sendText(from, tr('wa_photo_fail')); return true; }
+            await sendText(from, tr('wa_photo_uploading'));
+            const u = await uploadWaPhoto(mid);
+            if (u) { imgs.push(u); s.temp.phDirty = true; await sendButtons(from, { body: tr('wa_photo_added', imgs.length, MAX_IMAGES), buttons: [{ id: 'wa:phm:menu', title: tr('wa_phm_done_btn') }] }); }
+            else await sendText(from, tr('wa_photo_fail'));
+            return true;
+        }
         if (s.step !== 'ad_photo' && s.step !== 'ed_photo') return false;
         s.temp.photos = s.temp.photos || [];
         if (s.temp.photos.length >= MAX_IMAGES) { await sendButtons(from, { body: tr('wa_photo_max', MAX_IMAGES), buttons: [{ id: 'wa:adphdone', title: tr('wa_photos_done', s.temp.photos.length) }] }); return true; }
@@ -1514,6 +1595,14 @@ function create(deps) {
         if (id.startsWith('wa:delok:')) return doDeleteDeal(from, s, id.slice(9));
         if (id.startsWith('wa:del:')) return askDeleteDeal(from, s, id.slice(7));
         if (k === 'ded') { if (p[2] === 'menu') return editDealMenu(from, s, p.slice(3).join(':')); return editDealField(from, s, p[2], p.slice(3).join(':')); }
+        // مدير صور التعديل (v12.18)
+        if (k === 'phm') {
+            if (p[2] === 'del') return waPhmDelete(from, s, +p[3] || 0);
+            if (p[2] === 'add') return waPhmAdd(from, s);
+            if (p[2] === 'replace') { s.temp.flow = 'edit'; s.temp.photos = []; return askPhotos(from, s); }
+            if (p[2] === 'save') return waPhmSave(from, s);
+            return waRenderPhotos(from, s, true);   // wa:phm:menu
+        }
         if (k === 'edcat') return editCat(from, s, p[2]);
         if (id === 'wa:s:add') return startAdd(from, s);
         if (id === 'wa:adcancel') { s.step = 'idle'; s.temp = {}; await sendText(from, tr('wa_cancelled')); return mainMenu(from, s); }
