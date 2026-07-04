@@ -17,7 +17,9 @@ const sanitize = (arr: any): LocationPackage[] => {
     return arr.map((p: any, i: number) => ({
         id: Number(p?.id) || i + 1,
         max: Math.max(1, Math.round(Number(p?.max) || 1)),
-        price: Math.max(0, Math.round(Number(p?.price) || 0)),
+        // السعر بخانتين عشريتين — كان Math.round كاملاً هنا فيحوّل 299.99 إلى 300
+        // عند الحفظ/التحميل رغم إصلاح حقل الإدخال (v12.18).
+        price: Math.max(0, Math.round((Number(p?.price) || 0) * 100) / 100),
         discount: Math.min(100, Math.max(0, Math.round(Number(p?.discount) || 0))),
         durationDays: Math.max(1, Math.round(Number(p?.durationDays) || 30)),
         ar: String(p?.ar || `باقة ${i + 1}`),
