@@ -913,8 +913,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (e) {}
     }, []);
 
-    // Notification display helper
-    const showRealTimeAlert = useCallback((title: {ar: string, en: string}, body: {ar: string, en: string}) => {
+    // De-dupe للعرض المرئي: addNotification يعرض التنبيه محلياً ثم يحفظ الصف
+    // بنفس الـid، والبث اللحظي يعيد نفس الصف بعد ~ثانية فكان يُعرض مرة ثانية
+    // (لقطة ناصر: إشعاران متطابقان). الصوت كان محمياً بمؤقّت — العرض لم يكن.
+    const shownAlertIdsRef = useRef<Map<string, number>>(new Map());
+    const alertNotShownBefore = useCallback((key?: string) => {
+        if (!key) return true;
+        const now = Date.now();
+        const m = shownAlertIdsRef.current;
+        m.forEach((t, k) => { if (now - t > 300000) m.delete(k); });   // تنظيف كل ٥ دقائق
+        if (m.has(key)) return false;
+        m.set(key, now);
+        return true;
+    }, []);
+
+    // Notification display helper — dedupeKey = معرّف الإشعار (نفسه محلياً وفي صدى البث)
+    const showRealTimeAlert = useCallback((title: {ar: string, en: string}, body: {ar: string, en: string}, dedupeKey?: string) => {
+        if (!alertNotShownBefore(dedupeKey)) return;
         if ('Notification' in window && Notification.permission === 'granted') {
             const isAr = language === 'ar';
             new Notification(isAr ? title.ar : title.en, {
@@ -923,7 +938,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
         }
         playNotificationSound();
-    }, [language, playNotificationSound]);
+    }, [language, playNotificationSound, alertNotShownBefore]);
 
     const addNotification = useCallback(async (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'] = 'system', metadata?: any) => {
         const newNotif: Notification = {
@@ -958,8 +973,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
 
         // Native alert + sound only when the recipient is the local user.
+        // نمرر id الإشعار — صدى البث اللحظي يحمل نفسه فلا يُعرض مرتين (v12.19).
         if (user && user.id === userId) {
-            showRealTimeAlert(title, body);
+            showRealTimeAlert(title, body, newNotif.id);
         }
     }, [user, showRealTimeAlert]);
 
@@ -2225,7 +2241,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     // a "new message" heads-up too — previously they got
                     // nothing visible because only the seller had the (now
                     // removed) center box and the OS path is permission-gated.
-                    showRealTimeAlertRef.current(mapped.title, mapped.body);
+                    showRealTimeAlertRef.current(mapped.title, mapped.body, mapped.id);
                     setInAppBanner({ id: mapped.id, title: mapped.title, body: mapped.body, metadata: mapped.metadata });
                 }
             },
