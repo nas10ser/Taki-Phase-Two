@@ -978,14 +978,20 @@ function create(deps) {
         if (field === 'photos') { return waPhotoManager(from, s, d); }
     }
     // v12.18 — تعديل طريقة الانتهاء من واتساب مع عرض الطريقة الحالية أولاً.
+    // v12.20: نعرض الطريقة *المختارة* وقيمتها (كمية/ساعات/أيام/تاريخ) لا الوقت
+    // المتبقي — فالمتبقي يصير «—» بعد انتهاء العرض (ملاحظة ناصر).
     function waCurrentExpiry(d) {
-        if (d.expiry_type === 'date' && d.expiry_date) return tr('wa_exp_sum_date', fmtDay(d.expiry_date));
-        if (d.expiry_type === 'stock') return tr('wa_exp_sum_stock');
-        return remainingText(d) || '—';
+        if (d.expiry_type === 'stock') return tr('wa_exp_cur_stock');
+        if (d.expiry_type === 'date' && d.expiry_date) return tr('wa_exp_cur_date', fmtDay(d.expiry_date));
+        const mins = Number(d.expires_in_minutes) || 0;
+        if (d.expiry_type === 'hours' && mins)    return tr('wa_exp_cur_hours', Math.max(1, Math.round(mins / 60)));
+        if (d.expiry_type === 'duration' && mins) return tr('wa_exp_cur_days', Math.max(1, Math.round(mins / 1440)));
+        return remainingText(d) || tr('wa_exp_cur_unknown');
     }
     async function askExpiryEdit(from, s, d) {
         s.step = 'idle';
-        await sendButtons(from, { body: tr('wa_ed_expiry_cur', waCurrentExpiry(d)), buttons: [{ id: 'wa:adexp:stock', title: tr('wa_exp_stock') }, { id: 'wa:adexp:hours', title: tr('wa_exp_hours') }, { id: 'wa:adexp:duration', title: tr('wa_exp_days') }] });
+        const qty = d.is_unlimited ? tr('wa_unlimited') : String(d.quantity ?? '—');
+        await sendButtons(from, { body: tr('wa_ed_expiry_cur', waCurrentExpiry(d), qty), buttons: [{ id: 'wa:adexp:stock', title: tr('wa_exp_stock') }, { id: 'wa:adexp:hours', title: tr('wa_exp_hours') }, { id: 'wa:adexp:duration', title: tr('wa_exp_days') }] });
         await sendButtons(from, { body: '—', buttons: [{ id: 'wa:adexp:date', title: tr('wa_exp_date') }, { id: `wa:ded:menu:${s.temp.editDealId}`, title: tr('wa_back') }] });
     }
     // v12.18 — تغيير موقع العرض من واتساب مع عرض الموقع الحالي المستخدم أولاً.
