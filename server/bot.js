@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.20.0';
+const BOT_VERSION              = '12.22.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1237,18 +1237,67 @@ function countdownBlock(expiryMs){
     const cd = expiryMs ? fmtCountdown(expiryMs) : null;
     return cd ? tr('q1034_countdown_block', cd) : tr('q1034_booking_expired');
 }
-bot.action(/^cd:(\d+)$/, async ctx => {
-    const ms = +ctx.match[1];
-    const cd = fmtCountdown(ms);
-    await ctx.answerCbQuery(cd ? tr('b1039_time_left', cd) : tr('b1039_time_up'));
+// v12.22 — the countdown is LIVE: the button now carries the BARCODE (not the
+// timestamp), and every refresh re-reads the booking from the DB. A completed/
+// cancelled/expired booking says so and drops the refresh button, so an old
+// «تحديث العدّاد» can never keep counting after the booking ended.
+// Legacy cd:<ms> buttons (pre-v12.22 messages) are matched by expiry against
+// the user's ACTIVE bookings and degrade gracefully when none matches.
+// The bookings nav is role-aware: a store owner also gets «طلبات متجري»
+// instead of being dumped into buyer-only screens (role-mixing fix).
+function bookingsNavRows(s){
+    const base = [Markup.button.callback(tr('b1045_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('b1045_menu'),'menu:back')];
+    return ownsStore(s)
+        ? [[Markup.button.callback(tr('menu_store_orders'),'seller:bookings')], base]
+        : [base];
+}
+async function renderCountdown(ctx, barcode){
+    const s = getSession(tgId(ctx));
+    if (!s.userId) { await ctx.answerCbQuery().catch(()=>{}); return ctx.reply(tr('cm_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup }); }
+    const r = await rpc('bot_booking_countdown', { p_telegram_id: tgId(ctx), p_barcode: barcode });
+    if (!r?.success) {
+        await ctx.answerCbQuery(tr('cd_done_cb')).catch(()=>{});
+        return safeReplyMd(ctx, tr('cd_gone', DIV), { reply_markup: Markup.inlineKeyboard(bookingsNavRows(s)).reply_markup });
+    }
+    const active = r.status==='pending' || r.status==='acknowledged';
+    if (!active) {
+        const done = r.status==='completed' ? tr('cd_completed', DIV)
+                   : r.status==='cancelled' ? tr('cd_cancelled', DIV)
+                   : tr('b1042_booking_expired', DIV);
+        await ctx.answerCbQuery(tr('cd_done_cb')).catch(()=>{});
+        return safeReplyMd(ctx, done, { reply_markup: Markup.inlineKeyboard(bookingsNavRows(s)).reply_markup });
+    }
+    const ms = Number(r.expiry_time) || 0;
+    const cd = ms ? fmtCountdown(ms) : null;
+    await ctx.answerCbQuery(cd ? tr('b1039_time_left', cd) : tr('b1039_time_up')).catch(()=>{});
     const txt = cd
         ? tr('b1041_time_remaining', DIV, cd, md(fmtDate(new Date(ms))))
         : tr('b1042_booking_expired', DIV);
-    await ctx.reply(txt, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
-        ...(cd ? [[Markup.button.callback(tr('b1044_refresh_counter'), `cd:${ms}`)]] : []),
-        [Markup.button.callback(tr('b1045_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('b1045_menu'),'menu:back')]
+    return safeReplyMd(ctx, txt, { reply_markup: Markup.inlineKeyboard([
+        ...(cd ? [[Markup.button.callback(tr('b1044_refresh_counter'), `cd:${r.barcode}`)]] : []),
+        ...bookingsNavRows(s)
     ]).reply_markup });
-});
+}
+async function legacyCd(ctx, ms){
+    const s = getSession(tgId(ctx));
+    let bc = null;
+    try {
+        const mine = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope:'current' }) || [];
+        let hit = (Array.isArray(mine)?mine:[]).find(b => Number(b.expiry_time) === ms);
+        if (!hit && ownsStore(s)) {
+            const sl = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx), p_scope:'current' }) || [];
+            hit = (Array.isArray(sl)?sl:[]).find(b => Number(b.expiry_time) === ms);
+        }
+        if (hit) bc = hit.barcode;
+    } catch { /* degrade to the stale-button message below */ }
+    if (bc) return renderCountdown(ctx, bc);
+    await ctx.answerCbQuery(tr('cd_done_cb')).catch(()=>{});
+    return safeReplyMd(ctx, tr('cd_stale_button', DIV), { reply_markup: Markup.inlineKeyboard(bookingsNavRows(s)).reply_markup });
+}
+// Order matters only for clarity — an epoch-ms payload is 13 digits, a barcode
+// is 4–12 alphanumerics, so the two patterns can never both match.
+bot.action(/^cd:(\d{13,})$/, ctx => legacyCd(ctx, +ctx.match[1]));
+bot.action(/^cd:([A-Za-z0-9]{4,12})$/, ctx => renderCountdown(ctx, ctx.match[1]));
 
 // ── Booking: quantity → confirm → book ────────────────────────────────────────
 bot.action('book:qty', async ctx => {
@@ -1351,10 +1400,13 @@ bot.action('book:confirm', async ctx => {
         tr('q1147_booking_success', DIV, md(result.deal_name), md(result.shop_name), result.quantity, md(prepLabel(result.prep_time)), md(bc), md(expiry), countdownBlock(expiryMs)),
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback(tr('b1149_chat_merchant'),`chat:${bc}`), Markup.button.callback(tr('b1149_call_merchant'),`call:b:${bc}`)],
-            ...(expiryMs ? [[Markup.button.callback(tr('b1150_countdown'),`cd:${expiryMs}`)]] : []),
+            ...(expiryMs && bc ? [[Markup.button.callback(tr('b1150_countdown'),`cd:${bc}`)]] : []),
             ...(result.store_id ? [[Markup.button.callback(tr('b1151_store_page'),`store:${result.store_id}`)]] : []),
             // إلغاء الحجز مباشرةً من كرت التأكيد (كان ناقصاً — المشتري ما يقدر يلغي إلا من قائمة الحجوزات). v12.07
             ...(bc ? [[Markup.button.callback(tr('b1205_cancel_booking'),`cancel:${bc}`)]] : []),
+            // مالك المتجر (بائع أو أدمن-مالك) يحصل أيضاً على «طلبات متجري» — بدون هذا
+            // الصف كان يُرمى في مسار المشتري فقط بعد الحجز (تداخل الأدوار). v12.22
+            ...(ownsStore(s) ? [[Markup.button.callback(tr('menu_store_orders'),'seller:bookings')]] : []),
             [Markup.button.callback(tr('b1152_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('b1152_deals'),'deals:0')],
             [Markup.button.callback(tr('b1153_menu'),'menu:back')]
         ]).reply_markup });
@@ -1368,9 +1420,13 @@ bot.action('buyer:bk:previous', async ctx => { await ctx.answerCbQuery(); showBu
 async function buyerBookingsMenu(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply(tr('cm_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
-    await ctx.reply(tr('b1165_my_bookings_title', DIV), { parse_mode:'MarkdownV2',
+    // مالك المتجر يرى عنواناً موضحاً «كمشتري» + زر «طلبات متجري» — حتى لا يظن أن
+    // حجوزاته الشخصية الفارغة تعني ضياع طلبات متجره (تداخل الأدوار). v12.22
+    const owner = ownsStore(s);
+    await ctx.reply(tr(owner ? 'b1165_my_bookings_title_owner' : 'b1165_my_bookings_title', DIV), { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback(tr('b1167_current'),'buyer:bk:current'), Markup.button.callback(tr('b1167_previous'),'buyer:bk:previous')],
+            ...(owner ? [[Markup.button.callback(tr('menu_store_orders'),'seller:bookings')]] : []),
             [Markup.button.callback(tr('cm_menu'),'menu:back')]
         ]).reply_markup });
 }
@@ -1381,7 +1437,12 @@ async function showBuyerBookings(ctx, scope='current') {
     const list = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope: scope });
     if (!list?.length) {
         const empty = scope==='previous' ? tr('b1177_no_previous_bookings') : tr('b1177_no_current_bookings');
-        return ctx.reply(empty, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1178_browse_deals'),'deals:0')],[Markup.button.callback(tr('b1178_back'),'buyer:bookings')]]).reply_markup });
+        return ctx.reply(empty, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('b1178_browse_deals'),'deals:0')],
+            // مالك المتجر: القائمة الفارغة هنا تعني «ما حجزت كمشتري» — طلبات متجره في مكانها. v12.22
+            ...(ownsStore(s) ? [[Markup.button.callback(tr('menu_store_orders'),'seller:bookings')]] : []),
+            [Markup.button.callback(tr('b1178_back'),'buyer:bookings')]
+        ]).reply_markup });
     }
     const title = scope==='previous' ? tr('q1180_my_previous_bookings') : tr('q1180_my_current_bookings');
     const shown = list.slice(0, 10);
@@ -1404,7 +1465,7 @@ async function showBuyerBookings(ctx, scope='current') {
         if (b.status==='completed') row.push(Markup.button.callback(tr('b1198_rate'), `rate:${b.barcode}`));
         const rows = [row];
         const row2 = [];
-        if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${Number(b.expiry_time)}`));
+        if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${b.barcode}`));
         if (b.store_id) row2.push(Markup.button.callback(tr('b1202_store'), `store:${b.store_id}`));
         if (row2.length) rows.push(row2);
         const row3 = [];
@@ -1477,7 +1538,7 @@ async function renderOneBooking(ctx, barcode){
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1257_confirm_start_prep'),`ack:${b.barcode}`)]);
         if (active) rows.push([Markup.button.callback(tr('b1258_complete_booking'),`complete:${b.barcode}`)]);
     } else {
-        const r2=[]; if (b.status==='pending') r2.push(Markup.button.callback(tr('b1260_edit'),`edit:${b.barcode}`)); if (b.status==='completed') r2.push(Markup.button.callback(tr('b1260_rate'),`rate:${b.barcode}`)); if (active && b.expiry_time) r2.push(Markup.button.callback(tr('b1260_counter'),`cd:${Number(b.expiry_time)}`)); if (r2.length) rows.push(r2);
+        const r2=[]; if (b.status==='pending') r2.push(Markup.button.callback(tr('b1260_edit'),`edit:${b.barcode}`)); if (b.status==='completed') r2.push(Markup.button.callback(tr('b1260_rate'),`rate:${b.barcode}`)); if (active && b.expiry_time) r2.push(Markup.button.callback(tr('b1260_counter'),`cd:${b.barcode}`)); if (r2.length) rows.push(r2);
         const r3=[]; if (active) r3.push(Markup.button.callback(tr('b1261_cancel'),`cancel:${b.barcode}`)); if (b.store_id){ r3.push(Markup.button.callback(tr('b1261_store'),`store:${b.store_id}`)); r3.push(Markup.button.callback(tr('b1261_report'),`rep:${b.store_id}`)); } if (r3.length) rows.push(r3);
     }
     rows.push([Markup.button.callback(tr('b1263_back_to_bookings'), listCb)]);
@@ -1501,9 +1562,13 @@ async function renderChat(ctx, barcode) {
     }
     m += `${DIV}\n✍️ ${tr('w1280_your_messages')}: *${r.my_count}/3*`;
     const btns = [];
-    const canSend = r.status !== 'cancelled' && r.my_count < 3;
+    // حجز منتهٍ (مكتمل/ملغي/منتهي المهلة) = محادثة للقراءة فقط — يطابق حارس
+    // bot_send_booking_message في قاعدة البيانات (v12.22).
+    const finished = ['cancelled','completed','expired'].includes(r.status);
+    const canSend = !finished && r.my_count < 3;
     if (canSend) btns.push([Markup.button.callback(tr('b1285_write_message'), `chatmsg:${r.barcode}`)]);
-    else if (r.status !== 'cancelled') m += `\n${tr('w1284_message_limit_reached')}`;
+    else if (finished) m += `\n${tr('w_chat_finished')}`;
+    else m += `\n${tr('w1284_message_limit_reached')}`;
     // Task 1 — «back» returns to the booking itself; from there «back» → the list.
     btns.push([Markup.button.callback(tr('b1288_refresh'), `chat:${r.barcode}`), Markup.button.callback(tr('b1288_call'), `call:b:${r.barcode}`)]);
     btns.push([Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${r.barcode}`)]);
@@ -2194,7 +2259,7 @@ async function showSellerBookings(ctx, scope='current') {
         row.push(Markup.button.callback(b.unread>0 ? tr('b1945_chat_unread', b.unread) : tr('b1945_chat'), `chat:${b.barcode}`));
         rows.push(row);
         const row2 = [Markup.button.callback(tr('b1947_call_customer'), `call:b:${b.barcode}`)];
-        if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${Number(b.expiry_time)}`));
+        if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${b.barcode}`));
         rows.push(row2);
         // التاجر يقدر يلغي حجز المشتري من عنده (كان ناقصاً في البوت). مسار scancel يرجّع
         // لقائمة حجوزات التاجر بدل حجوزات المشتري. v12.07
@@ -2566,7 +2631,7 @@ bot.on('text', async ctx => {
         if (!bc) return ctx.reply(tr('b2251_session_ended'), { parse_mode:'MarkdownV2' });
         const r = await rpc('bot_send_booking_message', { p_telegram_id: tgId(ctx), p_barcode: bc, p_body: text });
         if (!r?.success) {
-            const e=r?.error; const msg = e==='cap_reached' ? tr('b2254_chat_cap_reached') : e==='cancelled' ? tr('b2254_chat_cancelled') : e==='bad_length' ? tr('b2254_chat_bad_length') : tr('b2254_chat_send_failed');
+            const e=r?.error; const msg = e==='cap_reached' ? tr('b2254_chat_cap_reached') : e==='cancelled' ? tr('b2254_chat_cancelled') : (e==='completed'||e==='expired') ? tr('b2254_chat_finished') : e==='bad_length' ? tr('b2254_chat_bad_length') : tr('b2254_chat_send_failed');
             await ctx.reply(msg, { parse_mode:'MarkdownV2' });
         }
         return renderChat(ctx, bc);

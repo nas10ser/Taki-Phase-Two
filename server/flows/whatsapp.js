@@ -507,6 +507,16 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     async function buyerBookingsMenu(from, s) {
         if (!s.userId) return sendButtons(from, { body: tr('wa_login_first'), buttons: [{ id: 'wa:link', title: tr('menu_login_link') }, menuBtn()] });
+        // مالك المتجر يحتاج «طلبات متجري» هنا أيضاً — أزرار واتساب سقفها ٣، فنستخدم
+        // قائمة (list) بأربعة صفوف بدل إسقاط الدور (تداخل الأدوار). v12.22
+        if (ownsStore(s)) {
+            return sendList(from, { header: tr('menu_bookings_buyer'), body: tr('wa_bookings_title'), button: tr('wa_menu_btn'), sections: [{ rows: [
+                row('wa:bk:cur', tr('wa_bk_current')),
+                row('wa:bk:prev', tr('wa_bk_previous')),
+                row('wa:s:orders', tr('menu_store_orders')),
+                menuRow(),
+            ] }] });
+        }
         await sendButtons(from, { body: tr('wa_bookings_title'), buttons: [
             { id: 'wa:bk:cur', title: tr('wa_bk_current') },
             { id: 'wa:bk:prev', title: tr('wa_bk_previous') },
@@ -522,13 +532,40 @@ function create(deps) {
         await sendList(from, { header: tr(scope === 'previous' ? 'wa_bk_previous' : 'wa_bk_current'), body: tr('wa_bk_pick'), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     function bkVal(s, bc) { return (s.temp.bkCache || {})[bc] || null; }
+    // عدّاد نصي (س:د:ث) — واتساب بلا أزرار حية، فيُعاد حسابه عند كل فتح للبطاقة. v12.22
+    function fmtLeft(ms) {
+        let d = ms - Date.now(); if (d <= 0) return null;
+        const h = Math.floor(d / 3600000); d -= h * 3600000;
+        const m = Math.floor(d / 60000); const sec = Math.floor((d - m * 60000) / 1000);
+        const p = n => String(n).padStart(2, '0');
+        return `${p(h)}:${p(m)}:${p(sec)}`;
+    }
+    // سطر الحالة/العدّاد على بطاقة الحجز: نشط → «صالح حتى» + المتبقّي؛ منتهٍ →
+    // سبب واضح بدل «صالح حتى» مضلِّل على حجز مكتمل/ملغي. v12.22
+    function bkStatusLines(b) {
+        let extra = '';
+        const active = b.status === 'pending' || b.status === 'acknowledged';
+        const ms = Number(b.expiry_time) || 0;
+        if (active && ms && ms > Date.now()) {
+            extra += tr('wa_bk_valid', fmtDate(new Date(ms)));
+            const left = fmtLeft(ms);
+            if (left) extra += tr('wa_bk_left', left);
+        } else if (b.status === 'completed') extra += tr('wa_bk_done_completed');
+        else if (b.status === 'cancelled') extra += tr('wa_bk_done_cancelled');
+        else if (b.status === 'expired' || (active && ms)) extra += tr('wa_bk_done_expired');
+        return extra;
+    }
     async function bookingDetail(from, s, bc) {
-        let b = bkVal(s, bc);
-        if (!b) { const all = await rpc('bot_get_my_bookings', aid(from, { p_scope: 'all' })) || []; s.temp.bkCache = s.temp.bkCache || {}; all.forEach(x => { s.temp.bkCache[x.barcode] = x; }); b = bkVal(s, bc); }
+        // v12.22: تحديث إجباري من القاعدة — البطاقة المخبّأة كانت تعرض حالة قديمة
+        // (مثلاً التاجر أتمّ الحجز للتو) وعدّاداً لحجز منتهٍ.
+        const all = await rpc('bot_get_my_bookings', aid(from, { p_scope: 'all' })) || [];
+        s.temp.bkCache = s.temp.bkCache || {};
+        all.forEach(x => { s.temp.bkCache[x.barcode] = x; });
+        const b = bkVal(s, bc);
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:bookings', title: tr('menu_bookings_buyer') }] });
         let extra = '';
         if (b.notes) extra += tr('wa_bk_note', b.notes);
-        if (b.expiry_time) extra += tr('wa_bk_valid', fmtDate(new Date(Number(b.expiry_time))));
+        extra += bkStatusLines(b);
         const body = tr('wa_bk_detail', bc, DIV, b.deal_name, b.shop_name, b.quantity, prepLabel(b.prep_time), statusLabel(b.status), extra);
         const btns = [{ id: `wa:chat:${bc}`, title: tr('wa_chat_btn') }];
         if (b.status === 'pending') btns.push({ id: `wa:edit:${bc}`, title: tr('wa_bk_edit') });
@@ -561,7 +598,10 @@ function create(deps) {
         if (!msgs.length) body += tr('wa_chat_empty');
         else body += '\n\n' + msgs.slice(-8).map(m => m.mine ? tr('wa_chat_me', m.body) : tr('wa_chat_them', m.body)).join('\n');
         const btns = [];
-        if (r.my_count < 3 && r.status !== 'cancelled') btns.push({ id: `wa:cmsg:${bc}`, title: tr('wa_chat_send') });
+        // حجز منتهٍ = محادثة للقراءة فقط — يطابق حارس القاعدة (v12.22).
+        const finished = ['cancelled', 'completed', 'expired'].includes(r.status);
+        if (finished) body += '\n\n' + tr('wa_chat_finished');
+        if (r.my_count < 3 && !finished) btns.push({ id: `wa:cmsg:${bc}`, title: tr('wa_chat_send') });
         btns.push({ id: ownsStore(s) ? `wa:so1:${bc}` : `wa:bk1:${bc}`, title: tr('wa_back') });
         btns.push(menuBtn());
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
@@ -572,7 +612,7 @@ function create(deps) {
         const r = await rpc('bot_send_booking_message', aid(from, { p_barcode: bc, p_body: body }));
         if (r && r.success) { await sendText(from, tr('wa_chat_sent', r.my_count)); return showChat(from, s, bc); }
         const e = r && r.error;
-        await sendText(from, e === 'cap_reached' ? tr('wa_chat_cap') : e === 'cancelled' ? tr('wa_chat_cancelled') : tr('wa_chat_fail'));
+        await sendText(from, e === 'cap_reached' ? tr('wa_chat_cap') : e === 'cancelled' ? tr('wa_chat_cancelled') : (e === 'completed' || e === 'expired') ? tr('wa_chat_finished') : tr('wa_chat_fail'));
         return showChat(from, s, bc);
     }
 
@@ -842,10 +882,13 @@ function create(deps) {
     }
     function soVal(s, bc) { return (s.temp.soCache || {})[bc] || null; }
     async function sellerOrderDetail(from, s, bc) {
-        let b = soVal(s, bc);
-        if (!b) { const all = await rpc('bot_get_seller_bookings', aid(from, { p_scope: 'all' })) || []; s.temp.soCache = s.temp.soCache || {}; all.forEach(x => { s.temp.soCache[x.barcode] = x; }); b = soVal(s, bc); }
+        // v12.22: تحديث إجباري من القاعدة — نفس علاج بطاقة المشتري (حالة قديمة/عدّاد ميت).
+        const all = await rpc('bot_get_seller_bookings', aid(from, { p_scope: 'all' })) || [];
+        s.temp.soCache = s.temp.soCache || {};
+        all.forEach(x => { s.temp.soCache[x.barcode] = x; });
+        const b = soVal(s, bc);
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:orders', title: tr('menu_seller_bookings') }] });
-        const extra = b.notes ? tr('wa_bk_note', b.notes) : '';
+        const extra = (b.notes ? tr('wa_bk_note', b.notes) : '') + bkStatusLines(b);
         const body = tr('wa_so_detail', bc, b.deal_name, b.user_name || '—', b.user_phone || '—', b.quantity, prepLabel(b.prep_time), statusLabel(b.status), extra);
         const btns = [];
         if (b.status === 'pending') btns.push({ id: `wa:ack:${bc}`, title: tr('wa_ack') });
