@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.22.0';
+const BOT_VERSION              = '12.23.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2896,9 +2896,13 @@ app.post('/webhook/whatsapp', async (req, res) => {
     let body; try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).json({error:'Bad JSON'}); }
     res.status(200).send('OK');
     try {
-        for (const entry of body?.entry||[]) for (const change of entry.changes||[]) for (const msg of change.value?.messages||[]) {
-            const from = msg.from; if (!from || !checkRL(`wa:${from}`)) continue;
-            await WA.handleMessage(from, msg);
+        for (const entry of body?.entry||[]) for (const change of entry.changes||[]) {
+            // فشل التسليم يصل كتقرير status ولا يُرى في أي مكان آخر — نسجّله وإلا ضاع السبب (v12.23)
+            for (const st of change.value?.statuses||[]) if (st.status === 'failed') console.error('WA delivery FAILED →', st.recipient_id, JSON.stringify(st.errors||[]));
+            for (const msg of change.value?.messages||[]) {
+                const from = msg.from; if (!from || !checkRL(`wa:${from}`)) continue;
+                await WA.handleMessage(from, msg);
+            }
         }
     } catch(e) { console.error('WA processing:', e.message); }
 });
