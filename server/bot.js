@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.24.0';
+const BOT_VERSION              = '12.25.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1270,23 +1270,20 @@ async function renderCountdown(ctx, barcode, roleCtx){
     // role ON THIS BOOKING as the DB sees it.
     const rc = roleCtx || (r.role === 'seller' ? 's' : 'b');
     const active = r.status==='pending' || r.status==='acknowledged';
-    if (!active) {
-        const done = r.status==='completed' ? tr('cd_completed', DIV)
-                   : r.status==='cancelled' ? tr('cd_cancelled', DIV)
-                   : tr('b1042_booking_expired', DIV);
-        await ctx.answerCbQuery(tr('cd_done_cb')).catch(()=>{});
-        return safeReplyMd(ctx, done, { reply_markup: Markup.inlineKeyboard(bookingsNavRows(s, rc)).reply_markup });
-    }
     const ms = Number(r.expiry_time) || 0;
-    const cd = ms ? fmtCountdown(ms) : null;
-    await ctx.answerCbQuery(cd ? tr('b1039_time_left', cd) : tr('b1039_time_up')).catch(()=>{});
-    const txt = cd
-        ? tr(rc==='s' ? 'b1041_time_remaining_s' : 'b1041_time_remaining', DIV, cd, md(fmtDate(new Date(ms))))
-        : tr('b1042_booking_expired', DIV);
-    return safeReplyMd(ctx, txt, { reply_markup: Markup.inlineKeyboard([
-        ...(cd ? [[Markup.button.callback(tr('b1044_refresh_counter'), `${rc==='s'?'cds':'cd'}:${r.barcode}`)]] : []),
-        ...bookingsNavRows(s, rc)
-    ]).reply_markup });
+    const cd = (active && ms) ? fmtCountdown(ms) : null;
+    // v12.25 (طلب ناصر): العدّاد يعرض «الحجز نفسه» مثل مسار التأكيد — رسالة
+    // المؤقّت (بلا أزرار) ثم بطاقة الحجز الكاملة بأزرارها، وفيها زر «العدّاد»
+    // الذي يعيد نفس الدورة بعدّاد محدّث.
+    const head = !active
+        ? (r.status==='completed' ? tr('cd_completed', DIV)
+           : r.status==='cancelled' ? tr('cd_cancelled', DIV)
+           : tr('b1042_booking_expired', DIV))
+        : (cd ? tr(rc==='s' ? 'b1041_time_remaining_s' : 'b1041_time_remaining', DIV, cd, md(fmtDate(new Date(ms))))
+              : tr('b1042_booking_expired', DIV));
+    await ctx.answerCbQuery(cd ? tr('b1039_time_left', cd) : tr('cd_done_cb')).catch(()=>{});
+    await safeReplyMd(ctx, head);
+    return renderOneBooking(ctx, r.barcode, rc);
 }
 async function legacyCd(ctx, ms){
     const s = getSession(tgId(ctx));
@@ -1520,7 +1517,7 @@ bot.action(/^sdoCancel:(.+)$/, async ctx => {
 
 // ── Task 1 — single-booking view (chat «back» lands here, then «back» → list) ──
 bot.action(/^bkOne:(.+)$/, async ctx => { await ctx.answerCbQuery(); await renderOneBooking(ctx, ctx.match[1]); });
-async function renderOneBooking(ctx, barcode){
+async function renderOneBooking(ctx, barcode, roleCtx){
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
     const bc = String(barcode).toUpperCase();
@@ -1528,16 +1525,25 @@ async function renderOneBooking(ctx, barcode){
     // booking — search the store list first, then fall back to the buyer list, so a
     // booking is always found. Was: user_type==='seller' only, which made the admin-
     // owner query the BUYER list (empty) → «لم نعد نجد هذا الحجز» on chat «back». v11.81
+    // roleCtx (v12.25): the countdown buttons carry the side they were opened from
+    // ('s' store / 'b' buyer) — when the owner books from his OWN store both lists
+    // contain the barcode, so the search order must follow the context, not ownsStore.
     let b = null, seller = false;
-    if (ownsStore(s)) {
+    const trySeller = async () => {
+        if (!ownsStore(s)) return false;
         const sl = await rpc('bot_get_seller_bookings', { p_telegram_id: tgId(ctx), p_scope:'all' }) || [];
-        b = (Array.isArray(sl)?sl:[]).find(x => String(x.barcode).toUpperCase()===bc);
-        if (b) seller = true;
-    }
-    if (!b) {
+        const f = (Array.isArray(sl)?sl:[]).find(x => String(x.barcode).toUpperCase()===bc);
+        if (f) { b = f; seller = true; }
+        return !!f;
+    };
+    const tryBuyer = async () => {
         const bl = await rpc('bot_get_my_bookings', { p_telegram_id: tgId(ctx), p_scope:'all' }) || [];
-        b = (Array.isArray(bl)?bl:[]).find(x => String(x.barcode).toUpperCase()===bc);
-    }
+        const f = (Array.isArray(bl)?bl:[]).find(x => String(x.barcode).toUpperCase()===bc);
+        if (f) { b = f; seller = false; }
+        return !!f;
+    };
+    if (roleCtx === 'b') { if (!(await tryBuyer())) await trySeller(); }
+    else { if (!(await trySeller())) await tryBuyer(); }
     const listCb = seller?'seller:bookings':'buyer:bookings';
     if (!b) return ctx.reply(tr('b1248_booking_not_found'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1248_bookings'), listCb)]]).reply_markup });
     const active = b.status==='pending'||b.status==='acknowledged';
