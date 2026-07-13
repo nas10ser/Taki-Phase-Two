@@ -1647,19 +1647,27 @@ const SellerDashboard: React.FC = () => {
             images,
             description: validationService.sanitizeText(description, 1000),
             locationId: locationId === 'other' ? `custom_${Date.now()}` : locationId,
-            // Always denormalize region/city. Prefer the seller's explicit
-            // selection; if they used "other" with a map pin and didn't pick
-            // a city, derive from coords via findNearestCity. This is what
-            // makes filter-by-region work for custom locations.
-            region: (() => {
-                if (selectedRegion) return selectedRegion;
-                const nearest = findNearestCity(finalLat, finalLng);
-                return nearest?.regionId;
-            })(),
-            city: (() => {
-                if (selectedCity) return selectedCity;
-                const nearest = findNearestCity(finalLat, finalLng);
-                return nearest?.id;
+            // v12.26 — denormalized region/city follow the STRONGEST location
+            // signal, not the dropdowns:
+            //   1. A real catalogued mall/market → its exact city+region.
+            //   2. An explicitly-set pin (GPS/link/map tap — anything that moved
+            //      it off the default Riyadh center) → nearest city to the pin.
+            //   3. Only with no mall and no pin → the dropdown selection.
+            // Was: dropdowns first — selectedCity defaults to riyadh_city, so a
+            // deal pinned in Dammam saved as «الرياض» and surfaced under the
+            // wrong region in every filter (web + bots read these columns).
+            ...(() => {
+                const chosenLoc = LOCATIONS.find(l => l.id === locationId);
+                if (chosenLoc) {
+                    const c = CITIES.find(c2 => c2.id === chosenLoc.cityId);
+                    return { region: c?.regionId, city: chosenLoc.cityId };
+                }
+                const pinMoved = Math.abs(finalLat - 24.7136) > 1e-6 || Math.abs(finalLng - 46.6753) > 1e-6;
+                if (pinMoved) {
+                    const nearest = findNearestCity(finalLat, finalLng);
+                    if (nearest) return { region: nearest.regionId, city: nearest.id };
+                }
+                return { region: selectedRegion || undefined, city: selectedCity || undefined };
             })(),
             googleMapsLink,
             mapLocation: { lat: finalLat, lng: finalLng },
