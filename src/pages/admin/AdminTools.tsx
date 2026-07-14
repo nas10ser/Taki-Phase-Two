@@ -564,7 +564,24 @@ type CampaignDraft = {
     ends_at: string;
     priority: number;
     is_active: boolean;
+    /** v12.27 — إعادة بث تلقائية: none/daily/every_3_days/weekend/weekly/monthly */
+    recurrence: string;
+    /** ساعة الإرسال بتوقيت الرياض (0–23) */
+    recurrence_hour: number;
 };
+
+// خيارات التكرار — الكرون الساعي في قاعدة البيانات يعيد البث حسبها (بتوقيت الرياض)
+const RECURRENCE_OPTIONS: { v: string; label: string; icon: string }[] = [
+    { v: 'none',         label: 'بدون تكرار',       icon: '⏹' },
+    { v: 'daily',        label: 'يومياً',            icon: '📆' },
+    { v: 'every_3_days', label: 'كل ٣ أيام',        icon: '🔂' },
+    { v: 'weekend',      label: 'كل ويكند (الجمعة)', icon: '🌴' },
+    { v: 'weekly',       label: 'أسبوعياً',          icon: '🗓' },
+    { v: 'monthly',      label: 'شهرياً',            icon: '📅' },
+];
+export const RECURRENCE_LABELS: Record<string, string> = Object.fromEntries(
+    RECURRENCE_OPTIONS.map((o) => [o.v, o.label])
+);
 
 const emptyCampaign: CampaignDraft = {
     title_ar: '',
@@ -582,6 +599,8 @@ const emptyCampaign: CampaignDraft = {
     ends_at: '',
     priority: 0,
     is_active: true,
+    recurrence: 'none',
+    recurrence_hour: 10,
 };
 
 const CampaignModal: React.FC<{
@@ -599,6 +618,8 @@ const CampaignModal: React.FC<{
         target_audience: (initial?.target_audience as any) ?? 'all',
         priority: initial?.priority ?? 0,
         is_active: initial?.is_active ?? true,
+        recurrence: initial?.recurrence ?? 'none',
+        recurrence_hour: typeof initial?.recurrence_hour === 'number' ? initial.recurrence_hour : 10,
     }));
     const [saving, setSaving] = useState(false);
 
@@ -656,6 +677,8 @@ const CampaignModal: React.FC<{
                 ends_at: endMs !== null ? new Date(endMs).toISOString() : null,
                 priority: Number(form.priority) || 0,
                 is_active: form.is_active,
+                recurrence: form.recurrence || 'none',
+                recurrence_hour: Math.min(23, Math.max(0, Number(form.recurrence_hour) || 10)),
             };
 
             // 12s timeout so a stalled network call never leaves the button
@@ -788,6 +811,49 @@ const CampaignModal: React.FC<{
                                 />
                             </div>
                         </div>
+                    </div>
+
+                    {/* 🔁 التكرار التلقائي (v12.27) */}
+                    <div>
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">🔁 التكرار التلقائي</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {RECURRENCE_OPTIONS.map((o) => (
+                                <button
+                                    key={o.v}
+                                    type="button"
+                                    onClick={() => set('recurrence', o.v)}
+                                    className={`p-2.5 rounded-xl border-2 font-bold text-xs transition-all ${
+                                        form.recurrence === o.v
+                                            ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                                            : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                    }`}
+                                >
+                                    <div className="text-lg mb-0.5">{o.icon}</div>
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                        {form.recurrence !== 'none' && (
+                            <div className="mt-3 flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+                                <div className="flex-1">
+                                    <div className="text-xs font-bold text-indigo-800">⏰ ساعة إعادة الإرسال (بتوقيت الرياض)</div>
+                                    <div className="text-[10px] text-indigo-600 mt-0.5">
+                                        تُعاد الحملة تلقائياً للجميع (إشعار + نافذة منبثقة) حسب التكرار، حتى تاريخ النهاية أو إيقاف الحملة.
+                                    </div>
+                                </div>
+                                <select
+                                    value={form.recurrence_hour}
+                                    onChange={(e) => set('recurrence_hour', Number(e.target.value))}
+                                    className="px-2 py-2 bg-[var(--card-bg)] border border-indigo-200 rounded-xl text-sm font-bold outline-none"
+                                >
+                                    {Array.from({ length: 24 }, (_, h) => (
+                                        <option key={h} value={h}>
+                                            {h === 0 ? '12 منتصف الليل' : h < 12 ? `${h} صباحاً` : h === 12 ? '12 ظهراً' : `${h - 12} مساءً`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
 
                     {/* CTA + media (collapsible) */}
@@ -1489,6 +1555,9 @@ const AdminTools: React.FC = () => {
                                             <span>•</span>
                                             <span>أولوية {c.priority ?? 0}</span>
                                             {c.target_city && <><span>•</span><span>📍 {c.target_city}</span></>}
+                                            {c.recurrence && c.recurrence !== 'none' && (
+                                                <><span>•</span><span className="text-indigo-600 font-bold">🔁 {RECURRENCE_LABELS[c.recurrence] ?? c.recurrence}</span></>
+                                            )}
                                             {ends && (
                                                 <>
                                                     <span>•</span>

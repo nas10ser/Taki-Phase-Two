@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.25.0';
+const BOT_VERSION              = '12.27.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2907,6 +2907,57 @@ if (supabase && bot) {
     console.log('📤 إشعارات البوت عبر outbox — سحب كل ثانيتين (آمن مع مفتاح anon: حجوزات + رسائل + تنبيهات + تحليلات + كل أحداث الموقع — يصل شبه فوري كالتطبيق)');
 }
 
+// ── Email dispatcher (v12.27) ─────────────────────────────────────────────────
+// The admin «الإشعارات والرسائل» tab can route lifecycle messages (subscription
+// warning/expired/cancelled, new-subscription invoice, booking reminder) to
+// email. DB functions render + queue the HTML into email_outbox; this 24/7
+// process is the ONLY sender. Configure SMTP on Render (a Gmail app-password
+// works): SMTP_USER + SMTP_PASS, optional SMTP_HOST/SMTP_PORT/SMTP_FROM.
+// Without creds it stays dormant and reports «غير مهيأ» to the admin tab.
+let mailer = null, mailerFrom = '';
+if (supabase) {
+    try {
+        if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+            const nodemailer = require('nodemailer');
+            const smtpPort = Number(process.env.SMTP_PORT || 465);
+            mailerFrom = process.env.SMTP_FROM || process.env.SMTP_USER;
+            mailer = nodemailer.createTransport({
+                host: process.env.SMTP_HOST || 'smtp.gmail.com',
+                port: smtpPort,
+                secure: smtpPort === 465,
+                auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            });
+        }
+    } catch (e) { console.error('mailer init:', e.message); }
+    // Tell the admin tab whether email delivery is live (best-effort, on boot).
+    rpc('bot_report_email_status', { p_configured: !!mailer, p_from: mailerFrom });
+    if (mailer) {
+        let emailBusy = false;
+        const drainEmails = async () => {
+            if (emailBusy) return;             // never overlap polls
+            emailBusy = true;
+            try {
+                const batch = await rpc('bot_pull_email_outbox', { p_limit: 10 });
+                if (Array.isArray(batch)) for (const m of batch) {
+                    try {
+                        await mailer.sendMail({ from: `TAKI تاكي <${mailerFrom}>`, to: m.to_email, subject: m.subject, html: m.html });
+                        await rpc('bot_mark_email', { p_id: m.id, p_ok: true });
+                    } catch (e) {
+                        console.error('email send:', m.to_email, e.message);
+                        await rpc('bot_mark_email', { p_id: m.id, p_ok: false, p_error: String(e.message || e).slice(0, 300) });
+                    }
+                }
+            } catch (e) { console.warn('email poll:', e.message); }
+            finally { emailBusy = false; }
+        };
+        setInterval(drainEmails, 45_000).unref?.();
+        drainEmails();
+        console.log(`📧 مرسل الإيميل مفعّل عبر SMTP (${mailerFrom}) — سحب من email_outbox كل 45 ثانية`);
+    } else {
+        console.log('📧 مرسل الإيميل غير مهيأ — اضبط SMTP_USER و SMTP_PASS في Render لتفعيله');
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  WhatsApp Cloud API — منطق القناة كاملاً في flows/whatsapp.js (الكائن WA أعلاه).
 //  bot.js يملك هنا النقل فقط: تحقّق webhook (GET) + توقيع HMAC (POST)، ثم يفوّض كل
@@ -2938,7 +2989,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 });
 
 // ── Health + Boot ─────────────────────────────────────────────────────────────
-app.get('/health', (_,res) => res.json({ status:'active', version:BOT_VERSION, mode:BOT_MODE, uptime:Math.round(process.uptime()), services:{ telegram:!!bot, supabase:!!supabase, photo_upload:!!BOT_GATEWAY_SECRET } }));
+app.get('/health', (_,res) => res.json({ status:'active', version:BOT_VERSION, mode:BOT_MODE, uptime:Math.round(process.uptime()), services:{ telegram:!!bot, supabase:!!supabase, photo_upload:!!BOT_GATEWAY_SECRET, email:!!mailer } }));
 app.listen(PORT, () => {
     console.log(`🚀 TAKI Bot v${BOT_VERSION} | port ${PORT} | mode: ${BOT_MODE}`);
     if (!TELEGRAM_TOKEN) console.warn('⚠️  TELEGRAM_BOT_TOKEN missing');

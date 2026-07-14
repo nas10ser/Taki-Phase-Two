@@ -36,6 +36,7 @@ const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
 const AdminTax       = lazy(() => import('./admin/AdminTax'));
 const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
+const AdminMessaging = lazy(() => import('./admin/AdminMessaging'));
 const AdminAdmins    = lazy(() => import('./admin/AdminAdmins'));
 
 type Tab = AdminTab;
@@ -63,6 +64,7 @@ const TABS: TabDef[] = [
     { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_launch'    },
     { value: 'tax',       label: 'الزكاة والضريبة',   icon: '🧾',  gradient: 'from-teal-600 to-emerald-700',     hint: 'عدّاد التسجيل الضريبي + جدول شهري + فواتير جاهزة',   permission: 'tab_launch'    },
     { value: 'messages',  label: 'الرسائل',           icon: '💬',  gradient: 'from-cyan-500 to-blue-600',        hint: 'مراقبة كل المحادثات لحظة بلحظة',                     permission: 'tab_messages'  },
+    { value: 'messaging', label: 'الإشعارات والرسائل', icon: '📨',  gradient: 'from-indigo-500 to-violet-600',    hint: 'التحكم برسائل الاشتراك والحجز: النص + التوقيت + القناة (إشعار/إيميل)', permission: 'tab_tools' },
     { value: 'admins',    label: 'المسؤولون',         icon: '👑',  gradient: 'from-amber-500 to-orange-600',     hint: 'إدارة الفريق + الصلاحيات (المالك فقط)',              permission: 'tab_admins'    },
 ];
 
@@ -336,6 +338,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'launch'    && hasPermission('tab_launch')    && <AdminLaunch />}
                         {activeTab === 'tax'       && hasPermission('tab_launch')    && <AdminTax />}
                         {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}
+                        {activeTab === 'messaging' && hasPermission('tab_tools')     && <AdminMessaging />}
                         {activeTab === 'admins'    && isSuperAdmin                   && <AdminAdmins />}
                     </Suspense>
                 </div>
