@@ -414,6 +414,10 @@ const SellerDashboard: React.FC = () => {
     const [discountedPrice, setDiscountedPrice] = useState('');
     const [quantity, setQuantity] = useState<number | string>('');
     const [isUnlimited, setIsUnlimited] = useState(false);
+    // v12.28 — حدود الحجز للمشتري (منع السوق السوداء): '' أو 0 = بلا حد
+    const [maxPerBooking, setMaxPerBooking] = useState<number | string>('');
+    const [maxBookingsPerBuyer, setMaxBookingsPerBuyer] = useState<number | string>('');
+    const [rebookCooldownMinutes, setRebookCooldownMinutes] = useState<number>(0);
     const [expiryType, setExpiryType] = useState<'duration' | 'date' | 'stock' | 'hours'>('hours');
     const [days, setDays] = useState('');
     const [expiryHours, setExpiryHours] = useState('');
@@ -1274,6 +1278,9 @@ const SellerDashboard: React.FC = () => {
         setDiscountedPrice('');
         setImages([]);
         setQuantity('');
+        setMaxPerBooking('');
+        setMaxBookingsPerBuyer('');
+        setRebookCooldownMinutes(0);
         setDays('');
         setExpiryHours('');
         setExpiryType('hours');
@@ -1306,6 +1313,9 @@ const SellerDashboard: React.FC = () => {
         setDiscountedPrice(deal.discountedPrice.toString());
         setQuantity(deal.quantity === 'unlimited' ? '' : deal.quantity);
         setIsUnlimited(deal.quantity === 'unlimited');
+        setMaxPerBooking(deal.maxPerBooking || '');
+        setMaxBookingsPerBuyer(deal.maxBookingsPerBuyer || '');
+        setRebookCooldownMinutes(deal.rebookCooldownMinutes || 0);
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1685,7 +1695,11 @@ const SellerDashboard: React.FC = () => {
             // (computedStartsAt is undefined unless the toggle is on AND a
             // future date is picked), so a buyer who opened the locked
             // detail page mid-launch never sees the lock reappear.
-            startsAt: computedStartsAt
+            startsAt: computedStartsAt,
+            // v12.28 — حدود الحجز: undefined = بلا حد (يُحفظ NULL في القاعدة)
+            maxPerBooking: Number(normalizeArabicNumerals(String(maxPerBooking))) || undefined,
+            maxBookingsPerBuyer: Number(normalizeArabicNumerals(String(maxBookingsPerBuyer))) || undefined,
+            rebookCooldownMinutes: rebookCooldownMinutes || undefined
         };
 
             // 20s ceiling per DB write. Without this, a stalled Supabase
@@ -2086,6 +2100,46 @@ const SellerDashboard: React.FC = () => {
                                 }} />
                             </div>
                         </div>
+
+                        {/* v12.28 — حدود الحجز للمشتري (اختياري): منع السوق السوداء */}
+                        <details style={{ background: 'var(--gray-100)', borderRadius: 14, padding: '10px 12px', marginBottom: 14 }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                {isRTL ? '🛡 حدود الحجز للمشتري (اختياري)' : '🛡 Buyer booking limits (optional)'}
+                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                    {isRTL ? 'حدّد كم قطعة يحجز العميل في المرة الواحدة، وكم مرة يحق له الحجز — لمنع الاحتكار وإعادة البيع' : 'Cap units per booking and how often one buyer can book — prevents resellers'}
+                                </span>
+                            </summary>
+                            <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                                <div>
+                                    <label style={labelStyle}>{isRTL ? 'أقصى عدد قطع في الحجز الواحد' : 'Max units per single booking'}</label>
+                                    <input type="tel" style={fieldInputStyle} value={maxPerBooking} placeholder={isRTL ? 'فارغ = بدون حد' : 'Empty = no limit'} onChange={e => {
+                                        const val = normalizeArabicNumerals(e.target.value).replace(/\D/g, '');
+                                        setMaxPerBooking(val === '' ? '' : Number(val));
+                                    }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>{isRTL ? 'كم مرة يحق للمشتري الواحد حجز هذا العرض؟' : 'How many times may one buyer book this deal?'}</label>
+                                    <input type="tel" style={fieldInputStyle} value={maxBookingsPerBuyer} placeholder={isRTL ? 'فارغ = غير محدود (١ = مرة واحدة فقط)' : 'Empty = unlimited (1 = once only)'} onChange={e => {
+                                        const val = normalizeArabicNumerals(e.target.value).replace(/\D/g, '');
+                                        setMaxBookingsPerBuyer(val === '' ? '' : Number(val));
+                                    }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>{isRTL ? 'مدة الانتظار قبل حجز جديد (بعد استلام الحجز السابق)' : 'Wait time before re-booking (after pickup)'}</label>
+                                    <select style={fieldInputStyle as any} value={rebookCooldownMinutes} onChange={e => setRebookCooldownMinutes(Number(e.target.value) || 0)}>
+                                        <option value={0}>{isRTL ? 'بدون انتظار — يحجز فوراً' : 'No wait'}</option>
+                                        <option value={30}>{isRTL ? '٣٠ دقيقة' : '30 minutes'}</option>
+                                        <option value={60}>{isRTL ? 'ساعة' : '1 hour'}</option>
+                                        <option value={180}>{isRTL ? '٣ ساعات' : '3 hours'}</option>
+                                        <option value={360}>{isRTL ? '٦ ساعات' : '6 hours'}</option>
+                                        <option value={720}>{isRTL ? '١٢ ساعة' : '12 hours'}</option>
+                                        <option value={1440}>{isRTL ? '٢٤ ساعة' : '24 hours'}</option>
+                                        <option value={4320}>{isRTL ? '٣ أيام' : '3 days'}</option>
+                                        <option value={10080}>{isRTL ? 'أسبوع' : '1 week'}</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </details>
 
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>

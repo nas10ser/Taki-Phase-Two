@@ -125,9 +125,9 @@ function register(bot, deps) {
     bot.action('sz:menu', async ctx => { await ctx.answerCbQuery(); showSizePicker(ctx); });
 
     // ── رجوع للخطوة السابقة في تدفّق الإضافة (مهمة ١/٩) ──
-    bot.action(/^adb:(name|cat|gender|size|desc|price|expiry|qty|sched|loc)$/, async ctx => {
+    bot.action(/^adb:(name|cat|gender|size|desc|price|expiry|qty|maxper|rebook|sched|loc)$/, async ctx => {
         await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); if (!s.temp.add) return;
-        const map = { name: askName, cat: askCategory, gender: askGender, size: askSize, desc: askDesc, price: askPrice, expiry: askExpiry, qty: askQty, sched: askSchedule, loc: askLocation };
+        const map = { name: askName, cat: askCategory, gender: askGender, size: askSize, desc: askDesc, price: askPrice, expiry: askExpiry, qty: askQty, maxper: askMaxPer, rebook: askRebook, sched: askSchedule, loc: askLocation };
         const fn = map[ctx.match[1]]; if (fn) return fn(ctx);
     });
     // ── مهمة ٩: «إبقاء والمتابعة» — يبقي القيمة الحالية وينتقل للخطوة التالية ──
@@ -194,6 +194,10 @@ function register(bot, deps) {
 
     // ════════ منتقي الكمية (مشترك) ═══════════════════════════════════════════════════
     bot.action(/^xq:(\d+|unlimited|custom)$/, async ctx => { await ctx.answerCbQuery(); pickedQty(ctx, ctx.match[1]); });
+
+    // ════════ v12.28 — حدود الحجز: أقصى كمية للحجز الواحد + سياسة إعادة الحجز ═══════════
+    bot.action(/^xm:(\d+|custom)$/, async ctx => { await ctx.answerCbQuery(); pickedMaxPer(ctx, ctx.match[1]); });
+    bot.action(/^xr:(open|c\d|m\d+)$/, async ctx => { await ctx.answerCbQuery(); pickedRebook(ctx, ctx.match[1]); });
 
     // ════════ الجدولة / العرض القادم (مشترك) ══════════════════════════════════════════
     bot.action('xs:now',   async ctx => { await ctx.answerCbQuery(); onScheduleChosen(ctx, null, false); });
@@ -550,6 +554,49 @@ async function pickedQty(ctx, key) {
 async function onQtyChosen(ctx) {
     const s = getSession(tgId(ctx));
     if (s.temp.flow === 'edit') return saveEditField(ctx, 'qty');
+    return askMaxPer(ctx);   // v12.28 — حدود الحجز قبل الجدولة
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  v12.28 — حدود الحجز للمشتري (منع السوق السوداء): كمية الحجز الواحد + إعادة الحجز
+// ════════════════════════════════════════════════════════════════════════════════
+async function askMaxPer(ctx) {
+    setStep(tgId(ctx), 'idle');
+    await reply(ctx, tr('sd900_maxper_title', DIV), Markup.inlineKeyboard([
+        [btn(tr('sd901_no_limit'), 'xm:0')],
+        [btn('1', 'xm:1'), btn('2', 'xm:2'), btn('3', 'xm:3')],
+        [btn('5', 'xm:5'), btn('10', 'xm:10'), btn(tr('sd902_custom_max'), 'xm:custom')],
+        [btn(tr('sd465_back'), 'adb:qty'), btn(tr('sd466_cancel'), 'sd:cancel')],
+    ]).reply_markup);
+}
+async function pickedMaxPer(ctx, key) {
+    const s = getSession(tgId(ctx)); const a = s.temp.add; if (!a) return;
+    if (key === 'custom') { setStep(tgId(ctx), 'ad_maxper'); return reply(ctx, tr('sd903_maxper_prompt'), kbBack('adb:maxper')); }
+    a.maxPer = +key || 0;
+    return askRebook(ctx);
+}
+async function askRebook(ctx) {
+    setStep(tgId(ctx), 'idle');
+    await reply(ctx, tr('sd905_rebook_title', DIV), Markup.inlineKeyboard([
+        [btn(tr('sd906_rb_open'), 'xr:open')],
+        [btn(tr('sd906_rb_once'), 'xr:c1'), btn(tr('sd906_rb_twice'), 'xr:c2'), btn(tr('sd906_rb_3'), 'xr:c3')],
+        [btn(tr('sd906_rb_24h'), 'xr:m1440'), btn(tr('sd906_rb_3d'), 'xr:m4320')],
+        [btn(tr('sd906_rb_1w'), 'xr:m10080')],
+        [btn(tr('sd465_back'), 'adb:maxper'), btn(tr('sd466_cancel'), 'sd:cancel')],
+    ]).reply_markup);
+}
+async function pickedRebook(ctx, key) {
+    const s = getSession(tgId(ctx)); const a = s.temp.add; if (!a) return;
+    a.rebookMax = 0; a.rebookCooldown = 0;
+    if (key[0] === 'c') a.rebookMax = +key.slice(1) || 0;
+    else if (key[0] === 'm') a.rebookCooldown = +key.slice(1) || 0;
+    return afterLimitsChosen(ctx);
+}
+function rbWaitLabel(m) {
+    return m === 1440 ? tr('sd906_rb_24h') : m === 4320 ? tr('sd906_rb_3d') : m === 10080 ? tr('sd906_rb_1w') : tr('sd908_review_wait_min', m);
+}
+async function afterLimitsChosen(ctx) {
+    const s = getSession(tgId(ctx));
     // إذا حُسم موعد البدء ضمن «بتاريخ محدّد» (مهمة ١٠) نتخطّى خطوة «عرض قادم».
     if (s.temp.add && s.temp.add.scheduleDone) return askLocation(ctx);
     return askSchedule(ctx);
@@ -563,7 +610,7 @@ async function askSchedule(ctx) {
     await reply(ctx, tr('sd488_step10_schedule'), Markup.inlineKeyboard([
         [btn(tr('sd489_publish_now'), 'xs:now')],
         [btn(tr('sd490_schedule_start'), 'xs:set')],
-        [btn(tr('sd491_back'), 'adb:qty'), btn(tr('sd491_cancel'), 'sd:cancel')],
+        [btn(tr('sd491_back'), 'adb:rebook'), btn(tr('sd491_cancel'), 'sd:cancel')],
     ]).reply_markup);
 }
 async function askStartDate(ctx) {
@@ -861,8 +908,14 @@ async function goReview(ctx) {
     const sched = a.startsAt ? tr('w724_sched_upcoming', md(fmtDate(a.startsAt))) : '';
     const size = a.size ? tr('w725_size', md(a.size)) : '';
     const desc = a.desc ? tr('w726_desc', md(a.desc)) : '';
+    // v12.28 — سطر حدود الحجز في المراجعة (يظهر فقط عند تفعيل أي حد)
+    const limitBits = [];
+    if (a.maxPer) limitBits.push(tr('sd908_review_per', a.maxPer));
+    if (a.rebookMax) limitBits.push(tr('sd908_review_count', a.rebookMax));
+    if (a.rebookCooldown) limitBits.push(rbWaitLabel(a.rebookCooldown));
+    const limits = limitBits.length ? `\n🛡 ${limitBits.map(x => md(String(x))).join(' · ')}` : '';
     await reply(ctx,
-        tr('sd727_review', DIV, md(a.name), md(catLabel(a.category)), md(genderLabel(a.gender)), size, priceBlock(a.orig, a.disc, pct), expirySummary(a), qty, sched, md(loc), a.images.length, desc),
+        tr('sd727_review', DIV, md(a.name), md(catLabel(a.category)), md(genderLabel(a.gender)), size, priceBlock(a.orig, a.disc, pct), expirySummary(a), qty, sched, md(loc), a.images.length, desc) + limits,
         Markup.inlineKeyboard([[btn(tr('sd731_publish'), 'ad:publish')], [btn(tr('sd731_cancel'), 'sd:cancel')]]).reply_markup);
 }
 async function doPublish(ctx) {
@@ -881,6 +934,10 @@ async function doPublish(ctx) {
         p_google_maps_link: a.loc?.google || null, p_size: a.size || null, p_gender: a.gender || 'all',
         p_expiry_type: a.expiryType, p_expiry_date: ex.expiry_date, p_expires_in_minutes: ex.minutes,
         p_starts_at: a.startsAt || null, p_is_unlimited: !!a.unlimited,
+        // v12.28 — حدود الحجز (null = بلا حد)
+        p_max_per_booking: a.maxPer || null,
+        p_max_bookings_per_buyer: a.rebookMax || null,
+        p_rebook_cooldown_minutes: a.rebookCooldown || null,
     });
     setStep(tgId(ctx), 'idle'); const ok = r?.success; resetTemp(s);
     if (!ok) {
@@ -1062,7 +1119,7 @@ async function showBranches(ctx) {
 // ════════════════════════════════════════════════════════════════════════════════
 async function handleText(ctx, s, text) {
     const step = s.step || 'idle';
-    const SELLER_STEPS = ['ad_name', 'ad_size', 'ad_desc', 'ad_orig', 'ad_disc', 'ad_hours', 'ad_days', 'ad_date', 'ad_dealstart', 'ad_qty', 'ad_startdate', 'loc_link', 'br_name', 'br_rename', 'ed_name', 'ed_orig', 'ed_disc', 'ed_desc', 'ed_size'];
+    const SELLER_STEPS = ['ad_name', 'ad_size', 'ad_desc', 'ad_orig', 'ad_disc', 'ad_hours', 'ad_days', 'ad_date', 'ad_dealstart', 'ad_qty', 'ad_maxper', 'ad_startdate', 'loc_link', 'br_name', 'br_rename', 'ed_name', 'ed_orig', 'ed_disc', 'ed_desc', 'ed_size'];
     if (!SELLER_STEPS.includes(step)) return false;
 
     // إلغاء من كيبورد الرد أثناء أي خطوة تاجر.
@@ -1081,6 +1138,7 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
     if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt) { await reply(ctx, tr('sd_date_unparseable', dmy(Date.now() + 7 * DAY_MS))); return true; } const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start', dmy(anchor + 7 * DAY_MS))); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_qty')   { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } const tq = expTarget(s); tq.qty = +normalizeDigits(text); tq.unlimited = false; await onQtyChosen(ctx); return true; }
+    if (step === 'ad_maxper') { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } if (s.temp.add) s.temp.add.maxPer = +normalizeDigits(text) || 0; await askRebook(ctx); return true; }
     if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
 
     // ── موقع (رابط/إحداثيات) — مشترك ──

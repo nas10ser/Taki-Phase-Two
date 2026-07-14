@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.27.0';
+const BOT_VERSION              = '12.28.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -540,8 +540,16 @@ function dealTypeBlock(d){
     else { const r=remainingText(d); lines.push(r ? tr('q469_ends_within', md(r)) : tr('q469_limited_time')); if(!d.is_unlimited) lines.push(tr('q469_remaining', numEsc(d.quantity??0))); }
     return lines.join('\n');
 }
-function sponsorWord(d){ return d.sponsor_label==='sponsor' ? tr('q472_official_sponsor') : tr('q472_featured_ad'); }
-function sponsorTag(d){ if(!d.is_sponsored) return ''; return `⭐️ ━━━━━ *${sponsorWord(d)}* ━━━━━ ⭐️`; }
+// v12.28 — أربع درجات تميز بترتيب ثابت (نفس تمييز الإطار الذهبي في الموقع):
+// 👑 راعٍ رسمي → 📣 معلن → ⭐ نجمة → 🥇 إطار ذهبي. bot_browse_deals يرتّبها بنفس السلّم.
+function sponsorEmoji(d){ return d.sponsor_label==='sponsor' ? '👑' : d.sponsor_label==='star' ? '⭐' : d.sponsor_label==='none' ? '🥇' : '📣'; }
+function sponsorWord(d){
+    if (d.sponsor_label==='sponsor') return tr('q472_official_sponsor');
+    if (d.sponsor_label==='star')    return tr('q472_star_badge');
+    if (d.sponsor_label==='none')    return tr('q472_gold_badge');
+    return tr('q472_featured_ad');
+}
+function sponsorTag(d){ if(!d.is_sponsored) return ''; const e=sponsorEmoji(d); return `${e} ━━━━━ *${sponsorWord(d)}* ━━━━━ ${e}`; }
 // placeLink / dirLink / driveInfo → lib/geo.js
 // One clear expiry/type line — shows HOW the deal ends (by time vs by quantity)
 // plus the exact end date & time when it's time-based. Mirrors the website. v11.72
@@ -801,7 +809,7 @@ async function renderList(ctx, sortLetter, cat, offset){
     for(let i=0;i<deals.length;i++){
         const d=deals[i];
         await ctx.reply(browseCard(d, offset+i+1, geo), { parse_mode:'MarkdownV2', link_preview_options:{is_disabled:true},
-            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book') + (d.is_sponsored?' ⭐':''), `deal:${d.id}`)]]).reply_markup });
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book') + (d.is_sponsored?` ${sponsorEmoji(d)}`:''), `deal:${d.id}`)]]).reply_markup });
     }
     const rows=[];
     const nav=[];
@@ -945,6 +953,7 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (!d) return ctx.reply(tr('b802_deal_expired'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b802_available_deals'),'browse:menu')]]).reply_markup });
     const s = getSession(tgId(ctx));
     s.temp.dealId = dealId; s.temp.dealName = d.item_name; s.temp.dealQty = 1;
+    s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
     const tag  = sponsorTag(d);
     const cat  = d.category ? tr('b806_category_line', md(catLabel(d.category))) : '';
     const rating = d.rating_count>0 ? tr('b807_rating_line', md(String(d.rating_avg)), d.rating_count) : '';
@@ -1315,14 +1324,28 @@ bot.action('book:qty', async ctx => {
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply(tr('b1053_login_via_open'), { parse_mode:'MarkdownV2' });
     if (!s.temp.dealId) return ctx.reply(tr('b1054_session_ended'), { parse_mode:'MarkdownV2' });
-    await ctx.reply(tr('b1055_how_many', md(s.temp.dealName)), { parse_mode:'MarkdownV2',
+    // v12.28 — سقف التاجر للحجز الواحد: نخفي الأزرار الأعلى منه ونظهر السقف
+    const cap = Number(s.temp.dealMaxPer) || 0;
+    const presets = [1,2,3,5].filter(q => !cap || q <= cap);
+    const row2 = [];
+    if (!cap || cap >= 10) row2.push(Markup.button.callback('10','bq:10'));
+    if (!cap || cap > 1)   row2.push(Markup.button.callback(tr('b1058_other_qty'),'bq:custom'));
+    const capHint = cap ? `\n${tr('bk_max_hint', cap)}` : '';
+    await ctx.reply(tr('b1055_how_many', md(s.temp.dealName)) + md(capHint), { parse_mode:'MarkdownV2',
         reply_markup: Markup.inlineKeyboard([
-            [1,2,3,5].map(q => Markup.button.callback(`${q}`, `bq:${q}`)),
-            [Markup.button.callback('10','bq:10'), Markup.button.callback(tr('b1058_other_qty'),'bq:custom')],
+            presets.map(q => Markup.button.callback(`${q}`, `bq:${q}`)),
+            ...(row2.length ? [row2] : []),
             [Markup.button.callback(tr('b1059_back'), s.temp.dealId ? `deal:${s.temp.dealId}` : 'browse:menu'), Markup.button.callback(tr('b1059_cancel'),'menu:back')]
         ]).reply_markup });
 });
-bot.action(/^bq:(\d+)$/, async ctx => { await ctx.answerCbQuery(); const s = getSession(tgId(ctx)); s.temp.dealQty = +ctx.match[1]; setStep(tgId(ctx),'idle'); await askPrep(ctx, s); });
+bot.action(/^bq:(\d+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    const cap = Number(s.temp.dealMaxPer) || 0;
+    // زر قديم أو متسابق يتجاوز السقف → نثبّت على السقف بدل الرفض (v12.28)
+    s.temp.dealQty = cap ? Math.min(+ctx.match[1], cap) : +ctx.match[1];
+    setStep(tgId(ctx),'idle'); await askPrep(ctx, s);
+});
 bot.action('bq:custom', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_book_qty'); await ctx.reply(tr('b1063_send_qty'), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1063_back'),'book:qty')]]).reply_markup }); });
 
 // Step 2 — pickup / prep time (mirrors the website's prep-time field)
@@ -1397,6 +1420,9 @@ bot.action('book:confirm', async ctx => {
                 : e==='deal_not_found'  ? tr('b1134_deal_not_found')
                 : e==='shop_closed'     ? tr('b1135_shop_closed', result.opens_in_min!=null?tr('b1135_opens_in', md(HRS.fmtMins(result.opens_in_min))):'')
                 : e==='no_quantity'     ? tr('b1136_no_quantity', result.available??0)
+                : e==='max_qty'         ? tr('bk_err_max_qty', result.limit??1)
+                : e==='rebook_limit'    ? tr('bk_err_rebook_limit', result.limit??1)
+                : e==='rebook_wait'     ? tr('bk_err_rebook_wait', md(HRS.fmtMins(result.wait_minutes??1)))
                 : e==='not_linked'      ? tr('b1137_login_first')
                 : e==='suspended'       ? tr('b1138_account_suspended')
                 : tr('b1139_booking_failed');
@@ -1645,7 +1671,7 @@ bot.action(/^eprep:(.+):(arrival|\d+)$/, async ctx => {
 });
 async function afterEdit(ctx, r) {
     if (!r?.success) {
-        const e=r?.error; const msg = e==='not_editable' ? tr('b1338_not_editable') : e==='no_quantity' ? tr('b1338_only_available', r.available??0) : e==='not_found' ? tr('b1338_booking_not_found') : tr('b1338_edit_failed');
+        const e=r?.error; const msg = e==='not_editable' ? tr('b1338_not_editable') : e==='no_quantity' ? tr('b1338_only_available', r.available??0) : e==='max_qty' ? tr('bk_err_max_qty', r.limit??1) : e==='not_found' ? tr('b1338_booking_not_found') : tr('b1338_edit_failed');
         return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_my_bookings'),'buyer:bookings')]]).reply_markup });
     }
     await ctx.reply(tr('cm_booking_edited'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1019_my_bookings'),'buyer:bookings')],[Markup.button.callback(tr('b1019_menu'),'menu:back')]]).reply_markup });
@@ -2212,7 +2238,7 @@ async function runNearby(ctx, offset){
     for(let i=0;i<deals.length;i++){
         const d=deals[i];
         await safeReplyMd(ctx, browseCard(d, offset+i+1, useGeo?s.geo:null), { link_preview_options:{is_disabled:true},
-            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book') + (d.is_sponsored?' ⭐':''), `deal:${d.id}`)]]).reply_markup });
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book') + (d.is_sponsored?` ${sponsorEmoji(d)}`:''), `deal:${d.id}`)]]).reply_markup });
     }
     const nav=[];
     if(offset>0) nav.push(Markup.button.callback(tr('b1883_prev'),`nf:go:${Math.max(0,offset-PAGE)}`));
@@ -2646,6 +2672,8 @@ bot.on('text', async ctx => {
     if (s.step === 'await_book_qty') {
         const q = numOf(text);
         if (!isQty(text) || q < 1) return ctx.reply(tr('b2238_send_valid_number'));
+        const cap = Number(s.temp.dealMaxPer) || 0;
+        if (cap && q > cap) return ctx.reply(tr('bk_err_max_qty', cap));   // v12.28
         s.temp.dealQty = q; setStep(tgId(ctx),'idle'); return askPrep(ctx, s);
     }
     if (s.step === 'await_prep') {

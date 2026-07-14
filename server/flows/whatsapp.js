@@ -271,10 +271,14 @@ function create(deps) {
         if (hh > 0) return `${tr('dur_h', hh)} ${tr('dur_m', mm)}`;
         return tr('dur_m', mm);
     }
+    // v12.28 — أربع درجات تميز بترتيب وتمييز الموقع نفسه:
+    // 👑 راعٍ رسمي → 📣 معلن → ⭐ نجمة → 🥇 إطار ذهبي (bot_browse_deals يرتّبها بنفس السلّم)
+    const spEmoji = d => d.sponsor_label === 'sponsor' ? '👑' : d.sponsor_label === 'star' ? '⭐' : d.sponsor_label === 'none' ? '🥇' : '📣';
+    const spWordOf = d => tr(d.sponsor_label === 'sponsor' ? 'q472_official_sponsor' : d.sponsor_label === 'star' ? 'q472_star_badge' : d.sponsor_label === 'none' ? 'q472_gold_badge' : 'q472_featured_ad');
     function dealText(d, geo) {
         const L = [];
-        // شارة ذهبية أعلى بطاقة الراعي/الإعلان — نظير sponsorTag في تيليجرام. v12.15
-        if (d.is_sponsored) L.push(`⭐️ ━━ *${tr(d.sponsor_label === 'sponsor' ? 'q472_official_sponsor' : 'q472_featured_ad')}* ━━ ⭐️`);
+        // شارة التميز أعلى البطاقة — نظير sponsorTag في تيليجرام. v12.15/v12.28
+        if (d.is_sponsored) { const e = spEmoji(d); L.push(`${e} ━━ *${spWordOf(d)}* ━━ ${e}`); }
         L.push(`🏷 *${d.item_name}*`);
         L.push(tr('q2523_wa_shop_city', d.shop_name, (geoLabel({ id: d.city, name: d.city }) || d.city || d.region || '—')));
         L.push(tr('q2524_wa_price', d.discounted_price, d.original_price, d.discount_percentage));
@@ -307,8 +311,8 @@ function create(deps) {
         // الرعاة/الإعلانات تتصدّر القائمة (ترتيب bot_browse_deals v12.15) بشكل ذهبي مميز:
         // 👑 راعٍ رسمي / ⭐ إعلان مميّز — نفس قانون الموقع بغضّ النظر عن المسافة.
         const rows = deals.slice(0, 9).map(d => {
-            const spTag = d.is_sponsored ? (d.sponsor_label === 'sponsor' ? '👑 ' : '⭐ ') : '';
-            const spWord = d.is_sponsored ? `${tr(d.sponsor_label === 'sponsor' ? 'q472_official_sponsor' : 'q472_featured_ad')} • ` : '';
+            const spTag = d.is_sponsored ? `${spEmoji(d)} ` : '';
+            const spWord = d.is_sponsored ? `${spWordOf(d)} • ` : '';
             return row(`wa:deal:${d.id}`, `${spTag}${d.item_name}`,
                 `${spWord}${d.discounted_price} ${cur()} • ${d.discount_percentage}%${geo && d.distance_km != null ? ` • ${d.distance_km}كم` : ''}`);
         });
@@ -365,6 +369,7 @@ function create(deps) {
     async function dealDetail(from, s, id) {
         const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null });
         if (!d) return sendButtons(from, { body: tr('wa_deal_gone'), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
+        s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
         s.temp.dealId = d.id; s.temp.dealName = d.item_name;
         const geo = s.geo;
         const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
@@ -423,17 +428,21 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     async function startBook(from, s, id) {
         if (!s.userId) return sendButtons(from, { body: tr('wa_login_first'), buttons: [{ id: 'wa:link', title: tr('menu_login_link') }, menuBtn()] });
-        if (id) { s.temp.dealId = id; const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null }); s.temp.dealName = d ? d.item_name : ''; }
+        if (id) { s.temp.dealId = id; const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null }); s.temp.dealName = d ? d.item_name : ''; s.temp.dealMaxPer = Number(d && d.max_per_booking) || 0; }
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
         s.step = 'idle';
-        await sendList(from, { header: tr('wa_book_title'), body: tr('wa_ask_qty', s.temp.dealName || ''), button: tr('wa_menu_btn'), sections: [{ rows: [
-            row('wa:bq:1', '1', ''), row('wa:bq:2', '2', ''), row('wa:bq:3', '3', ''),
-            row('wa:bq:5', '5', ''), row('wa:bq:10', '10', ''),
-            row('wa:bqc', tr('wa_qty_other'), ''),
-            row(`wa:deal:${s.temp.dealId}`, tr('wa_back'), ''), menuRow(),
-        ] }] });
+        // v12.28 — سقف التاجر للحجز الواحد: نخفي الكميات الأعلى منه ونظهر السقف
+        const cap = Number(s.temp.dealMaxPer) || 0;
+        const qtyRows = [1, 2, 3, 5, 10].filter(q => !cap || q <= cap).map(q => row(`wa:bq:${q}`, String(q), ''));
+        if (!cap || cap > 1) qtyRows.push(row('wa:bqc', tr('wa_qty_other'), ''));
+        qtyRows.push(row(`wa:deal:${s.temp.dealId}`, tr('wa_back'), ''), menuRow());
+        await sendList(from, { header: tr('wa_book_title'), body: tr('wa_ask_qty', s.temp.dealName || '') + (cap ? `\n${tr('bk_max_hint', cap)}` : ''), button: tr('wa_menu_btn'), sections: [{ rows: qtyRows }] });
     }
-    async function setQty(from, s, q) { s.temp.dealQty = q; s.step = 'idle'; return askPrep(from, s); }
+    async function setQty(from, s, q) {
+        const cap = Number(s.temp.dealMaxPer) || 0;
+        if (cap && q > cap) { await sendText(from, tr('bk_err_max_qty', cap)); return startBook(from, s, null); }
+        s.temp.dealQty = q; s.step = 'idle'; return askPrep(from, s);
+    }
     async function askPrep(from, s) {
         s.step = 'idle';
         await sendList(from, { header: tr('wa_book_title'), body: tr('wa_ask_prep', s.temp.dealQty || 1), button: tr('wa_menu_btn'), sections: [{ rows: [
@@ -487,6 +496,9 @@ function create(deps) {
                 : e === 'deal_not_found' ? tr('wa_book_err_notfound')
                 : e === 'shop_closed' ? tr('wa_book_err_closed', r.opens_in_min != null ? tr('wa_book_err_opensin', HRS.fmtMins(r.opens_in_min)) : '')
                 : e === 'no_quantity' ? tr('wa_book_err_noqty', r.available ?? 0)
+                : e === 'max_qty' ? tr('bk_err_max_qty', r.limit ?? 1)
+                : e === 'rebook_limit' ? tr('bk_err_rebook_limit', r.limit ?? 1)
+                : e === 'rebook_wait' ? tr('bk_err_rebook_wait', HRS.fmtMins(r.wait_minutes ?? 1))
                 : e === 'not_linked' ? tr('wa_login_first')
                 : e === 'suspended' ? tr('wa_book_err_suspended')
                 : tr('wa_book_err_fail');
@@ -626,7 +638,7 @@ function create(deps) {
     async function promptEditNote(from, s, bc) { const v = bkVal(s, bc); s.temp.editBarcode = bc; s.step = 'await_edit_note'; await sendText(from, tr('wa_edit_note_prompt', (v && v.notes) ? v.notes : '—')); }
     async function afterEdit(from, s, r) {
         if (r && r.success) { await sendText(from, tr('wa_edit_ok')); s.temp.bkCache = {}; return bookingDetail(from, s, s.temp.editBarcode); }
-        await sendText(from, tr('wa_edit_fail'));
+        await sendText(from, (r && r.error === 'max_qty') ? tr('bk_err_max_qty', r.limit ?? 1) : tr('wa_edit_fail'));
     }
 
     // ── تقييم ──
@@ -1066,26 +1078,26 @@ function create(deps) {
         s.step = 'idle';
         const rows = Object.keys(CAT).filter(k => k !== 'all').slice(0, 9).map(k => row(`wa:adcat:${k}`, catLabel(k), ''));
         rows.push(row('wa:adcancel', tr('wa_cancel'), ''));
-        await sendList(from, { header: '2/10', body: tr('wa_add_category'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+        await sendList(from, { header: '2/12', body: tr('wa_add_category'), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function askGender(from, s) {
         s.step = 'idle';
-        await sendButtons(from, { header: '3/10', body: tr('wa_add_gender'), buttons: [{ id: 'wa:adgen:all', title: genderLabel('all') }, { id: 'wa:adgen:men', title: genderLabel('men') }, { id: 'wa:adgen:women', title: genderLabel('women') }] });
+        await sendButtons(from, { header: '3/12', body: tr('wa_add_gender'), buttons: [{ id: 'wa:adgen:all', title: genderLabel('all') }, { id: 'wa:adgen:men', title: genderLabel('men') }, { id: 'wa:adgen:women', title: genderLabel('women') }] });
         await sendButtons(from, { body: '—', buttons: [{ id: 'wa:adgen:kids', title: genderLabel('kids') }, { id: 'wa:adcancel', title: tr('wa_cancel') }] });
     }
     async function askSize(from, s) {
         s.step = 'idle';
-        await sendButtons(from, { header: '4/10', body: tr('wa_add_size'), buttons: [{ id: 'wa:adsz:S', title: 'S' }, { id: 'wa:adsz:M', title: 'M' }, { id: 'wa:adsz:L', title: 'L' }] });
+        await sendButtons(from, { header: '4/12', body: tr('wa_add_size'), buttons: [{ id: 'wa:adsz:S', title: 'S' }, { id: 'wa:adsz:M', title: 'M' }, { id: 'wa:adsz:L', title: 'L' }] });
         await sendButtons(from, { body: '—', buttons: [{ id: 'wa:adszo', title: tr('wa_add_size_other') }, { id: 'wa:adszn', title: tr('wa_add_size_none') }] });
     }
     async function askDesc(from, s) {
         s.step = 'ad_desc';
-        await sendButtons(from, { header: '5/10', body: tr('wa_add_desc'), buttons: [{ id: 'wa:adskipdesc', title: tr('wa_add_desc_skip') }, { id: 'wa:adcancel', title: tr('wa_cancel') }] });
+        await sendButtons(from, { header: '5/12', body: tr('wa_add_desc'), buttons: [{ id: 'wa:adskipdesc', title: tr('wa_add_desc_skip') }, { id: 'wa:adcancel', title: tr('wa_cancel') }] });
     }
     async function askPrice(from, s) { s.step = 'ad_orig'; await sendText(from, tr('wa_add_orig')); }
     async function askExpiry(from, s) {
         s.step = 'idle';
-        await sendButtons(from, { header: '8/10', body: tr('wa_add_expiry'), buttons: [{ id: 'wa:adexp:stock', title: tr('wa_exp_stock') }, { id: 'wa:adexp:hours', title: tr('wa_exp_hours') }, { id: 'wa:adexp:duration', title: tr('wa_exp_days') }] });
+        await sendButtons(from, { header: '8/12', body: tr('wa_add_expiry'), buttons: [{ id: 'wa:adexp:stock', title: tr('wa_exp_stock') }, { id: 'wa:adexp:hours', title: tr('wa_exp_hours') }, { id: 'wa:adexp:duration', title: tr('wa_exp_days') }] });
         await sendButtons(from, { body: '—', buttons: [{ id: 'wa:adexp:date', title: tr('wa_exp_date') }, { id: 'wa:adcancel', title: tr('wa_cancel') }] });
     }
     function expTarget(s) { return s.temp.flow === 'edit' ? (s.temp.edraft || (s.temp.edraft = {})) : addVal(s); }
@@ -1108,7 +1120,7 @@ function create(deps) {
         rows.push(row('wa:adcancel', tr('wa_cancel'), ''));
         const d = isEdit ? (sdVal(s, s.temp.editDealId) || {}) : null;
         const body = isEdit ? tr('wa_ed_qty_cur', d.is_unlimited ? tr('wa_unlimited') : String(d.quantity ?? '—')) : tr('wa_add_qty');
-        await sendList(from, { header: isEdit ? tr('wa_ed_qty') : '9/10', body, button: tr('wa_menu_btn'), sections: [{ rows }] });
+        await sendList(from, { header: isEdit ? tr('wa_ed_qty') : '9/12', body, button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function pickQty(from, s, key) {
         const t0 = expTarget(s);
@@ -1118,7 +1130,34 @@ function create(deps) {
     }
     // v12.18: كان يستدعي askLocation (طلب مشاركة GPS) بدل قائمة المواقع، فيضيع
     // اختيار الموقع في تدفّق الإضافة — الصحيح منتقي المواقع الكامل askLocationStep.
-    async function onQtyChosen(from, s) { if (s.temp.flow === 'edit') return saveEditQty(from, s); return askLocationStep(from, s); }
+    async function onQtyChosen(from, s) { if (s.temp.flow === 'edit') return saveEditQty(from, s); return askMaxPerStep(from, s); }
+    // ── v12.28 — حدود الحجز للمشتري (منع السوق السوداء): خطوتان بعد الكمية ──
+    async function askMaxPerStep(from, s) {
+        s.step = 'idle';
+        const rows = [row('wa:admax:0', tr('sd901_no_limit'), ''),
+            row('wa:admax:1', '1', ''), row('wa:admax:2', '2', ''), row('wa:admax:3', '3', ''),
+            row('wa:admax:5', '5', ''), row('wa:admax:10', '10', ''),
+            row('wa:admaxc', tr('wa_add_qty_custom'), ''), row('wa:adcancel', tr('wa_cancel'), '')];
+        await sendList(from, { header: '10/12', body: tr('wa_add_maxper'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+    }
+    async function pickMaxPer(from, s, key) {
+        addVal(s).maxPer = +key || 0;
+        return askRebookStep(from, s);
+    }
+    async function askRebookStep(from, s) {
+        s.step = 'idle';
+        const rows = [row('wa:adrb:open', tr('sd906_rb_open'), ''),
+            row('wa:adrb:c1', tr('sd906_rb_once'), ''), row('wa:adrb:c2', tr('sd906_rb_twice'), ''), row('wa:adrb:c3', tr('sd906_rb_3'), ''),
+            row('wa:adrb:m1440', tr('sd906_rb_24h'), ''), row('wa:adrb:m4320', tr('sd906_rb_3d'), ''), row('wa:adrb:m10080', tr('sd906_rb_1w'), ''),
+            row('wa:adcancel', tr('wa_cancel'), '')];
+        await sendList(from, { header: '11/12', body: tr('wa_add_rebook'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+    }
+    async function pickRebook(from, s, key) {
+        const a = addVal(s); a.rebookMax = 0; a.rebookCooldown = 0;
+        if (key[0] === 'c') a.rebookMax = +key.slice(1) || 0;
+        else if (key[0] === 'm') a.rebookCooldown = +key.slice(1) || 0;
+        return askLocationStep(from, s);
+    }
     async function saveEditExpiry(from, s) {
         const t0 = s.temp.edraft || {}; const id = s.temp.editDealId; const d = sdVal(s, id) || {};
         const anchor = (d.starts_at && Number(d.starts_at) > Date.now()) ? Number(d.starts_at) : Date.now();
@@ -1308,7 +1347,13 @@ function create(deps) {
         const loc = a.loc ? (a.loc.name || a.loc.custom_location_name || a.loc.city || tr('wa_custom_location')) : tr('wa_none');
         const size = a.size ? tr('wa_review_size', a.size) : '';
         const desc = a.desc ? tr('wa_review_desc', a.desc) : '';
-        await sendButtons(from, { body: tr('wa_review_title', DIV, a.name, catLabel(a.category), genderLabel(a.gender), size, priceBlock(a.orig, a.disc, pct), expirySummary(s, a), qty, loc, a.images.length, desc), buttons: [
+        // v12.28 — سطر حدود الحجز في المراجعة (يظهر فقط عند تفعيل أي حد)
+        const limitBits = [];
+        if (a.maxPer) limitBits.push(tr('sd908_review_per', a.maxPer));
+        if (a.rebookMax) limitBits.push(tr('sd908_review_count', a.rebookMax));
+        if (a.rebookCooldown) limitBits.push(a.rebookCooldown === 1440 ? tr('sd906_rb_24h') : a.rebookCooldown === 4320 ? tr('sd906_rb_3d') : a.rebookCooldown === 10080 ? tr('sd906_rb_1w') : tr('sd908_review_wait_min', a.rebookCooldown));
+        const limits = limitBits.length ? `\n🛡 ${limitBits.join(' • ')}` : '';
+        await sendButtons(from, { body: tr('wa_review_title', DIV, a.name, catLabel(a.category), genderLabel(a.gender), size, priceBlock(a.orig, a.disc, pct), expirySummary(s, a), qty, loc, a.images.length, desc) + limits, buttons: [
             { id: 'wa:adpub', title: tr('wa_publish') }, { id: 'wa:adcancel', title: tr('wa_cancel') },
         ] });
     }
@@ -1327,6 +1372,10 @@ function create(deps) {
             p_region: a.loc && a.loc.region || null, p_city: a.loc && a.loc.city || null, p_google_maps_link: a.loc && a.loc.google || null,
             p_size: a.size || null, p_gender: a.gender || 'all', p_expiry_type: a.expiryType, p_expiry_date: ex.expiry_date,
             p_expires_in_minutes: ex.minutes, p_starts_at: a.startsAt || null, p_is_unlimited: !!a.unlimited,
+            // v12.28 — حدود الحجز (null = بلا حد)
+            p_max_per_booking: a.maxPer || null,
+            p_max_bookings_per_buyer: a.rebookMax || null,
+            p_rebook_cooldown_minutes: a.rebookCooldown || null,
         }));
         s.step = 'idle'; const ok = r && r.success; s.temp = {};
         if (!ok) {
@@ -1525,6 +1574,7 @@ function create(deps) {
             case 'ad_days': { const n = numOf(text); if (!isQty(text) || n < 1 || n > 365) { await sendText(from, tr('wa_exp_bad_days')); return; } expTarget(s).expiryDays = n; return onExpiryChosen(from, s); }
             case 'ad_date': { const dt = parseFlexibleDate(text); const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (!dt || dt.ms <= anchor) { await sendText(from, tr('wa_exp_bad_date')); return; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; return onExpiryChosen(from, s); }
             case 'ad_qty': { if (!isQty(text)) { await sendText(from, tr('wa_add_qty_bad')); return; } const tq = expTarget(s); tq.qty = numOf(text); tq.unlimited = false; return onQtyChosen(from, s); }
+            case 'ad_maxper': { if (!isQty(text)) { await sendText(from, tr('wa_add_qty_bad')); return; } addVal(s).maxPer = numOf(text) || 0; return askRebookStep(from, s); }
             case 'loc_link': { const g = await resolveGoogleLocation(text); if (!g) { await sendText(from, tr('wa_loc_bad')); return; } return onLocationChosen(from, s, { location_id: null, custom_location_name: null, map_lat: g.lat, map_lng: g.lng, region: null, city: null, google: /^https?:\/\//i.test(text.trim()) ? text.trim() : null, name: tr('wa_custom_location') }, true); }
             // تاجر — فروع
             case 'br_name': { if (text.length < 2) { await sendText(from, tr('wa_branch_name_prompt')); return; } s.temp.branchName = text.slice(0, 60); return askLocationStep(from, s, tr('wa_branch_loc_for', text.slice(0, 60))); }
@@ -1663,6 +1713,9 @@ function create(deps) {
         if (id === 'wa:adskipdesc') return (function () { addVal(s).desc = ''; return askPrice(from, s); })();
         if (k === 'adexp') return pickExpiry(from, s, p[2]);
         if (k === 'adqty') return pickQty(from, s, p[2]);
+        if (k === 'admax') return pickMaxPer(from, s, p[2]);
+        if (id === 'wa:admaxc') { s.step = 'ad_maxper'; return sendText(from, tr('sd903_maxper_prompt')); }
+        if (k === 'adrb') return pickRebook(from, s, p[2]);
         if (id === 'wa:adpub') return doPublish(from, s);
         if (id === 'wa:adphdone') return onPhotosDone(from, s);
         // موقع (مشترك)

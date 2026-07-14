@@ -112,7 +112,11 @@ export const dealRepository = {
             status: deal.status,
             created_at: deal.createdAt || Date.now(),
             // v11.20 — scheduled launch (Coming Soon). null = launches immediately.
-            starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null
+            starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null,
+            // v12.28 — merchant booking limits (0/undefined = unlimited → NULL)
+            max_per_booking: deal.maxPerBooking || null,
+            max_bookings_per_buyer: deal.maxBookingsPerBuyer || null,
+            rebook_cooldown_minutes: deal.rebookCooldownMinutes || null
         };
 
         // Internal 25s ceiling per attempt. The deal triggers
@@ -218,7 +222,10 @@ export const dealRepository = {
                 initial_quantity: deal.initialQuantity === 'unlimited' ? null : (deal.initialQuantity ?? (deal.quantity === 'unlimited' ? null : deal.quantity)),
                 status: deal.status,
                 created_at: deal.createdAt || Date.now(),
-                starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null
+                starts_at: typeof deal.startsAt === 'number' ? deal.startsAt : null,
+                max_per_booking: deal.maxPerBooking || null,
+                max_bookings_per_buyer: deal.maxBookingsPerBuyer || null,
+                rebook_cooldown_minutes: deal.rebookCooldownMinutes || null
             }));
             const { error } = await supabase.from('deals').upsert(dbDeals);
             if (error) throw error;
@@ -295,6 +302,10 @@ export const dealRepository = {
         if ('city' in d) deal.city = d.city || undefined;
         if ('expiry_type' in d && d.expiry_type) deal.expiryType = d.expiry_type;
         if ('expiry_date' in d && d.expiry_date) deal.expiryDate = d.expiry_date;
+        // v12.28 — merchant booking limits (NULL → undefined = unlimited)
+        if ('max_per_booking' in d) deal.maxPerBooking = d.max_per_booking || undefined;
+        if ('max_bookings_per_buyer' in d) deal.maxBookingsPerBuyer = d.max_bookings_per_buyer || undefined;
+        if ('rebook_cooldown_minutes' in d) deal.rebookCooldownMinutes = d.rebook_cooldown_minutes || undefined;
         // v11.20 — scheduled launch (Coming Soon). Stored as BIGINT epoch ms.
         if ('starts_at' in d && d.starts_at != null) {
             deal.startsAt = isNaN(Number(d.starts_at)) ? new Date(d.starts_at).getTime() : Number(d.starts_at);

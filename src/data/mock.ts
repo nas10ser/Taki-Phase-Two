@@ -126,6 +126,13 @@ export interface Deal {
     expiryDate?: string; // ISO YYYY-MM-DD (gregorian) when expiryType === 'date'
     quantity: number | 'unlimited';
     initialQuantity?: number | 'unlimited';
+    /** v12.28 — حدود التاجر للحجز (منع السوق السوداء). undefined/0 = بلا حد. */
+    /** أقصى عدد قطع يحجزها المشتري في الحجز الواحد. */
+    maxPerBooking?: number;
+    /** كم مرة يحق للمشتري الواحد حجز هذا العرض (نشط + مكتمل). */
+    maxBookingsPerBuyer?: number;
+    /** مدة الانتظار (بالدقائق) بعد استلام حجز مكتمل قبل السماح بحجز جديد. */
+    rebookCooldownMinutes?: number;
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

@@ -638,6 +638,51 @@ const DealDetails: React.FC = () => {
             if (!ok) return;
         }
 
+        // v12.28 — حدود التاجر: كمية الحجز الواحد + عدد المرات + مدة الانتظار.
+        // تُفرض نهائياً بتريغر في القاعدة (tr_enforce_booking_rules)؛ الفحص هنا
+        // يمنع الحجز المتفائل محلياً ويعرض سبباً واضحاً بدل فشل صامت في المزامنة.
+        if (deal.maxPerBooking && selectedQuantity > deal.maxPerBooking) {
+            customAlert(isRTL
+                ? `🛡 حدد التاجر ${deal.maxPerBooking} كحد أقصى للقطع في الحجز الواحد.`
+                : `🛡 The merchant allows at most ${deal.maxPerBooking} unit(s) per booking.`);
+            return;
+        }
+        if (deal.maxBookingsPerBuyer || deal.rebookCooldownMinutes) {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data: mine } = await supabase
+                    .from('bookings')
+                    .select('status, completed_at')
+                    .eq('deal_id', deal.id)
+                    .eq('user_id', user.id);
+                const rows = mine || [];
+                if (deal.maxBookingsPerBuyer) {
+                    const used = rows.filter(b => ['pending', 'acknowledged', 'completed'].includes(b.status)).length;
+                    if (used >= deal.maxBookingsPerBuyer) {
+                        customAlert(isRTL
+                            ? `⛔ وصلت الحد الأقصى لحجوزات هذا العرض (${deal.maxBookingsPerBuyer} لكل عميل) — حدّده التاجر لإتاحة الفرصة للجميع.`
+                            : `⛔ You reached this deal's booking limit (${deal.maxBookingsPerBuyer} per customer).`);
+                        return;
+                    }
+                }
+                if (deal.rebookCooldownMinutes) {
+                    const lastDone = rows
+                        .filter(b => b.status === 'completed' && b.completed_at)
+                        .map(b => new Date(b.completed_at as string).getTime())
+                        .sort((a, b) => b - a)[0];
+                    if (lastDone) {
+                        const waitMin = Math.ceil((lastDone + deal.rebookCooldownMinutes * 60000 - Date.now()) / 60000);
+                        if (waitMin > 0) {
+                            customAlert(isRTL
+                                ? `⏳ حدد التاجر مدة انتظار بين الحجوزات — يمكنك حجز هذا العرض مرة أخرى بعد ${fmtDuration(waitMin, true)}.`
+                                : `⏳ You can book this deal again in ${fmtDuration(waitMin, false)}.`);
+                            return;
+                        }
+                    }
+                }
+            } catch { /* التريغر في القاعدة يفرض الحدود على أي حال */ }
+        }
+
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, bookingNotes);
 
@@ -1384,13 +1429,20 @@ const DealDetails: React.FC = () => {
                                         <button onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>-</button>
                                         <span style={{ padding: '0 12px', fontWeight: 900 }}>{selectedQuantity}</span>
                                         <button onClick={() => {
+                                            // v12.28 — سقف التاجر للحجز الواحد يعلو أي زيادة
+                                            const capPer = (deal.maxPerBooking && deal.maxPerBooking > 0) ? deal.maxPerBooking : Infinity;
                                             if (deal.quantity === 'unlimited' || !hasStockCap) {
-                                                setSelectedQuantity(selectedQuantity + 1);
+                                                setSelectedQuantity(Math.min(capPer, selectedQuantity + 1));
                                             } else {
-                                                setSelectedQuantity(Math.min(deal.quantity as number, selectedQuantity + 1));
+                                                setSelectedQuantity(Math.min(capPer, Math.min(deal.quantity as number, selectedQuantity + 1)));
                                             }
                                         }} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>+</button>
                                     </div>
+                                </div>
+                            )}
+                            {!booked && canBook && !!deal.maxPerBooking && (
+                                <div style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: -6, marginBottom: 10 }}>
+                                    {isRTL ? `🛡 الحد الأقصى للحجز الواحد: ${deal.maxPerBooking}` : `🛡 Max per booking: ${deal.maxPerBooking}`}
                                 </div>
                             )}
                             {/* v11.20 — Coming Soon block. Instead of the live "احجز
