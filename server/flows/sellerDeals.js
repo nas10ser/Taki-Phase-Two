@@ -149,7 +149,7 @@ function register(bot, deps) {
 
     // ════════ تعديل عرض ════════════════════════════════════════════════════════════
     bot.action(/^dedit:([a-zA-Z0-9_-]+)$/, async ctx => { await ctx.answerCbQuery(); openEdit(ctx, ctx.match[1]); });
-    bot.action(/^ede:(name|price|qty|desc|cat|gender|size|expiry|sched|photos|loc|reactivate|preview):([a-zA-Z0-9_-]+)$/, async ctx => {
+    bot.action(/^ede:(name|price|qty|desc|cat|gender|size|expiry|sched|photos|loc|limits|reactivate|preview):([a-zA-Z0-9_-]+)$/, async ctx => {
         await ctx.answerCbQuery(); editField(ctx, ctx.match[1], ctx.match[2]);
     });
 
@@ -558,35 +558,60 @@ async function onQtyChosen(ctx) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-//  v12.28 — حدود الحجز للمشتري (منع السوق السوداء): كمية الحجز الواحد + إعادة الحجز
+//  v12.28/29 — حدود الحجز للمشتري (منع السوق السوداء): كمية الحجز الواحد + إعادة
+//  الحجز. مشترك بين تدفّق الإضافة (adb:) وتدفّق التعديل (ede:limits) — في التعديل
+//  الاختيار الجديد يستبدل الحدود الثلاثة كاملة (0 = إزالة الحد في bot_update_deal).
 // ════════════════════════════════════════════════════════════════════════════════
+function limTarget(s) { return s.temp.flow === 'edit' ? (s.temp.edraft || (s.temp.edraft = {})) : s.temp.add; }
+function limitsSummary(d) {
+    const bits = [];
+    if (d?.max_per_booking) bits.push(tr('sd908_review_per', d.max_per_booking));
+    if (d?.max_bookings_per_buyer) bits.push(tr('sd908_review_count', d.max_bookings_per_buyer));
+    if (d?.rebook_cooldown_minutes) bits.push(rbWaitLabel(d.rebook_cooldown_minutes));
+    return bits.length ? bits.map(x => md(String(x))).join(' · ') : '';
+}
 async function askMaxPer(ctx) {
+    const s = getSession(tgId(ctx));
     setStep(tgId(ctx), 'idle');
-    await reply(ctx, tr('sd900_maxper_title', DIV), Markup.inlineKeyboard([
+    const isEdit = s.temp.flow === 'edit';
+    const curLim = isEdit ? limitsSummary(s.temp.editDeal || {}) : '';
+    const curLine = isEdit ? `\n${tr('sd910_cur_limits', curLim || md(tr('sd901_no_limit')))}` : '';
+    const nav = isEdit
+        ? [btn(tr('sd465_back'), `dedit:${s.temp.editDealId}`)]
+        : [btn(tr('sd465_back'), 'adb:qty'), btn(tr('sd466_cancel'), 'sd:cancel')];
+    await reply(ctx, tr('sd900_maxper_title', DIV) + curLine, Markup.inlineKeyboard([
         [btn(tr('sd901_no_limit'), 'xm:0')],
         [btn('1', 'xm:1'), btn('2', 'xm:2'), btn('3', 'xm:3')],
         [btn('5', 'xm:5'), btn('10', 'xm:10'), btn(tr('sd902_custom_max'), 'xm:custom')],
-        [btn(tr('sd465_back'), 'adb:qty'), btn(tr('sd466_cancel'), 'sd:cancel')],
+        nav,
     ]).reply_markup);
 }
 async function pickedMaxPer(ctx, key) {
-    const s = getSession(tgId(ctx)); const a = s.temp.add; if (!a) return;
-    if (key === 'custom') { setStep(tgId(ctx), 'ad_maxper'); return reply(ctx, tr('sd903_maxper_prompt'), kbBack('adb:maxper')); }
+    const s = getSession(tgId(ctx)); const a = limTarget(s); if (!a) return;
+    if (key === 'custom') {
+        setStep(tgId(ctx), 'ad_maxper');
+        return reply(ctx, tr('sd903_maxper_prompt'), kbBack(s.temp.flow === 'edit' ? `ede:limits:${s.temp.editDealId}` : 'adb:maxper'));
+    }
     a.maxPer = +key || 0;
     return askRebook(ctx);
 }
 async function askRebook(ctx) {
+    const s = getSession(tgId(ctx));
     setStep(tgId(ctx), 'idle');
+    const isEdit = s.temp.flow === 'edit';
+    const nav = isEdit
+        ? [btn(tr('sd465_back'), `ede:limits:${s.temp.editDealId}`)]
+        : [btn(tr('sd465_back'), 'adb:maxper'), btn(tr('sd466_cancel'), 'sd:cancel')];
     await reply(ctx, tr('sd905_rebook_title', DIV), Markup.inlineKeyboard([
         [btn(tr('sd906_rb_open'), 'xr:open')],
         [btn(tr('sd906_rb_once'), 'xr:c1'), btn(tr('sd906_rb_twice'), 'xr:c2'), btn(tr('sd906_rb_3'), 'xr:c3')],
         [btn(tr('sd906_rb_24h'), 'xr:m1440'), btn(tr('sd906_rb_3d'), 'xr:m4320')],
         [btn(tr('sd906_rb_1w'), 'xr:m10080')],
-        [btn(tr('sd465_back'), 'adb:maxper'), btn(tr('sd466_cancel'), 'sd:cancel')],
+        nav,
     ]).reply_markup);
 }
 async function pickedRebook(ctx, key) {
-    const s = getSession(tgId(ctx)); const a = s.temp.add; if (!a) return;
+    const s = getSession(tgId(ctx)); const a = limTarget(s); if (!a) return;
     a.rebookMax = 0; a.rebookCooldown = 0;
     if (key[0] === 'c') a.rebookMax = +key.slice(1) || 0;
     else if (key[0] === 'm') a.rebookCooldown = +key.slice(1) || 0;
@@ -597,6 +622,17 @@ function rbWaitLabel(m) {
 }
 async function afterLimitsChosen(ctx) {
     const s = getSession(tgId(ctx));
+    // v12.29 — في التعديل: احفظ الحدود الثلاثة فوراً (0 = إزالة الحد) وعُد لقائمة التعديل.
+    if (s.temp.flow === 'edit') {
+        const t = s.temp.edraft || {};
+        const r = await rpc('bot_update_deal', {
+            p_telegram_id: tgId(ctx), p_deal_id: s.temp.editDealId,
+            p_max_per_booking: t.maxPer ?? 0,
+            p_max_bookings_per_buyer: t.rebookMax ?? 0,
+            p_rebook_cooldown_minutes: t.rebookCooldown ?? 0,
+        });
+        return afterEditSave(ctx, r);
+    }
     // إذا حُسم موعد البدء ضمن «بتاريخ محدّد» (مهمة ١٠) نتخطّى خطوة «عرض قادم».
     if (s.temp.add && s.temp.add.scheduleDone) return askLocation(ctx);
     return askSchedule(ctx);
@@ -975,7 +1011,10 @@ async function openEdit(ctx, id) {
     // ملخّص التعديل يعرض الطريقة المختارة (لا المتبقي الذي يصير «—» بعد الانتهاء) v12.20
     const exp = currentExpiryText(d);
     const sched = d.starts_at && Number(d.starts_at) > Date.now() ? tr('w780_sched', md(fmtDate(Number(d.starts_at)))) : '';
-    const cur = tr('w781_edit_current', DIV, md(d.item_name), statusLabel(d.status), money(d.original_price), money(d.discounted_price), md(d.discount_percentage), qty, md(catLabel(d.category)), md(genderLabel(d.gender || 'all')), d.size ? md(d.size) : tr('sd_size_none_set'), (Array.isArray(d.images) ? d.images.length : 0), exp, sched);
+    // v12.29 — سطر الحدود الحالية في ملخّص التعديل (يظهر فقط عند تفعيل أي حد)
+    const limSum = limitsSummary(d);
+    const cur = tr('w781_edit_current', DIV, md(d.item_name), statusLabel(d.status), money(d.original_price), money(d.discounted_price), md(d.discount_percentage), qty, md(catLabel(d.category)), md(genderLabel(d.gender || 'all')), d.size ? md(d.size) : tr('sd_size_none_set'), (Array.isArray(d.images) ? d.images.length : 0), exp, sched)
+        + (limSum ? `\n🛡 ${limSum}` : '');
     const rows = [
         [btn(tr('sd785_edit_name'), `ede:name:${id}`), btn(tr('sd785_edit_price'), `ede:price:${id}`)],
         [btn(tr('sd786_edit_qty'), `ede:qty:${id}`), btn(tr('sd786_edit_desc'), `ede:desc:${id}`)],
@@ -983,6 +1022,7 @@ async function openEdit(ctx, id) {
         [btn(tr('sd788_edit_size'), `ede:size:${id}`), btn(tr('sd788_edit_expiry'), `ede:expiry:${id}`)],
         [btn(tr('sd789_edit_sched'), `ede:sched:${id}`), btn(tr('sd789_edit_photos'), `ede:photos:${id}`)],
         [btn(tr('sd790_edit_loc'), `ede:loc:${id}`), btn(tr('sd790_edit_preview'), `ede:preview:${id}`)],
+        [btn(tr('sd_edit_limits'), `ede:limits:${id}`)],   // v12.29 — حدود الحجز
     ];
     if (dealEnded(d)) rows.push([btn(tr('sd792_reactivate'), `ede:reactivate:${id}`)]);
     else rows.push([btn(tr('sd793_pause'), `tglAsk:${id}:paused`)]);
@@ -1019,6 +1059,7 @@ async function editField(ctx, field, id) {
         const curLoc = `📍 *${md(nm)}*${place && place !== nm ? ' — ' + md(place) : ''}${u ? tr('sd548_show_on_map_link', mdUrl(u)) : ''}`;
         return askLocation(ctx, tr('sd813_change_loc2', curLoc, DIV));
     }
+    if (field === 'limits')     { s.temp.edraft = {}; return askMaxPer(ctx); }   // v12.29
     if (field === 'reactivate') { return reactivate(ctx, id); }
     if (field === 'preview')    { return previewDeal(ctx, d); }
 }
@@ -1138,7 +1179,7 @@ async function handleText(ctx, s, text) {
     if (step === 'ad_dealstart') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } const tt = expTarget(s); tt.startsAt = dt.ms; tt.scheduleDone = true; await askEndDate(ctx); return true; }
     if (step === 'ad_date')  { const dt = parseFlexibleDate(text); if (!dt) { await reply(ctx, tr('sd_date_unparseable', dmy(Date.now() + 7 * DAY_MS))); return true; } const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (dt.ms <= anchor) { await reply(ctx, tr('sd933_end_after_start', dmy(anchor + 7 * DAY_MS))); return true; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; await onExpiryChosen(ctx); return true; }
     if (step === 'ad_qty')   { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } const tq = expTarget(s); tq.qty = +normalizeDigits(text); tq.unlimited = false; await onQtyChosen(ctx); return true; }
-    if (step === 'ad_maxper') { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } if (s.temp.add) s.temp.add.maxPer = +normalizeDigits(text) || 0; await askRebook(ctx); return true; }
+    if (step === 'ad_maxper') { if (!isQty(text)) { await reply(ctx, tr('sd934_send_quantity')); return true; } const t9 = limTarget(s); if (t9) t9.maxPer = +normalizeDigits(text) || 0; await askRebook(ctx); return true; }
     if (step === 'ad_startdate') { const dt = parseFlexibleDate(text); const err = startDateError(dt); if (err) { await reply(ctx, err); return true; } await onScheduleChosen(ctx, dt.ms, false); return true; }
 
     // ── موقع (رابط/إحداثيات) — مشترك ──

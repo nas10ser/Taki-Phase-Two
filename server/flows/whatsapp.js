@@ -1009,7 +1009,7 @@ function create(deps) {
         await sendList(from, { header: tr('wa_ed_title', d.item_name), body: tr('wa_ed_pick'), button: tr('wa_menu_btn'), sections: [{ rows: [
             row(`wa:ded:name:${id}`, tr('wa_ed_name'), ''),
             row(`wa:ded:price:${id}`, tr('wa_ed_price'), ''),
-            row(`wa:ded:qty:${id}`, tr('wa_ed_qty'), ''),
+            row(`wa:ded:qty:${id}`, tr('wa_ed_qty_limits'), ''),
             row(`wa:ded:desc:${id}`, tr('wa_ed_desc'), ''),
             row(`wa:ded:cat:${id}`, tr('wa_ed_cat'), ''),
             row(`wa:ded:expiry:${id}`, tr('wa_ed_expiry'), ''),
@@ -1026,7 +1026,16 @@ function create(deps) {
         if (field === 'name')  { s.step = 'ed_name'; return sendText(from, tr('wa_ed_name_prompt', d.item_name || '—')); }
         if (field === 'price') { s.step = 'ed_orig'; return sendText(from, tr('wa_ed_orig_prompt', money(d.original_price), money(d.discounted_price))); }
         if (field === 'desc')  { s.step = 'ed_desc'; return sendText(from, tr('wa_ed_desc_prompt2', String(d.description || '—').slice(0, 300))); }
-        if (field === 'qty')   { s.temp.flow = 'edit'; s.temp.edraft = { expiryType: d.expiry_type }; return askQtyStep(from, s); }
+        // v12.29 — صف «الكمية وحدود الحجز» يتفرّع لخيارين (قائمة التعديل ممتلئة — سقف ١٠ صفوف)
+        if (field === 'qty') {
+            return sendButtons(from, { body: tr('wa_ed_qty_or_limits'), buttons: [
+                { id: `wa:ded:qonly:${id}`, title: tr('wa_ed_qty') },
+                { id: `wa:ded:limits:${id}`, title: tr('sd_edit_limits') },
+                { id: `wa:ded:menu:${id}`, title: tr('wa_back') },
+            ] });
+        }
+        if (field === 'qonly')  { s.temp.flow = 'edit'; s.temp.edraft = { expiryType: d.expiry_type }; return askQtyStep(from, s); }
+        if (field === 'limits') { s.temp.flow = 'edit'; s.temp.edraft = {}; return askMaxPerStep(from, s); }
         if (field === 'cat')   { const rows = Object.keys(CAT).filter(k => k !== 'all').slice(0, 9).map(k => row(`wa:edcat:${k}`, catLabel(k), '')); rows.push(row(`wa:sd1:${id}`, tr('wa_back'), '')); return sendList(from, { header: tr('wa_ed_cat'), body: tr('wa_ed_cat_cur', catLabel(d.category)), button: tr('wa_menu_btn'), sections: [{ rows }] }); }
         if (field === 'expiry') { s.temp.edraft = {}; return askExpiryEdit(from, s, d); }
         if (field === 'loc')    { return askLocEdit(from, s, d); }
@@ -1131,31 +1140,48 @@ function create(deps) {
     // v12.18: كان يستدعي askLocation (طلب مشاركة GPS) بدل قائمة المواقع، فيضيع
     // اختيار الموقع في تدفّق الإضافة — الصحيح منتقي المواقع الكامل askLocationStep.
     async function onQtyChosen(from, s) { if (s.temp.flow === 'edit') return saveEditQty(from, s); return askMaxPerStep(from, s); }
-    // ── v12.28 — حدود الحجز للمشتري (منع السوق السوداء): خطوتان بعد الكمية ──
+    // ── v12.28/29 — حدود الحجز للمشتري (منع السوق السوداء): خطوتان بعد الكمية،
+    //    مشتركتان مع تدفّق التعديل (wa:ded:limits) — التعديل يستبدل الحدود كاملة ──
+    function limVal(s) { return s.temp.flow === 'edit' ? (s.temp.edraft || (s.temp.edraft = {})) : addVal(s); }
     async function askMaxPerStep(from, s) {
         s.step = 'idle';
+        const isEdit = s.temp.flow === 'edit';
         const rows = [row('wa:admax:0', tr('sd901_no_limit'), ''),
             row('wa:admax:1', '1', ''), row('wa:admax:2', '2', ''), row('wa:admax:3', '3', ''),
             row('wa:admax:5', '5', ''), row('wa:admax:10', '10', ''),
-            row('wa:admaxc', tr('wa_add_qty_custom'), ''), row('wa:adcancel', tr('wa_cancel'), '')];
-        await sendList(from, { header: '10/12', body: tr('wa_add_maxper'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+            row('wa:admaxc', tr('wa_add_qty_custom'), '')];
+        if (isEdit) rows.push(row(`wa:ded:menu:${s.temp.editDealId}`, tr('wa_back'), ''));
+        rows.push(row('wa:adcancel', tr('wa_cancel'), ''));
+        await sendList(from, { header: isEdit ? tr('sd_edit_limits') : '10/12', body: tr('wa_add_maxper'), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function pickMaxPer(from, s, key) {
-        addVal(s).maxPer = +key || 0;
+        limVal(s).maxPer = +key || 0;
         return askRebookStep(from, s);
     }
     async function askRebookStep(from, s) {
         s.step = 'idle';
+        const isEdit = s.temp.flow === 'edit';
         const rows = [row('wa:adrb:open', tr('sd906_rb_open'), ''),
             row('wa:adrb:c1', tr('sd906_rb_once'), ''), row('wa:adrb:c2', tr('sd906_rb_twice'), ''), row('wa:adrb:c3', tr('sd906_rb_3'), ''),
-            row('wa:adrb:m1440', tr('sd906_rb_24h'), ''), row('wa:adrb:m4320', tr('sd906_rb_3d'), ''), row('wa:adrb:m10080', tr('sd906_rb_1w'), ''),
-            row('wa:adcancel', tr('wa_cancel'), '')];
-        await sendList(from, { header: '11/12', body: tr('wa_add_rebook'), button: tr('wa_menu_btn'), sections: [{ rows }] });
+            row('wa:adrb:m1440', tr('sd906_rb_24h'), ''), row('wa:adrb:m4320', tr('sd906_rb_3d'), ''), row('wa:adrb:m10080', tr('sd906_rb_1w'), '')];
+        if (isEdit) rows.push(row(`wa:ded:limits:${s.temp.editDealId}`, tr('wa_back'), ''));
+        rows.push(row('wa:adcancel', tr('wa_cancel'), ''));
+        await sendList(from, { header: isEdit ? tr('sd_edit_limits') : '11/12', body: tr('wa_add_rebook'), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     async function pickRebook(from, s, key) {
-        const a = addVal(s); a.rebookMax = 0; a.rebookCooldown = 0;
+        const a = limVal(s); a.rebookMax = 0; a.rebookCooldown = 0;
         if (key[0] === 'c') a.rebookMax = +key.slice(1) || 0;
         else if (key[0] === 'm') a.rebookCooldown = +key.slice(1) || 0;
+        // v12.29 — في التعديل: احفظ الحدود الثلاثة فوراً (0 = إزالة) وعُد لقائمة التعديل.
+        if (s.temp.flow === 'edit') {
+            const r = await rpc('bot_update_deal', aid(from, {
+                p_deal_id: s.temp.editDealId,
+                p_max_per_booking: a.maxPer ?? 0,
+                p_max_bookings_per_buyer: a.rebookMax ?? 0,
+                p_rebook_cooldown_minutes: a.rebookCooldown ?? 0,
+            }));
+            return afterDealEdit(from, s, r);
+        }
         return askLocationStep(from, s);
     }
     async function saveEditExpiry(from, s) {
@@ -1574,7 +1600,7 @@ function create(deps) {
             case 'ad_days': { const n = numOf(text); if (!isQty(text) || n < 1 || n > 365) { await sendText(from, tr('wa_exp_bad_days')); return; } expTarget(s).expiryDays = n; return onExpiryChosen(from, s); }
             case 'ad_date': { const dt = parseFlexibleDate(text); const tt = expTarget(s); const anchor = tt.startsAt && tt.startsAt > Date.now() ? tt.startsAt : Date.now(); if (!dt || dt.ms <= anchor) { await sendText(from, tr('wa_exp_bad_date')); return; } tt.expiryEndMs = dt.ms; tt.expiryDateIso = dt.iso; return onExpiryChosen(from, s); }
             case 'ad_qty': { if (!isQty(text)) { await sendText(from, tr('wa_add_qty_bad')); return; } const tq = expTarget(s); tq.qty = numOf(text); tq.unlimited = false; return onQtyChosen(from, s); }
-            case 'ad_maxper': { if (!isQty(text)) { await sendText(from, tr('wa_add_qty_bad')); return; } addVal(s).maxPer = numOf(text) || 0; return askRebookStep(from, s); }
+            case 'ad_maxper': { if (!isQty(text)) { await sendText(from, tr('wa_add_qty_bad')); return; } limVal(s).maxPer = numOf(text) || 0; return askRebookStep(from, s); }
             case 'loc_link': { const g = await resolveGoogleLocation(text); if (!g) { await sendText(from, tr('wa_loc_bad')); return; } return onLocationChosen(from, s, { location_id: null, custom_location_name: null, map_lat: g.lat, map_lng: g.lng, region: null, city: null, google: /^https?:\/\//i.test(text.trim()) ? text.trim() : null, name: tr('wa_custom_location') }, true); }
             // تاجر — فروع
             case 'br_name': { if (text.length < 2) { await sendText(from, tr('wa_branch_name_prompt')); return; } s.temp.branchName = text.slice(0, 60); return askLocationStep(from, s, tr('wa_branch_loc_for', text.slice(0, 60))); }
