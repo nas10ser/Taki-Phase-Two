@@ -1132,6 +1132,13 @@ const SellerDashboard: React.FC = () => {
             const url = await storageService.uploadImage(cropped);
             if (url) {
                 setImages(prev => [...prev, url].slice(0, 4));
+            } else if (storageService.lastBlockReason === 'nsfw') {
+                // v12.31 — فلتر المحتوى رفض الصورة: لا رفع ولا fallback محلي
+                // (وإلا لتسرّبت الصورة المرفوضة للعرض كـbase64). المحاولة
+                // مسجّلة في تبويب «الإنذارات» لدى الإدارة.
+                customAlert(isRTL
+                    ? '🚫 تم رفض هذه الصورة — رصد نظام الحماية محتوى غير لائق فيها.\nاستخدم صوراً واضحة للمنتج فقط. المحاولات المخالفة تُسجَّل لدى الإدارة.'
+                    : '🚫 This image was rejected — the safety filter detected inappropriate content.\nUse clear product photos only. Violations are logged for review.');
             } else {
                 // Local fallback so the seller doesn't lose the photo if
                 // storage is flaky — same path as before the crop step.

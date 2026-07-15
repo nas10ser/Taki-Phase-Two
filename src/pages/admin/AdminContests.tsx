@@ -79,7 +79,9 @@ const AdminContests: React.FC = () => {
         const url = await storageService.uploadImage(file);
         setUploadingBanner(false);
         if (url) setField({ banner_image: url });
-        else await customAlert('تعذّر رفع الصورة، حاول مجدداً.');
+        else await customAlert(storageService.lastBlockReason === 'nsfw'
+            ? '🚫 رفض فلتر المحتوى هذه الصورة (محتوى غير لائق).'
+            : 'تعذّر رفع الصورة، حاول مجدداً.');
     };
     const addQuestion = () => setDraft((d) => ({ ...d, questions: [...(d.questions || []), { id: uid(), type: 'choice', prompt: '', options: ['', ''], correctAnswer: '', points: 1, required: true } as ContestQuestion] }));
     const updateQuestion = (id: string, patch: Partial<ContestQuestion>) =>

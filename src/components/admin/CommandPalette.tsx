@@ -20,6 +20,7 @@ export type AdminTab =
     | 'buyers'
     | 'sellers'
     | 'reports'
+    | 'moderation'
     | 'analytics'
     | 'tools'
     | 'locations'
@@ -88,6 +89,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-buyers',    label: 'إدارة المشترين',   icon: '🛒', keywords: 'buyers customers مشتري مشترين عميل',                tab: 'buyers' },
         { kind: 'nav', id: 'nav-sellers',   label: 'إدارة البائعين',   icon: '🏪', keywords: 'sellers merchants تاجر متاجر بائع اشتراك',          tab: 'sellers' },
         { kind: 'nav', id: 'nav-reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
+        { kind: 'nav', id: 'nav-moderation', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
         { kind: 'nav', id: 'nav-analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
         { kind: 'nav', id: 'nav-tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
         { kind: 'nav', id: 'nav-locations', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },

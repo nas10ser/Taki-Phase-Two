@@ -4,6 +4,13 @@ import { logger } from '../utils/logger';
 import { compressImage } from '../utils/imageCompression';
 
 export const storageService = {
+    /**
+     * v12.31 — سبب رفض آخر رفع (null = لا رفض). تقرؤه نقاط الاستدعاء لعرض
+     * رسالة «محتوى غير لائق» بدل «فشل الرفع» العامة عندما يحجب فلتر الصور
+     * الإباحية (moderationService) الصورة.
+     */
+    lastBlockReason: null as 'nsfw' | null,
+
     get: <T>(key: keyof typeof CONFIG.STORAGE_KEYS): T | null => {
         const stored = localStorage.getItem(CONFIG.STORAGE_KEYS[key]);
         if (!stored) return null;
@@ -45,6 +52,21 @@ export const storageService = {
 
     uploadImage: async (rawFile: File): Promise<string | null> => {
         try {
+            // v12.31 — فحص الصور الإباحية قبل الرفع (NSFWJS داخل المتصفح).
+            // نقطة اختناق واحدة = كل مسارات الرفع (منتجات/بنرات/مسابقات)
+            // مفحوصة تلقائياً. الفحص fail-open فلا يعطّل الرفع أبداً.
+            storageService.lastBlockReason = null;
+            try {
+                const { moderationService } = await import('./moderationService');
+                const verdict = await moderationService.checkImage(rawFile);
+                if (!verdict.ok) {
+                    storageService.lastBlockReason = 'nsfw';
+                    moderationService.reportBlockedUpload(rawFile.name, verdict);
+                    logger.warn(`🚫 upload blocked by NSFW filter: ${verdict.label} ${Math.round((verdict.score || 0) * 100)}%`);
+                    return null;
+                }
+            } catch { /* الفلتر لا يمنع الرفع عند أي عطل */ }
+
             // Single chokepoint: every upload path (camera, gallery,
             // crop-applied, crop-skipped, decode-fail) flows through here,
             // so compressing here guarantees no raw multi-MB photo ever

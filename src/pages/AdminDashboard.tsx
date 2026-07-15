@@ -33,6 +33,7 @@ const AdminTools     = lazy(() => import('./admin/AdminTools'));
 const AdminLocations = lazy(() => import('./admin/AdminLocations'));
 const AdminContests  = lazy(() => import('./admin/AdminContests'));
 const AdminReports   = lazy(() => import('./admin/AdminReports'));
+const AdminModeration = lazy(() => import('./admin/AdminModeration'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
 const AdminTax       = lazy(() => import('./admin/AdminTax'));
 const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
@@ -57,6 +58,7 @@ const TABS: TabDef[] = [
     { value: 'buyers',    label: 'المشترون',          icon: '🛒',  gradient: 'from-blue-500 to-indigo-600',      hint: 'بحث وتعديل أي مشتري',                                permission: 'tab_buyers'    },
     { value: 'sellers',   label: 'البائعون',          icon: '🏪',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'تحكم بالاشتراكات والباقات',                          permission: 'tab_sellers'   },
     { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة',           permission: 'tab_reports'   },
+    { value: 'moderation', label: 'الإنذارات',        icon: '🛡',  gradient: 'from-rose-600 to-red-700',         hint: 'رصد آلي: كلمات تحرش في المحادثات/التقييمات/العروض + صور مرفوضة — عدد الإنذارات لكل متجر وسببها', permission: 'tab_reports' },
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
     { value: 'locations', label: 'المولات والأسواق',  icon: '🏬',  gradient: 'from-teal-500 to-emerald-600',     hint: 'إضافة وتعديل وحذف المولات والأسواق (الموقع + البوتين)', permission: 'tab_tools'     },
@@ -331,6 +333,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'buyers'    && hasPermission('tab_buyers')    && <AdminBuyers />}
                         {activeTab === 'sellers'   && hasPermission('tab_sellers')   && <AdminSellers />}
                         {activeTab === 'reports'   && hasPermission('tab_reports')   && <AdminReports />}
+                        {activeTab === 'moderation' && hasPermission('tab_reports')  && <AdminModeration />}
                         {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
                         {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
                         {activeTab === 'locations' && hasPermission('tab_tools')     && <AdminLocations />}

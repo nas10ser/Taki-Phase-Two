@@ -223,7 +223,9 @@ const BannerModal: React.FC<{
         const url = await storageService.uploadImage(file);
         setUploading(false);
         if (!url) {
-            await customAlert('❌ فشل رفع الصورة. تأكد من الإنترنت أو ألصق رابطاً جاهزاً.');
+            await customAlert(storageService.lastBlockReason === 'nsfw'
+                ? '🚫 رفض فلتر المحتوى هذه الصورة (محتوى غير لائق).'
+                : '❌ فشل رفع الصورة. تأكد من الإنترنت أو ألصق رابطاً جاهزاً.');
             return;
         }
         setForm(prev => ({ ...prev, image_url: url }));
@@ -1265,11 +1267,14 @@ const AdminTools: React.FC = () => {
 
     const toggleBanner = async (b: any) => {
         const next = !b.is_active;
+        // v12.31 — التفعيل اليدوي من الأدمن يمسح frozen_reason (البنر الذي
+        // أخفاه انتهاء اشتراك المتجر لا يعود إلا بهذا القرار الصريح).
+        const patch: any = next ? { is_active: true, frozen_reason: null } : { is_active: false };
         // Flip locally first — toggle pill snaps instantly.
-        setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: next } : x));
-        const { error } = await supabase.from('banners').update({ is_active: next }).eq('id', b.id);
+        setBanners(prev => prev.map(x => x.id === b.id ? { ...x, ...patch } : x));
+        const { error } = await supabase.from('banners').update(patch).eq('id', b.id);
         if (error) {
-            setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: !next } : x));
+            setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: !next, frozen_reason: b.frozen_reason } : x));
             await customAlert('❌ ' + error.message);
         }
     };
@@ -1463,6 +1468,12 @@ const AdminTools: React.FC = () => {
                                         {b.title_ar || 'بدون عنوان'}
                                     </div>
                                     <div className="text-xs text-[var(--text-secondary)] mt-0.5">{b.position}</div>
+                                    {/* v12.31 — بنر أخفاه انتهاء اشتراك المتجر: لا يعود إلا بتفعيل يدوي من هنا */}
+                                    {!b.is_active && b.frozen_reason === 'subscription_expired' && (
+                                        <div className="mt-2 text-[11px] font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+                                            ⏸ أُخفي تلقائياً — انتهى اشتراك المتجر المرتبط به. لن يعود للظهور إلا إذا فعّلته أنت بعد تجديد اشتراكه.
+                                        </div>
+                                    )}
                                     <div className="flex gap-2 mt-3 items-center">
                                         <ToggleSwitch
                                             enabled={b.is_active}

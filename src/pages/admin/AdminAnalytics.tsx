@@ -22,6 +22,7 @@ import { BotAnalytics } from '../../components/admin/BotAnalytics';
 import { AuthenticityPanel } from '../../components/admin/AuthenticityPanel';
 import { TopActivityPanel } from '../../components/admin/TopActivityPanel';
 import { ReferralPanel } from '../../components/admin/ReferralPanel';
+import { FirstMembersPanel } from '../../components/admin/FirstMembersPanel';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -343,6 +344,11 @@ const AdminAnalytics: React.FC = () => {
             {/* الإحالات — «من أين سمعت عنا» + أعلى المتاجر في روابط الدعوة (v12.30) */}
             <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
                 <ReferralPanel />
+            </div>
+
+            {/* أوائل المشتركين — أول N بالتاريخ والوقت بالثانية + فترة محددة (v12.31) */}
+            <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
+                <FirstMembersPanel />
             </div>
 
             {/* Live Counters */}

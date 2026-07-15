@@ -207,6 +207,11 @@ const StoreDetails: React.FC = () => {
             const url = await storageService.uploadImage(file);
             if (url) {
                 updateStoreProfile(id, { ...profile, avatar_url: url });
+            } else if (storageService.lastBlockReason === 'nsfw') {
+                // v12.31 — الصورة مرفوضة من فلتر المحتوى: لا fallback محلي.
+                customAlert(isRTL
+                    ? '🚫 تم رفض هذه الصورة — رصد نظام الحماية محتوى غير لائق فيها. المحاولة مسجّلة لدى الإدارة.'
+                    : '🚫 This image was rejected — the safety filter detected inappropriate content. The attempt was logged.');
             } else {
                 const reader = new FileReader();
                 reader.onload = (ev) => {
