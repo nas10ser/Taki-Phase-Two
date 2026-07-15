@@ -9,6 +9,7 @@ import CameraCapture from '../components/CameraCapture';
 import ReportDialog from '../components/ReportDialog';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
+import ReferralCard from '../components/seller/ReferralCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
@@ -2020,8 +2021,10 @@ const SellerDashboard: React.FC = () => {
             <div style={{ padding: 16 }}>
                 {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
                 {view === 'form' && user && (
-                    <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                        {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
+                        <ReferralCard isRTL={isRTL} onAlert={customAlert} />
                     </div>
                 )}
                 {view === 'form' && (!isPaymentEnabled || isSubscriptionValid) ? (

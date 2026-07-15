@@ -99,6 +99,22 @@ const Register: React.FC = () => {
     // RPC writes the timestamp + IP + user-agent for legal evidence.
     const [acceptedLegal, setAcceptedLegal] = useState(false);
     const TERMS_VERSION = '2026-05-20';
+    // v12.30 — «من أين سمعت عن تاكي؟» (اختياري) + رمز دعوة المتجر من الرابط.
+    // ?ref=CODE يُلتقط فور فتح الصفحة ويثبت في sessionStorage حتى لو تنقّل
+    // المستخدم بين الشاشات قبل إكمال التسجيل — فلا يفقد المتجر إحالته.
+    const [heardFrom, setHeardFrom] = useState('');
+    const [heardStoreName, setHeardStoreName] = useState('');
+    const [refCode] = useState<string>(() => {
+        try {
+            const fromUrl = new URLSearchParams(window.location.search).get('ref');
+            if (fromUrl && fromUrl.trim()) {
+                const clean = fromUrl.trim().toUpperCase().slice(0, 12);
+                sessionStorage.setItem('taki_ref', clean);
+                return clean;
+            }
+            return sessionStorage.getItem('taki_ref') || '';
+        } catch { return ''; }
+    });
     const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const phoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -359,6 +375,11 @@ const Register: React.FC = () => {
                 shop: userType === 'seller' ? shopName : null,
                 contact_phone: normalizedPhone,
                 address: '',
+                // v12.30 — referral attribution: the ?ref= code wins (resolved
+                // server-side in handle_new_user); otherwise the manual answer.
+                referral_source: refCode ? 'store' : (heardFrom || null),
+                referral_source_detail: heardFrom === 'store' ? validationService.sanitizeText(heardStoreName, 80) : null,
+                referred_by_code: refCode || null,
             };
 
             const response = await authService.signUpWithEmail(trimmedEmail, password, userData);
@@ -1004,6 +1025,48 @@ const Register: React.FC = () => {
                                     {t('📍 سيتم تحديد موقع المتجر لاحقاً من داخل التطبيق', '📍 Store location will be set later from inside the app')}
                                 </div>
                             </div>
+                        )}
+
+                        {/* v12.30 — «من أين سمعت عن تاكي؟» (اختياري). عند الوصول عبر
+                            رابط دعوة متجر (?ref=CODE) تُنسب الإحالة للمتجر تلقائياً
+                            ويظهر توضيح بدل القائمة. */}
+                        {!isLogin && (
+                            refCode ? (
+                                <div style={{
+                                    padding: 14, borderRadius: 14,
+                                    background: 'rgba(16, 185, 129, 0.08)',
+                                    border: '1.5px solid rgba(16, 185, 129, 0.45)',
+                                    fontSize: '0.82rem', lineHeight: 1.6, color: '#a7f3d0', fontWeight: 700,
+                                }}>
+                                    🎁 {t('وصلت عبر رابط دعوة من متجر — سيُسجَّل فضل تعريفك بتاكي لهذا المتجر تلقائياً.', 'You arrived via a store invite link — the referral will be credited to that store automatically.')}
+                                    <span style={{ display: 'inline-block', marginInlineStart: 6, fontFamily: 'monospace', direction: 'ltr', opacity: 0.8 }}>({refCode})</span>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label style={labelStyle}>{t('من أين سمعت عن تاكي؟', 'How did you hear about TAKI?')} <span style={{ opacity: 0.4, fontSize: '0.75rem' }}>{t('(اختياري)', '(optional)')}</span></label>
+                                    <select
+                                        value={heardFrom}
+                                        onChange={e => setHeardFrom(e.target.value)}
+                                        style={{ ...inputStyle, appearance: 'none' as const, cursor: 'pointer' }}
+                                    >
+                                        <option value="">{t('اختر…', 'Choose…')}</option>
+                                        <option value="friend">{t('👥 صديق أو قريب', '👥 Friend or family')}</option>
+                                        <option value="social">{t('📱 وسائل التواصل الاجتماعي', '📱 Social media')}</option>
+                                        <option value="search">{t('🔎 البحث في الإنترنت', '🔎 Internet search')}</option>
+                                        <option value="store">{t('🏬 متجر أخبرني عن تاكي', '🏬 A store told me about TAKI')}</option>
+                                        <option value="ad">{t('📢 إعلان', '📢 An ad')}</option>
+                                        <option value="other">{t('✨ أخرى', '✨ Other')}</option>
+                                    </select>
+                                    {heardFrom === 'store' && (
+                                        <input
+                                            value={heardStoreName}
+                                            onChange={e => setHeardStoreName(e.target.value)}
+                                            placeholder={t('اسم المتجر الذي أخبرك', 'Name of the store')}
+                                            style={{ ...inputStyle, marginTop: 10 }}
+                                        />
+                                    )}
+                                </div>
+                            )
                         )}
 
                         {/* Legal consent — required for new registrations only.

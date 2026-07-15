@@ -4,7 +4,7 @@ import { storageService } from '../../services/storageService';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
-    ContestStatus, QuestionType,
+    ContestStatus, QuestionType, DrawSource, DrawRole, DrawWinner, CustomDraw,
 } from '../../repositories/contestRepository';
 
 /**
@@ -179,6 +179,10 @@ const AdminContests: React.FC = () => {
                     </div>
                     <button onClick={openNew} className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold text-white bg-purple-600 hover:bg-purple-700 active:scale-95 whitespace-nowrap">➕ مسابقة جديدة</button>
                 </div>
+
+                {/* v12.30 — سحب مخصص من نشاط المنصة (بدون أسئلة): مشترون حجزوا /
+                    متاجر استقبلت حجوزات / كل المسجلين — بأي فترة وأي عدد فائزين. */}
+                <CustomDrawBox />
 
                 {loading ? (
                     <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-28 bg-[var(--gray-100)] rounded-2xl animate-pulse" />)}</div>
@@ -681,6 +685,220 @@ const DrawReel: React.FC<{
                     </div>
                 )}
             </div>
+        </div>
+    );
+};
+
+// ---------- v12.30 — سحب مخصص من نشاط المنصة (بدون أسئلة) ----------
+// المصدر: مشترون حجزوا خلال الفترة / متاجر استقبلت حجوزات / كل المسجلين
+// (الجميع أو مشترين أو تجار). الفترة: اليوم/يومان/٣/٧/٣٠/الكل أو عدد أيام حر
+// أو من-إلى. الاختيار العشوائي يتم في الخادم (admin_custom_draw) ويُحفظ
+// تاريخياً في admin_draws.
+type DrawPreset = '1' | '2' | '3' | '7' | '30' | 'all' | 'days' | 'custom';
+const DRAW_PRESETS: { key: DrawPreset; label: string }[] = [
+    { key: '1', label: 'اليوم' }, { key: '2', label: 'يومان' }, { key: '3', label: '٣ أيام' },
+    { key: '7', label: '٧ أيام' }, { key: '30', label: '٣٠ يوماً' }, { key: 'all', label: 'الكل' },
+    { key: 'days', label: 'عدد أيام' }, { key: 'custom', label: 'من / إلى' },
+];
+const DRAW_SOURCES: { key: DrawSource; label: string; hint: string }[] = [
+    { key: 'buyers_booked', label: '🛍 المشترون الذين حجزوا خلال الفترة', hint: 'كل عميل لديه حجز (غير ملغي) في الفترة المحددة يدخل السحب.' },
+    { key: 'stores_booked', label: '🏬 المتاجر التي استقبلت حجوزات خلال الفترة', hint: 'كل متجر وصله حجز (غير ملغي) في الفترة المحددة يدخل السحب.' },
+    { key: 'registered', label: '👥 كل المسجلين في المنصة (حتى بدون شراء)', hint: 'كل من أنشأ حسابه خلال الفترة المحددة يدخل السحب — اختر الجميع أو المشترين أو التجار.' },
+];
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+const CustomDrawBox: React.FC = () => {
+    const { customAlert } = useApp();
+    const [open, setOpen] = useState(false);
+    const [source, setSource] = useState<DrawSource>('buyers_booked');
+    const [role, setRole] = useState<DrawRole>('all');
+    const [preset, setPreset] = useState<DrawPreset>('7');
+    const [days, setDays] = useState(7);
+    const [from, setFrom] = useState(isoDay(new Date(Date.now() - 6 * 864e5)));
+    const [to, setTo] = useState(isoDay(new Date()));
+    const [count, setCount] = useState(1);
+    const [title, setTitle] = useState('');
+    const [drawing, setDrawing] = useState(false);
+    const [result, setResult] = useState<{ pool: number; winners: DrawWinner[] } | null>(null);
+    const [history, setHistory] = useState<CustomDraw[]>([]);
+    const [revealed, setRevealed] = useState<Set<string>>(new Set());
+
+    const loadHistory = useCallback(async () => {
+        setHistory(await contestRepository.listDraws());
+    }, []);
+    useEffect(() => { if (open) loadHistory(); }, [open, loadHistory]);
+
+    const range = (): { from: string | null; to: string | null } => {
+        if (preset === 'all') return { from: null, to: null };
+        if (preset === 'days') return { from: new Date(Date.now() - Math.max(1, days) * 864e5).toISOString(), to: null };
+        if (preset === 'custom') return {
+            from: new Date(from + 'T00:00:00').toISOString(),
+            to: new Date(new Date(to + 'T00:00:00').getTime() + 864e5).toISOString(),   // شامل يوم «إلى»
+        };
+        return { from: new Date(Date.now() - Number(preset) * 864e5).toISOString(), to: null };
+    };
+
+    const runDraw = async () => {
+        if (drawing) return;
+        setDrawing(true);
+        setResult(null);
+        const r = range();
+        const res = await contestRepository.customDraw({
+            source, role: source === 'registered' ? role : 'all',
+            from: r.from, to: r.to,
+            count: Math.max(1, Math.min(count || 1, 500)),
+            title: title.trim(),
+        });
+        setDrawing(false);
+        if (!res.success) { await customAlert('⚠️ ' + (res.error || 'تعذّر السحب')); return; }
+        setRevealed(new Set());
+        setResult({ pool: res.pool || 0, winners: res.winners || [] });
+        loadHistory();
+    };
+
+    const togglePhone = (key: string) => setRevealed(s => {
+        const n = new Set(s);
+        n.has(key) ? n.delete(key) : n.add(key);
+        return n;
+    });
+
+    const winnerRow = (w: DrawWinner, key: string) => {
+        const shown = revealed.has(key);
+        return (
+            <div key={key} className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl px-3 py-2">
+                <span className="shrink-0">🏆</span>
+                <span className="truncate">{w.shop ? `${w.shop}` : (w.name || 'مشارك')}</span>
+                {w.shop && w.name && <span className="text-[11px] text-[var(--text-secondary)] truncate">({w.name})</span>}
+                {shown ? (
+                    <a href={`tel:${w.phone || ''}`} className="font-mono text-emerald-600 underline mr-auto shrink-0" dir="ltr">{w.phone || '—'}</a>
+                ) : (
+                    <span className="font-mono text-[var(--text-secondary)] tracking-widest mr-auto shrink-0" dir="ltr">••••••••</span>
+                )}
+                <button onClick={() => togglePhone(key)} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {shown ? '🙈' : '🔓 الرقم'}
+                </button>
+            </div>
+        );
+    };
+
+    const srcMeta = DRAW_SOURCES.find(s => s.key === source)!;
+
+    return (
+        <div className="bg-[var(--card-bg)] border border-amber-300 rounded-2xl p-4 space-y-3">
+            <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-2 text-right">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="text-2xl shrink-0">🎰</div>
+                    <div className="min-w-0">
+                        <div className="font-extrabold text-[var(--text-primary)] text-base">سحب مخصص — من نشاط المنصة</div>
+                        <div className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                            اسحب فائزين من المشترين الذين حجزوا، أو المتاجر النشطة، أو كل المسجلين — بأي فترة وأي عدد فائزين.
+                        </div>
+                    </div>
+                </div>
+                <span className="shrink-0 text-lg text-[var(--text-secondary)]">{open ? '▲' : '▼'}</span>
+            </button>
+
+            {open && (
+                <>
+                    <div>
+                        <label className={labelCls}>من يدخل السحب؟</label>
+                        <select className={inputCls} value={source} onChange={e => { setSource(e.target.value as DrawSource); setResult(null); }}>
+                            {DRAW_SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                        </select>
+                        <div className="text-[11px] text-[var(--text-secondary)] mt-1.5 leading-relaxed">💡 {srcMeta.hint}</div>
+                    </div>
+
+                    {source === 'registered' && (
+                        <div>
+                            <label className={labelCls}>فئة المسجلين</label>
+                            <select className={inputCls} value={role} onChange={e => setRole(e.target.value as DrawRole)}>
+                                <option value="all">الجميع (مشترون + تجار)</option>
+                                <option value="buyers">المشترون فقط</option>
+                                <option value="sellers">التجار فقط</option>
+                            </select>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className={labelCls}>الفترة الزمنية</label>
+                        <div className="flex flex-wrap gap-1.5">
+                            {DRAW_PRESETS.map(p => (
+                                <button key={p.key} onClick={() => setPreset(p.key)}
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold ${preset === p.key ? 'bg-amber-500 text-white' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                        {preset === 'days' && (
+                            <div className="flex items-center gap-2 mt-2">
+                                <span className="text-xs font-bold text-[var(--text-secondary)]">آخر</span>
+                                <input type="number" min={1} max={3650} value={days}
+                                    onChange={e => setDays(Math.max(1, Math.min(3650, Number(e.target.value) || 1)))}
+                                    className="w-24 px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-center text-[var(--text-primary)]" />
+                                <span className="text-xs font-bold text-[var(--text-secondary)]">يوماً</span>
+                            </div>
+                        )}
+                        {preset === 'custom' && (
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                <div>
+                                    <label className={labelCls}>من تاريخ</label>
+                                    <input type="date" className={inputCls} value={from} max={to} onChange={e => setFrom(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>إلى تاريخ</label>
+                                    <input type="date" className={inputCls} value={to} min={from} max={isoDay(new Date())} onChange={e => setTo(e.target.value)} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className={labelCls}>عدد الفائزين</label>
+                            <input type="number" min={1} max={500} value={count}
+                                onChange={e => setCount(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                                className={inputCls} />
+                        </div>
+                        <div>
+                            <label className={labelCls}>اسم السحب (اختياري)</label>
+                            <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: سحب عملاء الويكند" />
+                        </div>
+                    </div>
+
+                    <button onClick={runDraw} disabled={drawing}
+                        className="w-full py-3 rounded-xl text-sm font-extrabold text-white bg-amber-500 hover:bg-amber-600 active:scale-95 disabled:opacity-50">
+                        {drawing ? '⏳ جاري السحب…' : '🎲 اسحب الفائزين الآن'}
+                    </button>
+
+                    {result && (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 space-y-2">
+                            <div className="text-xs font-extrabold text-emerald-900">
+                                🎉 تم السحب من {result.pool.toLocaleString('ar-SA')} مشارك مؤهّل — الفائزون ({result.winners.length}):
+                            </div>
+                            {result.winners.map((w, i) => winnerRow(w, `new_${i}`))}
+                        </div>
+                    )}
+
+                    {history.length > 0 && (
+                        <details className="pt-1">
+                            <summary className="cursor-pointer text-xs font-extrabold text-[var(--text-secondary)]">🗂 سجل السحوبات السابقة ({history.length})</summary>
+                            <div className="space-y-2 mt-2">
+                                {history.map(h => (
+                                    <div key={h.id} className="border border-[var(--border-color)] rounded-xl p-3 space-y-1.5">
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-[var(--text-secondary)]">
+                                            <span className="text-[var(--text-primary)] font-extrabold">{h.title || DRAW_SOURCES.find(s => s.key === h.source)?.label || h.source}</span>
+                                            <span>👥 {h.pool_size} مؤهّل</span>
+                                            <span>🏆 {h.winners.length} فائز</span>
+                                            <span>{new Date(h.created_at).toLocaleDateString('ar-SA')}</span>
+                                        </div>
+                                        {h.winners.map((w, i) => winnerRow(w, `${h.id}_${i}`))}
+                                    </div>
+                                ))}
+                            </div>
+                        </details>
+                    )}
+                </>
+            )}
         </div>
     );
 };

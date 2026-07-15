@@ -457,7 +457,7 @@ const DealDetails: React.FC = () => {
 
     const history = useHistory();
     const {
-        deals, user, addRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
+        deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
         storeProfiles
     } = useApp();
@@ -727,21 +727,20 @@ const DealDetails: React.FC = () => {
             history.push('/register');
             return;
         }
-        // Defensive: one rating per store (anti-inflation). The UI hides the
-        // form when myStoreReview exists, but guard the action too. v11.97
-        if (myStoreReview) {
-            setShowReviewForm(false);
-            customAlert(isRTL ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.' : 'You already rated this store — one rating per store is allowed.');
-            return;
-        }
         setSubmittingReview(true);
-        const ok = await addRating(deal.id, { score: reviewScore, comment: reviewComment });
+        // v12.30 — one rating per store, but it's EDITABLE: if the buyer
+        // already rated this store, saving UPDATES that rating in place
+        // (a merchant product-swap can't freeze an old favourable rating).
+        const editing = !!(myStoreReview && myStoreReview.id);
+        const ok = editing
+            ? await updateRating(myStoreReview!.dealId, myStoreReview!.id!, { score: reviewScore, comment: reviewComment })
+            : await addRating(deal.id, { score: reviewScore, comment: reviewComment });
         setSubmittingReview(false);
         if (ok === 'duplicate') {
             setShowReviewForm(false);
             customAlert(isRTL
-                ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.'
-                : 'You already rated this store — one rating per store is allowed.');
+                ? 'لقد قيّمت هذا المتجر سابقاً — اضغط «تعديل تقييمك» لتحديثه.'
+                : 'You already rated this store — tap “Edit your rating” to update it.');
             return;
         }
         if (!ok) {
@@ -752,7 +751,9 @@ const DealDetails: React.FC = () => {
         }
         setShowReviewForm(false);
         setReviewComment('');
-        customAlert(isRTL ? '✅ تم إرسال تقييمك — شكراً لمشاركتك!' : '✅ Review submitted — thanks for sharing!');
+        customAlert(editing
+            ? (isRTL ? '✅ تم تحديث تقييمك بنجاح!' : '✅ Your review was updated!')
+            : (isRTL ? '✅ تم إرسال تقييمك — شكراً لمشاركتك!' : '✅ Review submitted — thanks for sharing!'));
     };
 
     // isFavorite, isSeller, isOwner already defined above
@@ -1212,12 +1213,17 @@ const DealDetails: React.FC = () => {
                         <h3 style={{ fontWeight: 800, fontSize: '0.95rem' }}>{isRTL ? 'التعليقات والآراء' : 'Reviews & Feedback'} ({count})</h3>
                         {user && user.userType === 'buyer' && (
                             myStoreReview ? (
-                                // Already rated this store → no second rating. Offer follow.
-                                <button onClick={() => toggleFollowMerchant(deal.storeId)}
-                                    style={{ background: isFollowed ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'var(--primary)', color: 'white', padding: '8px 16px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, border: 'none' }}>
-                                    {isFollowed
-                                        ? (isRTL ? '✅ تتابع المتجر' : '✅ Following')
-                                        : (isRTL ? '➕ متابعة المتجر' : '➕ Follow store')}
+                                // v12.30 — already rated this store → EDIT the rating
+                                // (opens the same form prefilled; saving updates in place).
+                                <button onClick={() => {
+                                    if (!showReviewForm) {
+                                        setReviewScore(myStoreReview.score);
+                                        setReviewComment(myStoreReview.comment || '');
+                                    }
+                                    setShowReviewForm(!showReviewForm);
+                                }}
+                                    style={{ background: 'var(--dark)', color: 'white', padding: '8px 16px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, border: 'none' }}>
+                                    {isRTL ? '✏️ تعديل تقييمك' : '✏️ Edit your rating'}
                                 </button>
                             ) : (
                                 <button onClick={() => setShowReviewForm(!showReviewForm)}
@@ -1246,7 +1252,9 @@ const DealDetails: React.FC = () => {
                                 style={{ marginTop: 10, width: '100%', padding: '12px', borderRadius: 12, background: submittingReview ? 'var(--gray-400)' : 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: submittingReview ? 'default' : 'pointer' }}>
                                 {submittingReview
                                     ? (isRTL ? '⏳ جاري الإرسال...' : '⏳ Submitting...')
-                                    : (isRTL ? 'إرسال التقييم' : 'Submit Review')}
+                                    : myStoreReview
+                                        ? (isRTL ? 'حفظ التعديل ✅' : 'Save changes ✅')
+                                        : (isRTL ? 'إرسال التقييم' : 'Submit Review')}
                             </button>
                         </div>
                     )}

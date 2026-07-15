@@ -66,6 +66,23 @@ export interface ContestEntry {
 
 export interface MaskedWinner { name: string; phone: string | null; }
 
+/** v12.30 — «سحب مخصص»: draw straight from platform activity, no questions. */
+export type DrawSource = 'buyers_booked' | 'stores_booked' | 'registered';
+export type DrawRole = 'all' | 'buyers' | 'sellers';
+export interface DrawWinner { id: string; name: string | null; phone: string | null; shop?: string | null; }
+export interface CustomDraw {
+    id: string;
+    title: string;
+    source: DrawSource;
+    role_filter: DrawRole;
+    from_ts: string | null;
+    to_ts: string | null;
+    winners_count: number;
+    pool_size: number;
+    winners: DrawWinner[];
+    created_at: string;
+}
+
 /**
  * Is a contest LIVE right now for the public? Must be active AND inside its
  * scheduled window. A contest scheduled to start later stays invisible until
@@ -217,5 +234,43 @@ export const contestRepository = {
         const { data } = await supabase.rpc('my_contest_entry', { p_contest_id: contestId });
         const d = data as any;
         return { entered: !!d?.entered, qualified: d?.qualified, score: d?.score, max: d?.max_score };
+    },
+
+    /**
+     * v12.30 — «سحب مخصص»: server-side random draw from real activity
+     * (buyers who booked / stores that received bookings / everyone who
+     * registered) inside an arbitrary date window. Winners + pool size are
+     * persisted in admin_draws for the history list.
+     */
+    async customDraw(params: {
+        source: DrawSource; role: DrawRole;
+        from: string | null; to: string | null;
+        count: number; title: string;
+    }): Promise<{ success: boolean; pool?: number; winners?: DrawWinner[]; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_custom_draw', {
+            p_source: params.source,
+            p_role: params.role,
+            p_from: params.from,
+            p_to: params.to,
+            p_count: params.count,
+            p_title: params.title,
+        });
+        if (error) return { success: false, error: error.message };
+        const d = data as any;
+        if (!d?.success) return { success: false, error: d?.error === 'empty_pool' ? 'لا يوجد أي مشارك مطابق في هذه الفترة.' : (d?.error || 'تعذّر السحب') };
+        return { success: true, pool: d.pool, winners: d.winners || [] };
+    },
+
+    /** History of custom draws (admin-only via RLS on admin_draws). */
+    async listDraws(limit = 15): Promise<CustomDraw[]> {
+        const { data } = await supabase
+            .from('admin_draws')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+        return (data || []).map((r: any) => ({
+            ...r,
+            winners: Array.isArray(r.winners) ? r.winners : [],
+        })) as CustomDraw[];
     },
 };

@@ -3,7 +3,9 @@ import { supabase } from '../services/supabaseClient';
 /**
  * authenticityRepository — buyer votes on whether an OFFER is real or fake.
  *
- * One vote per (deal, user); re-voting updates. Writes go through the
+ * One vote per (deal, user); re-voting UPDATES the previous vote (editable
+ * since v12.30 — a buyer can flip real/fake after a re-purchase, so merchants
+ * can't lock-in a first favourable vote by swapping the product). Writes go through the
  * SECURITY DEFINER RPC `cast_authenticity_vote` (reads auth.uid(), resolves the
  * store server-side) so the client never needs INSERT rights on the table and
  * the voter's identity is never exposed publicly. Aggregate counts come from

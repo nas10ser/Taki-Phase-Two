@@ -96,6 +96,25 @@ export const ratingRepository = {
         return data ? fromRow(data) : null;
     },
 
+    /**
+     * Edit the caller's OWN rating (stars + comment) via the `update_rating`
+     * SECURITY DEFINER RPC (owner-or-admin enforced server-side). v12.30 —
+     * the buyer can revise their store rating after a re-purchase, so a
+     * merchant can't swap the product and keep an old high rating hostage.
+     */
+    update: async (ratingId: string, score: number, comment: string): Promise<boolean> => {
+        const { error } = await supabase.rpc('update_rating', {
+            p_rating_id: ratingId,
+            p_score: score,
+            p_comment: comment,
+        });
+        if (error) {
+            console.error('update_rating failed:', error.message);
+            return false;
+        }
+        return true;
+    },
+
     toggleLike: async (ratingId: string): Promise<{ likeCount: number; liked: boolean } | null> => {
         const { data, error } = await supabase.rpc('toggle_rating_like', { p_rating_id: ratingId });
         if (error) {

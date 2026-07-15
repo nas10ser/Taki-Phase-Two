@@ -100,6 +100,7 @@ interface AppContextType {
     markNotifRead: (id: string) => void;
     markAllNotifsRead: () => void;
     addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean | 'duplicate'>;
+    updateRating: (dealId: string, ratingId: string, ratingData: { score: number, comment: string }) => Promise<boolean>;
     addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
     toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
     removeRating: (dealId: string, ratingId: string) => Promise<void>;
@@ -300,10 +301,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // store" prompt the owner explicitly asked for.
     const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeId: string; storeName: string } | null>(null);
     // Two-step post-purchase flow (v11.97): 'auth' asks «is this offer real?»
-    // first, then either 'rate' (first time rating this store) or 'done' (already
-    // rated → show the previous rating + a follow option, never re-rate).
+    // first, then either 'rate' (rate / edit the store rating) or 'done'
+    // (already rated → show the previous rating with EDIT + DELETE options —
+    // editable since v12.30 so a merchant product-swap can't freeze old votes).
     const [ratingStep, setRatingStep] = useState<'auth' | 'rate' | 'done'>('auth');
-    const [prevReview, setPrevReview] = useState<{ score: number; comment: string } | null>(null);
+    // Carries id + dealId so the «done» step can edit or delete the previous rating.
+    const [prevReview, setPrevReview] = useState<{ id?: string; dealId?: string; score: number; comment: string } | null>(null);
     const [authVoting, setAuthVoting] = useState(false);
     const promptedRatingRef = useRef<Set<string>>(new Set());
     const [ratingStars, setRatingStars] = useState(5);
@@ -1778,26 +1781,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
     }, [deals, user]);
 
-    // Buyer authenticity vote («عرض حقيقي / وهمي») — ONE per deal and the first
-    // vote is FINAL (v12.10). A buyer who already voted can't flip real↔fake on
-    // a re-purchase, matching the DB (cast_authenticity_vote is now immutable).
+    // v12.30 — edit an existing rating (stars + comment). The `update_rating`
+    // RPC enforces owner-or-admin server-side; here we just sync local state.
+    const updateRating = useCallback(async (dealId: string, ratingId: string, ratingData: { score: number, comment: string }): Promise<boolean> => {
+        const { ratingRepository } = await import('../repositories/ratingRepository');
+        const ok = await ratingRepository.update(ratingId, ratingData.score, ratingData.comment);
+        if (!ok) return false;
+        setDeals(prev => prev.map(d => d.id === dealId
+            ? {
+                ...d,
+                ratings: (d.ratings || []).map(r => r.id === ratingId
+                    ? { ...r, score: ratingData.score, comment: ratingData.comment }
+                    : r),
+            }
+            : d));
+        return true;
+    }, []);
+
+    // Buyer authenticity vote («عرض حقيقي / وهمي») — ONE per deal, and since
+    // v12.30 it is EDITABLE: re-voting flips the previous vote (the DB upserts).
+    // Rationale (Nasser): a merchant could swap the whole product in the same
+    // slot and keep an old favourable vote frozen — the buyer must be able to
+    // change their mind after a re-purchase.
     const recordAuthVote = useCallback(async (dealId: string, isReal: boolean): Promise<boolean> => {
         if (!user) return false;
-        // Already voted on this deal? Keep it as-is — don't call the RPC and
-        // don't touch the counters. Their original vote stands.
         const current = dealsRef.current.find(d => d.id === dealId);
-        if (current && (current.myAuthVote === true || current.myAuthVote === false)) {
-            return true;
-        }
+        // Same vote again → nothing to change (skip the round-trip).
+        if (current && current.myAuthVote === isReal) return true;
         const { authenticityRepository } = await import('../repositories/authenticityRepository');
         const ok = await authenticityRepository.vote(dealId, isReal);
         if (!ok) return false;
         setDeals(prev => prev.map(d => {
             if (d.id !== dealId) return d;
-            // Guard again against a stale render — never overwrite an existing vote.
-            if (d.myAuthVote === true || d.myAuthVote === false) return d;
-            const real = (d.authReal || 0) + (isReal ? 1 : 0);
-            const fake = (d.authFake || 0) + (isReal ? 0 : 1);
+            if (d.myAuthVote === isReal) return d;
+            // Move the counter: remove the old vote (if any), add the new one.
+            let real = d.authReal || 0;
+            let fake = d.authFake || 0;
+            if (d.myAuthVote === true) real = Math.max(0, real - 1);
+            if (d.myAuthVote === false) fake = Math.max(0, fake - 1);
+            if (isReal) real += 1; else fake += 1;
             return { ...d, authReal: real, authFake: fake, myAuthVote: isReal };
         }));
         return true;
@@ -2334,26 +2356,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         if (d) {
                             const storeId = d.storeId;
                             // Has the buyer rated ANY deal of this store before?
-                            const myStoreReview = dealsRef.current
-                                .filter(x => x.storeId === storeId)
-                                .flatMap(x => x.ratings || [])
-                                .find((r: any) => r.userId === user?.id);
-                            const alreadyRatedStore = !!myStoreReview;
-                            const hasVotedThisDeal = d.myAuthVote === true || d.myAuthVote === false;
-                            // Nothing left to ask → don't pop a useless modal.
-                            if (!(hasVotedThisDeal && alreadyRatedStore)) {
-                                setRatingStars(5);
-                                setRatingComment('');
-                                setPrevReview(myStoreReview ? { score: myStoreReview.score, comment: myStoreReview.comment || '' } : null);
-                                // Skip the auth step only if they already voted this deal.
-                                setRatingStep(hasVotedThisDeal ? (alreadyRatedStore ? 'done' : 'rate') : 'auth');
-                                setRatingPrompt({
-                                    barcode: updated.barcode,
-                                    dealId: updated.deal_id,
-                                    storeId,
-                                    storeName: d.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
-                                });
+                            // Keep the rating's OWN deal id — edit/delete must
+                            // route to the deal the rating actually lives on.
+                            let myStoreReview: any = null;
+                            let myReviewDealId = '';
+                            for (const x of dealsRef.current) {
+                                if (x.storeId !== storeId) continue;
+                                const r = (x.ratings || []).find((rr: any) => rr.userId === user?.id);
+                                if (r) { myStoreReview = r; myReviewDealId = x.id; break; }
                             }
+                            // v12.30 — ALWAYS open the modal: even a buyer who
+                            // voted and rated before must SEE their previous
+                            // vote/rating and be able to edit or delete it
+                            // (anti merchant product-swap manipulation).
+                            setRatingStars(myStoreReview ? myStoreReview.score : 5);
+                            setRatingComment('');
+                            setPrevReview(myStoreReview ? {
+                                id: myStoreReview.id,
+                                dealId: myReviewDealId,
+                                score: myStoreReview.score,
+                                comment: myStoreReview.comment || '',
+                            } : null);
+                            // Start at the authenticity step; if they voted
+                            // before, that step shows the current vote and
+                            // offers to keep or change it.
+                            setRatingStep('auth');
+                            setRatingPrompt({
+                                barcode: updated.barcode,
+                                dealId: updated.deal_id,
+                                storeId,
+                                storeName: d.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
+                            });
                         }
                     }
                 } else if (payload.eventType === 'DELETE') {
@@ -2616,7 +2649,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, refreshDeals,
-        addRating, addReply, toggleRatingLike, removeRating,
+        addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
@@ -2644,7 +2677,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, refreshDeals,
-        addRating, addReply, toggleRatingLike, removeRating,
+        addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
@@ -2796,7 +2829,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     ? (language === 'ar' ? 'هل هذا العرض حقيقي؟' : 'Is this offer real?')
                                     : ratingStep === 'done'
                                         ? (language === 'ar' ? 'شكراً لك 🙏' : 'Thank you 🙏')
-                                        : (language === 'ar' ? 'نرجو تقييم المتجر' : 'Please rate the store')}
+                                        : prevReview
+                                            ? (language === 'ar' ? 'تعديل تقييم المتجر' : 'Edit your store rating')
+                                            : (language === 'ar' ? 'نرجو تقييم المتجر' : 'Please rate the store')}
                             </div>
                             <div style={{ fontSize: '0.83rem', fontWeight: 600, opacity: 0.9, marginTop: 5, lineHeight: 1.6 }}>
                                 {ratingStep === 'auth'
@@ -2805,16 +2840,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         : `Help other buyers — was the offer at “${ratingPrompt.storeName}” as described?`)
                                     : ratingStep === 'done'
                                         ? (language === 'ar'
-                                            ? `لقد قيّمت «${ratingPrompt.storeName}» سابقاً.`
-                                            : `You already rated “${ratingPrompt.storeName}”.`)
+                                            ? `لقد قيّمت «${ratingPrompt.storeName}» سابقاً — يمكنك تعديل تقييمك أو حذفه.`
+                                            : `You already rated “${ratingPrompt.storeName}” — you can edit or delete your rating.`)
                                         : (language === 'ar'
                                             ? `تقييمك يهمّنا 🙏 — كيف كانت تجربتك مع «${ratingPrompt.storeName}»؟`
                                             : `Your feedback matters 🙏 — how was your experience with “${ratingPrompt.storeName}”?`)}
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            {/* STEP 1 — authenticity vote (real / fake) */}
-                            {ratingStep === 'auth' && (
+                            {/* STEP 1 — authenticity vote (real / fake). Since v12.30 the
+                                vote is EDITABLE: a previous vote is shown and the buyer can
+                                change it or keep it (anti merchant product-swap). */}
+                            {ratingStep === 'auth' && (() => {
+                                const myVote = deals.find(d => d.id === ratingPrompt.dealId)?.myAuthVote;
+                                const hasVote = myVote === true || myVote === false;
+                                const proceed = () => setRatingStep(prevReview ? 'done' : 'rate');
+                                return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                     {/* Tiny, plain-language explainer so the buyer knows what they're voting on. */}
                                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.7, background: 'var(--gray-100)', borderRadius: 12, padding: '10px 12px', textAlign: language === 'ar' ? 'right' : 'left' }}>
@@ -2822,6 +2863,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             ? <>🔵 <b>حقيقي</b>: خصم فعلي على السعر.<br />🟡 <b>وهمي</b>: لا يوجد تخفيض حقيقي (نفس السعر، أو السعر الأصلي مبالغ فيه).</>
                                             : <>🔵 <b>Real</b>: a genuine price cut.<br />🟡 <b>Fake</b>: no real discount (same price, or an inflated original price).</>}
                                     </div>
+                                    {hasVote && (
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.7, background: myVote ? 'rgba(29,78,216,0.10)' : 'rgba(234,179,8,0.14)', border: `1.5px solid ${myVote ? 'rgba(29,78,216,0.35)' : 'rgba(202,138,4,0.4)'}`, borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
+                                            {language === 'ar'
+                                                ? <>تصويتك السابق: <b>{myVote ? '🔵 عرض حقيقي' : '🟡 عرض وهمي'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>يمكنك تغييره الآن أو الإبقاء عليه.</span></>
+                                                : <>Your previous vote: <b>{myVote ? '🔵 Real offer' : '🟡 Fake offer'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>You can change it now or keep it.</span></>}
+                                        </div>
+                                    )}
                                     {([true, false] as const).map(isReal => (
                                         <button
                                             key={String(isReal)}
@@ -2835,12 +2883,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                                     customAlert(language === 'ar' ? '❌ تعذّر تسجيل تصويتك، حاول لاحقاً' : '❌ Could not record your vote, try later');
                                                     return;
                                                 }
-                                                setRatingStep(prevReview ? 'done' : 'rate');
+                                                if (hasVote && myVote !== isReal) {
+                                                    customAlert(language === 'ar' ? '✅ تم تغيير تصويتك بنجاح' : '✅ Your vote was changed');
+                                                }
+                                                proceed();
                                             }}
                                             style={{
-                                                width: '100%', padding: 16, borderRadius: 16, border: 'none',
+                                                width: '100%', padding: 16, borderRadius: 16,
                                                 // BLUE = real, YELLOW = fake (green/red reserved for
                                                 // shop open/closed). Yellow needs dark text. v11.98
+                                                border: myVote === isReal ? '2.5px solid #10b981' : 'none',
                                                 background: isReal
                                                     ? 'linear-gradient(135deg, #1d4ed8, #2563eb)'
                                                     : 'linear-gradient(135deg, #facc15, #eab308)',
@@ -2851,8 +2903,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             {isReal
                                                 ? (language === 'ar' ? '🔵 عرض حقيقي' : '🔵 Real offer')
                                                 : (language === 'ar' ? '🟡 عرض وهمي' : '🟡 Fake offer')}
+                                            {myVote === isReal ? (language === 'ar' ? ' ✓ (تصويتك الحالي)' : ' ✓ (current)') : ''}
                                         </button>
                                     ))}
+                                    {hasVote && (
+                                        <button
+                                            onClick={proceed}
+                                            style={{
+                                                width: '100%', padding: 13, borderRadius: 14,
+                                                border: '1.5px solid var(--border-color)', background: 'var(--body-bg)',
+                                                color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer',
+                                            }}
+                                        >
+                                            {language === 'ar' ? '↩️ متابعة بدون تغيير التصويت' : '↩️ Continue without changing'}
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setRatingPrompt(null)}
                                         style={{
@@ -2864,7 +2929,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         {language === 'ar' ? 'لاحقاً' : 'Later'}
                                     </button>
                                 </div>
-                            )}
+                                );
+                            })()}
 
                             {/* STEP 2a — rate the store (first time only) */}
                             {ratingStep === 'rate' && (
@@ -2901,13 +2967,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         onClick={async () => {
                                             if (ratingSubmitting) return;
                                             setRatingSubmitting(true);
-                                            const ok = await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
+                                            // v12.30 — editing an existing rating UPDATES it in
+                                            // place; only a first-time rating INSERTs.
+                                            const isEdit = !!(prevReview && prevReview.id && prevReview.dealId);
+                                            const ok = isEdit
+                                                ? await updateRating(prevReview!.dealId!, prevReview!.id!, { score: ratingStars, comment: ratingComment.trim() })
+                                                : await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
                                             setRatingSubmitting(false);
                                             setRatingPrompt(null);
                                             if (ok === 'duplicate') {
-                                                customAlert(language === 'ar' ? 'لقد قيّمت هذا المتجر سابقاً — يُسمح بتقييم واحد لكل متجر.' : 'You already rated this store — one rating per store is allowed.');
+                                                customAlert(language === 'ar' ? 'لقد قيّمت هذا المتجر سابقاً — افتح صفحة العرض لتعديل تقييمك.' : 'You already rated this store — open the deal page to edit your rating.');
                                             } else if (!ok) {
                                                 customAlert(language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later');
+                                            } else if (isEdit) {
+                                                customAlert(language === 'ar' ? '✅ تم تحديث تقييمك بنجاح' : '✅ Your rating was updated');
                                             }
                                         }}
                                         disabled={ratingSubmitting}
@@ -2919,7 +2992,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     >
                                         {ratingSubmitting
                                             ? (language === 'ar' ? '⏳ جاري الإرسال...' : '⏳ Submitting…')
-                                            : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
+                                            : prevReview
+                                                ? (language === 'ar' ? 'حفظ التعديل ✅' : 'Save changes ✅')
+                                                : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
                                     </button>
                                     <button
                                         onClick={() => setRatingPrompt(null)}
@@ -2951,9 +3026,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     )}
                                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 14, textAlign: 'center' }}>
                                         {language === 'ar'
-                                            ? 'حفاظاً على عدالة التقييمات، يُسمح بتقييم واحد لكل متجر. تابع المتجر لمتابعة جديد عروضه.'
-                                            : 'To keep ratings fair, one rating per store is allowed. Follow the store to track its new offers.'}
+                                            ? 'يُسمح بتقييم واحد لكل متجر — ويمكنك تعديله أو حذفه في أي وقت إذا تغيّرت تجربتك.'
+                                            : 'One rating per store — and you can edit or delete it anytime if your experience changed.'}
                                     </p>
+                                    {/* v12.30 — edit / delete the previous rating right here. */}
+                                    <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                                        <button
+                                            onClick={() => {
+                                                setRatingStars(prevReview?.score || 5);
+                                                setRatingComment(prevReview?.comment || '');
+                                                setRatingStep('rate');
+                                            }}
+                                            style={{
+                                                flex: 1, padding: 13, borderRadius: 14, border: 'none',
+                                                background: 'linear-gradient(135deg, #0f172a, #334155)',
+                                                color: '#fff', fontWeight: 900, fontSize: '0.88rem', cursor: 'pointer',
+                                            }}
+                                        >
+                                            {language === 'ar' ? '✏️ تعديل تقييمي' : '✏️ Edit my rating'}
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (!prevReview?.id || !prevReview.dealId) return;
+                                                const yes = await customConfirm(language === 'ar'
+                                                    ? 'حذف تقييمك السابق نهائياً؟ يمكنك كتابة تقييم جديد بعد الحذف.'
+                                                    : 'Delete your previous rating permanently? You can write a new one after.');
+                                                if (!yes) return;
+                                                await removeRating(prevReview.dealId, prevReview.id);
+                                                setPrevReview(null);
+                                                setRatingStars(5);
+                                                setRatingComment('');
+                                                setRatingStep('rate');
+                                                customAlert(language === 'ar' ? '🗑 تم حذف تقييمك — يمكنك كتابة تقييم جديد الآن.' : '🗑 Rating deleted — you can write a new one now.');
+                                            }}
+                                            style={{
+                                                flex: 1, padding: 13, borderRadius: 14,
+                                                border: '1.5px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)',
+                                                color: '#ef4444', fontWeight: 900, fontSize: '0.88rem', cursor: 'pointer',
+                                            }}
+                                        >
+                                            {language === 'ar' ? '🗑 حذف تقييمي' : '🗑 Delete my rating'}
+                                        </button>
+                                    </div>
                                     <button
                                         onClick={() => toggleFollowMerchant(ratingPrompt.storeId)}
                                         style={{

@@ -648,26 +648,39 @@ function create(deps) {
         let st = null;
         try { st = await rpc('bot_rating_status', aid(from, { p_barcode: bc })); } catch { st = null; }
         s.temp.rateStatus = (st && st.ok) ? st : null;
-        // Already voted on this product → skip the authenticity question. v12.02
-        if (st && st.ok && st.voted_auth) return proceedWaStoreRating(from, s, bc);
+        // v12.30 — the vote is EDITABLE: show the current vote and offer to
+        // change or keep it (3 buttons = WA cap; ✅ marks the current vote).
+        if (st && st.ok && st.voted_auth) {
+            const curLbl = st.my_vote === true ? tr('av_real_btn') : tr('av_fake_btn');
+            return sendButtons(from, { body: tr('av_change_q', curLbl), buttons: [
+                { id: `wa:av:${bc}:1`, title: (st.my_vote === true ? '✅ ' : '') + tr('av_real_btn') },
+                { id: `wa:av:${bc}:0`, title: (st.my_vote === false ? '✅ ' : '') + tr('av_fake_btn') },
+                { id: `wa:avskip:${bc}`, title: tr('av_keep_btn') },
+            ] });
+        }
         await sendButtons(from, { body: tr('av_question'), buttons: [
             { id: `wa:av:${bc}:1`, title: tr('av_real_btn') }, { id: `wa:av:${bc}:0`, title: tr('av_fake_btn') }, { id: `wa:bk1:${bc}`, title: tr('wa_back') },
         ] });
     }
-    // Record the real/fake vote (barcode proves the completed purchase), then store rating.
+    // Record (or CHANGE) the real/fake vote (barcode proves the completed purchase).
     async function castWaAuthVote(from, s, bc, isReal) {
         s.temp.rateBarcode = bc;
         const r = await rpc('bot_cast_authenticity_vote', aid(from, { p_deal_id: null, p_is_real: isReal, p_barcode: bc }));
-        await sendText(from, (r && r.success) ? tr('av_thanks') : tr('av_error'));
+        await sendText(from, (r && r.success) ? (r.changed ? tr('av_changed') : tr('av_thanks')) : tr('av_error'));
         return proceedWaStoreRating(from, s, bc);
     }
-    // Already rated this STORE → show the previous stars+comment (no «تعذّر»). v12.02
+    // Already rated this STORE → show the previous stars+comment WITH an edit
+    // button (v12.30 — bot_rate_store updates the old rating in place).
     async function proceedWaStoreRating(from, s, bc) {
         const st = s.temp.rateStatus;
         if (st && st.prev_score) {
             const stars = '⭐'.repeat(st.prev_score);
             const cmt = st.prev_comment ? `\n💬 ${st.prev_comment}` : '';
-            return sendButtons(from, { body: tr('b_already_rated_store', st.shop_name || '', stars, cmt), buttons: [{ id: 'wa:bookings', title: tr('menu_bookings_buyer') }, menuBtn()] });
+            return sendButtons(from, { body: tr('b_already_rated_store', st.shop_name || '', stars, cmt), buttons: [
+                { id: `wa:redit:${bc}`, title: tr('rate_edit_btn') },
+                { id: 'wa:bookings', title: tr('menu_bookings_buyer') },
+                menuBtn(),
+            ] });
         }
         return showRateStars(from, s, bc);
     }
@@ -1679,6 +1692,9 @@ function create(deps) {
         if (id === 'wa:rskip') return submitRate(from, s, null);
         if (id.startsWith('wa:rate:')) return startRate(from, s, id.slice(8));
         if (k === 'av') return castWaAuthVote(from, s, p[2], p[3] === '1');
+        // v12.30 — إبقاء التصويت الحالي / تعديل التقييم السابق
+        if (id.startsWith('wa:avskip:')) return proceedWaStoreRating(from, s, id.slice(10));
+        if (id.startsWith('wa:redit:')) return showRateStars(from, s, id.slice(9));
         if (k === 'rst') return setRate(from, s, p[2], +p[3] || 5);
         if (id.startsWith('wa:call:')) return bookingContact(from, s, id.slice(8));
         // تنبيهات

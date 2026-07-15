@@ -147,7 +147,7 @@ export const authService = {
         });
     },
 
-    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string }) => {
+    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string, referral_source?: string | null, referral_source_detail?: string | null, referred_by_code?: string | null }) => {
         return await supabase.auth.signUp({
             email,
             password,
@@ -168,6 +168,11 @@ export const authService = {
                     shop: userData.shop || null,
                     contact_phone: userData.contact_phone || userData.phone,
                     address: userData.address || '',
+                    // v12.30 — referral attribution; handle_new_user resolves
+                    // referred_by_code → the owning store's id server-side.
+                    referral_source: userData.referral_source || null,
+                    referral_source_detail: userData.referral_source_detail || null,
+                    referred_by_code: userData.referred_by_code || null,
                 }
             }
         });

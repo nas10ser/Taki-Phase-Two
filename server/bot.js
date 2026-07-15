@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.29.0';
+const BOT_VERSION              = '12.30.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1183,39 +1183,62 @@ bot.action(/^rate:(.+)$/, async ctx => {
     let st = null;
     try { st = await rpc('bot_rating_status', { p_telegram_id: tgId(ctx), p_barcode: bc }); } catch { st = null; }
     s.temp.rateStatus = (st && st.ok) ? st : null;
-    // Already voted authenticity on THIS product → don't ask again (one vote per
-    // product; the count is DB-protected by UNIQUE(deal_id,user_id)). Go straight
-    // to the store-rating step. v12.02
-    if (st && st.ok && st.voted_auth) return proceedStoreRating(ctx, bc, st);
+    // v12.30 — the authenticity vote is now EDITABLE: if they voted before,
+    // show the current vote and offer to change it or keep it (anti merchant
+    // product-swap manipulation — Nasser). ✅ marks the current vote.
+    if (st && st.ok && st.voted_auth) {
+        const curLbl = st.my_vote === true ? tr('av_real_btn') : tr('av_fake_btn');
+        return ctx.reply(tr('av_change_q', curLbl), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback((st.my_vote === true ? '✅ ' : '') + tr('av_real_btn'), `av:${bc}:1`),
+             Markup.button.callback((st.my_vote === false ? '✅ ' : '') + tr('av_fake_btn'), `av:${bc}:0`)],
+            [Markup.button.callback(tr('av_keep_btn'), `avskip:${bc}`)],
+            [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
+        ]).reply_markup });
+    }
     await ctx.reply(tr('av_question'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(tr('av_real_btn'),`av:${bc}:1`), Markup.button.callback(tr('av_fake_btn'),`av:${bc}:0`)],
         [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
     ]).reply_markup });
 });
-// Record the real/fake vote (barcode proves the completed purchase), then store rating.
+// Record (or CHANGE) the real/fake vote (barcode proves the completed purchase).
 bot.action(/^av:(.+):([01])$/, async ctx => {
     const bc = ctx.match[1], isReal = ctx.match[2] === '1';
     const r = await rpc('bot_cast_authenticity_vote', { p_deal_id: null, p_is_real: isReal, p_telegram_id: tgId(ctx), p_barcode: bc });
-    await ctx.answerCbQuery(r && r.success ? tr('av_thanks') : tr('av_error'));
+    await ctx.answerCbQuery(r && r.success ? (r.changed ? tr('av_changed') : tr('av_thanks')) : tr('av_error'));
     return proceedStoreRating(ctx, bc, getSession(tgId(ctx)).temp.rateStatus);
 });
+// «إبقاء تصويتي» — keep the current vote and continue to the store rating. v12.30
+bot.action(/^avskip:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    return proceedStoreRating(ctx, ctx.match[1], getSession(tgId(ctx)).temp.rateStatus);
+});
 // Store-rating step: if the buyer already rated this STORE, SHOW their previous
-// stars+comment (no «تعذّر التقييم»); otherwise prompt for stars. v12.02
+// stars+comment WITH an edit button (v12.30 — bot_rate_store updates in place);
+// otherwise prompt for stars.
 async function proceedStoreRating(ctx, bc, st){
     if (st && st.prev_score) {
         const stars = '⭐'.repeat(st.prev_score);
         const cmt = st.prev_comment ? `\n💬 ${md(st.prev_comment)}` : '';
         return ctx.reply(tr('b_already_rated_store', md(st.shop_name||''), stars, cmt), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('rate_edit_btn'), `redit:${bc}`)],
             [Markup.button.callback(tr('b1019_my_bookings'),'buyer:bookings')],
             [Markup.button.callback(tr('b1019_menu'),'menu:back')]
         ]).reply_markup });
     }
+    return showRateStarsTg(ctx, bc);
+}
+function showRateStarsTg(ctx, bc){
     return ctx.reply(tr('b1000_rate_experience'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback('⭐',`rst:${bc}:1`), Markup.button.callback('⭐⭐',`rst:${bc}:2`), Markup.button.callback('⭐⭐⭐',`rst:${bc}:3`)],
         [Markup.button.callback('⭐⭐⭐⭐',`rst:${bc}:4`), Markup.button.callback('⭐⭐⭐⭐⭐',`rst:${bc}:5`)],
         [Markup.button.callback(tr('b1003_back'),'buyer:bookings')]
     ]).reply_markup });
 }
+// «تعديل تقييمي» — re-open the stars picker; bot_rate_store UPDATEs the old rating. v12.30
+bot.action(/^redit:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    return showRateStarsTg(ctx, ctx.match[1]);
+});
 bot.action(/^rst:(.+):([1-5])$/, async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));

@@ -20,6 +20,8 @@ import { AdvancedAnalytics } from '../../components/admin/AdvancedAnalytics';
 import { InvestorPack } from '../../components/admin/InvestorPack';
 import { BotAnalytics } from '../../components/admin/BotAnalytics';
 import { AuthenticityPanel } from '../../components/admin/AuthenticityPanel';
+import { TopActivityPanel } from '../../components/admin/TopActivityPanel';
+import { ReferralPanel } from '../../components/admin/ReferralPanel';
 
 type TimeRange = '5min' | '1hour' | '24hour' | '7day' | '30day' | 'custom';
 
@@ -328,9 +330,19 @@ const AdminAnalytics: React.FC = () => {
                 <BotAnalytics />
             </div>
 
-            {/* Authenticity — النسبة العامة حقيقي/وهمي بتواريخ مرنة + حالات للدراسة (v12.17) */}
+            {/* Authenticity — النسبة العامة حقيقي/وهمي بتواريخ مرنة + ترتيب حر (v12.30) */}
             <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
                 <AuthenticityPanel />
+            </div>
+
+            {/* الأعلى مبيعاً — متاجر/مشترون بأي عدد وأي فترة (v12.30) */}
+            <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
+                <TopActivityPanel />
+            </div>
+
+            {/* الإحالات — «من أين سمعت عنا» + أعلى المتاجر في روابط الدعوة (v12.30) */}
+            <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
+                <ReferralPanel />
             </div>
 
             {/* Live Counters */}

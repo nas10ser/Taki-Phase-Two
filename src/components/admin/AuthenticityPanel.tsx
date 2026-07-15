@@ -1,8 +1,9 @@
 /**
- * AuthenticityPanel v12.17 — «🔵🟡 مصداقية العروض» في تحليلات الأدمن.
+ * AuthenticityPanel v12.30 — «🔵🟡 مصداقية العروض» في تحليلات الأدمن.
  *
  * النسبة العامة لتصويت المشترين «حقيقي/وهمي» مع تواريخ مرنة (٧/٣٠/٩٠/سنة/الكل
- * + فترة مخصصة من/إلى) لدراسة الحالات: أكثر العروض والمتاجر المُبلَّغ عنها وهمياً.
+ * + فترة مخصصة من/إلى) + ترتيب مرن (الأعلى وهمي/حقيقي بالأصوات أو بالنسبة)
+ * + عدد نتائج حر (١٠/١٠٠/١٠٠٠ أو أي رقم) مع نسبة كل عرض/متجر.
  * الألوان: 🔵 أزرق = حقيقي، 🟡 كهرماني = وهمي (قرار ناصر — ليست أخضر/أحمر).
  * البيانات عبر admin_authenticity_stats (SECURITY DEFINER — تصويتات الجدول
  * محجوبة بسياسة «صاحب الصوت فقط»، فالأدمن يمرّ عبر الدالة).
@@ -23,6 +24,15 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: '365', label: 'سنة' }, { key: 'all', label: 'الكل' }, { key: 'custom', label: 'مخصص' },
 ];
 
+type SortKey = 'fake' | 'real' | 'fake_pct' | 'real_pct';
+const SORTS: { key: SortKey; label: string }[] = [
+    { key: 'fake', label: '🟡 الأعلى وهمي (أصواتاً)' },
+    { key: 'real', label: '🔵 الأعلى حقيقي (أصواتاً)' },
+    { key: 'fake_pct', label: '🟡 الأعلى نسبة وهمي' },
+    { key: 'real_pct', label: '🔵 الأعلى نسبة حقيقي' },
+];
+const LIMIT_CHIPS = [10, 50, 100, 1000];
+
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const pct = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
@@ -30,6 +40,8 @@ export const AuthenticityPanel: React.FC = () => {
     const [preset, setPreset] = useState<Preset>('30');
     const [from, setFrom] = useState(isoDate(new Date(Date.now() - 29 * 864e5)));
     const [to, setTo] = useState(isoDate(new Date()));
+    const [sort, setSort] = useState<SortKey>('fake');
+    const [limit, setLimit] = useState(20);
     const [stats, setStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -44,11 +56,18 @@ export const AuthenticityPanel: React.FC = () => {
 
     const load = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.rpc('admin_authenticity_stats', { p_from: range.from, p_to: range.to });
+        const { data, error } = await supabase.rpc('admin_authenticity_stats', {
+            p_from: range.from, p_to: range.to,
+            p_limit: Math.max(1, Math.min(limit || 20, 2000)),
+            p_sort: sort,
+        });
         if (!error && data) setStats(data as unknown as Stats);
         setLoading(false);
-    }, [range]);
+    }, [range, sort, limit]);
     useEffect(() => { load(); }, [load]);
+
+    // «حقيقي» يُظهر عمود نسبة الحقيقي، و«وهمي» يُظهر نسبة الوهمي.
+    const showReal = sort === 'real' || sort === 'real_pct';
 
     const realPct = stats ? pct(stats.real, stats.total) : 0;
     const fakePct = stats ? pct(stats.fake, stats.total) : 0;
@@ -82,6 +101,31 @@ export const AuthenticityPanel: React.FC = () => {
                 </div>
             )}
 
+            {/* v12.30 — الترتيب + عدد النتائج (أي رقم: ١٠/١٠٠/١٠٠٠…) */}
+            <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[220px]">
+                    <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">ترتيب القائمة</label>
+                    <select value={sort} onChange={e => setSort(e.target.value as SortKey)}
+                        className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-[var(--text-primary)]">
+                        {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">عدد النتائج</label>
+                    <div className="flex items-center gap-1.5">
+                        <input type="number" min={1} max={2000} value={limit}
+                            onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))}
+                            className="w-24 px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-center text-[var(--text-primary)]" />
+                        {LIMIT_CHIPS.map(n => (
+                            <button key={n} onClick={() => setLimit(n)}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold ${limit === n ? 'bg-blue-600 text-white' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
+                                {n}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
             {loading ? (
                 <div className="h-28 bg-[var(--gray-100)] rounded-xl animate-pulse" />
             ) : !stats || stats.total === 0 ? (
@@ -108,29 +152,34 @@ export const AuthenticityPanel: React.FC = () => {
                         <div style={{ width: `${fakePct}%`, background: FAKE_C, transition: 'width .4s' }} />
                     </div>
 
-                    {/* حالات للدراسة — عروض */}
+                    {/* الترتيب — عروض (النسبة تتبع نوع الترتيب المختار) */}
                     {stats.deals.length > 0 && (
                         <div>
-                            <h3 className="text-sm font-extrabold text-[var(--text-primary)] mt-2 mb-1.5">🔍 حالات للدراسة — أكثر العروض تصويتاً «وهمي»</h3>
+                            <h3 className="text-sm font-extrabold text-[var(--text-primary)] mt-2 mb-1.5">
+                                🔍 ترتيب العروض — {SORTS.find(s => s.key === sort)?.label} (أعلى {stats.deals.length})
+                            </h3>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead><tr className="text-[var(--text-secondary)]">
+                                        <th className="text-right py-1.5 px-2 font-extrabold">#</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">العرض</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">المتجر</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">🔵</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">🟡</th>
-                                        <th className="text-right py-1.5 px-2 font-extrabold">نسبة الوهمي</th>
+                                        <th className="text-right py-1.5 px-2 font-extrabold">{showReal ? 'نسبة الحقيقي' : 'نسبة الوهمي'}</th>
                                     </tr></thead>
                                     <tbody>
-                                        {stats.deals.map(d => {
-                                            const fp = pct(d.fake, d.votes);
+                                        {stats.deals.map((d, i) => {
+                                            const p = showReal ? pct(d.real, d.votes) : pct(d.fake, d.votes);
+                                            const warn = !showReal && p >= 50;
                                             return (
                                                 <tr key={d.deal_id} className="border-t border-[var(--border-color)] font-bold text-[var(--text-primary)]">
+                                                    <td className="py-1.5 px-2 text-[var(--text-secondary)]">{i + 1}</td>
                                                     <td className="py-1.5 px-2">{d.item_name || d.deal_id}{d.deal_status && d.deal_status !== 'active' ? ' (موقوف)' : ''}</td>
                                                     <td className="py-1.5 px-2">{d.shop || d.store_id}</td>
                                                     <td className="py-1.5 px-2" style={{ color: REAL_C }}>{d.real}</td>
                                                     <td className="py-1.5 px-2" style={{ color: '#b45309' }}>{d.fake}</td>
-                                                    <td className="py-1.5 px-2 font-black" style={{ color: fp >= 50 ? '#ef4444' : fp >= 25 ? '#b45309' : 'var(--text-secondary)' }}>{fp}٪</td>
+                                                    <td className="py-1.5 px-2 font-black" style={{ color: warn ? '#ef4444' : showReal ? REAL_C : (p >= 25 ? '#b45309' : 'var(--text-secondary)') }}>{p}٪</td>
                                                 </tr>
                                             );
                                         })}
@@ -140,19 +189,22 @@ export const AuthenticityPanel: React.FC = () => {
                         </div>
                     )}
 
-                    {/* حالات للدراسة — متاجر */}
+                    {/* الترتيب — متاجر */}
                     {stats.stores.length > 0 && (
                         <div>
-                            <h3 className="text-sm font-extrabold text-[var(--text-primary)] mt-2 mb-1.5">🏬 على مستوى المتاجر</h3>
+                            <h3 className="text-sm font-extrabold text-[var(--text-primary)] mt-2 mb-1.5">🏬 على مستوى المتاجر (أعلى {stats.stores.length})</h3>
                             <div className="flex flex-col gap-1.5">
-                                {stats.stores.map(s => {
-                                    const fp = pct(s.fake, s.votes);
+                                {stats.stores.map((s, i) => {
+                                    const p = showReal ? pct(s.real, s.votes) : pct(s.fake, s.votes);
                                     return (
                                         <div key={s.store_id} className="flex items-center gap-2 text-xs font-bold border border-[var(--border-color)] rounded-xl px-3 py-2">
+                                            <span className="text-[var(--text-secondary)] shrink-0">{i + 1}.</span>
                                             <span className="flex-1 text-[var(--text-primary)] truncate">{s.shop || s.store_id}</span>
                                             <span style={{ color: REAL_C }}>🔵 {s.real}</span>
                                             <span style={{ color: '#b45309' }}>🟡 {s.fake}</span>
-                                            <span className="font-black" style={{ color: fp >= 50 ? '#ef4444' : 'var(--text-secondary)' }}>{fp}٪ وهمي</span>
+                                            <span className="font-black" style={{ color: !showReal && p >= 50 ? '#ef4444' : showReal ? REAL_C : 'var(--text-secondary)' }}>
+                                                {p}٪ {showReal ? 'حقيقي' : 'وهمي'}
+                                            </span>
                                         </div>
                                     );
                                 })}
