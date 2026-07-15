@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '12.30.0';
+const BOT_VERSION              = '12.32.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -671,7 +671,12 @@ bot.command('contests', ctx => showContests(ctx));
 bot.action('contests:list', async ctx => { await ctx.answerCbQuery(); showContests(ctx); });
 async function showContests(ctx){
     const list = await rpc('bot_list_contests', { p_telegram_id: tgId(ctx) }) || [];
-    if (!list.length) return ctx.reply(tr('b574_no_contests', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b574_refresh'),'contests:list'), Markup.button.callback(tr('b553_menu'),'browse:menu')]]).reply_markup });
+    // v12.32 (طلب ناصر ١٧): «القائمة» كانت تفتح تصفّح العروض — الآن زران
+    // واضحان: «تصفح العروض» و«القائمة» (القائمة الرئيسية فعلاً).
+    if (!list.length) return ctx.reply(tr('b574_no_contests', DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('b574_refresh'),'contests:list')],
+        [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('b553_menu'),'menu:back')]
+    ]).reply_markup });
     await ctx.reply(tr('b575_contests_header', numEsc(list.length), DIV), { parse_mode:'MarkdownV2' });
     for (const c of list){
         let m = `🎁 *${md(c.title)}*`;
@@ -681,7 +686,11 @@ async function showContests(ctx){
         const label = c.entered ? tr('b581_entered_details') : tr('b581_enter_now');
         await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(label, `contest:open:${c.id}`)]]).reply_markup });
     }
-    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b574_refresh'),'contests:list'), Markup.button.callback(tr('b553_menu'),'browse:menu')]]).reply_markup });
+    // v12.32 (طلب ناصر ١٧): زران منفصلان — «تصفح العروض» و«القائمة» الرئيسية.
+    await ctx.reply(`${DIV}`, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('b574_refresh'),'contests:list')],
+        [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('b553_menu'),'menu:back')]
+    ]).reply_markup });
 }
 bot.action(/^contest:open:([0-9a-fA-F-]+)$/, async ctx => { await ctx.answerCbQuery(); openContest(ctx, ctx.match[1]); });
 async function openContest(ctx, id){
@@ -776,7 +785,11 @@ async function submitContest(ctx){
     }
     const head  = r.qualified ? tr('b677_entry_qualified') : tr('b677_entry_recorded');
     const score = (r.max_score>0) ? tr('b678_your_score', numEsc(r.score), numEsc(r.max_score)) : '';
-    await ctx.reply(tr('b679_good_luck', head, score, DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b679_other_contests'),'contests:list'), Markup.button.callback(tr('b679_menu'),'menu:back')]]).reply_markup });
+    // v12.32 (طلب ناصر ١٧): بعد المشاركة — «مسابقات أخرى» + «تصفح العروض» + «القائمة».
+    await ctx.reply(tr('b679_good_luck', head, score, DIV), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('b679_other_contests'),'contests:list')],
+        [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('b679_menu'),'menu:back')]
+    ]).reply_markup });
 }
 
 // br:<sortLetter>:<category|->:<offset>

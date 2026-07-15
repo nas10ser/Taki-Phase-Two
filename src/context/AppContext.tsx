@@ -1649,16 +1649,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const msg: string = error?.message || '';
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
             const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
+            // v12.32 — انتهاء الاشتراك سبب واضح بالعربي بدل نص الخطأ الخام
+            // (كان الاستئناف «ينجح» ظاهرياً — أساس طلب ناصر ١٥).
+            const isSubRequired = /SUBSCRIPTION_REQUIRED/i.test(msg);
+            // حد الباقة من نص الخطأ نفسه («Plan allows N distinct locations») —
+            // فتأتي الرسالة بعدد باقة التاجر الفعلي، وبصياغة ناصر لباقة الموقع
+            // الواحد: استخدم نفس موقع منتجاتك النشطة أو أوقف/احذف الأول. v12.32
+            const capMatch = msg.match(/allows\s+(\d+)\s+distinct/i);
+            const capN = capMatch ? Number(capMatch[1]) : 0;
+            const capMsgAr = capN === 1
+                ? '⚠️ اشتراكك بموقع واحد فقط.\n\nهذا العرض في موقع مختلف عن منتجاتك النشطة — استخدم نفس موقع المنتج الأول، أو أوقف/احذف منتجات الموقع الحالي أولاً لتتمكن من اختيار موقع آخر. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».'
+                : `⚠️ وصلت لحد المواقع المسموح في باقتك${capN > 1 ? ` (${capN} مواقع)` : ''}.\n\nاختر موقعاً من مواقعك الحالية، أو أوقف/احذف كل منتجات أحد المواقع لتفريغ خانة قبل تفعيل عرض في موقع جديد. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».`;
             console.error('Failed to update deal in database:', error);
             customAlert(
                 language === 'ar'
-                    ? (isLocationCap
-                        ? '⚠️ وصلت لحد المواقع المسموح في باقتك.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل نقل العرض لموقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.'
+                    ? (isSubRequired
+                        ? '🔒 اشتراكك منتهي — لا يمكن نشر أو استئناف أي عرض قبل تجديد الاشتراك.\nافتح «الاشتراك» وجدّد باقتك، ثم فعّل عروضك واحداً واحداً.'
+                        : isLocationCap
+                        ? capMsgAr
                         : isTransientLock
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
-                    : (isLocationCap
-                        ? '⚠️ You\'ve reached your package\'s location limit. Pick an existing location or free a vacant slot. Contact TAKI admin to upgrade.'
+                    : (isSubRequired
+                        ? '🔒 Your subscription has expired — renew it before publishing or resuming any deal.'
+                        : isLocationCap
+                        ? (capN === 1
+                            ? '⚠️ Your plan allows ONE location. Use the same location as your active products, or pause/delete them first to pick a new location.'
+                            : '⚠️ You\'ve reached your package\'s location limit. Pick an existing location or free a vacant slot. Upgrade from «Subscription» for more.')
                         : isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
@@ -2826,7 +2843,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             </div>
                             <div style={{ fontSize: '1.12rem', fontWeight: 900 }}>
                                 {ratingStep === 'auth'
-                                    ? (language === 'ar' ? 'هل هذا العرض حقيقي؟' : 'Is this offer real?')
+                                    ? (language === 'ar' ? 'هل الخصم في هذا العرض حقيقي؟' : 'Is the discount real?')
                                     : ratingStep === 'done'
                                         ? (language === 'ar' ? 'شكراً لك 🙏' : 'Thank you 🙏')
                                         : prevReview
@@ -2860,14 +2877,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     {/* Tiny, plain-language explainer so the buyer knows what they're voting on. */}
                                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.7, background: 'var(--gray-100)', borderRadius: 12, padding: '10px 12px', textAlign: language === 'ar' ? 'right' : 'left' }}>
                                         {language === 'ar'
-                                            ? <>🔵 <b>حقيقي</b>: خصم فعلي على السعر.<br />🟡 <b>وهمي</b>: لا يوجد تخفيض حقيقي (نفس السعر، أو السعر الأصلي مبالغ فيه).</>
-                                            : <>🔵 <b>Real</b>: a genuine price cut.<br />🟡 <b>Fake</b>: no real discount (same price, or an inflated original price).</>}
+                                            ? <>🔵 <b>خصم حقيقي</b>: تخفيض فعلي على السعر.<br />🟡 <b>خصم مبالغ فيه</b>: التخفيض غير فعلي (نفس السعر، أو السعر الأصلي مرفوع).<br /><span style={{ opacity: 0.8 }}>هذا تقييم لمصداقية الخصم فقط — وليس اتهاماً للمتجر بالنصب.</span></>
+                                            : <>🔵 <b>Real discount</b>: a genuine price cut.<br />🟡 <b>Inflated discount</b>: no real cut (same price, or an inflated original price).<br /><span style={{ opacity: 0.8 }}>This rates the discount's credibility only — it is not a fraud accusation.</span></>}
                                     </div>
                                     {hasVote && (
                                         <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.7, background: myVote ? 'rgba(29,78,216,0.10)' : 'rgba(234,179,8,0.14)', border: `1.5px solid ${myVote ? 'rgba(29,78,216,0.35)' : 'rgba(202,138,4,0.4)'}`, borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
                                             {language === 'ar'
-                                                ? <>تصويتك السابق: <b>{myVote ? '🔵 عرض حقيقي' : '🟡 عرض وهمي'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>يمكنك تغييره الآن أو الإبقاء عليه.</span></>
-                                                : <>Your previous vote: <b>{myVote ? '🔵 Real offer' : '🟡 Fake offer'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>You can change it now or keep it.</span></>}
+                                                ? <>تصويتك السابق: <b>{myVote ? '🔵 خصم حقيقي' : '🟡 خصم مبالغ فيه'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>يمكنك تغييره الآن أو الإبقاء عليه.</span></>
+                                                : <>Your previous vote: <b>{myVote ? '🔵 Real discount' : '🟡 Inflated discount'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>You can change it now or keep it.</span></>}
                                         </div>
                                     )}
                                     {([true, false] as const).map(isReal => (
@@ -2901,8 +2918,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             }}
                                         >
                                             {isReal
-                                                ? (language === 'ar' ? '🔵 عرض حقيقي' : '🔵 Real offer')
-                                                : (language === 'ar' ? '🟡 عرض وهمي' : '🟡 Fake offer')}
+                                                ? (language === 'ar' ? '🔵 خصم حقيقي' : '🔵 Real discount')
+                                                : (language === 'ar' ? '🟡 خصم مبالغ فيه' : '🟡 Inflated discount')}
                                             {myVote === isReal ? (language === 'ar' ? ' ✓ (تصويتك الحالي)' : ' ✓ (current)') : ''}
                                         </button>
                                     ))}

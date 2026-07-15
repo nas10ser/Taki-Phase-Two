@@ -543,8 +543,12 @@ const CONFETTI = Array.from({ length: 14 }, (_, i) => ({
     delay: (i % 7) * 0.18,
 }));
 
+// v12.32 — the reel is shared: regular contest draws pass ContestEntry[],
+// the custom draw passes a lightweight {id,name,phone} pool sample. Only
+// id/name/phone are ever read here.
+interface ReelEntry { id?: string; name: string; phone: string; }
 const DrawReel: React.FC<{
-    entries: ContestEntry[];
+    entries: ReelEntry[];
     count: number;
     revealName: boolean;
     maskPhone: (p: string) => string;
@@ -721,7 +725,10 @@ const CustomDrawBox: React.FC = () => {
     const [count, setCount] = useState(1);
     const [title, setTitle] = useState('');
     const [drawing, setDrawing] = useState(false);
-    const [result, setResult] = useState<{ pool: number; winners: DrawWinner[] } | null>(null);
+    // v12.32 — نفس بكرة السحب («قف») المستخدمة في المسابقات العادية: نجلب
+    // عيّنة أسماء من المجمّع للدوران التجميلي، والفائز الحقيقي يُحسم في
+    // الخادم (admin_custom_draw) ويتوقف عليه الزر فوراً.
+    const [reel, setReel] = useState<{ sample: ReelEntry[]; count: number } | null>(null);
     const [history, setHistory] = useState<CustomDraw[]>([]);
     const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
@@ -740,22 +747,43 @@ const CustomDrawBox: React.FC = () => {
         return { from: new Date(Date.now() - Number(preset) * 864e5).toISOString(), to: null };
     };
 
+    // v12.32 — يفتح البكرة بعد التأكد أن المجمّع غير فارغ (عيّنة الدوران من
+    // الخادم). السحب الفعلي يجري داخل البكرة (drawFn) والفائز يُكشف عند «قف».
     const runDraw = async () => {
-        if (drawing) return;
+        if (drawing || reel) return;
         setDrawing(true);
-        setResult(null);
+        const r = range();
+        const preview = await contestRepository.drawPreview({
+            source, role: source === 'registered' ? role : 'all',
+            from: r.from, to: r.to,
+        });
+        setDrawing(false);
+        if (preview.pool === 0) {
+            await customAlert('⚠️ لا يوجد أي مشارك مطابق في هذه الفترة.');
+            return;
+        }
+        const safe = Math.max(1, Math.min(count || 1, Math.min(preview.pool, 500)));
+        if (safe !== count) setCount(safe);
+        setReel({ sample: preview.sample, count: safe });
+    };
+
+    // السحب الحقيقي الذي تنفّذه البكرة — يُخزَّن في السجل عبر admin_custom_draw.
+    const reelDrawFn = async (): Promise<{ success: boolean; winners?: { name: string; phone: string }[]; error?: string }> => {
         const r = range();
         const res = await contestRepository.customDraw({
             source, role: source === 'registered' ? role : 'all',
             from: r.from, to: r.to,
-            count: Math.max(1, Math.min(count || 1, 500)),
+            count: reel ? reel.count : Math.max(1, Math.min(count || 1, 500)),
             title: title.trim(),
         });
-        setDrawing(false);
-        if (!res.success) { await customAlert('⚠️ ' + (res.error || 'تعذّر السحب')); return; }
-        setRevealed(new Set());
-        setResult({ pool: res.pool || 0, winners: res.winners || [] });
-        loadHistory();
+        if (!res.success) return { success: false, error: res.error };
+        return {
+            success: true,
+            winners: (res.winners || []).map(w => ({
+                name: w.shop || w.name || 'مشارك',
+                phone: w.phone || '',
+            })),
+        };
     };
 
     const togglePhone = (key: string) => setRevealed(s => {
@@ -804,7 +832,7 @@ const CustomDrawBox: React.FC = () => {
                 <>
                     <div>
                         <label className={labelCls}>من يدخل السحب؟</label>
-                        <select className={inputCls} value={source} onChange={e => { setSource(e.target.value as DrawSource); setResult(null); }}>
+                        <select className={inputCls} value={source} onChange={e => setSource(e.target.value as DrawSource)}>
                             {DRAW_SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                         </select>
                         <div className="text-[11px] text-[var(--text-secondary)] mt-1.5 leading-relaxed">💡 {srcMeta.hint}</div>
@@ -867,19 +895,13 @@ const CustomDrawBox: React.FC = () => {
                         </div>
                     </div>
 
-                    <button onClick={runDraw} disabled={drawing}
+                    <button onClick={runDraw} disabled={drawing || !!reel}
                         className="w-full py-3 rounded-xl text-sm font-extrabold text-white bg-amber-500 hover:bg-amber-600 active:scale-95 disabled:opacity-50">
-                        {drawing ? '⏳ جاري السحب…' : '🎲 اسحب الفائزين الآن'}
+                        {drawing ? '⏳ جاري تجهيز السحب…' : '🎲 اسحب الفائزين الآن'}
                     </button>
-
-                    {result && (
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 space-y-2">
-                            <div className="text-xs font-extrabold text-emerald-900">
-                                🎉 تم السحب من {result.pool.toLocaleString('ar-SA')} مشارك مؤهّل — الفائزون ({result.winners.length}):
-                            </div>
-                            {result.winners.map((w, i) => winnerRow(w, `new_${i}`))}
-                        </div>
-                    )}
+                    <div className="text-[10px] font-bold text-[var(--text-secondary)] text-center">
+                        🎰 نفس آلية السحب في المسابقات: تدور الأسماء وتضغط «قف» ليتوقف على الفائز — والفائزون يُحفظون في السجل بالأسفل.
+                    </div>
 
                     {history.length > 0 && (
                         <details className="pt-1">
@@ -898,6 +920,19 @@ const CustomDrawBox: React.FC = () => {
                                 ))}
                             </div>
                         </details>
+                    )}
+
+                    {/* v12.32 — بكرة السحب المشتركة: «قف» يتوقف فوراً على الفائز
+                        الذي اختاره الخادم (نفس عدالة سحب المسابقات العادية). */}
+                    {reel && (
+                        <DrawReel
+                            entries={reel.sample}
+                            count={reel.count}
+                            revealName
+                            maskPhone={(p) => '*** ' + p.replace(/\D/g, '').slice(-4)}
+                            drawFn={reelDrawFn}
+                            onClose={() => { setReel(null); setRevealed(new Set()); loadHistory(); }}
+                        />
                     )}
                 </>
             )}

@@ -346,10 +346,21 @@ const SellerDashboard: React.FC = () => {
         const deal = deals.find(d => d.id === dealId);
         if (deal) {
             const isCurrentlyPaused = deal.status === 'paused';
-            const msg = isCurrentlyPaused 
+
+            // v12.32 — أساس طلب ناصر ١٥: الاستئناف باشتراك منتهٍ كان يعرض
+            // «تم الاستئناف بنجاح» بينما القاعدة ترفضه بصمت. الفحص المبكر هنا
+            // يعطي السبب الصريح قبل أي محاولة (والقاعدة تظل الحكم النهائي).
+            if (isCurrentlyPaused && isPaymentEnabled && !isSubscriptionValid) {
+                customAlert(isRTL
+                    ? '🔒 اشتراكك منتهي — لا يمكن استئناف العرض قبل تجديد الاشتراك.\nافتح «الاشتراك» وجدّد باقتك، ثم فعّل عروضك واحداً واحداً.'
+                    : '🔒 Your subscription has expired — renew it before resuming any deal.');
+                return;
+            }
+
+            const msg = isCurrentlyPaused
                 ? (isRTL ? 'هل تريد استئناف العرض ليعود نشطاً للمشترين؟' : 'Do you want to resume this deal and make it active for buyers?')
                 : (isRTL ? 'هل تريد إيقاف العرض مؤقتاً؟ سينتقل للعروض السابقة ولن يراه المشترون.' : 'Do you want to pause this deal? It will move to previous deals and buyers won\'t see it.');
-            
+
             const confirmed = await customConfirm(msg);
             if (!confirmed) return;
 
@@ -357,9 +368,12 @@ const SellerDashboard: React.FC = () => {
                 ...deal,
                 status: (isCurrentlyPaused ? 'active' : 'paused') as any
             };
-            await updateDeal(updatedDeal);
-            customAlert(isRTL 
-                ? (isCurrentlyPaused ? '✅ تم استئناف العرض بنجاح!' : '⏸️ تم إيقاف العرض مؤقتاً!') 
+            // v12.32 — رسالة النجاح فقط عند نجاح الحفظ فعلاً؛ الفشل
+            // (اشتراك منتهٍ / حد المواقع) يعرض سببه من updateDeal نفسه.
+            const ok = await updateDeal(updatedDeal);
+            if (!ok) return;
+            customAlert(isRTL
+                ? (isCurrentlyPaused ? '✅ تم استئناف العرض بنجاح!' : '⏸️ تم إيقاف العرض مؤقتاً!')
                 : (isCurrentlyPaused ? '✅ Deal resumed!' : '⏸️ Deal paused!')
             );
         }

@@ -261,6 +261,26 @@ export const contestRepository = {
         return { success: true, pool: d.pool, winners: d.winners || [] };
     },
 
+    /**
+     * v12.32 — pool size + a random name sample (≤40) so the custom draw can
+     * spin the SAME slot-machine reel as the regular contest draw («قف» stops
+     * on the server-chosen winner).
+     */
+    async drawPreview(params: {
+        source: DrawSource; role: DrawRole;
+        from: string | null; to: string | null;
+    }): Promise<{ pool: number; sample: { id: string; name: string; phone: string }[] }> {
+        const { data, error } = await supabase.rpc('admin_custom_draw_preview', {
+            p_source: params.source,
+            p_role: params.role,
+            p_from: params.from,
+            p_to: params.to,
+        });
+        if (error) return { pool: 0, sample: [] };
+        const d = data as any;
+        return { pool: Number(d?.pool) || 0, sample: Array.isArray(d?.sample) ? d.sample : [] };
+    },
+
     /** History of custom draws (admin-only via RLS on admin_draws). */
     async listDraws(limit = 15): Promise<CustomDraw[]> {
         const { data } = await supabase

@@ -407,7 +407,7 @@ const StoreDetails: React.FC = () => {
                                             <div style={{ ...value, color: storeAuth.real ? '#60a5fa' : '#facc15' }}>
                                                 {storeAuth.real ? '🔵' : '🟡'} {storeAuth.pct}%
                                             </div>
-                                            <div style={label}>{storeAuth.real ? (isRTL ? 'عروض حقيقية' : 'Real offers') : (isRTL ? 'عروض وهمية' : 'Fake offers')}</div>
+                                            <div style={label}>{storeAuth.real ? (isRTL ? 'خصومات حقيقية' : 'Real discounts') : (isRTL ? 'خصومات مبالغ فيها' : 'Inflated discounts')}</div>
                                         </div>
                                     </>
                                 )}

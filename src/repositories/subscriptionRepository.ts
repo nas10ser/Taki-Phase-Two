@@ -40,8 +40,11 @@ export const subscriptionRepository = {
 
     /**
      * Self-serve activation/renew (v11.38). Writes the full mirror so the status
-     * card has price + start date, re-enables auto-renew, clears any cancellation,
-     * and restores deals that were auto-frozen on a previous expiry.
+     * card has price + start date, re-enables auto-renew and clears any
+     * cancellation. v12.32 — deliberately does NOT restore frozen deals:
+     * بعد أي انتهاء أو تغيير باقة تبقى كل العروض متوقفة حتى يفعّلها التاجر
+     * بنفسه واحداً واحداً (فيُعاد فحص حد المواقع بالباقة الحالية عند كل تفعيل
+     * — قاعدة ناصر لسد ثغرة النزول من باقة كبيرة لصغيرة).
      */
     async updateSubscription(
         storeId: string,
@@ -67,9 +70,6 @@ export const subscriptionRepository = {
 
         const { error } = await supabase.from('store_profiles').upsert(payload);
         if (error) throw error;
-
-        // Bring back any deals paused by a prior expiry (best-effort).
-        await this.restoreFrozenDeals(storeId);
     },
 
     async grantCustomSubscription(storeId: string, plan: string, expiresAt: string): Promise<void> {
@@ -96,10 +96,4 @@ export const subscriptionRepository = {
         return { success: true, expiresAt: (data as any)?.expires_at ?? null };
     },
 
-    /** Restore deals auto-paused on a previous expiry. Returns count restored. */
-    async restoreFrozenDeals(storeId: string): Promise<number> {
-        const { data, error } = await supabase.rpc('restore_frozen_deals', { p_store_id: storeId });
-        if (error) { console.error('restoreFrozenDeals:', error); return 0; }
-        return Number(data) || 0;
-    },
 };
