@@ -150,7 +150,7 @@ export interface Deal {
     /** Aggregated click-throughs — incremented by RPC `increment_deal_click`. */
     clicks?: number;
     /** v11.97 — buyer authenticity votes for THIS offer (deal_authenticity_votes).
-     *  Buyers who completed a purchase vote «عرض حقيقي / وهمي»; the green/red badge
+     *  Buyers who completed a purchase vote «عرض حقيقي / شكلي»; the green/red badge
      *  + percentage on the card and details page derives from these counts. */
     authReal?: number;
     authFake?: number;

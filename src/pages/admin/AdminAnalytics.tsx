@@ -331,7 +331,7 @@ const AdminAnalytics: React.FC = () => {
                 <BotAnalytics />
             </div>
 
-            {/* Authenticity — النسبة العامة حقيقي/وهمي بتواريخ مرنة + ترتيب حر (v12.30) */}
+            {/* Authenticity — النسبة العامة حقيقي/شكلي بتواريخ مرنة + ترتيب حر (v12.30) */}
             <div className="border-t-2 border-dashed border-[var(--border-color)] pt-6 mt-6">
                 <AuthenticityPanel />
             </div>

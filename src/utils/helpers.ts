@@ -571,11 +571,12 @@ export const geoErrorMessage = (e: unknown, isRTL: boolean): string => {
 
 /**
  * Authenticity badge derived from buyer «real vs fake» votes on an offer.
- * v12.32 wording (Nasser): buyer-facing labels are «خصم حقيقي» / «خصم مبالغ
- * فيه» — the old «عرض وهمي» read as "scam/fraud" to newcomers, while the vote
- * only judges whether the DISCOUNT is genuine (same price or inflated original
- * = مبالغ فيه). `show` is false until at least one vote exists so brand-new
- * deals don't carry a misleading badge. v11.97
+ * v12.33 wording (Nasser #18): buyer-facing labels are «عرض حقيقي» / «عرض
+ * شكلي» EVERYWHERE — «شكلي» (for-show) replaced both the harsh «وهمي» and the
+ * v12.32 «خصم مبالغ فيه» experiment. The vote judges whether the offer's
+ * discount is genuine (same price or inflated original = شكلي). `show` is
+ * false until at least one vote exists so brand-new deals don't carry a
+ * misleading badge. v11.97
  */
 export interface AuthenticityBadge {
     show: boolean;
@@ -598,8 +599,8 @@ export const getAuthenticityBadge = (real = 0, fake = 0, isRTL = true): Authenti
     const isReal = r >= f;                 // ties resolve to "real"
     const pct = isReal ? realPct : 100 - realPct;
     const label = isReal
-        ? `${isRTL ? '🔵 خصم حقيقي' : '🔵 Real discount'} ${pct}%`
-        : `${isRTL ? '🟡 خصم مبالغ فيه' : '🟡 Inflated discount'} ${pct}%`;
+        ? `${isRTL ? '🔵 عرض حقيقي' : '🔵 Real offer'} ${pct}%`
+        : `${isRTL ? '🟡 عرض شكلي' : '🟡 Cosmetic offer'} ${pct}%`;
     // BLUE (real) / YELLOW (fake) — NOT green/red, which are reserved for shop
     // open/closed status (owner's rule, v11.98). Yellow needs DARK text for AA
     // contrast; blue keeps white. Solid pill → readable on light + dark cards.

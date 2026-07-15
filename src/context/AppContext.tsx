@@ -1815,7 +1815,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
     }, []);
 
-    // Buyer authenticity vote («عرض حقيقي / وهمي») — ONE per deal, and since
+    // Buyer authenticity vote («عرض حقيقي / شكلي») — ONE per deal, and since
     // v12.30 it is EDITABLE: re-voting flips the previous vote (the DB upserts).
     // Rationale (Nasser): a merchant could swap the whole product in the same
     // slot and keep an old favourable vote frozen — the buyer must be able to
@@ -2843,7 +2843,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             </div>
                             <div style={{ fontSize: '1.12rem', fontWeight: 900 }}>
                                 {ratingStep === 'auth'
-                                    ? (language === 'ar' ? 'هل الخصم في هذا العرض حقيقي؟' : 'Is the discount real?')
+                                    ? (language === 'ar' ? 'هل هذا العرض حقيقي أم شكلي؟' : 'Is this offer real or cosmetic?')
                                     : ratingStep === 'done'
                                         ? (language === 'ar' ? 'شكراً لك 🙏' : 'Thank you 🙏')
                                         : prevReview
@@ -2877,14 +2877,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     {/* Tiny, plain-language explainer so the buyer knows what they're voting on. */}
                                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.7, background: 'var(--gray-100)', borderRadius: 12, padding: '10px 12px', textAlign: language === 'ar' ? 'right' : 'left' }}>
                                         {language === 'ar'
-                                            ? <>🔵 <b>خصم حقيقي</b>: تخفيض فعلي على السعر.<br />🟡 <b>خصم مبالغ فيه</b>: التخفيض غير فعلي (نفس السعر، أو السعر الأصلي مرفوع).<br /><span style={{ opacity: 0.8 }}>هذا تقييم لمصداقية الخصم فقط — وليس اتهاماً للمتجر بالنصب.</span></>
-                                            : <>🔵 <b>Real discount</b>: a genuine price cut.<br />🟡 <b>Inflated discount</b>: no real cut (same price, or an inflated original price).<br /><span style={{ opacity: 0.8 }}>This rates the discount's credibility only — it is not a fraud accusation.</span></>}
+                                            ? <>🔵 <b>عرض حقيقي</b>: خصم فعلي على السعر.<br />🟡 <b>عرض شكلي</b>: التخفيض غير فعلي (نفس السعر، أو السعر الأصلي مرفوع).<br /><span style={{ opacity: 0.8 }}>هذا تقييم لمصداقية العرض فقط — وليس اتهاماً للمتجر بالنصب.</span></>
+                                            : <>🔵 <b>Real offer</b>: a genuine price cut.<br />🟡 <b>Cosmetic offer</b>: no real cut (same price, or an inflated original price).<br /><span style={{ opacity: 0.8 }}>This rates the offer's credibility only — it is not a fraud accusation.</span></>}
                                     </div>
                                     {hasVote && (
                                         <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.7, background: myVote ? 'rgba(29,78,216,0.10)' : 'rgba(234,179,8,0.14)', border: `1.5px solid ${myVote ? 'rgba(29,78,216,0.35)' : 'rgba(202,138,4,0.4)'}`, borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
                                             {language === 'ar'
-                                                ? <>تصويتك السابق: <b>{myVote ? '🔵 خصم حقيقي' : '🟡 خصم مبالغ فيه'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>يمكنك تغييره الآن أو الإبقاء عليه.</span></>
-                                                : <>Your previous vote: <b>{myVote ? '🔵 Real discount' : '🟡 Inflated discount'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>You can change it now or keep it.</span></>}
+                                                ? <>تصويتك السابق: <b>{myVote ? '🔵 عرض حقيقي' : '🟡 عرض شكلي'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>يمكنك تغييره الآن أو الإبقاء عليه.</span></>
+                                                : <>Your previous vote: <b>{myVote ? '🔵 Real offer' : '🟡 Cosmetic offer'}</b><br /><span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>You can change it now or keep it.</span></>}
                                         </div>
                                     )}
                                     {([true, false] as const).map(isReal => (
@@ -2918,8 +2918,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             }}
                                         >
                                             {isReal
-                                                ? (language === 'ar' ? '🔵 خصم حقيقي' : '🔵 Real discount')
-                                                : (language === 'ar' ? '🟡 خصم مبالغ فيه' : '🟡 Inflated discount')}
+                                                ? (language === 'ar' ? '🔵 عرض حقيقي' : '🔵 Real offer')
+                                                : (language === 'ar' ? '🟡 عرض شكلي' : '🟡 Cosmetic offer')}
                                             {myVote === isReal ? (language === 'ar' ? ' ✓ (تصويتك الحالي)' : ' ✓ (current)') : ''}
                                         </button>
                                     ))}

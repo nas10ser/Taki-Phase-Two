@@ -1,10 +1,10 @@
 /**
  * AuthenticityPanel v12.30 — «🔵🟡 مصداقية العروض» في تحليلات الأدمن.
  *
- * النسبة العامة لتصويت المشترين «حقيقي/وهمي» مع تواريخ مرنة (٧/٣٠/٩٠/سنة/الكل
- * + فترة مخصصة من/إلى) + ترتيب مرن (الأعلى وهمي/حقيقي بالأصوات أو بالنسبة)
+ * النسبة العامة لتصويت المشترين «حقيقي/شكلي» مع تواريخ مرنة (٧/٣٠/٩٠/سنة/الكل
+ * + فترة مخصصة من/إلى) + ترتيب مرن (الأعلى شكلي/حقيقي بالأصوات أو بالنسبة)
  * + عدد نتائج حر (١٠/١٠٠/١٠٠٠ أو أي رقم) مع نسبة كل عرض/متجر.
- * الألوان: 🔵 أزرق = حقيقي، 🟡 كهرماني = وهمي (قرار ناصر — ليست أخضر/أحمر).
+ * الألوان: 🔵 أزرق = حقيقي، 🟡 كهرماني = شكلي (قرار ناصر — ليست أخضر/أحمر).
  * البيانات عبر admin_authenticity_stats (SECURITY DEFINER — تصويتات الجدول
  * محجوبة بسياسة «صاحب الصوت فقط»، فالأدمن يمرّ عبر الدالة).
  */
@@ -16,7 +16,7 @@ interface CaseRow { deal_id?: string; store_id: string; shop: string | null; ite
 interface Stats { total: number; real: number; fake: number; deals: CaseRow[]; stores: CaseRow[]; }
 
 const REAL_C = '#3b82f6';   // 🔵 حقيقي
-const FAKE_C = '#f59e0b';   // 🟡 وهمي
+const FAKE_C = '#f59e0b';   // 🟡 شكلي
 
 type Preset = '7' | '30' | '90' | '365' | 'all' | 'custom';
 const PRESETS: { key: Preset; label: string }[] = [
@@ -26,9 +26,9 @@ const PRESETS: { key: Preset; label: string }[] = [
 
 type SortKey = 'fake' | 'real' | 'fake_pct' | 'real_pct';
 const SORTS: { key: SortKey; label: string }[] = [
-    { key: 'fake', label: '🟡 الأعلى وهمي (أصواتاً)' },
+    { key: 'fake', label: '🟡 الأعلى شكلي (أصواتاً)' },
     { key: 'real', label: '🔵 الأعلى حقيقي (أصواتاً)' },
-    { key: 'fake_pct', label: '🟡 الأعلى نسبة وهمي' },
+    { key: 'fake_pct', label: '🟡 الأعلى نسبة شكلي' },
     { key: 'real_pct', label: '🔵 الأعلى نسبة حقيقي' },
 ];
 const LIMIT_CHIPS = [10, 50, 100, 1000];
@@ -66,7 +66,7 @@ export const AuthenticityPanel: React.FC = () => {
     }, [range, sort, limit]);
     useEffect(() => { load(); }, [load]);
 
-    // «حقيقي» يُظهر عمود نسبة الحقيقي، و«وهمي» يُظهر نسبة الوهمي.
+    // «حقيقي» يُظهر عمود نسبة الحقيقي، و«شكلي» يُظهر نسبة الشكلي.
     const showReal = sort === 'real' || sort === 'real_pct';
 
     const realPct = stats ? pct(stats.real, stats.total) : 0;
@@ -143,7 +143,7 @@ export const AuthenticityPanel: React.FC = () => {
                             <div className="text-lg font-black" style={{ color: REAL_C }}>{realPct}٪ <span className="text-[11px] font-bold">({stats.real.toLocaleString('ar-SA')})</span></div>
                         </div>
                         <div className="rounded-xl p-3" style={{ background: 'rgba(245,158,11,0.08)', border: `1px solid ${FAKE_C}44` }}>
-                            <div className="text-[10px] font-bold" style={{ color: '#b45309' }}>🟡 وهمي</div>
+                            <div className="text-[10px] font-bold" style={{ color: '#b45309' }}>🟡 شكلي</div>
                             <div className="text-lg font-black" style={{ color: '#b45309' }}>{fakePct}٪ <span className="text-[11px] font-bold">({stats.fake.toLocaleString('ar-SA')})</span></div>
                         </div>
                     </div>
@@ -166,7 +166,7 @@ export const AuthenticityPanel: React.FC = () => {
                                         <th className="text-right py-1.5 px-2 font-extrabold">المتجر</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">🔵</th>
                                         <th className="text-right py-1.5 px-2 font-extrabold">🟡</th>
-                                        <th className="text-right py-1.5 px-2 font-extrabold">{showReal ? 'نسبة الحقيقي' : 'نسبة الوهمي'}</th>
+                                        <th className="text-right py-1.5 px-2 font-extrabold">{showReal ? 'نسبة الحقيقي' : 'نسبة الشكلي'}</th>
                                     </tr></thead>
                                     <tbody>
                                         {stats.deals.map((d, i) => {
@@ -203,14 +203,14 @@ export const AuthenticityPanel: React.FC = () => {
                                             <span style={{ color: REAL_C }}>🔵 {s.real}</span>
                                             <span style={{ color: '#b45309' }}>🟡 {s.fake}</span>
                                             <span className="font-black" style={{ color: !showReal && p >= 50 ? '#ef4444' : showReal ? REAL_C : 'var(--text-secondary)' }}>
-                                                {p}٪ {showReal ? 'حقيقي' : 'وهمي'}
+                                                {p}٪ {showReal ? 'حقيقي' : 'شكلي'}
                                             </span>
                                         </div>
                                     );
                                 })}
                             </div>
                             <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">
-                                💡 نسبة وهمي مرتفعة = مؤشر «تخفيض مضلِّل» — افتح المتجر من تبويب البائعين للتحقيق أو الإيقاف.
+                                💡 نسبة «شكلي» مرتفعة = مؤشر «تخفيض مضلِّل» — افتح المتجر من تبويب البائعين للتحقيق أو الإيقاف.
                             </p>
                         </div>
                     )}

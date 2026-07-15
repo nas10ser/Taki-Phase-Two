@@ -326,7 +326,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     <span style={{ fontSize: '0.85rem', color: 'var(--gray-400)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
                 </div>
 
-                {/* Authenticity badge — green «عرض حقيقي N%» / red «عرض وهمي N%»
+                {/* Authenticity badge — green «عرض حقيقي N%» / yellow «عرض شكلي N%»
                     from buyer votes. Hidden until at least one buyer voted. v11.97 */}
                 {authBadge.show && (
                     <div style={{
