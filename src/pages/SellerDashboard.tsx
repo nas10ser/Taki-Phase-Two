@@ -2125,12 +2125,55 @@ const SellerDashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* v12.28 — حدود الحجز للمشتري (اختياري): منع السوق السوداء */}
-                        <details style={{ background: 'var(--gray-100)', borderRadius: 14, padding: '10px 12px', marginBottom: 14 }}>
-                            <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                                {isRTL ? '🛡 حدود الحجز للمشتري (اختياري)' : '🛡 Buyer booking limits (optional)'}
-                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                    {isRTL ? 'حدّد كم قطعة يحجز العميل في المرة الواحدة، وكم مرة يحق له الحجز — لمنع الاحتكار وإعادة البيع' : 'Cap units per booking and how often one buyer can book — prevents resellers'}
+                        {/* v12.28 — حدود الحجز للمشتري: منع السوق السوداء.
+                            v12.34 — أُبرز القسم بطلب من ناصر: كان صغيراً والتاجر
+                            «يسوّي له سكيب» بلا انتباه. الآن: إطار كهرماني بارز +
+                            شارة «مهم» + سطر حالة حي (غير مفعّلة بالأحمر / مفعّلة
+                            بالأخضر مع ملخص الحدود المختارة). */}
+                        {(() => {
+                            const limitsOn = (maxPerBooking !== '' && Number(maxPerBooking) > 0)
+                                || (maxBookingsPerBuyer !== '' && Number(maxBookingsPerBuyer) > 0)
+                                || (Number(rebookCooldownMinutes) > 0);
+                            const cdLabel = (m: number) => m >= 10080 ? (isRTL ? 'أسبوع' : '1w')
+                                : m >= 4320 ? (isRTL ? '٣ أيام' : '3d')
+                                : m >= 1440 ? (isRTL ? '٢٤ ساعة' : '24h')
+                                : m >= 720 ? (isRTL ? '١٢ ساعة' : '12h')
+                                : m >= 360 ? (isRTL ? '٦ ساعات' : '6h')
+                                : m >= 180 ? (isRTL ? '٣ ساعات' : '3h')
+                                : m >= 60 ? (isRTL ? 'ساعة' : '1h')
+                                : (isRTL ? '٣٠ دقيقة' : '30m');
+                            const parts: string[] = [];
+                            if (maxPerBooking !== '' && Number(maxPerBooking) > 0) parts.push(isRTL ? `${maxPerBooking} قطعة كحد أقصى للحجز` : `max ${maxPerBooking}/booking`);
+                            if (maxBookingsPerBuyer !== '' && Number(maxBookingsPerBuyer) > 0) parts.push(isRTL ? `${maxBookingsPerBuyer} ${Number(maxBookingsPerBuyer) === 1 ? 'مرة' : 'مرات'} لكل عميل` : `${maxBookingsPerBuyer}×/buyer`);
+                            if (Number(rebookCooldownMinutes) > 0) parts.push(isRTL ? `انتظار ${cdLabel(Number(rebookCooldownMinutes))} بين الحجوزات` : `${cdLabel(Number(rebookCooldownMinutes))} cooldown`);
+                            return (
+                        <details style={{
+                            background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(239,68,68,0.06))',
+                            border: '2px solid rgba(245,158,11,0.55)',
+                            borderRadius: 16, padding: '14px 14px', marginBottom: 14,
+                            boxShadow: '0 4px 14px rgba(245,158,11,0.15)',
+                        }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 900, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '1.25rem' }}>🛡</span>
+                                    {isRTL ? 'حدود الحجز للمشتري' : 'Buyer booking limits'}
+                                    <span style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff', fontSize: '0.62rem', fontWeight: 900, padding: '3px 9px', borderRadius: 999 }}>
+                                        {isRTL ? '⚠️ مهم — لا تتجاوزه' : '⚠️ Important'}
+                                    </span>
+                                </span>
+                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.6 }}>
+                                    {isRTL ? 'حدّد كم قطعة يحجز العميل في المرة الواحدة، وكم مرة يحق له الحجز — يحميك من الاحتكار وإعادة البيع' : 'Cap units per booking and how often one buyer can book — protects you from resellers'}
+                                </span>
+                                <span style={{
+                                    display: 'inline-block', marginTop: 8, fontWeight: 900, fontSize: '0.72rem',
+                                    padding: '5px 12px', borderRadius: 999,
+                                    background: limitsOn ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.12)',
+                                    border: `1.5px solid ${limitsOn ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.45)'}`,
+                                    color: limitsOn ? '#10b981' : '#ef4444',
+                                }}>
+                                    {limitsOn
+                                        ? (isRTL ? `✅ مفعّلة: ${parts.join(' · ')}` : `✅ On: ${parts.join(' · ')}`)
+                                        : (isRTL ? '⛔ غير مفعّلة — أي عميل يحجز بأي كمية وأي عدد مرات. اضغط هنا للضبط' : '⛔ OFF — anyone can book any quantity, any number of times. Tap to set')}
                                 </span>
                             </summary>
                             <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
@@ -2164,6 +2207,8 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                             </div>
                         </details>
+                            );
+                        })()}
 
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>

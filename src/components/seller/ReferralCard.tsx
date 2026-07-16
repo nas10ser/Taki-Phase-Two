@@ -20,6 +20,9 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     const [stats, setStats] = useState<{ total: number; last30: number } | null>(null);
     const [loading, setLoading] = useState(false);
     const [showQr, setShowQr] = useState(false);
+    // v12.34 — تكبير الباركود بالضغط (شاشة كاملة) + مشاركته كصورة.
+    const [qrZoom, setQrZoom] = useState(false);
+    const [sharingQr, setSharingQr] = useState(false);
 
     const load = useCallback(async () => {
         if (loading || code) return;
@@ -41,7 +44,61 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     useEffect(() => { if (open) load(); }, [open, load]);
 
     const link = code ? `${window.location.origin}/register?ref=${code}` : '';
-    const qrUrl = link ? `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=10&data=${encodeURIComponent(link)}` : '';
+    // v12.34 — دقة أعلى (700px) للطباعة والمشاركة كصورة بجودة ممتازة.
+    const qrUrl = link ? `https://api.qrserver.com/v1/create-qr-code/?size=700x700&margin=12&data=${encodeURIComponent(link)}` : '';
+
+    // v12.34 — مشاركة الباركود نفسه كصورة PNG (وليس الرابط فقط): نجلب صورة
+    // QR ثم نمررها لقائمة المشاركة (واتساب/الصور/…). إن لم يدعم الجهاز مشاركة
+    // الملفات نحفظها كملف تنزيل، وأسوأ حالة نرشد للطريقة اليدوية.
+    const fetchQrFile = async (): Promise<File> => {
+        const resp = await fetch(qrUrl, { mode: 'cors' });
+        if (!resp.ok) throw new Error('qr fetch failed');
+        const blob = await resp.blob();
+        return new File([blob], `taki-qr-${code || 'store'}.png`, { type: 'image/png' });
+    };
+
+    const downloadQr = async () => {
+        try {
+            const file = await fetchQrFile();
+            const url = URL.createObjectURL(file);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+            onAlert(isRTL ? '✅ تم حفظ صورة الباركود — تجدها في الصور/التنزيلات.' : '✅ QR image saved to your downloads/photos.');
+        } catch {
+            onAlert(isRTL ? '⚠️ تعذّر الحفظ التلقائي — اضغط مطوّلاً على صورة الباركود واختر «حفظ الصورة».' : '⚠️ Auto-save failed — long-press the QR image and choose “Save image”.');
+        }
+    };
+
+    const shareQrImage = async () => {
+        if (!qrUrl || sharingQr) return;
+        setSharingQr(true);
+        try {
+            const file = await fetchQrFile();
+            const nav: any = navigator;
+            if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+                await nav.share({
+                    files: [file],
+                    title: 'TAKI',
+                    text: isRTL ? 'امسح الباركود وسجّل في تاكي عبر متجرنا 🎁' : 'Scan to join TAKI via our store 🎁',
+                });
+                return;
+            }
+            // الجهاز لا يدعم مشاركة الملفات → نحفظ الصورة بدلاً من ذلك.
+            await downloadQr();
+        } catch (e: any) {
+            // إلغاء المستخدم للمشاركة ليس خطأ — أي فشل آخر نرشده للبديل.
+            if (!String(e?.name || '').includes('Abort')) {
+                onAlert(isRTL ? '⚠️ تعذّرت مشاركة الصورة — جرّب «حفظ الباركود» ثم أرسله من الصور.' : '⚠️ Could not share the image — try “Save QR” then send it from your photos.');
+            }
+        } finally {
+            setSharingQr(false);
+        }
+    };
 
     const copyLink = async () => {
         if (!link) return;
@@ -138,12 +195,33 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                             </div>
 
                             {showQr && (
-                                <div style={{ textAlign: 'center', background: '#ffffff', borderRadius: 16, padding: 16, border: '1px solid var(--border-color)' }}>
-                                    <img src={qrUrl} alt="Referral QR" width={220} height={220} style={{ borderRadius: 8 }} />
-                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155', marginTop: 8, lineHeight: 1.6 }}>
+                                <div style={{ textAlign: 'center', background: '#ffffff', borderRadius: 16, padding: 18, border: '1px solid var(--border-color)' }}>
+                                    {/* v12.34 — الباركود أكبر (يملأ عرض البطاقة حتى 340px) + اضغط للتكبير */}
+                                    <img
+                                        src={qrUrl}
+                                        alt="Referral QR"
+                                        onClick={() => setQrZoom(true)}
+                                        style={{ width: '100%', maxWidth: 340, height: 'auto', borderRadius: 10, cursor: 'zoom-in', display: 'block', margin: '0 auto' }}
+                                    />
+                                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#0369a1', marginTop: 8 }}>
+                                        {isRTL ? '🔍 اضغط على الباركود لتكبيره ملء الشاشة' : '🔍 Tap the QR to view fullscreen'}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                        <button type="button" onClick={shareQrImage} disabled={sharingQr}
+                                            style={{ flex: 1.4, background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 8px', fontWeight: 900, fontSize: '0.8rem', cursor: sharingQr ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: sharingQr ? 0.7 : 1 }}>
+                                            {sharingQr
+                                                ? (isRTL ? '⏳ جاري التجهيز…' : '⏳ Preparing…')
+                                                : (isRTL ? '📤 مشاركة الباركود كصورة' : '📤 Share QR as image')}
+                                        </button>
+                                        <button type="button" onClick={downloadQr}
+                                            style={{ flex: 1, background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 8px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                            ⬇️ {isRTL ? 'حفظ الصورة' : 'Save image'}
+                                        </button>
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155', marginTop: 10, lineHeight: 1.6 }}>
                                         {isRTL
-                                            ? 'اطبع الباركود وعلّقه في متجرك — مسحه يفتح صفحة التسجيل مباشرة في المتصفح (لا يحتاج العميل تحميل أي تطبيق).'
-                                            : 'Print this QR in your store — scanning opens the signup page directly in the browser (no app install needed).'}
+                                            ? 'اطبع الباركود وعلّقه في متجرك أو أرسله لعملائك — مسحه يفتح صفحة التسجيل مباشرة في المتصفح (لا يحتاج العميل تحميل أي تطبيق).'
+                                            : 'Print this QR in your store or send it to customers — scanning opens the signup page directly in the browser (no app install needed).'}
                                     </div>
                                     <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', marginTop: 6, fontFamily: 'monospace', direction: 'ltr' }}>
                                         {isRTL ? 'رمزك:' : 'Your code:'} {code}
@@ -152,6 +230,27 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                             )}
                         </>
                     )}
+                </div>
+            )}
+
+            {/* v12.34 — تكبير ملء الشاشة: خلفية بيضاء نقية = مسح أسهل للكاميرا */}
+            {qrZoom && (
+                <div
+                    onClick={() => setQrZoom(false)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 99995,
+                        background: 'rgba(10,14,25,0.92)', backdropFilter: 'blur(6px)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: 20, cursor: 'zoom-out',
+                    }}
+                >
+                    <div style={{ background: '#ffffff', borderRadius: 24, padding: 22, maxWidth: '92vw' }}>
+                        <img src={qrUrl} alt="Referral QR" style={{ width: 'min(80vw, 460px)', height: 'auto', display: 'block', borderRadius: 12 }} />
+                        <div style={{ textAlign: 'center', fontSize: '0.85rem', fontWeight: 900, color: '#0f172a', marginTop: 10, fontFamily: 'monospace', direction: 'ltr' }}>{code}</div>
+                    </div>
+                    <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.85rem', marginTop: 16 }}>
+                        {isRTL ? 'اضغط في أي مكان للإغلاق' : 'Tap anywhere to close'}
+                    </div>
                 </div>
             )}
         </div>
