@@ -530,6 +530,13 @@ export const adminService = {
         return data;
     },
 
+    /** v12.41 — القمع الكامل + الإلغاءات بمن ألغاها + الاحتفاظ + الأسوأ. */
+    async getAiFunnel(days = 30): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_funnel', { p_days: days });
+        if (error) { console.error('[adminService.getAiFunnel]', error); return null; }
+        return data;
+    },
+
     /** v12.40 — أقرب ٣ منافسين للتاجر (نفس المدينة + التصنيف). */
     async getAiCompetitors(storeId: string): Promise<any | null> {
         const { data, error } = await supabase.rpc('admin_ai_seller_competitors', { p_store_id: storeId });

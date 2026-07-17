@@ -323,6 +323,11 @@ const AdminAnalyst: React.FC = () => {
     const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
     // v12.40 — تفاعل الأقسام + البحث + المستكشف + منافسو التاجر المفتوح
     const [pulse2, setPulse2] = useState<any | null>(null);
+    // v12.41 — القمع والإلغاءات + فلاتر «الأسوأ» التنفيذية (ناصر يحدد الحد)
+    const [funnelData, setFunnelData] = useState<any | null>(null);
+    const [worstDim, setWorstDim] = useState<'by_city' | 'by_category' | 'by_store'>('by_city');
+    const [worstMetric, setWorstMetric] = useState<'cancel_rate' | 'least_bookings' | 'seller_cancels'>('cancel_rate');
+    const [worstMin, setWorstMin] = useState(3);
     const [mxCity, setMxCity] = useState<string>('all');
     const [mxCat, setMxCat] = useState<string>('all');
     const [matrix, setMatrix] = useState<any | null>(null);
@@ -331,12 +336,14 @@ const AdminAnalyst: React.FC = () => {
 
     const load = useCallback(async () => {
         setLoading(true);
-        const [d, p2] = await Promise.all([
+        const [d, p2, fn] = await Promise.all([
             adminService.getAiAnalyst(days),
             adminService.getAiPulse2(),
+            adminService.getAiFunnel(days),
         ]);
         setData(d);
         setPulse2(p2);
+        setFunnelData(fn);
         setLoading(false);
     }, [days]);
     useEffect(() => { load(); }, [load]);
@@ -486,6 +493,37 @@ const AdminAnalyst: React.FC = () => {
                 </div>
             </div>
 
+            {/* 📋 v12.41 — الخلاصة التنفيذية (تقرير الرئيس التنفيذي) */}
+            {(() => {
+                const fn = funnelData?.funnel || {};
+                const b = Number(fn.bookings) || 0;
+                const comp = Number(fn.completed) || 0;
+                const canc = Number(fn.cancelled) || 0;
+                const compPct = b ? Math.round((comp / b) * 100) : 0;
+                const cancPct = b ? Math.round((canc / b) * 100) : 0;
+                const topCity = ((data.cities || []) as GeoRow[])[0];
+                const topCat = ((data.categories || []) as GeoRow[])[0];
+                const critical = insights.find((i) => i.severity === 'critical');
+                const ret = funnelData?.retention || [];
+                const retTot = ret.reduce((a: number, r: any) => a + Number(r.buyers || 0), 0);
+                const retBack = ret.reduce((a: number, r: any) => a + Number(r.returned || 0), 0);
+                return (
+                    <section className="bg-[var(--card-bg)] border-2 border-slate-400/40 rounded-2xl p-4">
+                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-1.5">📋 الخلاصة التنفيذية — قرارك في سطور</h3>
+                        <div className="text-xs text-[var(--text-primary)] leading-relaxed">
+                            خلال آخر {arNum(days)} يوماً: <b>{arNum(b)}</b> حجزاً، اكتمل استلام <b>{arNum(comp)}</b> ({arNum(compPct)}٪)
+                            وأُلغي <b>{arNum(canc)}</b> ({arNum(cancPct)}٪). أقوى مدينة <b>{topCity?.city ?? '—'}</b> وأقوى قسم <b>{catLabel(topCat?.category)}</b>.
+                            {retTot > 0 && <> من كل من جرّب الشراء، عاد <b>{arNum(retBack)}</b> من <b>{arNum(retTot)}</b> للحجز مجدداً.</>}
+                        </div>
+                        <div className="text-xs mt-2 font-bold" style={{ color: critical ? '#ef4444' : '#10b981' }}>
+                            {critical
+                                ? <>🎯 القرار الأهم الآن: {critical.title} — {critical.action || critical.body}</>
+                                : '🎯 لا يوجد خطر عاجل — القرار الأنسب: نفّذ خطوة واحدة من خطة التسويق أدناه لتسريع النمو.'}
+                        </div>
+                    </section>
+                );
+            })()}
+
             {/* مؤشرات سريعة */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <Tile icon="📦" label={`حجوزات آخر ${arNum(days)} يوم`} value={arNum(Number(funnel.bookings) || 0)}
@@ -510,6 +548,123 @@ const AdminAnalyst: React.FC = () => {
                     </div>
                 ))}
             </section>
+
+            {/* 📉 v12.41 — قمع التحويل: من دخل الصفحة حتى الاستلام + من ألغى */}
+            {funnelData && (() => {
+                const fn = funnelData.funnel || {};
+                const steps = [
+                    { label: 'دخل صفحة متجر', n: Number(fn.store_views) || 0, icon: '🏪' },
+                    { label: 'شاهد عرضاً', n: Number(fn.deal_views) || 0, icon: '👁' },
+                    { label: 'نقر على عرض', n: Number(fn.clicks) || 0, icon: '👆' },
+                    { label: 'حجز', n: Number(fn.bookings) || 0, icon: '📦' },
+                    { label: 'استلم (مكتمل)', n: Number(fn.completed) || 0, icon: '✅' },
+                ];
+                const maxStep = Math.max(1, ...steps.map((s) => s.n));
+                const canc = Number(fn.cancelled) || 0;
+                return (
+                    <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
+                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📉 قمع التحويل — من الدخول حتى الاستلام</h3>
+                        <div className="space-y-1.5">
+                            {steps.map((s, i) => (
+                                <div key={s.label} className="flex items-center gap-2 text-[11px]">
+                                    <span className="w-28 shrink-0 font-bold text-[var(--text-primary)]">{s.icon} {s.label}</span>
+                                    <div className="flex-1 bg-[var(--body-bg)] rounded-full h-5 overflow-hidden">
+                                        <div className="h-full rounded-full flex items-center px-2 text-[10px] font-black text-white"
+                                            style={{ width: `${Math.max(6, (s.n / maxStep) * 100)}%`, background: i === 4 ? '#10b981' : '#6366f1', minWidth: 34 }}>
+                                            {arNum(s.n)}
+                                        </div>
+                                    </div>
+                                    {i > 0 && steps[i - 1].n > 0 && (
+                                        <span className="w-12 shrink-0 text-[10px] text-[var(--text-secondary)] tabular-nums">{Math.round((s.n / steps[i - 1].n) * 100)}٪</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-secondary)]">مراحل الدخول والمشاهدة والنقر بدأ تسجيلها الزمني في v12.38 — تكتمل خلال أيام. الحجوزات والاستلام تاريخ كامل.</div>
+
+                        <div className="font-bold text-xs text-[var(--text-primary)]">🚫 الإلغاءات ({arNum(canc)}) — من ألغى؟</div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <Tile icon="🛒" label="ألغاها المشتري" value={arNum(Number(fn.cancel_buyer) || 0)} />
+                            <Tile icon="🏪" label="ألغاها التاجر" value={arNum(Number(fn.cancel_seller) || 0)} />
+                            <Tile icon="⏱" label="انتهت المهلة (تلقائي)" value={arNum(Number(fn.cancel_system) || 0)} />
+                            <Tile icon="🗂" label="قديمة (قبل التتبع)" value={arNum(Number(fn.cancel_legacy) || 0)} />
+                        </div>
+                        <div className="text-[10px] text-[var(--text-secondary)]">
+                            بدأنا اليوم تسجيل «من ألغى» لكل إلغاء جديد (موقع + بوتات + انتهاء المهلة) — القديمة تظهر «قبل التتبع».
+                            إلغاء التاجر المتكرر مؤشر خطير (سلعة غير متوفرة فعلياً)، وانتهاء المهلة يعني مشترين يحجزون ولا يستلمون.
+                        </div>
+
+                        {(funnelData.retention || []).length > 0 && (
+                            <>
+                                <div className="font-bold text-xs text-[var(--text-primary)]">🔁 الاحتفاظ بالمشترين (حسب شهر أول حجز)</div>
+                                <div className="space-y-1">
+                                    {(funnelData.retention as any[]).map((r) => (
+                                        <div key={r.cohort} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-1.5">
+                                            <span className="font-bold text-[var(--text-primary)]">{r.cohort}</span>
+                                            <span className="text-[var(--text-secondary)] tabular-nums">
+                                                {arNum(Number(r.buyers) || 0)} مشترٍ جديد • عاد منهم {arNum(Number(r.returned) || 0)}
+                                                {Number(r.buyers) > 0 && ` (${Math.round((Number(r.returned) / Number(r.buyers)) * 100)}٪)`}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </section>
+                );
+            })()}
+
+            {/* 🚨 v12.41 — فلاتر «الأسوأ» التنفيذية: أنت تحدد البعد والمقياس والحد */}
+            {funnelData && (() => {
+                const rows: any[] = (funnelData[worstDim] || []).filter((r: any) => Number(r.bookings) >= worstMin);
+                const sorted = [...rows].sort((a, b) => {
+                    if (worstMetric === 'least_bookings') return Number(a.bookings) - Number(b.bookings);
+                    if (worstMetric === 'seller_cancels') return Number(b.c_seller || 0) - Number(a.c_seller || 0);
+                    return (Number(b.cancelled) / Math.max(1, Number(b.bookings))) - (Number(a.cancelled) / Math.max(1, Number(a.bookings)));
+                }).slice(0, 10);
+                const nameOf = (r: any) => worstDim === 'by_city' ? r.city : worstDim === 'by_category' ? catLabel(r.category) : `${r.shop}${r.city ? ` (${r.city})` : ''}`;
+                return (
+                    <section className="bg-[var(--card-bg)] border-2 border-rose-200 rounded-2xl p-4 space-y-2.5">
+                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🚨 راصد الأسوأ — أنت تحدد المعيار</h3>
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <select value={worstDim} onChange={(e) => setWorstDim(e.target.value as any)}
+                                className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                                <option value="by_city">🏙 المدن</option>
+                                <option value="by_category">🏷 الأقسام</option>
+                                <option value="by_store">🏪 المتاجر</option>
+                            </select>
+                            <select value={worstMetric} onChange={(e) => setWorstMetric(e.target.value as any)}
+                                className="flex-1 min-w-[150px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                                <option value="cancel_rate">الأعلى نسبة إلغاء</option>
+                                <option value="least_bookings">الأقل حجوزات (الأقل استفادة)</option>
+                                <option value="seller_cancels">الأكثر إلغاءً من التاجر نفسه</option>
+                            </select>
+                            <label className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-secondary)]">
+                                حد أدنى للحجوزات:
+                                <input type="number" min={0} value={worstMin}
+                                    onChange={(e) => setWorstMin(Math.max(0, Number(e.target.value) || 0))}
+                                    className="w-16 px-2 py-1.5 rounded-lg bg-[var(--body-bg)] border border-[var(--border-color)] text-center text-[var(--text-primary)] outline-none" />
+                            </label>
+                        </div>
+                        <div className="space-y-1.5">
+                            {sorted.map((r, i) => {
+                                const rate = Math.round((Number(r.cancelled) / Math.max(1, Number(r.bookings))) * 100);
+                                return (
+                                    <div key={i} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2 gap-2 flex-wrap">
+                                        <span className="font-bold text-[var(--text-primary)]">{i + 1}. {nameOf(r)}</span>
+                                        <span className="text-[var(--text-secondary)] tabular-nums">
+                                            📦 {arNum(Number(r.bookings))} • ✅ {arNum(Number(r.completed))} • 🚫 {arNum(Number(r.cancelled))} ({arNum(rate)}٪)
+                                            {Number(r.c_seller) > 0 && <span className="text-rose-500 font-bold"> • التاجر ألغى {arNum(Number(r.c_seller))}</span>}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                            {sorted.length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا نتائج فوق الحد المحدد — خفّض «الحد الأدنى».</div>}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-secondary)]">💡 متجر يكثر إلغاؤه بنفسه = سلعة غير متوفرة فعلاً (أرسل له تنبيهاً من الإرسال المستهدف). مدينة عالية الإلغاء = راجع مدد التحضير ومواعيد المحلات فيها.</div>
+                    </section>
+                );
+            })()}
 
             {/* ⏰ الذروة */}
             <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
