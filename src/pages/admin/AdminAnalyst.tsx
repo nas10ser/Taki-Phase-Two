@@ -30,8 +30,15 @@ interface SellerRow {
     bookings_30: number; bookings_prev30: number;
     deal_views_30: number; store_views_30: number;
     rating_avg: number | null; rating_count: number;
+    /** v12.39 — growth/content-quality fields */
+    top_category: string | null;
+    avg_images: number | null;
+    weak_image_deals: number;
+    weak_desc_deals: number;
+    has_hours: boolean;
 }
-interface GeoRow { city?: string; category?: string; mall?: string; deals: number; bookings: number }
+interface GeoRow { city?: string; region?: string; category?: string; mall?: string; deals: number; bookings: number }
+interface BuyerCityRow { city: string; buyers: number; bookings: number }
 
 interface Insight {
     id: string;
@@ -73,6 +80,9 @@ const sellerRisk = (s: SellerRow): { score: number; reasons: string[] } => {
     const lastActive = s.last_active_at ? Date.now() - new Date(s.last_active_at).getTime() : null;
     if (lastActive !== null && lastActive > 14 * 86400000) { score += 10; reasons.push('لم يفتح المنصة منذ أسبوعين+'); }
     if (s.rating_avg !== null && s.rating_count >= 3 && s.rating_avg < 3) { score += 10; reasons.push(`تقييمه منخفض (${s.rating_avg}★)`); }
+    // v12.39 — جودة المحتوى تدخل في الخطر (صور/وصف/دوام)
+    if (s.active_deals > 0 && s.weak_image_deals >= s.active_deals) { score += 5; reasons.push('كل عروضه بصورة واحدة أو بلا صور'); }
+    if (s.active_deals > 0 && !s.has_hours) { score += 5; reasons.push('لم يفعّل ساعات عمل متجره'); }
     return { score: Math.min(100, score), reasons };
 };
 
@@ -90,6 +100,10 @@ const buildSellerTip = (s: SellerRow, report: any | null): { title: string; body
     if (peakDay) lines.push(`• أقوى أيامك هو ${DOW_AR[peakDay.dow]} — ركّز كمياتك وخصوماتك فيه.`);
     if (s.deal_views_30 >= 20 && s.bookings_30 === 0) lines.push('• عروضك تُشاهد ولا تُحجز — جرّب خصماً أوضح (٣٠٪+) أو صوراً أجود للمنتج.');
     if (s.deal_views_30 + s.store_views_30 < 10) lines.push('• زياراتك قليلة — شارك رابط متجرك وباركود الدعوة مع عملائك في واتساب وحسابات التواصل.');
+    // v12.39 — جودة المحتوى (صور/وصف/دوام)
+    if (s.weak_image_deals > 0) lines.push(`• ${s.weak_image_deals} من عروضك بصورة واحدة أو بلا صور — أضف ٣ صور واضحة بزوايا مختلفة لكل عرض؛ العروض متعددة الصور تُحجز أكثر بوضوح.`);
+    if (s.weak_desc_deals > 0) lines.push(`• ${s.weak_desc_deals} من عروضك بلا وصف كافٍ — اكتب المقاسات والمميزات وحالة المنتج؛ الوصف الجيد يرفع الثقة ويقلل الإلغاء.`);
+    if (s.active_deals > 0 && !s.has_hours) lines.push('• فعّل «ساعات العمل» من لوحتك — تظهر للمشتري وتمنع حجوزات تصلك والمحل مغلق.');
     if (s.rating_avg !== null && s.rating_count >= 3 && s.rating_avg < 3.5) lines.push('• حسّن تجربة الاستلام والرد على التقييمات — التقييم العالي يرفع ترتيبك وثقة المشترين.');
     if (report?.top_deal?.item_name && Number(report?.top_deal?.bookings) > 0) lines.push(`• أفضل منتجاتك أداءً «${report.top_deal.item_name}» — كرّر عروضاً مشابهة له.`);
     if (!lines.length) lines.push('• استمر — أداؤك جيد. جرّب زيادة عدد العروض النشطة وتنويع التصنيفات لنمو أكبر.');
@@ -204,8 +218,51 @@ const buildInsights = (d: any): Insight[] => {
             action: 'استهدف تجار هذه المدن برابط الدعوة أو بحملة — سيجدون طلباً جاهزاً.',
         });
     }
+
+    // ٧) v12.39 — جودة محتوى المنصة (صور/أوصاف العروض)
+    const content = d.content || {};
+    const activeDeals = Number(content.active_deals) || 0;
+    const weakImgs = (Number(content.no_image) || 0) + (Number(content.one_image) || 0);
+    if (activeDeals >= 3 && weakImgs / activeDeals > 0.3) {
+        out.push({
+            id: 'content-imgs', severity: 'warn', icon: '🖼',
+            title: `${Math.round((weakImgs / activeDeals) * 100)}٪ من العروض النشطة صورها ضعيفة`,
+            body: `${arNum(weakImgs)} من ${arNum(activeDeals)} عرضاً بصورة واحدة أو بلا صور — الصور أول ما يقنع المشتري.`,
+            action: 'استخدم «الإرسال المستهدف» بالأسفل مع قالب «جودة الصور» لتنبيه المتاجر المعنية دفعة واحدة.',
+        });
+    }
+    if (activeDeals >= 3 && (Number(content.no_desc) || 0) / activeDeals > 0.4) {
+        out.push({
+            id: 'content-desc', severity: 'info', icon: '📝',
+            title: `${arNum(Number(content.no_desc) || 0)} عرضاً بلا وصف كافٍ`,
+            body: 'الوصف الناقص يزيد أسئلة الشات والإلغاءات — ذكّر التجار بكتابة المقاسات والتفاصيل.',
+        });
+    }
+
+    // ٨) v12.39 — مدن فيها مشترون نشطون بلا عرض كافٍ (من حجوزاتهم الفعلية)
+    const bbc: BuyerCityRow[] = d.buyers_by_city || [];
+    const cityDeals = new Map(cities.map((c) => [c.city, c.deals]));
+    const demandNoSupply = bbc.filter((b) => b.city !== 'غير محدد' && b.buyers >= 2 && (cityDeals.get(b.city) ?? 0) <= 1);
+    if (demandNoSupply.length) {
+        out.push({
+            id: 'buyer-city-gap', severity: 'info', icon: '🎯',
+            title: `مشترون نشطون بعرض شبه معدوم في: ${demandNoSupply.map((b) => b.city).join('، ')}`,
+            body: 'هؤلاء يحجزون فعلاً لكن الخيارات أمامهم قليلة — أول تاجر تستقطبه هناك سيحصد الطلب كله.',
+            action: 'ركّز حملات استقطاب التجار على هذه المدن أولاً (أعلى عائد على الجهد).',
+        });
+    }
     return out;
 };
+
+// v12.39 — التقويم الموسمي السعودي لخطة النمو (إرشادي ثابت + بياناتك تحدد ذروتك الفعلية)
+const SAUDI_SEASONS: { icon: string; name: string; when: string; tip: string }[] = [
+    { icon: '🌙', name: 'رمضان والعيد', when: 'رمضان القادم يبدأ تقريباً فبراير ٢٠٢٧ (يتقدم ~١١ يوماً كل سنة)', tip: 'أقوى موسم تخفيضات في السعودية — جهّز التجار قبله بأسبوعين: عروض سحور/عيديات/ملابس عيد.' },
+    { icon: '🎒', name: 'العودة للمدارس', when: 'منتصف أغسطس - أول سبتمبر', tip: 'قرطاسية، ملابس أطفال، أحذية — استقطب متاجر هذه الأصناف قبلها بشهر.' },
+    { icon: '🇸🇦', name: 'اليوم الوطني', when: '٢٣ سبتمبر', tip: 'خصومات وطنية ضخمة متوقعة من المشترين — نظّم حملة «عروض اليوم الوطني» ومسابقة.' },
+    { icon: '🏜', name: 'يوم التأسيس', when: '٢٢ فبراير', tip: 'موسم خصومات صاعد — فرصة لحملة بنرات مبكرة قبل المنافسين.' },
+    { icon: '🛍', name: 'الجمعة البيضاء', when: 'نهاية نوفمبر', tip: 'ذروة التسوق السنوية — افتح باب «عروض الجمعة البيضاء» وشجّع خصومات ٥٠٪+.' },
+    { icon: '☀️', name: 'إجازة الصيف', when: 'يونيو - أغسطس', tip: 'نشاط المولات يرتفع مساءً — وجّه التجار للنشر قبل المغرب وتمديد ساعات العمل.' },
+];
 
 // ─── مكوّنات عرض صغيرة ──────────────────────────────────────────────────────
 const SEV_STYLE: Record<Insight['severity'], { bg: string; border: string }> = {
@@ -245,7 +302,7 @@ const Bars: React.FC<{ data: { label: string; n: number }[]; color?: string; hei
 
 // ─── المكوّن الرئيسي ─────────────────────────────────────────────────────────
 const AdminAnalyst: React.FC = () => {
-    const { customAlert } = useApp();
+    const { customAlert, customConfirm } = useApp();
     const [days, setDays] = useState(30);
     const [data, setData] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
@@ -255,6 +312,15 @@ const AdminAnalyst: React.FC = () => {
     const [tipDraft, setTipDraft] = useState('');
     const [tipEmail, setTipEmail] = useState(false);
     const [sending, setSending] = useState(false);
+    // v12.39 — فلاتر (مدينة/تصنيف/حالة) تُطبَّق على قائمة الصحة وعلى الإرسال المستهدف
+    const [fCity, setFCity] = useState('all');
+    const [fCat, setFCat] = useState('all');
+    const [fStatus, setFStatus] = useState<'all' | 'weak' | 'risk' | 'expired' | 'nodeals'>('all');
+    // v12.39 — الإرسال الجماعي المستهدف (بموافقة ناصر دائماً)
+    const [bulkMsg, setBulkMsg] = useState('');
+    const [bulkEmail, setBulkEmail] = useState(false);
+    const [bulkSending, setBulkSending] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -269,6 +335,51 @@ const AdminAnalyst: React.FC = () => {
         const list: SellerRow[] = (data?.sellers || []).map((s: SellerRow) => s);
         return list.sort((a, b) => sellerRisk(b).score - sellerRisk(a).score);
     }, [data]);
+
+    // v12.39 — خيارات الفلاتر + القائمة المفلترة (تُغذي الصحة والإرسال المستهدف)
+    const cityOptions = useMemo(() => Array.from(new Set(sellers.map((s) => s.city).filter(Boolean))) as string[], [sellers]);
+    const catOptions = useMemo(() => Array.from(new Set(sellers.map((s) => s.top_category).filter(Boolean))) as string[], [sellers]);
+    const filteredSellers = useMemo(() => sellers.filter((s) => {
+        if (fCity !== 'all' && s.city !== fCity) return false;
+        if (fCat !== 'all' && s.top_category !== fCat) return false;
+        const risk = sellerRisk(s).score;
+        const dl = daysLeft(s.expires_at);
+        if (fStatus === 'weak' && risk < 30) return false;
+        if (fStatus === 'risk' && risk < 60) return false;
+        if (fStatus === 'expired' && !(dl !== null && dl < 0)) return false;
+        if (fStatus === 'nodeals' && s.active_deals !== 0) return false;
+        return true;
+    }), [sellers, fCity, fCat, fStatus]);
+
+    // قوالب رسائل جاهزة للإرسال المستهدف — كلها قابلة للتعديل قبل الإرسال
+    const bulkTemplates = useMemo(() => {
+        const topH: HourRow | null = (data?.peak_hours || []).length
+            ? [...data.peak_hours].sort((a: HourRow, b: HourRow) => b.n - a.n)[0] : null;
+        return [
+            { id: 'photos', label: '🖼 جودة الصور والوصف', text: 'مرحباً 👋\nنصيحة من فريق تاكي لزيادة حجوزاتك: أضف ٣ صور واضحة بزوايا مختلفة لكل عرض، واكتب وصفاً كاملاً (المقاسات/المميزات/الحالة) — العروض مكتملة الصور والوصف تُحجز أكثر بفارق واضح.\nفريق تاكي 🤝' },
+            { id: 'peak', label: '⏰ ساعات الذروة', text: `مرحباً 👋\nتحليل منصة تاكي يُظهر أن ذروة الحجوزات حوالي الساعة ${topH ? fmtHour(topH.h) : '٧ مساءً'} — انشر عروضك وجدّد كمياتها قبل الذروة بساعة لتحصد أكبر عدد من الحجوزات.\nفريق تاكي 🤝` },
+            { id: 'renew', label: '💳 تشجيع التجديد', text: 'مرحباً 👋\nنذكّرك بتجديد اشتراكك في تاكي حتى لا تتوقف عروضك عن الظهور للمشترين — المتاجر المستمرة تبني قاعدة عملاء ومتابعين تكبر شهراً بعد شهر.\nفريق تاكي 🤝' },
+            { id: 'activate', label: '🚀 تنشيط متجر خامل', text: 'مرحباً 👋\nلاحظنا أن متجرك بلا عروض نشطة حالياً — المشترون في مدينتك يبحثون يومياً عن التخفيضات. أضف عرضاً واحداً اليوم (يستغرق دقيقتين من لوحتك أو من بوت تيليجرام) وسيظهر فوراً.\nفريق تاكي 🤝' },
+            { id: 'custom', label: '✍️ رسالة حرة', text: '' },
+        ];
+    }, [data]);
+
+    const sendBulk = async () => {
+        if (bulkSending || !bulkMsg.trim() || filteredSellers.length === 0) return;
+        const ok = await customConfirm(`سيتم إرسال هذه الرسالة إلى ${filteredSellers.length} تاجراً (${fCity === 'all' ? 'كل المدن' : fCity} / ${fCat === 'all' ? 'كل التصنيفات' : catLabel(fCat)})${bulkEmail ? ' + بريد إلكتروني' : ''}. متابعة؟`);
+        if (!ok) return;
+        setBulkSending(true);
+        setBulkProgress({ done: 0, total: filteredSellers.length });
+        let done = 0, failed = 0;
+        for (const s of filteredSellers) {
+            const r = await adminService.notifyUser({ userId: s.id, titleAr: '💡 رسالة من فريق تاكي', bodyAr: bulkMsg.trim(), email: bulkEmail });
+            if (r.success) done++; else failed++;
+            setBulkProgress({ done: done + failed, total: filteredSellers.length });
+        }
+        setBulkSending(false);
+        setBulkProgress(null);
+        await customAlert(failed === 0 ? `✅ أُرسلت الرسالة لـ${arNum(done)} تاجراً.` : `⚠️ نجح ${arNum(done)} وفشل ${arNum(failed)}.`);
+    };
 
     const openReport = async (s: SellerRow) => {
         if (openSeller === s.id) { setOpenSeller(null); setReport(null); return; }
@@ -402,7 +513,29 @@ const AdminAnalyst: React.FC = () => {
             {/* 🏪 صحة التجار */}
             <section className="space-y-2">
                 <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🏪 صحة التجار (الأخطر أولاً) — اضغط تاجراً للتقرير والتوصية</h3>
-                {sellers.map((s) => {
+                {/* v12.39 — فلترة: مدينة / تصنيف / حالة (تنعكس أيضاً على الإرسال المستهدف بالأسفل) */}
+                <div className="flex flex-wrap gap-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-2.5">
+                    <select value={fCity} onChange={(e) => setFCity(e.target.value)}
+                        className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏙 كل المدن</option>
+                        {cityOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <select value={fCat} onChange={(e) => setFCat(e.target.value)}
+                        className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏷 كل التصنيفات</option>
+                        {catOptions.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}
+                    </select>
+                    <select value={fStatus} onChange={(e) => setFStatus(e.target.value as any)}
+                        className="flex-1 min-w-[130px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">📋 كل الحالات</option>
+                        <option value="weak">🟡 الضعاف (خطر ٣٠+)</option>
+                        <option value="risk">🔴 الخطرون (خطر ٦٠+)</option>
+                        <option value="expired">⛔ منتهو الاشتراك</option>
+                        <option value="nodeals">📭 بلا عروض نشطة</option>
+                    </select>
+                    <span className="text-[11px] font-bold text-[var(--text-secondary)] self-center whitespace-nowrap">= {arNum(filteredSellers.length)} تاجر</span>
+                </div>
+                {filteredSellers.map((s) => {
                     const risk = sellerRisk(s);
                     const dl = daysLeft(s.expires_at);
                     const trend = s.bookings_30 > s.bookings_prev30 ? '↗️' : s.bookings_30 < s.bookings_prev30 ? '↘️' : '→';
@@ -485,7 +618,107 @@ const AdminAnalyst: React.FC = () => {
                         </div>
                     );
                 })}
-                {sellers.length === 0 && <div className="text-xs text-[var(--text-secondary)]">لا تجار بعد.</div>}
+                {filteredSellers.length === 0 && <div className="text-xs text-[var(--text-secondary)]">لا تجار مطابقين لهذه الفلاتر.</div>}
+            </section>
+
+            {/* 📣 v12.39 — الإرسال المستهدف: نفس الفلاتر أعلاه تحدد المستقبلين */}
+            <section className="bg-[var(--card-bg)] border-2 border-indigo-200 rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📣 إرسال مستهدف للتجار (حسب الفلاتر أعلاه)</h3>
+                <div className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                    اختر المدينة/التصنيف/الحالة من فلاتر «صحة التجار»، ثم اختر قالباً أو اكتب رسالتك — تصل
+                    للمحددين فقط ({arNum(filteredSellers.length)} تاجر حالياً) إشعاراً داخل الموقع وبوتاتهم المرتبطة. <b>لن تُرسل إلا بتأكيدك.</b>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {bulkTemplates.map((t) => (
+                        <button key={t.id} onClick={() => setBulkMsg(t.text)}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] active:scale-95">
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+                <textarea value={bulkMsg} onChange={(e) => setBulkMsg(e.target.value)} rows={5}
+                    placeholder="اكتب الرسالة أو اختر قالباً..."
+                    className="w-full text-xs p-3 rounded-xl bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] leading-relaxed outline-none focus:border-indigo-500" />
+                <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)] cursor-pointer">
+                        <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={bulkEmail} onChange={(e) => setBulkEmail(e.target.checked)} />
+                        📧 بريد إلكتروني أيضاً
+                    </label>
+                    <button onClick={sendBulk} disabled={bulkSending || !bulkMsg.trim() || filteredSellers.length === 0}
+                        className="mr-auto px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-indigo-600 disabled:opacity-50">
+                        {bulkSending && bulkProgress
+                            ? `⏳ ${arNum(bulkProgress.done)}/${arNum(bulkProgress.total)}...`
+                            : `📨 إرسال لـ${arNum(filteredSellers.length)} تاجر`}
+                    </button>
+                </div>
+            </section>
+
+            {/* 🌱 v12.39 — خطة نمو المنصة (لناصر شخصياً) */}
+            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🌱 خطة نمو المنصة (لك)</h3>
+
+                <div>
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1">📆 موسمية حجوزاتك (١٢ شهراً)</div>
+                    <Bars data={(data.seasonal || []).map((m: { mon: string; bookings: number }) => ({ label: m.mon.slice(5), n: m.bookings }))} color="#8b5cf6" height={90} />
+                </div>
+
+                <div>
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🗓 المواسم السعودية القادمة — استعد قبلها بأسبوعين</div>
+                    <div className="grid md:grid-cols-2 gap-2">
+                        {SAUDI_SEASONS.map((s) => (
+                            <div key={s.name} className="bg-[var(--body-bg)] rounded-xl p-2.5 text-[11px]">
+                                <div className="font-extrabold text-[var(--text-primary)]">{s.icon} {s.name} <span className="font-normal text-[var(--text-secondary)]">— {s.when}</span></div>
+                                <div className="text-[var(--text-secondary)] mt-0.5 leading-relaxed">{s.tip}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div>
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🎯 أين تركّز جهدك؟ (طلب المشترين الفعلي مقابل عرض التجار — ٩٠ يوماً)</div>
+                    <div className="space-y-1.5">
+                        {((data.buyers_by_city || []) as BuyerCityRow[]).slice(0, 8).map((b) => {
+                            const supply = ((data.cities || []) as GeoRow[]).find((c) => c.city === b.city)?.deals ?? 0;
+                            const verdict = supply <= 1 && b.buyers >= 2 ? { t: '⚡ استقطب تجاراً هنا فوراً', c: '#f59e0b' }
+                                : b.bookings >= 10 && supply >= 3 ? { t: '✅ سوق متوازن — نمّه بالحملات', c: '#10b981' }
+                                : { t: '👀 راقب', c: 'var(--text-secondary)' };
+                            return (
+                                <div key={b.city} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2">
+                                    <span className="font-bold text-[var(--text-primary)]">{b.city}</span>
+                                    <span className="text-[var(--text-secondary)] tabular-nums">🛒 {arNum(b.buyers)} مشترٍ • 📦 {arNum(b.bookings)} حجز • 🏷 {arNum(supply)} عرض</span>
+                                    <span className="font-bold" style={{ color: verdict.c }}>{verdict.t}</span>
+                                </div>
+                            );
+                        })}
+                        {(data.buyers_by_city || []).length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا حجوزات بعد.</div>}
+                    </div>
+                </div>
+
+                <div>
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🧭 توصيات جذرية للمنصة (من بياناتك الفعلية)</div>
+                    <ul className="text-[11px] text-[var(--text-secondary)] leading-relaxed space-y-1 pr-4 list-disc">
+                        {Number(buyers.dormant_30) > 0 && <li><b className="text-[var(--text-primary)]">{arNum(Number(buyers.dormant_30))} مشترٍ خامل +٣٠ يوماً</b> — أعدهم بحملة من «الإشعارات والرسائل» (عروض المدينة الجديدة) أو مسابقة بجائزة.</li>}
+                        <li><b className="text-[var(--text-primary)]">استقطاب التجار الأثمن نمواً:</b> ركّز على مدن «⚡» أعلاه وتصنيفات «فرصة» — أرسل باركود دعوة التاجر لهم عبر واتساب المحلات مباشرة.</li>
+                        <li><b className="text-[var(--text-primary)]">حافظ على المجدّدين:</b> راقب بطاقة «تجديد الشهر الحالي» بالأعلى — أي هبوط تحت ٧٠٪ عالجه بخصم تجديد مؤقت من لوحة البائعين.</li>
+                        <li><b className="text-[var(--text-primary)]">المواسم تصنع القفزات:</b> جهّز حملة + مسابقة قبل كل موسم أعلاه بأسبوعين — البنرات والرعاة جاهزون في أدواتك.</li>
+                        {Number((data.content || {}).no_image) + Number((data.content || {}).one_image) > 0 && <li><b className="text-[var(--text-primary)]">جودة المحتوى تسويق مجاني:</b> استخدم قالب «جودة الصور» بالإرسال المستهدف — منصة صورها جميلة تبيع نفسها.</li>}
+                    </ul>
+                </div>
+            </section>
+
+            {/* 🖼 v12.39 — جودة محتوى العروض */}
+            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">🖼 جودة محتوى العروض النشطة</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <Tile icon="🏷" label="عروض نشطة" value={arNum(Number((data.content || {}).active_deals) || 0)} />
+                    <Tile icon="🚫" label="بلا صور إطلاقاً" value={arNum(Number((data.content || {}).no_image) || 0)} />
+                    <Tile icon="🖼" label="بصورة واحدة فقط" value={arNum(Number((data.content || {}).one_image) || 0)} />
+                    <Tile icon="📝" label="بلا وصف كافٍ" value={arNum(Number((data.content || {}).no_desc) || 0)} />
+                </div>
+                <div className="text-[11px] text-[var(--text-secondary)] mt-2 leading-relaxed">
+                    💡 نقيس اكتمال الصور والوصف وساعات العمل (وفلتر المحتوى يرفض الصور غير اللائقة تلقائياً منذ v12.31).
+                    المتاجر ضعيفة المحتوى تظهر أسبابها داخل بطاقتها في «صحة التجار» وتوصيتها الجاهزة تتضمن علاجها.
+                </div>
             </section>
 
             {/* 🗺 الفرص */}
