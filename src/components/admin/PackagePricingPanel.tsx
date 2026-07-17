@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { packageRepository } from '../../repositories/packageRepository';
+import { adminService } from '../../services/adminService';
 import { LocationPackage, effectivePrice, branchesShort } from '../../data/packages';
 
 /**
@@ -146,6 +147,21 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
             setSaving(false);
         }
         if (!res.success) { await customAlert('❌ ' + (res.error || 'تعذّر حفظ الباقات')); return; }
+        // v12.35 — unified pricing: the global default amount mirrors the
+        // default package. Re-sync it here so editing a price in this panel
+        // updates the «وضع الاشتراك العام» card + the new-seller trigger too.
+        // If the default package was deleted/hidden, fall back to the first
+        // active one and repoint default_package_id at it.
+        try {
+            const normalized2 = pkgs; // saved list (already sanitized on save)
+            const defId = Number(await adminService.getPlatformSetting<number>('default_package_id'));
+            const def = normalized2.find((p) => p.id === defId && p.active)
+                     ?? normalized2.find((p) => p.active);
+            if (def) {
+                if (def.id !== defId) await adminService.setPlatformSetting('default_package_id', def.id);
+                await adminService.setPlatformSetting('basic_plan_price_sar', effectivePrice(def));
+            }
+        } catch { /* non-fatal — the picker re-syncs on next change */ }
         setDirty(false);
         await customAlert('✅ تم حفظ الباقات. ستظهر للتجار بأسعارها الجديدة فوراً.');
         onSaved?.();

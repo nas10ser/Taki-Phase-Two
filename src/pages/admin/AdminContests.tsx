@@ -29,6 +29,7 @@ const blankContest = (): Partial<Contest> => ({
     title: '', description: '', prize: '', status: 'draft',
     questions: [], social_tasks: [], pass_mode: 'all_correct',
     reveal_name: true, reveal_phone: 'last4', audience: 'all', banner_image: null, starts_at: null, ends_at: null,
+    notify_inapp: true, announced_at: null,
 });
 
 const AdminContests: React.FC = () => {
@@ -152,12 +153,31 @@ const AdminContests: React.FC = () => {
         setSaving(false);
         if (!res.success) { await customAlert('❌ ' + (res.error || 'تعذّر الحفظ')); return; }
         await customAlert('✅ تم حفظ المسابقة.');
+        // v12.35 — a contest saved while already active gets its announcement
+        // too (same rule as the «تفعيل» button): toggle on + never sent before.
+        if (res.id && draft.status === 'active' && draft.notify_inapp !== false && !draft.announced_at) {
+            await maybeAnnounce({ ...(draft as Contest), id: res.id, status: 'active' });
+        }
         setView('list');
         load();
     };
 
+    // v12.35 — one announcement per contest (announced_at guards resends);
+    // the manual «📣» button can force a resend after a confirm.
+    const maybeAnnounce = async (c: Contest, force = false) => {
+        if (!force && (!c.notify_inapp || c.announced_at)) return;
+        if (force && c.announced_at) {
+            const ok = await customConfirm('سبق إرسال إشعار لهذه المسابقة. إرساله مرة أخرى للجميع؟');
+            if (!ok) return;
+        }
+        const r = await contestRepository.announce(c);
+        if (r.success) await customAlert(`📣 تم إرسال إشعار المسابقة داخل الموقع (${(r.notified ?? 0).toLocaleString('ar-SA')} مستخدم).`);
+        else await customAlert('⚠️ تعذّر إرسال الإشعار: ' + (r.error || ''));
+    };
+
     const changeStatus = async (c: Contest, status: ContestStatus) => {
         await contestRepository.setStatus(c.id, status);
+        if (status === 'active') await maybeAnnounce({ ...c, status: 'active' });
         load();
     };
 
@@ -211,6 +231,15 @@ const AdminContests: React.FC = () => {
                                 <button onClick={() => openEdit(c)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)]">✏️ تعديل</button>
                                 {c.status !== 'active' && <button onClick={() => changeStatus(c, 'active')} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500 text-white">▶️ تفعيل</button>}
                                 {c.status === 'active' && <button onClick={() => changeStatus(c, 'closed')} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-white">⏸️ إغلاق</button>}
+                                {c.status === 'active' && (
+                                    <button
+                                        onClick={async () => { await maybeAnnounce(c, true); load(); }}
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg border ${c.announced_at ? 'bg-[var(--body-bg)] border-[var(--border-color)] text-[var(--text-secondary)]' : 'bg-sky-50 border-sky-200 text-sky-700'}`}
+                                        title={c.announced_at ? 'سبق الإرسال — الضغط يعيد الإرسال بعد تأكيد' : 'إرسال إشعار داخل الموقع الآن'}
+                                    >
+                                        {c.announced_at ? '📣 أُرسل الإشعار ✓' : '📣 إرسال إشعار'}
+                                    </button>
+                                )}
                                 <button onClick={() => { setManageId(c.id); setView('manage'); }} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-600 text-white">👥 المشاركات والسحب</button>
                                 <button onClick={() => removeContest(c)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-50 text-red-600 border border-red-200">🗑 حذف</button>
                             </div>
@@ -248,6 +277,16 @@ const AdminContests: React.FC = () => {
                             <option value="sellers">التجار فقط</option>
                         </select>
                     </div>
+                    {/* v12.35 — owner control: announce the contest in-app on activation or not */}
+                    <label className="flex items-center justify-between text-sm text-[var(--text-primary)] bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl px-3 py-2.5 cursor-pointer">
+                        <span>
+                            📣 إرسال إشعار داخل الموقع عند التفعيل
+                            <span className="block text-[11px] text-[var(--text-secondary)] mt-0.5">
+                                يصل الإشعار للجمهور المحدّد أعلاه (مرة واحدة فقط){draft.announced_at ? ' — ✓ سبق إرساله' : ''}
+                            </span>
+                        </span>
+                        <input type="checkbox" className="w-5 h-5 accent-purple-600 shrink-0" checked={draft.notify_inapp !== false} onChange={(e) => setField({ notify_inapp: e.target.checked })} />
+                    </label>
                     <div>
                         <label className={labelCls}>صورة بنر المسابقة (اختياري)</label>
                         <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">

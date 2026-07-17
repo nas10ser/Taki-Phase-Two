@@ -47,6 +47,10 @@ export interface Contest {
     banner_image: string | null;   // optional custom hero-banner image (v11.49)
     starts_at: string | null;
     ends_at: string | null;
+    /** v12.35 — owner toggle: send an in-app notification when activated. */
+    notify_inapp: boolean;
+    /** v12.35 — when the announcement was actually broadcast (null = never). */
+    announced_at: string | null;
     created_at?: string;
 }
 
@@ -132,6 +136,8 @@ const sanitize = (r: any): Contest => ({
     banner_image: r.banner_image ?? null,
     starts_at: r.starts_at ?? null,
     ends_at: r.ends_at ?? null,
+    notify_inapp: r.notify_inapp !== false,
+    announced_at: r.announced_at ?? null,
     created_at: r.created_at,
 });
 
@@ -162,6 +168,7 @@ export const contestRepository = {
             banner_image: c.banner_image || null,
             starts_at: c.starts_at || null,
             ends_at: c.ends_at || null,
+            notify_inapp: c.notify_inapp !== false,
             updated_at: new Date().toISOString(),
         };
         if (!row.title) return { success: false, error: 'العنوان مطلوب' };
@@ -175,6 +182,35 @@ export const contestRepository = {
 
     async setStatus(id: string, status: ContestStatus): Promise<{ error?: any }> {
         return supabase.from('contests').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    },
+
+    /**
+     * v12.35 — broadcast an in-app announcement for a contest to its audience
+     * (via the gated admin_broadcast_notification RPC), then stamp
+     * announced_at so it's never sent twice by accident.
+     */
+    async announce(c: Contest): Promise<{ success: boolean; notified?: number; error?: string }> {
+        const body = [
+            c.prize ? `🏆 الجائزة: ${c.prize}` : '',
+            (c.description || '').trim(),
+            'شارك الآن من صفحة المسابقات!',
+        ].filter(Boolean).join('\n');
+        const { data, error } = await supabase.rpc('admin_broadcast_notification', {
+            p_title_ar: `🎁 مسابقة جديدة: ${c.title}`,
+            p_body_ar: body,
+            p_audience: c.audience === 'sellers' ? 'sellers' : c.audience === 'buyers' ? 'buyers' : 'all',
+            p_type: 'contest',
+            p_meta: { contestId: c.id, actionUrl: '/contests' },
+            p_inapp: true,
+            p_email: false,
+        });
+        if (error) return { success: false, error: error.message };
+        const d = data as any;
+        if (!d?.success) return { success: false, error: d?.error || 'تعذّر الإرسال' };
+        await supabase.from('contests')
+            .update({ announced_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', c.id);
+        return { success: true, notified: Number(d?.notified) || 0 };
     },
 
     async remove(id: string): Promise<{ error?: any }> {

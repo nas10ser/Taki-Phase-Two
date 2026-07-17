@@ -19,7 +19,7 @@ import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
-import { LOCATION_PACKAGES, packageForMax, effectivePrice, LocationPackage } from '../../data/packages';
+import { LOCATION_PACKAGES, packageForMax, effectivePrice, branchesShort, LocationPackage } from '../../data/packages';
 import { packageRepository } from '../../repositories/packageRepository';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 import { sponsorRepository, AdminSponsorRow } from '../../repositories/sponsorRepository';
@@ -867,55 +867,98 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
     const { customAlert, customConfirm } = useApp();
     const [loaded, setLoaded] = useState(false);
     const [globalAmount, setGlobalAmount] = useState<number>(199);
-    const [draftAmount, setDraftAmount] = useState<string>('199');
     const [trialDays, setTrialDays] = useState<number>(14);
     const [gatewayEnabled, setGatewayEnabled] = useState<boolean>(false);
-    const [savingAmount, setSavingAmount] = useState(false);
     const [busyMode, setBusyMode] = useState<null | 'free' | 'paid' | 'trial-paid' | 'trial-all'>(null);
+    // v12.35 — unified pricing: the default amount is no longer a free number;
+    // it's one of the الباقات (location_packages). One price source, no drift.
+    const [pkgs, setPkgs] = useState<LocationPackage[]>([]);
+    const [defaultPkgId, setDefaultPkgId] = useState<number>(1);
+    const [pkgSaveState, setPkgSaveState] = useState<'' | 'saving' | 'saved' | 'error'>('');
+    // v12.35 — how sellers get told when the mode flips (persisted setting).
+    const [notifInapp, setNotifInapp] = useState(true);
+    const [notifEmail, setNotifEmail] = useState(false);
+
+    const activePkgs = pkgs.filter((p) => p.active);
+    const selPkg = activePkgs.find((p) => p.id === defaultPkgId) ?? activePkgs[0] ?? null;
 
     // Hydrate current settings on mount.
     useEffect(() => {
         let alive = true;
         (async () => {
-            const [amount, enabled, trial] = await Promise.all([
+            const [amount, enabled, trial, defId, notifyPrefs, catalogue] = await Promise.all([
                 adminService.getPlatformSetting<number>('basic_plan_price_sar'),
                 adminService.getPlatformSetting<boolean>('payment_gateway_enabled'),
                 adminService.getPlatformSetting<number>('trial_days'),
+                adminService.getPlatformSetting<number>('default_package_id'),
+                adminService.getPlatformSetting<{ inapp?: boolean; email?: boolean }>('mode_change_notify'),
+                packageRepository.get(),
             ]);
             if (!alive) return;
-            const amt = Number(amount) || 199;
-            setGlobalAmount(amt);
-            setDraftAmount(String(amt));
+            setPkgs(catalogue);
+            const actives = catalogue.filter((p) => p.active);
+            const pick = actives.find((p) => p.id === Number(defId)) ?? actives[0] ?? null;
+            setDefaultPkgId(pick ? pick.id : 1);
+            setGlobalAmount(pick ? effectivePrice(pick) : (Number(amount) || 199));
             setTrialDays(Math.max(1, Number(trial) || 14));
             setGatewayEnabled(Boolean(enabled));
+            setNotifInapp(notifyPrefs?.inapp !== false);
+            setNotifEmail(notifyPrefs?.email === true);
             setLoaded(true);
         })();
         return () => { alive = false; };
     }, []);
 
-    const saveAmount = async () => {
-        const n = Math.max(0, Math.round(Number(draftAmount) || 0));
-        if (n === globalAmount || savingAmount) return;
-        setSavingAmount(true);
-        // try/finally so the spinner never sticks on a thrown error (v11.22).
-        let res: { success: boolean; error?: string } = { success: false };
+    // Picking a package IS the price: persist the id + mirror the effective
+    // price into basic_plan_price_sar (the new-seller DB trigger reads both,
+    // package first). Auto-saves — no extra button for the owner to forget.
+    const changePackage = async (id: number) => {
+        const pkg = activePkgs.find((p) => p.id === id);
+        if (!pkg) return;
+        setDefaultPkgId(id);
+        setGlobalAmount(effectivePrice(pkg));
+        setPkgSaveState('saving');
         try {
-            res = await adminService.setPlatformSetting(
-                'basic_plan_price_sar',
-                n,
-                'Default monthly subscription price for sellers (SAR).'
-            );
+            const [r1, r2] = await Promise.all([
+                adminService.setPlatformSetting('default_package_id', id),
+                adminService.setPlatformSetting('basic_plan_price_sar', effectivePrice(pkg)),
+            ]);
+            setPkgSaveState(r1.success && r2.success ? 'saved' : 'error');
+        } catch {
+            setPkgSaveState('error');
+        }
+    };
+
+    // Persist the tell-the-sellers channels the moment a checkbox flips.
+    const saveNotifyPrefs = (inapp: boolean, email: boolean) => {
+        setNotifInapp(inapp);
+        setNotifEmail(email);
+        adminService.setPlatformSetting('mode_change_notify', { inapp, email }).catch(() => {});
+    };
+
+    /**
+     * Broadcast the mode change to sellers over the enabled channels.
+     * Returns a line to append to the success alert (or '' when disabled).
+     */
+    const announceModeChange = async (titleAr: string, bodyAr: string): Promise<string> => {
+        if (!notifInapp && !notifEmail) return '';
+        try {
+            const r = await adminService.broadcastNotification({
+                titleAr, bodyAr,
+                audience: 'sellers',
+                type: 'system',
+                meta: { event: 'platform_mode' },
+                inapp: notifInapp,
+                email: notifEmail,
+            });
+            if (!r.success) return '\n⚠️ تعذّر إرسال التبليغ للتجار: ' + (r.error ?? '');
+            const parts: string[] = [];
+            if (notifInapp) parts.push(`إشعار داخل الموقع لـ${r.notified.toLocaleString('ar-SA')}`);
+            if (notifEmail) parts.push(`بريد إلكتروني لـ${r.emailed.toLocaleString('ar-SA')}`);
+            return parts.length ? `\n📣 تم التبليغ: ${parts.join(' + ')}.` : '';
         } catch (e: any) {
-            res = { success: false, error: e?.message || 'تعذّر الحفظ' };
-        } finally {
-            setSavingAmount(false);
+            return '\n⚠️ تعذّر إرسال التبليغ للتجار: ' + (e?.message ?? '');
         }
-        if (!res.success) {
-            await customAlert('❌ ' + (res.error ?? 'تعذّر الحفظ'));
-            return;
-        }
-        setGlobalAmount(n);
-        await customAlert(`✅ المبلغ الافتراضي: ${n.toLocaleString('ar-SA')} ر.س/شهر`);
     };
 
     const handleFreeForAll = async () => {
@@ -950,10 +993,14 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         } finally {
             setBusyMode(null);
         }
+        const announced = await announceModeChange(
+            '🎉 المنصة الآن مجانية بالكامل',
+            'قرّرنا جعل النشر مجانياً لجميع المتاجر — تم تحويل متجرك إلى الباقة المجانية بلا أي رسوم. استمتع بنشر عروضك!'
+        );
         await customAlert(
-            r.failed === 0
+            (r.failed === 0
                 ? `🆓 الموقع الآن مجاني تماماً.\n${r.ok} متجر تم ضبطه على الباقة المجانية.`
-                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
     };
@@ -962,7 +1009,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• تحويل كل البائعين النشطين إلى باقة مميزة بمبلغ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر بلا خصم\n` +
+            `• تحويل كل البائعين النشطين إلى «${selPkg?.ar ?? 'الباقة الافتراضية'}» بمبلغ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر بلا خصم\n` +
             '• إلغاء أي خصومات أو فترات مجانية حالية\n\n' +
             'متابعة؟'
         );
@@ -983,6 +1030,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 discount: 0,
                 expiresAt: null,
                 notes: 'Platform mode: mandatory paid for all',
+                maxBranches: selPkg?.max,
             });
         } catch (e: any) {
             await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
@@ -990,10 +1038,16 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         } finally {
             setBusyMode(null);
         }
+        const announced = await announceModeChange(
+            '💳 أصبح الاشتراك مطلوباً لنشر العروض',
+            `تم تفعيل الاشتراك الإلزامي على المنصة: ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر` +
+            (selPkg ? ` («${selPkg.ar}» — ${branchesShort(selPkg.max, true)})` : '') +
+            '. فعّل اشتراكك من لوحة التاجر → الاشتراك.'
+        );
         await customAlert(
-            r.failed === 0
+            (r.failed === 0
                 ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
-                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
     };
@@ -1066,6 +1120,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 discount: 0,
                 expiresAt: expires,
                 notes: 'Platform mode: trial for everyone (new + existing)',
+                maxBranches: selPkg?.max,
             });
         } catch (e: any) {
             await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
@@ -1073,10 +1128,14 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         } finally {
             setBusyMode(null);
         }
+        const announced = await announceModeChange(
+            '🎁 حصل متجرك على فترة تجربة مجانية',
+            `منحناك ${trialDays} يوم تجربة مجانية تبدأ الآن — انشر عروضك بلا رسوم، وبعد انتهائها يصبح الاشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
+        );
         await customAlert(
-            r.failed === 0
+            (r.failed === 0
                 ? `🎉 تم منح ${r.ok} متجراً ${trialDays} يوم تجربة مجانية، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
-                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`
+                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
     };
@@ -1097,37 +1156,33 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 </div>
             </div>
 
-            {/* Global default amount input */}
+            {/* v12.35 — unified default package picker (one price source: الباقات) */}
             <div className="bg-[var(--card-bg)] rounded-xl p-3 mb-3 border border-emerald-100">
                 <div className="text-xs font-bold text-[var(--text-secondary)] mb-1.5">
-                    💰 المبلغ الافتراضي للاشتراك (يطبَّق على التجار الجدد)
+                    💎 الباقة الافتراضية للاشتراك (تُطبَّق على التجار الجدد وأزرار الوضع)
                 </div>
-                <div className="flex gap-2">
-                    <div className="relative flex-1">
-                        <input
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={draftAmount}
-                            onChange={(e) => setDraftAmount(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') saveAmount(); }}
-                            className="w-full px-3 py-2.5 pl-12 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm font-bold focus:border-emerald-500 outline-none"
-                        />
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[var(--text-secondary)] pointer-events-none">
-                            ر.س/شهر
+                <select
+                    value={selPkg?.id ?? ''}
+                    onChange={(e) => changePackage(Number(e.target.value))}
+                    disabled={!loaded || activePkgs.length === 0}
+                    className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm font-bold text-[var(--text-primary)] focus:border-emerald-500 outline-none"
+                >
+                    {activePkgs.map((p) => (
+                        <option key={p.id} value={p.id}>
+                            {p.ar} — {branchesShort(p.max, true)} — {effectivePrice(p).toLocaleString('ar-SA')} ر.س/شهر
+                        </option>
+                    ))}
+                </select>
+                <div className="text-[10px] mt-1.5 leading-relaxed">
+                    {pkgSaveState === 'saving' && <span className="text-amber-700">⏳ جاري الحفظ...</span>}
+                    {pkgSaveState === 'saved' && <span className="text-emerald-700 font-bold">✓ محفوظ — السعر موحّد مع «💎 باقات المواقع والأسعار»</span>}
+                    {pkgSaveState === 'error' && <span className="text-red-600 font-bold">❌ تعذّر الحفظ — حاول مجدداً</span>}
+                    {pkgSaveState === '' && (
+                        <span className="text-[var(--text-secondary)]">
+                            السعر يأتي مباشرة من لوحة «💎 باقات المواقع والأسعار» بالأسفل — عدّل السعر هناك وسيتحدّث هنا تلقائياً (لا يوجد مبلغ منفصل).
                         </span>
-                    </div>
-                    <button
-                        onClick={saveAmount}
-                        disabled={savingAmount || Number(draftAmount) === globalAmount}
-                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm disabled:opacity-40 transition-all"
-                    >
-                        {savingAmount ? '...' : '💾 حفظ'}
-                    </button>
+                    )}
                 </div>
-                {Number(draftAmount) !== globalAmount && draftAmount !== '' && (
-                    <div className="text-[10px] text-amber-700 mt-1">⚡ مبلغ غير محفوظ — اضغط حفظ</div>
-                )}
             </div>
 
             {/* Platform-mode buttons */}
@@ -1178,6 +1233,34 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                     </div>
                     {busyMode === 'paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
                 </button>
+            </div>
+
+            {/* v12.35 — tell-the-sellers channels when a mode button is applied */}
+            <div className="mt-3 bg-[var(--card-bg)] rounded-lg p-2.5 text-[11px]">
+                <div className="font-bold text-[var(--text-primary)] mb-1.5">📣 عند تغيير الوضع، بلّغ التجار عبر:</div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[var(--text-primary)]">
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-emerald-600"
+                            checked={notifInapp}
+                            onChange={(e) => saveNotifyPrefs(e.target.checked, notifEmail)}
+                        />
+                        🔔 إشعار داخل الموقع
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[var(--text-primary)]">
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-emerald-600"
+                            checked={notifEmail}
+                            onChange={(e) => saveNotifyPrefs(notifInapp, e.target.checked)}
+                        />
+                        📧 بريد إلكتروني
+                    </label>
+                    <span className="text-[var(--text-secondary)]">
+                        — يُحفظ تلقائياً. زر «تجريبي للجدد فقط» لا يُبلّغ الحاليين لأنهم لا يتأثرون.
+                    </span>
+                </div>
             </div>
 
             {/* Editable trial duration — affects the trial-then-paid button label & action */}

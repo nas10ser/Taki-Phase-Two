@@ -14,6 +14,7 @@
   "orientation": "portrait-primary",
   "categories": ["shopping", "lifestyle", "business"],
   "prefer_related_applications": false,
+  "launch_handler": { "client_mode": "navigate-existing" },
   "icons": [
     {
       "src": "https://taki-test-eight.vercel.app/logo192.png",
@@ -45,14 +46,14 @@
       "name": "العروض القريبة",
       "short_name": "حولي",
       "description": "اكتشف أقرب التخفيضات حولك",
-      "url": "./index.html#/nearby",
+      "url": "/nearby",
       "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
     },
     {
       "name": "حجوزاتي",
       "short_name": "حجوزاتي",
       "description": "إدارة حجوزاتك النشطة",
-      "url": "./index.html#/bookings",
+      "url": "/bookings",
       "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
     }
   ]

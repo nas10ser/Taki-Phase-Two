@@ -209,6 +209,8 @@ const SeasonalGate: React.FC = () => {
 };
 
 const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
+// v12.35 — mobile-browser «ثبّت التطبيق» recommendation (non-blocking).
+const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
 
 const App = () => {
     return (
@@ -217,6 +219,7 @@ const App = () => {
             <InAppBanner />
             <Suspense fallback={null}>
                 <UpdateBanner />
+                <InstallPrompt />
             </Suspense>
             <div className="app-container">
                 <Suspense fallback={<RouteFallback />}>

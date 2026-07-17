@@ -499,6 +499,43 @@ export const adminService = {
     },
 
     /**
+     * v12.35 — one gated broadcast to an audience: in-app notification rows
+     * (fanned out per user, reaches web + Telegram via the outbox poller)
+     * and/or queued emails (email_outbox → Render SMTP). Admin-only (RPC
+     * checks is_admin() internally).
+     */
+    async broadcastNotification(p: {
+        titleAr: string;
+        bodyAr?: string;
+        audience?: 'all' | 'buyers' | 'sellers';
+        type?: string;
+        meta?: Record<string, any>;
+        inapp?: boolean;
+        email?: boolean;
+    }): Promise<{ success: boolean; notified: number; emailed: number; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_broadcast_notification', {
+            p_title_ar: p.titleAr,
+            p_body_ar: p.bodyAr ?? '',
+            p_audience: p.audience ?? 'all',
+            p_type: p.type ?? 'system',
+            p_meta: p.meta ?? {},
+            p_inapp: p.inapp !== false,
+            p_email: !!p.email,
+        });
+        if (error) {
+            console.error('[adminService.broadcastNotification]', error);
+            return { success: false, notified: 0, emailed: 0, error: error.message };
+        }
+        const d = data as any;
+        return {
+            success: !!d?.success,
+            notified: Number(d?.notified) || 0,
+            emailed: Number(d?.emailed) || 0,
+            error: d?.error,
+        };
+    },
+
+    /**
      * Convenience: bulk-apply a single uniform subscription to every active
      * seller (used by the "Free for all" / "Paid for all" platform-mode
      * buttons). Returns counts of OK / failed.
@@ -509,6 +546,8 @@ export const adminService = {
         discount: number;
         expiresAt: Date | null;
         notes?: string;
+        /** v12.35 — location cap from the default package (unified pricing). */
+        maxBranches?: number;
     }): Promise<{ ok: number; failed: number; total: number }> {
         const { data: sellersData, error } = await supabase.rpc('admin_search_users', {
             p_query: '',
@@ -533,6 +572,7 @@ export const adminService = {
                         amount: params.amount,
                         notes: params.notes,
                         sendNotification: false,
+                        maxBranches: params.maxBranches,
                     })
                 )
             );
