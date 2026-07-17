@@ -17,7 +17,11 @@ export interface ContestQuestion {
     type: QuestionType;
     prompt: string;
     options?: string[];        // choice only
-    correctAnswer?: string;    // empty ⇒ not auto-graded (free answer)
+    correctAnswer?: string;    // legacy single answer (kept in sync = first of correctAnswers)
+    /** v12.37 — choice questions may accept SEVERAL correct answers; the
+     *  participant's single pick scores when it matches ANY of them.
+     *  Empty/absent ⇒ not auto-graded (free answer). */
+    correctAnswers?: string[];
     points?: number;           // default 1
     required?: boolean;
 }

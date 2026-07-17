@@ -25,6 +25,12 @@ const STATUS_META: Record<ContestStatus, { label: string; bg: string }> = {
 const inputCls = 'w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-emerald-500';
 const labelCls = 'block text-xs font-bold text-[var(--text-secondary)] mb-1.5';
 
+// v12.37 — the current set of correct answers for a choice question, with
+// fallback to the legacy single correctAnswer (pre-multi contests).
+const correctSetOf = (q: Partial<ContestQuestion>): string[] =>
+    ((q.correctAnswers && q.correctAnswers.length ? q.correctAnswers : (q.correctAnswer ? [q.correctAnswer] : []))
+        .filter((s) => (s || '').trim() !== ''));
+
 const blankContest = (): Partial<Contest> => ({
     title: '', description: '', prize: '', status: 'draft',
     questions: [], social_tasks: [], pass_mode: 'all_correct',
@@ -96,8 +102,8 @@ const AdminContests: React.FC = () => {
     //   اختيارات     = اختيار من متعدد        → options + the correct one
     const changeQuestionType = (id: string, type: QuestionType) =>
         updateQuestion(id, type === 'choice'
-            ? { type, options: ['', ''], correctAnswer: '' }
-            : { type, options: undefined, correctAnswer: '' });
+            ? { type, options: ['', ''], correctAnswer: '', correctAnswers: [] }
+            : { type, options: undefined, correctAnswer: '', correctAnswers: [] });
 
     const addOption = (qid: string) =>
         setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => q.id === qid ? { ...q, options: [...(q.options || []), ''] } : q) }));
@@ -107,19 +113,27 @@ const AdminContests: React.FC = () => {
             const opts = [...(q.options || [])];
             const prev = opts[idx];
             opts[idx] = val;
-            // keep the «correct» marker on the same option while its text is edited
-            const correctAnswer = q.correctAnswer && q.correctAnswer === prev ? val : q.correctAnswer;
-            return { ...q, options: opts, correctAnswer };
+            // keep the «correct» markers on the same option while its text is edited
+            const correctAnswers = correctSetOf(q).map((c) => (c === prev ? val : c));
+            return { ...q, options: opts, correctAnswers, correctAnswer: correctAnswers[0] || '' };
         }) }));
     const removeOption = (qid: string, idx: number) =>
         setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => {
             if (q.id !== qid) return q;
             const removed = (q.options || [])[idx];
             const opts = (q.options || []).filter((_, i) => i !== idx);
-            const correctAnswer = q.correctAnswer && q.correctAnswer === removed ? '' : q.correctAnswer;
-            return { ...q, options: opts, correctAnswer };
+            const correctAnswers = correctSetOf(q).filter((c) => c !== removed);
+            return { ...q, options: opts, correctAnswers, correctAnswer: correctAnswers[0] || '' };
         }) }));
-    const setCorrectOption = (qid: string, val: string) => updateQuestion(qid, { correctAnswer: val });
+    // v12.37 — tapping a circle TOGGLES that option in the correct set, so the
+    // owner can mark several right answers (tap again to unmark).
+    const toggleCorrectOption = (qid: string, val: string) =>
+        setDraft((d) => ({ ...d, questions: (d.questions || []).map((q) => {
+            if (q.id !== qid) return q;
+            const set = correctSetOf(q);
+            const correctAnswers = set.includes(val) ? set.filter((c) => c !== val) : [...set, val];
+            return { ...q, correctAnswers, correctAnswer: correctAnswers[0] || '' };
+        }) }));
     const addTask = () => setDraft((d) => ({ ...d, social_tasks: [...(d.social_tasks || []), { id: uid(), prompt: '' }] }));
     const updateTask = (id: string, prompt: string) => setDraft((d) => ({ ...d, social_tasks: (d.social_tasks || []).map((t) => t.id === id ? { ...t, prompt } : t) }));
     const removeTask = (id: string) => setDraft((d) => ({ ...d, social_tasks: (d.social_tasks || []).filter((t) => t.id !== id) }));
@@ -136,11 +150,14 @@ const AdminContests: React.FC = () => {
             // «صحيح / عدد الأسئلة» with no confusing weight number to manage.
             if (q.type === 'choice') {
                 const options = (q.options || []).map((o) => o.trim()).filter(Boolean);
-                const correctAnswer = options.includes((q.correctAnswer || '').trim()) ? (q.correctAnswer || '').trim() : '';
-                return { ...q, prompt, options, correctAnswer, points: 1 };
+                // v12.37 — keep only markers that still match a real option (deduped).
+                const correctAnswers = Array.from(new Set(
+                    correctSetOf(q).map((c) => c.trim()).filter((c) => options.includes(c))
+                ));
+                return { ...q, prompt, options, correctAnswers, correctAnswer: correctAnswers[0] || '', points: 1 };
             }
             // نص (open) carries no correct answer; فراغ keeps its graded answer.
-            return { ...q, prompt, options: undefined, correctAnswer: q.type === 'fill' ? (q.correctAnswer || '').trim() : '', points: 1 };
+            return { ...q, prompt, options: undefined, correctAnswers: [], correctAnswer: q.type === 'fill' ? (q.correctAnswer || '').trim() : '', points: 1 };
         });
         // Validate before hitting the DB so the admin gets a clear, Arabic reason.
         for (let i = 0; i < cleaned.length; i++) {
@@ -348,12 +365,13 @@ const AdminContests: React.FC = () => {
 
                             {q.type === 'choice' && (
                                 <div className="space-y-1.5">
-                                    <div className="text-[11px] text-[var(--text-secondary)]">اضغط الدائرة بجانب الإجابة الصحيحة ✅</div>
+                                    {/* v12.37 — عدة إجابات صحيحة: الدائرة تبديل (ضغطة تحدّد، ضغطة تلغي) */}
+                                    <div className="text-[11px] text-[var(--text-secondary)]">اضغط الدائرة بجانب كل إجابة صحيحة ✅ — يمكنك تحديد <b>أكثر من واحدة</b>، والضغط مرة أخرى يلغيها.</div>
                                     {(q.options || []).map((opt, oi) => {
-                                        const isCorrect = !!q.correctAnswer && q.correctAnswer === opt && opt.trim() !== '';
+                                        const isCorrect = opt.trim() !== '' && correctSetOf(q).includes(opt);
                                         return (
                                             <div key={oi} className="flex items-center gap-2">
-                                                <button type="button" onClick={() => opt.trim() && setCorrectOption(q.id, opt)} title="حدّد كإجابة صحيحة"
+                                                <button type="button" onClick={() => opt.trim() && toggleCorrectOption(q.id, opt)} title={isCorrect ? 'إلغاء التحديد' : 'حدّد كإجابة صحيحة'}
                                                     className={`w-7 h-7 shrink-0 rounded-full border-2 flex items-center justify-center text-xs font-extrabold transition-colors ${isCorrect ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-[var(--border-color)] text-transparent hover:border-emerald-400'}`}>✓</button>
                                                 <input className={inputCls} placeholder={`الاختيار ${oi + 1}`} value={opt} onChange={(e) => updateOption(q.id, oi, e.target.value)} />
                                                 <button type="button" onClick={() => removeOption(q.id, oi)} disabled={(q.options || []).length <= 2} title="حذف الاختيار" className="w-9 h-9 shrink-0 rounded-lg bg-red-50 text-red-600 text-sm disabled:opacity-30 disabled:cursor-not-allowed">🗑</button>
@@ -361,7 +379,9 @@ const AdminContests: React.FC = () => {
                                         );
                                     })}
                                     <button type="button" onClick={() => addOption(q.id)} className="w-full py-2 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-dashed border-purple-300">➕ أضف اختيار</button>
-                                    {!q.correctAnswer && <div className="text-[11px] text-amber-600">لم تحدّد الإجابة الصحيحة (بلا تحديد = هذا السؤال بلا تصحيح).</div>}
+                                    {correctSetOf(q).length === 0
+                                        ? <div className="text-[11px] text-amber-600">لم تحدّد أي إجابة صحيحة (بلا تحديد = هذا السؤال بلا تصحيح).</div>
+                                        : correctSetOf(q).length > 1 && <div className="text-[11px] text-emerald-600">✓ {correctSetOf(q).length} إجابات صحيحة — يكفي المشارك اختيار أي واحدة منها.</div>}
                                 </div>
                             )}
 
