@@ -498,6 +498,34 @@ export const adminService = {
         return { success: true };
     },
 
+    // ================================================================
+    // v12.38 — «🧠 المحلل الذكي» wrappers
+    // ================================================================
+    /** Full platform analysis (peak hours, funnel, growth, renewals, seller
+     *  health, geo/category performance, buyer behavior). Admin-gated RPC. */
+    async getAiAnalyst(days = 30): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_analyst', { p_days: days });
+        if (error) { console.error('[adminService.getAiAnalyst]', error); return null; }
+        return data;
+    },
+
+    /** Per-merchant deep-dive + same-city/category benchmarks. */
+    async getAiSellerReport(storeId: string): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_seller_report', { p_store_id: storeId });
+        if (error) { console.error('[adminService.getAiSellerReport]', error); return null; }
+        return data;
+    },
+
+    /** Owner-approved send of ONE recommendation to ONE user (+optional email). */
+    async notifyUser(p: { userId: string; titleAr: string; bodyAr: string; email?: boolean }): Promise<{ success: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_notify_user', {
+            p_user_id: p.userId, p_title_ar: p.titleAr, p_body_ar: p.bodyAr, p_email: !!p.email,
+        });
+        if (error) return { success: false, error: error.message };
+        const d = data as any;
+        return { success: !!d?.success, error: d?.error };
+    },
+
     /**
      * v12.35 — one gated broadcast to an audience: in-app notification rows
      * (fanned out per user, reaches web + Telegram via the outbox poller)

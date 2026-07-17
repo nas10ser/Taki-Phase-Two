@@ -22,6 +22,7 @@ export type AdminTab =
     | 'reports'
     | 'moderation'
     | 'analytics'
+    | 'analyst'
     | 'tools'
     | 'locations'
     | 'contests'
@@ -91,6 +92,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
         { kind: 'nav', id: 'nav-moderation', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
         { kind: 'nav', id: 'nav-analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
+        { kind: 'nav', id: 'nav-analyst',   label: 'المحلل الذكي',     icon: '🧠', keywords: 'ai analyst insights churn محلل ذكي رؤى عزوف توصيات ذروة', tab: 'analyst' },
         { kind: 'nav', id: 'nav-tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
         { kind: 'nav', id: 'nav-locations', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
         { kind: 'nav', id: 'nav-launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },

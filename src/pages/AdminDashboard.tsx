@@ -39,6 +39,7 @@ const AdminTax       = lazy(() => import('./admin/AdminTax'));
 const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
 const AdminMessaging = lazy(() => import('./admin/AdminMessaging'));
 const AdminAdmins    = lazy(() => import('./admin/AdminAdmins'));
+const AdminAnalyst   = lazy(() => import('./admin/AdminAnalyst'));
 
 type Tab = AdminTab;
 
@@ -60,6 +61,7 @@ const TABS: TabDef[] = [
     { value: 'reports',   label: 'البلاغات والشكاوى', icon: '🚩',  gradient: 'from-red-500 to-rose-600',         hint: 'البلاغات بين المستخدمين والشكاوى للإدارة',           permission: 'tab_reports'   },
     { value: 'moderation', label: 'الإنذارات',        icon: '🛡',  gradient: 'from-rose-600 to-red-700',         hint: 'رصد آلي: كلمات تحرش في المحادثات/التقييمات/العروض + صور مرفوضة — عدد الإنذارات لكل متجر وسببها', permission: 'tab_reports' },
     { value: 'analytics', label: 'التحليلات',         icon: '📊',  gradient: 'from-amber-500 to-orange-600',     hint: 'مؤشرات لحظية ورسوم بيانية',                          permission: 'tab_analytics' },
+    { value: 'analyst',   label: 'المحلل الذكي',      icon: '🧠',  gradient: 'from-indigo-500 to-violet-700',    hint: 'تحليل آلي كامل: عزوف التجار وأسبابه + ذروة الساعات + فرص المدن + توصية لكل تاجر تُرسل بموافقتك', permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
     { value: 'locations', label: 'المولات والأسواق',  icon: '🏬',  gradient: 'from-teal-500 to-emerald-600',     hint: 'إضافة وتعديل وحذف المولات والأسواق (الموقع + البوتين)', permission: 'tab_tools'     },
     { value: 'contests',  label: 'المسابقات',         icon: '🎁',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'استبيانات بجوائز + تصحيح تلقائي + سحب',              permission: 'tab_contests'  },
@@ -335,6 +337,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'reports'   && hasPermission('tab_reports')   && <AdminReports />}
                         {activeTab === 'moderation' && hasPermission('tab_reports')  && <AdminModeration />}
                         {activeTab === 'analytics' && hasPermission('tab_analytics') && <AdminAnalytics />}
+                        {activeTab === 'analyst'   && hasPermission('tab_analytics') && <AdminAnalyst />}
                         {activeTab === 'tools'     && hasPermission('tab_tools')     && <AdminTools />}
                         {activeTab === 'locations' && hasPermission('tab_tools')     && <AdminLocations />}
                         {activeTab === 'contests'  && hasPermission('tab_contests')  && <AdminContests />}

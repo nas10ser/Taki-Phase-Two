@@ -35,6 +35,21 @@ const StoreDetails: React.FC = () => {
         return () => { cancelled = true; };
     }, [id, isFollowed]);
 
+    // v12.38 — «المحلل الذكي»: سجّل زيارة صفحة المتجر (مرة لكل متجر في الجلسة؛
+    // القاعدة تمنع التكرار خلال ٣٠ دقيقة أيضاً). صامتة تماماً ولا تعطل شيئاً،
+    // ولا تُحسب زيارة صاحب المتجر لصفحته.
+    useEffect(() => {
+        if (!id || user?.id === id) return;
+        try {
+            const key = `taki_sv_${id}`;
+            if (sessionStorage.getItem(key)) return;
+            sessionStorage.setItem(key, '1');
+        } catch { /* private mode — still track */ }
+        import('../services/supabaseClient')
+            .then(({ supabase }) => supabase.rpc('track_store_view', { p_store_id: id }))
+            .catch(() => { /* best-effort */ });
+    }, [id, user?.id]);
+
     const [editPhone, setEditPhone] = useState(profile.phone || '');
     // Provide phone number as default bio if empty
     const defaultBio = profile.bio ? profile.bio : (isRTL 

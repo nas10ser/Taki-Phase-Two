@@ -2157,8 +2157,9 @@ const SellerDashboard: React.FC = () => {
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: '1.25rem' }}>🛡</span>
                                     {isRTL ? 'حدود الحجز للمشتري' : 'Buyer booking limits'}
-                                    <span style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff', fontSize: '0.62rem', fontWeight: 900, padding: '3px 9px', borderRadius: 999 }}>
-                                        {isRTL ? '⚠️ مهم — لا تتجاوزه' : '⚠️ Important'}
+                                    {/* v12.38 — رجعت «اختياري» بطلب ناصر (كانت «مهم — لا تتجاوزه» في v12.34) */}
+                                    <span style={{ background: 'var(--gray-100)', color: 'var(--text-secondary)', fontSize: '0.62rem', fontWeight: 900, padding: '3px 9px', borderRadius: 999, border: '1px solid var(--border-color)' }}>
+                                        {isRTL ? 'اختياري' : 'Optional'}
                                     </span>
                                 </span>
                                 <span style={{ display: 'block', fontWeight: 600, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.6 }}>
