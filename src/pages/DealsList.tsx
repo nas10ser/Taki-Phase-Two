@@ -48,6 +48,11 @@ const DealsList: React.FC = () => {
         type === 'discount' ? 'discount' : type === 'trending' ? 'reliability' : 'reliability'
     );
     const [searchQuery, setSearchQuery] = useState('');
+    // v12.40 — «المحلل الذكي»: سجّل الكلمة المبحوثة (debounce داخل المتتبع)
+    useEffect(() => {
+        if (!searchQuery.trim()) return;
+        import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'deals')).catch(() => {});
+    }, [searchQuery]);
     // «مفتوح الآن» (العروض الحيّة) هو الافتراضي. v11.77
     const [openNow, setOpenNow] = useState(true);
     // «عروض حقيقية» — يُظهر فقط العروض التي صوّت المشترون أنها حقيقية (أغلبية).

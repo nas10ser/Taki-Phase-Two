@@ -321,14 +321,34 @@ const AdminAnalyst: React.FC = () => {
     const [bulkEmail, setBulkEmail] = useState(false);
     const [bulkSending, setBulkSending] = useState(false);
     const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+    // v12.40 — تفاعل الأقسام + البحث + المستكشف + منافسو التاجر المفتوح
+    const [pulse2, setPulse2] = useState<any | null>(null);
+    const [mxCity, setMxCity] = useState<string>('all');
+    const [mxCat, setMxCat] = useState<string>('all');
+    const [matrix, setMatrix] = useState<any | null>(null);
+    const [matrixLoading, setMatrixLoading] = useState(false);
+    const [competitors, setCompetitors] = useState<any | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
-        const d = await adminService.getAiAnalyst(days);
+        const [d, p2] = await Promise.all([
+            adminService.getAiAnalyst(days),
+            adminService.getAiPulse2(),
+        ]);
         setData(d);
+        setPulse2(p2);
         setLoading(false);
     }, [days]);
     useEffect(() => { load(); }, [load]);
+
+    // المستكشف: أي تغيير في (المدينة × القسم) يجلب شريحته فوراً
+    useEffect(() => {
+        let alive = true;
+        setMatrixLoading(true);
+        adminService.getAiMatrix(mxCity === 'all' ? null : mxCity, mxCat === 'all' ? null : mxCat)
+            .then((m) => { if (alive) { setMatrix(m); setMatrixLoading(false); } });
+        return () => { alive = false; };
+    }, [mxCity, mxCat]);
 
     const insights = useMemo(() => buildInsights(data), [data]);
     const sellers: SellerRow[] = useMemo(() => {
@@ -382,12 +402,17 @@ const AdminAnalyst: React.FC = () => {
     };
 
     const openReport = async (s: SellerRow) => {
-        if (openSeller === s.id) { setOpenSeller(null); setReport(null); return; }
+        if (openSeller === s.id) { setOpenSeller(null); setReport(null); setCompetitors(null); return; }
         setOpenSeller(s.id);
         setReport(null);
+        setCompetitors(null);
         setReportLoading(true);
-        const r = await adminService.getAiSellerReport(s.id);
+        const [r, comp] = await Promise.all([
+            adminService.getAiSellerReport(s.id),
+            adminService.getAiCompetitors(s.id),
+        ]);
         setReport(r);
+        setCompetitors(comp);
         setReportLoading(false);
         setTipDraft(buildSellerTip(s, r).body);
         setTipEmail(false);
@@ -592,6 +617,21 @@ const AdminAnalyst: React.FC = () => {
                                                         <div className="text-[var(--text-secondary)]">«{report.top_deal.item_name}» — {arNum(report.top_deal.bookings)} حجزاً، {arNum(report.top_deal.views)} مشاهدة</div>
                                                     </div>
                                                 )}
+                                                {/* v12.40 — أقرب منافسيه المباشرين (نفس المدينة + التصنيف) */}
+                                                {(competitors?.competitors || []).length > 0 && (
+                                                    <div className="bg-[var(--card-bg)] rounded-xl p-2.5 col-span-2">
+                                                        <div className="font-bold text-[var(--text-primary)] mb-1">⚔️ منافسوه المباشرون ({competitors.city || '—'} / {catLabel(competitors.category)})</div>
+                                                        <div className="space-y-1">
+                                                            {competitors.competitors.map((c: any) => (
+                                                                <div key={c.id} className="flex items-center justify-between text-[var(--text-secondary)]">
+                                                                    <span className="font-bold text-[var(--text-primary)]">{c.shop}</span>
+                                                                    <span className="tabular-nums">📦 {arNum(c.bookings_30)}/٣٠ي • 🏷 {arNum(c.active_deals)} • ⭐ {c.rating_avg ?? '—'} • 👁 {arNum(c.views_30)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="text-[10px] text-[var(--text-secondary)] mt-1">قارن أرقامه بهم — إن كان أضعف منهم فتوصيتك له أدناه هي الفرق.</div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div>
@@ -704,6 +744,136 @@ const AdminAnalyst: React.FC = () => {
                         {Number((data.content || {}).no_image) + Number((data.content || {}).one_image) > 0 && <li><b className="text-[var(--text-primary)]">جودة المحتوى تسويق مجاني:</b> استخدم قالب «جودة الصور» بالإرسال المستهدف — منصة صورها جميلة تبيع نفسها.</li>}
                     </ul>
                 </div>
+            </section>
+
+            {/* 🎯 v12.40 — المستكشف: مدينة × قسم × ساعة */}
+            <section className="bg-[var(--card-bg)] border-2 border-emerald-200 rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🎯 المستكشف: أي قسم؟ أي مدينة؟ أي ساعة؟</h3>
+                <div className="text-[11px] text-[var(--text-secondary)]">اختر الشريحة وسيعرض لك حركتها بالساعة (حجوزات ٩٠ يوماً + مشاهدات/نقرات) وأفضل عروضها — هكذا تعرف أين الطلب ومتى بالضبط.</div>
+                <div className="flex flex-wrap gap-2">
+                    <select value={mxCity} onChange={(e) => setMxCity(e.target.value)}
+                        className="flex-1 min-w-[120px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏙 كل المدن</option>
+                        {((data.cities || []) as GeoRow[]).filter((c) => c.city && c.city !== 'غير محدد').map((c) => <option key={c.city} value={c.city}>{c.city}</option>)}
+                    </select>
+                    <select value={mxCat} onChange={(e) => setMxCat(e.target.value)}
+                        className="flex-1 min-w-[120px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏷 كل الأقسام</option>
+                        {((data.categories || []) as GeoRow[]).filter((c) => c.category).map((c) => <option key={c.category} value={c.category}>{catLabel(c.category)}</option>)}
+                    </select>
+                </div>
+                {matrixLoading ? (
+                    <div className="h-24 bg-[var(--gray-100)] rounded-xl animate-pulse" />
+                ) : matrix ? (
+                    <>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                            <Tile icon="📦" label="حجوزات ٣٠ي" value={arNum(Number(matrix.totals?.bookings_30) || 0)} />
+                            <Tile icon="👁" label="مشاهدات ٣٠ي" value={arNum(Number(matrix.totals?.views_30) || 0)} />
+                            <Tile icon="👆" label="نقرات ٣٠ي" value={arNum(Number(matrix.totals?.clicks_30) || 0)} />
+                            <Tile icon="🏷" label="عروض نشطة" value={arNum(Number(matrix.totals?.active_deals) || 0)} />
+                            <Tile icon="🏪" label="متاجر" value={arNum(Number(matrix.totals?.stores) || 0)} />
+                        </div>
+                        <div className="font-bold text-xs text-[var(--text-primary)]">⏰ حجوزات هذه الشريحة بالساعة (٩٠ يوماً، توقيت الرياض)</div>
+                        <Bars data={(() => { const m = new Map(((matrix.hours || []) as HourRow[]).map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#10b981" height={90} />
+                        {((matrix.view_hours || []) as HourRow[]).length > 0 && (
+                            <>
+                                <div className="font-bold text-xs text-[var(--text-primary)]">👁 المشاهدات/النقرات بالساعة</div>
+                                <Bars data={(() => { const m = new Map(((matrix.view_hours || []) as HourRow[]).map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#0ea5e9" height={90} />
+                            </>
+                        )}
+                        {((matrix.top_deals || []) as any[]).length > 0 && (
+                            <div className="text-[11px] space-y-1">
+                                <div className="font-bold text-[var(--text-primary)]">🏆 أفضل عروض الشريحة</div>
+                                {(matrix.top_deals as any[]).map((t, i) => (
+                                    <div key={i} className="flex items-center justify-between text-[var(--text-secondary)] bg-[var(--body-bg)] rounded-lg px-2.5 py-1.5">
+                                        <span className="truncate ml-2">«{t.item_name}» — {t.shop_name}</span>
+                                        <span className="tabular-nums whitespace-nowrap">📦 {arNum(t.bookings)} • 👁 {arNum(t.views)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ) : <div className="text-[11px] text-[var(--text-secondary)]">تعذّر التحميل — غيّر الاختيار للمحاولة مجدداً.</div>}
+            </section>
+
+            {/* 💸 v12.40 — أقسام تحتاج تخفيضات / أقسام عليها طلب بلا معروض */}
+            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">💸 أين يجب أن تتركز التخفيضات؟ (تفاعل كل قسم)</h3>
+                <div className="space-y-1.5">
+                    {(((pulse2?.cat_engagement || []) as any[])).map((c) => {
+                        const eng = (Number(c.views_30) || 0) + (Number(c.clicks_30) || 0);
+                        const b30 = Number(c.bookings_30) || 0;
+                        const verdict = b30 > 0 && Number(c.active_deals) === 0
+                            ? { t: '🔥 طلب بلا معروض — استقطب تجاراً فوراً', col: '#ef4444' }
+                            : eng >= 10 && b30 / Math.max(eng, 1) < 0.05
+                            ? { t: '💸 يُشاهَد ولا يُحجز — يحتاج تخفيضات أقوى', col: '#f59e0b' }
+                            : b30 >= 5
+                            ? { t: '✅ قسم رائج', col: '#10b981' }
+                            : { t: '👀 هادئ', col: 'var(--text-secondary)' };
+                        return (
+                            <div key={c.category} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2 gap-2 flex-wrap">
+                                <span className="font-bold text-[var(--text-primary)]">{catLabel(c.category)}</span>
+                                <span className="text-[var(--text-secondary)] tabular-nums">👁 {arNum(Number(c.views_30) || 0)} • 👆 {arNum(Number(c.clicks_30) || 0)} • 📦 {arNum(b30)} • 🏷 {arNum(Number(c.active_deals) || 0)}</span>
+                                <span className="font-bold" style={{ color: verdict.col }}>{verdict.t}</span>
+                            </div>
+                        );
+                    })}
+                    {((pulse2?.cat_engagement || []) as any[]).length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا بيانات بعد.</div>}
+                </div>
+                <div className="text-[10px] text-[var(--text-secondary)] mt-2">المشاهدات/النقرات الزمنية بدأ تسجيلها في v12.38 — تكتمل دقتها خلال أيام. الحكم «طلب بلا معروض» فوري ودقيق من الحجوزات.</div>
+            </section>
+
+            {/* 🔎 v12.40 — عمليات البحث */}
+            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">🔎 ماذا يبحث الزوار؟ (آخر ٣٠ يوماً — {arNum(Number(pulse2?.search_total_30) || 0)} عملية بحث)</h3>
+                {((pulse2?.searches || []) as any[]).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                        {(pulse2.searches as any[]).map((s) => (
+                            <span key={s.q} className="text-[11px] font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">
+                                {s.q} <span className="text-[var(--text-secondary)]">×{arNum(Number(s.n) || 0)}</span>
+                            </span>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                        بدأنا اليوم تسجيل كل كلمة بحث في الرئيسية وقائمة العروض — خلال أيام سترى هنا <b>أعلى الكلمات المبحوثة</b>:
+                        كل كلمة تتكرر بلا عروض تلبّيها = طلب جاهز تستقطب له تاجراً أو تطلب من تجارك توفيره.
+                    </div>
+                )}
+            </section>
+
+            {/* 📢 v12.40 — خطة التسويق الجاهزة */}
+            <section className="bg-[var(--card-bg)] border-2 border-amber-200 rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📢 خطة التسويق الجاهزة (خطوة بخطوة — انسخ ونفّذ)</h3>
+                <div className="grid md:grid-cols-2 gap-2 text-[11px]">
+                    <div className="bg-[var(--body-bg)] rounded-xl p-3 leading-relaxed">
+                        <div className="font-extrabold text-[var(--text-primary)] mb-1">🏪 جذب التجار (رتّبها المحلل بأولوية العائد)</div>
+                        <ol className="pr-4 list-decimal space-y-1 text-[var(--text-secondary)]">
+                            <li>ابدأ بشرائح «🔥 طلب بلا معروض» و«⚡» أعلاه — الطلب موجود والمنافسة صفر.</li>
+                            <li>زر السوق/المول المستهدف وقت الذروة (انظر المستكشف) وكلّم المحلات مباشرة، أو أرسل لواتساب المحل.</li>
+                            <li>أرسل لهم النص الجاهز أدناه + باركود دعوة تاجر من لوحتك.</li>
+                            <li>قدّم «أول ١٤ يوماً مجاناً» (زر التجربة في وضع الاشتراك العام) — يزيل التردد.</li>
+                            <li>بعد انضمامه أرسل له توصية «تنشيط متجر خامل» من الإرسال المستهدف ليبدأ صح.</li>
+                        </ol>
+                        <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
+                            «أهلاً 👋 منصة تاكي توصل عروض محلك لمشترين يبحثون فعلاً في مدينتك — تحليلنا يُظهر طلباً على قسمك الآن. التسجيل دقائق وأول ١٤ يوماً مجاناً: taki-test-eight.vercel.app»
+                        </div>
+                    </div>
+                    <div className="bg-[var(--body-bg)] rounded-xl p-3 leading-relaxed">
+                        <div className="font-extrabold text-[var(--text-primary)] mb-1">🛒 جذب المشترين (بتوقيت الذروة)</div>
+                        <ol className="pr-4 list-decimal space-y-1 text-[var(--text-secondary)]">
+                            <li>انشر إعلانات سناب/تيك توك مستهدفة جغرافياً على مدن «✅ متوازن» — قبل ساعة الذروة بساعتين.</li>
+                            <li>مجموعات واتساب/تيليجرام الخاصة بكل مدينة — انشر أقوى ٣ عروض بصورها + رابط مباشر.</li>
+                            <li>شغّل مسابقة بجائزة من تبويب المسابقات + إشعار تلقائي — أفضل أداة إرجاع للخاملين ({arNum(Number(buyers.dormant_30) || 0)} خامل حالياً).</li>
+                            <li>اطلب من كل تاجر تعليق باركود متجره عند الكاشير — كل زبون يمسحه يصبح مستخدماً.</li>
+                            <li>قبل كل موسم (انظر التقويم أعلاه): بانر + حملة مجدولة من «الإشعارات والرسائل».</li>
+                        </ol>
+                        <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
+                            «خصومات حقيقية في {(((data.cities || [])[0] as GeoRow | undefined)?.city) || 'مدينتك'} تصل ٥٠٪ 🔥 احجز قبل نفاد الكمية — بدون تحميل تطبيق: taki-test-eight.vercel.app»
+                        </div>
+                    </div>
+                </div>
+                <div className="text-[10px] text-[var(--text-secondary)]">النصوص قابلة للنسخ (اضغط عليها مطولاً) — وتتحدث تلقائياً بأقوى مدنك الحالية.</div>
             </section>
 
             {/* 🖼 v12.39 — جودة محتوى العروض */}

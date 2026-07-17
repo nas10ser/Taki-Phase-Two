@@ -516,6 +516,27 @@ export const adminService = {
         return data;
     },
 
+    /** v12.40 — مستكشف (مدينة × قسم × ساعة): حجوزات/مشاهدات/نقرات الشريحة. */
+    async getAiMatrix(city: string | null, category: string | null): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_matrix', { p_city: city, p_category: category });
+        if (error) { console.error('[adminService.getAiMatrix]', error); return null; }
+        return data;
+    },
+
+    /** v12.40 — تفاعل الأقسام (مشاهدات/نقرات/حجوزات) + أعلى كلمات البحث. */
+    async getAiPulse2(): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_pulse2');
+        if (error) { console.error('[adminService.getAiPulse2]', error); return null; }
+        return data;
+    },
+
+    /** v12.40 — أقرب ٣ منافسين للتاجر (نفس المدينة + التصنيف). */
+    async getAiCompetitors(storeId: string): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_seller_competitors', { p_store_id: storeId });
+        if (error) { console.error('[adminService.getAiCompetitors]', error); return null; }
+        return data;
+    },
+
     /** Owner-approved send of ONE recommendation to ONE user (+optional email). */
     async notifyUser(p: { userId: string; titleAr: string; bodyAr: string; email?: boolean }): Promise<{ success: boolean; error?: string }> {
         const { data, error } = await supabase.rpc('admin_notify_user', {

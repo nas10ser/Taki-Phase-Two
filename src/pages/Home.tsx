@@ -100,6 +100,8 @@ const Home: React.FC = () => {
         // closest store name surfaces first and behaves identically on
         // every page.
         setMatchingStores(dealService.matchStores(searchQuery.trim(), storeProfiles, 15) as any);
+        // v12.40 — «المحلل الذكي»: سجّل الكلمة المبحوثة (debounce داخلي)
+        import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'home')).catch(() => {});
     }, [searchQuery, storeProfiles]);
 
     const filteredCities = useMemo(() => {
