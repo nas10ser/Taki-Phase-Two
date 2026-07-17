@@ -13,9 +13,13 @@ interface State {
 }
 
 // A stale build trying to lazy-load a chunk that the new deploy renamed.
+// «Importing a module script failed» + bare «Load failed» are iOS Safari's
+// wording for the same failure — without them iPhones got the generic error
+// screen instead of the silent auto-recovery (v12.36 fix, seen live by the
+// owner right after the v12.35 deploy).
 const isChunkError = (err?: Error | null): boolean =>
   err?.name === 'ChunkLoadError' ||
-  /Loading chunk|Failed to fetch dynamically imported module|error loading dynamically imported module/i.test(err?.message ?? '');
+  /Loading chunk|Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|^Load failed$/i.test(err?.message ?? '');
 
 // Guard so a genuinely broken build can't reload-loop forever. If we already
 // auto-recovered within this window and STILL hit a chunk error, we stop and

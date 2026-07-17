@@ -23,6 +23,7 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     // v12.34 — تكبير الباركود بالضغط (شاشة كاملة) + مشاركته كصورة.
     const [qrZoom, setQrZoom] = useState(false);
     const [sharingQr, setSharingQr] = useState(false);
+    const [savingQr, setSavingQr] = useState(false);
 
     const load = useCallback(async () => {
         if (loading || code) return;
@@ -57,9 +58,26 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
         return new File([blob], `taki-qr-${code || 'store'}.png`, { type: 'image/png' });
     };
 
+    // iOS لا يسمح لمواقع الويب بالكتابة في الاستديو (الصور) مباشرة — رابط
+    // التنزيل يذهب لتطبيق «الملفات» (ما لاحظه ناصر v12.36). الطريق الرسمي
+    // الوحيد للاستديو هو ورقة المشاركة: خيار «حفظ الصورة» فيها يحفظ في الصور.
+    const isIOS = (): boolean =>
+        /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
     const downloadQr = async () => {
+        if (savingQr) return;
+        setSavingQr(true);
         try {
             const file = await fetchQrFile();
+            const nav: any = navigator;
+            if (isIOS() && nav.canShare?.({ files: [file] }) && nav.share) {
+                await nav.share({ files: [file], title: 'TAKI QR' });
+                onAlert(isRTL
+                    ? '💡 اختر «حفظ الصورة» من القائمة لتُحفظ في الاستديو (تطبيق الصور).'
+                    : '💡 Choose “Save Image” from the sheet to store it in your Photos.');
+                return;
+            }
             const url = URL.createObjectURL(file);
             const a = document.createElement('a');
             a.href = url;
@@ -68,9 +86,14 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 4000);
-            onAlert(isRTL ? '✅ تم حفظ صورة الباركود — تجدها في الصور/التنزيلات.' : '✅ QR image saved to your downloads/photos.');
-        } catch {
-            onAlert(isRTL ? '⚠️ تعذّر الحفظ التلقائي — اضغط مطوّلاً على صورة الباركود واختر «حفظ الصورة».' : '⚠️ Auto-save failed — long-press the QR image and choose “Save image”.');
+            onAlert(isRTL ? '✅ تم حفظ صورة الباركود في التنزيلات.' : '✅ QR image saved to your downloads.');
+        } catch (e: any) {
+            // إلغاء ورقة المشاركة ليس خطأ.
+            if (!String(e?.name || '').includes('Abort')) {
+                onAlert(isRTL ? '⚠️ تعذّر الحفظ — اضغط مطوّلاً على صورة الباركود واختر «إضافة إلى الصور».' : '⚠️ Save failed — long-press the QR image and choose “Add to Photos”.');
+            }
+        } finally {
+            setSavingQr(false);
         }
     };
 
@@ -213,9 +236,13 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                                                 ? (isRTL ? '⏳ جاري التجهيز…' : '⏳ Preparing…')
                                                 : (isRTL ? '📤 مشاركة الباركود كصورة' : '📤 Share QR as image')}
                                         </button>
-                                        <button type="button" onClick={downloadQr}
-                                            style={{ flex: 1, background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 8px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}>
-                                            ⬇️ {isRTL ? 'حفظ الصورة' : 'Save image'}
+                                        <button type="button" onClick={downloadQr} disabled={savingQr}
+                                            style={{ flex: 1, background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 8px', fontWeight: 900, fontSize: '0.8rem', cursor: savingQr ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: savingQr ? 0.7 : 1 }}>
+                                            {savingQr
+                                                ? (isRTL ? '⏳ جاري التجهيز…' : '⏳ Preparing…')
+                                                : isIOS()
+                                                    ? (isRTL ? '📷 حفظ في الاستديو' : '📷 Save to Photos')
+                                                    : (isRTL ? '⬇️ حفظ الصورة' : '⬇️ Save image')}
                                         </button>
                                     </div>
                                     <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155', marginTop: 10, lineHeight: 1.6 }}>
