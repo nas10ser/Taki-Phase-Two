@@ -7,6 +7,7 @@ import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
 import InAppBanner from './components/InAppBanner';
 import SeasonFX from './components/SeasonFX';
+import { campaignPublicLive, campaignSellerOpen } from './data/seasons';
 import { isTelegramMiniApp } from './services/telegramMiniApp';
 
 // True only inside Telegram AND when the user arrived via the bot's "ربط حسابي"
@@ -198,12 +199,15 @@ const AuthRedirector = () => {
     return null;
 };
 
-// Gate the seasonal page on the admin-controlled flag. When the section
-// is hidden, navigating directly to /seasonal silently redirects home so
-// stale links don't leak the page.
+// v12.48 — بوابة صفحة عروض الموسم: تفتح للعامة خلال النافذة العامة التي
+// حددها المالك فقط (public_from → public_to)، وللتجار والأدمن معاينة مبكرة
+// خلال نافذة إضافة العروض. خارج ذلك أي رابط قديم يعود للرئيسية بصمت.
 const SeasonalGate: React.FC = () => {
-    const { platformSettings } = useApp();
-    if (!platformSettings.seasonalOffersVisible) {
+    const { platformSettings, user } = useApp();
+    const camp = platformSettings.seasonCampaign;
+    const allowed = campaignPublicLive(camp)
+        || (campaignSellerOpen(camp) && (user?.userType === 'seller' || user?.userType === 'admin'));
+    if (!allowed) {
         return <Redirect to="/" />;
     }
     return <SeasonalOffers />;

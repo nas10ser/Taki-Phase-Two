@@ -1,158 +1,129 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
-import { pushService } from '../services/pushService';
+import DealCard from '../components/DealCard';
+import { Deal } from '../data/mock';
+import { getSeasonById, campaignPublicLive, campaignSellerOpen } from '../data/seasons';
+import { isDealComingSoon, isDealExpiredByTime } from '../utils/helpers';
+import { useNowTick } from '../utils/useNowTick';
 
+/**
+ * v12.48 — صفحة عروض الموسم الحصرية (أعيد بناؤها من placeholder «قريباً»).
+ * تعرض فقط العروض التي وسمها التجار بموسم الحملة النشطة (deals.season_id)
+ * داخل النافذة التي حددها المالك. الوصول:
+ *  - العامة: خلال النافذة العامة (public_from → public_to) فقط — البوابة في
+ *    App.tsx (SeasonalGate) تعيد التوجيه للرئيسية خارجها.
+ *  - التجار والأدمن: معاينة مبكرة خلال نافذة إضافة العروض.
+ */
 const SeasonalOffers: React.FC = () => {
     const history = useHistory();
-    const { language, customAlert } = useApp();
+    const { language, deals, platformSettings, blockedMerchants, user } = useApp();
     const isRTL = language === 'ar';
-    const [notifyState, setNotifyState] = useState<'idle' | 'subscribing' | 'done'>('idle');
+    const nowTick = useNowTick(15000);
 
-    const handleNotifyMe = async () => {
-        if (notifyState !== 'idle') return;
-        setNotifyState('subscribing');
-        try {
-            // pushService stores the subscription endpoint in Supabase
-            // (push_subscriptions row keyed by user_id) — that's the
-            // record we use to fire the seasonal alert. No local flag
-            // needed; the DB row IS the opt-in.
-            await pushService.ensurePermissionAndSubscribe();
-            setNotifyState('done');
-            await customAlert(isRTL ? '✅ سنخبرك أول من يعلم بانطلاق الموسم!' : '✅ We will notify you the moment the season launches!');
-        } catch (err: any) {
-            setNotifyState('idle');
-            await customAlert(isRTL
-                ? '❌ تعذر تفعيل التنبيهات. تأكد من السماح للموقع بإرسال إشعارات في إعدادات المتصفح.'
-                : '❌ Could not enable notifications. Please allow notifications in your browser settings.');
-        }
+    const camp = platformSettings.seasonCampaign;
+    const season = camp ? getSeasonById(camp.seasonId) : undefined;
+    const publicLive = campaignPublicLive(camp);
+    const earlyPreview = !publicLive && campaignSellerOpen(camp)
+        && (user?.userType === 'seller' || user?.userType === 'admin');
+
+    const hasStock = (d: Deal) => {
+        if (d.quantity === 'unlimited') return true;
+        if (typeof d.quantity === 'number' && d.quantity > 0) return true;
+        const initial = d.initialQuantity;
+        return !(typeof initial === 'number' && initial > 0);
     };
 
-    return (
-        <div className="page-content" style={{ 
-            background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)', 
-            minHeight: '100vh', 
-            color: 'white',
-            direction: isRTL ? 'rtl' : 'ltr'
-        }}>
-            {/* Premium Header */}
-            <div style={{ 
-                height: 300, 
-                position: 'relative', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                textAlign: 'center',
-                padding: '0 20px'
-            }}>
-                <div style={{
-                    position: 'absolute',
-                    top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundImage: 'url(https://images.unsplash.com/photo-1543332164-6e82f355badc?w=1200)',
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                    opacity: 0.3,
-                    zIndex: 0
-                }} />
-                
-                <div style={{ zIndex: 1 }}>
-                    <div style={{ 
-                        background: 'rgba(80, 80, 90, 0.3)', 
-                        backdropFilter: 'blur(10px)',
-                        padding: '12px 24px', 
-                        borderRadius: 30,
-                        border: '1px solid rgba(80, 80, 95, 0.2)',
-                        marginBottom: 20,
-                        display: 'inline-block',
-                        fontSize: '0.9rem',
-                        fontWeight: 700,
-                        color: '#fbbf24'
-                    }}>
-                        ✨ {isRTL ? 'قريباً: عروض رمضان والعيد' : 'Coming Soon: Ramadan & Eid Special'}
-                    </div>
-                    <h1 style={{ fontSize: '2.4rem', fontWeight: 900, marginBottom: 12, lineHeight: 1.2 }}>
-                        {isRTL ? 'مهرجان التخفيضات الكبرى' : 'Grand Seasonal Festival'}
-                    </h1>
-                    <p style={{ fontSize: '1rem', opacity: 0.8, maxWidth: 400, margin: '0 auto', fontWeight: 600 }}>
-                        {isRTL 
-                            ? 'عروض حصرية وحصص محدودة جداً تصل إلى 90% خلال أيام الشهر الفضيل والعيد.' 
-                            : 'Exclusive limited offers up to 90% off during the holy month and Eid festivities.'}
-                    </p>
-                </div>
+    const seasonDeals = useMemo(() => {
+        if (!camp) return [];
+        return deals
+            .filter(d => d.seasonId === camp.seasonId
+                && d.status === 'active'
+                && !isDealComingSoon(d)
+                && !isDealExpiredByTime(d)
+                && hasStock(d)
+                && !blockedMerchants.includes(d.storeId))
+            .sort((a, b) => b.discountPercentage - a.discountPercentage);
+    }, [deals, camp?.seasonId, blockedMerchants, nowTick]);
 
-                <button 
+    if (!season || !camp) return null; // البوابة في App.tsx تمنع الوصول أصلاً
+
+    return (
+        <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
+            {/* هيدر الموسم — تدرّج الموسم نفسه (مستقل عن الثيم الحالي) */}
+            <div style={{
+                background: season.swatch, color: '#fff', padding: '26px 20px 30px',
+                borderRadius: '0 0 28px 28px', position: 'relative', overflow: 'hidden',
+                textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+            }}>
+                <button
                     onClick={() => history.push('/')}
+                    aria-label={isRTL ? 'العودة للرئيسية' : 'Back to home'}
                     style={{
-                        position: 'absolute', top: 20, left: isRTL ? 'auto' : 20, right: isRTL ? 20 : 'auto',
-                        background: 'rgba(80, 80, 95, 0.2)',
-                        border: '1px solid rgba(80, 80, 95, 0.3)',
-                        borderRadius: 12,
-                        padding: '8px 16px',
-                        color: 'white',
-                        fontWeight: 800,
-                        zIndex: 2
-                    }}
-                >
+                        position: 'absolute', top: 16, [isRTL ? 'right' : 'left']: 16,
+                        background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)',
+                        borderRadius: 12, padding: '7px 14px', color: '#fff', fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer',
+                    }}>
                     {isRTL ? '← العودة' : '← Back'}
                 </button>
+                <div style={{ fontSize: '3rem', lineHeight: 1, marginBottom: 10, filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.35))' }}>{season.emoji}</div>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 6, textShadow: '0 2px 8px rgba(0,0,0,0.25)' }}>
+                    {isRTL ? `عروض ${season.ar}` : `${season.en} Deals`}
+                </h1>
+                <p style={{ fontSize: '0.82rem', fontWeight: 600, opacity: 0.94, maxWidth: 420, margin: '0 auto', lineHeight: 1.6 }}>
+                    {isRTL ? season.taglineAr : season.taglineEn}
+                </p>
+                {camp.publicFrom && camp.publicTo && (
+                    <div style={{
+                        display: 'inline-block', marginTop: 12, padding: '6px 14px', borderRadius: 999,
+                        background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)',
+                        fontSize: '0.72rem', fontWeight: 800,
+                    }}>
+                        {isRTL ? `🗓 من ${camp.publicFrom} إلى ${camp.publicTo}` : `🗓 ${camp.publicFrom} → ${camp.publicTo}`}
+                    </div>
+                )}
+                {earlyPreview && (
+                    <div style={{
+                        marginTop: 10, display: 'inline-block', padding: '6px 14px', borderRadius: 999,
+                        background: 'rgba(0,0,0,0.28)', fontSize: '0.72rem', fontWeight: 800,
+                    }}>
+                        {isRTL ? '👁 معاينة مبكرة (للتجار والإدارة) — لم تُفتح للعامة بعد' : '👁 Early preview (sellers & admins)'}
+                    </div>
+                )}
             </div>
 
-            {/* Placeholder Content */}
-            <div style={{ padding: '20px 16px 120px', zIndex: 1, position: 'relative' }}>
-                <div style={{
-                    background: 'rgba(80, 80, 90, 0.2)',
-                    border: '1px dashed rgba(80, 80, 95, 0.2)',
-                    borderRadius: 24,
-                    padding: '60px 20px',
-                    textAlign: 'center'
-                }}>
-                    <div style={{ fontSize: '4rem', marginBottom: 20 }}>🌙</div>
-                    <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: 12 }}>
-                        {isRTL ? 'استعد لموسم العطاء' : 'Get Ready for Giving Season'}
-                    </h2>
-                    <p style={{ fontSize: '0.9rem', opacity: 0.6, lineHeight: 1.6, marginBottom: 30 }}>
-                        {isRTL 
-                            ? 'نحن نعمل حالياً مع أكبر الماركات التجارية والمحلات لتوفير أفضل العروض الحصرية لك. فعل التنبيهات لتكون أول من يعلم!' 
-                            : "We're currently partnering with premium brands and stores to bring you the best exclusive deals. Enable notifications to be the first to know!"}
-                    </p>
-                    <button
-                        onClick={handleNotifyMe}
-                        disabled={notifyState !== 'idle'}
-                        aria-live="polite"
-                        style={{
-                            background: notifyState === 'done' ? '#10b981' : 'var(--secondary)',
-                            color: notifyState === 'done' ? 'white' : 'var(--text-primary)',
-                            padding: '16px 32px',
-                            borderRadius: 16,
-                            border: 'none',
-                            fontWeight: 900,
-                            fontSize: '1rem',
-                            boxShadow: '0 8px 24px rgba(251,191,36,0.3)',
-                            cursor: notifyState === 'idle' ? 'pointer' : 'default',
-                            opacity: notifyState === 'subscribing' ? 0.7 : 1,
-                            transition: 'background 0.25s ease, color 0.25s ease',
-                        }}>
-                        {notifyState === 'subscribing'
-                            ? (isRTL ? 'جارٍ التفعيل...' : 'Enabling...')
-                            : notifyState === 'done'
-                            ? (isRTL ? '✅ تم تفعيل التنبيه' : '✅ Notifications On')
-                            : (isRTL ? 'أعلمني عند الانطلاق' : 'Notify Me at Launch')}
-                    </button>
-                </div>
-
-                {/* Decorative Stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 24 }}>
-                    <div style={{ background: 'rgba(80, 80, 90, 0.15)', padding: 16, borderRadius: 20, textAlign: 'center' }}>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#fbbf24' }}>+500</div>
-                        <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>{isRTL ? 'محل مشارك' : 'Participating Stores'}</div>
+            {/* شبكة العروض الموسومة */}
+            <div style={{ padding: '18px 16px 120px' }}>
+                {seasonDeals.length > 0 ? (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px' }}>
+                            <h2 style={{ fontSize: '1.02rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                                {isRTL ? `${seasonDeals.length} عرض حصري 🎯` : `${seasonDeals.length} exclusive deals 🎯`}
+                            </h2>
+                        </div>
+                        <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
+                            {seasonDeals.map(deal => (
+                                <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                            ))}
+                        </div>
+                    </>
+                ) : (
+                    <div style={{
+                        textAlign: 'center', padding: '70px 20px',
+                        background: 'var(--card-bg)', borderRadius: 24, border: '1px dashed var(--border-color)',
+                    }}>
+                        <div style={{ fontSize: '3.4rem', marginBottom: 16 }}>{season.emoji}</div>
+                        <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: 8 }}>
+                            {isRTL ? 'التجار يجهّزون عروض الموسم الآن' : 'Sellers are preparing their seasonal deals'}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.7, maxWidth: 340, margin: '0 auto' }}>
+                            {isRTL
+                                ? 'عد قريباً — العروض الحصرية تُضاف تباعاً طوال فترة الموسم.'
+                                : 'Check back soon — exclusive deals are being added throughout the season.'}
+                        </div>
                     </div>
-                    <div style={{ background: 'rgba(80, 80, 90, 0.15)', padding: 16, borderRadius: 20, textAlign: 'center' }}>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#fbbf24' }}>90%</div>
-                        <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>{isRTL ? 'أقصى خصم' : 'Max Discount'}</div>
-                    </div>
-                </div>
+                )}
             </div>
 
             <BottomNav />

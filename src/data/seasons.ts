@@ -114,3 +114,53 @@ export const SEASONS: Season[] = [
 
 export const getSeasonById = (id: string | undefined | null): Season | undefined =>
     SEASONS.find(s => s.id === id);
+
+// ═══════════════════════════════════════════════════════════════════════
+// v12.48 — «حملة الموسم»: نافذتان زمنيتان يحددهما المالك يدوياً بالكامل.
+//  - نافذة التجار (seller_from → seller_to): فيها فقط يستطيع التاجر وسم
+//    منتجاته كعروض موسم (تحرسها القاعدة بـtrigger أيضاً).
+//  - النافذة العامة (public_from → public_to): فيها تظهر صفحة /seasonal
+//    للمتسوقين في القائمة الجانبية وزر «تسوّق الآن».
+// المصدر: platform_settings.season_campaign (jsonb) عبر AppContext realtime.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface SeasonCampaign {
+    seasonId: string;
+    eventDate?: string;   // YYYY-MM-DD — تاريخ الفعالية نفسه (للعرض فقط)
+    sellerFrom?: string;
+    sellerTo?: string;
+    publicFrom?: string;
+    publicTo?: string;
+}
+
+export const parseSeasonCampaign = (value: any): SeasonCampaign | null => {
+    if (!value || typeof value !== 'object' || typeof value.season_id !== 'string' || !getSeasonById(value.season_id)) return null;
+    return {
+        seasonId: value.season_id,
+        eventDate: typeof value.event_date === 'string' ? value.event_date : undefined,
+        sellerFrom: typeof value.seller_from === 'string' ? value.seller_from : undefined,
+        sellerTo: typeof value.seller_to === 'string' ? value.seller_to : undefined,
+        publicFrom: typeof value.public_from === 'string' ? value.public_from : undefined,
+        publicTo: typeof value.public_to === 'string' ? value.public_to : undefined,
+    };
+};
+
+/** تاريخ اليوم المحلي بصيغة YYYY-MM-DD (جمهور المنصة سعودي — توقيت الجهاز كافٍ). */
+const todayStr = (): string => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const inWindow = (from?: string, to?: string): boolean => {
+    if (!from || !to) return false;
+    const t = todayStr();
+    return t >= from && t <= to;
+};
+
+/** هل باب إضافة عروض الموسم مفتوح للتجار الآن؟ */
+export const campaignSellerOpen = (c: SeasonCampaign | null): boolean =>
+    !!c && inWindow(c.sellerFrom, c.sellerTo);
+
+/** هل صفحة عروض الموسم ظاهرة للعامة الآن؟ */
+export const campaignPublicLive = (c: SeasonCampaign | null): boolean =>
+    !!c && inWindow(c.publicFrom, c.publicTo);

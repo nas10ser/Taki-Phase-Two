@@ -133,6 +133,10 @@ export interface Deal {
     maxBookingsPerBuyer?: number;
     /** مدة الانتظار (بالدقائق) بعد استلام حجز مكتمل قبل السماح بحجز جديد. */
     rebookCooldownMinutes?: number;
+    /** v12.48 — «حملة الموسم»: وسم العرض بموسم (national/ramadan/…) فيظهر في
+     *  صفحة /seasonal الحصرية. الوسم مسموح فقط داخل نافذة التجار التي يحددها
+     *  المالك (يحرسها DB trigger «tr_deal_season» أيضاً). */
+    seasonId?: string;
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

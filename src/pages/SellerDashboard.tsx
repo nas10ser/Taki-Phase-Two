@@ -12,6 +12,7 @@ import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
+import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
@@ -108,7 +109,7 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
@@ -429,6 +430,10 @@ const SellerDashboard: React.FC = () => {
     const [discountedPrice, setDiscountedPrice] = useState('');
     const [quantity, setQuantity] = useState<number | string>('');
     const [isUnlimited, setIsUnlimited] = useState(false);
+    // v12.48 — «حملة الموسم»: وسم العرض ليظهر في صفحة عروض الموسم الحصرية.
+    // التفعيل الجديد ممكن فقط داخل نافذة التجار التي حددها المالك (يحرسها
+    // DB trigger أيضاً)؛ عرض موسوم سابقاً يظهر التوغل مفعّلاً ويمكن إزالته.
+    const [seasonTag, setSeasonTag] = useState(false);
     // v12.28 — حدود الحجز للمشتري (منع السوق السوداء): '' أو 0 = بلا حد
     const [maxPerBooking, setMaxPerBooking] = useState<number | string>('');
     const [maxBookingsPerBuyer, setMaxBookingsPerBuyer] = useState<number | string>('');
@@ -1300,6 +1305,7 @@ const SellerDashboard: React.FC = () => {
         setDiscountedPrice('');
         setImages([]);
         setQuantity('');
+        setSeasonTag(false);
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1338,6 +1344,7 @@ const SellerDashboard: React.FC = () => {
         setMaxPerBooking(deal.maxPerBooking || '');
         setMaxBookingsPerBuyer(deal.maxBookingsPerBuyer || '');
         setRebookCooldownMinutes(deal.rebookCooldownMinutes || 0);
+        setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1721,7 +1728,14 @@ const SellerDashboard: React.FC = () => {
             // v12.28 — حدود الحجز: undefined = بلا حد (يُحفظ NULL في القاعدة)
             maxPerBooking: Number(normalizeArabicNumerals(String(maxPerBooking))) || undefined,
             maxBookingsPerBuyer: Number(normalizeArabicNumerals(String(maxBookingsPerBuyer))) || undefined,
-            rebookCooldownMinutes: rebookCooldownMinutes || undefined
+            rebookCooldownMinutes: rebookCooldownMinutes || undefined,
+            // v12.48 — وسم حملة الموسم: وسم جديد فقط داخل نافذة التجار المفتوحة؛
+            // عرض موسوم سابقاً يحتفظ بوسمه القائم (يمرّ من الحارس لأنه لم يتغير)،
+            // وإيقاف التوغل يزيل الوسم (مسموح دائماً).
+            seasonId: seasonTag
+                ? (existingDeal?.seasonId
+                    || (campaignSellerOpen(platformSettings.seasonCampaign) ? platformSettings.seasonCampaign!.seasonId : undefined))
+                : undefined
         };
 
             // 20s ceiling per DB write. Without this, a stalled Supabase
@@ -2356,6 +2370,69 @@ const SellerDashboard: React.FC = () => {
                             stays HIDDEN from buyers until 7 days before launch,
                             then surfaces locked with a live countdown until
                             startsAt passes and bookings open automatically. */}
+                        {/* v12.48 — «حملة الموسم»: يظهر فقط عندما يفتح المالك نافذة
+                            التجار (أو لعرض موسوم سابقاً كي يستطيع التاجر إزالة وسمه).
+                            الوسم = العرض يظهر في صفحة عروض الموسم الحصرية /seasonal. */}
+                        {(() => {
+                            const camp = platformSettings.seasonCampaign;
+                            const campSeason = camp ? getSeasonById(camp.seasonId) : undefined;
+                            const windowOpen = campaignSellerOpen(camp);
+                            if (!campSeason || (!windowOpen && !seasonTag)) return null;
+                            return (
+                                <div style={{ marginBottom: 20 }}>
+                                    <label style={labelStyle}>{isRTL ? `عروض ${campSeason.ar} 🌟` : `${campSeason.en} Deals 🌟`}</label>
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => {
+                                            if (!seasonTag && !windowOpen) {
+                                                customAlert(isRTL ? `⏳ نافذة إضافة عروض ${campSeason.ar} مغلقة حالياً (من ${camp?.sellerFrom || '؟'} إلى ${camp?.sellerTo || '؟'})` : '⏳ Submission window is closed');
+                                                return;
+                                            }
+                                            setSeasonTag(v => !v);
+                                        }}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 12,
+                                            padding: '14px 16px', borderRadius: 14,
+                                            border: seasonTag ? '1.5px solid var(--primary)' : '1.5px solid var(--gray-200)',
+                                            background: seasonTag ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                            cursor: 'pointer', WebkitTapHighlightColor: 'transparent'
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '1.4rem' }}>{campSeason.emoji}</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                                {isRTL ? `شارك في عروض ${campSeason.ar}` : `Join ${campSeason.en} deals`}
+                                            </div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
+                                                {isRTL
+                                                    ? (windowOpen
+                                                        ? `يظهر عرضك في صفحة عروض ${campSeason.ar} الحصرية. باب الإضافة مفتوح حتى ${camp?.sellerTo || '؟'}.`
+                                                        : 'نافذة الإضافة مغلقة — يمكنك فقط إزالة العرض من الموسم.')
+                                                    : 'Your deal appears on the exclusive seasonal page.'}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            width: 44, height: 26, borderRadius: 999,
+                                            background: seasonTag ? 'var(--primary)' : 'var(--gray-300)',
+                                            position: 'relative', transition: 'background 0.2s ease',
+                                            flexShrink: 0
+                                        }}>
+                                            <div style={{
+                                                position: 'absolute', top: 3,
+                                                [isRTL ? 'right' : 'left']: seasonTag ? 21 : 3,
+                                                width: 20, height: 20, borderRadius: '50%',
+                                                background: 'white',
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                            }} />
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         <div style={{ marginBottom: 20 }}>
                             <label style={labelStyle}>{isRTL ? 'جدولة العرض (اختياري)' : 'Schedule Launch (Optional)'}</label>
                             <div

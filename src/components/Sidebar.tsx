@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import ComplaintDialog from './ComplaintDialog';
+import { getSeasonById, campaignPublicLive, campaignSellerOpen } from '../data/seasons';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -50,10 +51,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
         { id: 'contests', icon: '🎁', ar: 'المسابقات', en: 'Contests', path: '/contests' },
     ];
-    // Seasonal offers section — admin can show/hide globally from
-    // platform_settings.seasonal_offers_visible. Hidden by default.
-    if (platformSettings.seasonalOffersVisible) {
-        menuItems.push({ id: 'seasonal', icon: '🌙', ar: 'عروض الموسم', en: 'Seasonal Offers', path: '/seasonal' });
+    // v12.48 — صفحة عروض الموسم الحصرية: تظهر للعامة خلال النافذة العامة
+    // التي حددها المالك في «حملة الموسم»، وباسم الموسم نفسه («عروض اليوم
+    // الوطني»…). التجار والأدمن يرونها مبكراً خلال نافذة إضافة العروض.
+    {
+        const camp = platformSettings.seasonCampaign;
+        const campSeason = camp ? getSeasonById(camp.seasonId) : undefined;
+        const canSee = campaignPublicLive(camp)
+            || (campaignSellerOpen(camp) && (user?.userType === 'seller' || user?.userType === 'admin'));
+        if (campSeason && canSee) {
+            menuItems.push({
+                id: 'seasonal', icon: campSeason.emoji,
+                ar: `عروض ${campSeason.ar}`, en: `${campSeason.en} Deals`,
+                path: '/seasonal',
+            });
+        }
     }
 
     if (isAuthReady && (user?.userType === 'seller' || user?.userType === 'admin')) {

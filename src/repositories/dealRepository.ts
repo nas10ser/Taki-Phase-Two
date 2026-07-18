@@ -116,7 +116,9 @@ export const dealRepository = {
             // v12.28 — merchant booking limits (0/undefined = unlimited → NULL)
             max_per_booking: deal.maxPerBooking || null,
             max_bookings_per_buyer: deal.maxBookingsPerBuyer || null,
-            rebook_cooldown_minutes: deal.rebookCooldownMinutes || null
+            rebook_cooldown_minutes: deal.rebookCooldownMinutes || null,
+            // v12.48 — وسم الموسم (null = عرض عادي). نافذة الوسم يحرسها tr_deal_season.
+            season_id: deal.seasonId || null
         };
 
         // Internal 25s ceiling per attempt. The deal triggers
@@ -306,6 +308,8 @@ export const dealRepository = {
         if ('max_per_booking' in d) deal.maxPerBooking = d.max_per_booking || undefined;
         if ('max_bookings_per_buyer' in d) deal.maxBookingsPerBuyer = d.max_bookings_per_buyer || undefined;
         if ('rebook_cooldown_minutes' in d) deal.rebookCooldownMinutes = d.rebook_cooldown_minutes || undefined;
+        // v12.48 — وسم حملة الموسم
+        if ('season_id' in d) deal.seasonId = d.season_id || undefined;
         // v11.20 — scheduled launch (Coming Soon). Stored as BIGINT epoch ms.
         if ('starts_at' in d && d.starts_at != null) {
             deal.startsAt = isNaN(Number(d.starts_at)) ? new Date(d.starts_at).getTime() : Number(d.starts_at);

@@ -17,7 +17,7 @@ import { useEscClose } from '../../hooks/useEscClose';
 import { Tooltip } from '../../components/admin/Tooltip';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
-import { SEASONS } from '../../data/seasons';
+import { SEASONS, campaignSellerOpen, campaignPublicLive, SeasonCampaign } from '../../data/seasons';
 
 // ============================================================
 // Setting Toggle Card
@@ -1058,7 +1058,6 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
 const AdminTools: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [paymentEnabled, setPaymentEnabled] = useState(false);
-    const [seasonalVisible, setSeasonalVisible] = useState(false);
     const [telegramBotEnabled, setTelegramBotEnabled] = useState(true);
     const [whatsappBotEnabled, setWhatsappBotEnabled] = useState(false);
     const [whatsappBotNumber, setWhatsappBotNumber] = useState('');
@@ -1066,6 +1065,13 @@ const AdminTools: React.FC = () => {
     // v12.44 — هوية المواسم: الموسم المفعّل حالياً ('' = الهوية الأساسية)
     const [seasonTheme, setSeasonTheme] = useState('');
     const [savingSeason, setSavingSeason] = useState(false);
+    // v12.48 — «حملة الموسم»: نافذة التجار + النافذة العامة + تاريخ الفعالية
+    const [camp, setCamp] = useState({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
+    const [campSaved, setCampSaved] = useState(false);
+    const [savingCamp, setSavingCamp] = useState(false);
+    // تواريخ الفعاليات لتذكير المالك قبل ٣٠ ثم ٧ أيام (كرون يومي)
+    const [eventDates, setEventDates] = useState<Record<string, string>>({});
+    const [savingDates, setSavingDates] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
@@ -1078,25 +1084,39 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, seasonalRes, botRes, waBotRes, waNumRes, seasonThemeRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
-            supabase.from('platform_settings').select('value').eq('key', 'seasonal_offers_visible').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_number').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'seasonal_theme').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'season_campaign').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'season_event_dates').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
 
         setPaymentEnabled(paymentRes.data?.value === true);
-        setSeasonalVisible(seasonalRes.data?.value === true);
         // Bot defaults ON: enabled unless explicitly turned off (fail-open).
         setTelegramBotEnabled(botRes.data?.value !== false);
         // WhatsApp defaults OFF (dormant until enabled + number set).
         setWhatsappBotEnabled(waBotRes.data?.value === true);
         setWhatsappBotNumber(typeof waNumRes.data?.value === 'string' ? waNumRes.data.value : '');
         setSeasonTheme(typeof seasonThemeRes.data?.value === 'string' ? seasonThemeRes.data.value : '');
+        // v12.48 — حملة الموسم + تواريخ التذكير
+        const cv = (seasonCampRes.data?.value ?? null) as any;
+        const hasCamp = !!(cv && typeof cv.season_id === 'string' && cv.season_id);
+        setCampSaved(hasCamp);
+        setCamp({
+            season_id: hasCamp ? cv.season_id : '',
+            event_date: (hasCamp && cv.event_date) || '',
+            seller_from: (hasCamp && cv.seller_from) || '',
+            seller_to: (hasCamp && cv.seller_to) || '',
+            public_from: (hasCamp && cv.public_from) || '',
+            public_to: (hasCamp && cv.public_to) || '',
+        });
+        const dv = (eventDatesRes.data?.value as any)?.dates ?? {};
+        setEventDates(Object.fromEntries(SEASONS.map(s => [s.id, typeof dv[s.id] === 'string' ? dv[s.id] : ''])));
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -1141,20 +1161,6 @@ const AdminTools: React.FC = () => {
                 ? '✅ تم تفعيل بوابة الدفع. التجار سيحتاجون اشتراك لإضافة عروض.'
                 : '✅ تم تعطيل البوابة. التطبيق الآن مجاني بالكامل.'
         );
-    };
-
-    const toggleSeasonal = async () => {
-        const newValue = !seasonalVisible;
-        setSeasonalVisible(newValue); // optimistic — toggle pill snaps instantly
-        // Upsert so the row is created the first time. Supabase realtime
-        // listener in AppContext propagates the new value to every client.
-        const { error } = await supabase
-            .from('platform_settings')
-            .upsert({ key: 'seasonal_offers_visible', value: newValue, description: 'Show/hide seasonal offers section across the app', updated_at: new Date().toISOString() });
-        if (error) {
-            setSeasonalVisible(!newValue);
-            await customAlert('❌ ' + error.message);
-        }
     };
 
     // Single kill-switch for the Telegram bot (request 2). Upsert so the row is
@@ -1202,6 +1208,90 @@ const AdminTools: React.FC = () => {
                 ? `✅ تم تفعيل هوية «${s.ar}» ${s.emoji} — تغيّرت ألوان المنصة كاملة (فاتح وداكن) لجميع المستخدمين فوراً، وظهر بانر الموسم أعلى الرئيسية.`
                 : '✅ رجعت المنصة للهوية الأساسية — اختفى بانر الموسم وعادت الألوان الافتراضية للجميع.'
         );
+    };
+
+    // v12.48 — «حملة الموسم»: حفظ/إنهاء الحملة + إشعار التجار + تواريخ التذكير.
+    // كل التواريخ يقررها ناصر يدوياً؛ الحارس النهائي للنافذة DB trigger.
+    const saveCampaign = async () => {
+        if (!camp.season_id) { await customAlert('⚠️ اختر الموسم أولاً'); return; }
+        if (!camp.seller_from || !camp.seller_to || !camp.public_from || !camp.public_to) {
+            await customAlert('⚠️ أكمل التواريخ الأربعة: نافذة التجار (من/إلى) والنافذة العامة (من/إلى)');
+            return;
+        }
+        if (camp.seller_from > camp.seller_to) { await customAlert('⚠️ نافذة التجار: تاريخ البداية بعد النهاية'); return; }
+        if (camp.public_from > camp.public_to) { await customAlert('⚠️ النافذة العامة: تاريخ البداية بعد النهاية'); return; }
+        setSavingCamp(true);
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'season_campaign',
+            value: {
+                season_id: camp.season_id,
+                event_date: camp.event_date || null,
+                seller_from: camp.seller_from,
+                seller_to: camp.seller_to,
+                public_from: camp.public_from,
+                public_to: camp.public_to,
+            },
+            description: 'Season campaign windows: seller submissions + public page (v12.48)',
+            updated_at: new Date().toISOString(),
+        });
+        setSavingCamp(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        setCampSaved(true);
+        const s = SEASONS.find(x => x.id === camp.season_id);
+        await customAlert(`✅ حُفظت حملة «${s?.ar}»:\n🏪 التجار يضيفون منتجاتهم من ${camp.seller_from} إلى ${camp.seller_to}\n👥 الصفحة تظهر للعامة من ${camp.public_from} إلى ${camp.public_to}\n\nلا تنسَ زر «📣 إشعار التجار» ليعرفوا أن الباب فُتح.`);
+    };
+
+    const clearCampaign = async () => {
+        const ok = await customConfirm('سيتم إنهاء الحملة: تختفي صفحة عروض الموسم ويقفل باب إضافة العروض للتجار (العروض الموسومة سابقاً تبقى عروضاً عادية). متابعة؟');
+        if (!ok) return;
+        setSavingCamp(true);
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'season_campaign', value: null,
+            description: 'Season campaign windows: seller submissions + public page (v12.48)',
+            updated_at: new Date().toISOString(),
+        });
+        setSavingCamp(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        setCampSaved(false);
+        setCamp({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
+        await customAlert('✅ انتهت الحملة — عادت المنصة لوضعها العادي.');
+    };
+
+    // إشعار للتجار فقط (وليس المشترين) عبر admin_broadcast_notification —
+    // يصلهم داخل التطبيق وفي البوتين (outbox v11.70) تلقائياً.
+    const notifySellersCampaign = async () => {
+        const s = SEASONS.find(x => x.id === camp.season_id);
+        if (!s) return;
+        const ok = await customConfirm(`سيصل إشعار لجميع التجار لإضافة منتجاتهم لعروض ${s.ar}. متابعة؟`);
+        if (!ok) return;
+        setSavingCamp(true);
+        const { data, error } = await supabase.rpc('admin_broadcast_notification', {
+            p_title_ar: `${s.emoji} فُتح باب عروض ${s.ar} لمتجرك!`,
+            p_body_ar: `أضف منتجاتك لصفحة عروض ${s.ar} الحصرية: من لوحة التاجر عند إضافة أو تعديل أي منتج فعّل «شارك في عروض ${s.ar}». باب الإضافة مفتوح من ${camp.seller_from} حتى ${camp.seller_to} فقط.`,
+            p_audience: 'sellers',
+            p_type: 'system',
+        });
+        setSavingCamp(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        await customAlert(`✅ وصل الإشعار إلى ${(data as any)?.notified ?? 0} تاجر.`);
+    };
+
+    // تواريخ الفعاليات للتذكير: قراءة-تعديل-كتابة تحافظ على سجل «أُرسل سابقاً»
+    // حتى لا يتكرر تذكير الـ٣٠/٧ أيام بعد كل حفظ.
+    const saveEventDates = async () => {
+        setSavingDates(true);
+        const { data } = await supabase.from('platform_settings').select('value').eq('key', 'season_event_dates').maybeSingle();
+        const notified = (data?.value as any)?.notified ?? [];
+        const dates = Object.fromEntries(Object.entries(eventDates).filter(([, v]) => !!v));
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'season_event_dates',
+            value: { dates, notified },
+            description: 'Season event dates for the 30/7-day admin reminders (v12.48)',
+            updated_at: new Date().toISOString(),
+        });
+        setSavingDates(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        await customAlert('✅ حُفظت التواريخ — سيصلك إشعار تلقائي قبل كل فعالية بشهر ثم بأسبوع.');
     };
 
     // Kill-switch for the WhatsApp bot — mirrors Telegram. The WA server polls
@@ -1373,18 +1463,6 @@ const AdminTools: React.FC = () => {
                         onToggle={togglePayment}
                     />
                     <ToggleCard
-                        icon="🌙"
-                        title="عروض الموسم"
-                        subtitle={
-                            seasonalVisible
-                                ? 'ظاهرة لجميع المستخدمين في القائمة الجانبية'
-                                : 'مخفية — لن تظهر لأي مستخدم'
-                        }
-                        enabled={seasonalVisible}
-                        onToggle={toggleSeasonal}
-                        color="purple"
-                    />
-                    <ToggleCard
                         icon="🤖"
                         title="بوت تيليجرام"
                         subtitle={
@@ -1499,6 +1577,124 @@ const AdminTools: React.FC = () => {
                         🔄 إيقاف الموسم والرجوع للهوية الأساسية
                     </button>
                 )}
+
+                {/* v12.48 — «حملة الموسم»: مشاركة التجار + صفحة العروض الحصرية */}
+                {(() => {
+                    const campSeason = SEASONS.find(s => s.id === camp.season_id);
+                    const parsed: SeasonCampaign | null = campSaved && camp.season_id ? {
+                        seasonId: camp.season_id,
+                        sellerFrom: camp.seller_from || undefined, sellerTo: camp.seller_to || undefined,
+                        publicFrom: camp.public_from || undefined, publicTo: camp.public_to || undefined,
+                    } : null;
+                    const sellerOpen = campaignSellerOpen(parsed);
+                    const publicLive = campaignPublicLive(parsed);
+                    const dateInput = (label: string, key: keyof typeof camp) => (
+                        <div>
+                            <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">{label}</label>
+                            <input
+                                type="date"
+                                value={camp[key]}
+                                onChange={e => setCamp(prev => ({ ...prev, [key]: e.target.value }))}
+                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
+                            />
+                        </div>
+                    );
+                    return (
+                        <div className="mt-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                                <h3 className="text-base font-extrabold text-[var(--text-primary)]">📅 حملة الموسم — مشاركة التجار وصفحة العروض</h3>
+                                {campSaved && (
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${sellerOpen ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
+                                            🏪 باب التجار: {sellerOpen ? 'مفتوح الآن' : 'مغلق'}
+                                        </span>
+                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${publicLive ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
+                                            👥 الصفحة العامة: {publicLive ? 'ظاهرة الآن' : 'مخفية'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
+                                التاجر يستطيع وسم منتجاته كعروض موسم <b>فقط داخل نافذة التجار</b> (تُضاف له خانة «شارك في عروض الموسم» عند إضافة/تعديل المنتج)، وصفحة العروض الحصرية تظهر للمتسوقين في القائمة الجانبية وزر «تسوّق الآن» <b>فقط خلال النافذة العامة</b>. أنت من يحدد كل التواريخ.
+                            </p>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الموسم</label>
+                                    <select
+                                        value={camp.season_id}
+                                        onChange={e => setCamp(prev => ({ ...prev, season_id: e.target.value }))}
+                                        className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
+                                    >
+                                        <option value="">— اختر —</option>
+                                        {SEASONS.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.ar}</option>)}
+                                    </select>
+                                </div>
+                                {dateInput('🗓 تاريخ الفعالية (اختياري)', 'event_date')}
+                                <div className="hidden md:block" />
+                                {dateInput('🏪 التجار — من', 'seller_from')}
+                                {dateInput('🏪 التجار — إلى', 'seller_to')}
+                                <div className="hidden md:block" />
+                                {dateInput('👥 الصفحة العامة — من', 'public_from')}
+                                {dateInput('👥 الصفحة العامة — إلى', 'public_to')}
+                            </div>
+                            <div className="flex gap-2 mt-3 flex-wrap">
+                                <button
+                                    onClick={saveCampaign}
+                                    disabled={savingCamp}
+                                    className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
+                                >
+                                    {savingCamp ? '⏳' : '💾 حفظ الحملة'}
+                                </button>
+                                {campSaved && campSeason && (
+                                    <button
+                                        onClick={notifySellersCampaign}
+                                        disabled={savingCamp}
+                                        className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
+                                    >
+                                        📣 إشعار التجار الآن
+                                    </button>
+                                )}
+                                {campSaved && (
+                                    <button
+                                        onClick={clearCampaign}
+                                        disabled={savingCamp}
+                                        className="py-2.5 px-4 rounded-xl border border-red-300 text-red-500 text-sm font-extrabold hover:bg-red-500/10 transition-all disabled:opacity-60"
+                                    >
+                                        🗑 إنهاء الحملة
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* تذكير المالك قبل ٣٠ ثم ٧ أيام من كل فعالية (كرون يومي) */}
+                            <div className="mt-4 pt-3 border-t border-[var(--border-color)]">
+                                <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">⏰ تواريخ الفعاليات — للتذكير التلقائي</div>
+                                <p className="text-[11px] text-[var(--text-secondary)] mb-2.5 leading-relaxed">
+                                    سيصلك إشعار قبل كل فعالية <b>بشهر</b> ثم <b>بأسبوع</b> حتى تجهّز الحملة. حدّث التواريخ متى شئت (رمضان والعيد يتقدمان كل سنة).
+                                </p>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                                    {SEASONS.map(s => (
+                                        <div key={s.id}>
+                                            <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">{s.emoji} {s.ar}</label>
+                                            <input
+                                                type="date"
+                                                value={eventDates[s.id] || ''}
+                                                onChange={e => setEventDates(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={saveEventDates}
+                                    disabled={savingDates}
+                                    className="mt-3 w-full py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-extrabold hover:shadow-md transition-all disabled:opacity-60"
+                                >
+                                    {savingDates ? '⏳' : '💾 حفظ تواريخ التذكير'}
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
             </section>
 
             {/* Banners */}

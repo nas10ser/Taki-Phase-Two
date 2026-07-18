@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } from '../data/mock';
+import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
@@ -170,7 +171,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string };
+    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null };
     /** Seller's saved branches (store_branches table). Drives the
      *  "📍 لوكيشن سابق" chip picker on Add Deal — each chip lets the
      *  seller adopt that branch's region/city/pin in one tap. */
@@ -393,13 +394,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // the admin opts in. Realtime listener below keeps every client in sync
     // the instant the admin flips a toggle.
     const [platformSettings, setPlatformSettings] = useState<{
-        seasonalOffersVisible: boolean;
         oauthGoogleEnabled: boolean;
         oauthAppleEnabled: boolean;
         telegramBotEnabled: boolean;
         whatsappBotEnabled: boolean;
         whatsappBotNumber: string;
         seasonalTheme: string;
+        seasonCampaign: SeasonCampaign | null;
     }>(() => {
         // v12.44 — «هوية المواسم»: apply the cached season skin during the very
         // first render (before paint) so returning visitors never see the base
@@ -409,7 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
             if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
         } catch { /* localStorage may be blocked (private mode) */ }
-        return { seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason };
+        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null };
     });
 
     // Load platform settings + subscribe to realtime updates so admin toggles
@@ -418,9 +419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         let cancelled = false;
         const apply = (key: string, value: any) => {
             if (cancelled) return;
-            if (key === 'seasonal_offers_visible') {
-                setPlatformSettings(prev => ({ ...prev, seasonalOffersVisible: value === true }));
-            } else if (key === 'oauth_google_enabled') {
+            if (key === 'oauth_google_enabled') {
                 setPlatformSettings(prev => ({ ...prev, oauthGoogleEnabled: value === true }));
             } else if (key === 'oauth_apple_enabled') {
                 setPlatformSettings(prev => ({ ...prev, oauthAppleEnabled: value === true }));
@@ -447,6 +446,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         localStorage.removeItem('TAKI_SEASON');
                     }
                 } catch { /* ignore */ }
+            } else if (key === 'season_campaign') {
+                // v12.48 — «حملة الموسم»: نوافذ التجار/العامة لصفحة عروض الموسم.
+                setPlatformSettings(prev => ({ ...prev, seasonCampaign: parseSeasonCampaign(value) }));
             }
         };
         (async () => {
@@ -454,7 +456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme']);
+                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);

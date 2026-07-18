@@ -1,7 +1,7 @@
 import React from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { getSeasonById } from '../data/seasons';
+import { getSeasonById, campaignPublicLive } from '../data/seasons';
 
 /**
  * v12.44 — بانر «هوية الموسم» أعلى الرئيسية.
@@ -30,7 +30,9 @@ const SeasonHero: React.FC = () => {
             <button
                 type="button"
                 className="season-hero-cta"
-                onClick={() => history.push('/deals?type=all')}
+                // v12.48 — عندما تكون صفحة عروض الموسم الحصرية مفتوحة للعامة،
+                // «تسوّق الآن» يقود إليها مباشرة؛ وإلا يبقى على كل العروض.
+                onClick={() => history.push(campaignPublicLive(platformSettings.seasonCampaign) ? '/seasonal' : '/deals?type=all')}
                 aria-label={isRTL ? `تسوّق عروض ${season.ar}` : `Shop ${season.en} deals`}
             >
                 {isRTL ? 'تسوّق الآن' : 'Shop now'}
