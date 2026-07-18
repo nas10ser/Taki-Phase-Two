@@ -174,7 +174,12 @@ function create(deps) {
         const linked = !!s.userId, seller = ownsStore(s);
         // v12.45 — «هوية المواسم»: سطر الموسم المفعّل يتصدّر نص القائمة (يُلحق
         // بالـbody أدناه). واتساب نص عادي — لا حاجة لأي escaping.
-        const seasonLine = SEASON ? await SEASON.line(I18N.lang()) : '';
+        // v12.46: عند «الدخول» فقط — مرة كل ٦ ساعات لكل مستخدم (نفس منطق تيليجرام).
+        let seasonLine = SEASON ? await SEASON.line(I18N.lang()) : '';
+        if (seasonLine) {
+            if (s.seasonGreetAt && Date.now() - s.seasonGreetAt <= 6 * 3600_000) seasonLine = '';
+            else s.seasonGreetAt = Date.now();
+        }
         const langRow = row('wa:lang', tr('wa_row_lang'), tr('wa_row_lang_desc'));
         const browseSec = { title: trunc(tr('wa_sec_browse'), LIM.rowTitle), rows: [
             row('wa:browse', tr('menu_browse'), tr('wa_row_browse_desc')),

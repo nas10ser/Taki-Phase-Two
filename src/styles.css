@@ -2349,7 +2349,11 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   pointer-events: none;
   z-index: 40;
   overflow: hidden;
+  /* v12.46 — «فرحة الدخول»: SeasonFX.tsx يضيف .fx-out بعد ٢٠ ثانية فتتلاشى
+     الطبقة كلها بنعومة ثم تُزال من الصفحة نهائياً — لا إزعاج أثناء التصفح. */
+  transition: opacity 2.4s ease;
 }
+.season-fx.fx-out { opacity: 0; }
 .season-fx span {
   position: absolute;
   top: 0;

@@ -331,8 +331,15 @@ function roleMsg(s) {
 async function sendMain(ctx, s) {
     // v12.45 — «هوية المواسم»: الموسم المفعّل من لوحة المدير يتصدّر القائمة
     // الرئيسية بسطر عريض (نفس هوية الموقع نصّياً). md() يؤمّن MarkdownV2.
+    // v12.46 (طلب ناصر «حتى لا تزعج»): يظهر عند «الدخول» فقط — مرة كل ٦ ساعات
+    // لكل مستخدم، لا مع كل رجوع للقائمة. s في الذاكرة فيُعاد الترحيب بعد
+    // إعادة تشغيل السيرفر — سلوك مقبول (دخول جديد فعلياً).
+    let msg = roleMsg(s);
     const seasonLine = await SEASON.line(I18N.lang());
-    const msg = seasonLine ? `*${md(seasonLine)}*\n${DIV}\n${roleMsg(s)}` : roleMsg(s);
+    if (seasonLine && (!s.seasonGreetAt || Date.now() - s.seasonGreetAt > 6 * 3600_000)) {
+        s.seasonGreetAt = Date.now();
+        msg = `*${md(seasonLine)}*\n${DIV}\n${msg}`;
+    }
     await safeReplyMd(ctx, msg, { reply_markup: roleKb(s).reply_markup });
 }
 

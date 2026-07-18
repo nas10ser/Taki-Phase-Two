@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { getSeasonById } from '../data/seasons';
@@ -10,8 +10,13 @@ import { getSeasonById } from '../data/seasons';
  * فتكون «السماء» ممتلئة من أول لحظة. pointer-events:none فلا تعيق أي ضغطة.
  * مخفية داخل لوحة المدير (/admin) حتى تبقى بيئة العمل صافية، وتختفي
  * تلقائياً لمن فعّل «تقليل الحركة» في نظامه.
+ * v12.46 (طلب ناصر): «فرحة دخول» فقط — تعمل ٢٠ ثانية عند فتح التطبيق ثم
+ * تتلاشى بنعومة حتى لا تزعج المتسوق أثناء التصفح. تعود للظهور ٢٠ ثانية
+ * أخرى لحظة تفعيل/تبديل موسم من لوحة المدير (يصل عبر realtime).
  */
 const COUNT = 16;
+const SHOW_MS = 20_000;   // مدة العرض عند الدخول
+const FADE_MS = 2_500;    // تلاشٍ نهائي ناعم بعدها
 
 // مولّد شبه عشوائي حتمي (mulberry32) — نفس الموسم يعطي نفس التوزيع دائماً،
 // فلا «تقفز» العناصر لمواضع جديدة مع كل re-render أو تنقّل بين الصفحات.
@@ -26,6 +31,18 @@ const SeasonFX: React.FC = () => {
     const { platformSettings } = useApp();
     const location = useLocation();
     const season = getSeasonById(platformSettings.seasonalTheme);
+
+    // «فرحة الدخول»: on → fading (تلاشٍ CSS) → off (إزالة كاملة من الصفحة).
+    // إعادة الضبط مربوطة بمعرّف الموسم: تفعيل موسم جديد والمستخدم داخل
+    // التطبيق يعيد العرض ٢٠ ثانية — لحظة الاحتفال نفسها التي قصدها المالك.
+    const [phase, setPhase] = useState<'on' | 'fading' | 'off'>('on');
+    useEffect(() => {
+        if (!season) return;
+        setPhase('on');
+        const t1 = setTimeout(() => setPhase('fading'), SHOW_MS);
+        const t2 = setTimeout(() => setPhase('off'), SHOW_MS + FADE_MS);
+        return () => { clearTimeout(t1); clearTimeout(t2); };
+    }, [season?.id]);
 
     const flakes = useMemo(() => {
         if (!season) return [];
@@ -48,10 +65,10 @@ const SeasonFX: React.FC = () => {
     }, [season?.id]);
 
     // داخل لوحة المدير الكثافة البصرية عالية أصلاً — نُبقيها صافية.
-    if (!season || location.pathname.startsWith('/admin')) return null;
+    if (!season || phase === 'off' || location.pathname.startsWith('/admin')) return null;
 
     return (
-        <div className={`season-fx${season.fx.mode === 'rise' ? ' rise' : ''}`} aria-hidden>
+        <div className={`season-fx${season.fx.mode === 'rise' ? ' rise' : ''}${phase === 'fading' ? ' fx-out' : ''}`} aria-hidden>
             {flakes.map(f => (
                 <span
                     key={f.key}
