@@ -45,7 +45,7 @@ const dmyWA = (ms) => { const d = new Date(ms + 3 * 3600_000); return `${String(
  * بيانات الاعتماد تُقرأ من البيئة هنا — القناة خاملة تماماً حتى تُضبط.
  */
 function create(deps) {
-    const { rpc, APP_URL } = deps;
+    const { rpc, APP_URL, SEASON } = deps;
     const botBookedBarcodes = deps.botBookedBarcodes || new Set();
     const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     const TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
@@ -170,8 +170,11 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     //  القائمة الرئيسية (role-aware)
     // ════════════════════════════════════════════════════════════════════════
-    function mainMenu(from, s) {
+    async function mainMenu(from, s) {
         const linked = !!s.userId, seller = ownsStore(s);
+        // v12.45 — «هوية المواسم»: سطر الموسم المفعّل يتصدّر نص القائمة (يُلحق
+        // بالـbody أدناه). واتساب نص عادي — لا حاجة لأي escaping.
+        const seasonLine = SEASON ? await SEASON.line(I18N.lang()) : '';
         const langRow = row('wa:lang', tr('wa_row_lang'), tr('wa_row_lang_desc'));
         const browseSec = { title: trunc(tr('wa_sec_browse'), LIM.rowTitle), rows: [
             row('wa:browse', tr('menu_browse'), tr('wa_row_browse_desc')),
@@ -222,6 +225,7 @@ function create(deps) {
         }
         // الأدمن المالك: أضف إحصائيات المنصّة كصفّ أول.
         if (linked && s.isAdmin && sections[0]) sections[0].rows.unshift(row('wa:a:stats', tr('menu_platform_stats'), tr('wa_row_pstats_desc')));
+        if (seasonLine) body = `${seasonLine}\n\n${body}`;
         return sendList(from, { header, body, button: tr('wa_menu_btn'), sections });
     }
 

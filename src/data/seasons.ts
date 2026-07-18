@@ -3,6 +3,17 @@
 // لكل الأجهزة عبر realtime؛ الـCSS في styles.css يقرأ data-season على <html>
 // ويبدّل هوية الألوان كاملة (فاتح + داكن). الاختيار يدوي ١٠٠٪ — المالك يقرّر
 // التاريخ، لا يوجد تفعيل تلقائي بالتقويم.
+// v12.45 — فصل «العيد» عن «رمضان» بهوية مستقلة + إعدادات «عمق الموسم» (fx):
+// عناصر متحركة تملأ الشاشة كلها (فوانيس تهبط في رمضان، شموس في الصيف،
+// بالونات تصعد في العيد…) عبر SeasonFX.tsx — نفس المعرّفات تُستخدم نصياً
+// في البوتين (server/lib/season.js) فأبقِ القائمتين متطابقتي المعرّفات.
+
+export interface SeasonFx {
+    /** fall = تهبط من الأعلى للأسفل، rise = تصعد من الأسفل (العيد: بالونات) */
+    mode: 'fall' | 'rise';
+    /** الرموز المتحركة — تتكرر بالتناوب على كل العناصر، كرّر رمزاً ليهيمن */
+    items: string[];
+}
 
 export interface Season {
     id: string;
@@ -16,18 +27,32 @@ export interface Season {
     hintAr: string;
     /** معاينة التدرّج في بطاقات الأدمن (ثابتة، لا تتأثر بالثيم الحالي) */
     swatch: string;
+    /** عناصر العمق المتحركة عبر كامل الصفحة */
+    fx: SeasonFx;
 }
 
 export const SEASONS: Season[] = [
     {
         id: 'ramadan',
-        emoji: '🌙',
-        ar: 'رمضان والعيد',
-        en: 'Ramadan & Eid',
-        taglineAr: 'هلّ الشهر… عروض السحور والعيديات والملابس في مكان واحد.',
-        taglineEn: 'Ramadan is here — suhoor, Eid gifts and fashion deals in one place.',
-        hintAr: 'رمضان + العيد (يتقدّم ~١١ يوماً كل سنة)',
+        emoji: '🏮',
+        ar: 'رمضان',
+        en: 'Ramadan',
+        taglineAr: 'هلّ الشهر… عروض السحور والملابس ومستلزمات رمضان في مكان واحد.',
+        taglineEn: 'Ramadan is here — suhoor, fashion and essentials deals in one place.',
+        hintAr: 'شهر رمضان (يتقدّم ~١١ يوماً كل سنة)',
         swatch: 'linear-gradient(130deg, #4c1d95, #7c3aed 55%, #c026d3)',
+        fx: { mode: 'fall', items: ['🏮', '🌙', '🏮', '✨', '🏮'] },
+    },
+    {
+        id: 'eid',
+        emoji: '🎉',
+        ar: 'العيد',
+        en: 'Eid',
+        taglineAr: 'عيدكم مبارك… العيديات والهدايا وعروض العيد وصلت.',
+        taglineEn: 'Eid Mubarak — gifts, Eidiyah and celebration deals have arrived.',
+        hintAr: 'عيد الفطر وعيد الأضحى — فعّله ليلة العيد',
+        swatch: 'linear-gradient(130deg, #701a75, #c026d3 55%, #f59e0b)',
+        fx: { mode: 'rise', items: ['🎈', '🎁', '🎈', '✨', '🎉'] },
     },
     {
         id: 'founding',
@@ -38,6 +63,7 @@ export const SEASONS: Season[] = [
         taglineEn: 'Founding Day — heritage-inspired deals for February 22.',
         hintAr: '٢٢ فبراير',
         swatch: 'linear-gradient(130deg, #713f12, #b45309 55%, #d4a24e)',
+        fx: { mode: 'fall', items: ['🌴', '🐪', '✨', '🌴'] },
     },
     {
         id: 'national',
@@ -48,6 +74,7 @@ export const SEASONS: Season[] = [
         taglineEn: 'National Day — massive green-day discounts from your city’s stores.',
         hintAr: '٢٣ سبتمبر',
         swatch: 'linear-gradient(130deg, #064e2b, #0e8544 60%, #25b06b)',
+        fx: { mode: 'fall', items: ['🇸🇦', '💚', '✨', '🇸🇦'] },
     },
     {
         id: 'school',
@@ -58,6 +85,7 @@ export const SEASONS: Season[] = [
         taglineEn: 'Stationery, clothes and shoes — get the kids ready for less.',
         hintAr: 'منتصف أغسطس – أول سبتمبر',
         swatch: 'linear-gradient(130deg, #1e3a8a, #3b82f6 60%, #60a5fa)',
+        fx: { mode: 'fall', items: ['📚', '✏️', '🎒', '📐'] },
     },
     {
         id: 'white_friday',
@@ -68,6 +96,7 @@ export const SEASONS: Season[] = [
         taglineEn: 'Peak sale season — 50%+ discounts for a limited time.',
         hintAr: 'نهاية نوفمبر',
         swatch: 'linear-gradient(130deg, #0b0f1a, #331122 50%, #b91c1c)',
+        fx: { mode: 'fall', items: ['🏷️', '💥', '🛍️', '🏷️'] },
     },
     {
         id: 'summer',
@@ -78,6 +107,7 @@ export const SEASONS: Season[] = [
         taglineEn: 'Summer break — evening mall deals all season long.',
         hintAr: 'يونيو – أغسطس',
         swatch: 'linear-gradient(130deg, #0d9488, #06b6d4 60%, #fb923c)',
+        fx: { mode: 'fall', items: ['☀️', '☀️', '🍉', '☀️', '🕶️'] },
     },
 ];
 

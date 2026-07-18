@@ -6,6 +6,7 @@ import { normalizeArabicNumerals } from './utils/helpers';
 import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
 import InAppBanner from './components/InAppBanner';
+import SeasonFX from './components/SeasonFX';
 import { isTelegramMiniApp } from './services/telegramMiniApp';
 
 // True only inside Telegram AND when the user arrived via the bot's "ربط حسابي"
@@ -217,6 +218,9 @@ const App = () => {
         <Router>
             <AuthRedirector />
             <InAppBanner />
+            {/* v12.45 — عمق الموسم: عناصر متحركة عبر كامل الصفحة في كل صفحات
+                المتسوّق عندما يكون هناك موسم مفعّل (مخفية داخل /admin). */}
+            <SeasonFX />
             <Suspense fallback={null}>
                 <UpdateBanner />
                 <InstallPrompt />

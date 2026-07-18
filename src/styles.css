@@ -2268,3 +2268,113 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   .season-hero::after,
   .season-hero-emoji { animation: none; }
 }
+
+/* ————— 🎉 العيد — فوشيا الاحتفال وذهب العيديات (v12.45) —————
+   Split from Ramadan on Nasser's request: Ramadan = lanterns &
+   crescent purple; Eid = celebratory fuchsia + gold, with balloons
+   RISING through the page (SeasonFX 'rise' mode) instead of falling. */
+:root[data-season="eid"] {
+  --primary: #a21caf;
+  --primary-dark: #701a75;
+  --primary-light: #fae8ff;
+  --primary-glow: rgba(162, 28, 175, 0.28);
+  --secondary: #d97706;
+  --secondary-light: #fef3c7;
+  --chip-active-bg: #a21caf;
+  --chip-active-shadow: 0 4px 14px rgba(162, 28, 175, 0.35);
+  --body-bg: #faf1fb;
+  --shadow-glow: 0 0 20px rgba(162, 28, 175, 0.25);
+  --notif-unread-bg: rgba(162, 28, 175, 0.08);
+  --header-gradient: linear-gradient(135deg, #701a75, #a21caf);
+  --season-hero: linear-gradient(130deg, #701a75 0%, #c026d3 55%, #d97706 100%);
+  --season-hero-glow: rgba(192, 38, 211, 0.38);
+  --season-orb-a: rgba(251, 191, 36, 0.5);
+  --season-orb-b: rgba(240, 171, 252, 0.4);
+}
+:root.dark-mode[data-season="eid"] {
+  --primary: #e879f9;
+  --primary-dark: #c026d3;
+  --primary-light: rgba(232, 121, 249, 0.16);
+  --primary-glow: rgba(232, 121, 249, 0.35);
+  --secondary: #fbbf24;
+  --secondary-light: #3b2c07;
+  --chip-active-bg: #a21caf;
+  --chip-active-shadow: 0 4px 14px rgba(162, 28, 175, 0.5);
+  --body-bg: #211026;
+  --card-bg: #331a3a;
+  --nav-bg: rgba(33, 16, 38, 0.97);
+  --success: #e879f9;
+  --shadow-glow: 0 0 15px rgba(232, 121, 249, 0.25);
+  --notif-unread-bg: rgba(232, 121, 249, 0.12);
+  --header-gradient: linear-gradient(135deg, #3c1042, #86198f);
+  --season-hero: linear-gradient(130deg, #4a044e 0%, #a21caf 60%, #b45309 100%);
+  --season-hero-glow: rgba(162, 28, 175, 0.45);
+  --season-orb-a: rgba(251, 191, 36, 0.4);
+  --season-orb-b: rgba(240, 171, 252, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="eid"] {
+    --primary: #e879f9;
+    --primary-dark: #c026d3;
+    --primary-light: rgba(232, 121, 249, 0.16);
+    --primary-glow: rgba(232, 121, 249, 0.35);
+    --secondary: #fbbf24;
+    --secondary-light: #3b2c07;
+    --chip-active-bg: #a21caf;
+    --chip-active-shadow: 0 4px 14px rgba(162, 28, 175, 0.5);
+    --body-bg: #211026;
+    --card-bg: #331a3a;
+    --nav-bg: rgba(33, 16, 38, 0.97);
+    --success: #e879f9;
+    --shadow-glow: 0 0 15px rgba(232, 121, 249, 0.25);
+    --notif-unread-bg: rgba(232, 121, 249, 0.12);
+    --header-gradient: linear-gradient(135deg, #3c1042, #86198f);
+    --season-hero: linear-gradient(130deg, #4a044e 0%, #a21caf 60%, #b45309 100%);
+    --season-hero-glow: rgba(162, 28, 175, 0.45);
+    --season-orb-a: rgba(251, 191, 36, 0.4);
+    --season-orb-b: rgba(240, 171, 252, 0.3);
+  }
+}
+
+/* ————— عمق الموسم (SeasonFX.tsx) — v12.45 —————
+   Fixed full-viewport overlay: lanterns/suns/school gear drift DOWN
+   the whole page (or balloons float UP for Eid). Transform-only
+   animations + negative delays so the sky is already populated on
+   first paint. pointer-events:none — never blocks a tap. z-index 40:
+   above page surfaces for the classic snow-overlay feel, but below
+   sticky navs (90+), the navbar and every modal. */
+.season-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  overflow: hidden;
+}
+.season-fx span {
+  position: absolute;
+  top: 0;
+  left: var(--fx-x, 50%);
+  font-size: var(--fx-size, 22px);
+  line-height: 1;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: fx-fall var(--fx-dur, 14s) linear var(--fx-delay, 0s) infinite;
+}
+.season-fx.rise span { animation-name: fx-rise; }
+@keyframes fx-fall {
+  0%   { transform: translate3d(0, -8vh, 0) rotate(-12deg); opacity: 0; }
+  8%   { opacity: var(--fx-op, 0.5); }
+  50%  { transform: translate3d(var(--fx-drift, 30px), 52vh, 0) rotate(12deg); }
+  92%  { opacity: var(--fx-op, 0.5); }
+  100% { transform: translate3d(0, 112vh, 0) rotate(-8deg); opacity: 0; }
+}
+@keyframes fx-rise {
+  0%   { transform: translate3d(0, 112vh, 0) rotate(8deg); opacity: 0; }
+  8%   { opacity: var(--fx-op, 0.5); }
+  50%  { transform: translate3d(var(--fx-drift, -30px), 52vh, 0) rotate(-8deg); }
+  92%  { opacity: var(--fx-op, 0.5); }
+  100% { transform: translate3d(0, -12vh, 0) rotate(6deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .season-fx { display: none; }
+}

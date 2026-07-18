@@ -160,9 +160,13 @@ async function rpc(fn, args) {
     } catch(e) { console.error(`RPC ${fn} ex:`, e.message); return null; }
 }
 
+// ── «هوية المواسم» (v12.45) — سطر الموسم المفعّل من لوحة المدير يتصدّر القوائم ──
+// كاش ٦٠ث عبر bot_active_season (نمط bot_is_enabled). مشترك بين البوتين.
+const SEASON = require('./lib/season').create({ rpc });
+
 // ── WhatsApp channel (flows/whatsapp.js) — مستقلّ، يعيد استخدام نفس RPCs/i18n ──
 // خامل تماماً حتى تُضبط WHATSAPP_* في البيئة (sendWA يصبح no-op قبلها). v11.91
-const WA = require('./flows/whatsapp').create({ rpc, APP_URL, botBookedBarcodes });
+const WA = require('./flows/whatsapp').create({ rpc, APP_URL, botBookedBarcodes, SEASON });
 
 // ── Admin kill-switch (request 2) ─────────────────────────────────────────────
 // The bot polls platform_settings.telegram_bot_enabled via a definer RPC, cached
@@ -325,7 +329,11 @@ function roleMsg(s) {
 // whole message fail → /start «did nothing» for a guest after logout. The escape
 // above fixes it; safeReplyMd guarantees the main menu always renders. v11.77
 async function sendMain(ctx, s) {
-    await safeReplyMd(ctx, roleMsg(s), { reply_markup: roleKb(s).reply_markup });
+    // v12.45 — «هوية المواسم»: الموسم المفعّل من لوحة المدير يتصدّر القائمة
+    // الرئيسية بسطر عريض (نفس هوية الموقع نصّياً). md() يؤمّن MarkdownV2.
+    const seasonLine = await SEASON.line(I18N.lang());
+    const msg = seasonLine ? `*${md(seasonLine)}*\n${DIV}\n${roleMsg(s)}` : roleMsg(s);
+    await safeReplyMd(ctx, msg, { reply_markup: roleKb(s).reply_markup });
 }
 
 // On login/start: surface a CURRENT booking the user may have made on the
