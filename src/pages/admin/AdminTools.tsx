@@ -17,6 +17,7 @@ import { useEscClose } from '../../hooks/useEscClose';
 import { Tooltip } from '../../components/admin/Tooltip';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
+import { SEASONS } from '../../data/seasons';
 
 // ============================================================
 // Setting Toggle Card
@@ -1062,6 +1063,9 @@ const AdminTools: React.FC = () => {
     const [whatsappBotEnabled, setWhatsappBotEnabled] = useState(false);
     const [whatsappBotNumber, setWhatsappBotNumber] = useState('');
     const [savingWaNumber, setSavingWaNumber] = useState(false);
+    // v12.44 — هوية المواسم: الموسم المفعّل حالياً ('' = الهوية الأساسية)
+    const [seasonTheme, setSeasonTheme] = useState('');
+    const [savingSeason, setSavingSeason] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
@@ -1074,12 +1078,13 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, seasonalRes, botRes, waBotRes, waNumRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, seasonalRes, botRes, waBotRes, waNumRes, seasonThemeRes, bannerRes, campaignRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'seasonal_offers_visible').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_number').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'seasonal_theme').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
@@ -1091,6 +1096,7 @@ const AdminTools: React.FC = () => {
         // WhatsApp defaults OFF (dormant until enabled + number set).
         setWhatsappBotEnabled(waBotRes.data?.value === true);
         setWhatsappBotNumber(typeof waNumRes.data?.value === 'string' ? waNumRes.data.value : '');
+        setSeasonTheme(typeof seasonThemeRes.data?.value === 'string' ? seasonThemeRes.data.value : '');
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
         setLoading(false);
@@ -1169,6 +1175,32 @@ const AdminTools: React.FC = () => {
             newValue
                 ? '✅ تم تفعيل بوت تيليجرام — عاد للعمل وظهر زر الربط في الإعدادات (قد يستغرق التفعيل حتى دقيقة).'
                 : '🔌 تم تعطيل بوت تيليجرام — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة). تقدر تعيد تفعيله بأي وقت بنفس الزر.'
+        );
+    };
+
+    // v12.44 — «هوية المواسم»: one tap re-skins the whole app (light + dark)
+    // for every user. Writes platform_settings.seasonal_theme; AppContext's
+    // realtime listener applies <html data-season> everywhere instantly, and
+    // this admin device re-skins immediately too. '' = back to base identity.
+    const activateSeason = async (id: string) => {
+        if (savingSeason) return;
+        const prev = seasonTheme;
+        setSavingSeason(true);
+        setSeasonTheme(id); // optimistic — the active card highlights instantly
+        const { error } = await supabase
+            .from('platform_settings')
+            .upsert({ key: 'seasonal_theme', value: id, description: 'Active seasonal identity skin for the whole app (v12.44)', updated_at: new Date().toISOString() });
+        setSavingSeason(false);
+        if (error) {
+            setSeasonTheme(prev); // rollback
+            await customAlert('❌ ' + error.message);
+            return;
+        }
+        const s = SEASONS.find(x => x.id === id);
+        await customAlert(
+            s
+                ? `✅ تم تفعيل هوية «${s.ar}» ${s.emoji} — تغيّرت ألوان المنصة كاملة (فاتح وداكن) لجميع المستخدمين فوراً، وظهر بانر الموسم أعلى الرئيسية.`
+                : '✅ رجعت المنصة للهوية الأساسية — اختفى بانر الموسم وعادت الألوان الافتراضية للجميع.'
         );
     };
 
@@ -1400,6 +1432,73 @@ const AdminTools: React.FC = () => {
                         </div>
                     )}
                 </div>
+            </section>
+
+            {/* v12.44 — هوية المواسم: تحكم كامل بنقرة واحدة. المالك يقرّر
+                التاريخ بنفسه — لا يوجد أي تفعيل تلقائي بالتقويم. */}
+            <section>
+                <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🎨 هوية المواسم</h2>
+                    {seasonTheme && (
+                        <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[var(--primary-light)] text-[var(--primary)]">
+                            مفعّل الآن: {SEASONS.find(s => s.id === seasonTheme)?.emoji} {SEASONS.find(s => s.id === seasonTheme)?.ar}
+                        </span>
+                    )}
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
+                    بنقرة واحدة تتبدّل ألوان المنصة كاملة (الوضع الفاتح والداكن معاً) لجميع المستخدمين فوراً، ويظهر بانر الموسم أعلى الصفحة الرئيسية. أنت من يقرّر متى يبدأ الموسم ومتى ينتهي — التلميحات الزمنية للاسترشاد فقط.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {SEASONS.map(s => {
+                        const active = seasonTheme === s.id;
+                        return (
+                            <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => activateSeason(active ? '' : s.id)}
+                                disabled={savingSeason}
+                                className={`relative text-right rounded-2xl overflow-hidden border-2 transition-all active:scale-[0.97] disabled:opacity-60 ${
+                                    active
+                                        ? 'border-[var(--primary)] shadow-lg'
+                                        : 'border-[var(--border-color)] hover:shadow-md'
+                                }`}
+                                style={{ background: 'var(--card-bg)' }}
+                            >
+                                <div className="h-16 w-full relative" style={{ background: s.swatch }}>
+                                    <span className="absolute bottom-1.5 right-2.5 text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))' }}>{s.emoji}</span>
+                                    {active && (
+                                        <span className="absolute top-1.5 left-2 text-[10px] font-black bg-white/95 text-emerald-700 px-2 py-0.5 rounded-full shadow">
+                                            ✓ مفعّل
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="p-2.5">
+                                    <div className="text-sm font-extrabold text-[var(--text-primary)]">{s.ar}</div>
+                                    <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{s.hintAr}</div>
+                                    <div className={`mt-2 text-[11px] font-black rounded-lg py-1.5 text-center ${
+                                        active
+                                            ? 'bg-[var(--gray-100)] text-[var(--text-secondary)]'
+                                            : 'text-white'
+                                    }`}
+                                        style={active ? undefined : { background: s.swatch }}
+                                    >
+                                        {active ? '⏹ إيقاف الموسم' : '⚡ تفعيل بنقرة'}
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+                {seasonTheme && (
+                    <button
+                        type="button"
+                        onClick={() => activateSeason('')}
+                        disabled={savingSeason}
+                        className="mt-3 w-full py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] text-sm font-extrabold hover:shadow-md transition-all disabled:opacity-60"
+                    >
+                        🔄 إيقاف الموسم والرجوع للهوية الأساسية
+                    </button>
+                )}
             </section>
 
             {/* Banners */}

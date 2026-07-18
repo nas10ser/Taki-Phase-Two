@@ -14,6 +14,7 @@ import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect, useCallback } from 'react';
 import BannerSlider from '../components/BannerSlider';
+import SeasonHero from '../components/SeasonHero';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
 import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
 
@@ -272,6 +273,10 @@ const Home: React.FC = () => {
                 />
             )}
             <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+
+            {/* v12.44 — بانر هوية الموسم: يظهر فقط عندما يفعّل المالك موسماً من
+                لوحة المدير، ويأخذ صدارة الصفحة لأن الهوية كلها تتبدّل معه. */}
+            <SeasonHero />
 
             {/* Live-location prompt — shoppers only, on entry, while undecided.
                 Once granted, the app-wide tracker follows them and pushes the

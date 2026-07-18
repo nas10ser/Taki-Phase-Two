@@ -1774,3 +1774,497 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   0%   { transform: translateY(-10%) rotate(0deg); opacity: 1; }
   100% { transform: translateY(460%) rotate(560deg); opacity: 0; }
 }
+/* ============================================================
+   v12.44 — «هوية المواسم» SEASONAL THEME ENGINE
+   The owner activates a season from AdminTools with one tap →
+   platform_settings.seasonal_theme → AppContext sets
+   <html data-season="…"> → these variable overrides re-skin the
+   ENTIRE app (chips, prices, links, header, bottom-nav, glows)
+   in BOTH light and dark mode. No component changes needed —
+   everything already reads the CSS variables.
+
+   Structure per season (mirrors the base theme's own pattern):
+     1) :root[data-season=X]                       → light values
+     2) :root.dark-mode[data-season=X]             → dark values (after JS)
+     3) @media dark :root:not(.light-mode)[data-season=X] → dark values
+        (first paint, before React applies the mode class)
+   The dark blocks MUST redeclare every var the light block sets —
+   the light block outranks the base dark media query otherwise.
+   ============================================================ */
+
+/* ————— 🌙 رمضان والعيد — ليل بنفسجي وذهب الفوانيس ————— */
+:root[data-season="ramadan"] {
+  --primary: #6d28d9;
+  --primary-dark: #4c1d95;
+  --primary-light: #ede9fe;
+  --primary-glow: rgba(109, 40, 217, 0.28);
+  --secondary: #d97706;
+  --secondary-light: #fef3c7;
+  --chip-active-bg: #6d28d9;
+  --chip-active-shadow: 0 4px 14px rgba(109, 40, 217, 0.35);
+  --body-bg: #f3f0fb;
+  --shadow-glow: 0 0 20px rgba(109, 40, 217, 0.25);
+  --notif-unread-bg: rgba(109, 40, 217, 0.08);
+  --header-gradient: linear-gradient(135deg, #3b1d6e, #6d28d9);
+  --season-hero: linear-gradient(130deg, #4c1d95 0%, #7c3aed 55%, #a21caf 100%);
+  --season-hero-glow: rgba(109, 40, 217, 0.38);
+  --season-orb-a: rgba(251, 191, 36, 0.45);
+  --season-orb-b: rgba(217, 70, 239, 0.35);
+}
+:root.dark-mode[data-season="ramadan"] {
+  --primary: #a78bfa;
+  --primary-dark: #7c3aed;
+  --primary-light: rgba(167, 139, 250, 0.18);
+  --primary-glow: rgba(167, 139, 250, 0.35);
+  --secondary: #fbbf24;
+  --secondary-light: #3b2c07;
+  --chip-active-bg: #7c3aed;
+  --chip-active-shadow: 0 4px 14px rgba(124, 58, 237, 0.5);
+  --body-bg: #171129;
+  --card-bg: #221a3d;
+  --nav-bg: rgba(23, 17, 41, 0.97);
+  --success: #a78bfa;
+  --shadow-glow: 0 0 15px rgba(167, 139, 250, 0.25);
+  --notif-unread-bg: rgba(167, 139, 250, 0.12);
+  --header-gradient: linear-gradient(135deg, #251b47, #4c2d8f);
+  --season-hero: linear-gradient(130deg, #2e1065 0%, #6d28d9 60%, #86198f 100%);
+  --season-hero-glow: rgba(124, 58, 237, 0.45);
+  --season-orb-a: rgba(251, 191, 36, 0.4);
+  --season-orb-b: rgba(217, 70, 239, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="ramadan"] {
+    --primary: #a78bfa;
+    --primary-dark: #7c3aed;
+    --primary-light: rgba(167, 139, 250, 0.18);
+    --primary-glow: rgba(167, 139, 250, 0.35);
+    --secondary: #fbbf24;
+    --secondary-light: #3b2c07;
+    --chip-active-bg: #7c3aed;
+    --chip-active-shadow: 0 4px 14px rgba(124, 58, 237, 0.5);
+    --body-bg: #171129;
+    --card-bg: #221a3d;
+    --nav-bg: rgba(23, 17, 41, 0.97);
+    --success: #a78bfa;
+    --shadow-glow: 0 0 15px rgba(167, 139, 250, 0.25);
+    --notif-unread-bg: rgba(167, 139, 250, 0.12);
+    --header-gradient: linear-gradient(135deg, #251b47, #4c2d8f);
+    --season-hero: linear-gradient(130deg, #2e1065 0%, #6d28d9 60%, #86198f 100%);
+    --season-hero-glow: rgba(124, 58, 237, 0.45);
+    --season-orb-a: rgba(251, 191, 36, 0.4);
+    --season-orb-b: rgba(217, 70, 239, 0.3);
+  }
+}
+
+/* ————— 🐎 يوم التأسيس — برونز الصحراء وذهب التراث ————— */
+:root[data-season="founding"] {
+  --primary: #92400e;
+  --primary-dark: #713f12;
+  --primary-light: #fef0dd;
+  --primary-glow: rgba(146, 64, 14, 0.28);
+  --secondary: #b45309;
+  --secondary-light: #fef3c7;
+  --chip-active-bg: #92400e;
+  --chip-active-shadow: 0 4px 14px rgba(146, 64, 14, 0.35);
+  --body-bg: #f8f3ea;
+  --shadow-glow: 0 0 20px rgba(180, 83, 9, 0.22);
+  --notif-unread-bg: rgba(180, 83, 9, 0.08);
+  --header-gradient: linear-gradient(135deg, #57340c, #92400e);
+  --season-hero: linear-gradient(130deg, #713f12 0%, #b45309 55%, #ca8a04 100%);
+  --season-hero-glow: rgba(180, 83, 9, 0.38);
+  --season-orb-a: rgba(250, 204, 21, 0.4);
+  --season-orb-b: rgba(120, 53, 15, 0.5);
+}
+:root.dark-mode[data-season="founding"] {
+  --primary: #e2b457;
+  --primary-dark: #b98a2e;
+  --primary-light: rgba(226, 180, 87, 0.16);
+  --primary-glow: rgba(226, 180, 87, 0.32);
+  --secondary: #f59e0b;
+  --secondary-light: #3b2c07;
+  --chip-active-bg: #a16207;
+  --chip-active-shadow: 0 4px 14px rgba(161, 98, 7, 0.5);
+  --body-bg: #1c1610;
+  --card-bg: #292013;
+  --nav-bg: rgba(28, 22, 16, 0.97);
+  --success: #e2b457;
+  --shadow-glow: 0 0 15px rgba(226, 180, 87, 0.22);
+  --notif-unread-bg: rgba(226, 180, 87, 0.1);
+  --header-gradient: linear-gradient(135deg, #2c2010, #7c5a1e);
+  --season-hero: linear-gradient(130deg, #3f2c0c 0%, #92400e 60%, #b98a2e 100%);
+  --season-hero-glow: rgba(185, 138, 46, 0.4);
+  --season-orb-a: rgba(250, 204, 21, 0.35);
+  --season-orb-b: rgba(120, 53, 15, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="founding"] {
+    --primary: #e2b457;
+    --primary-dark: #b98a2e;
+    --primary-light: rgba(226, 180, 87, 0.16);
+    --primary-glow: rgba(226, 180, 87, 0.32);
+    --secondary: #f59e0b;
+    --secondary-light: #3b2c07;
+    --chip-active-bg: #a16207;
+    --chip-active-shadow: 0 4px 14px rgba(161, 98, 7, 0.5);
+    --body-bg: #1c1610;
+    --card-bg: #292013;
+    --nav-bg: rgba(28, 22, 16, 0.97);
+    --success: #e2b457;
+    --shadow-glow: 0 0 15px rgba(226, 180, 87, 0.22);
+    --notif-unread-bg: rgba(226, 180, 87, 0.1);
+    --header-gradient: linear-gradient(135deg, #2c2010, #7c5a1e);
+    --season-hero: linear-gradient(130deg, #3f2c0c 0%, #92400e 60%, #b98a2e 100%);
+    --season-hero-glow: rgba(185, 138, 46, 0.4);
+    --season-orb-a: rgba(250, 204, 21, 0.35);
+    --season-orb-b: rgba(120, 53, 15, 0.55);
+  }
+}
+
+/* ————— 🇸🇦 اليوم الوطني — الأخضر السعودي ————— */
+:root[data-season="national"] {
+  --primary: #0b6b38;
+  --primary-dark: #064e2b;
+  --primary-light: #dcf3e6;
+  --primary-glow: rgba(11, 107, 56, 0.28);
+  --secondary: #f59e0b;
+  --secondary-light: #fef3c7;
+  --chip-active-bg: #0b6b38;
+  --chip-active-shadow: 0 4px 14px rgba(11, 107, 56, 0.35);
+  --body-bg: #eef6f0;
+  --shadow-glow: 0 0 20px rgba(11, 107, 56, 0.25);
+  --notif-unread-bg: rgba(11, 107, 56, 0.08);
+  --header-gradient: linear-gradient(135deg, #0a3622, #0b6b38);
+  --season-hero: linear-gradient(130deg, #064e2b 0%, #0e8544 60%, #25b06b 100%);
+  --season-hero-glow: rgba(14, 133, 68, 0.38);
+  --season-orb-a: rgba(255, 255, 255, 0.3);
+  --season-orb-b: rgba(37, 176, 107, 0.45);
+}
+:root.dark-mode[data-season="national"] {
+  --primary: #34d399;
+  --primary-dark: #059669;
+  --primary-light: rgba(52, 211, 153, 0.18);
+  --primary-glow: rgba(52, 211, 153, 0.35);
+  --secondary: #fbbf24;
+  --secondary-light: #3b2c07;
+  --chip-active-bg: #059669;
+  --chip-active-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+  --body-bg: #0e1f17;
+  --card-bg: #172b21;
+  --nav-bg: rgba(14, 31, 23, 0.97);
+  --success: #34d399;
+  --shadow-glow: 0 0 15px rgba(52, 211, 153, 0.25);
+  --notif-unread-bg: rgba(52, 211, 153, 0.12);
+  --header-gradient: linear-gradient(135deg, #0a2e1e, #116b3d);
+  --season-hero: linear-gradient(130deg, #052e1c 0%, #0b6b38 60%, #159d55 100%);
+  --season-hero-glow: rgba(21, 157, 85, 0.4);
+  --season-orb-a: rgba(255, 255, 255, 0.18);
+  --season-orb-b: rgba(37, 176, 107, 0.4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="national"] {
+    --primary: #34d399;
+    --primary-dark: #059669;
+    --primary-light: rgba(52, 211, 153, 0.18);
+    --primary-glow: rgba(52, 211, 153, 0.35);
+    --secondary: #fbbf24;
+    --secondary-light: #3b2c07;
+    --chip-active-bg: #059669;
+    --chip-active-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+    --body-bg: #0e1f17;
+    --card-bg: #172b21;
+    --nav-bg: rgba(14, 31, 23, 0.97);
+    --success: #34d399;
+    --shadow-glow: 0 0 15px rgba(52, 211, 153, 0.25);
+    --notif-unread-bg: rgba(52, 211, 153, 0.12);
+    --header-gradient: linear-gradient(135deg, #0a2e1e, #116b3d);
+    --season-hero: linear-gradient(130deg, #052e1c 0%, #0b6b38 60%, #159d55 100%);
+    --season-hero-glow: rgba(21, 157, 85, 0.4);
+    --season-orb-a: rgba(255, 255, 255, 0.18);
+    --season-orb-b: rgba(37, 176, 107, 0.4);
+  }
+}
+
+/* ————— 🎒 العودة للمدارس — أزرق الدفاتر وبرتقالي الحقائب ————— */
+:root[data-season="school"] {
+  --primary: #1d4ed8;
+  --primary-dark: #1e3a8a;
+  --primary-light: #dbe6fb;
+  --primary-glow: rgba(29, 78, 216, 0.28);
+  --secondary: #ea580c;
+  --secondary-light: #ffedd5;
+  --chip-active-bg: #1d4ed8;
+  --chip-active-shadow: 0 4px 14px rgba(29, 78, 216, 0.35);
+  --body-bg: #eef3fb;
+  --shadow-glow: 0 0 20px rgba(29, 78, 216, 0.25);
+  --notif-unread-bg: rgba(29, 78, 216, 0.08);
+  --header-gradient: linear-gradient(135deg, #1e3a8a, #2563eb);
+  --season-hero: linear-gradient(130deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
+  --season-hero-glow: rgba(37, 99, 235, 0.38);
+  --season-orb-a: rgba(251, 146, 60, 0.5);
+  --season-orb-b: rgba(96, 165, 250, 0.4);
+}
+:root.dark-mode[data-season="school"] {
+  --primary: #60a5fa;
+  --primary-dark: #2563eb;
+  --primary-light: rgba(96, 165, 250, 0.18);
+  --primary-glow: rgba(96, 165, 250, 0.35);
+  --secondary: #fb923c;
+  --secondary-light: #3b2107;
+  --chip-active-bg: #2563eb;
+  --chip-active-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+  --body-bg: #111a2c;
+  --card-bg: #1b2742;
+  --nav-bg: rgba(17, 26, 44, 0.97);
+  --success: #60a5fa;
+  --shadow-glow: 0 0 15px rgba(96, 165, 250, 0.25);
+  --notif-unread-bg: rgba(96, 165, 250, 0.12);
+  --header-gradient: linear-gradient(135deg, #152449, #1d4ed8);
+  --season-hero: linear-gradient(130deg, #172554 0%, #1d4ed8 60%, #3b82f6 100%);
+  --season-hero-glow: rgba(29, 78, 216, 0.45);
+  --season-orb-a: rgba(251, 146, 60, 0.45);
+  --season-orb-b: rgba(96, 165, 250, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="school"] {
+    --primary: #60a5fa;
+    --primary-dark: #2563eb;
+    --primary-light: rgba(96, 165, 250, 0.18);
+    --primary-glow: rgba(96, 165, 250, 0.35);
+    --secondary: #fb923c;
+    --secondary-light: #3b2107;
+    --chip-active-bg: #2563eb;
+    --chip-active-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+    --body-bg: #111a2c;
+    --card-bg: #1b2742;
+    --nav-bg: rgba(17, 26, 44, 0.97);
+    --success: #60a5fa;
+    --shadow-glow: 0 0 15px rgba(96, 165, 250, 0.25);
+    --notif-unread-bg: rgba(96, 165, 250, 0.12);
+    --header-gradient: linear-gradient(135deg, #152449, #1d4ed8);
+    --season-hero: linear-gradient(130deg, #172554 0%, #1d4ed8 60%, #3b82f6 100%);
+    --season-hero-glow: rgba(29, 78, 216, 0.45);
+    --season-orb-a: rgba(251, 146, 60, 0.45);
+    --season-orb-b: rgba(96, 165, 250, 0.35);
+  }
+}
+
+/* ————— 🛍️ الجمعة البيضاء — أسود التخفيضات وأحمر الأسعار ————— */
+:root[data-season="white_friday"] {
+  --primary: #b91c1c;
+  --primary-dark: #7f1d1d;
+  --primary-light: #fee2e2;
+  --primary-glow: rgba(185, 28, 28, 0.28);
+  --secondary: #f59e0b;
+  --secondary-light: #fef3c7;
+  --chip-active-bg: #111827;
+  --chip-active-shadow: 0 4px 14px rgba(17, 24, 39, 0.4);
+  --body-bg: #f6f1f1;
+  --shadow-glow: 0 0 20px rgba(185, 28, 28, 0.25);
+  --notif-unread-bg: rgba(185, 28, 28, 0.08);
+  --header-gradient: linear-gradient(135deg, #0f172a, #7f1d1d);
+  --season-hero: linear-gradient(130deg, #0b0f1a 0%, #3f1120 55%, #b91c1c 100%);
+  --season-hero-glow: rgba(185, 28, 28, 0.4);
+  --season-orb-a: rgba(251, 191, 36, 0.4);
+  --season-orb-b: rgba(239, 68, 68, 0.35);
+}
+:root.dark-mode[data-season="white_friday"] {
+  --primary: #f87171;
+  --primary-dark: #dc2626;
+  --primary-light: rgba(248, 113, 113, 0.16);
+  --primary-glow: rgba(248, 113, 113, 0.35);
+  --secondary: #fbbf24;
+  --secondary-light: #3b2c07;
+  --chip-active-bg: #dc2626;
+  --chip-active-shadow: 0 4px 14px rgba(220, 38, 38, 0.5);
+  --body-bg: #1a1114;
+  --card-bg: #271a1f;
+  --nav-bg: rgba(26, 17, 20, 0.97);
+  --success: #f87171;
+  --shadow-glow: 0 0 15px rgba(248, 113, 113, 0.25);
+  --notif-unread-bg: rgba(248, 113, 113, 0.12);
+  --header-gradient: linear-gradient(135deg, #150d12, #7f1d1d);
+  --season-hero: linear-gradient(130deg, #0b0f1a 0%, #3f1120 55%, #991b1b 100%);
+  --season-hero-glow: rgba(153, 27, 27, 0.45);
+  --season-orb-a: rgba(251, 191, 36, 0.35);
+  --season-orb-b: rgba(239, 68, 68, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="white_friday"] {
+    --primary: #f87171;
+    --primary-dark: #dc2626;
+    --primary-light: rgba(248, 113, 113, 0.16);
+    --primary-glow: rgba(248, 113, 113, 0.35);
+    --secondary: #fbbf24;
+    --secondary-light: #3b2c07;
+    --chip-active-bg: #dc2626;
+    --chip-active-shadow: 0 4px 14px rgba(220, 38, 38, 0.5);
+    --body-bg: #1a1114;
+    --card-bg: #271a1f;
+    --nav-bg: rgba(26, 17, 20, 0.97);
+    --success: #f87171;
+    --shadow-glow: 0 0 15px rgba(248, 113, 113, 0.25);
+    --notif-unread-bg: rgba(248, 113, 113, 0.12);
+    --header-gradient: linear-gradient(135deg, #150d12, #7f1d1d);
+    --season-hero: linear-gradient(130deg, #0b0f1a 0%, #3f1120 55%, #991b1b 100%);
+    --season-hero-glow: rgba(153, 27, 27, 0.45);
+    --season-orb-a: rgba(251, 191, 36, 0.35);
+    --season-orb-b: rgba(239, 68, 68, 0.3);
+  }
+}
+
+/* ————— ☀️ إجازة الصيف — فيروزي البحر ومرجان الغروب ————— */
+:root[data-season="summer"] {
+  --primary: #0d9488;
+  --primary-dark: #0f5f5a;
+  --primary-light: #d5f3ef;
+  --primary-glow: rgba(13, 148, 136, 0.28);
+  --secondary: #f97316;
+  --secondary-light: #ffedd5;
+  --chip-active-bg: #0d9488;
+  --chip-active-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+  --body-bg: #edf7f6;
+  --shadow-glow: 0 0 20px rgba(13, 148, 136, 0.25);
+  --notif-unread-bg: rgba(13, 148, 136, 0.08);
+  --header-gradient: linear-gradient(135deg, #0f5f5a, #0d9488);
+  --season-hero: linear-gradient(130deg, #0f766e 0%, #0d9488 55%, #06b6d4 100%);
+  --season-hero-glow: rgba(13, 148, 136, 0.38);
+  --season-orb-a: rgba(251, 146, 60, 0.5);
+  --season-orb-b: rgba(34, 211, 238, 0.4);
+}
+:root.dark-mode[data-season="summer"] {
+  --primary: #2dd4bf;
+  --primary-dark: #0d9488;
+  --primary-light: rgba(45, 212, 191, 0.16);
+  --primary-glow: rgba(45, 212, 191, 0.35);
+  --secondary: #fb923c;
+  --secondary-light: #3b2107;
+  --chip-active-bg: #0d9488;
+  --chip-active-shadow: 0 4px 14px rgba(13, 148, 136, 0.5);
+  --body-bg: #0f1f20;
+  --card-bg: #173033;
+  --nav-bg: rgba(15, 31, 32, 0.97);
+  --success: #2dd4bf;
+  --shadow-glow: 0 0 15px rgba(45, 212, 191, 0.25);
+  --notif-unread-bg: rgba(45, 212, 191, 0.12);
+  --header-gradient: linear-gradient(135deg, #0c2e2f, #0f766e);
+  --season-hero: linear-gradient(130deg, #134e4a 0%, #0f766e 55%, #0891b2 100%);
+  --season-hero-glow: rgba(15, 118, 110, 0.45);
+  --season-orb-a: rgba(251, 146, 60, 0.45);
+  --season-orb-b: rgba(34, 211, 238, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode)[data-season="summer"] {
+    --primary: #2dd4bf;
+    --primary-dark: #0d9488;
+    --primary-light: rgba(45, 212, 191, 0.16);
+    --primary-glow: rgba(45, 212, 191, 0.35);
+    --secondary: #fb923c;
+    --secondary-light: #3b2107;
+    --chip-active-bg: #0d9488;
+    --chip-active-shadow: 0 4px 14px rgba(13, 148, 136, 0.5);
+    --body-bg: #0f1f20;
+    --card-bg: #173033;
+    --nav-bg: rgba(15, 31, 32, 0.97);
+    --success: #2dd4bf;
+    --shadow-glow: 0 0 15px rgba(45, 212, 191, 0.25);
+    --notif-unread-bg: rgba(45, 212, 191, 0.12);
+    --header-gradient: linear-gradient(135deg, #0c2e2f, #0f766e);
+    --season-hero: linear-gradient(130deg, #134e4a 0%, #0f766e 55%, #0891b2 100%);
+    --season-hero-glow: rgba(15, 118, 110, 0.45);
+    --season-orb-a: rgba(251, 146, 60, 0.45);
+    --season-orb-b: rgba(34, 211, 238, 0.35);
+  }
+}
+
+/* ————— بانر الموسم في الرئيسية (SeasonHero.tsx) —————
+   Gradient card + two drifting light orbs + a slow diagonal shine
+   sweep + floating emoji. Pure CSS — zero images, zero JS timers. */
+.season-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  margin: 12px 16px 4px;
+  padding: 18px 16px;
+  background: var(--season-hero, var(--header-gradient));
+  color: #fff;
+  box-shadow: 0 12px 30px var(--season-hero-glow, rgba(0, 0, 0, 0.25));
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.season-hero::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 82% 18%, var(--season-orb-a, rgba(255,255,255,0.3)), transparent 45%),
+    radial-gradient(circle at 12% 85%, var(--season-orb-b, rgba(255,255,255,0.2)), transparent 40%);
+  animation: season-drift 14s ease-in-out infinite alternate;
+}
+.season-hero::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  left: -60%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.13), transparent);
+  transform: skewX(-18deg);
+  animation: season-shine 7s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes season-drift {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to   { transform: translate3d(4%, -3%, 0) rotate(4deg); }
+}
+@keyframes season-shine {
+  0%, 55% { left: -60%; }
+  85%, 100% { left: 130%; }
+}
+.season-hero-emoji {
+  font-size: 2.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.35));
+  animation: season-float 5s ease-in-out infinite;
+}
+@keyframes season-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.season-hero-title {
+  font-size: 1.08rem;
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.season-hero-tagline {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.94;
+  margin-top: 3px;
+  line-height: 1.55;
+}
+.season-hero-cta {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--primary-dark, #1e293b);
+  border: none;
+  border-radius: 12px;
+  padding: 9px 14px;
+  font-weight: 900;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 40px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+.season-hero-cta:active { transform: scale(0.95); }
+@media (prefers-reduced-motion: reduce) {
+  .season-hero::before,
+  .season-hero::after,
+  .season-hero-emoji { animation: none; }
+}

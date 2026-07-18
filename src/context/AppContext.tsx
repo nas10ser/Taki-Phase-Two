@@ -170,7 +170,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string };
+    platformSettings: { seasonalOffersVisible: boolean; oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string };
     /** Seller's saved branches (store_branches table). Drives the
      *  "📍 لوكيشن سابق" chip picker on Add Deal — each chip lets the
      *  seller adopt that branch's region/city/pin in one tap. */
@@ -399,7 +399,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         telegramBotEnabled: boolean;
         whatsappBotEnabled: boolean;
         whatsappBotNumber: string;
-    }>({ seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '' });
+        seasonalTheme: string;
+    }>(() => {
+        // v12.44 — «هوية المواسم»: apply the cached season skin during the very
+        // first render (before paint) so returning visitors never see the base
+        // identity flash in before the themed colors arrive from the server.
+        let cachedSeason = '';
+        try {
+            cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
+            if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
+        } catch { /* localStorage may be blocked (private mode) */ }
+        return { seasonalOffersVisible: false, oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason };
+    });
 
     // Load platform settings + subscribe to realtime updates so admin toggles
     // propagate to every open tab without requiring a refresh.
@@ -421,6 +432,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // The bot's public WhatsApp Business number (digits only, e.g. "9665…").
                 // Drives the wa.me deep link; empty ⇒ the link button stays hidden.
                 setPlatformSettings(prev => ({ ...prev, whatsappBotNumber: typeof value === 'string' ? value.replace(/\D/g, '') : '' }));
+            } else if (key === 'seasonal_theme') {
+                // v12.44 — «هوية المواسم»: the owner picks a season in AdminTools and
+                // every open client re-skins live. The skin itself is pure CSS keyed
+                // off <html data-season="…">; cached locally for a flash-free reload.
+                const seasonId = typeof value === 'string' ? value : '';
+                setPlatformSettings(prev => ({ ...prev, seasonalTheme: seasonId }));
+                try {
+                    if (seasonId) {
+                        document.documentElement.setAttribute('data-season', seasonId);
+                        localStorage.setItem('TAKI_SEASON', seasonId);
+                    } else {
+                        document.documentElement.removeAttribute('data-season');
+                        localStorage.removeItem('TAKI_SEASON');
+                    }
+                } catch { /* ignore */ }
             }
         };
         (async () => {
@@ -428,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number']);
+                    .in('key', ['seasonal_offers_visible', 'oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);
