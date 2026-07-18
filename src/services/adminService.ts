@@ -548,6 +548,22 @@ export const adminService = {
         return data;
     },
 
+    /** v12.43 — المحلل المخصص: أي شريحة يحددها المالك يدوياً (تاريخ من/إلى +
+     *  ساعات + يوم + مدينة + تصنيف) → تقرير كامل تلقائي. */
+    async getAiCustom(p: {
+        start: string; end: string;
+        hourFrom?: number; hourTo?: number;
+        dow?: number | null; city?: string | null; category?: string | null;
+    }): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_custom', {
+            p_start: p.start, p_end: p.end,
+            p_hour_from: p.hourFrom ?? 0, p_hour_to: p.hourTo ?? 23,
+            p_dow: p.dow ?? null, p_city: p.city ?? null, p_category: p.category ?? null,
+        });
+        if (error) { console.error('[adminService.getAiCustom]', error); return null; }
+        return data;
+    },
+
     /** v12.40 — أقرب ٣ منافسين للتاجر (نفس المدينة + التصنيف). */
     async getAiCompetitors(storeId: string): Promise<any | null> {
         const { data, error } = await supabase.rpc('admin_ai_seller_competitors', { p_store_id: storeId });

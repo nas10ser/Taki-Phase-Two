@@ -548,6 +548,36 @@ const AdminAnalyst: React.FC = () => {
 
     // v12.42 — العقل المشخّص الموحّد (يحل محل الرؤى المتفرقة)
     const diagnosis = useMemo(() => buildDiagnosis(data, pulse2, funnelData), [data, pulse2, funnelData]);
+    // v12.43 — «المحلل المخصص»: شريحة حرة يحددها ناصر يدوياً وتتحلل تلقائياً
+    const isoDay = (offset: number) => {
+        const dt = new Date(Date.now() + offset * 86400000);
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+    const [cuStart, setCuStart] = useState(() => isoDay(-30));
+    const [cuEnd, setCuEnd] = useState(() => isoDay(0));
+    const [cuFrom, setCuFrom] = useState(0);
+    const [cuTo, setCuTo] = useState(23);
+    const [cuDow, setCuDow] = useState<number | 'all'>('all');
+    const [cuCity, setCuCity] = useState('all');
+    const [cuCat, setCuCat] = useState('all');
+    const [cuData, setCuData] = useState<any | null>(null);
+    const [cuLoading, setCuLoading] = useState(false);
+    useEffect(() => {
+        if (!cuStart || !cuEnd) return;
+        let alive = true;
+        setCuLoading(true);
+        // debounce بسيط: أي تغيير متتابع في الفلاتر يرسل طلباً واحداً
+        const tm = setTimeout(() => {
+            adminService.getAiCustom({
+                start: cuStart, end: cuEnd, hourFrom: cuFrom, hourTo: cuTo,
+                dow: cuDow === 'all' ? null : cuDow,
+                city: cuCity === 'all' ? null : cuCity,
+                category: cuCat === 'all' ? null : cuCat,
+            }).then((r) => { if (alive) { setCuData(r); setCuLoading(false); } });
+        }, 400);
+        return () => { alive = false; clearTimeout(tm); };
+    }, [cuStart, cuEnd, cuFrom, cuTo, cuDow, cuCity, cuCat]);
+
     // v12.42 — التحكم الكامل بالساعات
     const [hrFrom, setHrFrom] = useState(16);
     const [hrTo, setHrTo] = useState(22);
@@ -695,6 +725,148 @@ const AdminAnalyst: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* 🎛 v12.43 — المحلل المخصص: أي تاريخ/ساعة/مدينة/تصنيف يدوياً → تحليل تلقائي */}
+            <section className="bg-[var(--card-bg)] border-2 border-violet-300 rounded-2xl p-4 space-y-3">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🎛 المحلل المخصص — حدد أي شيء وسيتحلل فوراً</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                    <label className="block">
+                        <span className="font-bold text-[var(--text-secondary)] block mb-1">من تاريخ</span>
+                        <input type="date" value={cuStart} max={cuEnd} onChange={(e) => setCuStart(e.target.value)}
+                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none" />
+                    </label>
+                    <label className="block">
+                        <span className="font-bold text-[var(--text-secondary)] block mb-1">إلى تاريخ</span>
+                        <input type="date" value={cuEnd} min={cuStart} onChange={(e) => setCuEnd(e.target.value)}
+                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none" />
+                    </label>
+                    <label className="block">
+                        <span className="font-bold text-[var(--text-secondary)] block mb-1">من الساعة</span>
+                        <select value={cuFrom} onChange={(e) => setCuFrom(Number(e.target.value))}
+                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+                        </select>
+                    </label>
+                    <label className="block">
+                        <span className="font-bold text-[var(--text-secondary)] block mb-1">إلى الساعة</span>
+                        <select value={cuTo} onChange={(e) => setCuTo(Number(e.target.value))}
+                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+                        </select>
+                    </label>
+                    <select value={cuDow === 'all' ? 'all' : String(cuDow)} onChange={(e) => setCuDow(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">📅 كل الأيام</option>
+                        {DOW_AR.map((d0, i) => <option key={i} value={i}>{d0}</option>)}
+                    </select>
+                    <select value={cuCity} onChange={(e) => setCuCity(e.target.value)}
+                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏙 كل المدن</option>
+                        {((data.cities || []) as GeoRow[]).filter((c) => c.city && c.city !== 'غير محدد').map((c) => <option key={c.city} value={c.city}>{c.city}</option>)}
+                    </select>
+                    <select value={cuCat} onChange={(e) => setCuCat(e.target.value)}
+                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">🏷 كل الأقسام</option>
+                        {((data.categories || []) as GeoRow[]).filter((c) => c.category).map((c) => <option key={c.category} value={c.category}>{catLabel(c.category)}</option>)}
+                    </select>
+                    <button type="button"
+                        onClick={() => { setCuStart(isoDay(-30)); setCuEnd(isoDay(0)); setCuFrom(0); setCuTo(23); setCuDow('all'); setCuCity('all'); setCuCat('all'); }}
+                        className="px-2 py-2 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] active:scale-95">
+                        ↺ إعادة الضبط
+                    </button>
+                </div>
+
+                {cuLoading ? (
+                    <div className="h-24 bg-[var(--gray-100)] rounded-xl animate-pulse" />
+                ) : cuData?.totals ? (() => {
+                    const tt = cuData.totals;
+                    const b = Number(tt.bookings) || 0;
+                    const ok = Number(tt.completed) || 0;
+                    const bad = Number(tt.cancelled) || 0;
+                    const attributed = (Number(tt.cancel_buyer) || 0) + (Number(tt.cancel_seller) || 0) + (Number(tt.cancel_system) || 0);
+                    const domCancel = attributed === 0 ? null
+                        : Number(tt.cancel_seller) >= Number(tt.cancel_buyer) && Number(tt.cancel_seller) >= Number(tt.cancel_system) ? 'التاجر 🏪'
+                        : Number(tt.cancel_system) >= Number(tt.cancel_buyer) ? 'انتهاء المهلة ⏱' : 'المشتري 🛒';
+                    const daily: { d: string; n: number }[] = cuData.daily || [];
+                    const half = Math.floor(daily.length / 2);
+                    const firstHalf = daily.slice(0, half).reduce((a, r) => a + r.n, 0);
+                    const secondHalf = daily.slice(half).reduce((a, r) => a + r.n, 0);
+                    const trend = daily.length < 4 ? null : secondHalf > firstHalf * 1.2 ? '📈 صاعد' : secondHalf < firstHalf * 0.8 ? '📉 هابط' : '➡️ مستقر';
+                    const topStore = (cuData.top_stores || [])[0];
+                    const topCat0 = (cuData.top_categories || [])[0];
+                    const hrs: HourRow[] = cuData.hours || [];
+                    const bestH = hrs.length ? [...hrs].sort((a, c) => c.n - a.n)[0] : null;
+                    return (
+                        <>
+                            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                                <Tile icon="📦" label="حجوزات" value={arNum(b)} sub={`${arNum(Number(tt.qty) || 0)} قطعة`} />
+                                <Tile icon="✅" label="مكتمل" value={arNum(ok)} sub={b ? `${Math.round((ok / b) * 100)}٪` : '—'} />
+                                <Tile icon="🚫" label="ملغى" value={arNum(bad)} sub={b ? `${Math.round((bad / b) * 100)}٪` : '—'} />
+                                <Tile icon="🛒" label="مشترون" value={arNum(Number(tt.buyers) || 0)} />
+                                <Tile icon="🏪" label="تجار مستفيدون" value={arNum(Number(tt.sellers) || 0)} />
+                            </div>
+                            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                                <Tile icon="👁" label="مشاهدات" value={arNum(Number(tt.views) || 0)} />
+                                <Tile icon="👆" label="نقرات" value={arNum(Number(tt.clicks) || 0)} />
+                                <Tile icon="🔎" label="عمليات بحث" value={arNum(Number(tt.searches) || 0)} />
+                                <Tile icon="🏷" label="عروض نُشرت" value={arNum(Number(tt.deals_published) || 0)} />
+                            </div>
+
+                            {daily.length > 1 && (
+                                <div>
+                                    <div className="font-bold text-[11px] text-[var(--text-primary)] mb-1">📈 الاتجاه اليومي للشريحة</div>
+                                    <Bars data={daily.map((r, i) => ({ label: daily.length <= 14 || i % Math.ceil(daily.length / 10) === 0 ? r.d.slice(5) : '', n: r.n }))} color="#8b5cf6" height={80} />
+                                </div>
+                            )}
+                            {hrs.length > 0 && (
+                                <div>
+                                    <div className="font-bold text-[11px] text-[var(--text-primary)] mb-1">⏰ توزيع ساعات الشريحة</div>
+                                    <Bars data={(() => { const m = new Map(hrs.map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#10b981" height={80} />
+                                </div>
+                            )}
+
+                            {/* أقوى عناصر الشريحة */}
+                            <div className="grid md:grid-cols-2 gap-2 text-[11px]">
+                                {([
+                                    ['🏙 المدن', cuData.top_cities], ['🏷 الأقسام', cuData.top_categories],
+                                    ['🏬 المولات', cuData.top_malls], ['🏪 المتاجر', cuData.top_stores],
+                                ] as [string, any[]][]).filter(([, rows]) => (rows || []).length > 0).map(([label, rows]) => (
+                                    <div key={label} className="bg-[var(--body-bg)] rounded-xl p-2.5">
+                                        <div className="font-extrabold text-[var(--text-primary)] mb-1">{label}</div>
+                                        {(rows as any[]).slice(0, 4).map((r, i) => (
+                                            <div key={i} className="flex items-center justify-between text-[var(--text-secondary)]">
+                                                <span className="truncate ml-2">{label === '🏷 الأقسام' ? catLabel(r.name) : r.name}</span>
+                                                <span className="tabular-nums whitespace-nowrap">📦 {arNum(Number(r.n))} • ✅ {arNum(Number(r.ok))} • 🚫 {arNum(Number(r.bad))}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                            {(cuData.top_deals || []).length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                    {(cuData.top_deals as any[]).map((r, i) => (
+                                        <span key={i} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏆 «{r.name}» — {r.shop} ×{arNum(Number(r.n))}</span>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* 🤖 حكم المحلل الآلي على الشريحة */}
+                            <div className="bg-[var(--body-bg)] rounded-xl p-3 text-[11px] leading-relaxed">
+                                <div className="font-extrabold text-[var(--text-primary)] mb-1">🤖 حكم المحلل على هذه الشريحة:</div>
+                                <ul className="pr-4 list-disc text-[var(--text-secondary)] space-y-0.5">
+                                    {b === 0 && <li>لا حجوزات في هذه الشريحة — إن كان فيها مشاهدات/بحث فهي طلب كامن بلا معروض مناسب، وإلا فهي شريحة خاملة لا تستحق ميزانية الآن.</li>}
+                                    {b > 0 && <li>الاكتمال {Math.round((ok / b) * 100)}٪ {ok / b >= 0.7 ? '— صحي ✅' : ok / b >= 0.5 ? '— مقبول، راقبه 👀' : '— ضعيف: راجع مدد التحضير والتذكيرات ⚠️'}.</li>}
+                                    {bad > 0 && <li>الإلغاء {Math.round((bad / b) * 100)}٪{domCancel ? ` — الأكثر إلغاءً هنا: ${domCancel}` : ' — كلها قبل بدء تتبع «من ألغى»'}.</li>}
+                                    {trend && <li>الاتجاه خلال الفترة: {trend}.</li>}
+                                    {bestH && <li>أفضل ساعة في الشريحة: {fmtHour(bestH.h)} ({arNum(bestH.n)} حجزاً) — اجدول حملاتك قبلها بساعة.</li>}
+                                    {topStore && <li>الأقوى هنا: «{topStore.name}» بـ{arNum(Number(topStore.n))} حجزاً{topCat0 ? ` — وأنشط قسم: ${catLabel(topCat0.name)}` : ''}.</li>}
+                                    {b > 0 && Number(tt.sellers) === 1 && <li>⚠️ كل حجوزات الشريحة من تاجر واحد — الشريحة هشة، استقطب منافساً له.</li>}
+                                </ul>
+                            </div>
+                        </>
+                    );
+                })() : <div className="text-[11px] text-[var(--text-secondary)]">تعذّر التحليل — عدّل الفلاتر للمحاولة.</div>}
+            </section>
 
             {/* 📋 v12.41 — الخلاصة التنفيذية (تقرير الرئيس التنفيذي) */}
             {(() => {
