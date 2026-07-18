@@ -537,6 +537,17 @@ export const adminService = {
         return data;
     },
 
+    /** v12.42 — التحكم الكامل بالساعات: أي مدى (يلتف عبر منتصف الليل) + يوم
+     *  اختياري → كل شيء داخله (حجوزات/مشترون/تجار/مشاهدات/بحث/نشر) + خريطة
+     *  الأسبوع الحرارية (يوم × ساعة). */
+    async getAiHours(from: number, to: number, dow: number | null, days = 90): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_ai_hours', {
+            p_from: from, p_to: to, p_dow: dow, p_days: days,
+        });
+        if (error) { console.error('[adminService.getAiHours]', error); return null; }
+        return data;
+    },
+
     /** v12.40 — أقرب ٣ منافسين للتاجر (نفس المدينة + التصنيف). */
     async getAiCompetitors(storeId: string): Promise<any | null> {
         const { data, error } = await supabase.rpc('admin_ai_seller_competitors', { p_store_id: storeId });

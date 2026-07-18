@@ -254,6 +254,195 @@ const buildInsights = (d: any): Insight[] => {
     return out;
 };
 
+// ─── v12.42 — «العقل المشخّص»: تحليل + تسويق + حلول في تقرير واحد ────────────
+// يقرأ كل مصادر البيانات معاً (التحليل العام + تفاعل الأقسام + القمع
+// والإلغاءات) ويُخرج: درجة صحة المنصة، أضعف النقاط، وقائمة تشخيصات — لكل
+// واحدة: الدليل بالأرقام، مكمن الخلل الجذري، خطوات العلاج (تشغيل + تسويق)،
+// والأثر المتوقع. هذا يحل محل «الرؤى» المتفرقة السابقة (طلب ناصر: لا تكرار).
+interface Diagnosis {
+    id: string;
+    severity: 'critical' | 'warn' | 'good' | 'info';
+    icon: string;
+    title: string;
+    evidence: string;
+    why?: string;
+    fix?: string[];
+    impact?: string;
+}
+
+const buildDiagnosis = (
+    d: any, p2: any, fn: any,
+): { health: number; weakest: string[]; items: Diagnosis[] } => {
+    const items: Diagnosis[] = [];
+    const penalties: { label: string; pts: number }[] = [];
+    if (!d) return { health: 100, weakest: [], items };
+
+    const sellers: SellerRow[] = d.sellers || [];
+    const f = fn?.funnel || {};
+    const b = Number(f.bookings) || 0;
+    const canc = Number(f.cancelled) || 0;
+
+    // ١) العزوف: منتهون بلا تجديد — مع السبب المهيمن بينهم
+    const expired = sellers.filter((s) => { const dl = daysLeft(s.expires_at); return dl !== null && dl < 0; });
+    if (expired.length > 0) {
+        penalties.push({ label: 'عزوف تجار', pts: 18 });
+        const noDeals = expired.filter((s) => s.active_deals === 0).length;
+        const noBookings = expired.filter((s) => s.bookings_30 === 0).length;
+        const dominantWhy = noDeals >= expired.length / 2
+            ? 'أغلبهم توقف عن النشر أصلاً قبل الانتهاء — فقدوا الحافز مبكراً ولم يروا قيمة.'
+            : noBookings >= expired.length / 2
+                ? 'أغلبهم لم يحصل على حجوزات كافية — دفعوا ولم يروا مبيعات، فالتجديد صار خسارة في نظرهم.'
+                : 'أسباب متفاوتة — افتح بطاقة كل تاجر في «صحة التجار» لسببه الفردي.';
+        items.push({
+            id: 'dg-churn', severity: 'critical', icon: '🚨',
+            title: `${arNum(expired.length)} تاجر انتهى اشتراكه ولم يجدّد`,
+            evidence: expired.slice(0, 5).map((s) => `«${s.shop}» (${arNum(s.bookings_30)} حجز/٣٠ي، ${arNum(s.active_deals)} عرض نشط)`).join(' • '),
+            why: dominantWhy,
+            fix: [
+                'أرسل لكل واحد توصيته الجاهزة من بطاقته (سبب ضعفه بالضبط) قبل عرض أي خصم.',
+                'قدّم «خصم عودة» مؤقتاً من لوحة البائعين لمن كانت حجوزاته ضعيفة رغم نشاطه.',
+                'من توقف عن النشر: أرسل قالب «تنشيط متجر خامل» من الإرسال المستهدف.',
+            ],
+            impact: 'استرجاع تاجر قائم أرخص ٥ أضعاف من استقطاب جديد — كل تاجر يعود = إيراد شهري مستمر.',
+        });
+    }
+
+    // ٢) تجار يلغون حجوزات عملائهم بأنفسهم
+    const selfCancelers = ((fn?.by_store || []) as any[]).filter((s) => Number(s.c_seller) > 0);
+    if (selfCancelers.length > 0) {
+        penalties.push({ label: 'إلغاء من التجار', pts: 10 });
+        items.push({
+            id: 'dg-seller-cancel', severity: 'critical', icon: '⛔',
+            title: 'تجار يلغون حجوزات عملائهم بأنفسهم',
+            evidence: selfCancelers.map((s) => `«${s.shop}» ألغى ${arNum(Number(s.c_seller))} حجزاً`).join(' • '),
+            why: 'السلعة غير متوفرة فعلاً وقت وصول العميل (كمية وهمية أو عرض شكلي) — هذا أسرع طريق لفقدان ثقة المشترين.',
+            fix: [
+                'أرسل تنبيهاً مباشراً لهؤلاء التجار من الإرسال المستهدف (فلتر «الأكثر إلغاءً من التاجر» في راصد الأسوأ).',
+                'راقبهم أسبوعين — التكرار يستحق إنذاراً رسمياً من تبويب الإنذارات.',
+                'وجّههم لاستخدام «الكمية المحدودة» الفعلية بدل أرقام مبالغ فيها.',
+            ],
+            impact: 'كل إلغاء من تاجر = مشترٍ غالباً لن يعود — وقف هذا النزيف يرفع الاحتفاظ مباشرة.',
+        });
+    }
+
+    // ٣) حجوزات تموت بانتهاء المهلة (مشترون لا يستلمون)
+    const sysCanc = Number(f.cancel_system) || 0;
+    if (b >= 10 && sysCanc / Math.max(1, b) > 0.15) {
+        penalties.push({ label: 'عدم استلام', pts: 8 });
+        items.push({
+            id: 'dg-noshow', severity: 'warn', icon: '⏱',
+            title: `${arNum(sysCanc)} حجزاً ماتت بانتهاء المهلة دون استلام`,
+            evidence: `${Math.round((sysCanc / Math.max(1, b)) * 100)}٪ من حجوزات الفترة انتهت تلقائياً.`,
+            why: 'المشتري يحجز بحماس ثم ينسى أو يستصعب الوصول — أو مدة التحضير لدى التاجر أطول من صبره.',
+            fix: [
+                'رسائل التذكير قبل انتهاء المهلة تعمل — راجع نصها وتوقيتها في «الإشعارات والرسائل».',
+                'شجّع التجار على مدد تحضير واقعية قصيرة (توصية جاهزة من بطاقاتهم).',
+            ],
+            impact: 'كل حجز يُستلم بدل أن يموت = مبيعة حقيقية وتقييم وثقة.',
+        });
+    }
+
+    // ٤) تركّز خطير: المنصة تقف على متجر/مدينة واحدة
+    const byStore = (fn?.by_store || []) as any[];
+    const topStore = [...byStore].sort((a, c) => Number(c.bookings) - Number(a.bookings))[0];
+    if (topStore && b >= 10 && Number(topStore.bookings) / b > 0.6) {
+        penalties.push({ label: 'تركّز على متجر واحد', pts: 12 });
+        items.push({
+            id: 'dg-concentration', severity: 'warn', icon: '🎯',
+            title: `«${topStore.shop}» وحده يمثل ${Math.round((Number(topStore.bookings) / b) * 100)}٪ من كل الحجوزات`,
+            evidence: `${arNum(Number(topStore.bookings))} من أصل ${arNum(b)} حجزاً في الفترة.`,
+            why: 'الاعتماد على متجر واحد هشّ — لو توقف أو غادر تنهار أرقام المنصة كلها.',
+            fix: [
+                'كثّف استقطاب تجار في المدن والأقسام ذات العلامة «⚡» و«🔥» (الطلب جاهز).',
+                'استخدم خطة التسويق أدناه — هدفك: لا يتجاوز أي متجر ٣٠٪ من الحجوزات.',
+            ],
+            impact: 'توزيع أوسع = نمو أثبت وإيراد اشتراكات أعلى.',
+        });
+    }
+
+    // ٥) أقسام عليها طلب فعلي بلا معروض (من تفاعل الأقسام)
+    const hungryCats = ((p2?.cat_engagement || []) as any[]).filter((c) => Number(c.bookings_30) > 0 && Number(c.active_deals) === 0);
+    if (hungryCats.length > 0) {
+        items.push({
+            id: 'dg-hungry-cats', severity: 'warn', icon: '🔥',
+            title: `${arNum(hungryCats.length)} قسم عليه طلب حقيقي بلا أي عرض نشط الآن`,
+            evidence: hungryCats.map((c) => `${catLabel(c.category)} (${arNum(Number(c.bookings_30))} حجزاً سابقاً)`).join(' • '),
+            why: 'مشترون جرّبوا وحجزوا في هذه الأقسام ثم اختفى المعروض — طلب مثبت بالمال يضيع يومياً.',
+            fix: [
+                'استقطب تاجراً واحداً على الأقل لكل قسم منها (نص الإقناع جاهز في خطة التسويق).',
+                'اسأل تجارك الحاليين القريبين من هذه الأقسام إضافة عروض فيها.',
+            ],
+            impact: 'أول تاجر في قسم جائع يحصد كل طلبه — وأسرع نمو لأرقامك.',
+        });
+    }
+
+    // ٦) الاحتفاظ بالمشترين
+    const ret = (fn?.retention || []) as any[];
+    const retTot = ret.reduce((a: number, r: any) => a + Number(r.buyers || 0), 0);
+    const retBack = ret.reduce((a: number, r: any) => a + Number(r.returned || 0), 0);
+    if (retTot >= 5) {
+        const rr = retBack / retTot;
+        if (rr < 0.3) {
+            penalties.push({ label: 'احتفاظ ضعيف', pts: 10 });
+            items.push({
+                id: 'dg-retention', severity: 'warn', icon: '🔁',
+                title: `فقط ${Math.round(rr * 100)}٪ من المشترين يعودون لحجز ثانٍ`,
+                evidence: `${arNum(retBack)} عادوا من أصل ${arNum(retTot)} مشترياً جرّبوا الحجز.`,
+                why: 'التجربة الأولى لا تخلق عادة — غالباً لقلة العروض الجديدة أو غياب سبب للعودة.',
+                fix: [
+                    'مسابقة شهرية بجائزة (تبويب المسابقات + إشعار تلقائي) — أقوى أداة عودة.',
+                    'حملة أسبوعية «جديد هذا الأسبوع في مدينتك» من الإشعارات والرسائل.',
+                    'شجّع المتابعة: من يتابع متجراً يصله كل عرض جديد تلقائياً.',
+                ],
+                impact: 'رفع العودة ١٠٪ يضاعف الحجوزات بلا ريال تسويق واحد.',
+            });
+        } else if (rr >= 0.4) {
+            items.push({ id: 'dg-retention-good', severity: 'good', icon: '🔁', title: `ولاء ممتاز: ${Math.round(rr * 100)}٪ من المشترين يعودون`, evidence: `${arNum(retBack)} من ${arNum(retTot)} عادوا لحجز جديد.` });
+        }
+    }
+
+    // ٧) توقف النمو (آخر شهرين بلا مسجلين جدد)
+    const mons: MonthRow[] = d.monthly || [];
+    if (mons.length >= 2) {
+        const l1 = mons[mons.length - 1]; const l2 = mons[mons.length - 2];
+        if (l1.new_buyers + l1.new_sellers === 0 && l2.new_buyers + l2.new_sellers === 0) {
+            penalties.push({ label: 'توقف النمو', pts: 12 });
+            items.push({
+                id: 'dg-stagnation', severity: 'warn', icon: '📉',
+                title: 'شهران بلا أي تاجر أو مشترٍ جديد',
+                evidence: `${l2.mon} و${l1.mon}: صفر تسجيلات جديدة.`,
+                why: 'لا قنوات اكتساب نشطة حالياً — المنصة تعيش على مستخدميها الحاليين فقط.',
+                fix: [
+                    'نفّذ خطوة واحدة من «خطة التسويق» أسبوعياً (ابدأ بمجموعات واتساب مدينتك الأقوى).',
+                    'فعّل باركود الدعوة: اطلب من كل تاجر تعليقه عند الكاشير هذا الأسبوع.',
+                ],
+                impact: 'قناة اكتساب واحدة منتظمة تكسر الركود خلال أسبوعين.',
+            });
+        }
+    }
+
+    // ٨) دمج قواعد الرؤى السابقة (تجديد، تحويل، جودة صور، فرص مدن...) بلا تكرار
+    for (const ins of buildInsights(d)) {
+        if (items.some((x) => x.id === 'dg-churn' && ins.id === 'churn-now')) continue;
+        items.push({
+            id: 'ins-' + ins.id, severity: ins.severity, icon: ins.icon,
+            title: ins.title, evidence: ins.body,
+            fix: ins.action ? [ins.action] : undefined,
+        });
+        if (ins.id === 'renew-drop') penalties.push({ label: 'هبوط التجديد', pts: 15 });
+        if (ins.id === 'conv-low') penalties.push({ label: 'تحويل منخفض', pts: 8 });
+        if (ins.id === 'cancel-high') penalties.push({ label: 'إلغاءات مرتفعة', pts: 8 });
+        if (ins.id === 'content-imgs') penalties.push({ label: 'صور ضعيفة', pts: 6 });
+    }
+
+    // الدرجة النهائية + أضعف النقاط
+    const health = Math.max(5, Math.min(100, 100 - penalties.reduce((a, p) => a + p.pts, 0)));
+    const weakest = [...penalties].sort((a, c) => c.pts - a.pts).slice(0, 3).map((p) => p.label);
+    const order = { critical: 0, warn: 1, info: 2, good: 3 } as const;
+    items.sort((a, c) => order[a.severity] - order[c.severity]);
+    return { health, weakest, items };
+};
+
 // v12.39 — التقويم الموسمي السعودي لخطة النمو (إرشادي ثابت + بياناتك تحدد ذروتك الفعلية)
 const SAUDI_SEASONS: { icon: string; name: string; when: string; tip: string }[] = [
     { icon: '🌙', name: 'رمضان والعيد', when: 'رمضان القادم يبدأ تقريباً فبراير ٢٠٢٧ (يتقدم ~١١ يوماً كل سنة)', tip: 'أقوى موسم تخفيضات في السعودية — جهّز التجار قبله بأسبوعين: عروض سحور/عيديات/ملابس عيد.' },
@@ -357,7 +546,21 @@ const AdminAnalyst: React.FC = () => {
         return () => { alive = false; };
     }, [mxCity, mxCat]);
 
-    const insights = useMemo(() => buildInsights(data), [data]);
+    // v12.42 — العقل المشخّص الموحّد (يحل محل الرؤى المتفرقة)
+    const diagnosis = useMemo(() => buildDiagnosis(data, pulse2, funnelData), [data, pulse2, funnelData]);
+    // v12.42 — التحكم الكامل بالساعات
+    const [hrFrom, setHrFrom] = useState(16);
+    const [hrTo, setHrTo] = useState(22);
+    const [hrDow, setHrDow] = useState<number | 'all'>('all');
+    const [hoursData, setHoursData] = useState<any | null>(null);
+    const [hoursLoading, setHoursLoading] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        setHoursLoading(true);
+        adminService.getAiHours(hrFrom, hrTo, hrDow === 'all' ? null : hrDow, days)
+            .then((h) => { if (alive) { setHoursData(h); setHoursLoading(false); } });
+        return () => { alive = false; };
+    }, [hrFrom, hrTo, hrDow, days]);
     const sellers: SellerRow[] = useMemo(() => {
         const list: SellerRow[] = (data?.sellers || []).map((s: SellerRow) => s);
         return list.sort((a, b) => sellerRisk(b).score - sellerRisk(a).score);
@@ -503,7 +706,7 @@ const AdminAnalyst: React.FC = () => {
                 const cancPct = b ? Math.round((canc / b) * 100) : 0;
                 const topCity = ((data.cities || []) as GeoRow[])[0];
                 const topCat = ((data.categories || []) as GeoRow[])[0];
-                const critical = insights.find((i) => i.severity === 'critical');
+                const critical = diagnosis.items.find((i) => i.severity === 'critical');
                 const ret = funnelData?.retention || [];
                 const retTot = ret.reduce((a: number, r: any) => a + Number(r.buyers || 0), 0);
                 const retBack = ret.reduce((a: number, r: any) => a + Number(r.returned || 0), 0);
@@ -517,7 +720,7 @@ const AdminAnalyst: React.FC = () => {
                         </div>
                         <div className="text-xs mt-2 font-bold" style={{ color: critical ? '#ef4444' : '#10b981' }}>
                             {critical
-                                ? <>🎯 القرار الأهم الآن: {critical.title} — {critical.action || critical.body}</>
+                                ? <>🎯 القرار الأهم الآن: {critical.title} — {critical.fix?.[0] || critical.evidence}</>
                                 : '🎯 لا يوجد خطر عاجل — القرار الأنسب: نفّذ خطوة واحدة من خطة التسويق أدناه لتسريع النمو.'}
                         </div>
                     </section>
@@ -528,23 +731,55 @@ const AdminAnalyst: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <Tile icon="📦" label={`حجوزات آخر ${arNum(days)} يوم`} value={arNum(Number(funnel.bookings) || 0)}
                     sub={`${arNum(Number(funnel.completed) || 0)} مكتمل`} />
-                <Tile icon="⏰" label="ساعة الذروة" value={topHour ? fmtHour(topHour.h) : '—'}
-                    sub={topHour ? `${arNum(topHour.n)} حجزاً` : 'لا بيانات بعد'} />
+                <Tile icon="⏰" label="أقوى ٣ ساعات" value={(data?.peak_hours || []).length
+                        ? [...data.peak_hours].sort((a: HourRow, b: HourRow) => b.n - a.n).slice(0, 3).map((r: HourRow) => fmtHour(r.h)).join(' · ')
+                        : '—'}
+                    sub={topHour ? `الأعلى: ${arNum(topHour.n)} حجزاً — التفصيل الكامل في «التحكم بالساعات»` : 'لا بيانات بعد'} />
                 <Tile icon="🔁" label="معدل عودة المشترين" value={`${Number(buyers.with_booking) ? Math.round(((Number(buyers.repeaters) || 0) / Number(buyers.with_booking)) * 100) : 0}٪`}
                     sub={`${arNum(Number(buyers.active_30) || 0)} نشط آخر ٣٠ يوم`} />
                 <Tile icon="💳" label="تجديد الشهر الحالي" value={lastRenew && lastRenew.expired ? `${Math.round((lastRenew.renewed / lastRenew.expired) * 100)}٪` : '—'}
                     sub={lastRenew ? `${arNum(lastRenew.renewed)} من ${arNum(lastRenew.expired)} جدّدوا` : 'لا انتهاءات بعد'} />
             </div>
 
-            {/* 🚨 الرؤى والتنبيهات */}
+            {/* 🧠 v12.42 — التشخيص الشامل: درجة الصحة + مكمن الخلل + العلاج */}
             <section className="space-y-2">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🚨 رؤى المحلل (مرتبة بالأهمية)</h3>
-                {insights.length === 0 && <div className="text-xs text-[var(--text-secondary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">لا توجد ملاحظات مقلقة حالياً — كل المؤشرات ضمن الطبيعي.</div>}
-                {insights.map((ins) => (
-                    <div key={ins.id} className="rounded-2xl p-3.5" style={{ background: SEV_STYLE[ins.severity].bg, border: `1.5px solid ${SEV_STYLE[ins.severity].border}` }}>
-                        <div className="font-extrabold text-sm text-[var(--text-primary)]">{ins.icon} {ins.title}</div>
-                        <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">{ins.body}</div>
-                        {ins.action && <div className="text-xs font-bold mt-1.5 text-[var(--text-primary)]">💡 الإجراء: <span className="font-normal text-[var(--text-secondary)]">{ins.action}</span></div>}
+                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <div className="text-center">
+                            <div className="text-3xl font-black tabular-nums" style={{ color: diagnosis.health >= 75 ? '#10b981' : diagnosis.health >= 50 ? '#f59e0b' : '#ef4444' }}>
+                                {arNum(diagnosis.health)}٪
+                            </div>
+                            <div className="text-[10px] font-bold text-[var(--text-secondary)]">صحة المنصة</div>
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
+                            <div className="h-3 bg-[var(--body-bg)] rounded-full overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${diagnosis.health}%`, background: diagnosis.health >= 75 ? '#10b981' : diagnosis.health >= 50 ? '#f59e0b' : '#ef4444' }} />
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] mt-1.5">
+                                {diagnosis.weakest.length
+                                    ? <>أضعف النقاط حالياً: <b className="text-[var(--text-primary)]">{diagnosis.weakest.join(' • ')}</b> — علاجها مفصّل في التشخيصات أدناه.</>
+                                    : 'لا نقاط ضعف جوهرية — المؤشرات كلها ضمن الصحي.'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🧠 التشخيص الشامل — مكمن الخلل والعلاج (الأخطر أولاً)</h3>
+                {diagnosis.items.length === 0 && <div className="text-xs text-[var(--text-secondary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">لا توجد مشاكل مرصودة حالياً.</div>}
+                {diagnosis.items.map((dg) => (
+                    <div key={dg.id} className="rounded-2xl p-3.5" style={{ background: SEV_STYLE[dg.severity].bg, border: `1.5px solid ${SEV_STYLE[dg.severity].border}` }}>
+                        <div className="font-extrabold text-sm text-[var(--text-primary)]">{dg.icon} {dg.title}</div>
+                        <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">📌 <b>الدليل:</b> {dg.evidence}</div>
+                        {dg.why && <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">🔍 <b className="text-[var(--text-primary)]">مكمن الخلل:</b> {dg.why}</div>}
+                        {dg.fix && dg.fix.length > 0 && (
+                            <div className="text-xs mt-1.5">
+                                <b className="text-[var(--text-primary)]">🛠 العلاج:</b>
+                                <ol className="pr-5 list-decimal text-[var(--text-secondary)] leading-relaxed mt-0.5 space-y-0.5">
+                                    {dg.fix.map((s, i) => <li key={i}>{s}</li>)}
+                                </ol>
+                            </div>
+                        )}
+                        {dg.impact && <div className="text-[11px] mt-1.5 font-bold" style={{ color: '#10b981' }}>📈 الأثر المتوقع: <span className="font-normal">{dg.impact}</span></div>}
                     </div>
                 ))}
             </section>
@@ -666,13 +901,113 @@ const AdminAnalyst: React.FC = () => {
                 );
             })()}
 
-            {/* ⏰ الذروة */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-1">⏰ ساعات الذروة (حجوزات، بتوقيت الرياض)</h3>
-                <Bars data={hourBars} color="#10b981" />
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-1 mt-3">📅 أيام الأسبوع</h3>
-                <Bars data={dayBars} color="#6366f1" />
-                <div className="text-[11px] text-[var(--text-secondary)] mt-2">💡 انصح التجار بنشر وتجديد عروضهم قبل الذروة بساعة — وضع الحملات الترويجية فيها.</div>
+            {/* ⏰ v12.42 — التحكم الكامل بالساعات (كل الساعات + مدى تختاره أنت) */}
+            <section className="bg-[var(--card-bg)] border-2 border-emerald-200 rounded-2xl p-4 space-y-3">
+                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">⏰ التحكم الكامل بالساعات — كل ساعة بكل تفاصيلها</h3>
+                <div>
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1">كل الساعات الـ٢٤ (حجوزات، توقيت الرياض)</div>
+                    <Bars data={hourBars} color="#10b981" />
+                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1 mt-2">📅 أيام الأسبوع</div>
+                    <Bars data={dayBars} color="#6366f1" />
+                </div>
+
+                {/* خريطة الأسبوع الحرارية: يوم × ساعة — اضغط أي خلية لتحليلها فوراً */}
+                {hoursData?.heatmap && (
+                    <div>
+                        <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🗓 خريطة الأسبوع (يوم × ساعة) — الأغمق = الأنشط، واضغط أي خلية لتحليلها</div>
+                        <div className="overflow-x-auto" style={{ direction: 'ltr' }}>
+                            {(() => {
+                                const hm = new Map<string, number>((hoursData.heatmap as any[]).map((c) => [`${c.dow}-${c.h}`, Number(c.n)]));
+                                const maxN = Math.max(1, ...(hoursData.heatmap as any[]).map((c) => Number(c.n)));
+                                return (
+                                    <div className="inline-block min-w-full">
+                                        {Array.from({ length: 7 }, (_, dow) => (
+                                            <div key={dow} className="flex items-center gap-[2px] mb-[2px]">
+                                                <span className="w-12 shrink-0 text-[9px] font-bold text-[var(--text-secondary)] text-right pl-1" style={{ direction: 'rtl' }}>{DOW_AR[dow]}</span>
+                                                {Array.from({ length: 24 }, (_, h) => {
+                                                    const n = hm.get(`${dow}-${h}`) || 0;
+                                                    const active = hrDow !== 'all' ? hrDow === dow : true;
+                                                    return (
+                                                        <button key={h} type="button"
+                                                            onClick={() => { setHrDow(dow); setHrFrom(h); setHrTo(h); }}
+                                                            title={`${DOW_AR[dow]} ${fmtHour(h)} — ${n} حجز`}
+                                                            className="flex-1 rounded-[3px]"
+                                                            style={{
+                                                                minWidth: 10, height: 16, cursor: 'pointer',
+                                                                background: n === 0 ? 'var(--body-bg)' : `rgba(16,185,129,${0.25 + 0.75 * (n / maxN)})`,
+                                                                outline: active ? 'none' : '1px solid transparent',
+                                                                opacity: active ? 1 : 0.45,
+                                                            }} />
+                                                    );
+                                                })}
+                                            </div>
+                                        ))}
+                                        <div className="flex items-center gap-[2px]">
+                                            <span className="w-12 shrink-0" />
+                                            {Array.from({ length: 24 }, (_, h) => (
+                                                <span key={h} className="flex-1 text-center text-[8px] text-[var(--text-secondary)]" style={{ minWidth: 10 }}>{h % 3 === 0 ? h : ''}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                )}
+
+                {/* أدوات التحكم: من / إلى / اليوم */}
+                <div className="flex flex-wrap gap-2 items-center bg-[var(--body-bg)] rounded-xl p-2.5">
+                    <span className="text-[11px] font-bold text-[var(--text-primary)]">حلّل المدى:</span>
+                    <label className="flex items-center gap-1 text-[11px] font-bold text-[var(--text-secondary)]">
+                        من
+                        <select value={hrFrom} onChange={(e) => setHrFrom(Number(e.target.value))}
+                            className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex items-center gap-1 text-[11px] font-bold text-[var(--text-secondary)]">
+                        إلى
+                        <select value={hrTo} onChange={(e) => setHrTo(Number(e.target.value))}
+                            className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+                        </select>
+                    </label>
+                    <select value={hrDow === 'all' ? 'all' : String(hrDow)} onChange={(e) => setHrDow(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                        className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
+                        <option value="all">📅 كل الأيام</option>
+                        {DOW_AR.map((d0, i) => <option key={i} value={i}>{d0}</option>)}
+                    </select>
+                    <span className="text-[10px] text-[var(--text-secondary)]">— يدعم الالتفاف عبر منتصف الليل (مثل ١٠م → ٤ص)</span>
+                </div>
+
+                {/* نتائج المدى المحدد */}
+                {hoursLoading ? (
+                    <div className="h-20 bg-[var(--gray-100)] rounded-xl animate-pulse" />
+                ) : hoursData?.totals ? (
+                    <>
+                        <div className="font-bold text-xs text-[var(--text-primary)]">
+                            نتائج {hrDow === 'all' ? 'كل الأيام' : DOW_AR[hrDow as number]} من {fmtHour(hrFrom)} إلى {fmtHour(hrTo)} (آخر {arNum(days)} يوماً):
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                            <Tile icon="📦" label="حجوزات" value={arNum(Number(hoursData.totals.bookings) || 0)} sub={`✅ ${arNum(Number(hoursData.totals.completed) || 0)} • 🚫 ${arNum(Number(hoursData.totals.cancelled) || 0)}`} />
+                            <Tile icon="🛒" label="مشترون نشطون" value={arNum(Number(hoursData.totals.buyers) || 0)} />
+                            <Tile icon="🏪" label="تجار مستفيدون" value={arNum(Number(hoursData.totals.sellers) || 0)} />
+                            <Tile icon="👁" label="مشاهدات ونقرات" value={arNum((Number(hoursData.totals.views) || 0) + (Number(hoursData.totals.clicks) || 0))} sub={`🔎 ${arNum(Number(hoursData.totals.searches) || 0)} بحث`} />
+                            <Tile icon="🏷" label="عروض نُشرت" value={arNum(Number(hoursData.totals.deals_published) || 0)} />
+                        </div>
+                        {(((hoursData.top_categories || []) as any[]).length > 0 || ((hoursData.top_cities || []) as any[]).length > 0) && (
+                            <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                {(hoursData.top_categories as any[]).map((c) => (
+                                    <span key={c.category} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏷 {catLabel(c.category)} ×{arNum(Number(c.n))}</span>
+                                ))}
+                                {(hoursData.top_cities as any[]).map((c) => (
+                                    <span key={c.city} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏙 {c.city} ×{arNum(Number(c.n))}</span>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ) : null}
+                <div className="text-[10px] text-[var(--text-secondary)]">💡 استخدمه لقرارات دقيقة: متى تجدول الحملات، أي ساعات تنصح تجار مدينة معينة بالنشر فيها، ومتى يكون البث الجماعي أعلى وصولاً.</div>
             </section>
 
             {/* 📈 النمو الشهري */}
