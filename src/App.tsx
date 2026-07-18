@@ -203,7 +203,10 @@ const AuthRedirector = () => {
 // حددها المالك فقط (public_from → public_to)، وللتجار والأدمن معاينة مبكرة
 // خلال نافذة إضافة العروض. خارج ذلك أي رابط قديم يعود للرئيسية بصمت.
 const SeasonalGate: React.FC = () => {
-    const { platformSettings, user } = useApp();
+    const { platformSettings, platformSettingsReady, user } = useApp();
+    // فتح /seasonal برابط مباشر يسبق وصول الإعدادات من الخادم — لا نحكم
+    // بالطرد قبل أن نعرف نوافذ الحملة فعلاً (كان يعيد التوجيه خطأً).
+    if (!platformSettingsReady) return <RouteFallback />;
     const camp = platformSettings.seasonCampaign;
     const allowed = campaignPublicLive(camp)
         || (campaignSellerOpen(camp) && (user?.userType === 'seller' || user?.userType === 'admin'));

@@ -172,6 +172,8 @@ interface AppContextType {
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
     platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null };
+    /** v12.48 — true بعد وصول platform_settings من الخادم؛ البوابات المعتمدة على النوافذ الزمنية تنتظرها قبل أي redirect */
+    platformSettingsReady: boolean;
     /** Seller's saved branches (store_branches table). Drives the
      *  "📍 لوكيشن سابق" chip picker on Add Deal — each chip lets the
      *  seller adopt that branch's region/city/pin in one tap. */
@@ -412,6 +414,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch { /* localStorage may be blocked (private mode) */ }
         return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null };
     });
+    // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
+    const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
 
     // Load platform settings + subscribe to realtime updates so admin toggles
     // propagate to every open tab without requiring a refresh.
@@ -461,6 +465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);
             }
+            if (!cancelled) setPlatformSettingsReady(true);
         })();
         const channel = supabase
             .channel('platform-settings-sync')
@@ -2709,6 +2714,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSuperAdmin, adminPermissions, hasPermission,
         incrementDealView, incrementDealClick,
         platformSettings,
+        platformSettingsReady,
         branches, saveBranch, removeBranch,
     }), [
         language, setLanguage,
@@ -2737,6 +2743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSuperAdmin, adminPermissions, hasPermission,
         incrementDealView, incrementDealClick,
         platformSettings,
+        platformSettingsReady,
         branches, saveBranch, removeBranch,
     ]);
 
