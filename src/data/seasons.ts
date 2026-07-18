@@ -74,7 +74,8 @@ export const SEASONS: Season[] = [
         taglineEn: 'National Day — massive green-day discounts from your city’s stores.',
         hintAr: '٢٣ سبتمبر',
         swatch: 'linear-gradient(130deg, #064e2b, #0e8544 60%, #25b06b)',
-        fx: { mode: 'fall', items: ['🇸🇦', '💚', '✨', '🇸🇦'] },
+        // v12.47 — طلب ناصر: بدون علم في العناصر النازلة؛ القلب الأخضر يهيمن.
+        fx: { mode: 'fall', items: ['💚', '✨', '💚'] },
     },
     {
         id: 'school',
