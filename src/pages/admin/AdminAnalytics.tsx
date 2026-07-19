@@ -311,6 +311,16 @@ const AdminAnalytics: React.FC = () => {
                 </p>
             </div>
 
+            {/* v12.52 — دليل مبسّط (طلب ناصر: «لست خبيراً مالياً») — ماذا يعني كل رقم؟ */}
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-3">
+                <div className="text-xs font-extrabold text-[var(--text-primary)] mb-1.5">📖 دليل سريع — كل تبويب وتخصصه (بلا مصطلحات):</div>
+                <ul className="text-[11px] font-bold text-[var(--text-secondary)] space-y-1 leading-relaxed">
+                    <li>📊 <b className="text-[var(--text-primary)]">التحليلات (هنا)</b>: نبض المنصة الآن — كم حجزاً وكم مستخدماً وكم ريالاً، لحظة بلحظة.</li>
+                    <li>🧠 <b className="text-[var(--text-primary)]">المحلل الذكي</b>: يحلل <b>التجار والسوق</b> — من يضعف، أين الفرص، وماذا تفعل حياله.</li>
+                    <li>👥 <b className="text-[var(--text-primary)]">جمهور المدن</b>: يحلل <b>المشترين</b> — كم مسجّلاً في كل منطقة ومدينة ومتى يدخلون.</li>
+                </ul>
+            </div>
+
             {/* Investor Pack — the headline metrics every VC asks for in the
                 first call (GMV, AOV, MAU, stickiness, conversion %, MoM growth,
                 retention curve, geographic spread). Sits at the very top because

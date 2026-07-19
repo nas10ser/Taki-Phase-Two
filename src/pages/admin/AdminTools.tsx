@@ -1245,8 +1245,10 @@ const AdminTools: React.FC = () => {
         const ok = await customConfirm('سيتم إنهاء الحملة: تختفي صفحة عروض الموسم ويقفل باب إضافة العروض للتجار (العروض الموسومة سابقاً تبقى عروضاً عادية). متابعة؟');
         if (!ok) return;
         setSavingCamp(true);
+        // v12.52 — كان value: null يفشل بصمت (العمود NOT NULL) فتبقى الحملة حية
+        // رغم «الإنهاء» — {} تعني «لا حملة» عند الويب والبوتين معاً.
         const { error } = await supabase.from('platform_settings').upsert({
-            key: 'season_campaign', value: null,
+            key: 'season_campaign', value: {},
             description: 'Season campaign windows: seller submissions + public page (v12.48)',
             updated_at: new Date().toISOString(),
         });

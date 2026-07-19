@@ -32,6 +32,10 @@ const SeasonalOffers: React.FC = () => {
     const publicLive = campaignPublicLive(camp);
     const earlyPreview = !publicLive && campaignSellerOpen(camp)
         && (user?.userType === 'seller' || user?.userType === 'admin');
+    // v12.52 — سرية المشاركات قبل الإطلاق (طلب ناصر): التاجر في المعاينة
+    // المبكرة يرى عروضه هو فقط — لا يطّلع أي متجر على مشاركات منافسيه قبل
+    // فتح الصفحة للعامة. الأدمن يرى الكل (يدير الحملة).
+    const sellerPreviewOwnOnly = earlyPreview && user?.userType === 'seller';
 
     // فلاتر مطابقة لقائمة العروض (DealsList)
     const [openNow, setOpenNow] = useState(true);
@@ -56,6 +60,9 @@ const SeasonalOffers: React.FC = () => {
             && !isDealExpiredByTime(d)
             && hasStock(d)
             && !blockedMerchants.includes(d.storeId));
+
+        // v12.52 — قبل الإطلاق العام: كل تاجر يرى مشاركاته فقط (سرية المنافسة)
+        if (sellerPreviewOwnOnly && user) list = list.filter(d => d.storeId === user.id);
 
         if (activeCategory !== 'all') {
             list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
@@ -93,7 +100,7 @@ const SeasonalOffers: React.FC = () => {
         else if (sortBy === 'reliability') list.sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0));
         else list.sort((a, b) => b.createdAt - a.createdAt);
         return list;
-    }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, openNow, verifiedOnly, searchQuery, sortBy, storeProfiles, isRTL]);
+    }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, openNow, verifiedOnly, searchQuery, sortBy, storeProfiles, isRTL, sellerPreviewOwnOnly, user?.id]);
 
     if (!season || !camp) return null; // البوابة في App.tsx تمنع الوصول أصلاً
 
@@ -139,7 +146,9 @@ const SeasonalOffers: React.FC = () => {
                         marginTop: 10, display: 'inline-block', padding: '6px 14px', borderRadius: 999,
                         background: 'rgba(0,0,0,0.28)', fontSize: '0.72rem', fontWeight: 800,
                     }}>
-                        {isRTL ? '👁 معاينة مبكرة (للتجار والإدارة) — لم تُفتح للعامة بعد' : '👁 Early preview (sellers & admins)'}
+                        {sellerPreviewOwnOnly
+                            ? (isRTL ? `👁 معاينة مبكرة — تعرض عروضك أنت فقط (مشاركات بقية التجار سرّية حتى الإطلاق${camp.publicFrom ? ` في ${camp.publicFrom}` : ''})` : '👁 Early preview — your own deals only')
+                            : (isRTL ? `👁 معاينة مبكرة (الإدارة) — تُفتح للعامة${camp.publicFrom ? ` في ${camp.publicFrom}` : ' لاحقاً'}` : '👁 Early preview (admin)')}
                     </div>
                 )}
             </div>

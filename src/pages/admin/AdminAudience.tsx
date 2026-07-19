@@ -1,17 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents } from 'react-leaflet';
 import { adminService } from '../../services/adminService';
-import { REGIONS, CITIES, CATEGORIES } from '../../data/mock';
+import { REGIONS, CITIES, LOCATIONS, CATEGORIES } from '../../data/mock';
 
 /**
- * v12.50 — «🗺 جمهور المدن» (طلب ناصر): أين المشترون وكم يدخلون يومياً؟
- *  - خريطة بآخر موقع معروف لكل مستخدم شارك موقعه (مباشر أو مرة واحدة).
- *  - إحصاء يومي: كم دخل التطبيق، كم حجز، ونسبة التحويل — مع إنذار هبوط.
- *  - فلترة بمنطقة / مدينة / نطاق كيلومتري أحدده بنقرة على الخريطة.
- *  - المصادر: ويب / بوت تيليجرام / بوت واتساب.
- *  - نسب التصنيفات المشاهدة داخل النطاق المحدد.
- * المصدر: RPC admin_geo_insights (أدمن فقط) فوق analytics_events (جلسة
- * «فتح» كل ٣٠ دقيقة كحد أقصى) + users.lat/lng + bookings.
+ * v12.52 — «👥 جمهور المدن» ج٢ (طلب ناصر): أرقام واضحة بلا خرائط —
+ * حُذفت خريطة التتبع نهائياً احتراماً لخصوصية المستخدمين.
+ *  - المناطق الـ١٣ كلها بأعداد المسجلين والمتفاعلين (اضغط منطقة لتصفيتها).
+ *  - المدن: مسجلون + متفاعلون + اليوم/أمس — والمنتقل من مدينة لأخرى يُحسب
+ *    على آخر مدينة عُرف فيها (الدمام ← الخبر = الخبر).
+ *  - يوم محدد + مدى ساعات بتوقيت الرياض + منطقة/مدينة/سوق محدد بنطاق كم.
+ *  - تفصيل الحجوزات: مكتمل / نشط / ملغى (مشتري / تاجر / انتهاء الوقت).
+ *  - ساعات الذروة (٢٤ ساعة) للنطاق المحدد.
+ * المصدر: RPC admin_geo_insights v2 (أدمن فقط) — لا تُرجع أي إحداثيات أفراد.
+ * هذا التبويب يحلل «المشترين» — المحلل الذكي يحلل «التجار والسوق».
  */
 
 type Geo = any;
@@ -26,6 +27,12 @@ const catName = (id: string) => {
 const deltaPct = (today: number, yday: number): number | null => {
     if (!yday) return null;
     return Math.round(((today - yday) / yday) * 100);
+};
+/** «٥ م» بدل 17 — تسميات ساعات مفهومة لغير التقنيين. */
+const hourLabel = (h: number) => {
+    const ampm = h < 12 ? 'ص' : 'م';
+    const base = h % 12 === 0 ? 12 : h % 12;
+    return `${base} ${ampm}`;
 };
 
 /** شريط أعمدة SVG بسيط (بلا مكتبات) — نفس روح SellerAnalytics. */
@@ -54,10 +61,32 @@ const DailyBars: React.FC<{ rows: Array<{ d: string; actives: number; bookers: n
     );
 };
 
-/** يلتقط نقرة الخريطة لتحديد مركز النطاق الكيلومتري. */
-const RadiusPicker: React.FC<{ onPick: (lat: number, lng: number) => void }> = ({ onPick }) => {
-    useMapEvents({ click: (e) => onPick(e.latlng.lat, e.latlng.lng) });
-    return null;
+/** أعمدة ساعات الذروة (٢٤ ساعة) — أعلى ساعة تتلوّن ذهبياً. */
+const HourBars: React.FC<{ rows: Array<{ hr: number; opens: number }> }> = ({ rows }) => {
+    const max = Math.max(1, ...rows.map(r => r.opens));
+    const top = rows.reduce((b, r) => (r.opens > b.opens ? r : b), { hr: -1, opens: -1 });
+    const W = 700, H = 120, pad = 4;
+    const bw = Math.max(5, (W - pad * 2) / 24 - 3);
+    return (
+        <div className="overflow-x-auto" dir="ltr">
+            <svg viewBox={`0 0 ${W} ${H + 26}`} className="w-full min-w-[420px]" style={{ maxHeight: 170 }}>
+                {rows.map((r) => {
+                    const x = pad + r.hr * ((W - pad * 2) / 24);
+                    const h = Math.round((r.opens / max) * H);
+                    const isTop = r.hr === top.hr && r.opens > 0;
+                    return (
+                        <g key={r.hr}>
+                            <rect x={x} y={H - h} width={bw} height={Math.max(h, r.opens > 0 ? 3 : 1)} rx={2}
+                                fill={isTop ? '#f59e0b' : '#0d9488'} opacity={r.opens > 0 ? 0.9 : 0.18} />
+                            {r.hr % 3 === 0 && (
+                                <text x={x + bw / 2} y={H + 14} textAnchor="middle" fontSize={8.5} fill="var(--text-secondary)" fontWeight={700}>{hourLabel(r.hr)}</text>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
+    );
 };
 
 const SRC_META: Record<string, { emoji: string; ar: string }> = {
@@ -68,88 +97,138 @@ const SRC_META: Record<string, { emoji: string; ar: string }> = {
 
 const AdminAudience: React.FC = () => {
     const [days, setDays] = useState(7);
+    const [onDate, setOnDate] = useState('');        // يوم محدد — يطغى على الفترة
+    const [hourFrom, setHourFrom] = useState(-1);    // -1 = كل الساعات
+    const [hourTo, setHourTo] = useState(-1);
     const [region, setRegion] = useState('');
     const [city, setCity] = useState('');
-    const [radiusOn, setRadiusOn] = useState(false);
+    const [mall, setMall] = useState('');            // سوق/مول محدد (نطاق كم حوله)
     const [radiusKm, setRadiusKm] = useState(10);
-    const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
     const [data, setData] = useState<Geo | null>(null);
     const [loading, setLoading] = useState(true);
 
     const regionCities = useMemo(() => CITIES.filter(c => !region || c.regionId === region), [region]);
+    const cityMalls = useMemo(() => LOCATIONS.filter(l => city && l.cityId === city), [city]);
+    const mallObj = useMemo(() => LOCATIONS.find(l => l.id === mall), [mall]);
+    const hoursOn = hourFrom >= 0 && hourTo >= 0;
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
         adminService.getGeoInsights({
             days,
+            date: onDate || null,
+            hourFrom: hoursOn ? hourFrom : null,
+            hourTo: hoursOn ? hourTo : null,
             region: region || null,
             city: city || null,
-            lat: radiusOn && center ? center.lat : null,
-            lng: radiusOn && center ? center.lng : null,
-            radiusKm: radiusOn && center ? radiusKm : null,
+            lat: mallObj?.lat ?? null,
+            lng: mallObj?.lng ?? null,
+            radiusKm: mallObj ? radiusKm : null,
         }).then(d => { if (alive) { setData(d); setLoading(false); } });
         return () => { alive = false; };
-    }, [days, region, city, radiusOn, center, radiusKm]);
+    }, [days, onDate, hourFrom, hourTo, hoursOn, region, city, mallObj, radiusKm]);
 
     const t = data?.totals || {};
     const daily: Array<any> = data?.daily || [];
+    const hours: Array<any> = data?.hours || [];
+    const regions: Array<any> = data?.regions || [];
     const sources: Array<any> = data?.sources || [];
     const cats: Array<any> = data?.cats || [];
     const cities: Array<any> = data?.cities || [];
-    const points: Array<any> = data?.points || [];
 
     const todayDelta = deltaPct(Number(t.actives_today) || 0, Number(t.actives_yday) || 0);
     const conv = (Number(t.actives) || 0) > 0 ? Math.round(((Number(t.bookers) || 0) / Number(t.actives)) * 100) : 0;
     const catTotal = Math.max(1, cats.reduce((s, c) => s + (Number(c.views) || 0), 0));
-    const bigDrop = todayDelta !== null && todayDelta <= -40;
+    const bigDrop = !onDate && todayDelta !== null && todayDelta <= -40;
+    const topHour = hours.reduce((b: any, r: any) => ((r.opens || 0) > (b?.opens || 0) ? r : b), null);
+
+    // المسجلون داخل النطاق المختار (مدينة > منطقة > الكل)
+    const scopeRegistered = city
+        ? Number(cities.find(c => c.city === city)?.registered) || 0
+        : region
+            ? Number(regions.find(r => r.region === region)?.registered) || 0
+            : Number(t.total_users) || 0;
+
+    // نضمن ظهور المناطق الـ١٣ كلها حتى الصفرية
+    const regions13 = useMemo(() => REGIONS.map(r => {
+        const row = regions.find(x => x.region === r.id) || {};
+        return { id: r.id, name: r.name, registered: Number(row.registered) || 0, actives: Number(row.actives) || 0, buyers: Number(row.buyers) || 0, sellers: Number(row.sellers) || 0 };
+    }), [regions]);
+
+    const periodLabel = onDate
+        ? `يوم ${onDate}${hoursOn ? ` (${hourLabel(hourFrom)} → ${hourLabel(hourTo)})` : ''}`
+        : `${days === 1 ? 'اليوم' : `آخر ${days} يوم`}${hoursOn ? ` (${hourLabel(hourFrom)} → ${hourLabel(hourTo)})` : ''}`;
 
     return (
         <div className="space-y-4 font-tajawal" dir="rtl">
             <div>
-                <h2 className="text-xl font-extrabold text-[var(--text-primary)]">🗺 جمهور المدن — أماكن المشترين وتفاعلهم</h2>
+                <h2 className="text-xl font-extrabold text-[var(--text-primary)]">👥 جمهور المدن — أعداد المشترين وتفاعلهم</h2>
                 <p className="text-xs text-[var(--text-secondary)] font-bold mt-1 leading-relaxed">
-                    كم شخصاً دخل يومياً، من أين، من أي قناة، وكم منهم حجز — لكل السعودية أو منطقة أو مدينة أو نطاق تحدده بنقرة على الخريطة.
+                    هذا التبويب عن <b>المشترين</b>: كم مسجّلاً في كل منطقة ومدينة، كم دخلوا، متى ذروتهم، وماذا فعلوا —
+                    أرقام فقط <b>بلا خرائط تتبّع</b> احتراماً للخصوصية. (تحليل التجار والسوق في «المحلل الذكي»).
                 </p>
             </div>
 
-            {/* الفلاتر */}
+            {/* التحكم الكامل: الفترة/اليوم + الساعات + المكان */}
             <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
                     {[1, 7, 14, 30].map(d => (
-                        <button key={d} onClick={() => setDays(d)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${days === d ? 'bg-teal-600 text-white border-teal-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
+                        <button key={d} onClick={() => { setDays(d); setOnDate(''); }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${!onDate && days === d ? 'bg-teal-600 text-white border-teal-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
                             {d === 1 ? 'اليوم' : `آخر ${d} يوم`}
                         </button>
                     ))}
+                    <label className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-extrabold cursor-pointer ${onDate ? 'bg-teal-600 text-white border-teal-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
+                        📅 يوم محدد
+                        <input type="date" value={onDate} onChange={e => setOnDate(e.target.value)}
+                            className="bg-transparent text-inherit font-bold text-[11px] outline-none" style={{ colorScheme: 'auto' }} />
+                        {onDate && <button onClick={(ev) => { ev.preventDefault(); setOnDate(''); }} className="font-black">✕</button>}
+                    </label>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                    <select value={region} onChange={e => { setRegion(e.target.value); setCity(''); }}
+                    <select value={hourFrom} onChange={e => { const v = Number(e.target.value); setHourFrom(v); if (v >= 0 && hourTo < 0) setHourTo(23); if (v < 0) setHourTo(-1); }}
                         className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
-                        <option value="">🌍 كل المناطق</option>
+                        <option value={-1}>🕐 كل الساعات</option>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>من {hourLabel(h)}</option>)}
+                    </select>
+                    <select value={hourTo} disabled={hourFrom < 0} onChange={e => setHourTo(Number(e.target.value))}
+                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)] disabled:opacity-50">
+                        <option value={-1}>—</option>
+                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>إلى {hourLabel(h)}</option>)}
+                    </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <select value={region} onChange={e => { setRegion(e.target.value); setCity(''); setMall(''); }}
+                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
+                        <option value="">🌍 كل المناطق (١٣)</option>
                         {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
-                    <select value={city} onChange={e => setCity(e.target.value)}
+                    <select value={city} onChange={e => { setCity(e.target.value); setMall(''); }}
                         className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
                         <option value="">🏙 كل المدن</option>
                         {regionCities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-extrabold text-[var(--text-primary)]">
-                        <input type="checkbox" checked={radiusOn} onChange={e => setRadiusOn(e.target.checked)} className="w-4 h-4 accent-teal-600" />
-                        🎯 نطاق كيلومتري (انقر على الخريطة لتحديد المركز)
-                    </label>
-                    {radiusOn && (
-                        <div className="flex items-center gap-1.5">
-                            <input type="number" min={1} max={200} value={radiusKm}
-                                onChange={e => setRadiusKm(Math.min(200, Math.max(1, Number(e.target.value) || 1)))}
-                                className="w-16 px-2 py-1 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-center text-[var(--text-primary)]" />
-                            <span className="text-[10px] font-bold text-[var(--text-secondary)]">كم</span>
-                            {center && <span className="text-[10px] font-bold text-teal-700">📍 {center.lat.toFixed(3)}, {center.lng.toFixed(3)}</span>}
-                        </div>
-                    )}
-                </div>
+                {city && cityMalls.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <select value={mall} onChange={e => setMall(e.target.value)}
+                            className="flex-1 min-w-[160px] px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
+                            <option value="">🏬 المدينة كاملة (بدون سوق محدد)</option>
+                            {cityMalls.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                        {mall && (
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-[var(--text-secondary)]">نطاق</span>
+                                <input type="number" min={1} max={100} value={radiusKm}
+                                    onChange={e => setRadiusKm(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
+                                    className="w-16 px-2 py-1 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-center text-[var(--text-primary)]" />
+                                <span className="text-[10px] font-bold text-[var(--text-secondary)]">كم حول السوق</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+                <div className="text-[10px] font-bold text-teal-700">🎯 يعرض الآن: {periodLabel} • {mallObj ? `${mallObj.name} (${radiusKm} كم)` : city ? cityName(city) : region ? regionName(region) : 'كل السعودية'}</div>
             </div>
 
             {loading ? (
@@ -165,31 +244,90 @@ const AdminAudience: React.FC = () => {
                         </div>
                     )}
 
-                    {/* KPIs */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {/* الأرقام الرئيسية — بلغة بسيطة */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                         <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-teal-700">{arNum(t.actives)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">👥 متفاعل خلال الفترة</div>
+                            <div className="text-2xl font-black text-[var(--text-primary)]">{arNum(scopeRegistered)}</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🪪 مسجّلون في هذا النطاق</div>
                         </div>
                         <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-[var(--text-primary)]">
-                                {arNum(t.actives_today)}
-                                {todayDelta !== null && (
-                                    <span className={`text-xs font-black mr-1 ${todayDelta < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                        {todayDelta > 0 ? `▲${todayDelta}٪` : todayDelta < 0 ? `▼${Math.abs(todayDelta)}٪` : '='}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">📅 دخلوا اليوم (أمس: {arNum(t.actives_yday)})</div>
+                            <div className="text-2xl font-black text-teal-700">{arNum(t.actives)}</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">👥 دخلوا فعلاً في الفترة المحددة</div>
+                        </div>
+                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
+                            <div className="text-2xl font-black text-indigo-600">{arNum(t.new_users)}</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🆕 سجّلوا جديداً في الفترة</div>
                         </div>
                         <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
                             <div className="text-2xl font-black text-amber-600">{arNum(t.bookers)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🎟 حجزوا ({arNum(t.bookings)} حجزاً)</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🎟 أشخاص حجزوا</div>
+                        </div>
+                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
+                            <div className="text-2xl font-black text-[var(--text-primary)]">{arNum(t.bookings)}</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">📦 إجمالي الحجوزات</div>
                         </div>
                         <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
                             <div className={`text-2xl font-black ${conv < 10 ? 'text-red-600' : 'text-emerald-600'}`}>{conv}٪</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🔁 نسبة التحويل دخول→حجز</div>
+                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🔁 من دخلوا وانتهوا بحجز</div>
                         </div>
+                    </div>
+
+                    {/* تفصيل الحجوزات: من أنجز ومن ألغى؟ */}
+                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
+                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">📦 ماذا حدث للحجوزات في هذه الفترة؟</div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="bg-emerald-500/10 rounded-xl p-2.5">
+                                <div className="text-lg font-black text-emerald-600">{arNum(t.bk_completed)}</div>
+                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">✅ استُلمت (مكتملة)</div>
+                            </div>
+                            <div className="bg-sky-500/10 rounded-xl p-2.5">
+                                <div className="text-lg font-black text-sky-600">{arNum(t.bk_active)}</div>
+                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">⏳ ما زالت قائمة</div>
+                            </div>
+                            <div className="bg-red-500/10 rounded-xl p-2.5">
+                                <div className="text-lg font-black text-red-600">{arNum(t.bk_cancelled)}</div>
+                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">🚫 أُلغيت</div>
+                            </div>
+                        </div>
+                        {Number(t.bk_cancelled) > 0 && (
+                            <div className="flex gap-2 mt-2 text-[10px] font-extrabold text-[var(--text-secondary)] flex-wrap">
+                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">🛍 ألغاها المشتري: {arNum(t.bk_c_buyer)}</span>
+                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">🏪 ألغاها التاجر: {arNum(t.bk_c_seller)}</span>
+                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">⏰ انتهى وقتها تلقائياً: {arNum(t.bk_c_system)}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* المناطق الـ١٣ — أرقام لا خرائط */}
+                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
+                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">🗺 المناطق الـ١٣ — كم مسجّلاً في كل منطقة؟</div>
+                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">اضغط أي منطقة لتصفية كل الأرقام عليها. «مسجّل» = آخر موقع معروف له داخل المنطقة.</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {regions13.map(r => (
+                                <button key={r.id} onClick={() => { setRegion(region === r.id ? '' : r.id); setCity(''); setMall(''); }}
+                                    className={`text-right rounded-xl p-2.5 border transition-all ${region === r.id ? 'border-teal-600 bg-teal-600/10 shadow' : 'border-[var(--border-color)] bg-[var(--body-bg)] hover:shadow'}`}>
+                                    <div className="text-[11px] font-extrabold text-[var(--text-primary)] truncate">{r.name}</div>
+                                    <div className="flex items-baseline gap-2 mt-1">
+                                        <span className="text-lg font-black text-teal-700">{arNum(r.registered)}</span>
+                                        <span className="text-[9px] font-bold text-[var(--text-secondary)]">مسجّل</span>
+                                        <span className="text-xs font-black text-amber-600 mr-auto">{arNum(r.actives)}</span>
+                                        <span className="text-[9px] font-bold text-[var(--text-secondary)]">نشِط</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* ساعات الذروة */}
+                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
+                        <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
+                            <div className="text-sm font-extrabold text-[var(--text-primary)]">⏰ ساعات الذروة {city ? `في ${cityName(city)}` : region ? `في ${regionName(region)}` : ''}</div>
+                            {topHour && topHour.opens > 0 && (
+                                <span className="text-[10px] font-black text-amber-600 bg-amber-500/10 px-2 py-1 rounded-full">🔥 الذروة: {hourLabel(topHour.hr)} ({arNum(topHour.opens)} دخول)</span>
+                            )}
+                        </div>
+                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">كل عمود = عدد مرات الدخول في تلك الساعة (بتوقيت الرياض) خلال الفترة المحددة.</p>
+                        <HourBars rows={hours} />
                     </div>
 
                     {/* الرسم اليومي */}
@@ -224,7 +362,7 @@ const AdminAudience: React.FC = () => {
 
                     {/* التصنيفات */}
                     <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">🏷 أي التصنيفات يشاهدون؟ (٪ من مشاهدات المنتجات)</div>
+                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">🏷 أين دخلوا؟ (أي التصنيفات شاهدوا)</div>
                         {cats.length === 0 ? (
                             <div className="text-xs font-bold text-[var(--text-secondary)] text-center py-3">لا مشاهدات منتجات مسجلة في هذه الفترة/النطاق بعد.</div>
                         ) : (
@@ -237,7 +375,7 @@ const AdminAudience: React.FC = () => {
                                             <div className="flex-1 h-3 bg-[var(--body-bg)] rounded-full overflow-hidden border border-[var(--border-color)]">
                                                 <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#0d9488,#14b8a6)' }} />
                                             </div>
-                                            <div className="w-14 text-[11px] font-black text-teal-700 text-left" dir="ltr">{pct}٪ ({arNum(c.views)})</div>
+                                            <div className="w-24 text-[11px] font-black text-teal-700 text-left" dir="ltr">{pct}٪ ({arNum(c.viewers)} شخص)</div>
                                         </div>
                                     );
                                 })}
@@ -247,7 +385,10 @@ const AdminAudience: React.FC = () => {
 
                     {/* المدن */}
                     <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">🏙 المدن الأنشط (اليوم مقابل أمس)</div>
+                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">🏙 المدن — مسجّلون ونشاط</div>
+                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">
+                            المنتقل بين المدن يُحسب على <b>آخر مدينة</b> عُرف فيها (كان في الدمام وصار في الخبر ← يُحسب على الخبر).
+                        </p>
                         {cities.length === 0 ? (
                             <div className="text-xs font-bold text-[var(--text-secondary)] text-center py-3">
                                 لا مستخدمين بموقع معروف تفاعلوا في هذه الفترة — كلما شارك المتسوقون مواقعهم امتلأ هذا الجدول.
@@ -258,7 +399,8 @@ const AdminAudience: React.FC = () => {
                                     <thead>
                                         <tr className="text-[var(--text-secondary)] font-extrabold">
                                             <th className="text-right py-1.5">المدينة</th>
-                                            <th className="text-center py-1.5">متفاعلون</th>
+                                            <th className="text-center py-1.5">مسجّلون</th>
+                                            <th className="text-center py-1.5">دخلوا في الفترة</th>
                                             <th className="text-center py-1.5">اليوم</th>
                                             <th className="text-center py-1.5">أمس</th>
                                             <th className="text-center py-1.5">التغيّر</th>
@@ -269,7 +411,13 @@ const AdminAudience: React.FC = () => {
                                             const dl = deltaPct(Number(c.today) || 0, Number(c.yesterday) || 0);
                                             return (
                                                 <tr key={c.city} className="border-t border-[var(--border-color)] font-bold text-[var(--text-primary)]">
-                                                    <td className="py-1.5">{cityName(c.city)} <span className="text-[9px] text-[var(--text-secondary)]">({regionName(c.region)})</span></td>
+                                                    <td className="py-1.5">
+                                                        <button onClick={() => { setRegion(c.region || ''); setCity(c.city); setMall(''); }} className="font-extrabold text-teal-700 hover:underline">
+                                                            {cityName(c.city)}
+                                                        </button>
+                                                        {' '}<span className="text-[9px] text-[var(--text-secondary)]">({regionName(c.region)})</span>
+                                                    </td>
+                                                    <td className="text-center">{arNum(c.registered)}</td>
                                                     <td className="text-center">{arNum(c.actives)}</td>
                                                     <td className="text-center">{arNum(c.today)}</td>
                                                     <td className="text-center">{arNum(c.yesterday)}</td>
@@ -287,48 +435,9 @@ const AdminAudience: React.FC = () => {
                                 </table>
                             </div>
                         )}
-                    </div>
-
-                    {/* الخريطة */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="text-sm font-extrabold text-[var(--text-primary)]">📍 خريطة المستخدمين (آخر موقع معروف)</div>
-                            <div className="text-[10px] font-bold text-[var(--text-secondary)]">
-                                {arNum(t.located_users)} من {arNum(t.total_users)} مستخدماً شاركوا موقعهم
-                            </div>
-                        </div>
-                        <div style={{ height: 380, borderRadius: 16, overflow: 'hidden' }}>
-                            <MapContainer center={[24.7136, 46.6753]} zoom={5} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                {radiusOn && <RadiusPicker onPick={(lat, lng) => setCenter({ lat, lng })} />}
-                                {radiusOn && center && (
-                                    <Circle center={[center.lat, center.lng]} radius={radiusKm * 1000}
-                                        pathOptions={{ color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.08 }} />
-                                )}
-                                {points.map((p) => (
-                                    <CircleMarker
-                                        key={p.id}
-                                        center={[p.lat, p.lng]}
-                                        radius={7}
-                                        pathOptions={{
-                                            color: p.type === 'seller' ? '#f59e0b' : p.type === 'admin' ? '#8b5cf6' : '#0d9488',
-                                            fillOpacity: 0.75, weight: 2,
-                                        }}
-                                    >
-                                        <Popup>
-                                            <div style={{ fontFamily: 'inherit', fontWeight: 700, fontSize: 12, direction: 'rtl' }}>
-                                                {p.type === 'seller' ? '🏪' : p.type === 'admin' ? '🛡' : '🛍'} {p.name || 'مستخدم'}
-                                                <br />المدينة: {cityName(p.city)}
-                                                {p.last_seen && <><br />آخر نشاط: {new Date(p.last_seen).toLocaleString('ar-SA')}</>}
-                                            </div>
-                                        </Popup>
-                                    </CircleMarker>
-                                ))}
-                            </MapContainer>
-                        </div>
                         <div className="text-[10px] font-bold text-[var(--text-secondary)] mt-2 leading-relaxed">
-                            🛍 مشترٍ • 🏪 تاجر • 🛡 إدارة — النقطة تعكس آخر موقع شاركه المستخدم (مباشر أو لمرة واحدة).
-                            الجلسات تُحسب مرة كل ٣٠ دقيقة كحد أقصى لكل مستخدم، والزوار بلا حساب يُحصون في الإجمالي بلا موقع.
+                            🔒 خصوصية: {arNum(t.located_users)} من {arNum(t.total_users)} مستخدماً شاركوا موقعهم — نعرض <b>أعداداً فقط</b>،
+                            لا خرائط ولا مواقع أفراد. الجلسات تُحسب مرة كل ٣٠ دقيقة كحد أقصى لكل مستخدم.
                         </div>
                     </div>
                 </>

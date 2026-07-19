@@ -503,7 +503,8 @@ export const adminService = {
     // ================================================================
     /** إحصاء المتفاعلين يومياً (دخول/حجوزات/مصادر/تصنيفات/مدن/نقاط خريطة)
      *  مع فلترة اختيارية بمنطقة أو مدينة أو نطاق كيلومتري حول نقطة. */
-    async getGeoInsights(p: { days?: number; region?: string | null; city?: string | null; lat?: number | null; lng?: number | null; radiusKm?: number | null }): Promise<any | null> {
+    // v12.52 — «جمهور المدن» ج٢: يوم محدد + مدى ساعات (الرياض) بلا أي خرائط.
+    async getGeoInsights(p: { days?: number; region?: string | null; city?: string | null; lat?: number | null; lng?: number | null; radiusKm?: number | null; date?: string | null; hourFrom?: number | null; hourTo?: number | null }): Promise<any | null> {
         const { data, error } = await supabase.rpc('admin_geo_insights', {
             p_days: p.days ?? 7,
             p_region: p.region ?? null,
@@ -511,6 +512,9 @@ export const adminService = {
             p_lat: p.lat ?? null,
             p_lng: p.lng ?? null,
             p_radius_km: p.radiusKm ?? null,
+            p_date: p.date ?? null,
+            p_hour_from: p.hourFrom ?? null,
+            p_hour_to: p.hourTo ?? null,
         });
         if (error) { console.error('[adminService.getGeoInsights]', error); return null; }
         return data;

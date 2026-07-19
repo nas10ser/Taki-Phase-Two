@@ -708,15 +708,26 @@ const AdminAnalyst: React.FC = () => {
             <div className="bg-gradient-to-l from-indigo-600 to-violet-700 text-white rounded-3xl p-5">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
-                        <div className="text-xl font-black">🧠 المحلل الذكي</div>
+                        <div className="text-xl font-black">🧠 المحلل الذكي — التجار والسوق</div>
                         <div className="text-[12px] opacity-90 mt-1 leading-relaxed max-w-xl">
-                            يحلل كل نشاط المنصة آلياً — عزوف التجار وأسبابه، ساعات الذروة، الفرص بالمدن والتصنيفات،
-                            وتوصية جاهزة لكل تاجر <b>لا تُرسل إلا بموافقتك</b>. يراقب أسبوعياً ويُنبّهك عند بدء العزوف أو القفزات.
+                            هذا التبويب يحلل <b>التجار وصحة السوق</b>: عزوف التجار وأسبابه، ساعات الذروة، الفرص بالمدن
+                            والتصنيفات، وتوصية جاهزة لكل تاجر <b>لا تُرسل إلا بموافقتك</b>.
+                            (أرقام <b>المشترين</b> في تبويب «جمهور المدن»، والأرقام المالية العامة في «التحليلات».)
+                        </div>
+                        <div className="text-[11px] opacity-80 mt-1.5 font-bold">
+                            ⬅️ الأزرار جانباً تحدد فترة التحليل لكل الأقسام أدناه — واللوحة المخصصة تتبعها تلقائياً.
                         </div>
                     </div>
                     <div className="flex gap-1.5 items-center">
                         {[7, 30, 90].map((d) => (
-                            <button key={d} onClick={() => setDays(d)}
+                            <button key={d}
+                                onClick={() => {
+                                    // v12.52 — إنهاء «تضارب التواريخ»: الزر يضبط الفترة لكل
+                                    // الأقسام ويُزامن تواريخ اللوحة المخصصة معه فلا يتعارضان.
+                                    setDays(d);
+                                    setCuStart(isoDay(-d));
+                                    setCuEnd(isoDay(0));
+                                }}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-extrabold ${days === d ? 'bg-white text-indigo-700' : 'bg-white/15 text-white'}`}>
                                 {arNum(d)} يوم
                             </button>
@@ -729,6 +740,10 @@ const AdminAnalyst: React.FC = () => {
             {/* 🎛 v12.43 — المحلل المخصص: أي تاريخ/ساعة/مدينة/تصنيف يدوياً → تحليل تلقائي */}
             <section className="bg-[var(--card-bg)] border-2 border-violet-300 rounded-2xl p-4 space-y-3">
                 <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🎛 المحلل المخصص — حدد أي شيء وسيتحلل فوراً</h3>
+                <p className="text-[10px] font-bold text-[var(--text-secondary)] leading-relaxed -mt-1.5">
+                    هذه اللوحة <b>تتبع أزرار الفترة في الأعلى تلقائياً</b> (٧/٣٠/٩٠ يوم). وإذا عدّلت أي حقل هنا يدوياً،
+                    فالنتائج داخل هذه اللوحة فقط تتبع اختيارك — بقية الأقسام تبقى على فترة الأزرار العلوية.
+                </p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                     <label className="block">
                         <span className="font-bold text-[var(--text-secondary)] block mb-1">من تاريخ</span>
