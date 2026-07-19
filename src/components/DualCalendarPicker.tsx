@@ -9,6 +9,10 @@ interface DualCalendarPickerProps {
     /** Pre-selected Hijri date 'YYYY-MM-DD' or Gregorian 'YYYY-MM-DD' */
     currentHijri?: string;
     currentGregorian?: string;
+    /** v12.50 — نطاق مسموح (ميلادي YYYY-MM-DD): أيام خارجَه تُعطَّل ولا تُختار.
+     *  يُستخدم لحصر عروض الموسم بين تاريخي الحملة اللذين حددهما المالك. */
+    minDate?: string;
+    maxDate?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -84,6 +88,13 @@ function getHijriMonthDays(hYear: number, hMonth: number): Array<{ hd: number; g
     return result;
 }
 
+/** Local-timezone YYYY-MM-DD — NOT toISOString(): that converts to UTC and
+ *  rolls the date back a day for any timezone east of Greenwich (Riyadh +3),
+ *  which made the saved Gregorian date lag one day behind the picked Hijri. */
+function toLocalYMD(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /** Format gregorian date for display */
 function formatGregDay(date: Date) {
     return date.getDate();
@@ -95,10 +106,18 @@ function gregMonthShort(date: Date, ar: boolean) {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
-    isOpen, onClose, onSelect, isRTL, currentHijri, currentGregorian,
+    isOpen, onClose, onSelect, isRTL, currentHijri, currentGregorian, minDate, maxDate,
 }) => {
     const today = new Date();
     const todayH = gregorianToHijri(today);
+
+    // v12.50 — هل هذا اليوم داخل النطاق المسموح؟ (بدون نطاق = كل الأيام مسموحة)
+    const inRange = useCallback((d: Date): boolean => {
+        const s = toLocalYMD(d);
+        if (minDate && s < minDate) return false;
+        if (maxDate && s > maxDate) return false;
+        return true;
+    }, [minDate, maxDate]);
 
     // ── View state: which Hijri month are we browsing ──
     const [viewH, setViewH] = useState<{ y: number; m: number }>({ y: todayH.y, m: todayH.m });
@@ -175,13 +194,14 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
         a.getDate() === b.getDate();
 
     const handleSelectDay = useCallback((gregDate: Date) => {
+        if (!inRange(gregDate)) return; // خارج نطاق الموسم — اليوم مُعطَّل
         setSelectedGreg(gregDate);
         const h = gregorianToHijri(gregDate);
         const hijri = `${h.y}-${String(h.m).padStart(2,'0')}-${String(h.d).padStart(2,'0')}`;
-        const gregorian = gregDate.toISOString().split('T')[0];
+        const gregorian = toLocalYMD(gregDate);
         onSelect({ hijri, gregorian });
         onClose();
-    }, [onSelect, onClose]);
+    }, [onSelect, onClose, inRange]);
 
     const changeHijriMonth = (delta: number) => {
         setViewH(prev => {
@@ -207,7 +227,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
         const h = gregorianToHijri(today);
         setViewH({ y: h.y, m: h.m });
         setViewGreg({ y: today.getFullYear(), m: today.getMonth() });
-        handleSelectDay(today);
+        if (inRange(today)) handleSelectDay(today);
     };
 
     const handleClear = () => {
@@ -221,7 +241,9 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
         if (!selectedGreg) return null;
         const h = gregorianToHijri(selectedGreg);
         const hStr = `${h.d} ${isRTL ? HIJRI_MONTHS[h.m-1].ar : HIJRI_MONTHS[h.m-1].en} ${h.y}هـ`;
-        const gStr = selectedGreg.toLocaleDateString(isRTL ? 'ar-SA' : 'en-US', { day:'numeric', month:'long', year:'numeric' });
+        // 'ar-SA' وحدها تعرض التقويم الهجري (أم القرى) — إجبار gregory حتى
+        // يظهر السطر الثاني ميلادياً فعلاً بدل هجريين متطابقين.
+        const gStr = selectedGreg.toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US', { day:'numeric', month:'long', year:'numeric' });
         return { h: hStr, g: gStr };
     }, [selectedGreg, isRTL]);
 
@@ -346,6 +368,19 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                             </button>
                         </div>
 
+                        {/* v12.50 — نطاق الموسم المسموح (يظهر فقط عندما يُمرَّر حد) */}
+                        {(minDate || maxDate) && (
+                            <div style={{
+                                marginBottom: 10, padding: '6px 10px', borderRadius: 10,
+                                background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.25)',
+                                color: 'white', fontSize: '0.7rem', fontWeight: 800, textAlign: 'center',
+                            }}>
+                                {isRTL
+                                    ? `🌟 المسموح داخل الموسم: ${minDate ? `من ${minDate}` : ''} ${maxDate ? `إلى ${maxDate}` : ''}`
+                                    : `🌟 Season range: ${minDate ? `from ${minDate}` : ''} ${maxDate ? `to ${maxDate}` : ''}`}
+                            </div>
+                        )}
+
                         {/* Selected Date Display */}
                         <div style={{ color: 'white' }}>
                             {selectedLabel ? (
@@ -465,6 +500,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                 {hijriDays.map(({ hd, greg }) => {
                                     const isSelected = selectedGreg ? isSameDay(greg, selectedGreg) : false;
                                     const isTodayCell = isSameDay(greg, today);
+                                    const isDisabled = !inRange(greg);
                                     const gregDay = greg.getDate();
                                     const h = gregorianToHijri(greg);
                                     const isFirstOfGregMonth = gregDay === 1;
@@ -472,9 +508,12 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                     return (
                                         <button
                                             key={hd}
+                                            disabled={isDisabled}
                                             className={`dcal-day-btn${isSelected ? ' selected' : ''}${isTodayCell && !isSelected ? ' today-cell' : ''}`}
                                             style={{
                                                 background: isSelected ? undefined : 'transparent',
+                                                opacity: isDisabled ? 0.22 : 1,
+                                                cursor: isDisabled ? 'not-allowed' : 'pointer',
                                             }}
                                             onClick={() => handleSelectDay(greg)}
                                         >
@@ -513,14 +552,20 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                 {gregorianDays.map((greg) => {
                                     const isSelected = selectedGreg ? isSameDay(greg, selectedGreg) : false;
                                     const isTodayCell = isSameDay(greg, today);
+                                    const isDisabled = !inRange(greg);
                                     const h = gregorianToHijri(greg);
                                     const isFirstOfHijriMonth = h.d === 1;
 
                                     return (
                                         <button
                                             key={greg.getDate()}
+                                            disabled={isDisabled}
                                             className={`dcal-day-btn${isSelected ? ' selected' : ''}${isTodayCell && !isSelected ? ' today-cell' : ''}`}
-                                            style={{ background: isSelected ? undefined : 'transparent' }}
+                                            style={{
+                                                background: isSelected ? undefined : 'transparent',
+                                                opacity: isDisabled ? 0.22 : 1,
+                                                cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                            }}
                                             onClick={() => handleSelectDay(greg)}
                                         >
                                             {/* Primary: Gregorian day */}

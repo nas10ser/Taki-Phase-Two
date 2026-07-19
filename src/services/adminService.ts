@@ -499,6 +499,24 @@ export const adminService = {
     },
 
     // ================================================================
+    // v12.50 — «🗺 جمهور المدن» — تحليلات المشترين الجغرافية
+    // ================================================================
+    /** إحصاء المتفاعلين يومياً (دخول/حجوزات/مصادر/تصنيفات/مدن/نقاط خريطة)
+     *  مع فلترة اختيارية بمنطقة أو مدينة أو نطاق كيلومتري حول نقطة. */
+    async getGeoInsights(p: { days?: number; region?: string | null; city?: string | null; lat?: number | null; lng?: number | null; radiusKm?: number | null }): Promise<any | null> {
+        const { data, error } = await supabase.rpc('admin_geo_insights', {
+            p_days: p.days ?? 7,
+            p_region: p.region ?? null,
+            p_city: p.city ?? null,
+            p_lat: p.lat ?? null,
+            p_lng: p.lng ?? null,
+            p_radius_km: p.radiusKm ?? null,
+        });
+        if (error) { console.error('[adminService.getGeoInsights]', error); return null; }
+        return data;
+    },
+
+    // ================================================================
     // v12.38 — «🧠 المحلل الذكي» wrappers
     // ================================================================
     /** Full platform analysis (peak hours, funnel, growth, renewals, seller

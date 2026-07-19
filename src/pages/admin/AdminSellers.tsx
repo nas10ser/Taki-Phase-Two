@@ -32,6 +32,7 @@ import { Tooltip } from '../../components/admin/Tooltip';
 import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
 import PackagePricingPanel from '../../components/admin/PackagePricingPanel';
+import SponsorLayoutPanel from '../../components/admin/SponsorLayoutPanel';
 import { CsvColumn } from '../../utils/csvExport';
 
 const SELLER_CSV_COLUMNS: CsvColumn<AdminUserRow>[] = [
@@ -2060,6 +2061,10 @@ const AdminSellers: React.FC = () => {
             {/* Dedicated boxes so sponsors & admins are distinguishable among
                 thousands of ordinary accounts (each with its own search). */}
             <SponsorsBox refreshKey={boxesRefresh} onManage={manageSponsor} />
+            {/* v12.50 — تحكم يدوي كامل بنمط ظهور الرعاة/المعلنين في القوائم.
+                نفس شرط ظهور تبويب البائعين (tab_sellers) يكفي هنا — الحفظ نفسه
+                محمي في القاعدة بصلاحية الأدمن على platform_settings. */}
+            <SponsorLayoutPanel />
             {isSuperAdmin && <AdminsBox />}
 
             {/* Platform-wide subscription mode — set the default amount + flip

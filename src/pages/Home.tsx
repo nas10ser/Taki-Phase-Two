@@ -20,7 +20,7 @@ import { contestRepository, isContestLive, contestMatchesAudience } from '../rep
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
@@ -159,8 +159,8 @@ const Home: React.FC = () => {
         });
         // v11.25 — sponsors lead this carousel too (gold first, then every 5),
         // then cap at 8 cards so the section stays a tidy horizontal strip.
-        return interleaveSponsored(list, sponsors).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick]);
+        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout).slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
 
     const bestDiscounts = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
@@ -172,8 +172,8 @@ const Home: React.FC = () => {
             }
             return b.discountPercentage - a.discountPercentage;
         });
-        return interleaveSponsored(list, sponsors).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick]);
+        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout).slice(0, 8);
+    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
 
     // v11.20 — Coming Soon carousel. Same look as trending/discount, but
     // ONLY deals whose startsAt is in the future AND inside the 7-day
@@ -239,11 +239,10 @@ const Home: React.FC = () => {
         });
 
         // v11.23 — Official Sponsors: pull on-target sponsor deals out of the
-        // stream and re-insert them as gold ads after every 5 normal deals,
-        // rotating across all active sponsors (targeting + expiry respected
-        // inside interleaveSponsored).
-        return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants, nowTick]);
+        // stream and re-insert them as gold ads (spacing/tier order/rotation
+        // follow the owner's sponsor_layout config — v12.50).
+        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants, nowTick, platformSettings.sponsorLayout]);
 
     return (
         <>

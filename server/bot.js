@@ -419,6 +419,9 @@ bot.use((ctx, next) => {
     return next();
 });
 
+// كبح تتبع «فتح البوت» في الذاكرة (telegram_id → آخر تسجيل). v12.50
+const openTrackAt = new Map();
+
 // Lazy identity refresh: if we don't yet know who this chat belongs to (e.g. the
 // user just linked their account from the Mini App), load their profile from the
 // DB BEFORE any handler runs — so حجوزاتي / الحجوزات / إلخ recognise them without
@@ -434,6 +437,18 @@ bot.use(async (ctx, next) => {
     }
     try { const id = tgId(ctx); if (id && !getSession(id).userId) await refreshSession(ctx); }
     catch { /* never block the update */ }
+    // v12.50 — «جمهور المدن»: جلسة «فتح» واحدة كل ٣٠ دقيقة لكل مستخدم تُغذي
+    // تحليلات الأدمن (كم شخصاً دخل من تيليجرام يومياً). كبح محلي + كبح القاعدة.
+    try {
+        const id = tgId(ctx);
+        if (id) {
+            const last = openTrackAt.get(id) || 0;
+            if (Date.now() - last > 30 * 60 * 1000) {
+                openTrackAt.set(id, Date.now());
+                rpc('bot_track_open', { p_telegram_id: id }).catch(() => {});
+            }
+        }
+    } catch { /* never block the update */ }
     // Per-update language context — every tr() downstream reads it (default Arabic). v11.85
     let _lang = 'ar'; try { _lang = getSession(tgId(ctx)).lang || 'ar'; } catch { /* */ }
     return I18N.withLang(_lang, next);
@@ -2468,6 +2483,11 @@ bot.action('seller:sub', async ctx => {
     const s = getSession(tgId(ctx));
     // الأدمن-المالك للمتجر «تاكي» يُعدّ بائعاً لأغراض إدارة المتجر (ownsStore). v11.91
     if (!s.userId || !ownsStore(s)) return ctx.reply(tr('b2040_option_sellers_only'), { parse_mode:'MarkdownV2' });
+    // v12.50 — الوضع المجاني للجميع: نخفي الاشتراك والباقات كلياً حتى يراجع
+    // المالك سلوك الموقع ويقرر التسعير. false صراحةً فقط (خطأ شبكة = نُظهر).
+    if ((await rpc('bot_payments_enabled', {})) === false) {
+        return safeReplyMd(ctx, tr('pkg_free_mode', DIV), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2048_back'),'menu:back')]]).reply_markup });
+    }
     const sub = await rpc('bot_get_subscription', { p_telegram_id: tgId(ctx) });
     if (!sub?.success) return ctx.reply(tr('b2042_subscription_load_failed'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     const planAr = sub.plan==='premium' ? tr('q2046_plan_premium') : sub.plan==='trial' ? tr('q2046_plan_trial') : tr('q2046_plan_free');
@@ -2483,6 +2503,10 @@ bot.action('seller:packages', async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));
     if (!s.userId || !ownsStore(s)) return;
+    // v12.50 — الوضع المجاني يخفي قائمة الباقات نفسها.
+    if ((await rpc('bot_payments_enabled', {})) === false) {
+        return safeReplyMd(ctx, tr('pkg_free_mode', DIV), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2048_back'),'menu:back')]]).reply_markup });
+    }
     const pkgs = await rpc('bot_list_packages', {});
     const list = Array.isArray(pkgs) ? pkgs.filter(p => p.active!==false) : [];
     if (!list.length) return ctx.reply(tr('b2056_no_packages'), { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
@@ -2529,7 +2553,10 @@ bot.action(/^subgo:(\d+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b2078_activating'));
     const r = await rpc('bot_subscribe_plan', { p_telegram_id: tgId(ctx), p_package_id: +ctx.match[1] });
     if (!r?.success) {
-        const e=r?.error; const msg = e==='not_seller' ? tr('b2081_sellers_only') : e==='bad_package' ? tr('b2081_package_unavailable') : tr('b2081_subscribe_failed');
+        const e=r?.error;
+        // v12.50 — القاعدة ترفض الاشتراك في الوضع المجاني (حزام أمان خلف إخفاء الشاشات).
+        if (e==='free_mode') return safeReplyMd(ctx, tr('pkg_free_mode', DIV), { reply_markup: KB_BACK().reply_markup });
+        const msg = e==='not_seller' ? tr('b2081_sellers_only') : e==='bad_package' ? tr('b2081_package_unavailable') : tr('b2081_subscribe_failed');
         return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     }
     await ctx.reply(

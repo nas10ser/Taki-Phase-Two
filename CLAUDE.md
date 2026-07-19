@@ -16,7 +16,7 @@
 - Supabase MCP متصل — Project: `kbmqzxcjdankdgiovctm`
 - الإنتاج: `https://taki-test-eight.vercel.app`
 - Vercel: `nasser-projects1/taki-test` (مفوّض كـ `nalaumari-8916`، Env vars مشفّرة)
-- **الإصدار الحالي: v11.72** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
+- **الإصدار الحالي: v12.50** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
 
 ## 🔄 آلية التنفيذ الكاملة (كل تعديل)
 1. عدّل الكود في الـworktree الحالي

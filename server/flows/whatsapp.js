@@ -47,6 +47,8 @@ const dmyWA = (ms) => { const d = new Date(ms + 3 * 3600_000); return `${String(
 function create(deps) {
     const { rpc, APP_URL, SEASON } = deps;
     const botBookedBarcodes = deps.botBookedBarcodes || new Set();
+    // كبح تتبع «فتح البوت» في الذاكرة (رقم الواتساب → آخر تسجيل). v12.50
+    const openTrackAt = new Map();
     const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     const TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
     const GATEWAY  = process.env.BOT_GATEWAY_SECRET || '';
@@ -1543,12 +1545,20 @@ function create(deps) {
     }
     async function showSubscription(from, s) {
         if (!sellerGate(from, s)) return;
+        // v12.50 — الوضع المجاني للجميع: لا اشتراك ولا باقات حتى يقرر المالك التسعير.
+        if ((await rpc('bot_payments_enabled', {})) === false) {
+            return sendButtons(from, { body: tr('wa_sub_free_mode'), buttons: [menuBtn()] });
+        }
         const sub = await rpc('bot_get_subscription', aid(from));
         if (!sub || !sub.success) return sendButtons(from, { body: tr('wa_err'), buttons: [menuBtn()] });
         const exp = sub.expires_at ? tr('wa_sub_expires', fmtDay(sub.expires_at)) : '';
         await sendButtons(from, { body: tr('wa_sub_title', sub.plan || 'free', sub.max_branches || 1, sub.active ? tr('wa_sub_active') : tr('wa_sub_inactive'), exp), buttons: [{ id: 'wa:subpk', title: tr('wa_sub_packages') }, menuBtn()] });
     }
     async function showPackages(from, s) {
+        // v12.50 — الوضع المجاني يخفي الباقات (القاعدة تعيد [] أيضاً كحزام أمان).
+        if ((await rpc('bot_payments_enabled', {})) === false) {
+            return sendButtons(from, { body: tr('wa_sub_free_mode'), buttons: [menuBtn()] });
+        }
         const list0 = await rpc('bot_list_packages', {}) || [];
         if (!list0.length) return sendButtons(from, { body: tr('wa_sub_no_packages'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, menuBtn()] });
         s.temp.pkgs = list0;
@@ -1563,6 +1573,8 @@ function create(deps) {
     async function subscribe(from, s, pkgId) {
         const r = await rpc('bot_subscribe_plan', aid(from, { p_package_id: +pkgId }));
         if (r && r.success) return sendButtons(from, { body: tr('wa_sub_ok', r.max_branches), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, menuBtn()] });
+        // v12.50 — رفض القاعدة في الوضع المجاني.
+        if (r && r.error === 'free_mode') return sendButtons(from, { body: tr('wa_sub_free_mode'), buttons: [menuBtn()] });
         await sendButtons(from, { body: tr('wa_sub_fail'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }] });
     }
     async function showStoreProfile(from, s) {
@@ -1818,6 +1830,15 @@ function create(deps) {
         if (!(await killSwitchOn())) return;
         const s = waSess(from);
         if (!s.userId) await waRefresh(from);
+        // v12.50 — «جمهور المدن»: جلسة «فتح» كل ٣٠ دقيقة كحد أقصى لكل رقم —
+        // تُغذي تحليلات الأدمن (كم شخصاً دخل من واتساب يومياً). كبح محلي + قاعدة.
+        try {
+            const last = openTrackAt.get(from) || 0;
+            if (Date.now() - last > 30 * 60 * 1000) {
+                openTrackAt.set(from, Date.now());
+                rpc('bot_track_open', { p_whatsapp_id: from }).catch(() => {});
+            }
+        } catch { /* never block the message */ }
         const lang = s.lang || 'ar';
         return I18N.withLang(lang, async () => {
             try {

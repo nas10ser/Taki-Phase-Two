@@ -1668,6 +1668,40 @@ const SellerDashboard: React.FC = () => {
             return (finalDays ? finalDays * 24 * 60 : 525600);
         };
 
+        // v12.50 — «حصر عرض الموسم»: عرض مفعَّل عليه «شارك في عروض الموسم» يجب
+        // أن تقع نهايته بين تاريخي النافذة العامة اللذين حددهما المالك — التاجر
+        // حر في المدة (يوم أو أسبوع…) طالما لم يتجاوز الحدين. إيقاف التفعيل
+        // يعيد النموذج طبيعياً بلا أي قيد. (بالكمية بلا مؤقّت زمني — تستثنى.)
+        if (seasonTag) {
+            const seasonCamp = platformSettings.seasonCampaign;
+            if (seasonCamp?.publicFrom && seasonCamp?.publicTo) {
+                const seasonStartMs = new Date(`${seasonCamp.publicFrom}T00:00:00`).getTime();
+                const seasonEndMs = new Date(`${seasonCamp.publicTo}T23:59:59`).getTime();
+                const anchor = computedStartsAt ?? Date.now();
+                if (computedStartsAt && computedStartsAt > seasonEndMs) {
+                    await customAlert(isRTL
+                        ? `⚠️ موعد بدء العرض المجدول بعد نهاية الموسم (${seasonCamp.publicTo}). قدّم الموعد أو عطّل «شارك في عروض الموسم».`
+                        : `⚠️ Scheduled launch is after the season ends (${seasonCamp.publicTo}).`);
+                    return;
+                }
+                if (expiryType !== 'stock') {
+                    const endMs = anchor + calcExpiryMinutes() * 60000;
+                    if (endMs > seasonEndMs) {
+                        await customAlert(isRTL
+                            ? `⚠️ عرض الموسم لا يمكن أن يمتد بعد نهاية الموسم (${seasonCamp.publicTo}). قصّر المدة أو اختر تاريخاً داخل الموسم — أو عطّل «شارك في عروض الموسم» ليعود العرض حراً.`
+                            : `⚠️ A seasonal deal cannot extend past the season end (${seasonCamp.publicTo}). Shorten it or turn off the season toggle.`);
+                        return;
+                    }
+                    if (endMs < seasonStartMs) {
+                        await customAlert(isRTL
+                            ? `⚠️ عرضك ينتهي قبل بداية الموسم (${seasonCamp.publicFrom}) فلن يظهر في صفحة الموسم أبداً. مدّد المدة أو عطّل «شارك في عروض الموسم».`
+                            : `⚠️ Your deal ends before the season starts (${seasonCamp.publicFrom}) so it would never appear on the seasonal page.`);
+                        return;
+                    }
+                }
+            }
+        }
+
         const normOrig = Number(normalizeArabicNumerals(originalPrice.toString())) || 0;
         const normDisc = Number(normalizeArabicNumerals(discountedPrice.toString())) || 0;
         const discountPerc = normOrig > 0 ? Math.round((1 - normDisc / normOrig) * 100) : 0;
@@ -2347,7 +2381,8 @@ const SellerDashboard: React.FC = () => {
                                                     </span>
                                                     {expiryGregorian && (
                                                         <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                                            {new Date(expiryGregorian).toLocaleDateString(isRTL ? 'ar-SA' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                            {/* 'ar-SA' وحدها = تقويم هجري → كان السطران هجريين. gregory إجباري. */}
+                                                            {new Date(expiryGregorian).toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
                                                         </span>
                                                     )}
                                                 </>
@@ -2412,6 +2447,14 @@ const SellerDashboard: React.FC = () => {
                                                         : 'نافذة الإضافة مغلقة — يمكنك فقط إزالة العرض من الموسم.')
                                                     : 'Your deal appears on the exclusive seasonal page.'}
                                             </div>
+                                            {/* v12.50 — عند التفعيل: تذكير بحدَّي الموسم اللذين يُحصر بينهما انتهاء العرض */}
+                                            {seasonTag && camp?.publicFrom && camp?.publicTo && (
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, marginTop: 4 }}>
+                                                    {isRTL
+                                                        ? `⏳ ينتهي عرضك حصراً بين ${camp.publicFrom} و ${camp.publicTo} — والمدة داخلها حرة (يوم، أسبوع…).`
+                                                        : `⏳ Deal must end between ${camp.publicFrom} and ${camp.publicTo}.`}
+                                                </div>
+                                            )}
                                         </div>
                                         <div style={{
                                             width: 44, height: 26, borderRadius: 999,
@@ -3784,6 +3827,16 @@ const SellerDashboard: React.FC = () => {
                 isRTL={isRTL}
                 currentHijri={expiryHijriDisplay}
                 currentGregorian={expiryGregorian}
+                // v12.50 — عرض موسمي: المنتقي نفسه يمنع أي يوم خارج نافذة الموسم
+                // العامة (أدنى حد: اليوم أو بداية الموسم أيهما أحدث). بلا تفعيل
+                // الموسم لا يُمرَّر شيء والنموذج طبيعي تماماً.
+                {...(() => {
+                    const c = platformSettings.seasonCampaign;
+                    if (!seasonTag || !c?.publicFrom || !c?.publicTo) return {};
+                    const now = new Date();
+                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    return { minDate: c.publicFrom > todayStr ? c.publicFrom : todayStr, maxDate: c.publicTo };
+                })()}
             />
             {cropQueue.length > 0 && (
                 <ImageCropEditor

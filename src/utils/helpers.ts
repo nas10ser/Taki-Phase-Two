@@ -138,15 +138,73 @@ export const dealMatchesSponsorTarget = (deal: Deal, s: Sponsor): boolean => {
  */
 export interface DisplayDeal { deal: Deal; sponsored: boolean; sponsorLabel?: SponsorLabel; }
 
-/** Rank value for a sponsor's label type — 'sponsor' (راعٍ رسمي) always
- *  outranks 'ad' (إعلان) so an official sponsor appears before a plain ad. */
-const labelRank = (label: SponsorLabel | undefined): number => (label === 'sponsor' ? 2 : 1);
+// =========================================================================
+// v12.50 — «تحكم ترتيب الرعاة» — المالك يتحكم يدوياً في نمط الظهور من
+// لوحة المدير (platform_settings.sponsor_layout):
+//   everyN     كم منتجاً عادياً بين كل بطاقتين مروَّجتين.
+//   lead       هل تتصدّر بطاقة مروَّجة أول القائمة؟
+//   tierOrder  ترتيب الطبقات الأربع (راعٍ رسمي/معلن/نجمة/إطار) — الأول يظهر أولاً.
+//   rotation   داخل الطبقة: round_robin تناوب متجر-متجر، sequential متجر
+//              يستنفد منتجاته ثم الذي يليه.
+//   storeOrder ترتيب يدوي للمتاجر داخل طبقتها (غير المذكور يتبع priority).
+// =========================================================================
+export interface SponsorLayout {
+    everyN: number;
+    lead: boolean;
+    tierOrder: SponsorLabel[];
+    rotation: 'round_robin' | 'sequential';
+    storeOrder: string[];
+}
+
+export const DEFAULT_SPONSOR_LAYOUT: SponsorLayout = {
+    everyN: SPONSOR_EVERY_N,
+    lead: true,
+    tierOrder: ['sponsor', 'ad', 'star', 'none'],
+    rotation: 'round_robin',
+    storeOrder: [],
+};
+
+/** يفكّ jsonb القادم من platform_settings بدفاعية كاملة — أي نقص يكمَّل من الافتراضي. */
+export const parseSponsorLayout = (v: any): SponsorLayout => {
+    const d = DEFAULT_SPONSOR_LAYOUT;
+    if (!v || typeof v !== 'object') return d;
+    const rawTiers = Array.isArray(v.tier_order) ? v.tier_order.filter((t: any) => ['sponsor', 'ad', 'star', 'none'].includes(t)) : [];
+    const tierOrder = [...rawTiers, ...d.tierOrder.filter(t => !rawTiers.includes(t))] as SponsorLabel[];
+    const n = Number(v.every_n);
+    return {
+        everyN: Number.isFinite(n) ? Math.min(20, Math.max(1, Math.round(n))) : d.everyN,
+        lead: v.lead !== false,
+        tierOrder,
+        rotation: v.rotation === 'sequential' ? 'sequential' : 'round_robin',
+        storeOrder: Array.isArray(v.store_order) ? v.store_order.filter((s: any) => typeof s === 'string') : [],
+    };
+};
 
 export const interleaveSponsored = (
     ranked: Deal[],
     sponsorMap: Record<string, Sponsor>,
-    everyN: number = SPONSOR_EVERY_N
+    layout: SponsorLayout = DEFAULT_SPONSOR_LAYOUT
 ): DisplayDeal[] => {
+    const everyN = Math.min(20, Math.max(1, layout.everyN || SPONSOR_EVERY_N));
+    // ترتيب الطبقة من tierOrder — الفهرس الأصغر = أسبق ظهوراً.
+    const labelRank = (label: SponsorLabel | undefined): number => {
+        const i = layout.tierOrder.indexOf(label || 'ad');
+        return i === -1 ? layout.tierOrder.length : i;
+    };
+    // ترتيب المتاجر داخل الطبقة: اليدوي أولاً (storeOrder)، ثم priority تنازلياً.
+    const storeCmp = (a: string, b: string): number => {
+        const ia = layout.storeOrder.indexOf(a);
+        const ib = layout.storeOrder.indexOf(b);
+        if (ia !== -1 || ib !== -1) {
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
+        }
+        const pa = sponsorMap[a]?.priority ?? 0;
+        const pb = sponsorMap[b]?.priority ?? 0;
+        if (pb !== pa) return pb - pa;
+        return a < b ? -1 : a > b ? 1 : 0;
+    };
     // Partition: ad-eligible deals (active sponsor + on-target) vs the rest.
     const normal: Deal[] = [];
     const adsByStore = new Map<string, Deal[]>();
@@ -164,37 +222,41 @@ export const interleaveSponsored = (
         return normal.map(deal => ({ deal, sponsored: false }));
     }
 
-    // Build the ad SEQUENCE with strict tier precedence:
-    //   1. ALL official sponsors (label 'sponsor') are emitted first — fully
-    //      drained — before ANY plain advertiser ('ad') appears.
-    //   2. WITHIN a tier, stores rotate round-robin (S1, S2, S3, S1, S2, …) so
-    //      no single sponsor dominates; higher priority leads the rotation.
-    // So with 3 sponsors + 1 advertiser the order is:
-    //   S1,S2,S3, S1,S2,S3, … (until sponsors exhausted), then A1,A1,…
+    // Build the ad SEQUENCE with tier precedence taken from layout.tierOrder:
+    //   1. Tiers emit in the owner's chosen order — the whole first tier drains
+    //      before the next tier appears.
+    //   2. WITHIN a tier, stores follow storeOrder (manual) then priority; the
+    //      rotation mode decides round-robin (S1,S2,S3,S1…) vs sequential
+    //      (all of S1, then all of S2 …).
     const byTier = new Map<number, string[]>(); // rank → storeIds
     for (const id of adsByStore.keys()) {
         const rank = labelRank(sponsorMap[id]?.labelType);
         if (!byTier.has(rank)) byTier.set(rank, []);
         byTier.get(rank)!.push(id);
     }
-    const tiers = Array.from(byTier.keys()).sort((a, b) => b - a); // 2 (sponsor) before 1 (ad)
+    const tiers = Array.from(byTier.keys()).sort((a, b) => a - b); // فهرس أصغر = أسبق
     const adQueue: DisplayDeal[] = [];
     for (const rank of tiers) {
-        const stores = byTier.get(rank)!.sort((a, b) => {
-            const pa = sponsorMap[a]?.priority ?? 0;
-            const pb = sponsorMap[b]?.priority ?? 0;
-            if (pb !== pa) return pb - pa;
-            return a < b ? -1 : a > b ? 1 : 0;
-        });
-        // Round-robin across this tier's stores until all their queues drain.
-        let any = true;
-        while (any) {
-            any = false;
+        const stores = byTier.get(rank)!.sort(storeCmp);
+        if (layout.rotation === 'sequential') {
+            // متجر يستنفد كل منتجاته ثم الذي يليه.
             for (const id of stores) {
-                const q = adsByStore.get(id);
-                if (q && q.length > 0) {
-                    adQueue.push({ deal: q.shift()!, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' });
-                    any = true;
+                const q = adsByStore.get(id) || [];
+                for (const deal of q) {
+                    adQueue.push({ deal, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' });
+                }
+            }
+        } else {
+            // Round-robin across this tier's stores until all their queues drain.
+            let any = true;
+            while (any) {
+                any = false;
+                for (const id of stores) {
+                    const q = adsByStore.get(id);
+                    if (q && q.length > 0) {
+                        adQueue.push({ deal: q.shift()!, sponsored: true, sponsorLabel: sponsorMap[id]?.labelType || 'ad' });
+                        any = true;
+                    }
                 }
             }
         }
@@ -206,11 +268,13 @@ export const interleaveSponsored = (
     const remainingAds = () => ai < adQueue.length;
     const nextAd = (): DisplayDeal | null => (ai < adQueue.length ? adQueue[ai++] : null);
 
-    // The FIRST sponsored card leads the page (before any normal deal), then
-    // one sponsored card after every `everyN` normal deals. With few/no normal
-    // deals the ads still surface (the leading one + the rest trail).
-    const lead = nextAd();
-    if (lead) out.push(lead);
+    // With lead=true the FIRST sponsored card opens the page (before any normal
+    // deal); lead=false starts with normal deals and the first ad waits for the
+    // first everyN chunk. Then one sponsored card after every `everyN` normals.
+    if (layout.lead) {
+        const lead = nextAd();
+        if (lead) out.push(lead);
+    }
 
     while (ni < normal.length || remainingAds()) {
         for (let i = 0; i < everyN && ni < normal.length; i++) {

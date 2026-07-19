@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } from '../data/mock';
 import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
-import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
+import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
 import { userRepository } from '../repositories/userRepository';
@@ -171,7 +171,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null };
+    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout };
     /** v12.48 — true بعد وصول platform_settings من الخادم؛ البوابات المعتمدة على النوافذ الزمنية تنتظرها قبل أي redirect */
     platformSettingsReady: boolean;
     /** Seller's saved branches (store_branches table). Drives the
@@ -403,6 +403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         whatsappBotNumber: string;
         seasonalTheme: string;
         seasonCampaign: SeasonCampaign | null;
+        sponsorLayout: SponsorLayout;
     }>(() => {
         // v12.44 — «هوية المواسم»: apply the cached season skin during the very
         // first render (before paint) so returning visitors never see the base
@@ -412,7 +413,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
             if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
         } catch { /* localStorage may be blocked (private mode) */ }
-        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null };
+        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT };
     });
     // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
     const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
@@ -453,6 +454,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } else if (key === 'season_campaign') {
                 // v12.48 — «حملة الموسم»: نوافذ التجار/العامة لصفحة عروض الموسم.
                 setPlatformSettings(prev => ({ ...prev, seasonCampaign: parseSeasonCampaign(value) }));
+            } else if (key === 'sponsor_layout') {
+                // v12.50 — «تحكم ترتيب الرعاة»: نمط ظهور الإعلانات في القوائم.
+                setPlatformSettings(prev => ({ ...prev, sponsorLayout: parseSponsorLayout(value) }));
             }
         };
         (async () => {
@@ -460,7 +464,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign']);
+                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);
@@ -1359,6 +1363,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })();
         return () => { cancelled = true; if (perm) perm.onchange = null; };
     }, [user?.id, user?.userType, startLiveWatch, stopLiveWatch]);
+
+    // v12.50 — «جمهور المدن»: سجّل «فتح تطبيق» (جلسة) مرة كل ٣٠ دقيقة كحد
+    // أقصى، بآخر إحداثيات معروفة إن وُجدت. القاعدة تكبح المكرر أيضاً
+    // (track_app_open)، وهذا يغذي لوحة الأدمن: كم شخصاً دخل يومياً ومن أين
+    // ومن أي قناة (ويب/تيليجرام/واتساب). أنون بلا حساب يُحصى بلا هوية.
+    useEffect(() => {
+        const OPEN_KEY = 'TAKI_APPOPEN_AT';
+        const timer = setTimeout(() => {
+            try {
+                const uid = user?.id || 'anon';
+                let last: { at: number; uid: string } | null = null;
+                try { last = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null'); } catch { /* ignore */ }
+                if (last && last.uid === uid && Date.now() - last.at < 30 * 60 * 1000) return;
+                const coords = lastLiveRef.current;
+                import('../services/telegramMiniApp').then(({ isTelegramMiniApp }) => {
+                    const src = isTelegramMiniApp() ? 'telegram' : 'web';
+                    supabase.rpc('track_app_open', {
+                        p_source: src,
+                        p_lat: coords?.lat ?? null,
+                        p_lng: coords?.lng ?? null,
+                    }).then(
+                        () => { try { localStorage.setItem(OPEN_KEY, JSON.stringify({ at: Date.now(), uid })); } catch { /* ignore */ } },
+                        () => { /* best-effort */ },
+                    );
+                }).catch(() => { /* best-effort */ });
+            } catch { /* best-effort */ }
+        }, 5000); // مهلة قصيرة حتى تصل أول إحداثيات المتتبع الحي إن كان مفعّلاً
+        return () => clearTimeout(timer);
+    }, [user?.id]);
 
     const markNotifRead = useCallback((id: string) => {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));

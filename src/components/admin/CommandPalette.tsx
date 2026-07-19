@@ -23,6 +23,7 @@ export type AdminTab =
     | 'moderation'
     | 'analytics'
     | 'analyst'
+    | 'audience'
     | 'tools'
     | 'locations'
     | 'contests'

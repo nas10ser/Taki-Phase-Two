@@ -35,7 +35,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant } = useApp();
+    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -143,8 +143,8 @@ const DealsList: React.FC = () => {
         // v11.23 — interleave gold sponsor ads (every 5, rotated, targeted).
         // Coming-soon view stays ad-free (those deals aren't bookable yet).
         if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
-        return interleaveSponsored(list, sponsors);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles, nowTick]);
+        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout);
+    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles, nowTick, platformSettings.sponsorLayout]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.
