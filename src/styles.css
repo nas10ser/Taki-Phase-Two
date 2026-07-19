@@ -2380,3 +2380,19 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
 @media (prefers-reduced-motion: reduce) {
   .season-fx { display: none; }
 }
+
+/* ————— v12.51 — «مرونة» تبديل الثيم —————
+   AppContext يضيف .theme-anim على <html> لحظة تبديل داكن/فاتح (أو تبدّل
+   الموسم realtime) ويزيله بعد ~0.65s، فتنساب كل الألوان بنعومة بدل القفزة
+   الحادة — ثم يعود الأداء طبيعياً تماماً (لا transitions دائمة على iPhone X). */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease,
+    border-color 0.35s ease,
+    fill 0.35s ease,
+    box-shadow 0.35s ease !important;
+}

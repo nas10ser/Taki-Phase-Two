@@ -191,6 +191,12 @@ function create(deps) {
         ] };
         const header = tr('wa_menu_title');
         let body, sections;
+        // v12.51 — صف «عروض الموسم» في قائمة الزائر (٩/١٠ صفوف — سقف المشتري
+        // الموصول ممتلئ، فيصله الصف من قائمة «تصفح العروض» بدلاً منها).
+        const campMM = SEASON ? await SEASON.campaign().catch(() => null) : null;
+        if (!linked && campMM && SEASON.publicLive(campMM)) {
+            browseSec.rows.push(row('wa:season', trunc(SEASON.label(campMM, I18N.lang()), LIM.rowTitle), ''));
+        }
         if (!linked) {
             body = tr('wa_menu_body_guest');
             sections = [browseSec, { title: trunc(tr('wa_sec_account'), LIM.rowTitle), rows: [
@@ -344,6 +350,9 @@ function create(deps) {
         } catch { /* banners are best-effort */ }
     }
     async function browseMenu(from, s) {
+        // v12.51 — صف «عروض الموسم» يظهر خلال النافذة العامة للحملة فقط (٩/١٠ صفوف)
+        const camp = SEASON ? await SEASON.campaign().catch(() => null) : null;
+        const seasonRows = (camp && SEASON.publicLive(camp)) ? [row('wa:season', trunc(SEASON.label(camp, I18N.lang()), LIM.rowTitle), '')] : [];
         await sendList(from, { header: tr('wa_menu_title'), body: tr('wa_browse_pick'), button: tr('wa_menu_btn'), sections: [{ rows: [
             row('wa:br:newest', tr('sort_t_newest'), ''),
             row('wa:br:popular', tr('sort_t_popular'), ''),
@@ -351,9 +360,22 @@ function create(deps) {
             row('wa:br:real', tr('sort_t_real'), ''),
             row('wa:near', tr('sort_t_nearby'), ''),
             row('wa:soon', tr('menu_coming_soon'), ''),
+            ...seasonRows,
             row('wa:cats', tr('wa_row_cats'), ''),
             menuRow(),
         ] }] });
+    }
+    // عروض الموسم — العروض الموسومة بحملة الموسم فقط (نفس صفحة /seasonal). v12.51
+    async function browseSeason(from, s, offset) {
+        offset = offset || 0;
+        const camp = SEASON ? await SEASON.campaign().catch(() => null) : null;
+        if (!camp || !SEASON.publicLive(camp)) return browseMenu(from, s);
+        const deals = await rpc('bot_browse_deals', { p_sort: 'discount', p_limit: 9, p_offset: offset, p_season: camp.season_id }) || [];
+        if (!deals.length) { if (offset > 0) return browseMenu(from, s); return sendButtons(from, { body: tr('season_none'), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] }); }
+        const rows = deals.slice(0, 9).map(d => row(`wa:deal:${d.id}`, String(d.item_name), `${d.discounted_price} ${cur()} · ${d.shop_name}`));
+        if (deals.length >= 9) rows.push(row(`wa:seasonmore:${offset + 9}`, tr('wa_more_deals'), ''));
+        rows.push(menuRow());
+        return sendList(from, { header: SEASON.label(camp, I18N.lang()), body: tr('wa_browse_body'), footer: 'TAKI', button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
     // العروض القادمة — عروض مجدولة تبدأ خلال ٧ أيام (p_upcoming). v11.98
     async function browseUpcoming(from, s, offset) {
@@ -1436,6 +1458,15 @@ function create(deps) {
             return sendButtons(from, { body: m, buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, { id: 'wa:s:branches', title: tr('menu_my_locations') }, menuBtn()] });
         }
         await sendButtons(from, { body: tr('wa_publish_ok', r.discount), buttons: [{ id: 'wa:s:deals', title: tr('menu_seller_deals') }, { id: 'wa:s:add', title: tr('wa_add_another') }, menuBtn()] });
+        // v12.51 — «حملة الموسم»: داخل نافذة التجار، دعوة ضم العرض الجديد للموسم
+        try {
+            const camp = SEASON ? await SEASON.campaign().catch(() => null) : null;
+            if (camp && SEASON.sellerOpen(camp) && r.deal_id) {
+                const nm = SEASON.NAMES[camp.season_id] || {};
+                const seasonName = (I18N.lang() === 'en' ? nm.en : nm.ar) || '';
+                await sendButtons(from, { body: tr('season_prompt', seasonName), buttons: [{ id: `wa:sseason:${r.deal_id}`, title: trunc(tr('season_add_btn'), 20) }, menuBtn()] });
+            }
+        } catch (e) { /* دعوة اختيارية — لا تكسر النشر */ }
         // اقترح ساعات العمل أول مرة فقط
         try { const hr = await rpc('bot_get_store_hours', aid(from)); const wh = hr && hr.working_hours; if (!(wh && wh.enabled && wh.days)) await sendButtons(from, { body: tr('wa_add_hours_prompt'), buttons: [{ id: 'wa:s:hours', title: tr('menu_working_hours') }, menuBtn()] }); } catch (e) { /* ignore */ }
     }
@@ -1670,6 +1701,14 @@ function create(deps) {
         if (id === 'wa:near') return nearbyEntry(from, s);
         if (id === 'wa:soon') return browseUpcoming(from, s, 0);
         if (id.startsWith('wa:soonmore:')) return browseUpcoming(from, s, +p[2] || 0);
+        if (id === 'wa:season') return browseSeason(from, s, 0);
+        if (id.startsWith('wa:seasonmore:')) return browseSeason(from, s, +p[2] || 0);
+        // v12.51 — زر «أضفه لعروض الموسم» بعد نشر عرض جديد (نافذة التجار)
+        if (id.startsWith('wa:sseason:')) {
+            const r2 = await rpc('bot_set_deal_season', aid(from, { p_deal_id: id.slice('wa:sseason:'.length), p_on: true }));
+            await sendText(from, (r2 && r2.success) ? tr('season_added') : tr('season_add_fail'));
+            return;
+        }
         if (id === 'wa:search') return startSearch(from, s);
         if (id === 'wa:link') return linkInstructions(from);
         if (id === 'wa:lang') return toggleLang(from, s);

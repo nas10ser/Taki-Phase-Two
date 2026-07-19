@@ -418,6 +418,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
     const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
 
+    // v12.51 — «مرونة» تبديل الثيم (طلب ناصر): صنف مؤقت على <html> يفعّل
+    // transition لونياً ناعماً (~0.35s) لكل العناصر أثناء تبديل داكن/فاتح أو
+    // تبدّل الموسم، ثم يُزال فلا يبقى أي أثر على أداء التمرير (مهم لآيفون X).
+    const themeAnimTimer = useRef<number>(0);
+    const animateThemeSwap = useCallback(() => {
+        try {
+            const el = document.documentElement;
+            el.classList.add('theme-anim');
+            window.clearTimeout(themeAnimTimer.current);
+            themeAnimTimer.current = window.setTimeout(() => el.classList.remove('theme-anim'), 650);
+        } catch { /* ignore */ }
+    }, []);
+
     // Load platform settings + subscribe to realtime updates so admin toggles
     // propagate to every open tab without requiring a refresh.
     useEffect(() => {
@@ -441,6 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // every open client re-skins live. The skin itself is pure CSS keyed
                 // off <html data-season="…">; cached locally for a flash-free reload.
                 const seasonId = typeof value === 'string' ? value : '';
+                animateThemeSwap(); // v12.51 — تبدّل الموسم realtime ينساب بنعومة
                 setPlatformSettings(prev => ({ ...prev, seasonalTheme: seasonId }));
                 try {
                     if (seasonId) {
@@ -531,7 +545,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pushService.ensurePermissionAndSubscribe().catch(() => {});
     }, []);
 
-    const toggleDarkMode = useCallback(() => setDarkMode(prev => !prev), []);
+    const toggleDarkMode = useCallback(() => {
+        animateThemeSwap(); // v12.51 — انتقال لوني ناعم بدل القفزة الحادة
+        setDarkMode(prev => !prev);
+    }, [animateThemeSwap]);
 
     // Periodic expiry check — every 30s. When a deal crosses its expiry,
     // we flip the local status AND push the change to Supabase so every

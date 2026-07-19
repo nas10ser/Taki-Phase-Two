@@ -12,7 +12,7 @@ const F = require('../lib/format');
 const C = require('../lib/catalog');
 const G = require('../lib/geo');
 const { tgId, getSession, setStep } = require('../lib/session');
-const { tr } = require('../lib/i18n');   // request-scoped translation (ar/en) — v11.86
+const { tr, lang } = require('../lib/i18n');   // request-scoped translation (ar/en) — v11.86
 
 const {
     md, money, fmtDay, fmtDate, DIV, isPrice, isQty,
@@ -52,7 +52,7 @@ const startDateError = (dt) => {
 };
 
 // ── deps المحقونة من bot.js ────────────────────────────────────────────────────
-let rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK;
+let rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK, SEASON;
 
 // ── كيبوردات وأدوات صغيرة ───────────────────────────────────────────────────────
 const btn = (t, d) => Markup.button.callback(t, d);
@@ -95,7 +95,20 @@ function expirySummary(a) {
 
 // ════════════════════════════════════════════════════════════════════════════════
 function register(bot, deps) {
-    ({ rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK } = deps);
+    ({ rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK, SEASON } = deps);
+
+    // v12.51 — «حملة الموسم»: زرّا ما بعد النشر (ضم العرض للموسم / تجاهل).
+    // الملكية تُتحقق في bot_set_deal_season، والنافذة عند حارس القاعدة نفسه.
+    bot.action(/^ad:season:([A-Za-z0-9_.-]+)$/, async ctx => {
+        await ctx.answerCbQuery();
+        const r = await rpc('bot_set_deal_season', { p_deal_id: ctx.match[1], p_on: true, p_telegram_id: tgId(ctx) });
+        const ok = r && r.success;
+        try { await ctx.editMessageText(ok ? tr('season_added') : tr('season_add_fail')); } catch { await ctx.reply(ok ? tr('season_added') : tr('season_add_fail')); }
+    });
+    bot.action('ad:sskip', async ctx => {
+        await ctx.answerCbQuery();
+        try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    });
 
     // ── إلغاء عام لكل تدفّقات التاجر ──────────────────────────────────────────────
     bot.action('sd:cancel', async ctx => {
@@ -986,6 +999,17 @@ async function doPublish(ctx) {
     }
     const liveLine = a.startsAt ? tr('sd758_upcoming_line') : tr('sd758_live_line');
     await reply(ctx, tr('sd759_published_ok', DIV, r.discount, liveLine), Markup.inlineKeyboard([[btn(tr('sd759_my_deals'), 'seller:deals'), btn(tr('sd759_another_deal'), 'seller:addDeal')], [btn(tr('sd759_menu'), 'menu:back')]]).reply_markup);
+    // v12.51 — «حملة الموسم»: داخل نافذة التجار فقط، اعرض دعوة ضم العرض الجديد
+    // لصفحة عروض الموسم الحصرية (نفس خانة الويب — بنقرة واحدة).
+    try {
+        const camp = SEASON ? await SEASON.campaign() : null;
+        if (camp && SEASON.sellerOpen(camp) && r.deal_id) {
+            const nm = SEASON.NAMES[camp.season_id] || {};
+            const seasonName = (lang() === 'en' ? nm.en : nm.ar) || '';
+            await reply(ctx, md(tr('season_prompt', seasonName)),
+                Markup.inlineKeyboard([[btn(tr('season_add_btn'), `ad:season:${r.deal_id}`)], [btn(tr('season_skip_btn'), 'ad:sskip')]]).reply_markup);
+        }
+    } catch { /* الموسم دعوة اختيارية — لا يكسر النشر أبداً */ }
     // Ask for working hours the first time only — once set they stay fixed across
     // all future products (the seller changes them only from «ساعات العمل»). v11.77
     try {

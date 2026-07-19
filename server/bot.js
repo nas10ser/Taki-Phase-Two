@@ -248,11 +248,19 @@ const geoLabel = item => (I18N.lang()==='en' && item && GEO_EN[item.id]) ? GEO_E
 // ── Keyboards ─────────────────────────────────────────────────────────────────
 const KB_BACK = (s) => Markup.inlineKeyboard([[Markup.button.callback(tr('menu_back'),'menu:back')]]);
 
+// v12.51 — زر «عروض الموسم» يظهر في القوائم فقط خلال النافذة العامة للحملة
+// (التي يحددها المالك). يقرأ الكاش sync — sendMain يُنعشه قبل بناء القائمة.
+const seasonBrowseRow = () => {
+    const c = SEASON.campaignSync();
+    return SEASON.publicLive(c) ? [[Markup.button.callback(SEASON.label(c, I18N.lang()), 'browse:season')]] : [];
+};
+
 function kbGuest(s) {
     return Markup.inlineKeyboard([
         [Markup.button.callback(tr('menu_browse_start'),'browse:menu')],
         [Markup.button.callback(tr('menu_nearby'),'buyer:nearby'), Markup.button.callback(tr('menu_search'),'search:start')],
         [Markup.button.callback(tr('menu_coming_soon'),'browse:soon')],
+        ...seasonBrowseRow(),
         [Markup.button.callback(tr('menu_login_link'),'link:start')],
         [Markup.button.webApp(tr('menu_quick_login'), APP_URL)],
         [Markup.button.callback(tr('menu_help'),'help'), langBtn()]
@@ -262,6 +270,7 @@ function kbBuyer(s) {
     return Markup.inlineKeyboard([
         [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('menu_nearby'),'buyer:nearby')],
         [Markup.button.callback(tr('menu_coming_soon'),'browse:soon'), Markup.button.callback(tr('menu_search'),'search:start')],
+        ...seasonBrowseRow(),
         [Markup.button.callback(tr('menu_bookings_buyer'),'buyer:bookings'), Markup.button.callback(tr('menu_smart_alerts'),'buyer:notif')],
         [Markup.button.callback(tr('menu_follows'),'buyer:following'), Markup.button.callback(tr('menu_contests'),'contests:list')],
         [Markup.button.callback(tr('menu_account'),'buyer:profile')],
@@ -287,6 +296,7 @@ function kbAdmin(s = {}) {
     const rows = [
         [Markup.button.callback(tr('menu_platform_stats'),'admin:stats'), Markup.button.callback(tr('menu_reports'),'admin:reports')],
         [Markup.button.callback(tr('menu_browse'),'browse:menu'), Markup.button.callback(tr('menu_nearby'),'buyer:nearby')],
+        ...seasonBrowseRow(),
         // Store owners don't book — show «طلبات متجري» (store orders) here instead
         // of the buyer «حجوزاتي» which would just be empty + confusing. v12.02
         [ownsStore(s)
@@ -336,6 +346,8 @@ async function sendMain(ctx, s) {
     // إعادة تشغيل السيرفر — سلوك مقبول (دخول جديد فعلياً).
     let msg = roleMsg(s);
     const seasonLine = await SEASON.line(I18N.lang());
+    // v12.51 — إنعاش كاش الحملة قبل بناء القائمة (زر «عروض الموسم» يقرأه sync)
+    await SEASON.campaign().catch(() => {});
     if (seasonLine && (!s.seasonGreetAt || Date.now() - s.seasonGreetAt > 6 * 3600_000)) {
         s.seasonGreetAt = Date.now();
         msg = `*${md(seasonLine)}*\n${DIV}\n${msg}`;
@@ -456,7 +468,7 @@ bot.use(async (ctx, next) => {
 
 // ── Seller-deal flow (إضافة/تعديل العرض + المواقع) — وحدة مستقلة تسجّل أزرارها،
 //    وbot.js يفوّض إليها النص/الصورة/الموقع. v11.73
-const sellerH = sellerDeals.register(bot, { rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK });
+const sellerH = sellerDeals.register(bot, { rpc, uploadPhoto, W, refreshSession, sendMain, KB_BACK, SEASON });
 
 // ── /start (handles deep-link token: /start link_<token>) ─────────────────────
 bot.start(async ctx => {
@@ -913,6 +925,39 @@ async function renderUpcoming(ctx, offset){
 }
 bot.action('browse:soon', async ctx => { await ctx.answerCbQuery(); await renderUpcoming(ctx, 0); });
 bot.action(/^soon:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderUpcoming(ctx, +ctx.match[1]); });
+
+// ── عروض الموسم (حملة الموسم v12.51) — العروض التي وسمها التجار بالموسم فقط،
+//    وتظهر للمتسوقين خلال النافذة العامة التي حددها المالك (نفس صفحة /seasonal). ──
+async function renderSeason(ctx, offset){
+    if(!checkRL(`ssn:${chatId(ctx)}`)) return;
+    const s=getSession(tgId(ctx));
+    const camp = await SEASON.campaign();
+    if(!SEASON.publicLive(camp)){
+        return safeReplyMd(ctx, tr('season_none'), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b728_menu'),'menu:back')]]).reply_markup });
+    }
+    const title = SEASON.label(camp, I18N.lang());
+    const deals=await rpc('bot_browse_deals',{ p_sort:'discount', p_limit:PAGE, p_offset:offset, p_season: camp.season_id })||[];
+    s.temp.listCb='browse:season';
+    if(!deals.length){
+        return safeReplyMd(ctx, `*${md(title)}*\n${DIV}\n\n${md(tr('season_none'))}`, {
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b728_menu'),'menu:back')]]).reply_markup });
+    }
+    await safeReplyMd(ctx, `*${md(title)}*\n${DIV}`);
+    for(let i=0;i<deals.length;i++){
+        const d=deals[i];
+        await ctx.reply(browseCard(d, offset+i+1, undefined), { parse_mode:'MarkdownV2', link_preview_options:{is_disabled:true},
+            reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('cm_details_book'), `deal:${d.id}`)]]).reply_markup });
+    }
+    const nav=[];
+    if(offset>0) nav.push(Markup.button.callback(tr('b716_previous'),`ssn:go:${Math.max(0,offset-PAGE)}`));
+    if(deals.length===PAGE) nav.push(Markup.button.callback(tr('b717_next'),`ssn:go:${offset+PAGE}`));
+    const rows=[];
+    if(nav.length) rows.push(nav);
+    rows.push([Markup.button.callback(tr('b728_menu'),'menu:back')]);
+    await safeReplyMd(ctx, tr('b732_page_footer', DIV, md(String(Math.floor(offset/PAGE)+1))), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+bot.action('browse:season', async ctx => { await ctx.answerCbQuery(); await renderSeason(ctx, 0); });
+bot.action(/^ssn:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderSeason(ctx, +ctx.match[1]); });
 
 // "Open now" (1) vs "all shops" (0) for the browse list, then re-render. v11.77
 bot.action(/^br:open:([01])$/, async ctx => {
