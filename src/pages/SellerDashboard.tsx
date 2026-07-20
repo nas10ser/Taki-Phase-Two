@@ -454,6 +454,21 @@ const SellerDashboard: React.FC = () => {
     // tampered input can't sneak in a year-out date.
     const [scheduledEnabled, setScheduledEnabled] = useState(false);
     const [scheduledAt, setScheduledAt] = useState(''); // YYYY-MM-DDTHH:mm
+    // v12.55 — توحيد شكل التواريخ (طلب ناصر): تاريخ البدء صار بنفس منتقي
+    // الهجري+الميلادي المستخدم للانتهاء + حقل وقت مطابق. scheduledAt يُشتق
+    // منهما تلقائياً فتبقى كل فحوصات النشر كما هي.
+    const [dualPickerTarget, setDualPickerTarget] = useState<'expiry' | 'start'>('expiry');
+    const [startDateG, setStartDateG] = useState('');            // YYYY-MM-DD ميلادي
+    const [startHijriDisplay, setStartHijriDisplay] = useState(''); // للعرض
+    const [startTimeStr, setStartTimeStr] = useState('');        // HH:mm
+    useEffect(() => {
+        // «يبدأ لاحقاً» + تاريخ ووقت مكتملان → scheduledAt (كل فحوصات النشر تقرؤه)
+        if (scheduledEnabled && startDateG && /^\d{2}:\d{2}$/.test(startTimeStr)) {
+            setScheduledAt(`${startDateG}T${startTimeStr}`);
+        } else if (!scheduledEnabled) {
+            setScheduledAt('');
+        }
+    }, [scheduledEnabled, startDateG, startTimeStr]);
     const [category, setCategory] = useState<Category | ''>('');
     const [gender, setGender] = useState<GenderTarget>('all');
     const [size, setSize] = useState('');
@@ -1328,6 +1343,8 @@ const SellerDashboard: React.FC = () => {
         // v11.20 — reset Coming Soon scheduling
         setScheduledEnabled(false);
         setScheduledAt('');
+        setStartDateG(''); setStartTimeStr(''); setStartHijriDisplay(''); // v12.55
+        setExpiryTimeStr('23:59');
 
         // Reset location to shop defaults
         if (user?.lat && user?.lng) {
@@ -1410,14 +1427,23 @@ const SellerDashboard: React.FC = () => {
         if (typeof deal.startsAt === 'number' && deal.startsAt > Date.now()) {
             setScheduledEnabled(true);
             // Convert ms → YYYY-MM-DDTHH:mm in the browser's local timezone
-            // so the datetime-local input shows the same moment the
-            // merchant originally picked.
+            // so the pickers show the same moment the merchant originally picked.
             const d = new Date(deal.startsAt);
             const pad = (n: number) => n.toString().padStart(2, '0');
-            setScheduledAt(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+            const g = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            setScheduledAt(`${g}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+            // v12.55 — المنتقي الموحد: تاريخ + وقت + العرض الهجري
+            setStartDateG(g);
+            setStartTimeStr(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+            try {
+                const parts = new Intl.DateTimeFormat('en-US-u-ca-islamic-uma', { year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(d);
+                const hy = parts.find(p => p.type === 'year')?.value, hm = parts.find(p => p.type === 'month')?.value, hd = parts.find(p => p.type === 'day')?.value;
+                if (hy && hm && hd) setStartHijriDisplay(`${hy}-${hm.padStart(2, '0')}-${hd.padStart(2, '0')}`);
+            } catch { setStartHijriDisplay(''); }
         } else {
             setScheduledEnabled(false);
             setScheduledAt('');
+            setStartDateG(''); setStartTimeStr(''); setStartHijriDisplay('');
         }
 
         setCategory(deal.category);
@@ -2355,6 +2381,139 @@ const SellerDashboard: React.FC = () => {
                             </div>
                         )}
 
+                        {/* v12.55 — «موعد بدء العرض» فوق نظام الانتهاء (البدء قبل
+                            الانتهاء منطقياً — طلب ناصر) وبمنتقيات موحدة: نفس منتقي
+                            الهجري+الميلادي المستخدم للانتهاء + حقل وقت مطابق. أي موعد
+                            مستقبلي = «عرض قادم» تلقائياً (بلا مفتاح منفصل). */}
+                        <div style={{ marginBottom: 20 }}>
+                            <label style={labelStyle}>{isRTL ? '🚀 موعد بدء العرض' : '🚀 Launch time'}</label>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button type="button"
+                                    onClick={() => { setScheduledEnabled(false); setScheduledAt(''); setStartDateG(''); setStartTimeStr(''); setStartHijriDisplay(''); }}
+                                    style={{
+                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
+                                        border: !scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                        background: !scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                        color: !scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
+                                        WebkitTapHighlightColor: 'transparent',
+                                    }}>
+                                    {isRTL ? '🚀 انشره الآن' : '🚀 Publish now'}
+                                </button>
+                                <button type="button"
+                                    onClick={() => setScheduledEnabled(true)}
+                                    style={{
+                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
+                                        border: scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                        background: scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                        color: scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
+                                        WebkitTapHighlightColor: 'transparent',
+                                    }}>
+                                    {isRTL ? '🗓 يبدأ في موعد لاحق' : '🗓 Starts later'}
+                                </button>
+                            </div>
+
+                            {scheduledEnabled && (
+                                <div style={{ marginTop: 12 }}>
+                                    <div style={{
+                                        marginBottom: 10, padding: '10px 12px', borderRadius: 10,
+                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
+                                        fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                    }}>
+                                        {isRTL
+                                            ? '🕒 أي موعد بعد اللحظة الحالية يجعل العرض تلقائياً «عرضاً قادماً»: لا يظهر للعامة في الموقع إلا عندما يتبقى أسبوع أو أقل على موعده، ولا يستطيع المشتري الحجز قبل الموعد.'
+                                            : '🕒 Any future time automatically makes this a "Coming Soon" deal: it only shows publicly within 7 days of launch, and no bookings before it starts.'}
+                                    </div>
+                                    <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                        {isRTL ? 'تاريخ البدء (هجري + ميلادي)' : 'Start date (Hijri + Gregorian)'}
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setDualPickerTarget('start'); setShowDualPicker(true); }}
+                                        style={{
+                                            ...fieldInputStyle,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            cursor: 'pointer', textAlign: isRTL ? 'right' : 'left',
+                                            border: startDateG ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                            background: startDateG ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                            {startDateG ? (
+                                                <>
+                                                    <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                        {startHijriDisplay
+                                                            ? (() => {
+                                                                const [y, m, d] = startHijriDisplay.split('-').map(Number);
+                                                                const mName = isRTL
+                                                                    ? ['محرم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'][m-1]
+                                                                    : ['Muharram','Safar','Rabi al-Awwal','Rabi al-Thani','Jumada al-Ula','Jumada al-Akhirah','Rajab','Shaban','Ramadan','Shawwal','Dhu al-Qidah','Dhu al-Hijjah'][m-1];
+                                                                return `${d} ${mName} ${y}هـ`;
+                                                              })()
+                                                            : startDateG}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                        {new Date(startDateG).toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <span style={{ color: 'var(--gray-400)', fontWeight: 600, fontSize: '0.88rem' }}>
+                                                    {isRTL ? 'اضغط لاختيار التاريخ...' : 'Tap to select date...'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span style={{ fontSize: '1.3rem' }}>📅</span>
+                                    </button>
+                                    <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 10 }}>
+                                        {isRTL ? '⏰ وقت البدء في ذلك اليوم' : '⏰ Time of day it starts'}
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={startTimeStr}
+                                        onChange={e => setStartTimeStr(e.target.value)}
+                                        style={{
+                                            ...fieldInputStyle,
+                                            border: startTimeStr ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                            textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)',
+                                        }}
+                                    />
+                                    {scheduledAt && (() => {
+                                        const startMs = new Date(scheduledAt).getTime();
+                                        if (isNaN(startMs)) return null;
+                                        const diff = startMs - Date.now();
+                                        if (diff <= 0) return null;
+                                        const days = Math.floor(diff / 86400000);
+                                        const hours = Math.floor((diff / 3600000) % 24);
+                                        const inWindow = diff <= 7 * 24 * 60 * 60 * 1000;
+                                        return (
+                                            <div style={{
+                                                marginTop: 8,
+                                                padding: '10px 12px',
+                                                borderRadius: 10,
+                                                background: inWindow ? 'rgba(99,102,241,0.12)' : 'var(--gold-soft)',
+                                                border: inWindow ? '1px solid rgba(99,102,241,0.35)' : '1px solid var(--gold-border)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '0.78rem',
+                                                fontWeight: 700,
+                                                lineHeight: 1.5,
+                                                display: 'flex', gap: 8, alignItems: 'flex-start'
+                                            }}>
+                                                <span style={{ fontSize: '1rem' }}>{inWindow ? '⏳' : '📅'}</span>
+                                                <span>
+                                                    {isRTL
+                                                        ? (inWindow
+                                                            ? `سيظهر العرض في "العروض القادمة" ويبدأ خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
+                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days} يوماً للظهور).`)
+                                                        : (inWindow
+                                                            ? `Will appear in Coming Soon — launches in ${days > 0 ? days + 'd ' : ''}${hours}h`
+                                                            : `Saved & scheduled. Visible to buyers 7 days before launch (${days} days until visible).`)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+
                         <div style={{ marginBottom: 20 }}>
                             <label style={labelStyle}>{isRTL ? 'نظام انتهاء العرض' : 'Offer Expiry System'}</label>
                             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -2392,7 +2551,7 @@ const SellerDashboard: React.FC = () => {
                                     {/* Dual Calendar Trigger Button */}
                                     <button
                                         type="button"
-                                        onClick={() => setShowDualPicker(true)}
+                                        onClick={() => { setDualPickerTarget('expiry'); setShowDualPicker(true); }}
                                         style={{
                                             ...fieldInputStyle,
                                             display: 'flex',
@@ -2446,7 +2605,12 @@ const SellerDashboard: React.FC = () => {
                                         type="time"
                                         value={expiryTimeStr}
                                         onChange={e => setExpiryTimeStr(e.target.value || '23:59')}
-                                        style={{ ...fieldInputStyle, border: '1px solid var(--gray-200)' }}
+                                        style={{
+                                            // v12.55 — نفس شكل حقل وقت البدء تماماً (توحيد)
+                                            ...fieldInputStyle,
+                                            border: '1px solid var(--gray-200)',
+                                            textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)',
+                                        }}
                                     />
                                 </div>
                             )}
@@ -2565,8 +2729,8 @@ const SellerDashboard: React.FC = () => {
                                                 value={g.mode}
                                                 onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: e.target.value as 'single' | 'multi' } : x))}
                                                 style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
-                                                <option value="single">{isRTL ? '☝️ خيار واحد فقط' : '☝️ Pick one only'}</option>
-                                                <option value="multi">{isRTL ? '🤲 عدة خيارات بكميات' : '🤲 Multiple with quantities'}</option>
+                                                <option value="single">{isRTL ? '☝️ يختار المشتري خياراً واحداً فقط' : '☝️ Buyer picks ONE choice only'}</option>
+                                                <option value="multi">{isRTL ? '🤲 يختار المشتري عدة خيارات معاً' : '🤲 Buyer picks SEVERAL choices'}</option>
                                             </select>
                                         </div>
                                         <div>
@@ -2579,6 +2743,21 @@ const SellerDashboard: React.FC = () => {
                                                 <option value="opt">{isRTL ? 'اختياري — يمكن تجاوزه' : 'Optional'}</option>
                                             </select>
                                         </div>
+                                    </div>
+                                    {/* v12.55 — شرح حي (طلب ناصر «وضّحها أكثر»): جملة كاملة
+                                        تتبدل مع الاختيار فيفهم التاجر السلوك قبل الحفظ. */}
+                                    <div style={{
+                                        marginBottom: 10, padding: '8px 12px', borderRadius: 10,
+                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
+                                        fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                    }}>
+                                        {isRTL
+                                            ? (g.mode === 'single'
+                                                ? '☝️ المشتري يختار مرة واحدة فقط من هذا القسم — إن اختار «كوب سيراميك» لا يستطيع معه «كوب ورقي». مناسب لنوع البن، طريقة التقديم…'
+                                                : '🤲 المشتري يستطيع الجمع بين عدة خيارات من نفس القسم وبكمية لكل خيار — مثل مقاس L ×٢ + مقاس M ×١ في حجز واحد. مناسب للمقاسات والإضافات.')
+                                            : (g.mode === 'single'
+                                                ? '☝️ The buyer selects exactly one choice from this group (e.g. ceramic OR paper cup — never both).'
+                                                : '🤲 The buyer can combine several choices from this group with a quantity for each (e.g. L ×2 + M ×1).')}
                                     </div>
                                     {g.choices.map((c, ci) => (
                                         <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
@@ -2621,105 +2800,6 @@ const SellerDashboard: React.FC = () => {
                                 style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
                                 {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
                             </button>
-                        </div>
-
-                        {/* v12.54 — حُذف مفتاح «عرض قادم» (طلب ناصر): الجدولة صارت
-                            أوتوماتيكية — «انشره الآن» أو تاريخ/وقت لاحق فيتحول العرض
-                            تلقائياً إلى «قادم» مع تنبيه واضح بقاعدة ظهور الأسبوع. */}
-                        <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '⏰ موعد بدء العرض' : '⏰ Launch time'}</label>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <button type="button"
-                                    onClick={() => { setScheduledEnabled(false); setScheduledAt(''); }}
-                                    style={{
-                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
-                                        border: !scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
-                                        background: !scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
-                                        color: !scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
-                                        WebkitTapHighlightColor: 'transparent',
-                                    }}>
-                                    {isRTL ? '🚀 انشره الآن' : '🚀 Publish now'}
-                                </button>
-                                <button type="button"
-                                    onClick={() => setScheduledEnabled(true)}
-                                    style={{
-                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
-                                        border: scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
-                                        background: scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
-                                        color: scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
-                                        WebkitTapHighlightColor: 'transparent',
-                                    }}>
-                                    {isRTL ? '🗓 يبدأ في موعد لاحق' : '🗓 Starts later'}
-                                </button>
-                            </div>
-
-                            {scheduledEnabled && (
-                                <div style={{ marginTop: 12 }}>
-                                    <div style={{
-                                        marginBottom: 10, padding: '10px 12px', borderRadius: 10,
-                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
-                                        fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
-                                    }}>
-                                        {isRTL
-                                            ? '🕒 أي موعد بعد اللحظة الحالية يجعل العرض تلقائياً «عرضاً قادماً»: لا يظهر للعامة في الموقع إلا عندما يتبقى أسبوع أو أقل على موعده، ولا يستطيع المشتري الحجز قبل الموعد.'
-                                            : '🕒 Any future time automatically makes this a “Coming Soon” deal: it only shows publicly within 7 days of launch, and no bookings before it starts.'}
-                                    </div>
-                                    <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                        {isRTL ? 'تاريخ ووقت البدء' : 'Start date & time'}
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        value={scheduledAt}
-                                        onChange={(e) => setScheduledAt(e.target.value)}
-                                        min={(() => {
-                                            // min = now + 10 minutes (local tz). datetime-local has
-                                            // no tz info so we format from the user's wall clock.
-                                            const d = new Date(Date.now() + 10 * 60 * 1000);
-                                            const pad = (n: number) => n.toString().padStart(2, '0');
-                                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                                        })()}
-                                        style={{
-                                            ...fieldInputStyle,
-                                            border: scheduledAt ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
-                                            colorScheme: 'light',
-                                        }}
-                                    />
-                                    {scheduledAt && (() => {
-                                        const startMs = new Date(scheduledAt).getTime();
-                                        if (isNaN(startMs)) return null;
-                                        const diff = startMs - Date.now();
-                                        if (diff <= 0) return null;
-                                        const days = Math.floor(diff / 86400000);
-                                        const hours = Math.floor((diff / 3600000) % 24);
-                                        const inWindow = diff <= 7 * 24 * 60 * 60 * 1000;
-                                        return (
-                                            <div style={{
-                                                marginTop: 8,
-                                                padding: '10px 12px',
-                                                borderRadius: 10,
-                                                background: inWindow ? 'rgba(99,102,241,0.12)' : 'rgba(245,158,11,0.12)',
-                                                border: inWindow ? '1px solid rgba(99,102,241,0.35)' : '1px solid rgba(245,158,11,0.35)',
-                                                color: 'var(--text-primary)',
-                                                fontSize: '0.78rem',
-                                                fontWeight: 700,
-                                                lineHeight: 1.5,
-                                                display: 'flex', gap: 8, alignItems: 'flex-start'
-                                            }}>
-                                                <span style={{ fontSize: '1rem' }}>{inWindow ? '⏳' : '📅'}</span>
-                                                <span>
-                                                    {isRTL
-                                                        ? (inWindow
-                                                            ? `سيظهر العرض في "العروض القادمة" ويبدأ خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
-                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days} يوماً للظهور).`)
-                                                        : (inWindow
-                                                            ? `Will appear in Coming Soon — launches in ${days > 0 ? days + 'd ' : ''}${hours}h`
-                                                            : `Saved & scheduled. Visible to buyers 7 days before launch (${days} days until visible).`)}
-                                                </span>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
                         </div>
 
                         {discount > 0 && <div style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#b91c1c', padding: '10px', borderRadius: 12, textAlign: 'center', fontWeight: 900, marginBottom: 20 }}>{isRTL ? `خصم ${discount}% 🔥` : `Discount ${discount}% 🔥`}</div>}
@@ -3963,21 +4043,29 @@ const SellerDashboard: React.FC = () => {
                 isOpen={showDualPicker}
                 onClose={() => setShowDualPicker(false)}
                 onSelect={({ hijri, gregorian }) => {
+                    // v12.55 — منتقٍ واحد موحّد يخدم الانتهاء والبدء معاً
+                    if (dualPickerTarget === 'start') {
+                        setStartDateG(gregorian);
+                        setStartHijriDisplay(hijri);
+                        return;
+                    }
                     setExpiryDate(hijri);         // hijri for parseHijriAndGetMinutes fallback
                     setExpiryGregorian(gregorian); // gregorian for accurate minutes calc
                     setExpiryHijriDisplay(hijri);  // hijri YYYY-MM-DD for display label
                 }}
                 isRTL={isRTL}
-                currentHijri={expiryHijriDisplay}
-                currentGregorian={expiryGregorian}
+                currentHijri={dualPickerTarget === 'start' ? startHijriDisplay : expiryHijriDisplay}
+                currentGregorian={dualPickerTarget === 'start' ? startDateG : expiryGregorian}
                 // v12.50 — عرض موسمي: المنتقي نفسه يمنع أي يوم خارج نافذة الموسم
                 // العامة (أدنى حد: اليوم أو بداية الموسم أيهما أحدث). بلا تفعيل
                 // الموسم لا يُمرَّر شيء والنموذج طبيعي تماماً.
                 {...(() => {
-                    const c = platformSettings.seasonCampaign;
-                    if (!seasonTag || !c?.publicFrom || !c?.publicTo) return {};
                     const now = new Date();
                     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    // v12.55 — تاريخ البدء: لا ماضي إطلاقاً (أدنى حد اليوم)
+                    if (dualPickerTarget === 'start') return { minDate: todayStr };
+                    const c = platformSettings.seasonCampaign;
+                    if (!seasonTag || !c?.publicFrom || !c?.publicTo) return { minDate: todayStr };
                     return { minDate: c.publicFrom > todayStr ? c.publicFrom : todayStr, maxDate: c.publicTo };
                 })()}
             />
