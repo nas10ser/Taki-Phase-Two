@@ -2466,16 +2466,33 @@ const SellerDashboard: React.FC = () => {
                                     <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 10 }}>
                                         {isRTL ? '⏰ وقت البدء في ذلك اليوم' : '⏰ Time of day it starts'}
                                     </label>
-                                    <input
-                                        type="time"
-                                        value={startTimeStr}
-                                        onChange={e => setStartTimeStr(e.target.value)}
-                                        style={{
-                                            ...fieldInputStyle,
-                                            border: startTimeStr ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
-                                            textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)',
-                                        }}
-                                    />
+                                    {/* v12.56 — iOS يعرض حقل الوقت الفارغ صندوقاً أبيض بلا أي
+                                        نص، فيبدو معطلاً: نص إرشادي فوقه بنفس أسلوب حقل التاريخ. */}
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type="time"
+                                            className={startTimeStr ? undefined : 'time-empty'}
+                                            value={startTimeStr}
+                                            onChange={e => setStartTimeStr(e.target.value)}
+                                            style={{
+                                                ...fieldInputStyle,
+                                                border: startTimeStr ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                                background: startTimeStr ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                                textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)',
+                                                display: 'block', minHeight: 48,
+                                            }}
+                                        />
+                                        {!startTimeStr && (
+                                            <span className="time-hint" style={{
+                                                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                pointerEvents: 'none',
+                                                color: 'var(--gray-400)', fontWeight: 600, fontSize: '0.88rem',
+                                            }}>
+                                                {isRTL ? '⏰ اضغط لاختيار الوقت...' : '⏰ Tap to select time...'}
+                                            </span>
+                                        )}
+                                    </div>
                                     {scheduledAt && (() => {
                                         const startMs = new Date(scheduledAt).getTime();
                                         if (isNaN(startMs)) return null;
@@ -2610,6 +2627,7 @@ const SellerDashboard: React.FC = () => {
                                             ...fieldInputStyle,
                                             border: '1px solid var(--gray-200)',
                                             textAlign: 'center', fontWeight: 800, color: 'var(--text-primary)',
+                                            display: 'block', minHeight: 48,
                                         }}
                                     />
                                 </div>

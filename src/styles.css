@@ -1490,6 +1490,28 @@ input[type="search"] {
   appearance: none;
 }
 
+/* v12.56 — iOS Safari يرسم input[type=time] بمظهره الأصلي: الحقل كان
+   يتجاوز عرض البطاقة، والفارغ يظهر صندوقاً أبيض بلا أي نص، والقيمة
+   المختارة تلتصق بطرف الحقل بدل الوسط. appearance:none يعيد التحكم
+   بالمقاس، والوسيطة توسّط القيمة المختارة على iOS. */
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  max-width: 100%;
+}
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: center;
+  margin: 0;
+}
+/* كروم/أندرويد يعرض --:-- للحقل الفارغ — تُخفى كي لا تتراكب مع نص
+   «اضغط لاختيار الوقت...»، ويعود الظهور عند التركيز للكتابة اليدوية. */
+input[type="time"].time-empty:not(:focus)::-webkit-datetime-edit {
+  color: transparent;
+}
+input[type="time"]:focus + .time-hint {
+  opacity: 0;
+}
+
 /* ---------------------------------------------------------------------
  * PWA STANDALONE MODE — when launched from home screen, lean into
  * native-app feel.
