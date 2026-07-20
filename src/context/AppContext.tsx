@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } from '../data/mock';
 import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
@@ -546,7 +547,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const toggleDarkMode = useCallback(() => {
-        animateThemeSwap(); // v12.51 — انتقال لوني ناعم بدل القفزة الحادة
+        // v12.54 — «مرونة ٤K» (طلب ناصر): على الأجهزة الداعمة (iOS 18+/Chrome)
+        // نلفّ التبديل في View Transition = تلاشٍ متقاطع لكامل الشاشة، كل
+        // البكسلات (حتى التدرجات والصور) تتحول معاً بلا أي قفزة. الأجهزة
+        // الأقدم تبقى على الانتقال اللوني المؤقت theme-anim (v12.51).
+        const doc = document as any;
+        if (typeof doc.startViewTransition === 'function') {
+            doc.startViewTransition(() => {
+                flushSync(() => setDarkMode(prev => !prev));
+            });
+            return;
+        }
+        animateThemeSwap();
         setDarkMode(prev => !prev);
     }, [animateThemeSwap]);
 

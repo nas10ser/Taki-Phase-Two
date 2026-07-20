@@ -511,6 +511,20 @@ const DealDetails: React.FC = () => {
         return () => { alive = false; };
     }, [showBookingModal, deal?.id, deal?.options?.length]);
 
+    // v12.54 — ربط كميات الخيارات بالكمية الإجمالية (طلب ناصر): مجموع كميات
+    // الأقسام متعددة الاختيار = عدد القطع المحجوزة، فيُخصم من مخزون العرض
+    // ويخضع تلقائياً لـ«حدود الحجز للمشتري» (فحص maxPerBooking أعلاه يقرأه).
+    useEffect(() => {
+        if (!deal?.options?.length) return;
+        const multiIds = new Set(deal.options.filter(g => g.mode === 'multi').map(g => g.id));
+        let sum = 0;
+        for (const [gid, chs] of Object.entries(optSel)) {
+            if (!multiIds.has(gid)) continue;
+            for (const q of Object.values(chs)) sum += (q || 0);
+        }
+        if (sum > 0) setSelectedQuantity(sum);
+    }, [optSel, deal?.options]);
+
     // Tick once a second so the on-image countdown badge updates live.
     React.useEffect(() => {
         const id = setInterval(() => setNowTick(t => t + 1), 1000);
@@ -1739,6 +1753,12 @@ const DealDetails: React.FC = () => {
                                             </div>
                                         );
                                     })}
+                                    {/* v12.54 — توضيح ربط الكميات بالإجمالي */}
+                                    {grp.mode === 'multi' && (
+                                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
+                                            {isRTL ? '💡 مجموع الكميات التي تختارها هنا = عدد القطع التي ستُحجز وتُخصم من كمية العرض.' : '💡 The quantities you pick here add up to your total booked pieces.'}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}

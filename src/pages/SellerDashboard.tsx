@@ -444,6 +444,9 @@ const SellerDashboard: React.FC = () => {
     const [days, setDays] = useState('');
     const [expiryHours, setExpiryHours] = useState('');
     const [expiryDate, setExpiryDate] = useState(''); // Gregorian YYYY-MM-DD (used for calculation)
+    // v12.54 — وقت الانتهاء في يوم «بالتاريخ» (طلب ناصر: التاريخ وحده بلا ساعة
+    // كان ينهي العرض منتصف الليل). الافتراضي نهاية اليوم.
+    const [expiryTimeStr, setExpiryTimeStr] = useState('23:59');
     // v11.20 — Coming Soon scheduling. Off by default so existing sellers
     // see no behavior change. When ON we capture a single datetime-local
     // value (browser-native picker, native validation). The 30-day cap is
@@ -1510,6 +1513,23 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
+        // v12.54 — «بالتاريخ» (طلب ناصر): امنع تاريخ الأمس/الماضي أو وقتاً أقرب
+        // من ١٠ دقائق من لحظة النشر — كان النظام يقبلها بصمت فيولد عرضاً ميتاً.
+        if (expiryType === 'date' && expiryGregorian) {
+            const t = /^\d{2}:\d{2}$/.test(expiryTimeStr) ? expiryTimeStr : '23:59';
+            const endMsCheck = new Date(`${expiryGregorian}T${t}:00`).getTime();
+            if (isNaN(endMsCheck)) {
+                await customAlert(isRTL ? '⚠️ تاريخ الانتهاء غير صالح — أعد اختياره.' : '⚠️ Invalid expiry date.');
+                return;
+            }
+            if (!scheduledEnabled && endMsCheck <= Date.now() + 10 * 60 * 1000) {
+                await customAlert(isRTL
+                    ? '⛔ تاريخ/وقت الانتهاء الذي اخترته مضى بالفعل أو أقرب من ١٠ دقائق من الآن.\nاختر تاريخاً ووقتاً مستقبليين حتى يجد المشترون وقتاً للحجز.'
+                    : '⛔ The expiry date/time is already past (or under 10 minutes away). Pick a future time.');
+                return;
+            }
+        }
+
         // 4. v11.20 — Coming Soon validation. Schedule must be in the
         //    future (no upper cap as of v11.21). We use the user's local
         //    timezone (datetime-local has no tz info) which matches the
@@ -1539,11 +1559,13 @@ const SellerDashboard: React.FC = () => {
             // Hours / days / stock anchor their lifespan to startsAt, so they
             // can never collide with the launch time.
             if (expiryType === 'date' && expiryGregorian) {
-                const expiryMs = new Date(expiryGregorian).getTime();
+                // v12.54 — المقارنة صارت بالتاريخ + الوقت (لا منتصف الليل فقط)
+                const tEnd = /^\d{2}:\d{2}$/.test(expiryTimeStr) ? expiryTimeStr : '23:59';
+                const expiryMs = new Date(`${expiryGregorian}T${tEnd}:00`).getTime();
                 if (!isNaN(expiryMs) && startMs >= expiryMs) {
                     await customAlert(isRTL
-                        ? '⚠️ موعد بدء العرض يجب أن يكون قبل تاريخ انتهاء العرض. عدّل أحد التاريخين.'
-                        : '⚠️ The launch time must be before the deal\'s expiry date. Adjust one of them.');
+                        ? '⛔ تاريخ الانتهاء قبل (أو يساوي) موعد بدء العرض — لا يمكن أن ينتهي العرض قبل أن يبدأ. عدّل أحد التاريخين.'
+                        : '⛔ The expiry is before the launch time — a deal can\'t end before it starts. Adjust one of them.');
                     return;
                 }
             }
@@ -1661,12 +1683,15 @@ const SellerDashboard: React.FC = () => {
                 // date instead of drifting past it. computedStartsAt is
                 // undefined for non-scheduled deals → falls back to now, which
                 // preserves the original behaviour.
+                // v12.54 — التاريخ + وقت اليوم الذي اختاره التاجر (بتوقيت جهازه
+                // المحلي — new Date('YYYY-MM-DD') وحدها كانت منتصف ليل UTC).
                 const anchor = computedStartsAt ?? Date.now();
+                const t = /^\d{2}:\d{2}$/.test(expiryTimeStr) ? expiryTimeStr : '23:59';
                 if (expiryGregorian) {
-                    return Math.max(1, Math.floor((new Date(expiryGregorian).getTime() - anchor) / 60000));
+                    return Math.max(1, Math.floor((new Date(`${expiryGregorian}T${t}:00`).getTime() - anchor) / 60000));
                 }
                 if (expiryDate) {
-                    return parseHijriAndGetMinutes(expiryDate);
+                    return parseHijriAndGetMinutes(expiryDate); // هجري بلا ميلادي: دقة يومية تكفي
                 }
             }
             return (finalDays ? finalDays * 24 * 60 : 525600);
@@ -2214,8 +2239,8 @@ const SellerDashboard: React.FC = () => {
                             if (Number(rebookCooldownMinutes) > 0) parts.push(isRTL ? `انتظار ${cdLabel(Number(rebookCooldownMinutes))} بين الحجوزات` : `${cdLabel(Number(rebookCooldownMinutes))} cooldown`);
                             return (
                         <details style={{
-                            background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(239,68,68,0.06))',
-                            border: '2px solid rgba(245,158,11,0.55)',
+                            background: 'var(--gold-soft)',
+                            border: '2px solid var(--gold-border)',
                             borderRadius: 16, padding: '14px 14px', marginBottom: 14,
                             boxShadow: '0 4px 14px rgba(245,158,11,0.15)',
                         }}>
@@ -2412,6 +2437,17 @@ const SellerDashboard: React.FC = () => {
                                         </div>
                                         <span style={{ fontSize: '1.3rem' }}>📅</span>
                                     </button>
+                                    {/* v12.54 — الساعة (طلب ناصر): التاريخ وحده كان ينهي
+                                        العرض منتصف الليل بلا تحكم بالوقت. */}
+                                    <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 10 }}>
+                                        {isRTL ? '⏰ وقت الانتهاء في ذلك اليوم' : '⏰ Time of day it ends'}
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={expiryTimeStr}
+                                        onChange={e => setExpiryTimeStr(e.target.value || '23:59')}
+                                        style={{ ...fieldInputStyle, border: '1px solid var(--gray-200)' }}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -2520,17 +2556,29 @@ const SellerDashboard: React.FC = () => {
                                             aria-label={isRTL ? 'حذف القسم' : 'Delete group'}
                                             style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 12px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
                                     </div>
-                                    <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                                        <button type="button"
-                                            onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: x.mode === 'single' ? 'multi' : 'single' } : x))}
-                                            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}>
-                                            {g.mode === 'single' ? (isRTL ? '☝️ يختار المشتري خياراً واحداً' : '☝️ Pick one') : (isRTL ? '🤲 يختار أكثر من خيار' : '🤲 Pick multiple')}
-                                        </button>
-                                        <button type="button"
-                                            onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: !x.required } : x))}
-                                            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border-color)', background: g.required ? 'var(--primary)' : 'var(--card-bg)', color: g.required ? '#fff' : 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}>
-                                            {g.required ? (isRTL ? '⭐ مطلوب — لا حجز بدونه' : '⭐ Required') : (isRTL ? 'اختياري' : 'Optional')}
-                                        </button>
+                                    {/* v12.54 — وضوح (طلب ناصر): قائمتان مسميّتان بدل الأزرار
+                                        الغامضة — التاجر يرى كل البدائل المتاحة قبل الاختيار. */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'طريقة الاختيار' : 'Selection mode'}</div>
+                                            <select
+                                                value={g.mode}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: e.target.value as 'single' | 'multi' } : x))}
+                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
+                                                <option value="single">{isRTL ? '☝️ خيار واحد فقط' : '☝️ Pick one only'}</option>
+                                                <option value="multi">{isRTL ? '🤲 عدة خيارات بكميات' : '🤲 Multiple with quantities'}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'الإلزام' : 'Requirement'}</div>
+                                            <select
+                                                value={g.required ? 'req' : 'opt'}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: e.target.value === 'req' } : x))}
+                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
+                                                <option value="req">{isRTL ? '⭐ مطلوب — لا حجز بدونه' : '⭐ Required'}</option>
+                                                <option value="opt">{isRTL ? 'اختياري — يمكن تجاوزه' : 'Optional'}</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     {g.choices.map((c, ci) => (
                                         <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
@@ -2561,8 +2609,10 @@ const SellerDashboard: React.FC = () => {
                                         style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1px dashed var(--gray-300)', background: 'transparent', color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer' }}>
                                         {isRTL ? '+ خيار جديد' : '+ Add choice'}
                                     </button>
-                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6 }}>
-                                        {isRTL ? 'الكمية لكل خيار اختيارية — فارغة = مفتوحة بلا سقف، وعند تحديدها يرى المشتري «متبقي N» وتُخصم تلقائياً.' : 'Per-choice qty is optional — empty = unlimited.'}
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
+                                        {isRTL
+                                            ? '📌 «الكمية» لكل خيار = كم قطعة متاحة منه (مثال: مقاس L = ٣). فارغة = مفتوحة بلا سقف. عند تحديدها: يرى المشتري «متبقي N»، وكل حجز يخصمها من كمية الخيار ومن الكمية الإجمالية للعرض معاً، وتخضع لـ«حدود الحجز للمشتري» في الأعلى (الحد الأقصى للقطع في الحجز الواحد).'
+                                            : '📌 Per-choice qty = available pieces of that choice. Empty = unlimited. Bookings deduct it from BOTH the choice and the deal total, and respect the buyer booking limits above.'}
                                     </div>
                                 </div>
                             ))}
@@ -2573,53 +2623,49 @@ const SellerDashboard: React.FC = () => {
                             </button>
                         </div>
 
+                        {/* v12.54 — حُذف مفتاح «عرض قادم» (طلب ناصر): الجدولة صارت
+                            أوتوماتيكية — «انشره الآن» أو تاريخ/وقت لاحق فيتحول العرض
+                            تلقائياً إلى «قادم» مع تنبيه واضح بقاعدة ظهور الأسبوع. */}
                         <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? 'جدولة العرض (اختياري)' : 'Schedule Launch (Optional)'}</label>
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setScheduledEnabled(v => { if (v) setScheduledAt(''); return !v; })}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setScheduledEnabled(v => { if (v) setScheduledAt(''); return !v; }); } }}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: 12,
-                                    padding: '14px 16px', borderRadius: 14,
-                                    border: scheduledEnabled ? '1.5px solid var(--primary)' : '1.5px solid var(--gray-200)',
-                                    background: scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
-                                    cursor: 'pointer', WebkitTapHighlightColor: 'transparent'
-                                }}
-                            >
-                                <div style={{ fontSize: '1.4rem' }}>⏳</div>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                                        {isRTL ? 'عرض قادم — Coming Soon' : 'Coming Soon launch'}
-                                    </div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
-                                        {isRTL
-                                            ? 'جهّز العرض من الآن، يبدأ تلقائياً في الوقت المحدد. لا يستطيع المشتري الحجز قبل الموعد.'
-                                            : 'Prep ahead — deal stays locked until launch time.'}
-                                    </div>
-                                </div>
-                                <div style={{
-                                    width: 44, height: 26, borderRadius: 999,
-                                    background: scheduledEnabled ? 'var(--primary)' : 'var(--gray-300)',
-                                    position: 'relative', transition: 'background 0.2s ease',
-                                    flexShrink: 0
-                                }}>
-                                    <div style={{
-                                        position: 'absolute', top: 3,
-                                        [isRTL ? 'right' : 'left']: scheduledEnabled ? 21 : 3,
-                                        width: 20, height: 20, borderRadius: '50%',
-                                        background: 'white',
-                                        transition: 'all 0.2s ease',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                                    }} />
-                                </div>
+                            <label style={labelStyle}>{isRTL ? '⏰ موعد بدء العرض' : '⏰ Launch time'}</label>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button type="button"
+                                    onClick={() => { setScheduledEnabled(false); setScheduledAt(''); }}
+                                    style={{
+                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
+                                        border: !scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                        background: !scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                        color: !scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
+                                        WebkitTapHighlightColor: 'transparent',
+                                    }}>
+                                    {isRTL ? '🚀 انشره الآن' : '🚀 Publish now'}
+                                </button>
+                                <button type="button"
+                                    onClick={() => setScheduledEnabled(true)}
+                                    style={{
+                                        flex: 1, padding: '13px 10px', borderRadius: 12, fontWeight: 900, fontSize: '0.84rem', cursor: 'pointer',
+                                        border: scheduledEnabled ? '1.5px solid var(--primary)' : '1px solid var(--gray-200)',
+                                        background: scheduledEnabled ? 'var(--notif-unread-bg)' : 'var(--gray-50)',
+                                        color: scheduledEnabled ? 'var(--primary)' : 'var(--text-secondary)',
+                                        WebkitTapHighlightColor: 'transparent',
+                                    }}>
+                                    {isRTL ? '🗓 يبدأ في موعد لاحق' : '🗓 Starts later'}
+                                </button>
                             </div>
 
                             {scheduledEnabled && (
                                 <div style={{ marginTop: 12 }}>
+                                    <div style={{
+                                        marginBottom: 10, padding: '10px 12px', borderRadius: 10,
+                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
+                                        fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                    }}>
+                                        {isRTL
+                                            ? '🕒 أي موعد بعد اللحظة الحالية يجعل العرض تلقائياً «عرضاً قادماً»: لا يظهر للعامة في الموقع إلا عندما يتبقى أسبوع أو أقل على موعده، ولا يستطيع المشتري الحجز قبل الموعد.'
+                                            : '🕒 Any future time automatically makes this a “Coming Soon” deal: it only shows publicly within 7 days of launch, and no bookings before it starts.'}
+                                    </div>
                                     <label style={{ ...labelStyle, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                        {isRTL ? 'موعد بدء العرض' : 'Launch time'}
+                                        {isRTL ? 'تاريخ ووقت البدء' : 'Start date & time'}
                                     </label>
                                     <input
                                         type="datetime-local"

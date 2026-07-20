@@ -94,10 +94,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                 // dark themes (gradient border, not a theme-var color).
                 border: '2px solid transparent',
                 borderRadius: 24,
-                backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)',
+                // v12.54 — ذهبي فاخر (بدل البرتقالي) عبر متغيرات تعمل في الوضعين
+                backgroundImage: 'linear-gradient(var(--card-bg), var(--card-bg)), var(--gold-grad)',
                 backgroundOrigin: 'border-box',
                 backgroundClip: 'padding-box, border-box',
-                boxShadow: '0 6px 22px rgba(245,158,11,0.35)'
+                boxShadow: '0 6px 22px var(--gold-glow)'
             } : { position: 'relative' }}
         >
             {isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '' && (
@@ -112,13 +113,13 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     top: 0,
                     left: 0,
                     right: 0,
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 55%, #b45309 100%)',
+                    background: 'var(--gold-grad)',
                     color: '#fff',
                     padding: '6px 10px',
                     fontSize: '0.82rem',
                     fontWeight: 900,
                     zIndex: 10,
-                    boxShadow: '0 2px 8px rgba(180,83,9,0.5)',
+                    boxShadow: '0 2px 8px var(--gold-glow)',
                     textShadow: '0 1px 2px rgba(0,0,0,0.4)',
                     display: 'flex',
                     alignItems: 'center',
@@ -226,9 +227,9 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                             [isRTL ? 'right' : 'left']: 8,
                             zIndex: 11,
                             width: 30, height: 30, borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #fde68a 0%, #f59e0b 55%, #b45309 100%)',
+                            background: 'var(--gold-grad)',
                             border: '1.5px solid rgba(255,255,255,0.85)',
-                            boxShadow: '0 2px 8px rgba(180,83,9,0.55)',
+                            boxShadow: '0 2px 8px var(--gold-glow)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '0.9rem',
                         }}

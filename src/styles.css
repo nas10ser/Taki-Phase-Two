@@ -2396,3 +2396,54 @@ html.theme-anim *::after {
     fill 0.35s ease,
     box-shadow 0.35s ease !important;
 }
+
+/* ————— v12.54 — «الذهبي الفاخر» بدل البرتقالي (طلب ناصر) —————
+   درجات ذهب معدنية أنيقة تعمل في الوضعين الفاتح والداكن — تُستخدم لإطار
+   الراعي الرسمي وشاراته، صناديق حدود الحجز، وتمييزات الباقات. */
+:root {
+  --gold-1: #e9d48a;
+  --gold-2: #c9a227;
+  --gold-3: #8a6d1f;
+  --gold-grad: linear-gradient(135deg, #eeda96 0%, #c9a227 48%, #8a6d1f 100%);
+  --gold-soft: rgba(201, 162, 39, 0.12);
+  --gold-border: rgba(201, 162, 39, 0.45);
+  --gold-glow: rgba(201, 162, 39, 0.35);
+}
+.dark-mode {
+  --gold-1: #f0dc96;
+  --gold-2: #d9b74a;
+  --gold-3: #9a7a24;
+  --gold-grad: linear-gradient(135deg, #eeda96 0%, #d9b74a 48%, #7c621c 100%);
+  --gold-soft: rgba(217, 183, 74, 0.14);
+  --gold-border: rgba(217, 183, 74, 0.5);
+  --gold-glow: rgba(217, 183, 74, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light-mode) {
+    --gold-1: #f0dc96;
+    --gold-2: #d9b74a;
+    --gold-3: #9a7a24;
+    --gold-grad: linear-gradient(135deg, #eeda96 0%, #d9b74a 48%, #7c621c 100%);
+    --gold-soft: rgba(217, 183, 74, 0.14);
+    --gold-border: rgba(217, 183, 74, 0.5);
+    --gold-glow: rgba(217, 183, 74, 0.3);
+  }
+}
+
+/* v12.54 — «مرونة ٤K»: fallback الأجهزة بلا View Transitions — مدة أطول
+   ومنحنى أنعم (الأساس 0.35s بقي للخصائص؛ هنا نمدد قليلاً لسلاسة أعلى). */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition-duration: 0.5s !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* View Transitions (iOS 18+/Chrome): تلاشٍ متقاطع لكامل الشاشة عند تبديل
+   الوضع — أنعم انتقال ممكن، كل البكسلات تتحول معاً بلا أي قفزة. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.45s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}

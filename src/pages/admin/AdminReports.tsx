@@ -87,10 +87,12 @@ const AdminReports: React.FC = () => {
     const { customConfirm, customAlert } = useApp();
     const history = useHistory();
 
-    const [view, setView] = useState<'reports' | 'complaints' | 'warnings'>('reports');
+    const [view, setView] = useState<'reports' | 'complaints' | 'warnings' | 'suspended'>('reports');
     const [reports, setReports] = useState<AdminReportRow[]>([]);
     const [complaints, setComplaints] = useState<AdminComplaintRow[]>([]);
     const [warned, setWarned] = useState<WarnedUser[]>([]);
+    // v12.54 — «الحسابات المعلقة» بأسبابها الكاملة (إنذارات/مخالفات/بلاغات)
+    const [suspended, setSuspended] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [q, setQ] = useState('');
@@ -111,6 +113,9 @@ const AdminReports: React.FC = () => {
         } else if (view === 'complaints') {
             const rows = await adminService.listComplaints({ query: q, status: status || null });
             setComplaints(rows);
+        } else if (view === 'suspended') {
+            const { data } = await supabase.rpc('admin_suspended_accounts');
+            setSuspended(Array.isArray(data) ? data : []);
         } else {
             const rows = await adminService.listWarnedUsers({ role: role || null, minCount: warnMin, search: q });
             setWarned(rows);
@@ -196,7 +201,11 @@ const AdminReports: React.FC = () => {
             </div>
 
             {/* Summary strip */}
-            {view !== 'warnings' ? (
+            {view === 'suspended' ? (
+                <div className="grid grid-cols-1 gap-3">
+                    <SummaryCard label="حسابات معلقة (يدوياً أو تلقائياً بعد ٣ مخالفات)" value={suspended.length} gradient="bg-gradient-to-br from-slate-600 to-slate-800" />
+                </div>
+            ) : view !== 'warnings' ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <SummaryCard
                         label="مفتوح / يحتاج مراجعة"
@@ -260,6 +269,16 @@ const AdminReports: React.FC = () => {
                 >
                     ⚠️ الإنذارات
                 </button>
+                <button
+                    onClick={() => { setView('suspended'); setStatus(''); }}
+                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
+                        view === 'suspended'
+                            ? 'bg-gradient-to-r from-slate-600 to-slate-800 text-white shadow-md'
+                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-slate-400'
+                    }`}
+                >
+                    ⛔ الحسابات المعلقة
+                </button>
             </div>
 
             {/* Filters */}
@@ -283,7 +302,7 @@ const AdminReports: React.FC = () => {
                     )}
                 </div>
 
-                {view !== 'warnings' && (
+                {view !== 'warnings' && view !== 'suspended' && (
                     <div className="flex flex-wrap gap-1.5">
                         {/* Status chips */}
                         <FilterChip active={!status} onClick={() => setStatus('')} label="كل الحالات" icon="•" />
@@ -393,6 +412,61 @@ const AdminReports: React.FC = () => {
                                 onOpenAccount={openAccount}
                                 onStatusChange={changeComplaintStatus}
                             />
+                        ))}
+                    </div>
+                )
+            ) : view === 'suspended' ? (
+                // v12.54 — «الحسابات المعلقة»: من عُلّق (يدوياً أو تلقائياً بعد ٣
+                // مخالفات) وأسبابه كاملة — إنذارات + مخالفات مرصودة + بلاغات —
+                // حتى يقرر ناصر إعادة التفعيل عن علم.
+                suspended.length === 0 ? (
+                    <EmptyState
+                        icon="✅"
+                        title="لا حسابات معلقة حالياً"
+                        subtitle="أي حساب يُعلّق يدوياً أو تلقائياً (٣ مخالفات محتوى) يظهر هنا بأسبابه"
+                    />
+                ) : (
+                    <div className="space-y-3">
+                        {suspended.map((u: any) => (
+                            <div key={u.user_id} className="bg-[var(--card-bg)] border border-red-300 rounded-2xl p-4 shadow-sm">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="min-w-0">
+                                        <div className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
+                                            {u.user_type === 'seller' ? '🏪' : '🛒'} {u.name || '—'}
+                                            <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-0.5 rounded-full">موقوف</span>
+                                        </div>
+                                        <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                                            {u.user_type === 'seller' ? 'تاجر' : u.user_type === 'buyer' ? 'مشتري' : (u.user_type || '—')}{u.phone ? ` · ${u.phone}` : ''}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => toggleSuspend(u.user_id, false, u.name || '')}
+                                        className="px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
+                                        ✅ إعادة تفعيل الحساب
+                                    </button>
+                                </div>
+                                <div className="flex gap-2 mt-3 flex-wrap text-[10px] font-extrabold text-[var(--text-secondary)]">
+                                    <span className="px-2 py-1 rounded-full bg-amber-500/10 text-amber-700">⚠️ {Number(u.warn_count) || 0} إنذار</span>
+                                    <span className="px-2 py-1 rounded-full bg-rose-500/10 text-rose-700">🛡 {Number(u.flag_count) || 0} مخالفة محتوى مرصودة</span>
+                                    <span className="px-2 py-1 rounded-full bg-sky-500/10 text-sky-700">🚩 {Number(u.report_count) || 0} بلاغ ضده</span>
+                                    <span className="px-2 py-1 rounded-full bg-[var(--gray-100)]">📣 {Number(u.complaint_count) || 0} شكوى منه</span>
+                                </div>
+                                {Array.isArray(u.warnings) && u.warnings.length > 0 && (
+                                    <div className="mt-3 space-y-1.5">
+                                        <div className="text-[11px] font-extrabold text-[var(--text-primary)]">آخر الإنذارات:</div>
+                                        {u.warnings.map((wn: any, i: number) => (
+                                            <div key={i} className="text-[11px] font-bold text-[var(--text-secondary)] bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg px-3 py-1.5">
+                                                {wn.auto ? '🤖' : '👤'} {wn.reason}
+                                                <span className="text-[9px] mr-2">{wn.at ? new Date(wn.at).toLocaleDateString('ar-SA-u-ca-gregory') : ''}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {Array.isArray(u.recent_flags) && u.recent_flags.length > 0 && (
+                                    <div className="mt-2 text-[10px] font-bold text-[var(--text-secondary)]">
+                                        🛡 آخر ما رُصد: {u.recent_flags.map((f: any) => (Array.isArray(f.matched) ? f.matched.join('، ') : '')).filter(Boolean).join(' • ') || 'صور/محتوى مرفوض'}
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </div>
                 )

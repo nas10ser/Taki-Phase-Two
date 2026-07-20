@@ -16,8 +16,8 @@ const goldRing = (selected: boolean): React.CSSProperties => ({
     border: `${selected ? 2.5 : 2}px solid transparent`,
     borderRadius: 24,
     backgroundImage: selected
-        ? 'linear-gradient(rgba(245,158,11,0.13), rgba(245,158,11,0.07)), linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)'
-        : 'linear-gradient(var(--card-bg), var(--card-bg)), linear-gradient(135deg, #fde68a 0%, #f59e0b 45%, #b45309 100%)',
+        ? 'linear-gradient(var(--gold-soft), var(--gold-soft)), linear-gradient(var(--card-bg), var(--card-bg)), var(--gold-grad)'
+        : 'linear-gradient(var(--card-bg), var(--card-bg)), var(--gold-grad)',
     backgroundOrigin: 'border-box',
     backgroundClip: selected ? 'padding-box, padding-box, border-box' : 'padding-box, border-box',
     boxShadow: selected ? '0 14px 34px rgba(245,158,11,0.42)' : '0 4px 18px rgba(245,158,11,0.13)',
@@ -221,7 +221,7 @@ const Subscription: React.FC = () => {
                                     {isSel ? (
                                         <span
                                             className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-black shrink-0 shadow"
-                                            style={{ background: 'linear-gradient(135deg,#f59e0b,#b45309)' }}
+                                            style={{ background: 'var(--gold-grad)' }}
                                         >✓</span>
                                     ) : <span className="w-7 h-7 rounded-full border-2 border-amber-300/50 shrink-0" />}
                                 </div>
@@ -258,7 +258,7 @@ const Subscription: React.FC = () => {
                     onClick={handleSubscribe}
                     disabled={isPaying}
                     className="w-full mt-6 text-white font-extrabold py-4 rounded-2xl shadow-lg disabled:opacity-60 flex items-center justify-center gap-2"
-                    style={{ background: 'linear-gradient(135deg,#f59e0b 0%,#d97706 55%,#b45309 100%)' }}
+                    style={{ background: 'var(--gold-grad)' }}
                 >
                     {isPaying
                         ? 'جاري التحويل لبوابة الدفع...'
