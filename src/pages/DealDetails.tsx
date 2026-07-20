@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -471,6 +471,15 @@ const DealDetails: React.FC = () => {
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
+    // v12.53 — «اختيارات المنتج»: اختيارات المشتري {قسم → {خيار → كمية}} +
+    // المحجوز سابقاً من كل خيار مسقوف (لعرض «متبقي N» وتعطيل النافد)
+    const [optSel, setOptSel] = useState<Record<string, Record<string, number>>>({});
+    const [optUsage, setOptUsage] = useState<Record<string, number>>({});
+    /** المتبقي من خيار مسقوف (undefined = مفتوح بلا سقف) */
+    const optRemaining = (g: string, c: string, cap?: number): number | undefined => {
+        if (!cap || cap <= 0) return undefined;
+        return Math.max(0, cap - (optUsage[`${g}:${c}`] || 0));
+    };
     const [manualCode, setManualCode] = useState('');
     const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
     const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
@@ -482,6 +491,25 @@ const DealDetails: React.FC = () => {
 
     const isRTL = language === 'ar';
     const deal = deals.find(d => d.id === id);
+
+    // v12.53 — عند فتح ورقة الحجز لعرضٍ له اختيارات: صفّر الاختيارات واجلب
+    // المحجوز من كل خيار مسقوف (بعد تعريف deal — فخ TDZ v10.61)
+    useEffect(() => {
+        if (!showBookingModal || !deal?.options?.length) return;
+        setOptSel({});
+        let alive = true;
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data } = await supabase.rpc('deal_option_usage', { p_deal_id: deal.id });
+                if (!alive || !Array.isArray(data)) return;
+                const m: Record<string, number> = {};
+                data.forEach((r: any) => { m[`${r.g}:${r.c}`] = Number(r.booked) || 0; });
+                setOptUsage(m);
+            } catch { /* حارس القاعدة يفرض السقف على أي حال */ }
+        })();
+        return () => { alive = false; };
+    }, [showBookingModal, deal?.id, deal?.options?.length]);
 
     // Tick once a second so the on-image countdown badge updates live.
     React.useEffect(() => {
@@ -683,8 +711,46 @@ const DealDetails: React.FC = () => {
             } catch { /* التريغر في القاعدة يفرض الحدود على أي حال */ }
         }
 
+        // v12.53 — «اختيارات المنتج»: تحقق من الأقسام المطلوبة وسقوف الكميات،
+        // ثم ابنِ نص الاختيارات داخل الملاحظات (يراه التاجر في كل الواجهات
+        // والبوتات بلا أي تغيير إضافي) + النسخة المهيكلة لحارس المخزون.
+        let selectedOptions: Array<{ g: string; c: string; qty?: number }> | undefined;
+        let notesWithOptions = bookingNotes;
+        if (deal.options?.length) {
+            const lines: string[] = [];
+            const sels: Array<{ g: string; c: string; qty?: number }> = [];
+            for (const grp of deal.options) {
+                const chosen = Object.entries(optSel[grp.id] || {}).filter(([, q]) => q > 0);
+                if (grp.required && chosen.length === 0) {
+                    customAlert(isRTL ? `🧩 اختر «${grp.title}» أولاً لإتمام الحجز.` : `🧩 Please choose "${grp.title}" first.`);
+                    return;
+                }
+                if (chosen.length === 0) continue;
+                const parts: string[] = [];
+                for (const [cid, q] of chosen) {
+                    const choice = grp.choices.find(c => c.id === cid);
+                    if (!choice) continue;
+                    const rem = optRemaining(grp.id, cid, choice.qty);
+                    if (rem !== undefined && q > rem) {
+                        customAlert(isRTL
+                            ? `⛔ «${choice.label}» متبقٍ منه ${rem} فقط — خفّف الكمية أو اختر غيره.`
+                            : `⛔ Only ${rem} left of "${choice.label}".`);
+                        return;
+                    }
+                    sels.push({ g: grp.id, c: cid, qty: q });
+                    parts.push(q > 1 ? `${choice.label} ×${q}` : choice.label);
+                }
+                if (parts.length) lines.push(`${grp.title}: ${parts.join('، ')}`);
+            }
+            if (sels.length) {
+                selectedOptions = sels;
+                const optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
+                notesWithOptions = bookingNotes.trim() ? `${optText}\n${bookingNotes}` : optText;
+            }
+        }
+
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
-        bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, bookingNotes);
+        bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions);
 
         // Reserve quantity only when the seller set a real stock cap.
         // Time-based offers stay infinitely bookable until the timer ends.
@@ -1585,6 +1651,98 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
                         
+                        {/* v12.53 — «اختيارات المنتج»: أقسام التاجر (نوع البن/المقاس…)
+                            بنفس هوية الوضعين الداكن والفاتح — radio للقسم الأحادي،
+                            وأزرار كمية للقسم المتعدد، مع «متبقي N» للخيارات المسقوفة. */}
+                        {deal.options?.map(grp => {
+                            const sel = optSel[grp.id] || {};
+                            return (
+                                <div key={grp.id} style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                        <h3 style={{ fontWeight: 800, fontSize: '0.95rem', margin: 0 }}>🧩 {grp.title}</h3>
+                                        <span style={{
+                                            fontSize: '0.66rem', fontWeight: 800, padding: '4px 10px', borderRadius: 999,
+                                            background: grp.required ? 'var(--danger-light)' : 'var(--gray-100)',
+                                            color: grp.required ? 'var(--danger)' : 'var(--text-secondary)',
+                                        }}>
+                                            {grp.required
+                                                ? (grp.mode === 'single' ? (isRTL ? 'مطلوب — اختر ١' : 'Required — pick 1') : (isRTL ? 'مطلوب' : 'Required'))
+                                                : (isRTL ? 'اختياري' : 'Optional')}
+                                        </span>
+                                    </div>
+                                    {grp.choices.map(choice => {
+                                        const rem = optRemaining(grp.id, choice.id, choice.qty);
+                                        const soldOut = rem !== undefined && rem <= 0;
+                                        const qty = sel[choice.id] || 0;
+                                        const picked = qty > 0;
+                                        const toggle = () => {
+                                            if (soldOut) return;
+                                            setOptSel(prev => {
+                                                const cur = { ...(prev[grp.id] || {}) };
+                                                if (grp.mode === 'single') {
+                                                    // radio: خيار واحد فقط في القسم
+                                                    return { ...prev, [grp.id]: picked ? {} : { [choice.id]: 1 } };
+                                                }
+                                                if (picked) delete cur[choice.id]; else cur[choice.id] = 1;
+                                                return { ...prev, [grp.id]: cur };
+                                            });
+                                        };
+                                        const setQty = (q: number) => {
+                                            const capped = rem !== undefined ? Math.min(q, rem) : q;
+                                            setOptSel(prev => {
+                                                const cur = { ...(prev[grp.id] || {}) };
+                                                if (capped <= 0) delete cur[choice.id]; else cur[choice.id] = capped;
+                                                return { ...prev, [grp.id]: cur };
+                                            });
+                                        };
+                                        return (
+                                            <div key={choice.id}
+                                                role={grp.mode === 'single' ? 'radio' : 'checkbox'}
+                                                aria-checked={picked}
+                                                tabIndex={soldOut ? -1 : 0}
+                                                onClick={toggle}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                                                    borderRadius: 14, marginBottom: 8, cursor: soldOut ? 'not-allowed' : 'pointer',
+                                                    border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                    background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
+                                                    opacity: soldOut ? 0.45 : 1, transition: 'all 0.15s ease',
+                                                    WebkitTapHighlightColor: 'transparent',
+                                                }}>
+                                                <div style={{
+                                                    width: 22, height: 22, flexShrink: 0,
+                                                    borderRadius: grp.mode === 'single' ? '50%' : 7,
+                                                    border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)',
+                                                    background: picked && grp.mode === 'multi' ? 'var(--primary)' : 'var(--card-bg)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    color: '#fff', fontSize: '0.7rem', fontWeight: 900, transition: 'all 0.15s ease',
+                                                }}>{picked && grp.mode === 'multi' ? '✓' : ''}</div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{choice.label}</div>
+                                                    {rem !== undefined && (
+                                                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: soldOut ? 'var(--danger)' : 'var(--text-secondary)', marginTop: 2 }}>
+                                                            {soldOut ? (isRTL ? 'نفدت الكمية' : 'Sold out') : (isRTL ? `متبقي ${rem}` : `${rem} left`)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {grp.mode === 'multi' && picked && (
+                                                    <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <button type="button" onClick={() => setQty(qty - 1)}
+                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>−</button>
+                                                        <span style={{ fontWeight: 900, minWidth: 18, textAlign: 'center', color: 'var(--text-primary)' }}>{qty}</span>
+                                                        <button type="button" onClick={() => setQty(qty + 1)}
+                                                            disabled={rem !== undefined && qty >= rem}
+                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer', opacity: rem !== undefined && qty >= rem ? 0.4 : 1 }}>+</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })}
+
                         {/* Preparation Time */}
                         <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
                             <h3 style={{ fontWeight: 800, marginBottom: 12, fontSize: '0.95rem' }}>{isRTL ? 'وقت تجهيز الطلب بالدقائق' : 'Order Prep Time (Minutes)'}</h3>

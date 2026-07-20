@@ -14,8 +14,9 @@ export const useBooking = () => {
         acknowledgeBooking: contextAcknowledgeBooking
     } = useApp();
 
-    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string): Booking => {
-        return contextBookDeal(deal, quantity, userId, prepTime, notes);
+    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>): Booking => {
+        // v12.53 — selectedOptions: اختيارات المنتج المهيكلة (حارس المخزون يقرؤها)
+        return contextBookDeal(deal, quantity, userId, prepTime, notes, selectedOptions);
     }, [contextBookDeal]);
 
     // Bookings auto-expire 2h after creation regardless of deal lifespan.

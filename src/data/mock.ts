@@ -98,6 +98,25 @@ export interface Booking {
     status?: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
 }
 
+// v12.53 — «اختيارات المنتج» (نوع البن، المقاسات، تفضيلات…)
+export interface DealOptionChoice {
+    id: string;
+    label: string;
+    /** كمية متاحة لهذا الخيار — غير محدد/0 = مفتوحة بلا سقف */
+    qty?: number;
+}
+export interface DealOptionGroup {
+    id: string;
+    title: string;
+    /** single = يختار المشتري خياراً واحداً فقط، multi = أكثر من خيار */
+    mode: 'single' | 'multi';
+    /** مطلوب: لا يكتمل الحجز بدون اختيار من هذا القسم */
+    required?: boolean;
+    choices: DealOptionChoice[];
+}
+/** اختيار المشتري المحفوظ على الحجز: قسم + خيار + كمية */
+export interface SelectedOption { g: string; c: string; qty?: number; }
+
 export interface Deal {
     id: string;
     storeId: string;
@@ -137,6 +156,10 @@ export interface Deal {
      *  صفحة /seasonal الحصرية. الوسم مسموح فقط داخل نافذة التجار التي يحددها
      *  المالك (يحرسها DB trigger «tr_deal_season» أيضاً). */
     seasonId?: string;
+    /** v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن، المقاس…)
+     *  بخيارات لكل قسم، وقد يسقف كمية كل خيار (مقاس L = ٣ قطع) أو يتركها
+     *  مفتوحة. حارس المخزون DB trigger «tr_booking_options». */
+    options?: DealOptionGroup[];
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

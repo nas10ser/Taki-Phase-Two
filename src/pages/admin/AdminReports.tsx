@@ -30,6 +30,7 @@ import {
 } from '../../services/adminService';
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
+import { supabase } from '../../services/supabaseClient';
 
 const REPORT_TYPES = [
     { value: 'scam', label: 'احتيال', icon: '⚠️' },
@@ -774,7 +775,20 @@ const WarnedUserCard: React.FC<{
                         <div key={wn.id} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] font-bold text-amber-600">⚠️ إنذار</span>
-                                <span className="text-[10px] text-[var(--text-secondary)]">{fmt(wn.created_at)}{wn.admin_name ? ` · ${wn.admin_name}` : ''}</span>
+                                <span className="flex items-center gap-2">
+                                    <span className="text-[10px] text-[var(--text-secondary)]">{fmt(wn.created_at)}{wn.admin_name ? ` · ${wn.admin_name}` : ''}</span>
+                                    {/* v12.53 — حذف يدوي: يزيل الإنذار من السجل، وإن كان
+                                        إشعاره المؤجل لم يصل المخالف بعدُ يُلغى إرساله نهائياً */}
+                                    <button
+                                        onClick={async () => {
+                                            if (!window.confirm('حذف هذا الإنذار نهائياً؟ إن لم يصل إشعاره للمخالف بعد فسيُلغى إرساله.')) return;
+                                            const { data, error } = await supabase.rpc('admin_delete_warning', { p_warning_id: wn.id });
+                                            if (error || !(data as any)?.success) { alert('❌ تعذّر الحذف'); return; }
+                                            setWarnings(prev => (prev || []).filter(x => x.id !== wn.id));
+                                        }}
+                                        className="text-[10px] font-extrabold text-red-500 border border-red-200 rounded-lg px-2 py-0.5 hover:bg-red-50"
+                                    >🗑 حذف</button>
+                                </span>
                             </div>
                             <div className="text-sm text-[var(--text-primary)] mt-1 whitespace-pre-wrap break-words">{wn.reason}</div>
                             {wn.context_message && (

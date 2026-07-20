@@ -11,7 +11,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -434,6 +434,8 @@ const SellerDashboard: React.FC = () => {
     // التفعيل الجديد ممكن فقط داخل نافذة التجار التي حددها المالك (يحرسها
     // DB trigger أيضاً)؛ عرض موسوم سابقاً يظهر التوغل مفعّلاً ويمكن إزالته.
     const [seasonTag, setSeasonTag] = useState(false);
+    // v12.53 — «اختيارات المنتج»: أقسام (نوع البن/المقاس…) بخيارات وكميات
+    const [optionGroups, setOptionGroups] = useState<DealOptionGroup[]>([]);
     // v12.28 — حدود الحجز للمشتري (منع السوق السوداء): '' أو 0 = بلا حد
     const [maxPerBooking, setMaxPerBooking] = useState<number | string>('');
     const [maxBookingsPerBuyer, setMaxBookingsPerBuyer] = useState<number | string>('');
@@ -1306,6 +1308,7 @@ const SellerDashboard: React.FC = () => {
         setImages([]);
         setQuantity('');
         setSeasonTag(false);
+        setOptionGroups([]);
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1345,6 +1348,7 @@ const SellerDashboard: React.FC = () => {
         setMaxBookingsPerBuyer(deal.maxBookingsPerBuyer || '');
         setRebookCooldownMinutes(deal.rebookCooldownMinutes || 0);
         setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
+        setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1769,7 +1773,21 @@ const SellerDashboard: React.FC = () => {
             seasonId: seasonTag
                 ? (existingDeal?.seasonId
                     || (campaignSellerOpen(platformSettings.seasonCampaign) ? platformSettings.seasonCampaign!.seasonId : undefined))
-                : undefined
+                : undefined,
+            // v12.53 — اختيارات المنتج: تُحفظ الأقسام المكتملة فقط (عنوان + خيار واحد
+            // فأكثر بنص)، والكميات الفارغة/صفر = مفتوحة بلا سقف
+            options: (() => {
+                const cleaned = optionGroups
+                    .map(g => ({
+                        ...g,
+                        title: g.title.trim(),
+                        choices: g.choices
+                            .map(c => ({ ...c, label: c.label.trim(), qty: Number(c.qty) > 0 ? Number(c.qty) : undefined }))
+                            .filter(c => c.label),
+                    }))
+                    .filter(g => g.title && g.choices.length > 0);
+                return cleaned.length ? cleaned : undefined;
+            })()
         };
 
             // 20s ceiling per DB write. Without this, a stalled Supabase
@@ -2475,6 +2493,85 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                             );
                         })()}
+
+                        {/* v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن،
+                            المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري،
+                            وكمية لكل خيار (فارغة = مفتوحة). تُخصم كميات الخيارات آلياً
+                            من حجوزات المشترين (حارس في القاعدة). */}
+                        <div style={{ marginBottom: 20 }}>
+                            <label style={labelStyle}>{isRTL ? '🧩 اختيارات المنتج (اختياري)' : '🧩 Product options (optional)'}</label>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.5 }}>
+                                {isRTL
+                                    ? 'مثال: مقهى يضيف قسم «نوع البن» بخيارات، أو محل ملابس يضيف «المقاس» ويحدد كمية كل مقاس. المشتري يختار عند الحجز.'
+                                    : 'e.g. a café adds a “Beans type” group, a clothing store adds “Size” with per-size stock.'}
+                            </div>
+                            {optionGroups.map((g, gi) => (
+                                <div key={g.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: '12px', marginBottom: 10, background: 'var(--gray-50)' }}>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        <input
+                                            type="text"
+                                            value={g.title}
+                                            onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, title: e.target.value } : x))}
+                                            placeholder={isRTL ? 'عنوان القسم (مثل: المقاس، نوع البن)' : 'Group title (e.g. Size)'}
+                                            style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 700 }}
+                                        />
+                                        <button type="button"
+                                            onClick={() => setOptionGroups(prev => prev.filter((_, i) => i !== gi))}
+                                            aria-label={isRTL ? 'حذف القسم' : 'Delete group'}
+                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 12px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                                        <button type="button"
+                                            onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: x.mode === 'single' ? 'multi' : 'single' } : x))}
+                                            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}>
+                                            {g.mode === 'single' ? (isRTL ? '☝️ يختار المشتري خياراً واحداً' : '☝️ Pick one') : (isRTL ? '🤲 يختار أكثر من خيار' : '🤲 Pick multiple')}
+                                        </button>
+                                        <button type="button"
+                                            onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: !x.required } : x))}
+                                            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--border-color)', background: g.required ? 'var(--primary)' : 'var(--card-bg)', color: g.required ? '#fff' : 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}>
+                                            {g.required ? (isRTL ? '⭐ مطلوب — لا حجز بدونه' : '⭐ Required') : (isRTL ? 'اختياري' : 'Optional')}
+                                        </button>
+                                    </div>
+                                    {g.choices.map((c, ci) => (
+                                        <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                                            <input
+                                                type="text"
+                                                value={c.label}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, label: e.target.value } : y) } : x))}
+                                                placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
+                                                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
+                                            />
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={c.qty ?? ''}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
+                                                placeholder={isRTL ? 'الكمية' : 'Qty'}
+                                                title={isRTL ? 'كمية هذا الخيار — اتركها فارغة لتكون مفتوحة' : 'Stock for this choice — empty = unlimited'}
+                                                style={{ width: 76, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                            />
+                                            <button type="button"
+                                                onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
+                                                aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
+                                                style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
+                                        </div>
+                                    ))}
+                                    <button type="button"
+                                        onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: [...x.choices, { id: `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, label: '' }] } : x))}
+                                        style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1px dashed var(--gray-300)', background: 'transparent', color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer' }}>
+                                        {isRTL ? '+ خيار جديد' : '+ Add choice'}
+                                    </button>
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6 }}>
+                                        {isRTL ? 'الكمية لكل خيار اختيارية — فارغة = مفتوحة بلا سقف، وعند تحديدها يرى المشتري «متبقي N» وتُخصم تلقائياً.' : 'Per-choice qty is optional — empty = unlimited.'}
+                                    </div>
+                                </div>
+                            ))}
+                            <button type="button"
+                                onClick={() => setOptionGroups(prev => [...prev, { id: `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, title: '', mode: 'single', required: true, choices: [{ id: `c_${Date.now().toString(36)}a`, label: '' }, { id: `c_${Date.now().toString(36)}b`, label: '' }] }])}
+                                style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
+                                {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
+                            </button>
+                        </div>
 
                         <div style={{ marginBottom: 20 }}>
                             <label style={labelStyle}>{isRTL ? 'جدولة العرض (اختياري)' : 'Schedule Launch (Optional)'}</label>

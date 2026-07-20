@@ -55,10 +55,13 @@ const AdminModeration: React.FC = () => {
     const [newTerm, setNewTerm] = useState('');
     const [newMode, setNewMode] = useState<'word' | 'substr'>('word');
     const [savingTerm, setSavingTerm] = useState(false);
+    // v12.53 — تأخير وصول الإنذار للمخالف بالدقائق (٠ = فوري): يوحي بمراجعة بشرية
+    const [warnDelay, setWarnDelay] = useState<number>(0);
+    const [savingDelay, setSavingDelay] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
-        const [ovRes, flRes, tRes] = await Promise.all([
+        const [ovRes, flRes, tRes, msRes] = await Promise.all([
             supabase.rpc('admin_moderation_overview', { p_limit: 200 }),
             supabase.rpc('admin_moderation_flags', {
                 p_store: storeFilter,
@@ -66,13 +69,30 @@ const AdminModeration: React.FC = () => {
                 p_limit: 300,
             }),
             supabase.from('moderation_terms').select('*').order('term'),
+            supabase.from('platform_settings').select('value').eq('key', 'moderation_settings').maybeSingle(),
         ]);
         if (!ovRes.error && ovRes.data) setOverview(ovRes.data as any);
         if (!flRes.error && Array.isArray(flRes.data)) setFlags(flRes.data as FlagRow[]);
         if (!tRes.error && tRes.data) setTerms(tRes.data as TermRow[]);
+        setWarnDelay(Number((msRes.data?.value as any)?.warn_delay_minutes) || 0);
         setLoading(false);
     }, [storeFilter, statusFilter]);
     useEffect(() => { load(); }, [load]);
+
+    const saveWarnDelay = async () => {
+        setSavingDelay(true);
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'moderation_settings',
+            value: { warn_delay_minutes: Math.max(0, Math.min(1440, Math.round(warnDelay) || 0)) },
+            description: 'Moderation: minutes to delay warning delivery so it feels human-reviewed (v12.53)',
+            updated_at: new Date().toISOString(),
+        });
+        setSavingDelay(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        await customAlert(warnDelay > 0
+            ? `✅ من الآن: أي إنذار ترسله يُسجّل فوراً عندك، ويصل للمخالف بعد ${warnDelay} دقيقة — يوحي بأن فريقاً بشرياً راجع المخالفة.`
+            : '✅ الإنذارات ستصل فوراً (بدون تأخير).');
+    };
 
     const setFlagStatus = async (f: FlagRow, status: 'open' | 'reviewed') => {
         setFlags(prev => prev.map(x => x.id === f.id ? { ...x, status } : x));
@@ -115,6 +135,36 @@ const AdminModeration: React.FC = () => {
                         — في الموقع والبوتين معاً — ومحاولات رفع الصور غير اللائقة التي يحجبها فلتر الصور قبل وصولها للمنصة.
                         {overview && <b className="mr-1">حالياً {overview.total_open.toLocaleString('ar-SA')} إنذار مفتوح.</b>}
                     </div>
+                </div>
+            </div>
+
+            {/* v12.53 — «المراقبة البشرية»: تأخير وصول الإنذار للمخالف بالدقائق.
+                الإنذار يُسجّل عندك فوراً ويبقى حتى تحذفه يدوياً — فقط وصول
+                الإشعار للمخالف يتأخر فلا يبدو رداً آلياً لحظياً. */}
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                <div className="font-extrabold text-sm text-[var(--text-primary)] mb-1">⏱ توقيت وصول الإنذار للمخالف</div>
+                <p className="text-[11px] font-bold text-[var(--text-secondary)] leading-relaxed mb-2.5">
+                    الإنذار يُسجّل في سجلك <b>فوراً</b> ويبقى حتى تحذفه يدوياً. حدد كم دقيقة ينتظر النظام قبل إيصال
+                    الإشعار للمخالف — التأخير يوحي بأن <b>فريقاً بشرياً</b> راجع المخالفة (٠ = يصل فوراً).
+                    وإذا حذفت الإنذار قبل انقضاء المدة، يُلغى إرساله نهائياً.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {[0, 10, 30, 60, 180].map(m => (
+                        <button key={m} onClick={() => setWarnDelay(m)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${warnDelay === m ? 'bg-rose-600 text-white border-rose-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
+                            {m === 0 ? 'فوري' : m < 60 ? `${m} دقيقة` : `${m / 60} ساعة`}
+                        </button>
+                    ))}
+                    <input
+                        type="number" min={0} max={1440} value={warnDelay}
+                        onChange={e => setWarnDelay(Math.max(0, Math.min(1440, Number(e.target.value) || 0)))}
+                        className="w-20 px-2 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-center text-[var(--text-primary)]"
+                    />
+                    <span className="text-[10px] font-bold text-[var(--text-secondary)]">دقيقة</span>
+                    <button onClick={saveWarnDelay} disabled={savingDelay}
+                        className="px-4 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-extrabold shadow hover:shadow-md active:scale-95 transition-all disabled:opacity-60">
+                        {savingDelay ? '⏳' : '💾 حفظ'}
+                    </button>
                 </div>
             </div>
 

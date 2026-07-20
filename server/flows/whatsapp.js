@@ -522,9 +522,15 @@ function create(deps) {
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
         const r = await rpc('bot_book_deal', aid(from, { p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty || 1, p_notes: s.temp.notes || null, p_prep_time: s.temp.prepTime || 'arrival' }));
         const bc = r && r.barcode; const dealName = s.temp.dealName;
+        const bookedDealId = s.temp.dealId; // v12.53 — لرابط «أكمل من الموقع» عند needs_options
         s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null;
         if (!r || !r.success) {
             const e = r && r.error;
+            // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل الحجز من الموقع
+            if (e === 'needs_options') {
+                await sendText(from, tr('bk_needs_options'));
+                return sendText(from, `${tr('bk_needs_options_btn')}: ${APP_URL}/deal/${bookedDealId || ''}`);
+            }
             const m = e === 'deal_inactive' ? tr('wa_book_err_inactive')
                 : e === 'deal_not_found' ? tr('wa_book_err_notfound')
                 : e === 'shop_closed' ? tr('wa_book_err_closed', r.opens_in_min != null ? tr('wa_book_err_opensin', HRS.fmtMins(r.opens_in_min)) : '')

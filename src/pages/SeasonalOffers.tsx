@@ -116,12 +116,17 @@ const SeasonalOffers: React.FC = () => {
                 textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
             }}>
                 <button
+                    type="button"
                     onClick={() => history.push('/')}
                     aria-label={isRTL ? 'العودة للرئيسية' : 'Back to home'}
                     style={{
-                        position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 16px)', [isRTL ? 'right' : 'left']: 16,
+                        // v12.53 — zIndex إلزامي: div الإيموجي أدناه يحمل filter
+                        // (drop-shadow) فينشئ طبقة رسم لاحقة في DOM كانت تغطي هذا
+                        // الزر وتبتلع اللمسات — «زر العودة يعلق» على آيفون ناصر.
+                        position: 'absolute', zIndex: 5, top: 'calc(env(safe-area-inset-top, 0px) + 16px)', [isRTL ? 'right' : 'left']: 16,
                         background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)',
                         borderRadius: 12, padding: '7px 14px', color: '#fff', fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer',
+                        WebkitTapHighlightColor: 'transparent', minHeight: 42,
                     }}>
                     {isRTL ? '← العودة' : '← Back'}
                 </button>

@@ -118,7 +118,9 @@ export const dealRepository = {
             max_bookings_per_buyer: deal.maxBookingsPerBuyer || null,
             rebook_cooldown_minutes: deal.rebookCooldownMinutes || null,
             // v12.48 — وسم الموسم (null = عرض عادي). نافذة الوسم يحرسها tr_deal_season.
-            season_id: deal.seasonId || null
+            season_id: deal.seasonId || null,
+            // v12.53 — اختيارات المنتج (أقسام/خيارات/كميات) — null = بلا اختيارات
+            options: (deal.options && deal.options.length) ? deal.options : null
         };
 
         // Internal 25s ceiling per attempt. The deal triggers
@@ -310,6 +312,8 @@ export const dealRepository = {
         if ('rebook_cooldown_minutes' in d) deal.rebookCooldownMinutes = d.rebook_cooldown_minutes || undefined;
         // v12.48 — وسم حملة الموسم
         if ('season_id' in d) deal.seasonId = d.season_id || undefined;
+        // v12.53 — اختيارات المنتج
+        if ('options' in d) deal.options = Array.isArray(d.options) ? d.options : undefined;
         // v11.20 — scheduled launch (Coming Soon). Stored as BIGINT epoch ms.
         if ('starts_at' in d && d.starts_at != null) {
             deal.startsAt = isNaN(Number(d.starts_at)) ? new Date(d.starts_at).getTime() : Number(d.starts_at);

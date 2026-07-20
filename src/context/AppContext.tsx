@@ -116,7 +116,7 @@ interface AppContextType {
     addSmartAlert: (rule: SmartAlertRule) => Promise<boolean>;
     removeSmartAlert: (idx: number) => Promise<boolean>;
     bookings: any[];
-    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string) => any;
+    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>) => any;
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
     acknowledgeBooking: (barcode: string, note?: string) => void;
@@ -2082,7 +2082,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [smartAlerts, user]);
 
     // Booking logic - uses generateBarcode from helpers
-    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string) => {
+    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>) => {
         const barcode = generateBarcode(8);
 
         // Bookings get a full 2-hour pickup hold from the moment they're made.
@@ -2108,6 +2108,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             userPhone: user?.phone || user?.contactPhone || '',
             prepTime,
             notes,
+            // v12.53 — اختيارات المنتج المهيكلة (النص القارئ داخل notes أصلاً)
+            selectedOptions,
             status: 'pending' as const
         };
 

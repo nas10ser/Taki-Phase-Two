@@ -1524,9 +1524,17 @@ bot.action('book:confirm', async ctx => {
     if (!s.temp.dealId) return ctx.reply(tr('b1127_session_ended'), { parse_mode:'MarkdownV2' });
     const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival' });
     const bc = result?.barcode;
+    const bookedDealId = s.temp.dealId; // v12.53 — يلزمنا لرابط «أكمل من الموقع» عند needs_options
     s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null;
     if (!result?.success) {
         const e = result?.error;
+        // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل من الموقع
+        if (e === 'needs_options') {
+            return safeReplyMd(ctx, tr('bk_needs_options'), { reply_markup: Markup.inlineKeyboard([
+                [Markup.button.webApp(tr('bk_needs_options_btn'), W(`/deal/${bookedDealId || ''}`))],
+                [Markup.button.callback(tr('b1140_menu'),'menu:back')]
+            ]).reply_markup });
+        }
         const m = e==='deal_inactive'   ? tr('b1133_deal_inactive')
                 : e==='deal_not_found'  ? tr('b1134_deal_not_found')
                 : e==='shop_closed'     ? tr('b1135_shop_closed', result.opens_in_min!=null?tr('b1135_opens_in', md(HRS.fmtMins(result.opens_in_min))):'')

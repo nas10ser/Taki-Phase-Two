@@ -32,6 +32,8 @@ export interface Booking {
     userPhone?: string;
     prepTime?: string;
     notes?: string;          // Buyer's note attached at booking time
+    /** v12.53 — اختيارات المشتري المهيكلة [{g,c,qty}] — حارس المخزون يقرؤها */
+    selectedOptions?: Array<{ g: string; c: string; qty?: number }>;
     merchantNote?: string;   // Seller's note left when acknowledging the order
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
@@ -175,6 +177,9 @@ export const bookingRepository = {
                 booked_quantity: booking.bookedQuantity,
                 prep_time: booking.prepTime,
                 notes: booking.notes,
+                // v12.53 — الاختيارات المهيكلة: يقرؤها tr_booking_options لخصم
+                // كميات الخيارات المسقوفة (النص القارئ للتاجر داخل notes أصلاً)
+                selected_options: (booking.selectedOptions && booking.selectedOptions.length) ? booking.selectedOptions : null,
                 status: booking.status,
                 booked_at: booking.bookedAt,
                 expiry_time: booking.expiryTime
