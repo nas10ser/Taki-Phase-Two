@@ -2500,29 +2500,27 @@ const SellerDashboard: React.FC = () => {
                                         if (diff <= 0) return null;
                                         const days = Math.floor(diff / 86400000);
                                         const hours = Math.floor((diff / 3600000) % 24);
-                                        const inWindow = diff <= 7 * 24 * 60 * 60 * 1000;
+                                        // v12.59: لا نافذة ٧ أيام بعد الآن — العرض المجدول يظهر
+                                        // فوراً في «العروض القادمة» (وصفحة الموسم إن اختير موسم)
+                                        // مقفلاً بعدّاد حتى موعد انطلاقه.
                                         return (
                                             <div style={{
                                                 marginTop: 8,
                                                 padding: '10px 12px',
                                                 borderRadius: 10,
-                                                background: inWindow ? 'rgba(99,102,241,0.12)' : 'var(--gold-soft)',
-                                                border: inWindow ? '1px solid rgba(99,102,241,0.35)' : '1px solid var(--gold-border)',
+                                                background: 'rgba(99,102,241,0.12)',
+                                                border: '1px solid rgba(99,102,241,0.35)',
                                                 color: 'var(--text-primary)',
                                                 fontSize: '0.78rem',
                                                 fontWeight: 700,
                                                 lineHeight: 1.5,
                                                 display: 'flex', gap: 8, alignItems: 'flex-start'
                                             }}>
-                                                <span style={{ fontSize: '1rem' }}>{inWindow ? '⏳' : '📅'}</span>
+                                                <span style={{ fontSize: '1rem' }}>⏳</span>
                                                 <span>
                                                     {isRTL
-                                                        ? (inWindow
-                                                            ? `سيظهر العرض في "العروض القادمة" ويبدأ خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
-                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days} يوماً للظهور).`)
-                                                        : (inWindow
-                                                            ? `Will appear in Coming Soon — launches in ${days > 0 ? days + 'd ' : ''}${hours}h`
-                                                            : `Saved & scheduled. Visible to buyers 7 days before launch (${days} days until visible).`)}
+                                                        ? `سيظهر العرض فوراً في "العروض القادمة" مقفلاً بعدّاد، ويفتح للحجز خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
+                                                        : `Appears in Coming Soon right away (locked, with countdown) — opens for booking in ${days > 0 ? days + 'd ' : ''}${hours}h`}
                                                 </span>
                                             </div>
                                         );
@@ -2637,10 +2635,10 @@ const SellerDashboard: React.FC = () => {
                         {/* v11.20 — Coming Soon scheduling. Toggle is OFF by
                             default; turning it ON reveals the datetime picker
                             with a floor of "10 min from now" and no upper cap
-                            (v11.21). The deal saves with a future startsAt,
-                            stays HIDDEN from buyers until 7 days before launch,
-                            then surfaces locked with a live countdown until
-                            startsAt passes and bookings open automatically. */}
+                            (v11.21). The deal saves with a future startsAt and
+                            surfaces IMMEDIATELY (v12.59 — no 7-day hiding) as a
+                            locked card with a live countdown until startsAt
+                            passes and bookings open automatically. */}
                         {/* v12.48 — «حملة الموسم»: يظهر فقط عندما يفتح المالك نافذة
                             التجار (أو لعرض موسوم سابقاً كي يستطيع التاجر إزالة وسمه).
                             الوسم = العرض يظهر في صفحة عروض الموسم الحصرية /seasonal. */}

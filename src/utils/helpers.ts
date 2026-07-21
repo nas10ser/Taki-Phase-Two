@@ -289,34 +289,26 @@ export const interleaveSponsored = (
 };
 
 // =========================================================================
-// Coming Soon (v11.20) — A scheduled deal lives in three phases:
-//   1. Hidden       — startsAt > now + 7 days   (only merchant sees it)
-//   2. Coming Soon  — now < startsAt ≤ now + 7d  (shown on Home, locked)
-//   3. Live         — startsAt ≤ now             (normal active deal)
+// Coming Soon (v11.20, reworked v12.59) — A scheduled deal has two phases:
+//   1. Coming Soon  — startsAt > now  (visible everywhere, locked + countdown)
+//   2. Live         — startsAt ≤ now  (normal active deal)
+// v12.59 (Nasser): the old 7-day "hidden prep" phase is GONE — a scheduled
+// deal must appear in «العروض القادمة» and on the season page the moment
+// it's saved, however far out its start date is.
 // `null/undefined` startsAt = legacy behavior (always live from createdAt).
 // =========================================================================
-export const COMING_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;   // 7 days
 export const COMING_SOON_URGENT_MS = 4 * 60 * 60 * 1000;        // 4 hours
-export const COMING_SOON_MAX_LEAD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** True if the deal has a future startsAt — i.e. not yet bookable. */
 export const isDealComingSoon = (deal: Deal): boolean => {
     return typeof deal.startsAt === 'number' && deal.startsAt > Date.now();
 };
 
-/** True if the deal is in its public 7-day countdown window
- *  (visible on Home + StoreDetails but locked from booking). */
+/** True if the deal should render as a locked coming-soon card (Home rail,
+ *  DealsList filter, season page). v12.59: the whole scheduled period —
+ *  no more 7-day visibility gate. */
 export const isDealVisibleComingSoon = (deal: Deal): boolean => {
-    if (typeof deal.startsAt !== 'number') return false;
-    const now = Date.now();
-    return deal.startsAt > now && deal.startsAt <= now + COMING_SOON_WINDOW_MS;
-};
-
-/** True if the deal is scheduled further than 7 days out — merchant
- *  prep mode; not shown to buyers yet. */
-export const isDealScheduledHidden = (deal: Deal): boolean => {
-    if (typeof deal.startsAt !== 'number') return false;
-    return deal.startsAt > Date.now() + COMING_SOON_WINDOW_MS;
+    return isDealComingSoon(deal);
 };
 
 /** True if the deal is in the last 4 hours of its coming-soon window

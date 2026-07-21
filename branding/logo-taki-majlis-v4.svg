@@ -1,0 +1,25 @@
+<svg width="680" height="520" viewBox="0 0 680 520" role="img" xmlns="http://www.w3.org/2000/svg"><title>رجل بثوب وغترة جالس جلسة أرضية يتصفح جواله ويده على تكاية مخملية</title><desc>رسمة فيكتور بدون أي نص: رجل سعودي بثوب بني وغترة بيضاء، وجه بدون ملامح، جالس على الأرض وركبته مرفوعة، ذراع مسنودة على تكاية عنابية بمعينات ذهبية، واليد الأخرى تمسك جوالاً</desc>
+<ellipse cx="360" cy="452" rx="115" ry="28" fill="#4A3529"/>
+<path d="M402 480 L440 320 Q 451 300 464 318 L500 480 Z" fill="#4A3529"/>
+<rect x="320" y="280" width="110" height="190" rx="40" fill="#4A3529"/>
+<rect x="150" y="395" width="152" height="85" rx="20" fill="#7A1322" stroke="#4E0A14" stroke-width="2.5"/>
+<path d="M184 413 L190 420 L184 427 L178 420 Z" fill="#E4A93C"/>
+<path d="M226 405 L232 412 L226 419 L220 412 Z" fill="#E4A93C"/>
+<path d="M268 413 L274 420 L268 427 L262 420 Z" fill="#E4A93C"/>
+<path d="M204 445 L210 452 L204 459 L198 452 Z" fill="#E4A93C"/>
+<path d="M248 445 L254 452 L248 459 L242 452 Z" fill="#E4A93C"/>
+<path d="M335 308 C 302 340, 268 368, 238 390" fill="none" stroke="#4A3529" stroke-width="22" stroke-linecap="round"/>
+<circle cx="230" cy="394" r="11" fill="#E8B48C"/>
+<circle cx="375" cy="226" r="38" fill="#F7F1E6"/>
+<circle cx="375" cy="234" r="26" fill="#E8B48C"/>
+<path d="M345 240 C 335 275, 338 300, 350 320" fill="none" stroke="#F7F1E6" stroke-width="26" stroke-linecap="round"/>
+<path d="M405 240 C 418 278, 416 310, 402 335" fill="none" stroke="#F7F1E6" stroke-width="28" stroke-linecap="round"/>
+<path d="M416 302 C 438 318, 450 332, 454 342" fill="none" stroke="#4A3529" stroke-width="22" stroke-linecap="round"/>
+<path d="M454 342 C 462 318, 465 295, 464 278" fill="none" stroke="#4A3529" stroke-width="22" stroke-linecap="round"/>
+<g transform="rotate(-10 470 240)">
+<rect x="450" y="204" width="40" height="72" rx="8" fill="#241B26"/>
+<rect x="455" y="211" width="30" height="54" rx="4" fill="#FFF6E9"/>
+<path d="M470 226 L476 234 L470 242 L464 234 Z" fill="#E4A93C"/>
+</g>
+<circle cx="464" cy="276" r="11" fill="#E8B48C"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg width="680" height="640" viewBox="0 0 680 640" role="img" xmlns="http://www.w3.org/2000/svg"><title>شعار تاكي — جلسة أرضية مع تكاية</title><desc>شخص بصورة ظلية بدون ملامح جالس على الأرض جلسة عربية، ذراعه مسنودة فوق تكاية مخملية عنابية بمعينات ذهبية، ويتصفح جواله باليد الأخرى، مع اسم تاكي بالأسفل</desc>
+<path d="M150 473 L595 473" stroke="#DECBA8" stroke-width="5" stroke-linecap="round"/>
+<ellipse cx="300" cy="446" rx="98" ry="28" fill="#322433"/>
+<rect x="262" y="290" width="88" height="150" rx="36" fill="#322433"/>
+<circle cx="318" cy="262" r="32" fill="#322433"/>
+<rect x="428" y="386" width="152" height="84" rx="20" fill="#7A1322" stroke="#4E0A14" stroke-width="2.5"/>
+<path d="M462 405 L468 412 L462 419 L456 412 Z" fill="#E4A93C"/>
+<path d="M504 397 L510 404 L504 411 L498 404 Z" fill="#E4A93C"/>
+<path d="M546 405 L552 412 L546 419 L540 412 Z" fill="#E4A93C"/>
+<path d="M482 437 L488 444 L482 451 L476 444 Z" fill="#E4A93C"/>
+<path d="M526 437 L532 444 L526 451 L520 444 Z" fill="#E4A93C"/>
+<path d="M296 318 C 336 352, 398 376, 458 382" fill="none" stroke="#322433" stroke-width="18" stroke-linecap="round"/>
+<circle cx="464" cy="384" r="11" fill="#322433"/>
+<path d="M322 312 C 352 330, 372 322, 376 292" fill="none" stroke="#322433" stroke-width="18" stroke-linecap="round"/>
+<g transform="rotate(-12 384 258)">
+<rect x="366" y="222" width="38" height="70" rx="8" fill="#1F1720"/>
+<rect x="371" y="229" width="28" height="52" rx="4" fill="#FFF6E9"/>
+<path d="M385 244 L391 252 L385 260 L379 252 Z" fill="#E4A93C"/>
+</g>
+<circle cx="379" cy="292" r="11" fill="#322433"/>
+<text x="340" y="560" text-anchor="middle" font-size="84" font-weight="700" fill="#7A1322" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">تاكي</text>
+<text x="340" y="600" text-anchor="middle" font-size="20" fill="#9C7B33" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">منصة حجز التخفيضات</text>
+</svg>

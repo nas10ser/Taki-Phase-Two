@@ -1,0 +1,38 @@
+<svg width="680" height="640" viewBox="0 0 680 640" role="img" xmlns="http://www.w3.org/2000/svg"><title>شعار تاكي — شخص جالس يحجز من جواله</title><desc>رسمة فيكتور لشخص جالس على مخدة مخملية عنابية، يمسك جواله بيد ويرفع يده الثانية احتفالاً، مع اسم تاكي بالأسفل</desc>
+<ellipse cx="350" cy="478" rx="160" ry="18" fill="#F2E6D0"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(240 90) scale(0.9)"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(330 70) scale(0.7)"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(196 170) scale(0.6)"/>
+<path d="M322 268 C 298 230, 286 180, 284 138" fill="none" stroke="#E8B48C" stroke-width="17" stroke-linecap="round"/>
+<circle cx="284" cy="132" r="13" fill="#E8B48C"/>
+<path d="M322 268 C 310 250, 302 234, 298 218" fill="none" stroke="#7A1322" stroke-width="23" stroke-linecap="round"/>
+<path d="M362 368 C 336 380, 318 388, 310 398" fill="none" stroke="#2C3547" stroke-width="30" stroke-linecap="round"/>
+<path d="M310 398 C 312 425, 316 442, 318 456" fill="none" stroke="#2C3547" stroke-width="26" stroke-linecap="round"/>
+<rect x="300" y="452" width="42" height="16" rx="8" fill="#241F2A"/>
+<rect x="300" y="380" width="150" height="90" rx="24" fill="#7A1322" stroke="#4E0A14" stroke-width="2.5"/>
+<path d="M330 403 L336 410 L330 417 L324 410 Z" fill="#E4A93C"/>
+<path d="M377 393 L383 400 L377 407 L371 400 Z" fill="#E4A93C"/>
+<path d="M424 403 L430 410 L424 417 L418 410 Z" fill="#E4A93C"/>
+<path d="M352 435 L358 442 L352 449 L346 442 Z" fill="#E4A93C"/>
+<path d="M402 435 L408 442 L402 449 L396 442 Z" fill="#E4A93C"/>
+<path d="M342 370 C 316 380, 296 384, 282 392" fill="none" stroke="#3D4C6B" stroke-width="30" stroke-linecap="round"/>
+<path d="M282 392 C 284 420, 288 440, 291 454" fill="none" stroke="#3D4C6B" stroke-width="26" stroke-linecap="round"/>
+<rect x="272" y="450" width="42" height="16" rx="8" fill="#2E2836"/>
+<rect x="312" y="240" width="84" height="136" rx="30" fill="#7A1322"/>
+<rect x="345" y="222" width="16" height="16" fill="#E8B48C"/>
+<circle cx="352" cy="196" r="34" fill="#E8B48C"/>
+<path d="M318 196 A 34 34 0 0 1 386 196 Z" fill="#2E2430"/>
+<circle cx="360" cy="203" r="3" fill="#2A1B14"/>
+<circle cx="375" cy="200" r="3" fill="#2A1B14"/>
+<path d="M360 214 Q 369 220 378 212" fill="none" stroke="#5A3A28" stroke-width="3" stroke-linecap="round"/>
+<path d="M382 268 C 408 288, 424 272, 422 236" fill="none" stroke="#E8B48C" stroke-width="17" stroke-linecap="round"/>
+<path d="M382 268 C 394 277, 402 280, 410 274" fill="none" stroke="#7A1322" stroke-width="23" stroke-linecap="round"/>
+<g transform="rotate(-10 428 202)">
+<rect x="408" y="164" width="42" height="76" rx="9" fill="#2E2430"/>
+<rect x="413" y="171" width="32" height="58" rx="5" fill="#FFF6E9"/>
+<path d="M429 190 L436 200 L429 210 L422 200 Z" fill="#E4A93C"/>
+</g>
+<circle cx="422" cy="234" r="12" fill="#E8B48C"/>
+<text x="340" y="560" text-anchor="middle" font-size="84" font-weight="700" fill="#7A1322" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">تاكي</text>
+<text x="340" y="600" text-anchor="middle" font-size="20" fill="#9C7B33" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">منصة حجز التخفيضات</text>
+</svg>

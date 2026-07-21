@@ -1,0 +1,38 @@
+<svg width="680" height="640" viewBox="0 0 680 640" role="img" xmlns="http://www.w3.org/2000/svg"><title>شعار تاكي — ماسكوت مخملي</title><desc>شخصية مستوحاة من قماش مخملي عنابي بمعينات ذهبية، رافعة يديها وماسكة جوال، مع اسم تاكي بالأسفل</desc>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(120 160) scale(0.8)"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(205 60)"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(452 50) scale(0.7)"/>
+<path d="M0 -12 L3 -3 L12 0 L3 3 L0 12 L-3 3 L-12 0 L-3 -3 Z" fill="#E4A93C" transform="translate(585 170) scale(0.9)"/>
+<path d="M242 245 C 205 205, 178 160, 168 118" fill="none" stroke="#7A1322" stroke-width="24" stroke-linecap="round"/>
+<circle cx="166" cy="110" r="19" fill="#7A1322"/>
+<path d="M438 245 C 472 205, 498 162, 508 122" fill="none" stroke="#7A1322" stroke-width="24" stroke-linecap="round"/>
+<rect x="225" y="195" width="230" height="225" rx="50" fill="#7A1322" stroke="#4E0A14" stroke-width="3"/>
+<rect x="282" y="410" width="46" height="22" rx="11" fill="#4E0A14"/>
+<rect x="352" y="410" width="46" height="22" rx="11" fill="#4E0A14"/>
+<path d="M258 224 L264.5 232 L258 240 L251.5 232 Z" fill="#E4A93C"/>
+<path d="M422 224 L428.5 232 L422 240 L415.5 232 Z" fill="#E4A93C"/>
+<path d="M252 282 L258.5 290 L252 298 L245.5 290 Z" fill="#E4A93C"/>
+<path d="M428 282 L434.5 290 L428 298 L421.5 290 Z" fill="#E4A93C"/>
+<path d="M262 342 L268.5 350 L262 358 L255.5 350 Z" fill="#E4A93C"/>
+<path d="M340 354 L346.5 362 L340 370 L333.5 362 Z" fill="#E4A93C"/>
+<path d="M418 342 L424.5 350 L418 358 L411.5 350 Z" fill="#E4A93C"/>
+<path d="M300 384 L306.5 392 L300 400 L293.5 392 Z" fill="#E4A93C"/>
+<path d="M380 384 L386.5 392 L380 400 L373.5 392 Z" fill="#E4A93C"/>
+<circle cx="297" cy="262" r="12" fill="#FFF6E9"/>
+<circle cx="383" cy="262" r="12" fill="#FFF6E9"/>
+<circle cx="297" cy="263" r="5.5" fill="#2A0E14"/>
+<circle cx="383" cy="263" r="5.5" fill="#2A0E14"/>
+<path d="M295 300 Q 340 330 385 300" fill="none" stroke="#F4E3C6" stroke-width="8" stroke-linecap="round"/>
+<g transform="rotate(-15 528 78)">
+<rect x="502" y="28" width="52" height="94" rx="12" fill="#2E2430"/>
+<rect x="508" y="36" width="40" height="72" rx="6" fill="#FFF6E9"/>
+<path d="M528 50 L540 64 L528 78 L516 64 Z" fill="#E4A93C"/>
+<rect x="516" y="86" width="24" height="4" rx="2" fill="#D9C9A8"/>
+<rect x="520" y="94" width="16" height="4" rx="2" fill="#D9C9A8"/>
+</g>
+<circle cx="518" cy="121" r="18" fill="#7A1322"/>
+<text x="340" y="548" text-anchor="middle" font-size="96" font-weight="700" fill="#7A1322" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">تاكي</text>
+<path d="M228 576 L234.5 584 L228 592 L221.5 584 Z" fill="#E4A93C"/>
+<path d="M452 576 L458.5 584 L452 592 L445.5 584 Z" fill="#E4A93C"/>
+<text x="340" y="592" text-anchor="middle" font-size="20" fill="#9C7B33" style="font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif">منصة حجز التخفيضات</text>
+</svg>

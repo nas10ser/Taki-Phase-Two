@@ -2379,7 +2379,11 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   top: 0;
   left: var(--fx-x, 50%);
   font-size: var(--fx-size, 22px);
-  line-height: 1;
+  /* v12.59 — iOS يقصّ الإيموجي النازل (قلوب نصفها مفقود): will-change يرقّي
+     العنصر لطبقة مركّبة بحجم صندوق السطر، وإيموجي أبل أطول من 1em فيُقص.
+     line-height أكبر + padding يوسّعان الطبقة ليتّسع الرمز كاملاً. */
+  line-height: 1.5;
+  padding: 0.1em 0.12em;
   opacity: 0;
   will-change: transform, opacity;
   animation: fx-fall var(--fx-dur, 14s) linear var(--fx-delay, 0s) infinite;

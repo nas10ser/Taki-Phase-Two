@@ -102,6 +102,27 @@ const SeasonalOffers: React.FC = () => {
         return list;
     }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, openNow, verifiedOnly, searchQuery, sortBy, storeProfiles, isRTL, sellerPreviewOwnOnly, user?.id]);
 
+    // v12.59 (طلب ناصر) — العروض الموسمية المجدولة تظهر من لحظة حفظها في قسم
+    // «عروض قادمة» بقفل وعدّاد (DealCard يرسمهما تلقائياً لأي عرض startsAt
+    // مستقبلي). الأقرب انطلاقاً أولاً. فلاتر «المفتوحة الآن/حقيقية/البحث» تخص
+    // الحجز الفوري فلا تُطبَّق هنا — التصنيف والفئة يُطبَّقان.
+    const comingSeasonDeals = useMemo(() => {
+        if (!camp) return [];
+        let list = deals.filter(d => d.seasonId === camp.seasonId
+            && d.status === 'active'
+            && isDealComingSoon(d)
+            && hasStock(d)
+            && !blockedMerchants.includes(d.storeId));
+        if (sellerPreviewOwnOnly && user) list = list.filter(d => d.storeId === user.id);
+        if (activeCategory !== 'all') {
+            list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
+        }
+        if (activeGender !== 'all') {
+            list = list.filter(d => d.gender === activeGender || d.gender === 'all');
+        }
+        return list.sort((a, b) => (a.startsAt || 0) - (b.startsAt || 0));
+    }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, sellerPreviewOwnOnly, user?.id]);
+
     if (!season || !camp) return null; // البوابة في App.tsx تمنع الوصول أصلاً
 
     return (
@@ -244,7 +265,7 @@ const SeasonalOffers: React.FC = () => {
                             ))}
                         </div>
                     </>
-                ) : (
+                ) : comingSeasonDeals.length > 0 ? null : (
                     <div style={{
                         textAlign: 'center', padding: '70px 20px',
                         background: 'var(--card-bg)', borderRadius: 24, border: '1px dashed var(--border-color)',
@@ -269,6 +290,29 @@ const SeasonalOffers: React.FC = () => {
                                 {isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}
                             </button>
                         )}
+                    </div>
+                )}
+
+                {/* v12.59 — العروض الموسمية المجدولة: مقفلة بعدّاد حتى موعد انطلاقها */}
+                {comingSeasonDeals.length > 0 && (
+                    <div style={{ marginTop: seasonDeals.length > 0 ? 26 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 12px' }}>
+                            <h2 style={{ fontSize: '1.02rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                                {isRTL ? '🔒 عروض قادمة' : '🔒 Coming soon'}
+                            </h2>
+                            <span style={{
+                                fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)',
+                                background: 'var(--card-bg)', border: '1px solid var(--border-color)',
+                                borderRadius: 999, padding: '4px 10px',
+                            }}>
+                                {isRTL ? 'تنطلق قريباً — العدّاد على كل بطاقة' : 'Launching soon — countdown on each card'}
+                            </span>
+                        </div>
+                        <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
+                            {comingSeasonDeals.map(deal => (
+                                <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
