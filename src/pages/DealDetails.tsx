@@ -516,6 +516,13 @@ const DealDetails: React.FC = () => {
     const variants = deal?.variants || [];
     const selectedVariant = variants.length ? (variants.find(v => v.id === variantId) || variants[0]) : undefined;
     const unitPrice = selectedVariant ? selectedVariant.price : (deal?.discountedPrice || 0);
+    // v12.62 — لكل نسخة سعرها الأصلي وخصمها الخاص
+    const unitOriginal = (selectedVariant?.originalPrice && selectedVariant.originalPrice > 0)
+        ? selectedVariant.originalPrice
+        : (deal?.originalPrice || 0);
+    const unitDiscountPct = unitOriginal > unitPrice && unitOriginal > 0
+        ? Math.round(((unitOriginal - unitPrice) / unitOriginal) * 100)
+        : (deal?.discountPercentage || 0);
     React.useEffect(() => { setVariantId(null); }, [deal?.id]);
     React.useEffect(() => {
         const ii = selectedVariant?.imageIndex;
@@ -946,7 +953,7 @@ const DealDetails: React.FC = () => {
                     </div>
                 )}
                 <div style={{ position: 'absolute', top: 12, right: 12, background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', padding: '6px 14px', borderRadius: 12, fontWeight: 900, fontSize: '1rem', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>
-                    -{deal.discountPercentage}%
+                    -{unitDiscountPct}%
                 </div>
                 {/* Live countdown — same compact badge as the home-feed card.
                     v11.20: switches to a Coming-Soon countdown when the deal
@@ -1200,10 +1207,10 @@ const DealDetails: React.FC = () => {
 
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: variants.length ? 10 : 16 }}>
                         <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--danger)', transition: 'all 0.2s ease' }}>{unitPrice} ر.س</span>
-                        <span style={{ fontSize: '1rem', color: 'var(--gray-400)', textDecoration: 'line-through' }}>{deal.originalPrice} ر.س</span>
-                        {deal.originalPrice - unitPrice > 0 && (
+                        <span style={{ fontSize: '1rem', color: 'var(--gray-400)', textDecoration: 'line-through' }}>{unitOriginal} ر.س</span>
+                        {unitOriginal - unitPrice > 0 && (
                             <span style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
-                                {isRTL ? `وفّر ${Math.round((deal.originalPrice - unitPrice) * 100) / 100} ر.س` : `Save ${Math.round((deal.originalPrice - unitPrice) * 100) / 100} SAR`}
+                                {isRTL ? `وفّر ${Math.round((unitOriginal - unitPrice) * 100) / 100} ر.س` : `Save ${Math.round((unitOriginal - unitPrice) * 100) / 100} SAR`}
                             </span>
                         )}
                     </div>

@@ -438,6 +438,24 @@ const SellerDashboard: React.FC = () => {
     const [optionGroups, setOptionGroups] = useState<DealOptionGroup[]>([]);
     // v12.61 — «نسخ المنتج» (تجريبي): أحجام بأسعار وكميات وصور مختلفة
     const [variants, setVariants] = useState<DealVariant[]>([]);
+    // v12.62 (طلب ناصر) — النسخ تقود التسعير والكمية العامة حتى لا يلتبس التاجر:
+    // لكل نسخة سعرها الأصلي وبعد الخصم، وأرخص نسخة تضبط السعرين العامين
+    // تلقائياً (البطاقة تعرض «يبدأ من»)، ومجموع كميات النسخ = الكمية الإجمالية.
+    const completeVariants = variants.filter(v => v.label.trim() && Number(v.price) > 0);
+    const variantsDriving = completeVariants.length > 0;
+    const variantQtySum = (() => {
+        if (!variantsDriving) return null;
+        const withQty = completeVariants.filter(v => Number(v.qty) > 0);
+        if (withQty.length === 0 || withQty.length !== completeVariants.length) return null;
+        return withQty.reduce((s, v) => s + Number(v.qty), 0);
+    })();
+    useEffect(() => {
+        if (!variantsDriving) return;
+        const cheapest = completeVariants.reduce((a, b) => (Number(b.price) < Number(a.price) ? b : a));
+        setDiscountedPrice(String(cheapest.price));
+        if (Number(cheapest.originalPrice) > 0) setOriginalPrice(String(cheapest.originalPrice));
+        if (variantQtySum != null) { setIsUnlimited(false); setQuantity(variantQtySum); }
+    }, [JSON.stringify(variants)]);
     // v12.28 — حدود الحجز للمشتري (منع السوق السوداء): '' أو 0 = بلا حد
     const [maxPerBooking, setMaxPerBooking] = useState<number | string>('');
     const [maxBookingsPerBuyer, setMaxBookingsPerBuyer] = useState<number | string>('');
@@ -1521,6 +1539,25 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
+        // v12.62 — نسخ المنتج: لكل نسخة سعر أصلي أعلى من سعرها بعد الخصم،
+        // والكميات إما لكل النسخ (المجموع = الإجمالي تلقائياً) أو لا شيء.
+        if (completeVariants.length) {
+            const badPrice = completeVariants.find(v => !(Number(v.originalPrice) > 0) || Number(v.originalPrice) <= Number(v.price));
+            if (badPrice) {
+                await customAlert(isRTL
+                    ? `⛔ نسخة «${badPrice.label}»: حدد سعراً أصلياً أعلى من سعرها بعد الخصم (${badPrice.price} ر.س) حتى يظهر خصمها صحيحاً.`
+                    : `⛔ Version "${badPrice.label}": set an original price higher than its discounted price (${badPrice.price}).`);
+                return;
+            }
+            const withQty = completeVariants.filter(v => Number(v.qty) > 0);
+            if (withQty.length > 0 && withQty.length !== completeVariants.length) {
+                await customAlert(isRTL
+                    ? '⛔ كميات النسخ: حدد كمية لكل نسخة (المجموع يصبح الكمية الإجمالية تلقائياً) أو اتركها كلها فارغة.'
+                    : '⛔ Version quantities: set a qty on EVERY version (the sum becomes the deal total) or leave them all empty.');
+                return;
+            }
+        }
+
         // Logic enforcement:
         // 1. If Unlimited -> needs SOME end signal (hours / days / date).
         //    'stock' is incompatible with unlimited. The seller picks which.
@@ -1843,13 +1880,15 @@ const SellerDashboard: React.FC = () => {
                     .filter(g => g.title && g.choices.length > 0);
                 return cleaned.length ? cleaned : undefined;
             })(),
-            // v12.61 — نسخ المنتج (تجريبي): تُحفظ النسخ المكتملة فقط (اسم + سعر > 0)
+            // v12.61-62 — نسخ المنتج (تجريبي): تُحفظ النسخ المكتملة فقط
+            // (اسم + سعر أصلي + سعر بعد الخصم)
             variants: (() => {
                 const cleaned = variants
                     .map(v => ({
                         ...v,
                         label: v.label.trim(),
                         price: Number(v.price) || 0,
+                        originalPrice: Number(v.originalPrice) > 0 ? Number(v.originalPrice) : undefined,
                         qty: Number(v.qty) > 0 ? Number(v.qty) : undefined,
                         imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
                     }))
@@ -2239,7 +2278,7 @@ const SellerDashboard: React.FC = () => {
                                         cursor: 'pointer',
                                         fontSize: '0.75rem'
                                     }}>
-                                        <input type="checkbox" checked={isUnlimited} onChange={e => {
+                                        <input type="checkbox" checked={isUnlimited} disabled={variantQtySum != null} onChange={e => {
                                             setIsUnlimited(e.target.checked);
                                             // 'stock' is the only mode incompatible with unlimited —
                                             // hours / days / date all make sense. Only swap away
@@ -2251,11 +2290,19 @@ const SellerDashboard: React.FC = () => {
                                         {isRTL ? 'لامحدود' : 'Unlim'}
                                     </label>
                                 </label>
-                                <input type="tel" style={{...fieldInputStyle, opacity: isUnlimited ? 0.5 : 1}} value={isUnlimited ? '' : quantity} disabled={isUnlimited} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
+                                <input type="tel" style={{...fieldInputStyle, opacity: (isUnlimited || variantQtySum != null) ? 0.5 : 1}} value={isUnlimited ? '' : quantity} disabled={isUnlimited || variantQtySum != null} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
                                     const val = normalizeArabicNumerals(e.target.value).replace(/\D/g, '');
                                     setQuantity(val === '' ? '' : Number(val));
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
+                                {/* v12.62 — مجموع كميات النسخ يقود الكمية الإجمالية تلقائياً */}
+                                {variantQtySum != null && (
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginTop: 6, lineHeight: 1.5 }}>
+                                        🧬 {isRTL
+                                            ? `تُحسب تلقائياً: مجموع كميات النسخ = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`
+                                            : `Auto-calculated: versions total = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -2351,8 +2398,10 @@ const SellerDashboard: React.FC = () => {
                                 <input
                                     type="text"
                                     inputMode="decimal"
+                                    disabled={variantsDriving}
                                     style={{
                                         ...fieldInputStyle,
+                                        opacity: variantsDriving ? 0.55 : 1,
                                         borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
                                         boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
                                     }}
@@ -2366,8 +2415,10 @@ const SellerDashboard: React.FC = () => {
                                 <input
                                     type="text"
                                     inputMode="decimal"
+                                    disabled={variantsDriving}
                                     style={{
                                         ...fieldInputStyle,
+                                        opacity: variantsDriving ? 0.55 : 1,
                                         borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
                                         boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
                                     }}
@@ -2377,6 +2428,19 @@ const SellerDashboard: React.FC = () => {
                                 />
                             </div>
                         </div>
+                        {/* v12.62 — عندما توجد نسخ: السعران العامان يُضبطان تلقائياً
+                            على أرخص نسخة حتى لا يلتبس التاجر بين سعرين. */}
+                        {variantsDriving && (
+                            <div style={{
+                                margin: '-12px 0 16px', padding: '10px 14px', borderRadius: 12,
+                                background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
+                                color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 700, lineHeight: 1.6,
+                            }}>
+                                🧬 {isRTL
+                                    ? 'الأسعار تُدار الآن من «نسخ المنتج» بالأسفل — هذان الحقلان يُضبطان تلقائياً على أرخص نسخة، والبطاقة ستعرض «يبدأ من».'
+                                    : 'Prices are now managed by the product versions below — these two fields auto-follow the cheapest version, and the card will show “From …”.'}
+                            </div>
+                        )}
                         {priceInvalid && (
                             <div
                                 role="alert"
@@ -2863,27 +2927,52 @@ const SellerDashboard: React.FC = () => {
                                             placeholder={isRTL ? `النسخة ${vi + 1} (مثل: صغير)` : `Version ${vi + 1} (e.g. Small)`}
                                             style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
                                         />
-                                        <input
-                                            type="number" min={0} step="any" inputMode="decimal"
-                                            value={v.price || ''}
-                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
-                                            placeholder={isRTL ? 'السعر ر.س' : 'Price'}
-                                            title={isRTL ? 'سعر هذه النسخة بعد الخصم' : 'This version’s discounted price'}
-                                            style={{ width: 84, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
-                                        />
-                                        <input
-                                            type="number" min={0}
-                                            value={v.qty ?? ''}
-                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
-                                            placeholder={isRTL ? 'الكمية' : 'Qty'}
-                                            title={isRTL ? 'كمية هذه النسخة — فارغة = تتبع كمية العرض' : 'Qty for this version — empty = follows deal qty'}
-                                            style={{ width: 66, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
-                                        />
                                         <button type="button"
                                             onClick={() => setVariants(prev => prev.filter((_, i) => i !== vi))}
                                             aria-label={isRTL ? 'حذف النسخة' : 'Delete version'}
-                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 10px', alignSelf: 'stretch', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '6px 10px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
                                     </div>
+                                    {/* v12.62 — لكل نسخة سعرها الأصلي وخصمها وكميتها */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'السعر الأصلي' : 'Original'}</div>
+                                            <input
+                                                type="number" min={0} step="any" inputMode="decimal"
+                                                value={v.originalPrice || ''}
+                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, originalPrice: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
+                                                placeholder={isRTL ? 'مثال: 20' : 'e.g. 20'}
+                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) <= Number(v.price) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'بعد الخصم' : 'Discounted'}</div>
+                                            <input
+                                                type="number" min={0} step="any" inputMode="decimal"
+                                                value={v.price || ''}
+                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
+                                                placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
+                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'الكمية' : 'Qty'}</div>
+                                            <input
+                                                type="number" min={0}
+                                                value={v.qty ?? ''}
+                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
+                                                placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
+                                                title={isRTL ? 'كمية هذه النسخة — المجموع يصبح الكمية الإجمالية تلقائياً' : 'Qty of this version — the sum becomes the deal total'}
+                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    {Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) > Number(v.price) && (
+                                        <div style={{ fontSize: '0.66rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
+                                            {isRTL
+                                                ? `🔥 خصم ${Math.round(((Number(v.originalPrice) - Number(v.price)) / Number(v.originalPrice)) * 100)}٪ على «${v.label || `النسخة ${vi + 1}`}»`
+                                                : `🔥 ${Math.round(((Number(v.originalPrice) - Number(v.price)) / Number(v.originalPrice)) * 100)}% off "${v.label || `Version ${vi + 1}`}"`}
+                                        </div>
+                                    )}
                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                         <select
                                             value={v.gender || 'all'}

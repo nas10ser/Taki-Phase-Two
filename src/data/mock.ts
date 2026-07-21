@@ -126,11 +126,13 @@ export interface SelectedOption { g: string; c: string; qty?: number; }
 // تختلف عن «الاختيارات»: الاختيار إضافة فوق المنتج، النسخة منتج بسعر مستقل.
 export interface DealVariant {
     id: string;
-    label: string;         // «صغير» / «وسط» / «كبير»
-    price: number;         // سعر النسخة بعد الخصم — يحل محل سعر العرض عند اختيارها
-    qty?: number;          // كمية هذه النسخة — فارغة = تتبع كمية العرض العامة
-    imageIndex?: number;   // أي صورة من صور العرض (0-3) تمثل هذه النسخة
-    gender?: GenderTarget; // فئة مستهدفة خاصة بالنسخة (اختياري)
+    label: string;          // «صغير» / «وسط» / «كبير»
+    price: number;          // سعر النسخة بعد الخصم — يحل محل سعر العرض عند اختيارها
+    /** السعر الأصلي للنسخة قبل الخصم — لكل نسخة خصمها الخاص (v12.62) */
+    originalPrice?: number;
+    qty?: number;           // كمية هذه النسخة — مجموع الكميات = الكمية الإجمالية للعرض
+    imageIndex?: number;    // أي صورة من صور العرض (0-3) تمثل هذه النسخة
+    gender?: GenderTarget;  // فئة مستهدفة خاصة بالنسخة (اختياري)
 }
 
 export interface Deal {
