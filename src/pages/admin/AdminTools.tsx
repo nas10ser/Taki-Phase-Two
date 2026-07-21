@@ -1062,9 +1062,10 @@ const AdminTools: React.FC = () => {
     const [whatsappBotEnabled, setWhatsappBotEnabled] = useState(false);
     const [whatsappBotNumber, setWhatsappBotNumber] = useState('');
     const [savingWaNumber, setSavingWaNumber] = useState(false);
-    // v12.44 — هوية المواسم: الموسم المفعّل حالياً ('' = الهوية الأساسية)
+    // v12.44 — هوية المواسم: الموسم المفعّل حالياً ('' = الهوية الأساسية).
+    // v12.57 — صار للعرض فقط: القيمة تُشتق في القاعدة من النافذة العامة
+    // للحملة (trigger + كرون كل ١٥ دقيقة) — لا تفعيل يدوي منفصل.
     const [seasonTheme, setSeasonTheme] = useState('');
-    const [savingSeason, setSavingSeason] = useState(false);
     // v12.48 — «حملة الموسم»: نافذة التجار + النافذة العامة + تاريخ الفعالية
     const [camp, setCamp] = useState({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
     const [campSaved, setCampSaved] = useState(false);
@@ -1184,30 +1185,16 @@ const AdminTools: React.FC = () => {
         );
     };
 
-    // v12.44 — «هوية المواسم»: one tap re-skins the whole app (light + dark)
-    // for every user. Writes platform_settings.seasonal_theme; AppContext's
-    // realtime listener applies <html data-season> everywhere instantly, and
-    // this admin device re-skins immediately too. '' = back to base identity.
-    const activateSeason = async (id: string) => {
-        if (savingSeason) return;
-        const prev = seasonTheme;
-        setSavingSeason(true);
-        setSeasonTheme(id); // optimistic — the active card highlights instantly
-        const { error } = await supabase
-            .from('platform_settings')
-            .upsert({ key: 'seasonal_theme', value: id, description: 'Active seasonal identity skin for the whole app (v12.44)', updated_at: new Date().toISOString() });
-        setSavingSeason(false);
-        if (error) {
-            setSeasonTheme(prev); // rollback
-            await customAlert('❌ ' + error.message);
-            return;
-        }
-        const s = SEASONS.find(x => x.id === id);
-        await customAlert(
-            s
-                ? `✅ تم تفعيل هوية «${s.ar}» ${s.emoji} — تغيّرت ألوان المنصة كاملة (فاتح وداكن) لجميع المستخدمين فوراً، وظهر بانر الموسم أعلى الرئيسية.`
-                : '✅ رجعت المنصة للهوية الأساسية — اختفى بانر الموسم وعادت الألوان الافتراضية للجميع.'
-        );
+    // v12.57 — توحيد (طلب ناصر): أُلغي التفعيل اليدوي المنفصل للهوية.
+    // seasonal_theme يُشتق في القاعدة من النافذة العامة للحملة تلقائياً
+    // (trigger عند الحفظ/الإنهاء + كرون كل ١٥ دقيقة لانقلاب منتصف الليل)،
+    // فتتبعه كل الواجهات: ألوان الموقع وبانر الرئيسية وسطر الموسم في البوتين.
+    // هذه نسخة محلية من نفس الاشتقاق لتحديث شارة «النشط الآن» فوراً بعد الحفظ.
+    const localEffectiveTheme = (c: typeof camp): string => {
+        if (!c.season_id || !c.public_from || !c.public_to) return '';
+        const d = new Date();
+        const t = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return t >= c.public_from && t <= c.public_to ? c.season_id : '';
     };
 
     // v12.48 — «حملة الموسم»: حفظ/إنهاء الحملة + إشعار التجار + تواريخ التذكير.
@@ -1237,12 +1224,24 @@ const AdminTools: React.FC = () => {
         setSavingCamp(false);
         if (error) { await customAlert('❌ ' + error.message); return; }
         setCampSaved(true);
+        // v12.57 — الهوية تتبع الحملة: القاعدة زامنت seasonal_theme فور الحفظ
+        // (trigger)، وهنا نحدّث الشارة محلياً بنفس المنطق دون انتظار realtime.
+        const eff = localEffectiveTheme(camp);
+        setSeasonTheme(eff);
         const s = SEASONS.find(x => x.id === camp.season_id);
-        await customAlert(`✅ حُفظت حملة «${s?.ar}»:\n🏪 التجار يضيفون منتجاتهم من ${camp.seller_from} إلى ${camp.seller_to}\n👥 الصفحة تظهر للعامة من ${camp.public_from} إلى ${camp.public_to}\n\nلا تنسَ زر «📣 إشعار التجار» ليعرفوا أن الباب فُتح.`);
+        await customAlert(
+            `✅ حُفظت حملة «${s?.ar}» — نظام موحّد:\n` +
+            `🏪 التجار يضيفون منتجاتهم من ${camp.seller_from} إلى ${camp.seller_to}\n` +
+            `👥 الصفحة العامة + هوية الألوان والبانر والبوتات: من ${camp.public_from} إلى ${camp.public_to} تلقائياً\n\n` +
+            (eff
+                ? `🎨 النافذة العامة مفتوحة الآن — هوية «${s?.ar}» اشتغلت فوراً لجميع المستخدمين.\n\n`
+                : `⏳ الهوية ستشتغل من تلقاء نفسها يوم ${camp.public_from} وتنطفئ بعد ${camp.public_to}.\n\n`) +
+            'لا تنسَ زر «📣 إشعار التجار» ليعرفوا أن الباب فُتح.'
+        );
     };
 
     const clearCampaign = async () => {
-        const ok = await customConfirm('سيتم إنهاء الحملة: تختفي صفحة عروض الموسم ويقفل باب إضافة العروض للتجار (العروض الموسومة سابقاً تبقى عروضاً عادية). متابعة؟');
+        const ok = await customConfirm('سيتم إنهاء الحملة نهائياً: تختفي صفحة عروض الموسم من موقع المشترين والبوتات، ويقفل باب إضافة العروض للتجار، وتعود ألوان المنصة وبانر الرئيسية للهوية الأساسية فوراً (العروض الموسومة سابقاً تبقى عروضاً عادية). متابعة؟');
         if (!ok) return;
         setSavingCamp(true);
         // v12.52 — كان value: null يفشل بصمت (العمود NOT NULL) فتبقى الحملة حية
@@ -1256,7 +1255,8 @@ const AdminTools: React.FC = () => {
         if (error) { await customAlert('❌ ' + error.message); return; }
         setCampSaved(false);
         setCamp({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
-        await customAlert('✅ انتهت الحملة — عادت المنصة لوضعها العادي.');
+        setSeasonTheme(''); // v12.57 — القاعدة صفّرت الهوية بنفس اللحظة (trigger)
+        await customAlert('✅ انتهت الحملة — اختفت صفحة الموسم من الموقع والبوتات، وعادت الألوان والبانر للهوية الأساسية لجميع المستخدمين.');
     };
 
     // إشعار للتجار فقط (وليس المشترين) عبر admin_broadcast_notification —
@@ -1514,31 +1514,38 @@ const AdminTools: React.FC = () => {
                 </div>
             </section>
 
-            {/* v12.44 — هوية المواسم: تحكم كامل بنقرة واحدة. المالك يقرّر
-                التاريخ بنفسه — لا يوجد أي تفعيل تلقائي بالتقويم. */}
+            {/* v12.57 — نظام موحّد (طلب ناصر): البطاقة تختار موسم الحملة فقط،
+                والتفعيل الفعلي كله (ألوان الموقع + بانر الرئيسية + صفحة العروض
+                + القائمة الجانبية + خانة التاجر + البوتان) تحكمه تواريخ الحملة
+                أدناه وحدها — القاعدة تشتق seasonal_theme من النافذة العامة
+                تلقائياً (trigger عند الحفظ + كرون كل ١٥ دقيقة). */}
             <section>
                 <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🎨 هوية المواسم</h2>
-                    {seasonTheme && (
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🎨 الموسم — هوية وحملة موحّدة</h2>
+                    {seasonTheme ? (
                         <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[var(--primary-light)] text-[var(--primary)]">
-                            مفعّل الآن: {SEASONS.find(s => s.id === seasonTheme)?.emoji} {SEASONS.find(s => s.id === seasonTheme)?.ar}
+                            🟢 الهوية النشطة الآن: {SEASONS.find(s => s.id === seasonTheme)?.emoji} {SEASONS.find(s => s.id === seasonTheme)?.ar}
+                        </span>
+                    ) : (
+                        <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[var(--gray-100)] text-[var(--text-secondary)]">
+                            ⚪ الهوية الأساسية — لا موسم نشط الآن
                         </span>
                     )}
                 </div>
                 <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
-                    بنقرة واحدة تتبدّل ألوان المنصة كاملة (الوضع الفاتح والداكن معاً) لجميع المستخدمين فوراً، ويظهر بانر الموسم أعلى الصفحة الرئيسية. أنت من يقرّر متى يبدأ الموسم ومتى ينتهي — التلميحات الزمنية للاسترشاد فقط.
+                    نظام واحد بلا لخبطة: <b>اختر الموسم من البطاقات</b> ثم حدد التواريخ واحفظ الحملة بالأسفل. ألوان المنصة والبانر وصفحة العروض والقائمة الجانبية والبوتات كلها تشتغل <b>تلقائياً مع بداية «الصفحة العامة»</b> وتنطفئ مع نهايتها، وخانة «شارك في عروض الموسم» عند التاجر تتبع «نافذة التجار» — لا يوجد أي تفعيل يدوي منفصل، و«إنهاء الحملة» يعيد كل شيء فوراً.
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {SEASONS.map(s => {
-                        const active = seasonTheme === s.id;
+                        const selected = camp.season_id === s.id;
+                        const liveNow = seasonTheme === s.id;
                         return (
                             <button
                                 key={s.id}
                                 type="button"
-                                onClick={() => activateSeason(active ? '' : s.id)}
-                                disabled={savingSeason}
-                                className={`relative text-right rounded-2xl overflow-hidden border-2 transition-all active:scale-[0.97] disabled:opacity-60 ${
-                                    active
+                                onClick={() => setCamp(prev => ({ ...prev, season_id: s.id }))}
+                                className={`relative text-right rounded-2xl overflow-hidden border-2 transition-all active:scale-[0.97] ${
+                                    selected
                                         ? 'border-[var(--primary)] shadow-lg'
                                         : 'border-[var(--border-color)] hover:shadow-md'
                                 }`}
@@ -1546,9 +1553,14 @@ const AdminTools: React.FC = () => {
                             >
                                 <div className="h-16 w-full relative" style={{ background: s.swatch }}>
                                     <span className="absolute bottom-1.5 right-2.5 text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))' }}>{s.emoji}</span>
-                                    {active && (
+                                    {liveNow && (
                                         <span className="absolute top-1.5 left-2 text-[10px] font-black bg-white/95 text-emerald-700 px-2 py-0.5 rounded-full shadow">
-                                            ✓ مفعّل
+                                            🟢 نشط الآن
+                                        </span>
+                                    )}
+                                    {!liveNow && selected && campSaved && (
+                                        <span className="absolute top-1.5 left-2 text-[10px] font-black bg-white/95 text-amber-600 px-2 py-0.5 rounded-full shadow">
+                                            ⏳ مجدول
                                         </span>
                                     )}
                                 </div>
@@ -1556,29 +1568,19 @@ const AdminTools: React.FC = () => {
                                     <div className="text-sm font-extrabold text-[var(--text-primary)]">{s.ar}</div>
                                     <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{s.hintAr}</div>
                                     <div className={`mt-2 text-[11px] font-black rounded-lg py-1.5 text-center ${
-                                        active
-                                            ? 'bg-[var(--gray-100)] text-[var(--text-secondary)]'
-                                            : 'text-white'
+                                        selected
+                                            ? 'text-white'
+                                            : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'
                                     }`}
-                                        style={active ? undefined : { background: s.swatch }}
+                                        style={selected ? { background: s.swatch } : undefined}
                                     >
-                                        {active ? '⏹ إيقاف الموسم' : '⚡ تفعيل بنقرة'}
+                                        {selected ? '✓ موسم الحملة — حدد التواريخ بالأسفل' : 'اختر لهذه الحملة'}
                                     </div>
                                 </div>
                             </button>
                         );
                     })}
                 </div>
-                {seasonTheme && (
-                    <button
-                        type="button"
-                        onClick={() => activateSeason('')}
-                        disabled={savingSeason}
-                        className="mt-3 w-full py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-secondary)] text-sm font-extrabold hover:shadow-md transition-all disabled:opacity-60"
-                    >
-                        🔄 إيقاف الموسم والرجوع للهوية الأساسية
-                    </button>
-                )}
 
                 {/* v12.48 — «حملة الموسم»: مشاركة التجار + صفحة العروض الحصرية */}
                 {(() => {
@@ -1604,32 +1606,27 @@ const AdminTools: React.FC = () => {
                     return (
                         <div className="mt-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
                             <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-                                <h3 className="text-base font-extrabold text-[var(--text-primary)]">📅 حملة الموسم — مشاركة التجار وصفحة العروض</h3>
+                                <h3 className="text-base font-extrabold text-[var(--text-primary)]">📅 تواريخ الحملة — التحكم الوحيد بالتفعيل</h3>
                                 {campSaved && (
                                     <div className="flex gap-1.5 flex-wrap">
                                         <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${sellerOpen ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
                                             🏪 باب التجار: {sellerOpen ? 'مفتوح الآن' : 'مغلق'}
                                         </span>
                                         <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${publicLive ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
-                                            👥 الصفحة العامة: {publicLive ? 'ظاهرة الآن' : 'مخفية'}
+                                            👥 الصفحة + الهوية + البوتات: {publicLive ? 'شغّالة الآن' : 'مطفأة'}
                                         </span>
                                     </div>
                                 )}
                             </div>
                             <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
-                                التاجر يستطيع وسم منتجاته كعروض موسم <b>فقط داخل نافذة التجار</b> (تُضاف له خانة «شارك في عروض الموسم» عند إضافة/تعديل المنتج)، وصفحة العروض الحصرية تظهر للمتسوقين في القائمة الجانبية وزر «تسوّق الآن» <b>فقط خلال النافذة العامة</b>. أنت من يحدد كل التواريخ.
+                                <b>نافذة التجار:</b> فيها فقط تظهر للتاجر خانة «شارك في عروض الموسم» عند إضافة/تعديل المنتج. <b>النافذة العامة:</b> فيها فقط تظهر صفحة العروض للمتسوقين (القائمة الجانبية + زر «تسوّق الآن» + زر الموسم في البوتين) <b>وتشتغل هوية الألوان والبانر تلقائياً</b> — وتنطفئ كلها بانتهائها دون أي تدخل منك.
                             </p>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                                 <div>
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الموسم</label>
-                                    <select
-                                        value={camp.season_id}
-                                        onChange={e => setCamp(prev => ({ ...prev, season_id: e.target.value }))}
-                                        className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
-                                    >
-                                        <option value="">— اختر —</option>
-                                        {SEASONS.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.ar}</option>)}
-                                    </select>
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الموسم (من البطاقات أعلاه)</label>
+                                    <div className={`w-full px-2.5 py-2 rounded-xl border text-sm font-extrabold ${campSeason ? 'border-[var(--primary)] bg-[var(--primary-light)] text-[var(--primary)]' : 'border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-secondary)]'}`}>
+                                        {campSeason ? `${campSeason.emoji} ${campSeason.ar}` : '⬆️ اضغط بطاقة موسم أولاً'}
+                                    </div>
                                 </div>
                                 {dateInput('🗓 تاريخ الفعالية (اختياري)', 'event_date')}
                                 <div className="hidden md:block" />
@@ -1639,6 +1636,15 @@ const AdminTools: React.FC = () => {
                                 {dateInput('👥 الصفحة العامة — من', 'public_from')}
                                 {dateInput('👥 الصفحة العامة — إلى', 'public_to')}
                             </div>
+                            {/* v12.57 — تنبيه التعارض: نافذة عامة لا تشمل تاريخ الفعالية
+                                المسجّل للتذكير (مثل حملة «اليوم الوطني» في يوليو والفعلية
+                                ٢٣ سبتمبر) — هذا مصدر اللخبطة الذي أشار له ناصر. */}
+                            {campSeason && eventDates[camp.season_id] && camp.public_from && camp.public_to
+                                && (eventDates[camp.season_id] < camp.public_from || eventDates[camp.season_id] > camp.public_to) && (
+                                <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-[var(--text-primary)] leading-relaxed">
+                                    💡 انتبه: تاريخ فعالية «{campSeason.ar}» المسجّل عندك للتذكير هو <b>{eventDates[camp.season_id]}</b>، لكن نافذتك العامة ({camp.public_from} → {camp.public_to}) لا تشمله — إن لم يكن هذا مقصوداً عدّل التواريخ قبل الحفظ.
+                                </div>
+                            )}
                             <div className="flex gap-2 mt-3 flex-wrap">
                                 <button
                                     onClick={saveCampaign}
