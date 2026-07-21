@@ -55,8 +55,25 @@ const FollowController = ({
 const FlyController = ({ target }: { target: { lat: number; lng: number; zoom: number; key: number } | null }) => {
     const map = useMap();
     useEffect(() => {
-        if (!target) return;
-        map.flyTo([target.lat, target.lng], target.zoom, { duration: 1.1 });
+        if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
+        // flyTo على خريطة بلا مقاس (مخفية/لسه بتتركب) يرمي Invalid LatLng NaN
+        // ويسقط الصفحة كاملة في ErrorBoundary — invalidateSize أولاً، وflyTo فقط
+        // عندما يكون للحاوية مقاس فعلي، وإلا setView بلا أنيميشن (لا يحتاج مقاساً).
+        const go = () => {
+            try {
+                map.invalidateSize();
+                const s = map.getSize();
+                if (s.x > 0 && s.y > 0) {
+                    map.flyTo([target.lat, target.lng], target.zoom, { duration: 1.1 });
+                } else {
+                    map.setView([target.lat, target.lng], target.zoom, { animate: false });
+                }
+            } catch {
+                try { map.setView([target.lat, target.lng], target.zoom, { animate: false }); } catch { /* ignore */ }
+            }
+        };
+        const t = setTimeout(go, 50);
+        return () => clearTimeout(t);
     }, [target?.key]);
     return null;
 };
