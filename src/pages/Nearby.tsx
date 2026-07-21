@@ -175,9 +175,14 @@ const Nearby: React.FC = () => {
 
     const nearbyDeals = useMemo(() => {
         return deals.map(deal => {
+            // v12.65 (بلاغ ناصر: «الباحة مول يظهر بجانبي بأمتار») — إذا اختار
+            // التاجر مولاً/سوقاً معروفاً فإحداثيات المول هي نقطة الاستلام
+            // الحقيقية؛ mapLocation قد يكون GPS جهاز التاجر لحظة الإنشاء
+            // (بيته!) فتطلع المسافات كلها غلط. المواقع المخصصة تبقى على
+            // mapLocation كما هي.
             const loc = getLocation(deal.locationId);
-            const lat = deal.mapLocation?.lat || loc?.lat || 0;
-            const lng = deal.mapLocation?.lng || loc?.lng || 0;
+            const lat = loc?.lat || deal.mapLocation?.lat || 0;
+            const lng = loc?.lng || deal.mapLocation?.lng || 0;
             const distance = getDistance(userLat, userLng, lat, lng);
             return { ...deal, distance, lat, lng };
         }).filter(d => {

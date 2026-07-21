@@ -1220,9 +1220,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // ── Fallback: proximity-based alerts if no Supabase campaigns ──
         if (user.userType === 'buyer' && lat && lng) {
             const hasNearby = deals.some(d => {
+                // v12.65 — المول المعروف يتقدم على GPS جهاز التاجر لحظة الإنشاء
                 const dLoc = getLocation(d.locationId);
-                const dLat = d.mapLocation?.lat || dLoc?.lat || 0;
-                const dLng = d.mapLocation?.lng || dLoc?.lng || 0;
+                const dLat = dLoc?.lat || d.mapLocation?.lat || 0;
+                const dLng = dLoc?.lng || d.mapLocation?.lng || 0;
                 return d.status === 'active' && getDistance(lat, lng, dLat, dLng) <= 5;
             });
 

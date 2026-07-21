@@ -829,6 +829,16 @@ const DealDetails: React.FC = () => {
             }
         }
 
+        // v12.65 — النسخ المختارة تُمرَّر مهيكلة في selected_options بوسم
+        // g='__variant__' — حارس القاعدة يخصمها من كمية كل نسخة (المتاح)
+        // ويعيدها عند الإلغاء، والفحص يرفض ما يتجاوز المتبقي.
+        if (variants.length && variantPiecesTotal > 0) {
+            const ventries = variants
+                .filter(v => (varSel[v.id] || 0) > 0)
+                .map(v => ({ g: '__variant__', c: v.id, qty: varSel[v.id] }));
+            selectedOptions = [...(selectedOptions || []), ...ventries];
+        }
+
         // v12.64 — سطر المقاسات المختارة بكمياتها يتصدّر الملاحظات، وسطر
         // «الإجمالي» الموحّد يختمها (يشمل النسخ + الإضافات) — يصل كما هو
         // لكل واجهات التاجر والبوتات.

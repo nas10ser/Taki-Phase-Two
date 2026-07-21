@@ -103,6 +103,21 @@ const AdminModeration: React.FC = () => {
         }
     };
 
+    // v12.65 (طلب ناصر) — حذف الإنذار نهائياً: يختفي من السجل وعدّادات المتجر،
+    // وترقية الإنذار الآلي تعدّ صفوف moderation_flags — فحذفه يعيد عدّ
+    // مخالفات الحساب من الصفر فعلياً.
+    const deleteFlag = async (f: FlagRow) => {
+        const ok = await customConfirm('🗑 حذف هذا الإنذار نهائياً؟ لن يُحسب على الحساب وسيبدأ عدّه من جديد.');
+        if (!ok) return;
+        const prev = flags;
+        setFlags(p => p.filter(x => x.id !== f.id));
+        const { error } = await supabase.rpc('admin_delete_flag', { p_id: f.id });
+        if (error) {
+            setFlags(prev);
+            await customAlert('❌ ' + error.message);
+        }
+    };
+
     const addTerm = async () => {
         const t = newTerm.trim();
         if (!t || savingTerm) return;
@@ -233,6 +248,11 @@ const AdminModeration: React.FC = () => {
                                         <button onClick={() => setFlagStatus(f, f.status === 'open' ? 'reviewed' : 'open')}
                                             className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-[var(--gray-100)] text-[var(--text-primary)]">
                                             {f.status === 'open' ? '✓ اعتبره مُراجَعاً' : '↩︎ أعده مفتوحاً'}
+                                        </button>
+                                        {/* v12.65 — حذف نهائي: يصفّر عدّ مخالفات الحساب */}
+                                        <button onClick={() => deleteFlag(f)}
+                                            className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200">
+                                            🗑 حذف
                                         </button>
                                     </div>
                                     {f.content && (
