@@ -1550,7 +1550,15 @@ const SellerDashboard: React.FC = () => {
                 return;
             }
             const withQty = completeVariants.filter(v => Number(v.qty) > 0);
-            if (withQty.length > 0 && withQty.length !== completeVariants.length) {
+            // v12.63 (قاعدة ناصر): انتهاء «بالكمية» = كمية كل نسخة إلزامية؛
+            // انتهاء بالساعات/الأيام/التاريخ = الكميات اختيارية (لكن لا جزئية).
+            if (expiryType === 'stock' && withQty.length !== completeVariants.length) {
+                await customAlert(isRTL
+                    ? '⛔ نظام الانتهاء «بالكمية» مفعّل: حدد كمية لكل نسخة — المجموع يصبح الكمية الإجمالية تلقائياً.'
+                    : '⛔ Stock-based expiry is on: set a qty for EVERY version — the sum becomes the deal total automatically.');
+                return;
+            }
+            if (expiryType !== 'stock' && withQty.length > 0 && withQty.length !== completeVariants.length) {
                 await customAlert(isRTL
                     ? '⛔ كميات النسخ: حدد كمية لكل نسخة (المجموع يصبح الكمية الإجمالية تلقائياً) أو اتركها كلها فارغة.'
                     : '⛔ Version quantities: set a qty on EVERY version (the sum becomes the deal total) or leave them all empty.');
@@ -2955,14 +2963,17 @@ const SellerDashboard: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'الكمية' : 'Qty'}</div>
+                                            {/* v12.63 — انتهاء «بالكمية» يجعل كمية كل نسخة إلزامية */}
+                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 3 }}>
+                                                {isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : `Qty${expiryType === 'stock' ? ' *' : ''}`}
+                                            </div>
                                             <input
                                                 type="number" min={0}
                                                 value={v.qty ?? ''}
                                                 onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
                                                 placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
                                                 title={isRTL ? 'كمية هذه النسخة — المجموع يصبح الكمية الإجمالية تلقائياً' : 'Qty of this version — the sum becomes the deal total'}
-                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(v.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
                                     </div>
@@ -3008,6 +3019,24 @@ const SellerDashboard: React.FC = () => {
                                     {isRTL
                                         ? '📌 بطاقة العرض في الصفحات العامة ستعرض «يبدأ من أقل سعر» مع شارة «عدة خيارات» — وداخل صفحة المنتج يختار المشتري النسخة قبل الحجز ويتغير السعر والصورة مباشرة.'
                                         : '📌 Public cards show “From <lowest price>” with a small versions badge — inside the product page the buyer picks a version and price & photo follow.'}
+                                </div>
+                            )}
+                            {/* v12.63 — قاعدة الكميات حسب نظام الانتهاء */}
+                            {variants.length > 0 && (
+                                <div style={{
+                                    marginTop: 8, padding: '8px 12px', borderRadius: 10, lineHeight: 1.6,
+                                    fontSize: '0.7rem', fontWeight: 700,
+                                    background: expiryType === 'stock' ? 'var(--danger-light)' : 'var(--gray-50)',
+                                    color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)',
+                                    border: `1px solid ${expiryType === 'stock' ? 'var(--danger)' : 'var(--border-color)'}`,
+                                }}>
+                                    {expiryType === 'stock'
+                                        ? (isRTL
+                                            ? '⚠️ نظام الانتهاء «بالكمية» مفعّل: كمية كل نسخة إلزامية — والمجموع يصبح الكمية الإجمالية تلقائياً (مثال: صغير ١٥ + وسط ١٥ = ٣٠).'
+                                            : '⚠️ Stock-based expiry is ON: every version needs a qty — the sum becomes the deal total automatically.')
+                                        : (isRTL
+                                            ? '💡 الانتهاء بالساعات/الأيام/التاريخ: كميات النسخ اختيارية — إن حددتها لكل النسخ يُحسب المجموع تلقائياً كالكمية الإجمالية.'
+                                            : '💡 Time-based expiry: version quantities are optional — if you set them on all versions, the sum auto-fills the deal total.')}
                                 </div>
                             )}
                         </div>
