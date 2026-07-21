@@ -322,10 +322,28 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     {deal.itemName}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 950, color: 'var(--danger)' }}>{deal.discountedPrice} ر.س</span>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--gray-400)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
-                </div>
+                {/* v12.61 — عرض له نسخ بأسعار مختلفة: «يبدأ من أقل سعر» + شارة
+                    صغيرة توصل للمشتري أن فيه عدة خيارات — بدون أي ازدحام. */}
+                {(() => {
+                    const vs = deal.variants || [];
+                    const fromPrice = vs.length ? Math.min(...vs.map(v => v.price)) : deal.discountedPrice;
+                    return (
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '1.2rem', fontWeight: 950, color: 'var(--danger)' }}>
+                                {vs.length ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`) : `${deal.discountedPrice} ر.س`}
+                            </span>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--gray-400)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
+                            {vs.length > 0 && (
+                                <span style={{
+                                    fontSize: '0.62rem', fontWeight: 900, color: 'var(--primary)',
+                                    background: 'var(--primary-light)', borderRadius: 999, padding: '3px 8px',
+                                }}>
+                                    🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Authenticity badge — green «عرض حقيقي N%» / yellow «عرض شكلي N%»
                     from buyer votes. Hidden until at least one buyer voted. v11.97 */}

@@ -2407,6 +2407,19 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
   .season-fx { display: none; }
 }
 
+/* ————— v12.61 — سهم ▼ واضح على قوائم فلاتر «حولي» —————
+   iOS يخفي سهم القائمة الأصلي مع الخلفيات المخصصة، فكان المستخدم لا يعرف
+   أن «التصنيفات/الأنواع/الأماكن» قوائم تُفتح (طلب ناصر). السهم يسار الحقل
+   لأن الواجهة عربية RTL. اللون رمادي متوسط يعمل في الوضعين. */
+.nb-select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%239ca3af' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: left 8px center;
+  padding-left: 24px !important;
+}
+
 /* ————— v12.51 — «مرونة» تبديل الثيم —————
    AppContext يضيف .theme-anim على <html> لحظة تبديل داكن/فاتح (أو تبدّل
    الموسم realtime) ويزيله بعد ~0.65s، فتنساب كل الألوان بنعومة بدل القفزة

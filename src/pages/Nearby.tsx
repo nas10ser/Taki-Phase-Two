@@ -47,6 +47,20 @@ const FollowController = ({
     return null;
 };
 
+/**
+ * v12.61 (طلب ناصر المتكرر) — عند اختيار منطقة/مدينة/مكان من الفلاتر كانت
+ * الخريطة تبقى جامدة: القوائم تحدّث الإحداثيات لكن FollowController يتجاهلها
+ * لأن المتابعة مطفأة. هذا المتحكم يطير بالخريطة لأي هدف تختاره القوائم.
+ */
+const FlyController = ({ target }: { target: { lat: number; lng: number; zoom: number; key: number } | null }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (!target) return;
+        map.flyTo([target.lat, target.lng], target.zoom, { duration: 1.1 });
+    }, [target?.key]);
+    return null;
+};
+
 const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoints: number = 64) => {
     const points: [number, number][] = [];
     const kmPerLat = 111.32;
@@ -103,6 +117,8 @@ const Nearby: React.FC = () => {
 
     const [selectedRegion, setSelectedRegion] = useState(urlParams.region);
     const [selectedCity, setSelectedCity] = useState(urlParams.city);
+    // v12.61 — هدف طيران الخريطة عند اختيار منطقة/مدينة/مكان من الفلاتر
+    const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom: number; key: number } | null>(null);
     const [selectedCategory, setSelectedCategory] = useState(urlParams.cat || 'all');
     const [locationType, setLocationType] = useState('');
     const [selectedLocationId, setSelectedLocationId] = useState(urlParams.mall);
@@ -215,7 +231,7 @@ const Nearby: React.FC = () => {
                     </div>
                     
                     <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                        <select 
+                        <select className="nb-select" 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedRegion}
                             onChange={e => { 
@@ -226,10 +242,13 @@ const Nearby: React.FC = () => {
                                 if (regId) {
                                     setFollowMode(false); // browsing a chosen area — don't snap back to GPS
                                     setRadius(0); // Show whole region
+                                    // v12.61 — منطقة بلا إحداثيات؟ أول مدينة فيها تكفي هدفاً
                                     const reg = REGIONS.find(r => r.id === regId);
-                                    if (reg && reg.lat && reg.lng) {
-                                        setUserLat(reg.lat);
-                                        setUserLng(reg.lng);
+                                    const pt = (reg?.lat && reg?.lng) ? { lat: reg.lat, lng: reg.lng } : CITIES.find(c => c.regionId === regId);
+                                    if (pt) {
+                                        setUserLat(pt.lat);
+                                        setUserLng(pt.lng);
+                                        setFlyTarget({ lat: pt.lat, lng: pt.lng, zoom: 8, key: Date.now() });
                                     }
                                 }
                             }}
@@ -237,7 +256,7 @@ const Nearby: React.FC = () => {
                             <option value="">{isRTL ? 'كل المناطق' : 'All Regions'}</option>
                             {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                         </select>
-                        <select 
+                        <select className="nb-select" 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedCity}
                             onChange={e => { 
@@ -248,14 +267,17 @@ const Nearby: React.FC = () => {
                                     setFollowMode(false);
                                     setRadius(30); // Default 30km for city
                                     const city = CITIES.find(c => c.id === cityId);
-                                    if (city) { setUserLat(city.lat); setUserLng(city.lng); }
+                                    if (city) {
+                                        setUserLat(city.lat); setUserLng(city.lng);
+                                        setFlyTarget({ lat: city.lat, lng: city.lng, zoom: 11, key: Date.now() }); // v12.61
+                                    }
                                 }
                             }}
                         >
                             <option value="">{isRTL ? 'كل المدن' : 'All Cities'}</option>
                             {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
                         </select>
-                        <select 
+                        <select className="nb-select" 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedCategory}
                             onChange={e => setSelectedCategory(e.target.value)}
@@ -263,7 +285,7 @@ const Nearby: React.FC = () => {
                             <option value="all">{isRTL ? 'كل التصنيفات' : 'All Categories'}</option>
                             {CATEGORIES.filter(c => c.id !== 'all').map(c => <option key={c.id} value={c.id}>{c.emoji} {isRTL ? c.ar : c.en}</option>)}
                         </select>
-                        <select 
+                        <select className="nb-select" 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={locationType}
                             onChange={e => { setLocationType(e.target.value); setSelectedLocationId(''); }}
@@ -273,7 +295,7 @@ const Nearby: React.FC = () => {
                             <option value="market">{isRTL ? 'سوق 🏛️' : 'Market 🏛️'}</option>
                             <option value="store">{isRTL ? 'محل 🏪' : 'Store 🏪'}</option>
                         </select>
-                        <select 
+                        <select className="nb-select" 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedLocationId}
                             onChange={e => {
@@ -282,7 +304,10 @@ const Nearby: React.FC = () => {
                                 if (locId) {
                                     setFollowMode(false);
                                     const loc = LOCATIONS.find(l => l.id === locId);
-                                    if (loc) { setUserLat(loc.lat); setUserLng(loc.lng); }
+                                    if (loc) {
+                                        setUserLat(loc.lat); setUserLng(loc.lng);
+                                        setFlyTarget({ lat: loc.lat, lng: loc.lng, zoom: 14, key: Date.now() }); // v12.61
+                                    }
                                 }
                             }}
                         >
@@ -307,7 +332,7 @@ const Nearby: React.FC = () => {
                     <label style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--primary)', whiteSpace: 'nowrap' }}>
                         🎯 {isRTL ? 'في حدود:' : 'Within:'}
                     </label>
-                    <select value={radius} onChange={e => setRadius(Number(e.target.value))}
+                    <select className="nb-select" value={radius} onChange={e => setRadius(Number(e.target.value))}
                         style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid var(--primary)', color: 'var(--primary)', padding: '6px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900, minHeight: 32 }}>
                         <option value={0}>{isRTL ? 'الكل 🌍' : 'All 🌍'}</option>
                         <option value={1}>1 {isRTL ? 'كم' : 'km'}</option>
@@ -385,6 +410,7 @@ const Nearby: React.FC = () => {
             >
                 <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                     <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
+                    <FlyController target={flyTarget} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     
                     {/* Visual Mask for Selection */}

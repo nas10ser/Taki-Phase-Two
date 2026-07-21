@@ -475,6 +475,8 @@ const DealDetails: React.FC = () => {
     // v12.60 — سقوف كميات الخيارات أُلغيت؛ الخيار قد يحمل «سعراً إضافياً»
     // يُضاف تلقائياً لمبلغ الحجز النهائي (جبنة +٣ ر.س → 10 تصبح 13).
     const [optSel, setOptSel] = useState<Record<string, Record<string, number>>>({});
+    // v12.61 — «نسخ المنتج» (تجريبي): النسخة المختارة تحدد السعر والصورة
+    const [variantId, setVariantId] = useState<string | null>(null);
     const [manualCode, setManualCode] = useState('');
     const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
     const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
@@ -508,9 +510,23 @@ const DealDetails: React.FC = () => {
         }
         return Math.round(sum * 100) / 100;
     }, [deal?.options, optSel]);
-    /** مبلغ الحجز النهائي: سعر العرض × الكمية + الإضافات */
+
+    // v12.61 — نسخ المنتج: النسخة المختارة (الأولى افتراضياً — بلا رسائل خطأ)
+    // تحدد سعر الوحدة، وصورتها تحل في الواجهة، وكميتها تسقف الحجز.
+    const variants = deal?.variants || [];
+    const selectedVariant = variants.length ? (variants.find(v => v.id === variantId) || variants[0]) : undefined;
+    const unitPrice = selectedVariant ? selectedVariant.price : (deal?.discountedPrice || 0);
+    React.useEffect(() => { setVariantId(null); }, [deal?.id]);
+    React.useEffect(() => {
+        const ii = selectedVariant?.imageIndex;
+        if (typeof ii === 'number' && deal?.images && ii >= 0 && ii < deal.images.length) {
+            setCurrentImage(ii);
+        }
+    }, [selectedVariant?.id]);
+
+    /** مبلغ الحجز النهائي: سعر النسخة/العرض × الكمية + الإضافات */
     const bookingTotal = deal
-        ? Math.round((deal.discountedPrice * selectedQuantity + optAddOnTotal) * 100) / 100
+        ? Math.round((unitPrice * selectedQuantity + optAddOnTotal) * 100) / 100
         : 0;
 
     // v12.54 — ربط كميات الخيارات بالكمية الإجمالية (طلب ناصر): مجموع كميات
@@ -733,6 +749,18 @@ const DealDetails: React.FC = () => {
         // ويدخل في سطر «الإجمالي» — سقوف الكميات أُلغيت.
         let selectedOptions: Array<{ g: string; c: string; qty?: number }> | undefined;
         let notesWithOptions = bookingNotes;
+
+        // v12.61 — نسخ المنتج: سقف كمية النسخة + سطر النسخة في الملاحظات
+        // (تصل لكل واجهات التاجر والبوتات كما هي).
+        if (selectedVariant) {
+            if (typeof selectedVariant.qty === 'number' && selectedQuantity > selectedVariant.qty) {
+                customAlert(isRTL
+                    ? `⛔ المتاح من «${selectedVariant.label}» ${selectedVariant.qty} فقط — خفّف الكمية أو اختر نسخة أخرى.`
+                    : `⛔ Only ${selectedVariant.qty} available in "${selectedVariant.label}".`);
+                return;
+            }
+        }
+
         if (deal.options?.length) {
             const lines: string[] = [];
             const sels: Array<{ g: string; c: string; qty?: number }> = [];
@@ -758,11 +786,17 @@ const DealDetails: React.FC = () => {
                 let optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
                 if (optAddOnTotal > 0) {
                     optText += `\n💰 ${isRTL
-                        ? `الإجمالي مع الإضافات: ${bookingTotal} ر.س (${deal.discountedPrice * selectedQuantity} + ${optAddOnTotal} إضافات)`
-                        : `Total incl. add-ons: ${bookingTotal} SAR (${deal.discountedPrice * selectedQuantity} + ${optAddOnTotal} extras)`}`;
+                        ? `الإجمالي مع الإضافات: ${bookingTotal} ر.س (${Math.round(unitPrice * selectedQuantity * 100) / 100} + ${optAddOnTotal} إضافات)`
+                        : `Total incl. add-ons: ${bookingTotal} SAR (${Math.round(unitPrice * selectedQuantity * 100) / 100} + ${optAddOnTotal} extras)`}`;
                 }
                 notesWithOptions = bookingNotes.trim() ? `${optText}\n${bookingNotes}` : optText;
             }
+        }
+
+        // سطر النسخة يتصدّر الملاحظات دائماً (مع أو بدون اختيارات)
+        if (selectedVariant) {
+            const vLine = `📏 ${isRTL ? 'النسخة' : 'Version'}: ${selectedVariant.label} (${selectedVariant.price} ${isRTL ? 'ر.س' : 'SAR'})`;
+            notesWithOptions = notesWithOptions.trim() ? `${vLine}\n${notesWithOptions}` : vLine;
         }
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
@@ -1164,13 +1198,47 @@ const DealDetails: React.FC = () => {
                     </div>
                     <h1 style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12 }}>{deal.itemName}</h1>
 
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
-                        <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--danger)' }}>{deal.discountedPrice} ر.س</span>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: variants.length ? 10 : 16 }}>
+                        <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--danger)', transition: 'all 0.2s ease' }}>{unitPrice} ر.س</span>
                         <span style={{ fontSize: '1rem', color: 'var(--gray-400)', textDecoration: 'line-through' }}>{deal.originalPrice} ر.س</span>
-                        <span style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
-                            {isRTL ? `وفّر ${deal.originalPrice - deal.discountedPrice} ر.س` : `Save ${deal.originalPrice - deal.discountedPrice} SAR`}
-                        </span>
+                        {deal.originalPrice - unitPrice > 0 && (
+                            <span style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
+                                {isRTL ? `وفّر ${Math.round((deal.originalPrice - unitPrice) * 100) / 100} ر.س` : `Save ${Math.round((deal.originalPrice - unitPrice) * 100) / 100} SAR`}
+                            </span>
+                        )}
                     </div>
+
+                    {/* v12.61 — نسخ المنتج (تجريبي): أزرار الأحجام — تبديلها يغيّر
+                        السعر أعلاه والصورة والإجمالي في زر الحجز مباشرة. */}
+                    {variants.length > 0 && (
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {variants.map(v => {
+                                    const active = selectedVariant?.id === v.id;
+                                    return (
+                                        <button key={v.id} type="button"
+                                            onClick={() => setVariantId(v.id)}
+                                            style={{
+                                                padding: '9px 16px', borderRadius: 12, cursor: 'pointer',
+                                                border: active ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                background: active ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
+                                                color: 'var(--text-primary)', fontWeight: 900, fontSize: '0.82rem',
+                                                display: 'flex', alignItems: 'center', gap: 6,
+                                                transition: 'all 0.15s ease', WebkitTapHighlightColor: 'transparent',
+                                            }}>
+                                            <span>{v.label}</span>
+                                            <span style={{ color: active ? 'var(--primary)' : 'var(--text-secondary)', fontWeight: 800, fontSize: '0.76rem' }}>{v.price} ر.س</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {typeof selectedVariant?.qty === 'number' && (
+                                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6 }}>
+                                    {isRTL ? `المتاح من «${selectedVariant.label}»: ${selectedVariant.qty}` : `Available in "${selectedVariant.label}": ${selectedVariant.qty}`}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                         <span style={{ background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 800 }}>
@@ -1655,7 +1723,9 @@ const DealDetails: React.FC = () => {
                                 <img src={images[0]} alt="Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             </div>
                             <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>{deal.itemName}</div>
+                                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>
+                                    {deal.itemName}{selectedVariant ? ` — ${selectedVariant.label}` : ''}
+                                </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 900 }}>★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')}</span>
                                     <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 900 }}>{bookingTotal} ر.س</span>

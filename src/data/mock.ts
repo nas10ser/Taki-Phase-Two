@@ -121,6 +121,18 @@ export interface DealOptionGroup {
 /** اختيار المشتري المحفوظ على الحجز: قسم + خيار + كمية */
 export interface SelectedOption { g: string; c: string; qty?: number; }
 
+// v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام/نسخ لكل
+// واحدة سعرها وكميتها وصورتها وفئتها (برجر صغير ١٠ / وسط ١٥ / كبير ٢٠).
+// تختلف عن «الاختيارات»: الاختيار إضافة فوق المنتج، النسخة منتج بسعر مستقل.
+export interface DealVariant {
+    id: string;
+    label: string;         // «صغير» / «وسط» / «كبير»
+    price: number;         // سعر النسخة بعد الخصم — يحل محل سعر العرض عند اختيارها
+    qty?: number;          // كمية هذه النسخة — فارغة = تتبع كمية العرض العامة
+    imageIndex?: number;   // أي صورة من صور العرض (0-3) تمثل هذه النسخة
+    gender?: GenderTarget; // فئة مستهدفة خاصة بالنسخة (اختياري)
+}
+
 export interface Deal {
     id: string;
     storeId: string;
@@ -164,6 +176,8 @@ export interface Deal {
      *  بخيارات لكل قسم، وقد يسقف كمية كل خيار (مقاس L = ٣ قطع) أو يتركها
      *  مفتوحة. حارس المخزون DB trigger «tr_booking_options». */
     options?: DealOptionGroup[];
+    /** v12.61 — نسخ المنتج بأسعار مختلفة (تجريبي) */
+    variants?: DealVariant[];
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

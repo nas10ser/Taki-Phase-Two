@@ -11,7 +11,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -436,6 +436,8 @@ const SellerDashboard: React.FC = () => {
     const [seasonTag, setSeasonTag] = useState(false);
     // v12.53 — «اختيارات المنتج»: أقسام (نوع البن/المقاس…) بخيارات وكميات
     const [optionGroups, setOptionGroups] = useState<DealOptionGroup[]>([]);
+    // v12.61 — «نسخ المنتج» (تجريبي): أحجام بأسعار وكميات وصور مختلفة
+    const [variants, setVariants] = useState<DealVariant[]>([]);
     // v12.28 — حدود الحجز للمشتري (منع السوق السوداء): '' أو 0 = بلا حد
     const [maxPerBooking, setMaxPerBooking] = useState<number | string>('');
     const [maxBookingsPerBuyer, setMaxBookingsPerBuyer] = useState<number | string>('');
@@ -1327,6 +1329,7 @@ const SellerDashboard: React.FC = () => {
         setQuantity('');
         setSeasonTag(false);
         setOptionGroups([]);
+        setVariants([]);
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1369,6 +1372,7 @@ const SellerDashboard: React.FC = () => {
         setRebookCooldownMinutes(deal.rebookCooldownMinutes || 0);
         setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
         setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
+        setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)) : []); // v12.61 — نسخ المنتج
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1837,6 +1841,19 @@ const SellerDashboard: React.FC = () => {
                             .filter(c => c.label),
                     }))
                     .filter(g => g.title && g.choices.length > 0);
+                return cleaned.length ? cleaned : undefined;
+            })(),
+            // v12.61 — نسخ المنتج (تجريبي): تُحفظ النسخ المكتملة فقط (اسم + سعر > 0)
+            variants: (() => {
+                const cleaned = variants
+                    .map(v => ({
+                        ...v,
+                        label: v.label.trim(),
+                        price: Number(v.price) || 0,
+                        qty: Number(v.qty) > 0 ? Number(v.qty) : undefined,
+                        imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
+                    }))
+                    .filter(v => v.label && v.price > 0);
                 return cleaned.length ? cleaned : undefined;
             })()
         };
@@ -2824,6 +2841,86 @@ const SellerDashboard: React.FC = () => {
                                 style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
                                 {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
                             </button>
+                        </div>
+
+                        {/* v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام
+                            لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
+                            أحجام في صفحة المنتج، والبطاقة العامة تعرض «يبدأ من». */}
+                        <div style={{ marginBottom: 20 }}>
+                            <label style={labelStyle}>{isRTL ? '🧬 نسخ المنتج بأسعار مختلفة (تجريبي — اختياري)' : '🧬 Product versions with different prices (experimental)'}</label>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
+                                {isRTL
+                                    ? '💡 إذا كانت كل المقاسات بنفس السعر فلا تحتاج هذا القسم — استخدم «اختيارات المنتج» أعلاه. أما إذا كان لكل حجم سعره الخاص (برجر صغير ١٠ / وسط ١٥ / كبير ٢٠، أو علم صغير/وسط/كبير) فأضف نسخة لكل حجم: اسم + سعر + كمية + صورة من صور العرض. المشتري يبدّل بين النسخ داخل صفحة المنتج فيتغير السعر والصورة تلقائياً.'
+                                    : '💡 If all sizes share one price you don’t need this — use “Product options” above. If each size has its OWN price (small burger 10 / medium 15 / large 20), add a version per size: name + price + qty + photo. The buyer switches versions on the product page and the price & photo follow.'}
+                            </div>
+                            {variants.map((v, vi) => (
+                                <div key={v.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: 12, marginBottom: 10, background: 'var(--gray-50)' }}>
+                                    <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            value={v.label}
+                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, label: e.target.value } : x))}
+                                            placeholder={isRTL ? `النسخة ${vi + 1} (مثل: صغير)` : `Version ${vi + 1} (e.g. Small)`}
+                                            style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
+                                        />
+                                        <input
+                                            type="number" min={0} step="any" inputMode="decimal"
+                                            value={v.price || ''}
+                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
+                                            placeholder={isRTL ? 'السعر ر.س' : 'Price'}
+                                            title={isRTL ? 'سعر هذه النسخة بعد الخصم' : 'This version’s discounted price'}
+                                            style={{ width: 84, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                        />
+                                        <input
+                                            type="number" min={0}
+                                            value={v.qty ?? ''}
+                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
+                                            placeholder={isRTL ? 'الكمية' : 'Qty'}
+                                            title={isRTL ? 'كمية هذه النسخة — فارغة = تتبع كمية العرض' : 'Qty for this version — empty = follows deal qty'}
+                                            style={{ width: 66, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                        />
+                                        <button type="button"
+                                            onClick={() => setVariants(prev => prev.filter((_, i) => i !== vi))}
+                                            aria-label={isRTL ? 'حذف النسخة' : 'Delete version'}
+                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 10px', alignSelf: 'stretch', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <select
+                                            value={v.gender || 'all'}
+                                            onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, gender: e.target.value === 'all' ? undefined : e.target.value as GenderTarget } : x))}
+                                            title={isRTL ? 'الفئة المستهدفة لهذه النسخة' : 'Audience for this version'}
+                                            style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.74rem', fontWeight: 800 }}>
+                                            {GENDERS.map(g => <option key={g.id} value={g.id}>{g.emoji} {isRTL ? g.ar : g.en}</option>)}
+                                        </select>
+                                        {images.length > 0 && (
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'صورتها:' : 'Photo:'}</span>
+                                                {images.map((img, ii) => (
+                                                    <img key={ii} src={img} alt=""
+                                                        onClick={() => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, imageIndex: x.imageIndex === ii ? undefined : ii } : x))}
+                                                        style={{
+                                                            width: 34, height: 34, borderRadius: 8, objectFit: 'cover', cursor: 'pointer',
+                                                            border: v.imageIndex === ii ? '2.5px solid var(--primary)' : '2px solid var(--border-color)',
+                                                            opacity: v.imageIndex === undefined || v.imageIndex === ii ? 1 : 0.45,
+                                                        }} />
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            <button type="button"
+                                onClick={() => setVariants(prev => [...prev, { id: `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, label: '', price: 0 }])}
+                                style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
+                                {isRTL ? '➕ إضافة نسخة (مثال: صغير / وسط / كبير)' : '➕ Add a version (e.g. Small / Medium / Large)'}
+                            </button>
+                            {variants.length > 0 && (
+                                <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
+                                    {isRTL
+                                        ? '📌 بطاقة العرض في الصفحات العامة ستعرض «يبدأ من أقل سعر» مع شارة «عدة خيارات» — وداخل صفحة المنتج يختار المشتري النسخة قبل الحجز ويتغير السعر والصورة مباشرة.'
+                                        : '📌 Public cards show “From <lowest price>” with a small versions badge — inside the product page the buyer picks a version and price & photo follow.'}
+                                </div>
+                            )}
                         </div>
 
                         {discount > 0 && <div style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#b91c1c', padding: '10px', borderRadius: 12, textAlign: 'center', fontWeight: 900, marginBottom: 20 }}>{isRTL ? `خصم ${discount}% 🔥` : `Discount ${discount}% 🔥`}</div>}
