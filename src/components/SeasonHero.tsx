@@ -21,7 +21,7 @@ const SeasonHero: React.FC = () => {
             <div className="season-hero-emoji" aria-hidden>{season.emoji}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="season-hero-title">
-                    {isRTL ? `عروض ${season.ar}` : `${season.en} Deals`}
+                    {isRTL ? `عروض ${season.ar} الحصرية` : `Exclusive ${season.en} Deals`}
                 </div>
                 <div className="season-hero-tagline">
                     {isRTL ? season.taglineAr : season.taglineEn}

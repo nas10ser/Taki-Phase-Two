@@ -12,7 +12,7 @@ const CAT = {
     Butcher: { ar: 'ملحمة', e: '🥩' }, Sanitary: { ar: 'أدوات صحية', e: '🚿' }, Cafe: { ar: 'مقاهي', e: '☕' },
     Home: { ar: 'منزل وديكور', e: '🏠' }, Hotels: { ar: 'فنادق', e: '🏨' }, CarRentals: { ar: 'تأجير سيارات', e: '🚗' },
     Laundry: { ar: 'مغسلة ملابس', e: '🧺' }, MensTailor: { ar: 'خياطة رجالية', e: '🧵' }, WomensTailor: { ar: 'مشغل نسائي', e: '🪡' },
-    CarWash: { ar: 'غسيل سيارات', e: '🧽' }, CarWorkshop: { ar: 'ورش سيارات', e: '🔧' }, Amusements: { ar: 'ملاهي', e: '🎡' },
+    CarWash: { ar: 'غسيل سيارات', e: '🧽' }, CarWorkshop: { ar: 'مستلزمات وورش السيارات', e: '🔧' }, Amusements: { ar: 'ملاهي', e: '🎡' },
     Gym: { ar: 'نادي رياضي', e: '🏋️' }, Library: { ar: 'مكتبة', e: '📚' }, Nursery: { ar: 'مشاتل', e: '🌱' },
     Pharmacy: { ar: 'صيدلية', e: '💊' }, Clinics: { ar: 'عيادات', e: '🩺' }, Online: { ar: 'أونلاين', e: '🌐' }, Other: { ar: 'أخرى', e: '✨' },
 };

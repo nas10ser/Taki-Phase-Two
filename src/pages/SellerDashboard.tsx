@@ -2500,27 +2500,32 @@ const SellerDashboard: React.FC = () => {
                                         if (diff <= 0) return null;
                                         const days = Math.floor(diff / 86400000);
                                         const hours = Math.floor((diff / 3600000) % 24);
-                                        // v12.59: لا نافذة ٧ أيام بعد الآن — العرض المجدول يظهر
-                                        // فوراً في «العروض القادمة» (وصفحة الموسم إن اختير موسم)
-                                        // مقفلاً بعدّاد حتى موعد انطلاقه.
+                                        // v12.60 (قاعدة ناصر المتفق عليها): العرض المجدول يظهر
+                                        // للجمهور — في كل الصفحات بما فيها صفحة الموسم — فقط
+                                        // عندما يبقى ≤٧ أيام على انطلاقه، مقفلاً بعدّاد.
+                                        const inWindow = diff <= 7 * 24 * 60 * 60 * 1000;
                                         return (
                                             <div style={{
                                                 marginTop: 8,
                                                 padding: '10px 12px',
                                                 borderRadius: 10,
-                                                background: 'rgba(99,102,241,0.12)',
-                                                border: '1px solid rgba(99,102,241,0.35)',
+                                                background: inWindow ? 'rgba(99,102,241,0.12)' : 'var(--gold-soft)',
+                                                border: inWindow ? '1px solid rgba(99,102,241,0.35)' : '1px solid var(--gold-border)',
                                                 color: 'var(--text-primary)',
                                                 fontSize: '0.78rem',
                                                 fontWeight: 700,
                                                 lineHeight: 1.5,
                                                 display: 'flex', gap: 8, alignItems: 'flex-start'
                                             }}>
-                                                <span style={{ fontSize: '1rem' }}>⏳</span>
+                                                <span style={{ fontSize: '1rem' }}>{inWindow ? '⏳' : '📅'}</span>
                                                 <span>
                                                     {isRTL
-                                                        ? `سيظهر العرض فوراً في "العروض القادمة" مقفلاً بعدّاد، ويفتح للحجز خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
-                                                        : `Appears in Coming Soon right away (locked, with countdown) — opens for booking in ${days > 0 ? days + 'd ' : ''}${hours}h`}
+                                                        ? (inWindow
+                                                            ? `سيظهر العرض في "العروض القادمة" مقفلاً بعدّاد، ويفتح للحجز خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
+                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days - 7} يوماً للظهور).`)
+                                                        : (inWindow
+                                                            ? `Will appear in Coming Soon (locked, with countdown) — opens for booking in ${days > 0 ? days + 'd ' : ''}${hours}h`
+                                                            : `Saved & scheduled. Visible to buyers 7 days before launch (${days - 7} days until visible).`)}
                                                 </span>
                                             </div>
                                         );
@@ -2635,10 +2640,11 @@ const SellerDashboard: React.FC = () => {
                         {/* v11.20 — Coming Soon scheduling. Toggle is OFF by
                             default; turning it ON reveals the datetime picker
                             with a floor of "10 min from now" and no upper cap
-                            (v11.21). The deal saves with a future startsAt and
-                            surfaces IMMEDIATELY (v12.59 — no 7-day hiding) as a
-                            locked card with a live countdown until startsAt
-                            passes and bookings open automatically. */}
+                            (v11.21). The deal saves with a future startsAt,
+                            stays HIDDEN from buyers until 7 days before launch
+                            (v12.60 — Nasser's rule, ALL surfaces incl. the
+                            season page), then surfaces locked with a countdown
+                            until startsAt passes and bookings open. */}
                         {/* v12.48 — «حملة الموسم»: يظهر فقط عندما يفتح المالك نافذة
                             التجار (أو لعرض موسوم سابقاً كي يستطيع التاجر إزالة وسمه).
                             الوسم = العرض يظهر في صفحة عروض الموسم الحصرية /seasonal. */}
@@ -2711,15 +2717,15 @@ const SellerDashboard: React.FC = () => {
                         })()}
 
                         {/* v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن،
-                            المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري،
-                            وكمية لكل خيار (فارغة = مفتوحة). تُخصم كميات الخيارات آلياً
-                            من حجوزات المشترين (حارس في القاعدة). */}
+                            المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري.
+                            v12.60 — لكل خيار «سعر إضافي» اختياري يُضاف تلقائياً لمبلغ
+                            الحجز النهائي (بدل سقف الكمية الملغى). */}
                         <div style={{ marginBottom: 20 }}>
                             <label style={labelStyle}>{isRTL ? '🧩 اختيارات المنتج (اختياري)' : '🧩 Product options (optional)'}</label>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.5 }}>
                                 {isRTL
-                                    ? 'مثال: مقهى يضيف قسم «نوع البن» بخيارات، أو محل ملابس يضيف «المقاس» ويحدد كمية كل مقاس. المشتري يختار عند الحجز.'
-                                    : 'e.g. a café adds a “Beans type” group, a clothing store adds “Size” with per-size stock.'}
+                                    ? 'مثال: مطعم يضيف قسم «الإضافات» وفيه «جبنة +٣ ر.س» — يُضاف السعر تلقائياً لمبلغ الحجز. المشتري يختار عند الحجز.'
+                                    : 'e.g. a restaurant adds an “Extras” group with “Cheese +3 SAR” — the add-on price joins the booking total automatically.'}
                             </div>
                             {optionGroups.map((g, gi) => (
                                 <div key={g.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: '12px', marginBottom: 10, background: 'var(--gray-50)' }}>
@@ -2787,11 +2793,13 @@ const SellerDashboard: React.FC = () => {
                                             <input
                                                 type="number"
                                                 min={0}
-                                                value={c.qty ?? ''}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
-                                                placeholder={isRTL ? 'الكمية' : 'Qty'}
-                                                title={isRTL ? 'كمية هذا الخيار — اتركها فارغة لتكون مفتوحة' : 'Stock for this choice — empty = unlimited'}
-                                                style={{ width: 76, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                                step="any"
+                                                inputMode="decimal"
+                                                value={c.price ?? ''}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
+                                                placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
+                                                title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
+                                                style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                             <button type="button"
                                                 onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
@@ -2806,8 +2814,8 @@ const SellerDashboard: React.FC = () => {
                                     </button>
                                     <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
                                         {isRTL
-                                            ? '📌 «الكمية» لكل خيار = كم قطعة متاحة منه (مثال: مقاس L = ٣). فارغة = مفتوحة بلا سقف. عند تحديدها: يرى المشتري «متبقي N»، وكل حجز يخصمها من كمية الخيار ومن الكمية الإجمالية للعرض معاً، وتخضع لـ«حدود الحجز للمشتري» في الأعلى (الحد الأقصى للقطع في الحجز الواحد).'
-                                            : '📌 Per-choice qty = available pieces of that choice. Empty = unlimited. Bookings deduct it from BOTH the choice and the deal total, and respect the buyer booking limits above.'}
+                                            ? '📌 «+ سعر ر.س» = مبلغ إضافي يُضاف تلقائياً لمبلغ الحجز النهائي عند اختيار هذا الخيار (مثال: جبنة +٣ ر.س → حجز بـ١٠ يصبح ١٣). اتركه فارغاً إذا كان الخيار بدون تكلفة إضافية — ويرى المشتري السعر بجانب الخيار قبل تأكيد الحجز.'
+                                            : '📌 “+ SAR” = an add-on amount joined automatically to the final booking total when this choice is picked (e.g. cheese +3 → a 10 SAR booking becomes 13). Leave empty for no extra cost — the buyer sees the price next to the choice before confirming.'}
                                     </div>
                                 </div>
                             ))}

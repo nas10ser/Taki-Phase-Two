@@ -471,15 +471,10 @@ const DealDetails: React.FC = () => {
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
-    // v12.53 — «اختيارات المنتج»: اختيارات المشتري {قسم → {خيار → كمية}} +
-    // المحجوز سابقاً من كل خيار مسقوف (لعرض «متبقي N» وتعطيل النافد)
+    // v12.53 — «اختيارات المنتج»: اختيارات المشتري {قسم → {خيار → كمية}}.
+    // v12.60 — سقوف كميات الخيارات أُلغيت؛ الخيار قد يحمل «سعراً إضافياً»
+    // يُضاف تلقائياً لمبلغ الحجز النهائي (جبنة +٣ ر.س → 10 تصبح 13).
     const [optSel, setOptSel] = useState<Record<string, Record<string, number>>>({});
-    const [optUsage, setOptUsage] = useState<Record<string, number>>({});
-    /** المتبقي من خيار مسقوف (undefined = مفتوح بلا سقف) */
-    const optRemaining = (g: string, c: string, cap?: number): number | undefined => {
-        if (!cap || cap <= 0) return undefined;
-        return Math.max(0, cap - (optUsage[`${g}:${c}`] || 0));
-    };
     const [manualCode, setManualCode] = useState('');
     const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
     const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
@@ -492,24 +487,31 @@ const DealDetails: React.FC = () => {
     const isRTL = language === 'ar';
     const deal = deals.find(d => d.id === id);
 
-    // v12.53 — عند فتح ورقة الحجز لعرضٍ له اختيارات: صفّر الاختيارات واجلب
-    // المحجوز من كل خيار مسقوف (بعد تعريف deal — فخ TDZ v10.61)
+    // v12.53 — عند فتح ورقة الحجز لعرضٍ له اختيارات: صفّر الاختيارات
+    // (v12.60: لا جلب لاستهلاك الكميات — السقوف أُلغيت).
     useEffect(() => {
         if (!showBookingModal || !deal?.options?.length) return;
         setOptSel({});
-        let alive = true;
-        (async () => {
-            try {
-                const { supabase } = await import('../services/supabaseClient');
-                const { data } = await supabase.rpc('deal_option_usage', { p_deal_id: deal.id });
-                if (!alive || !Array.isArray(data)) return;
-                const m: Record<string, number> = {};
-                data.forEach((r: any) => { m[`${r.g}:${r.c}`] = Number(r.booked) || 0; });
-                setOptUsage(m);
-            } catch { /* حارس القاعدة يفرض السقف على أي حال */ }
-        })();
-        return () => { alive = false; };
     }, [showBookingModal, deal?.id, deal?.options?.length]);
+
+    // v12.60 — مجموع الأسعار الإضافية للاختيارات المحددة (سعر الخيار × كميته)
+    const optAddOnTotal = useMemo(() => {
+        if (!deal?.options?.length) return 0;
+        let sum = 0;
+        for (const grp of deal.options) {
+            const sel = optSel[grp.id] || {};
+            for (const [cid, q] of Object.entries(sel)) {
+                if (!q || q <= 0) continue;
+                const price = grp.choices.find(c => c.id === cid)?.price || 0;
+                if (price > 0) sum += price * q;
+            }
+        }
+        return Math.round(sum * 100) / 100;
+    }, [deal?.options, optSel]);
+    /** مبلغ الحجز النهائي: سعر العرض × الكمية + الإضافات */
+    const bookingTotal = deal
+        ? Math.round((deal.discountedPrice * selectedQuantity + optAddOnTotal) * 100) / 100
+        : 0;
 
     // v12.54 — ربط كميات الخيارات بالكمية الإجمالية (طلب ناصر): مجموع كميات
     // الأقسام متعددة الاختيار = عدد القطع المحجوزة، فيُخصم من مخزون العرض
@@ -725,9 +727,10 @@ const DealDetails: React.FC = () => {
             } catch { /* التريغر في القاعدة يفرض الحدود على أي حال */ }
         }
 
-        // v12.53 — «اختيارات المنتج»: تحقق من الأقسام المطلوبة وسقوف الكميات،
-        // ثم ابنِ نص الاختيارات داخل الملاحظات (يراه التاجر في كل الواجهات
-        // والبوتات بلا أي تغيير إضافي) + النسخة المهيكلة لحارس المخزون.
+        // v12.53 — «اختيارات المنتج»: تحقق من الأقسام المطلوبة، ثم ابنِ نص
+        // الاختيارات داخل الملاحظات (يراه التاجر في كل الواجهات والبوتات بلا
+        // أي تغيير إضافي). v12.60: كل خيار له «سعر إضافي» يظهر في السطر
+        // ويدخل في سطر «الإجمالي» — سقوف الكميات أُلغيت.
         let selectedOptions: Array<{ g: string; c: string; qty?: number }> | undefined;
         let notesWithOptions = bookingNotes;
         if (deal.options?.length) {
@@ -744,21 +747,20 @@ const DealDetails: React.FC = () => {
                 for (const [cid, q] of chosen) {
                     const choice = grp.choices.find(c => c.id === cid);
                     if (!choice) continue;
-                    const rem = optRemaining(grp.id, cid, choice.qty);
-                    if (rem !== undefined && q > rem) {
-                        customAlert(isRTL
-                            ? `⛔ «${choice.label}» متبقٍ منه ${rem} فقط — خفّف الكمية أو اختر غيره.`
-                            : `⛔ Only ${rem} left of "${choice.label}".`);
-                        return;
-                    }
                     sels.push({ g: grp.id, c: cid, qty: q });
-                    parts.push(q > 1 ? `${choice.label} ×${q}` : choice.label);
+                    const priceTag = (choice.price || 0) > 0 ? ` (+${choice.price} ${isRTL ? 'ر.س' : 'SAR'})` : '';
+                    parts.push(`${choice.label}${priceTag}${q > 1 ? ` ×${q}` : ''}`);
                 }
                 if (parts.length) lines.push(`${grp.title}: ${parts.join('، ')}`);
             }
             if (sels.length) {
                 selectedOptions = sels;
-                const optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
+                let optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
+                if (optAddOnTotal > 0) {
+                    optText += `\n💰 ${isRTL
+                        ? `الإجمالي مع الإضافات: ${bookingTotal} ر.س (${deal.discountedPrice * selectedQuantity} + ${optAddOnTotal} إضافات)`
+                        : `Total incl. add-ons: ${bookingTotal} SAR (${deal.discountedPrice * selectedQuantity} + ${optAddOnTotal} extras)`}`;
+                }
                 notesWithOptions = bookingNotes.trim() ? `${optText}\n${bookingNotes}` : optText;
             }
         }
@@ -1579,8 +1581,8 @@ const DealDetails: React.FC = () => {
                                         style={{ opacity: 0.55, cursor: 'not-allowed' }}
                                     >
                                         {isRTL
-                                            ? `🔒 احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س`
-                                            : `🔒 Book Now — ${deal.discountedPrice * selectedQuantity} SAR`}
+                                            ? `🔒 احجز الآن — ${bookingTotal} ر.س`
+                                            : `🔒 Book Now — ${bookingTotal} SAR`}
                                     </button>
                                 </div>
                             ) : shopClosed && !booked ? (
@@ -1623,7 +1625,7 @@ const DealDetails: React.FC = () => {
                                             ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
                                             : isSoldOut
                                                 ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                                : (isRTL ? `🎟️ احجز الآن — ${deal.discountedPrice * selectedQuantity} ر.س` : `🎟️ Book Now — ${deal.discountedPrice * selectedQuantity} SAR`)}
+                                                : (isRTL ? `🎟️ احجز الآن — ${bookingTotal} ر.س` : `🎟️ Book Now — ${bookingTotal} SAR`)}
                                     </button>
                                 </>
                             )}
@@ -1656,7 +1658,7 @@ const DealDetails: React.FC = () => {
                                 <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>{deal.itemName}</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 900 }}>★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')}</span>
-                                    <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 900 }}>{deal.discountedPrice * selectedQuantity} ر.س</span>
+                                    <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 900 }}>{bookingTotal} ر.س</span>
                                 </div>
                             </div>
                             {/* Merchant Avatar for Trust */}
@@ -1685,12 +1687,10 @@ const DealDetails: React.FC = () => {
                                         </span>
                                     </div>
                                     {grp.choices.map(choice => {
-                                        const rem = optRemaining(grp.id, choice.id, choice.qty);
-                                        const soldOut = rem !== undefined && rem <= 0;
                                         const qty = sel[choice.id] || 0;
                                         const picked = qty > 0;
+                                        const addOn = choice.price || 0;
                                         const toggle = () => {
-                                            if (soldOut) return;
                                             setOptSel(prev => {
                                                 const cur = { ...(prev[grp.id] || {}) };
                                                 if (grp.mode === 'single') {
@@ -1702,10 +1702,9 @@ const DealDetails: React.FC = () => {
                                             });
                                         };
                                         const setQty = (q: number) => {
-                                            const capped = rem !== undefined ? Math.min(q, rem) : q;
                                             setOptSel(prev => {
                                                 const cur = { ...(prev[grp.id] || {}) };
-                                                if (capped <= 0) delete cur[choice.id]; else cur[choice.id] = capped;
+                                                if (q <= 0) delete cur[choice.id]; else cur[choice.id] = q;
                                                 return { ...prev, [grp.id]: cur };
                                             });
                                         };
@@ -1713,15 +1712,15 @@ const DealDetails: React.FC = () => {
                                             <div key={choice.id}
                                                 role={grp.mode === 'single' ? 'radio' : 'checkbox'}
                                                 aria-checked={picked}
-                                                tabIndex={soldOut ? -1 : 0}
+                                                tabIndex={0}
                                                 onClick={toggle}
                                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
                                                 style={{
                                                     display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                                                    borderRadius: 14, marginBottom: 8, cursor: soldOut ? 'not-allowed' : 'pointer',
+                                                    borderRadius: 14, marginBottom: 8, cursor: 'pointer',
                                                     border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
                                                     background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
-                                                    opacity: soldOut ? 0.45 : 1, transition: 'all 0.15s ease',
+                                                    transition: 'all 0.15s ease',
                                                     WebkitTapHighlightColor: 'transparent',
                                                 }}>
                                                 <div style={{
@@ -1734,20 +1733,25 @@ const DealDetails: React.FC = () => {
                                                 }}>{picked && grp.mode === 'multi' ? '✓' : ''}</div>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{choice.label}</div>
-                                                    {rem !== undefined && (
-                                                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: soldOut ? 'var(--danger)' : 'var(--text-secondary)', marginTop: 2 }}>
-                                                            {soldOut ? (isRTL ? 'نفدت الكمية' : 'Sold out') : (isRTL ? `متبقي ${rem}` : `${rem} left`)}
-                                                        </div>
-                                                    )}
                                                 </div>
+                                                {/* v12.60 — السعر الإضافي للخيار: يظهر قبل التأكيد ويُضاف للمبلغ */}
+                                                {addOn > 0 && (
+                                                    <span style={{
+                                                        fontSize: '0.76rem', fontWeight: 900, flexShrink: 0,
+                                                        color: picked ? 'var(--primary)' : 'var(--text-secondary)',
+                                                        background: picked ? 'var(--primary-light)' : 'var(--gray-100)',
+                                                        borderRadius: 999, padding: '4px 10px',
+                                                    }}>
+                                                        +{addOn} {isRTL ? 'ر.س' : 'SAR'}
+                                                    </span>
+                                                )}
                                                 {grp.mode === 'multi' && picked && (
                                                     <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                         <button type="button" onClick={() => setQty(qty - 1)}
                                                             style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>−</button>
                                                         <span style={{ fontWeight: 900, minWidth: 18, textAlign: 'center', color: 'var(--text-primary)' }}>{qty}</span>
                                                         <button type="button" onClick={() => setQty(qty + 1)}
-                                                            disabled={rem !== undefined && qty >= rem}
-                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer', opacity: rem !== undefined && qty >= rem ? 0.4 : 1 }}>+</button>
+                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>+</button>
                                                     </div>
                                                 )}
                                             </div>
@@ -1803,7 +1807,15 @@ const DealDetails: React.FC = () => {
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 16, border: '2px solid var(--gray-200)' }}>
                                 <span style={{ fontWeight: 800 }}>{isRTL ? 'إجمالي الدفع عند الاستلام:' : 'Pay at Pickup Total:'}</span>
-                                <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>{deal.discountedPrice * selectedQuantity} ر.س</span>
+                                <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>
+                                    {bookingTotal} ر.س
+                                    {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}
+                                    {optAddOnTotal > 0 && (
+                                        <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
+                                            {isRTL ? `منها إضافات: +${optAddOnTotal} ر.س` : `incl. add-ons: +${optAddOnTotal} SAR`}
+                                        </span>
+                                    )}
+                                </span>
                         </div>
 
                         <div style={{

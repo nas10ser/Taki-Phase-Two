@@ -99,10 +99,14 @@ export interface Booking {
 }
 
 // v12.53 — «اختيارات المنتج» (نوع البن، المقاسات، تفضيلات…)
+// v12.60 — «سعر إضافي» بدل كميات الخيارات (طلب ناصر): كل خيار قد يضيف
+// مبلغاً على سعر الحجز النهائي (برجر + جبنة ‎+3 ر.س → 10 تصبح 13).
 export interface DealOptionChoice {
     id: string;
     label: string;
-    /** كمية متاحة لهذا الخيار — غير محدد/0 = مفتوحة بلا سقف */
+    /** سعر إضافي بالريال يُضاف للمبلغ النهائي عند اختياره — غير محدد/0 = بلا إضافة */
+    price?: number;
+    /** @deprecated v12.60 — سقف الكمية أُلغي؛ يبقى في بيانات العروض القديمة ويُتجاهل */
     qty?: number;
 }
 export interface DealOptionGroup {
@@ -210,7 +214,7 @@ export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: 
     { id: 'MensTailor', ar: 'خياطة رجالية', en: "Men's Tailor", emoji: '🧵' },
     { id: 'WomensTailor', ar: 'مشغل نسائي', en: "Women's Tailor", emoji: '🪡' },
     { id: 'CarWash', ar: 'مغسلة سيارات', en: 'Car Wash', emoji: '🧽' },
-    { id: 'CarWorkshop', ar: 'ورش سيارات', en: 'Car Workshops', emoji: '🔧' },
+    { id: 'CarWorkshop', ar: 'مستلزمات وورش السيارات', en: 'Car Parts & Workshops', emoji: '🔧' },
     { id: 'Amusements', ar: 'ملاهي ألعاب', en: 'Amusements', emoji: '🎡' },
     { id: 'Gym', ar: 'نادي رياضي', en: 'Gym', emoji: '🏋️' },
     { id: 'Library', ar: 'مكتبة', en: 'Library', emoji: '📚' },

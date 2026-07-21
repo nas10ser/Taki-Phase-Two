@@ -289,14 +289,14 @@ export const interleaveSponsored = (
 };
 
 // =========================================================================
-// Coming Soon (v11.20, reworked v12.59) — A scheduled deal has two phases:
-//   1. Coming Soon  — startsAt > now  (visible everywhere, locked + countdown)
-//   2. Live         — startsAt ≤ now  (normal active deal)
-// v12.59 (Nasser): the old 7-day "hidden prep" phase is GONE — a scheduled
-// deal must appear in «العروض القادمة» and on the season page the moment
-// it's saved, however far out its start date is.
+// Coming Soon (v11.20, re-confirmed v12.60) — Nasser's agreed rule, on
+// EVERY public surface (Home rail, DealsList, season page alike):
+//   1. Hidden       — startsAt > now + 7 days   (only the merchant sees it)
+//   2. Coming Soon  — now < startsAt ≤ now + 7d  (locked + countdown)
+//   3. Live         — startsAt ≤ now             (normal active deal)
 // `null/undefined` startsAt = legacy behavior (always live from createdAt).
 // =========================================================================
+export const COMING_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;   // 7 days
 export const COMING_SOON_URGENT_MS = 4 * 60 * 60 * 1000;        // 4 hours
 
 /** True if the deal has a future startsAt — i.e. not yet bookable. */
@@ -304,11 +304,13 @@ export const isDealComingSoon = (deal: Deal): boolean => {
     return typeof deal.startsAt === 'number' && deal.startsAt > Date.now();
 };
 
-/** True if the deal should render as a locked coming-soon card (Home rail,
- *  DealsList filter, season page). v12.59: the whole scheduled period —
- *  no more 7-day visibility gate. */
+/** True if the deal is in its public 7-day countdown window — the agreed
+ *  rule for ALL public listings (Home rail, DealsList, season page): a
+ *  scheduled deal only surfaces once ≤7 days remain to launch. */
 export const isDealVisibleComingSoon = (deal: Deal): boolean => {
-    return isDealComingSoon(deal);
+    if (typeof deal.startsAt !== 'number') return false;
+    const now = Date.now();
+    return deal.startsAt > now && deal.startsAt <= now + COMING_SOON_WINDOW_MS;
 };
 
 /** True if the deal is in the last 4 hours of its coming-soon window

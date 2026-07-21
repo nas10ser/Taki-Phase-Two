@@ -5,7 +5,7 @@ import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
 import { getSeasonById, campaignPublicLive, campaignSellerOpen } from '../data/seasons';
-import { isDealComingSoon, isDealExpiredByTime, getAuthenticityBadge } from '../utils/helpers';
+import { isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, getAuthenticityBadge } from '../utils/helpers';
 import { useNowTick } from '../utils/useNowTick';
 import { getShopStatus } from '../utils/workingHours';
 import { dealService } from '../services/dealService';
@@ -102,15 +102,16 @@ const SeasonalOffers: React.FC = () => {
         return list;
     }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, openNow, verifiedOnly, searchQuery, sortBy, storeProfiles, isRTL, sellerPreviewOwnOnly, user?.id]);
 
-    // v12.59 (طلب ناصر) — العروض الموسمية المجدولة تظهر من لحظة حفظها في قسم
-    // «عروض قادمة» بقفل وعدّاد (DealCard يرسمهما تلقائياً لأي عرض startsAt
-    // مستقبلي). الأقرب انطلاقاً أولاً. فلاتر «المفتوحة الآن/حقيقية/البحث» تخص
+    // v12.59-60 (قاعدة ناصر المتفق عليها) — قسم «عروض قادمة» في صفحة الموسم
+    // يعرض العرض المجدول فقط عندما يبقى ≤٧ أيام على انطلاقه (نفس قاعدة كل
+    // العروض العامة — isDealVisibleComingSoon)، بقفل وعدّاد يرسمهما DealCard
+    // تلقائياً. الأقرب انطلاقاً أولاً. فلاتر «المفتوحة الآن/حقيقية/البحث» تخص
     // الحجز الفوري فلا تُطبَّق هنا — التصنيف والفئة يُطبَّقان.
     const comingSeasonDeals = useMemo(() => {
         if (!camp) return [];
         let list = deals.filter(d => d.seasonId === camp.seasonId
             && d.status === 'active'
-            && isDealComingSoon(d)
+            && isDealVisibleComingSoon(d)
             && hasStock(d)
             && !blockedMerchants.includes(d.storeId));
         if (sellerPreviewOwnOnly && user) list = list.filter(d => d.storeId === user.id);
@@ -153,7 +154,7 @@ const SeasonalOffers: React.FC = () => {
                 </button>
                 <div style={{ fontSize: '3rem', lineHeight: 1, marginBottom: 10, filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.35))' }}>{season.emoji}</div>
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 6, textShadow: '0 2px 8px rgba(0,0,0,0.25)' }}>
-                    {isRTL ? `عروض ${season.ar}` : `${season.en} Deals`}
+                    {isRTL ? `عروض ${season.ar} الحصرية` : `Exclusive ${season.en} Deals`}
                 </h1>
                 <p style={{ fontSize: '0.82rem', fontWeight: 600, opacity: 0.94, maxWidth: 420, margin: '0 auto', lineHeight: 1.6 }}>
                     {isRTL ? season.taglineAr : season.taglineEn}

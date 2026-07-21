@@ -176,10 +176,10 @@ const Home: React.FC = () => {
     }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
 
     // v11.20 — Coming Soon carousel. Same look as trending/discount, but
-    // ONLY deals whose startsAt is in the future (v12.59: the whole
-    // scheduled period — the old 7-day visibility gate is gone). Same
-    // proximity/location ranking so the section respects the user's
-    // region/city/home filter.
+    // ONLY deals whose startsAt is in the future AND ≤7 days out — Nasser's
+    // agreed rule for general listings (v12.60; the season page is the one
+    // surface that previews further-out deals). Same proximity/location
+    // ranking so the section respects the user's region/city/home filter.
     const comingSoonDeals = useMemo(() => {
         const base = deals.filter(d => d.status === 'active' && isDealVisibleComingSoon(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
         const list = useProximity ? base.slice() : applyLocationFilter(base);

@@ -62,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         if (campSeason && canSee) {
             menuItems.push({
                 id: 'seasonal', icon: campSeason.emoji,
-                ar: `عروض ${campSeason.ar}`, en: `${campSeason.en} Deals`,
+                ar: `عروض ${campSeason.ar} الحصرية`, en: `Exclusive ${campSeason.en} Deals`,
                 path: '/seasonal',
             });
         }
