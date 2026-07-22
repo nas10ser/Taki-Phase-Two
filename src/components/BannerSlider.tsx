@@ -206,12 +206,16 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                             banner.contest?.banner_image ? (
                                 // Owner-uploaded contest banner image + a light CTA overlay. (v11.49)
                                 <>
+                                    {/* v12.74 — eager للجميع: الشرائح المستنسخة كانت lazy،
+                                        فعند كل دورة كاملة ينزلق الشريط لنسخة لم تُحمَّل
+                                        صورتها بعد ويظهر التدرج جزءاً من الثانية (وميض
+                                        «يختفي ويرجع» — بلاغ ناصر). العدد صغير فلا كلفة. */}
                                     <img
                                         src={banner.contest.banner_image}
                                         alt={banner.contest?.title || 'مسابقة'}
                                         width={1200}
                                         height={480}
-                                        loading={idx <= 1 ? 'eager' : 'lazy'}
+                                        loading="eager"
                                         decoding="async"
                                         draggable={false}
                                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -253,7 +257,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                                     alt={isRTL ? banner.title_ar : banner.title_en}
                                     width={1200}
                                     height={480}
-                                    loading={idx <= 1 ? 'eager' : 'lazy'}
+                                    loading="eager"
                                     decoding="async"
                                     draggable={false}
                                     {...(idx === 1 ? { fetchpriority: 'high' as 'high' } : {})}

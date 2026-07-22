@@ -1065,14 +1065,6 @@ const SellerDashboard: React.FC = () => {
         setGoogleMapsLink('');
         setLastResolvedLink('');
     };
-    const adoptLocationFromDeal = (d: Deal) => adoptLocationChip({
-        locationId: d.locationId,
-        regionId: d.region,
-        cityId: d.city,
-        lat: d.mapLocation?.lat,
-        lng: d.mapLocation?.lng,
-    });
-
     // Delete confirmation for a saved branch (the X button on a chip).
     // Optimistic — context drops it from `branches` immediately and rolls
     // back if the DB delete fails.
@@ -3244,9 +3236,11 @@ const SellerDashboard: React.FC = () => {
                             )}
 
                             {/* Renewal banner: the seller hit "تجديد" on an expired
-                                deal that used a now-deleted location slot. Show the
-                                3 current locations as one-tap chips so they can
-                                reassign without navigating away. */}
+                                deal that used a now-deleted/over-cap location.
+                                v12.74 — نص إرشادي فقط بلا شرائح: كانت شرائحه تحل محل
+                                صندوق «مواقعك» فيتبادلان الظهور والاختفاء مع كل نقرة
+                                (بلاغ ناصر) — الآن الصندوق ثابت دائماً والبانر يظهر
+                                فوقه كتحذير فقط ما دام الموقع المختار غير صالح. */}
                             {editingFromDeletedLocation && (
                                 <div
                                     style={{
@@ -3257,38 +3251,13 @@ const SellerDashboard: React.FC = () => {
                                 >
                                     <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--secondary)', marginBottom: 4 }}>
                                         {isRTL
-                                            ? '⚠️ تم حذف لوكيشن العرض السابق'
-                                            : '⚠️ This deal\'s previous location was removed'}
+                                            ? '⚠️ موقع العرض السابق لم يعد ضمن باقتك'
+                                            : '⚠️ This deal\'s previous location is no longer on your package'}
                                     </div>
-                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 10 }}>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
                                         {isRTL
-                                            ? `انتهت كل عروض موقعه السابق فحُذفت الخانة. تم تغيير موقعك السابق — اختر أحد مواقعك الحالية (${activeLocationKeys.size}/${MAX_LOCATIONS}) لتجديد هذا العرض:`
-                                            : `All deals in its old location expired, so the slot was freed. Your previous location was reassigned — pick one of your current locations (${activeLocationKeys.size}/${MAX_LOCATIONS}) to renew this deal:`}
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {activeLocationsList.map(({ key, deal }) => (
-                                            <button
-                                                key={key}
-                                                type="button"
-                                                onClick={() => adoptLocationFromDeal(deal)}
-                                                style={{
-                                                    background: 'var(--card-bg)',
-                                                    color: 'var(--text-primary)',
-                                                    border: '1.5px solid var(--primary)',
-                                                    borderRadius: 999,
-                                                    padding: '8px 14px',
-                                                    fontSize: '0.82rem',
-                                                    fontWeight: 900,
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 6,
-                                                    WebkitTapHighlightColor: 'transparent'
-                                                }}
-                                            >
-                                                📍 {locNameOf(deal)}
-                                            </button>
-                                        ))}
+                                            ? `لتجديد هذا العرض اختر موقعاً نشطاً (🔒) من قائمة «مواقعك» بالأسفل (${activeLocationKeys.size}/${MAX_LOCATIONS} مستخدم)، ثم احفظ.`
+                                            : `To renew this deal, pick an active (🔒) location from the "Your locations" list below (${activeLocationKeys.size}/${MAX_LOCATIONS} used), then save.`}
                                     </div>
                                 </div>
                             )}
@@ -3385,10 +3354,9 @@ const SellerDashboard: React.FC = () => {
                                 from store_branches (DB-backed, X to delete) merged
                                 with active-deal locations (auto-derived, no delete).
                                 One tap adopts region+city+type+pin so the map and
-                                filters update together. Hidden during the renewal-
-                                of-deleted-slot flow because that banner already
-                                shows the same chips above. */}
-                            {mergedLocationChips.length > 0 && !editingFromDeletedLocation && (
+                                filters update together. v12.74: ثابت دائماً حتى مع
+                                بانر الموقع المحذوف — إخفاؤه كان سبب «يختفي ويظهر». */}
+                            {mergedLocationChips.length > 0 && (
                                 <div style={{
                                     background: 'var(--card-bg)',
                                     border: '1.5px solid var(--gray-200)',
