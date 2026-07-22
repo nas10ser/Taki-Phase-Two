@@ -101,9 +101,14 @@ const Bookings: React.FC = () => {
         [bookings, user?.id, searchTerm, sortOrder]
     );
 
-    // Auto-expand if only one active booking
+    // Auto-expand if only one active booking — ONCE per visit (v12.69).
+    // كان يعيد فتح الحجز النشط الوحيد بعد كل محاولة إغلاق أو نقر على حجز
+    // آخر (يتصارع مع اختيار المستخدم) — الآن يفتح تلقائياً مرة واحدة فقط.
+    const autoExpandedRef = React.useRef(false);
     useEffect(() => {
+        if (autoExpandedRef.current) return;
         if (filteredActive.length === 1 && !expandedId) {
+            autoExpandedRef.current = true;
             setExpandedId(filteredActive[0].barcode);
         }
     }, [filteredActive, expandedId]);
@@ -123,8 +128,12 @@ const Bookings: React.FC = () => {
             const el = document.getElementById(`booking-${target}`);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
-        const t = setTimeout(() => setHighlightedBarcode(null), 3500);
-        return () => clearTimeout(t);
+        setTimeout(() => setHighlightedBarcode(null), 3500);
+        // v12.69 — استهلاك رابط الإشعار مرة واحدة (سبب «يفتح لي الطلب
+        // الخطأ»): كان ?barcode يبقى في العنوان، وكل تحديث لحظي للحجوزات
+        // يعيد تشغيل هذا التأثير فيفتح ويمرر للطلب القديم ويخطف نقرة
+        // المستخدم على الطلب الآخر. الآن يُزال فور استخدامه فتُحترم النقرات.
+        history.replace('/bookings');
     }, [location.search, bookings, user?.id]);
 
     const copyCode = (code: string) => {

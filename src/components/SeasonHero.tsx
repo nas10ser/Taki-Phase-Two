@@ -1,7 +1,7 @@
 import React from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { getSeasonById, campaignPublicLive } from '../data/seasons';
+import { getSeasonById, campaignPublicLive, seasonHeroTexts } from '../data/seasons';
 
 /**
  * v12.44 — بانر «هوية الموسم» أعلى الرئيسية.
@@ -15,17 +15,16 @@ const SeasonHero: React.FC = () => {
     const season = getSeasonById(platformSettings.seasonalTheme);
     if (!season) return null;
     const isRTL = language === 'ar';
+    // v12.69 — نص البانر تحت تحكم المالك من لوحة المدير (حملة الموسم)،
+    // والفراغ = النص الافتراضي للموسم.
+    const hero = seasonHeroTexts(season, platformSettings.seasonCampaign, isRTL);
 
     return (
         <div className="season-hero animate-fade-in" dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="season-hero-emoji" aria-hidden>{season.emoji}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="season-hero-title">
-                    {isRTL ? `عروض ${season.ar} الحصرية` : `Exclusive ${season.en} Deals`}
-                </div>
-                <div className="season-hero-tagline">
-                    {isRTL ? season.taglineAr : season.taglineEn}
-                </div>
+                <div className="season-hero-title">{hero.title}</div>
+                <div className="season-hero-tagline">{hero.tagline}</div>
             </div>
             <button
                 type="button"

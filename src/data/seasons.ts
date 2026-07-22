@@ -133,6 +133,12 @@ export interface SeasonCampaign {
     sellerTo?: string;
     publicFrom?: string;
     publicTo?: string;
+    // v12.69 — نصوص البانر تحت تحكم المالك (طلب ناصر): عنوان وسطر تسويقي
+    // مخصصان لكل حملة — الفراغ = النص الافتراضي للموسم.
+    heroTitleAr?: string;
+    heroTitleEn?: string;
+    heroTaglineAr?: string;
+    heroTaglineEn?: string;
 }
 
 export const parseSeasonCampaign = (value: any): SeasonCampaign | null => {
@@ -144,7 +150,37 @@ export const parseSeasonCampaign = (value: any): SeasonCampaign | null => {
         sellerTo: typeof value.seller_to === 'string' ? value.seller_to : undefined,
         publicFrom: typeof value.public_from === 'string' ? value.public_from : undefined,
         publicTo: typeof value.public_to === 'string' ? value.public_to : undefined,
+        heroTitleAr: typeof value.hero_title_ar === 'string' ? value.hero_title_ar : undefined,
+        heroTitleEn: typeof value.hero_title_en === 'string' ? value.hero_title_en : undefined,
+        heroTaglineAr: typeof value.hero_tagline_ar === 'string' ? value.hero_tagline_ar : undefined,
+        heroTaglineEn: typeof value.hero_tagline_en === 'string' ? value.hero_tagline_en : undefined,
     };
+};
+
+/**
+ * v12.69 — نص بانر الموسم الفعلي: نص الحملة المخصص إن كتبه المالك،
+ * وإلا النص الافتراضي للموسم. تُستخدم في بانر الرئيسية وصفحة /seasonal
+ * والقائمة الجانبية معاً حتى تبقى العبارة واحدة في كل مكان.
+ */
+export const seasonHeroTexts = (
+    season: Season,
+    campaign: SeasonCampaign | null,
+    isRTL: boolean,
+): { title: string; tagline: string } => {
+    const pick = (custom: string | undefined, fallback: string): string => {
+        const t = (custom || '').trim();
+        return t ? t : fallback;
+    };
+    const c = campaign && campaign.seasonId === season.id ? campaign : null;
+    return isRTL
+        ? {
+            title: pick(c?.heroTitleAr, `عروض ${season.ar} الحصرية`),
+            tagline: pick(c?.heroTaglineAr, season.taglineAr),
+        }
+        : {
+            title: pick(c?.heroTitleEn, `Exclusive ${season.en} Deals`),
+            tagline: pick(c?.heroTaglineEn, season.taglineEn),
+        };
 };
 
 /** تاريخ اليوم المحلي بصيغة YYYY-MM-DD (جمهور المنصة سعودي — توقيت الجهاز كافٍ). */

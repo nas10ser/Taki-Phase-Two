@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
-import { getSeasonById, campaignPublicLive, campaignSellerOpen } from '../data/seasons';
+import { getSeasonById, campaignPublicLive, campaignSellerOpen, seasonHeroTexts } from '../data/seasons';
 import { isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, getAuthenticityBadge } from '../utils/helpers';
 import { useNowTick } from '../utils/useNowTick';
 import { getShopStatus } from '../utils/workingHours';
@@ -153,11 +153,12 @@ const SeasonalOffers: React.FC = () => {
                     {isRTL ? '← العودة' : '← Back'}
                 </button>
                 <div style={{ fontSize: '3rem', lineHeight: 1, marginBottom: 10, filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.35))' }}>{season.emoji}</div>
+                {/* v12.69 — النص من الحملة (تحكم المالك) والفراغ = الافتراضي */}
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 900, marginBottom: 6, textShadow: '0 2px 8px rgba(0,0,0,0.25)' }}>
-                    {isRTL ? `عروض ${season.ar} الحصرية` : `Exclusive ${season.en} Deals`}
+                    {seasonHeroTexts(season, camp, isRTL).title}
                 </h1>
                 <p style={{ fontSize: '0.82rem', fontWeight: 600, opacity: 0.94, maxWidth: 420, margin: '0 auto', lineHeight: 1.6 }}>
-                    {isRTL ? season.taglineAr : season.taglineEn}
+                    {seasonHeroTexts(season, camp, isRTL).tagline}
                 </p>
                 {camp.publicFrom && camp.publicTo && (
                     <div style={{

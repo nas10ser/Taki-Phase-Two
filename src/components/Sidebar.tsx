@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import ComplaintDialog from './ComplaintDialog';
-import { getSeasonById, campaignPublicLive, campaignSellerOpen } from '../data/seasons';
+import { getSeasonById, campaignPublicLive, campaignSellerOpen, seasonHeroTexts } from '../data/seasons';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -60,9 +60,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         const canSee = campaignPublicLive(camp)
             || (campaignSellerOpen(camp) && (user?.userType === 'seller' || user?.userType === 'admin'));
         if (campSeason && canSee) {
+            // v12.69 — نفس عبارة البانر (المخصصة أو الافتراضية) في كل مكان
             menuItems.push({
                 id: 'seasonal', icon: campSeason.emoji,
-                ar: `عروض ${campSeason.ar} الحصرية`, en: `Exclusive ${campSeason.en} Deals`,
+                ar: seasonHeroTexts(campSeason, camp, true).title,
+                en: seasonHeroTexts(campSeason, camp, false).title,
                 path: '/seasonal',
             });
         }

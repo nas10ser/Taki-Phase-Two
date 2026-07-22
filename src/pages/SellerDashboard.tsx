@@ -286,9 +286,14 @@ const SellerDashboard: React.FC = () => {
         const scrollTimer = window.setTimeout(() => {
             const el = document.getElementById(`order-${barcode}`);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // v12.69 — استهلاك رابط الإشعار مرة واحدة: أزل ?barcode من العنوان
+            // بعد أول تمرير (أو بعد اكتمال تحميل الطلبات وعدم وجوده) حتى لا
+            // يعيد كل تحديث لحظي للحجوزات التمرير للطلب القديم ويخطف تنقّل
+            // التاجر بين الطلبات.
+            if (el || bookings.length > 0) history.replace('/seller?tab=orders');
         }, 250);
-        const clearTimer = window.setTimeout(() => setHighlightedBarcode(null), 3000);
-        return () => { window.clearTimeout(scrollTimer); window.clearTimeout(clearTimer); };
+        window.setTimeout(() => setHighlightedBarcode(null), 3000);
+        return () => { window.clearTimeout(scrollTimer); };
     }, [location.search, view, bookings.length]);
 
     // Handle Edit Mode from URL — fills form fields once deals arrive.
@@ -2153,45 +2158,73 @@ const SellerDashboard: React.FC = () => {
                 (the card returns null when there's no paid subscription). */}
             {isPaymentEnabled && <SubscriptionStatusCard compact />}
 
-            {/* Pending-orders banner — appears no matter which tab the seller
-                is on, so they never miss a booking that's waiting for receipt
-                confirmation. Tap = jumps to the Orders tab where the
-                "تأكيد استلام الطلب" button is rendered per-order. */}
+            {/* v12.69 — بانران للطلبات (طلب ناصر): البرتقالي للطلبات الجديدة
+                بانتظار تأكيد الاستلام، والأزرق المخضرّ للطلبات المؤكدة بانتظار
+                «إتمام الحجز» بعد تسليمها للمشتري — يبقى ظاهراً حتى الإتمام
+                فلا ينسى التاجر إغلاق الطلب. كلاهما يقفز لتبويب الطلبات. */}
             {(() => {
+                if (view === 'orders') return null;
                 const pendingCount = myOrders.filter(b => b.status === 'pending').length;
-                if (pendingCount === 0 || view === 'orders') return null;
+                const ackCount = myOrders.filter(b => b.status === 'acknowledged').length;
+                if (pendingCount === 0 && ackCount === 0) return null;
+                const goOrders = () => { setView('orders'); history.push('/seller?tab=orders'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+                const bannerStyle = (bg: string, shadow: string): React.CSSProperties => ({
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    margin: '12px 16px 0',
+                    padding: '14px 16px',
+                    borderRadius: 16,
+                    background: bg,
+                    color: 'white',
+                    border: 'none',
+                    cursor: 'pointer',
+                    boxShadow: shadow,
+                    width: 'calc(100% - 32px)',
+                    textAlign: isRTL ? 'right' : 'left',
+                    fontFamily: 'inherit'
+                });
                 return (
-                    <button
-                        type="button"
-                        onClick={() => { setView('orders'); history.push('/seller?tab=orders'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            margin: '12px 16px 0',
-                            padding: '14px 16px',
-                            borderRadius: 16,
-                            background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                            color: 'white',
-                            border: 'none',
-                            cursor: 'pointer',
-                            boxShadow: '0 6px 18px rgba(239, 68, 68, 0.35)',
-                            width: 'calc(100% - 32px)',
-                            textAlign: isRTL ? 'right' : 'left',
-                            fontFamily: 'inherit'
-                        }}
-                    >
-                        <span style={{ fontSize: '1.6rem', flexShrink: 0 }}>🔔</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
-                                {isRTL
-                                    ? `لديك ${pendingCount} ${pendingCount === 1 ? 'طلب جديد' : pendingCount === 2 ? 'طلبان جديدان' : 'طلبات جديدة'} بانتظار تأكيدك`
-                                    : `${pendingCount} new ${pendingCount === 1 ? 'order' : 'orders'} waiting for your confirmation`}
-                            </div>
-                            <div style={{ fontSize: '0.78rem', opacity: 0.95, fontWeight: 600, marginTop: 2 }}>
-                                {isRTL ? 'اضغط لفتح قائمة الطلبات وتأكيد الاستلام' : 'Tap to open the orders list and confirm receipt'}
-                            </div>
-                        </div>
-                        <span style={{ fontSize: '1.4rem', fontWeight: 900, flexShrink: 0 }}>{isRTL ? '‹' : '›'}</span>
-                    </button>
+                    <>
+                        {pendingCount > 0 && (
+                            <button
+                                type="button"
+                                onClick={goOrders}
+                                style={bannerStyle('linear-gradient(135deg, #f59e0b, #ef4444)', '0 6px 18px rgba(239, 68, 68, 0.35)')}
+                            >
+                                <span style={{ fontSize: '1.6rem', flexShrink: 0 }}>🔔</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
+                                        {isRTL
+                                            ? `لديك ${pendingCount} ${pendingCount === 1 ? 'طلب جديد' : pendingCount === 2 ? 'طلبان جديدان' : 'طلبات جديدة'} بانتظار تأكيدك`
+                                            : `${pendingCount} new ${pendingCount === 1 ? 'order' : 'orders'} waiting for your confirmation`}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', opacity: 0.95, fontWeight: 600, marginTop: 2 }}>
+                                        {isRTL ? 'اضغط لفتح قائمة الطلبات وتأكيد الاستلام' : 'Tap to open the orders list and confirm receipt'}
+                                    </div>
+                                </div>
+                                <span style={{ fontSize: '1.4rem', fontWeight: 900, flexShrink: 0 }}>{isRTL ? '‹' : '›'}</span>
+                            </button>
+                        )}
+                        {ackCount > 0 && (
+                            <button
+                                type="button"
+                                onClick={goOrders}
+                                style={bannerStyle('linear-gradient(135deg, #0d9488, #0369a1)', '0 6px 18px rgba(13, 148, 136, 0.35)')}
+                            >
+                                <span style={{ fontSize: '1.6rem', flexShrink: 0 }}>📦</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
+                                        {isRTL
+                                            ? `لديك ${ackCount} ${ackCount === 1 ? 'طلب مؤكد' : ackCount === 2 ? 'طلبان مؤكدان' : 'طلبات مؤكدة'} بانتظار الإتمام`
+                                            : `${ackCount} confirmed ${ackCount === 1 ? 'order' : 'orders'} awaiting completion`}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', opacity: 0.95, fontWeight: 600, marginTop: 2 }}>
+                                        {isRTL ? 'بعد تسليم الطلب للمشتري اضغط «إتمام الحجز» حتى يُغلق الطلب' : 'After handing over, tap “Complete booking” to close the order'}
+                                    </div>
+                                </div>
+                                <span style={{ fontSize: '1.4rem', fontWeight: 900, flexShrink: 0 }}>{isRTL ? '‹' : '›'}</span>
+                            </button>
+                        )}
+                    </>
                 );
             })()}
 
@@ -2805,125 +2838,15 @@ const SellerDashboard: React.FC = () => {
                             );
                         })()}
 
-                        {/* v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن،
-                            المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري.
-                            v12.60 — لكل خيار «سعر إضافي» اختياري يُضاف تلقائياً لمبلغ
-                            الحجز النهائي (بدل سقف الكمية الملغى). */}
-                        <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '🧩 اختيارات المنتج (اختياري)' : '🧩 Product options (optional)'}</label>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.5 }}>
-                                {isRTL
-                                    ? 'مثال: مطعم يضيف قسم «الإضافات» وفيه «جبنة +٣ ر.س» — يُضاف السعر تلقائياً لمبلغ الحجز. المشتري يختار عند الحجز.'
-                                    : 'e.g. a restaurant adds an “Extras” group with “Cheese +3 SAR” — the add-on price joins the booking total automatically.'}
-                            </div>
-                            {optionGroups.map((g, gi) => (
-                                <div key={g.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: '12px', marginBottom: 10, background: 'var(--gray-50)' }}>
-                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                        <input
-                                            type="text"
-                                            value={g.title}
-                                            onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, title: e.target.value } : x))}
-                                            placeholder={isRTL ? 'عنوان القسم (مثل: المقاس، نوع البن)' : 'Group title (e.g. Size)'}
-                                            style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 700 }}
-                                        />
-                                        <button type="button"
-                                            onClick={() => setOptionGroups(prev => prev.filter((_, i) => i !== gi))}
-                                            aria-label={isRTL ? 'حذف القسم' : 'Delete group'}
-                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 12px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
-                                    </div>
-                                    {/* v12.54 — وضوح (طلب ناصر): قائمتان مسميّتان بدل الأزرار
-                                        الغامضة — التاجر يرى كل البدائل المتاحة قبل الاختيار. */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                                        <div>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'طريقة الاختيار' : 'Selection mode'}</div>
-                                            <select
-                                                value={g.mode}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: e.target.value as 'single' | 'multi' } : x))}
-                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
-                                                <option value="single">{isRTL ? '☝️ يختار المشتري خياراً واحداً فقط' : '☝️ Buyer picks ONE choice only'}</option>
-                                                <option value="multi">{isRTL ? '🤲 يختار المشتري عدة خيارات معاً' : '🤲 Buyer picks SEVERAL choices'}</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'الإلزام' : 'Requirement'}</div>
-                                            <select
-                                                value={g.required ? 'req' : 'opt'}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: e.target.value === 'req' } : x))}
-                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
-                                                <option value="req">{isRTL ? '⭐ مطلوب — لا حجز بدونه' : '⭐ Required'}</option>
-                                                <option value="opt">{isRTL ? 'اختياري — يمكن تجاوزه' : 'Optional'}</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    {/* v12.55 — شرح حي (طلب ناصر «وضّحها أكثر»): جملة كاملة
-                                        تتبدل مع الاختيار فيفهم التاجر السلوك قبل الحفظ. */}
-                                    <div style={{
-                                        marginBottom: 10, padding: '8px 12px', borderRadius: 10,
-                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
-                                        fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
-                                    }}>
-                                        {isRTL
-                                            ? (g.mode === 'single'
-                                                ? '☝️ المشتري يختار مرة واحدة فقط من هذا القسم — إن اختار «كوب سيراميك» لا يستطيع معه «كوب ورقي». مناسب لنوع البن، طريقة التقديم…'
-                                                : '🤲 المشتري يستطيع الجمع بين عدة خيارات من نفس القسم وبكمية لكل خيار — مثل مقاس L ×٢ + مقاس M ×١ في حجز واحد. مناسب للمقاسات والإضافات.')
-                                            : (g.mode === 'single'
-                                                ? '☝️ The buyer selects exactly one choice from this group (e.g. ceramic OR paper cup — never both).'
-                                                : '🤲 The buyer can combine several choices from this group with a quantity for each (e.g. L ×2 + M ×1).')}
-                                    </div>
-                                    {g.choices.map((c, ci) => (
-                                        <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                                            <input
-                                                type="text"
-                                                value={c.label}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, label: e.target.value } : y) } : x))}
-                                                placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
-                                                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
-                                            />
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step="any"
-                                                inputMode="decimal"
-                                                value={c.price ?? ''}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
-                                                placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
-                                                title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
-                                                style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
-                                            />
-                                            <button type="button"
-                                                onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
-                                                aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
-                                                style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
-                                        </div>
-                                    ))}
-                                    <button type="button"
-                                        onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: [...x.choices, { id: `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, label: '' }] } : x))}
-                                        style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1px dashed var(--gray-300)', background: 'transparent', color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer' }}>
-                                        {isRTL ? '+ خيار جديد' : '+ Add choice'}
-                                    </button>
-                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
-                                        {isRTL
-                                            ? '📌 «+ سعر ر.س» = مبلغ إضافي يُضاف تلقائياً لمبلغ الحجز النهائي عند اختيار هذا الخيار (مثال: جبنة +٣ ر.س → حجز بـ١٠ يصبح ١٣). اتركه فارغاً إذا كان الخيار بدون تكلفة إضافية — ويرى المشتري السعر بجانب الخيار قبل تأكيد الحجز.'
-                                            : '📌 “+ SAR” = an add-on amount joined automatically to the final booking total when this choice is picked (e.g. cheese +3 → a 10 SAR booking becomes 13). Leave empty for no extra cost — the buyer sees the price next to the choice before confirming.'}
-                                    </div>
-                                </div>
-                            ))}
-                            <button type="button"
-                                onClick={() => setOptionGroups(prev => [...prev, { id: `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, title: '', mode: 'single', required: true, choices: [{ id: `c_${Date.now().toString(36)}a`, label: '' }, { id: `c_${Date.now().toString(36)}b`, label: '' }] }])}
-                                style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
-                                {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
-                            </button>
-                        </div>
-
                         {/* v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام
                             لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
                             أحجام في صفحة المنتج، والبطاقة العامة تعرض «يبدأ من». */}
                         <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '🧬 نسخ المنتج بأسعار مختلفة (تجريبي — اختياري)' : '🧬 Product versions with different prices (experimental)'}</label>
+                            <label style={labelStyle}>{isRTL ? '🧬 نسخ المنتج بأسعار مختلفة (اختياري)' : '🧬 Product versions with different prices (optional)'}</label>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
                                 {isRTL
-                                    ? '💡 إذا كانت كل المقاسات بنفس السعر فلا تحتاج هذا القسم — استخدم «اختيارات المنتج» أعلاه. أما إذا كان لكل حجم سعره الخاص (برجر صغير ١٠ / وسط ١٥ / كبير ٢٠، أو علم صغير/وسط/كبير) فأضف نسخة لكل حجم: اسم + سعر + كمية + صورة من صور العرض. المشتري يبدّل بين النسخ داخل صفحة المنتج فيتغير السعر والصورة تلقائياً.'
-                                    : '💡 If all sizes share one price you don’t need this — use “Product options” above. If each size has its OWN price (small burger 10 / medium 15 / large 20), add a version per size: name + price + qty + photo. The buyer switches versions on the product page and the price & photo follow.'}
+                                    ? '💡 لكل حجم سعره الخاص؟ أضف نسخة لكل حجم (اسم + سعر + كمية + صورة). مثال: برجر صغير ١٠ / وسط ١٥ / كبير ٢٠. المشتري يبدّل بين النسخ فيتغير السعر والصورة تلقائياً. أما إذا كانت كل الأحجام بنفس السعر فاستخدم «اختيارات المنتج» بالأسفل.'
+                                    : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
                             </div>
                             {variants.map((v, vi) => (
                                 <div key={v.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: 12, marginBottom: 10, background: 'var(--gray-50)' }}>
@@ -3039,6 +2962,116 @@ const SellerDashboard: React.FC = () => {
                                             : '💡 Time-based expiry: version quantities are optional — if you set them on all versions, the sum auto-fills the deal total.')}
                                 </div>
                             )}
+                        </div>
+
+                        {/* v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن،
+                            المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري.
+                            v12.60 — لكل خيار «سعر إضافي» اختياري يُضاف تلقائياً لمبلغ
+                            الحجز النهائي (بدل سقف الكمية الملغى). */}
+                        <div style={{ marginBottom: 20 }}>
+                            <label style={labelStyle}>{isRTL ? '🧩 اختيارات المنتج (اختياري)' : '🧩 Product options (optional)'}</label>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
+                                {isRTL
+                                    ? '💡 إضافات وتفضيلات على المنتج نفسه — مجانية أو بسعر إضافي يدخل في مبلغ الحجز. مثال: «بدون جبنة» / «جبنة +٣ ر.س». المشتري يحددها لكل قطعة عند الحجز. الفرق باختصار: النسخ أعلاه = منتج بأسعار مختلفة، الاختيارات = إضافات فوق المنتج.'
+                                    : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
+                            </div>
+                            {optionGroups.map((g, gi) => (
+                                <div key={g.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 14, padding: '12px', marginBottom: 10, background: 'var(--gray-50)' }}>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        <input
+                                            type="text"
+                                            value={g.title}
+                                            onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, title: e.target.value } : x))}
+                                            placeholder={isRTL ? 'عنوان القسم (مثل: المقاس، نوع البن)' : 'Group title (e.g. Size)'}
+                                            style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 700 }}
+                                        />
+                                        <button type="button"
+                                            onClick={() => setOptionGroups(prev => prev.filter((_, i) => i !== gi))}
+                                            aria-label={isRTL ? 'حذف القسم' : 'Delete group'}
+                                            style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '0 12px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                                    </div>
+                                    {/* v12.54 — وضوح (طلب ناصر): قائمتان مسميّتان بدل الأزرار
+                                        الغامضة — التاجر يرى كل البدائل المتاحة قبل الاختيار. */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'طريقة الاختيار' : 'Selection mode'}</div>
+                                            <select
+                                                value={g.mode}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: e.target.value as 'single' | 'multi' } : x))}
+                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
+                                                <option value="single">{isRTL ? '☝️ يختار المشتري خياراً واحداً فقط' : '☝️ Buyer picks ONE choice only'}</option>
+                                                <option value="multi">{isRTL ? '🤲 يختار المشتري عدة خيارات معاً' : '🤲 Buyer picks SEVERAL choices'}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'الإلزام' : 'Requirement'}</div>
+                                            <select
+                                                value={g.required ? 'req' : 'opt'}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: e.target.value === 'req' } : x))}
+                                                style={{ width: '100%', padding: '9px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800 }}>
+                                                <option value="req">{isRTL ? '⭐ مطلوب — لا حجز بدونه' : '⭐ Required'}</option>
+                                                <option value="opt">{isRTL ? 'اختياري — يمكن تجاوزه' : 'Optional'}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    {/* v12.55 — شرح حي (طلب ناصر «وضّحها أكثر»): جملة كاملة
+                                        تتبدل مع الاختيار فيفهم التاجر السلوك قبل الحفظ. */}
+                                    <div style={{
+                                        marginBottom: 10, padding: '8px 12px', borderRadius: 10,
+                                        background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
+                                        fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                    }}>
+                                        {isRTL
+                                            ? (g.mode === 'single'
+                                                ? '☝️ المشتري يختار مرة واحدة فقط من هذا القسم — إن اختار «كوب سيراميك» لا يستطيع معه «كوب ورقي». مناسب لنوع البن، طريقة التقديم…'
+                                                : '🤲 المشتري يستطيع الجمع بين عدة خيارات من نفس القسم وبكمية لكل خيار — مثل مقاس L ×٢ + مقاس M ×١ في حجز واحد. مناسب للمقاسات والإضافات.')
+                                            : (g.mode === 'single'
+                                                ? '☝️ The buyer selects exactly one choice from this group (e.g. ceramic OR paper cup — never both).'
+                                                : '🤲 The buyer can combine several choices from this group with a quantity for each (e.g. L ×2 + M ×1).')}
+                                    </div>
+                                    {g.choices.map((c, ci) => (
+                                        <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                                            <input
+                                                type="text"
+                                                value={c.label}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, label: e.target.value } : y) } : x))}
+                                                placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
+                                                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
+                                            />
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                step="any"
+                                                inputMode="decimal"
+                                                value={c.price ?? ''}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
+                                                placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
+                                                title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
+                                                style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                            />
+                                            <button type="button"
+                                                onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
+                                                aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
+                                                style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
+                                        </div>
+                                    ))}
+                                    <button type="button"
+                                        onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: [...x.choices, { id: `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, label: '' }] } : x))}
+                                        style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1px dashed var(--gray-300)', background: 'transparent', color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer' }}>
+                                        {isRTL ? '+ خيار جديد' : '+ Add choice'}
+                                    </button>
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
+                                        {isRTL
+                                            ? '📌 «+ سعر ر.س» = مبلغ إضافي يُضاف تلقائياً لمبلغ الحجز النهائي عند اختيار هذا الخيار (مثال: جبنة +٣ ر.س → حجز بـ١٠ يصبح ١٣). اتركه فارغاً إذا كان الخيار بدون تكلفة إضافية — ويرى المشتري السعر بجانب الخيار قبل تأكيد الحجز.'
+                                            : '📌 “+ SAR” = an add-on amount joined automatically to the final booking total when this choice is picked (e.g. cheese +3 → a 10 SAR booking becomes 13). Leave empty for no extra cost — the buyer sees the price next to the choice before confirming.'}
+                                    </div>
+                                </div>
+                            ))}
+                            <button type="button"
+                                onClick={() => setOptionGroups(prev => [...prev, { id: `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, title: '', mode: 'single', required: true, choices: [{ id: `c_${Date.now().toString(36)}a`, label: '' }, { id: `c_${Date.now().toString(36)}b`, label: '' }] }])}
+                                style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
+                                {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
+                            </button>
                         </div>
 
                         {discount > 0 && <div style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#b91c1c', padding: '10px', borderRadius: 12, textAlign: 'center', fontWeight: 900, marginBottom: 20 }}>{isRTL ? `خصم ${discount}% 🔥` : `Discount ${discount}% 🔥`}</div>}

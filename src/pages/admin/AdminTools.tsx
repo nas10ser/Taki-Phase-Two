@@ -1067,7 +1067,7 @@ const AdminTools: React.FC = () => {
     // للحملة (trigger + كرون كل ١٥ دقيقة) — لا تفعيل يدوي منفصل.
     const [seasonTheme, setSeasonTheme] = useState('');
     // v12.48 — «حملة الموسم»: نافذة التجار + النافذة العامة + تاريخ الفعالية
-    const [camp, setCamp] = useState({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
+    const [camp, setCamp] = useState({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '', hero_title_ar: '', hero_tagline_ar: '', hero_title_en: '', hero_tagline_en: '' });
     const [campSaved, setCampSaved] = useState(false);
     const [savingCamp, setSavingCamp] = useState(false);
     // تواريخ الفعاليات لتذكير المالك قبل ٣٠ ثم ٧ أيام (كرون يومي)
@@ -1115,6 +1115,11 @@ const AdminTools: React.FC = () => {
             seller_to: (hasCamp && cv.seller_to) || '',
             public_from: (hasCamp && cv.public_from) || '',
             public_to: (hasCamp && cv.public_to) || '',
+            // v12.69 — نصوص البانر المخصصة (فارغة = الافتراضي)
+            hero_title_ar: (hasCamp && cv.hero_title_ar) || '',
+            hero_tagline_ar: (hasCamp && cv.hero_tagline_ar) || '',
+            hero_title_en: (hasCamp && cv.hero_title_en) || '',
+            hero_tagline_en: (hasCamp && cv.hero_tagline_en) || '',
         });
         const dv = (eventDatesRes.data?.value as any)?.dates ?? {};
         setEventDates(Object.fromEntries(SEASONS.map(s => [s.id, typeof dv[s.id] === 'string' ? dv[s.id] : ''])));
@@ -1217,6 +1222,11 @@ const AdminTools: React.FC = () => {
                 seller_to: camp.seller_to,
                 public_from: camp.public_from,
                 public_to: camp.public_to,
+                // v12.69 — نصوص البانر المخصصة (فارغة = يُستخدم نص الموسم الافتراضي)
+                hero_title_ar: camp.hero_title_ar.trim() || null,
+                hero_tagline_ar: camp.hero_tagline_ar.trim() || null,
+                hero_title_en: camp.hero_title_en.trim() || null,
+                hero_tagline_en: camp.hero_tagline_en.trim() || null,
             },
             description: 'Season campaign windows: seller submissions + public page (v12.48)',
             updated_at: new Date().toISOString(),
@@ -1254,7 +1264,7 @@ const AdminTools: React.FC = () => {
         setSavingCamp(false);
         if (error) { await customAlert('❌ ' + error.message); return; }
         setCampSaved(false);
-        setCamp({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '' });
+        setCamp({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '', hero_title_ar: '', hero_tagline_ar: '', hero_title_en: '', hero_tagline_en: '' });
         setSeasonTheme(''); // v12.57 — القاعدة صفّرت الهوية بنفس اللحظة (trigger)
         await customAlert('✅ انتهت الحملة — اختفت صفحة الموسم من الموقع والبوتات، وعادت الألوان والبانر للهوية الأساسية لجميع المستخدمين.');
     };
@@ -1643,6 +1653,53 @@ const AdminTools: React.FC = () => {
                                 && (eventDates[camp.season_id] < camp.public_from || eventDates[camp.season_id] > camp.public_to) && (
                                 <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-[var(--text-primary)] leading-relaxed">
                                     💡 انتبه: تاريخ فعالية «{campSeason.ar}» المسجّل عندك للتذكير هو <b>{eventDates[camp.season_id]}</b>، لكن نافذتك العامة ({camp.public_from} → {camp.public_to}) لا تشمله — إن لم يكن هذا مقصوداً عدّل التواريخ قبل الحفظ.
+                                </div>
+                            )}
+                            {/* v12.69 — نص بانر الموسم تحت تحكم المالك (طلب ناصر):
+                                عنوان + سطر تسويقي لكل حملة، والفراغ = الافتراضي.
+                                يظهر في بانر الرئيسية + صفحة /seasonal + القائمة الجانبية. */}
+                            {campSeason && (
+                                <div className="mt-3 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] p-3">
+                                    <div className="text-xs font-extrabold text-[var(--text-primary)] mb-1">✍️ نص بانر الموسم — أنت المتحكم</div>
+                                    <p className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+                                        يظهر للمتسوقين في بانر الرئيسية وصفحة العروض الموسمية والقائمة الجانبية.
+                                        اتركه فارغاً ليُستخدم النص الافتراضي (الظاهر داخل الحقل كمثال باهت)، ويسري تعديلك فور «💾 حفظ الحملة».
+                                    </p>
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">العنوان الكبير</label>
+                                    <input
+                                        type="text"
+                                        value={camp.hero_title_ar}
+                                        onChange={e => setCamp(prev => ({ ...prev, hero_title_ar: e.target.value }))}
+                                        placeholder={`عروض ${campSeason.ar} الحصرية`}
+                                        className="w-full px-2.5 py-2 mb-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm font-bold outline-none focus:border-violet-500"
+                                    />
+                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">السطر التسويقي (تحت العنوان)</label>
+                                    <textarea
+                                        rows={2}
+                                        value={camp.hero_tagline_ar}
+                                        onChange={e => setCamp(prev => ({ ...prev, hero_tagline_ar: e.target.value }))}
+                                        placeholder={campSeason.taglineAr}
+                                        className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none focus:border-violet-500 leading-relaxed"
+                                    />
+                                    <details className="mt-2 rounded-xl border border-[var(--border-color)]">
+                                        <summary className="cursor-pointer px-3 py-2 text-[11px] font-bold text-[var(--text-secondary)]">🌐 النسخة الإنجليزية (لمستخدمي English)</summary>
+                                        <div className="p-2.5 space-y-2">
+                                            <input
+                                                type="text" dir="ltr"
+                                                value={camp.hero_title_en}
+                                                onChange={e => setCamp(prev => ({ ...prev, hero_title_en: e.target.value }))}
+                                                placeholder={`Exclusive ${campSeason.en} Deals`}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm outline-none"
+                                            />
+                                            <textarea
+                                                rows={2} dir="ltr"
+                                                value={camp.hero_tagline_en}
+                                                onChange={e => setCamp(prev => ({ ...prev, hero_tagline_en: e.target.value }))}
+                                                placeholder={campSeason.taglineEn}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm outline-none leading-relaxed"
+                                            />
+                                        </div>
+                                    </details>
                                 </div>
                             )}
                             <div className="flex gap-2 mt-3 flex-wrap">
