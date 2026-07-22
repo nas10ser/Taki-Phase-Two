@@ -204,7 +204,13 @@ const PullToRefresh: React.FC<Props> = ({
             <style>{`
                 @keyframes taki-ptr-spin { to { transform: rotate(360deg); } }
             `}</style>
-            <div style={{ transform: `translateY(${Math.min(pullDistance, maxDistance)}px)`, transition: refreshing || pullDistance === 0 ? 'transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none' }}>
+            {/* الـtransform يُطبَّق فقط أثناء السحب الفعلي: وجوده الدائم (حتى
+                translateY(0)) يجعل الغلاف containing block فيَكسر تثبيت
+                .premium-bar اللاصق على iOS Safari بشكل متقطع — البانر كان
+                «يختفي» مع التمرير. بدون سحب: div عادي بلا transform. */}
+            <div style={visible
+                ? { transform: `translateY(${Math.min(pullDistance, maxDistance)}px)`, transition: refreshing ? 'transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none' }
+                : { transition: 'transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1)' }}>
                 {children}
             </div>
         </>

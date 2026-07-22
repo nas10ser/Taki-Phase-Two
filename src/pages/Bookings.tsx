@@ -403,7 +403,7 @@ const Bookings: React.FC = () => {
                                                     {booking.notes && (
                                                         <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, borderRight: isRTL ? '3px solid #3b82f6' : 'none', borderLeft: !isRTL ? '3px solid #3b82f6' : 'none' }}>
                                                             <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>📝 {isRTL ? 'ملاحظتك:' : 'Your note:'}</div>
-                                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>{booking.notes}</div>
+                                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'pre-line', lineHeight: 1.7 }}>{booking.notes}</div>
                                                         </div>
                                                     )}
                                                 </div>

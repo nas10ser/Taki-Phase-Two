@@ -3906,7 +3906,7 @@ const SellerDashboard: React.FC = () => {
                                                 </div>
                                             </div>
                                             {order.notes && (
-                                                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'pre-line', lineHeight: 1.7 }}>
                                                     📝 {order.notes}
                                                 </div>
                                             )}
@@ -4010,7 +4010,7 @@ const SellerDashboard: React.FC = () => {
                                         <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>
                                             📝 {isRTL ? 'ملاحظات المشتري:' : 'Buyer Notes:'}
                                         </div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                        <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
                                             {order.notes}
                                         </div>
                                     </div>

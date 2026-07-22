@@ -858,7 +858,13 @@ const DealDetails: React.FC = () => {
                     if (labels.length) parts.push(`${grp.title}: ${labels.join('، ')}`);
                 }
                 if (!parts.length) continue;
-                lines.push(bookingPieces.length > 1 ? `▫️ ${piece.label}: ${parts.join(' | ')}` : parts.join('\n'));
+                // كل قطعة في سطر مستقل، وكل اختيار فرعي تحتها بسطر خاص بعلامة ↳
+                if (bookingPieces.length > 1) {
+                    lines.push(`▪️ ${piece.label}:`);
+                    for (const p of parts) lines.push(`   ↳ ${p}`);
+                } else {
+                    for (const p of parts) lines.push(`↳ ${p}`);
+                }
             }
             if (agg.size) {
                 selectedOptions = Array.from(agg.values());
@@ -883,8 +889,8 @@ const DealDetails: React.FC = () => {
         if (variants.length && variantPiecesTotal > 0) {
             const parts = variants
                 .filter(v => (varSel[v.id] || 0) > 0)
-                .map(v => `${v.label} ×${varSel[v.id]} (${v.price} ${isRTL ? 'ر.س' : 'SAR'})`);
-            const vLine = `📏 ${isRTL ? 'المقاسات' : 'Versions'}: ${parts.join(' + ')}`;
+                .map(v => `• ${v.label} ×${varSel[v.id]} (${v.price} ${isRTL ? 'ر.س' : 'SAR'})`);
+            const vLine = `📦 ${isRTL ? 'المواصفات' : 'Items'}:\n${parts.join('\n')}`;
             notesWithOptions = notesWithOptions.trim() ? `${vLine}\n${notesWithOptions}` : vLine;
         }
         if ((variants.length && variantPiecesTotal > 0) || optAddOnTotal > 0) {
@@ -1313,6 +1319,8 @@ const DealDetails: React.FC = () => {
                                 const q = varSel[v.id] || 0;
                                 const picked = q > 0;
                                 const cap = typeof v.qty === 'number' ? v.qty : undefined;
+                                // سعر النسخة الأصلي المشطوب — سعرها الخاص إن وُجد وإلا سعر العرض
+                                const vOriginal = (v.originalPrice && v.originalPrice > 0) ? v.originalPrice : (deal.originalPrice || 0);
                                 const setQ = (next: number) => {
                                     const capped = cap !== undefined ? Math.min(next, cap) : next;
                                     setFocusVariantId(v.id);
@@ -1339,6 +1347,9 @@ const DealDetails: React.FC = () => {
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <span style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{v.label}</span>
                                             <span style={{ fontWeight: 800, fontSize: '0.76rem', color: picked ? 'var(--primary)' : 'var(--text-secondary)', marginInlineStart: 8 }}>{v.price} ر.س</span>
+                                            {vOriginal > v.price && (
+                                                <span style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--gray-400)', textDecoration: 'line-through', marginInlineStart: 6 }}>{vOriginal} ر.س</span>
+                                            )}
                                             {cap !== undefined && (
                                                 <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
                                                     {isRTL ? `المتاح: ${cap}` : `Available: ${cap}`}
