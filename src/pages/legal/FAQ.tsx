@@ -59,6 +59,10 @@ const howItWorksAR: QA[] = [
         a: <p>نعم، المنصّة تغطّي جغرافياً كل مناطق المملكة. نشاط التجار يتركّز حالياً في المدن الكبرى، ويتوسّع تدريجياً بحسب انضمام التجار في كل منطقة.</p>,
     },
     {
+        q: 'على أيّ قنوات أستطيع استخدام TAKI؟',
+        a: <p>عبر الموقع وتطبيق الويب على جوّالك، وعبر <strong>بوت تيليجرام الرسمي @TakiKSA_bot</strong> — اربط حسابك من داخل التطبيق برمز ربط آمن (لا نطلب رقم جوّالك في تيليجرام)، وتابع منه العروض والحجوزات وتصلك إشعاراتك هناك أيضاً. ودعم واتساب يُضاف تدريجياً. أيّ حساب آخر يدّعي أنّه TAKI لا يُمثّلنا.</p>,
+    },
+    {
         q: 'هل بياناتي محميّة؟',
         a: <p>نعم. نَلتزم بنظام حماية البيانات الشخصية السعودي ولوائحه التنفيذية، ونطبّق إجراءات وقائية فنّية وإدارية معقولة تجارياً لحماية بياناتك. للتفاصيل، راجع <a href="/privacy" className="text-emerald-600 font-bold underline">سياسة الخصوصية</a>.</p>,
     },
@@ -94,6 +98,10 @@ const howItWorksEN: QA[] = [
         a: <p>Yes — the platform geographically covers every region of the Kingdom. Merchant activity is currently concentrated in the larger cities and expands gradually as merchants join in each region.</p>,
     },
     {
+        q: 'On which channels can I use TAKI?',
+        a: <p>Through the website and the web app on your phone, and through the <strong>official Telegram bot @TakiKSA_bot</strong> — link your account from inside the app using a secure linking code (we never ask for your phone number on Telegram), then browse offers, manage bookings and receive your notifications there too. WhatsApp support is being rolled out gradually. Any other account claiming to be TAKI does not represent us.</p>,
+    },
+    {
         q: 'Is my data protected?',
         a: <p>Yes. We comply with the Saudi Personal Data Protection Law and its implementing regulations, and apply commercially reasonable technical and administrative safeguards to protect your data. For details, see the <a href="/privacy" className="text-emerald-600 font-bold underline">Privacy Policy</a>.</p>,
     },
@@ -120,6 +128,7 @@ const buyerFAQ_AR: QA[] = [
         a: <ol className="list-decimal ps-5 space-y-1">
             <li>تتصفّح العروض في الصفحة الرئيسية أو من قسم «حولي» لرؤية القريب من موقعك.</li>
             <li>تختار العرض وتقرأ تفاصيله، شروطه، ومدّة صلاحيّته.</li>
+            <li>إذا كان للعرض <strong>نسخ</strong> (مقاسات أو أحجام بأسعار مختلفة) أو <strong>اختيارات</strong> (إضافات قد يكون لها سعر إضافي)، تحدّدها أثناء الحجز — <strong>ولكلّ قطعة اختياراتها الخاصّة</strong> (برغر بدون جبنة وآخر بجبنة في نفس الحجز)، ويظهر لك الإجمالي كاملاً قبل التأكيد.</li>
             <li>تضغط زرّ «احجز» — يصلك إشعار بتأكيد الحجز ويصل التاجر إشعار آخر.</li>
             <li>تذهب إلى موقع التاجر خلال المدّة، تستلم البضاعة/الخدمة، وتدفع له مباشرة.</li>
         </ol>,
@@ -127,6 +136,19 @@ const buyerFAQ_AR: QA[] = [
     {
         q: 'هل يتم سحب أي مبلغ من بطاقتي عند الحجز؟',
         a: <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء. الدفع كاملاً يتمّ بينك وبين التاجر في موقعه عند الاستلام.</p>,
+    },
+    {
+        q: 'كم مدّة صلاحية الحجز؟',
+        a: <p><strong>ساعتان من لحظة التأكيد</strong>. استلم طلبك من المتجر خلال ساعتين، وإن انتهت المهلة دون استلام يُلغى الحجز تلقائياً وتعود الكمّية للبيع — دون أيّ التزام عليك. تظهر لك المهلة المتبقّية في صفحة «حجوزاتي».</p>,
+    },
+    {
+        q: 'لماذا لا أستطيع الحجز أحياناً؟',
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li><strong>المحلّ مغلق</strong>: الحجز يتقيّد بساعات عمل المتجر المُعلَنة، ويفتح تلقائياً فور فتح المحلّ (يظهر لك موعد الفتح).</li>
+            <li><strong>العرض لم يبدأ بعد</strong>: العروض «القريبة» تعرض عدّاداً تنازلياً ويُفتح حجزها لحظة البداية.</li>
+            <li><strong>حدود يضبطها التاجر</strong>: حدّ أقصى للكمّية في الحجز الواحد، حدّ أقصى لعدد حجوزاتك من نفس العرض، أو مدّة انتظار بين الحجوزات.</li>
+            <li><strong>نفدت الكمّية</strong> أو نفدت كمّية النسخة (المقاس) التي تريدها.</li>
+        </ul>,
     },
     {
         q: 'هل يمكنني إلغاء الحجز؟',
@@ -146,7 +168,19 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'كيف أقيّم تجربتي مع متجر؟',
-        a: <p>بعد إتمام الحجز، يظهر لك خيار تقييم المتجر بنجوم وإضافة تعليق. التقييم الصادق يُساعد المشترين الآخرين ويُحفّز التجار على تحسين خدماتهم. تجنّب التقييمات الكيدية أو غير الصادقة لأنّها قد تتعرّض للحذف.</p>,
+        a: <p>بعد إتمام الحجز، يظهر لك خيار تقييم المتجر بنجوم وإضافة تعليق. لك <strong>تقييم واحد لكلّ متجر</strong>، ويمكنك <strong>تعديله أو حذفه</strong> في أيّ وقت، وللتاجر حقّ الردّ عليه. التقييم الصادق يُساعد المشترين الآخرين ويُحفّز التجار على تحسين خدماتهم. تجنّب التقييمات الكيدية أو غير الصادقة لأنّها قد تتعرّض للحذف.</p>,
+    },
+    {
+        q: 'ما تصويت «أصالة المنتج»؟',
+        a: <p>بعد استلام طلبك فعلياً، يمكنك التصويت على أصالة المنتج (🔵 أصلي / 🟡 غير أصلي). التصويت متاح <strong>فقط لمن أتمّ حجزاً حقيقياً</strong> — فلا يستطيع أحد التلاعب به — ويظهر مجموعه للمشترين في صفحة العرض، ويمكنك تعديل تصويتك لاحقاً.</p>,
+    },
+    {
+        q: 'ما المسابقات والسحوبات في TAKI؟',
+        a: <p>من صفحة «المسابقات» تُشارك مجاناً في مسابقات واستبيانات بجوائز تُعلنها المنصّة. التصحيح تلقائي، ونتائج السحب تُعرض <strong>بهوية مموّهة</strong> حفاظاً على الخصوصية، وإجاباتك لا يطّلع عليها غير الإدارة. المشاركة اختيارية بالكامل، ولكلّ مسابقة شروطها المُعلَنة وقتها.</p>,
+    },
+    {
+        q: 'ما رمز الإحالة وكيف أستخدمه؟',
+        a: <p>من صفحة «حسابي» تجد <strong>رمز إحالة</strong> خاصّاً بك مع رابط جاهز للمشاركة. عند تسجيل أصدقائك عبر رابطك تُحسب الإحالة لك، وقد تدخل بها في ترتيب النشاط أو سحوبات تُعلنها المنصّة من وقت لآخر.</p>,
     },
     {
         q: 'لاحظت عرضاً مخالفاً أو متجراً مشبوهاً، ماذا أفعل؟',
@@ -186,7 +220,7 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'كيف أحصل على تنبيهات للعروض المهمّة؟',
-        a: <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. الكلّ اختياري ويمكنك تعطيله متى تشاء.</p>,
+        a: <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. وتابع صفحة <strong>«العروض الموسمية»</strong> لعروض المواسم والحملات (رمضان، العيد، التخفيضات الموسمية…) مع تذكيرات قبل انطلاقها. الكلّ اختياري ويمكنك تعطيله متى تشاء — وإن ربطت حسابك ببوت تيليجرام تصلك الإشعارات هناك أيضاً.</p>,
     },
     {
         q: 'هل يمكنني حذف حسابي نهائياً؟',
@@ -204,6 +238,7 @@ const buyerFAQ_EN: QA[] = [
         a: <ol className="list-decimal ps-5 space-y-1">
             <li>Browse offers on the home page or in the «Nearby» section to see what is close to you.</li>
             <li>Choose an offer and read its details, conditions and validity window.</li>
+            <li>If the offer has <strong>versions</strong> (sizes at different prices) or <strong>options</strong> (add-ons that may carry an extra price), pick them while booking — <strong>each item gets its own choices</strong> (one burger without cheese and another with cheese in the same booking), and the full total is shown before you confirm.</li>
             <li>Tap «Book» — you receive a booking confirmation and the merchant receives a notification.</li>
             <li>Visit the merchant's location within the window, collect the goods or service, and pay them directly.</li>
         </ol>,
@@ -211,6 +246,19 @@ const buyerFAQ_EN: QA[] = [
     {
         q: 'Is any amount charged to my card on booking?',
         a: <p><strong>Never.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you. Full payment is made between you and the merchant at their location on receipt.</p>,
+    },
+    {
+        q: 'How long does a booking stay valid?',
+        a: <p><strong>Two hours from the moment of confirmation.</strong> Collect your order from the store within two hours; if the window passes without pickup, the booking is cancelled automatically and the quantity returns to sale — at no obligation to you. The remaining time is shown on your «My Bookings» page.</p>,
+    },
+    {
+        q: 'Why am I sometimes unable to book?',
+        a: <ul className="list-disc ps-5 space-y-1">
+            <li><strong>The shop is closed</strong>: booking follows the store's published working hours and re-opens automatically the moment the shop opens (the opening time is shown to you).</li>
+            <li><strong>The offer has not started yet</strong>: «coming soon» offers show a countdown and become bookable the moment they start.</li>
+            <li><strong>Merchant-set limits</strong>: a cap per single booking, a cap on your total bookings of the same offer, or a waiting period between bookings.</li>
+            <li><strong>Sold out</strong> — either the whole offer or the specific version (size) you want.</li>
+        </ul>,
     },
     {
         q: 'Can I cancel a booking?',
@@ -230,7 +278,19 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'How do I rate my experience with a store?',
-        a: <p>After completing a booking, you will see an option to rate the store in stars and add a comment. An honest review helps other buyers and motivates merchants to improve. Avoid malicious or untruthful ratings — they may be removed.</p>,
+        a: <p>After completing a booking, you will see an option to rate the store in stars and add a comment. You have <strong>one rating per store</strong>, which you can <strong>edit or delete</strong> at any time, and the merchant may reply to it. An honest review helps other buyers and motivates merchants to improve. Avoid malicious or untruthful ratings — they may be removed.</p>,
+    },
+    {
+        q: 'What is the «product authenticity» vote?',
+        a: <p>After actually collecting your order, you can vote on the product's authenticity (🔵 genuine / 🟡 not genuine). The vote is available <strong>only to buyers who completed a real booking</strong> — so it cannot be gamed — its tally is shown to buyers on the offer page, and you can change your vote later.</p>,
+    },
+    {
+        q: 'What are TAKI contests and draws?',
+        a: <p>From the «Contests» page you can enter free contests and surveys with prizes announced by the platform. Grading is automatic, draw results are displayed with <strong>masked identities</strong> to protect privacy, and your answers are visible to the administration only. Participation is entirely optional, and each contest has its own rules announced at the time.</p>,
+    },
+    {
+        q: 'What is the referral code and how do I use it?',
+        a: <p>On the «My Account» page you will find your personal <strong>referral code</strong> with a ready-to-share link. When friends register through your link, the referral is credited to you, and it may count towards activity rankings or draws announced by the platform from time to time.</p>,
     },
     {
         q: 'I have noticed a non-compliant offer or a suspicious store — what do I do?',
@@ -270,7 +330,7 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'How do I get alerts for offers that matter to me?',
-        a: <p>From the «My Account» page you can configure <strong>Smart Alerts</strong>: pick categories of interest, merchants to follow, or keywords, and you will be notified whenever an offer matches your preferences. It is all optional and you can disable it at any time.</p>,
+        a: <p>From the «My Account» page you can configure <strong>Smart Alerts</strong>: pick categories of interest, merchants to follow, or keywords, and you will be notified whenever an offer matches your preferences. Also check the <strong>«Seasonal Offers»</strong> page for seasons and campaigns (Ramadan, Eid, seasonal sales…) with reminders before they launch. It is all optional and you can disable it at any time — and if you have linked your account to the Telegram bot, notifications reach you there too.</p>,
     },
     {
         q: 'Can I permanently delete my account?',
@@ -305,10 +365,28 @@ const merchantFAQ_AR: QA[] = [
             <li>من «لوحة التاجر» اضغط «➕ إضافة عرض».</li>
             <li>اكتب عنوان العرض، وصفه، السعر قبل وبعد التخفيض.</li>
             <li>حدّد الكمّيّة المتاحة ومدّة صلاحيّة العرض (تاريخ بداية ونهاية).</li>
+            <li>عند الحاجة، أضف <strong>نسخ المنتج</strong> (مقاسات/أحجام لكلّ منها سعرها وخصمها وكمّيتها وصورتها) و<strong>اختيارات المنتج</strong> (أقسام إضافات قد تحمل سعراً إضافياً يدخل تلقائياً في إجمالي الحجز — والمشتري يحدّد اختيارات كلّ قطعة على حدة).</li>
+            <li>اضبط <strong>حدود الحجز</strong> إن أردت: حدّ أقصى للحجز الواحد، حدّ لكلّ مشترٍ، ومدّة انتظار بين الحجوزات.</li>
             <li>ارفع صوراً واضحة (يَدعم محرّر القصّ الذكيّ لتعديل النسبة).</li>
-            <li>اختر الفرع أو الفروع التي يَسري عليها العرض.</li>
+            <li>اختر الفرع أو الفروع التي يَسري عليها العرض، واربطه بموسم أو حملة عند توفّرها.</li>
             <li>اضغط «انشر» — يَظهر العرض فوراً للمشترين.</li>
         </ol>,
+    },
+    {
+        q: 'هل يمكنني تحديد ساعات عمل محلّي؟',
+        a: <p>نعم. من إعدادات المتجر حدّد <strong>ساعات العمل</strong> لكلّ يوم (حتى فترتين في اليوم الواحد). خارج هذه الساعات يُقفل زرّ الحجز تلقائياً ويظهر للمشتري موعد الفتح، ويستأنف الحجز فور فتح المحلّ — كما يستفيد متجرك من فلتر «مفتوح الآن» في التصفّح.</p>,
+    },
+    {
+        q: 'ماذا يحدث عند انتهاء اشتراكي؟',
+        a: <p>تصلك <strong>تذكيرات قبل الانتهاء</strong>، وعند انتهاء الاشتراك دون تجديد تتوقّف عروضك عن الظهور تلقائياً — <strong>ولا يوجد تجديد تلقائي ولا سحب إضافي</strong>. بعد التجديد تُعيد تفعيل عروضك بنفسك بما يوافق سقف المواقع في باقتك.</p>,
+    },
+    {
+        q: 'ما خيارات الظهور الإضافية لمتجري؟',
+        a: <p>تتوفّر خدمات ظهور مدفوعة — مثل «راعٍ رسمي» و«إعلان» و«⭐» — تمنح عروضك شارات مميّزة وترتيباً أعلى في التصفّح وفي البوت. تُعرض تفاصيلها وأسعارها داخل التطبيق، وتنتهي بانتهاء اشتراكها.</p>,
+    },
+    {
+        q: 'هل أستطيع إدارة متجري من تيليجرام؟',
+        a: <p>نعم. بعد ربط حسابك بالبوت الرسمي <strong>@TakiKSA_bot</strong> تستطيع إضافة عروض وتعديلها، ومتابعة الحجوزات الواردة وتأكيد الاستلام أو الإلغاء، ومحادثة المشتري — وتصلك إشعارات الحجوزات فور وقوعها.</p>,
     },
     {
         q: 'كيف أستقبل الحجوزات؟',
@@ -392,10 +470,28 @@ const merchantFAQ_EN: QA[] = [
             <li>From the «Merchant Dashboard» tap «➕ Add offer».</li>
             <li>Enter the title, description, and price before and after discount.</li>
             <li>Set the available quantity and offer window (start and end date).</li>
+            <li>Where needed, add <strong>product versions</strong> (sizes, each with its own price, discount, quantity and image) and <strong>product options</strong> (add-on groups that may carry an extra price which joins the booking total automatically — the buyer picks options for each item separately).</li>
+            <li>Set <strong>booking limits</strong> if you wish: a cap per single booking, a cap per buyer, and a waiting period between bookings.</li>
             <li>Upload clear images (the smart crop editor lets you adjust the ratio).</li>
-            <li>Select the branch or branches to which the offer applies.</li>
+            <li>Select the branch or branches to which the offer applies, and link it to a season or campaign where available.</li>
             <li>Tap «Publish» — the offer appears to buyers immediately.</li>
         </ol>,
+    },
+    {
+        q: 'Can I set my shop\'s working hours?',
+        a: <p>Yes. From the store settings, set your <strong>working hours</strong> per day (up to two shifts a day). Outside those hours the booking button locks automatically and buyers see the opening time; booking resumes the moment the shop opens — and your store benefits from the «Open now» browsing filter.</p>,
+    },
+    {
+        q: 'What happens when my subscription expires?',
+        a: <p>You receive <strong>reminders before expiry</strong>. If the subscription ends without renewal, your offers stop appearing automatically — <strong>there is no auto-renewal and no extra charge</strong>. After renewing, you re-activate your offers yourself within the location cap of your package.</p>,
+    },
+    {
+        q: 'What extra visibility options are available for my store?',
+        a: <p>Paid visibility services are available — such as «Official Sponsor», «Ad» and «⭐» — giving your offers distinctive badges and higher placement in browsing and in the bot. Their details and prices are shown inside the app, and they end when their subscription ends.</p>,
+    },
+    {
+        q: 'Can I manage my store from Telegram?',
+        a: <p>Yes. After linking your account to the official bot <strong>@TakiKSA_bot</strong>, you can add and edit offers, track incoming bookings, confirm pickup or cancel, and chat with the buyer — with instant notifications for every new booking.</p>,
     },
     {
         q: 'How do I receive bookings?',
@@ -463,7 +559,7 @@ const FAQ: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'الأسئلة الشائعة' : 'Frequently Asked Questions'}
             subtitle={isRTL ? 'Frequently Asked Questions · TAKI' : 'الأسئلة الشائعة · TAKI'}
-            lastUpdated="2026-06-01"
+            lastUpdated="2026-07-22"
             draftNotice={false}
         >
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">

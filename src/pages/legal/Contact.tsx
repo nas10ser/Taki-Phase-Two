@@ -18,7 +18,7 @@ const Contact: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'اتصل بنا' : 'Contact Us'}
             subtitle={isRTL ? 'Contact TAKI' : 'Contact TAKI'}
-            lastUpdated="2026-05-21"
+            lastUpdated="2026-07-22"
             draftNotice={false}
         >
             <Paragraph>
@@ -46,6 +46,30 @@ const Contact: React.FC = () => {
                             details, so you do not need to re-establish your identity. We
                             aim to respond as soon as reasonably possible, depending on
                             the nature of the request and management priorities.
+                        </>
+                    )}
+                </Paragraph>
+            </Section>
+
+            <Section title={isRTL ? '🤖 بوت تيليجرام الرسمي' : '🤖 Official Telegram bot'}>
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            يمكنك استخدام TAKI ومتابعة إشعاراتك وحجوزاتك عبر البوت الرسمي{' '}
+                            <strong>@TakiKSA_bot</strong> على تيليجرام. اربط حسابك من داخل
+                            التطبيق (صفحة «حسابي») برمز ربط آمن — <strong>لا نطلب رقم جوّالك
+                            في تيليجرام</strong> ولا كلمة مرورك. وأيّ حساب آخر يدّعي أنّه
+                            TAKI لا يُمثّلنا، فلا تتعامل معه.
+                        </>
+                    ) : (
+                        <>
+                            You can use TAKI and follow your notifications and bookings
+                            through the official bot <strong>@TakiKSA_bot</strong> on
+                            Telegram. Link your account from inside the app (the «My
+                            Account» page) using a secure linking code — <strong>we never
+                            ask for your phone number on Telegram</strong>, nor your
+                            password. Any other account claiming to be TAKI does not
+                            represent us — do not deal with it.
                         </>
                     )}
                 </Paragraph>

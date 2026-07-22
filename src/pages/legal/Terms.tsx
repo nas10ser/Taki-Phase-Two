@@ -22,7 +22,7 @@ const Terms: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'شروط الاستخدام' : 'Terms of Service'}
             subtitle={isRTL ? 'Terms of Service · TAKI' : 'Terms of Service · TAKI'}
-            lastUpdated="2026-05-21"
+            lastUpdated="2026-07-22"
         >
             <Paragraph>
                 {isRTL ? (
@@ -247,6 +247,9 @@ const Terms: React.FC = () => {
             <Section n={5} title={isRTL ? 'آلية الحجز والدفع والاستلام' : 'Booking, payment and delivery mechanism'}>
                 <Bullets items={isRTL ? [
                     'يَتصفّح المشتري العروض، يَختار ما يُناسبه، ويَضغط «احجز». يُسجَّل الحجز فوراً، يَصِل التاجر إشعار، ويَصِل المشتري تأكيد.',
+                    'قد يَتضمّن العرض نسخاً بأسعار مختلفة واختيارات بإضافات سعرية يُحدّدها التاجر؛ يَظهر الإجمالي كاملاً للمشتري قبل تأكيد الحجز، ويَبقى الدفع مباشرةً للتاجر عند الاستلام.',
+                    'مدّة صلاحية الحجز ساعتان من تأكيده (ما لم تُعلن المنصّة خلاف ذلك) — عند انتهائها دون استلام يُلغى الحجز تلقائياً وتُعاد الكمّية للعرض، دون أيّ التزام مالي على المشتري.',
+                    'يَخضع الحجز لساعات عمل المحلّ المُعلَنة، ولحدود الحجز التي يَضبطها التاجر (حدّ أقصى للحجز الواحد، حدّ لكلّ مشترٍ، مدّة انتظار بين الحجوزات) — وتُطبَّق هذه الحدود آلياً.',
                     'يَستلم التاجر الحجز عبر لوحته ويَختار قبوله أو رفضه بحسب توفّر الكمّية وساعات العمل.',
                     'يَحضر المشتري إلى موقع التاجر خلال مدّة صلاحية العرض ليَستلم البضاعة أو يَحصل على الخدمة، ويَدفع الثمن للتاجر مباشرةً.',
                     'إن لم يَحضر المشتري خلال المدّة المُحدَّدة، يَحقّ للتاجر إلغاء الحجز.',
@@ -255,6 +258,9 @@ const Terms: React.FC = () => {
                     'يُمنع منعاً قاطعاً استخدام بيانات الاتصال المتاحة عبر المنصّة (الجوّال، الموقع، الشات) لأيّ غرض خارج تَنفيذ هذا الحجز تَحديداً، أو لمحاولة نقل التعامل خارج المنصّة، أو تَحويل العميل إلى قنوات أخرى — أيّ مخالفة تُعدّ إخلالاً جسيماً.',
                 ] : [
                     'The buyer browses the offers, picks one that suits them, and taps «Book». The booking is recorded immediately; the merchant receives a notification and the buyer a confirmation.',
+                    'An offer may include versions at different prices and options with priced add-ons set by the merchant; the full total is shown to the buyer before confirming the booking, and payment remains made directly to the merchant on receipt.',
+                    'A booking is valid for two hours from confirmation (unless the platform announces otherwise) — if the window passes without pickup, the booking is cancelled automatically and the quantity returns to the offer, at no financial obligation on the buyer.',
+                    'Booking is subject to the store\'s published working hours and to the limits set by the merchant (a cap per single booking, a cap per buyer, a waiting period between bookings) — these limits are enforced automatically.',
                     'The merchant receives the booking through their dashboard and chooses to accept or reject it based on quantity availability and operating hours.',
                     'The buyer visits the merchant\'s location within the offer window to collect the goods or receive the service, and pays the merchant directly.',
                     'If the buyer does not attend within the specified window, the merchant may cancel the booking.',
@@ -270,11 +276,13 @@ const Terms: React.FC = () => {
                     'إصدار الفواتير الضريبية يَقع على التاجر (إن انطبق عليه) وفقاً لأنظمة هيئة الزكاة والضريبة والجمارك.',
                     'يُمنع التلاعب بالأسعار بأيّ شكل، أو رفعها صورياً لخصمها لاحقاً، أو الإعلان عن سعر ثمّ المطالبة بسعر أعلى عند الاستلام («طُعم وتَبديل»).',
                     'عند تَفعيل اشتراك مدفوع للتجار، تُعلَن الأسعار مسبقاً ويُتاح الإلغاء من إعدادات الحساب وفق سياسة الاسترداد المنشورة على /refund.',
+                    'قد تَظهر بعض العروض والمتاجر بشارات ظهور مدفوع («راعٍ رسمي»، «إعلان»، «⭐») ضمن خدمات اشتراك التاجر — وهي خدمات ترتيب وعرض فقط، ولا تُعدّ توصية أو ضماناً من المنصّة لجودة العرض أو التاجر.',
                 ] : [
                     'Prices are displayed in Saudi Riyal as set by the merchant. The merchant is solely responsible for the accuracy of the price; any pricing error is borne by the merchant.',
                     'Issuing tax invoices is the merchant\'s responsibility (where applicable) in accordance with the rules of the Zakat, Tax and Customs Authority.',
                     'Manipulating prices in any form, inflating them artificially to discount them later, or advertising a price and then demanding a higher one at receipt («bait-and-switch»), is prohibited.',
                     'Where a paid merchant subscription is enabled, prices are disclosed in advance and cancellation is available from account settings under the Refund Policy published at /refund.',
+                    'Some offers and stores may appear with paid-visibility badges («Official Sponsor», «Ad», «⭐») as part of merchant subscription services — these are placement and display services only, and are not a recommendation or guarantee by the platform of the quality of the offer or the merchant.',
                 ]} />
             </Section>
 
@@ -494,12 +502,16 @@ const Terms: React.FC = () => {
                     'المسؤولية الكاملة عن محتوى التَقييم تَقع على ناشره — مدنياً وجنائياً.',
                     'يَحقّ للإدارة، وَفق سلطتها التَقديرية، إيقاف أيّ مُستخدم يَثبت تَلاعبه بنظام التقييمات (تَقييمات وَهمية، تَواطؤ مع آخرين، إدخال معلومات كاذبة)، ومنعه من استخدام المنصّة.',
                     'يُمنع المُستخدمون من تَعليقات الإعلان في الردود، أو السبّ والشتم، أو البخس بدون مُبرّر، أو إضافة محتوى لا يَتعلّق بالعرض. وتُحذف هذه التعليقات وقد يُعلَّق حساب المُخالف.',
+                    'لكلّ مشترٍ تَقييم واحد لكلّ متجر، ويَحقّ له تَعديله أو حذفه في أيّ وقت، وللتاجر حقّ الردّ عليه علناً.',
+                    'تصويت «أصالة المنتج» متاح فقط لمن أتمّ حجزاً فعلياً، ويُعبّر عن رأي صاحبه وحده، ويُعرض مجموعه للعموم — وتَسري عليه نفس أحكام التقييمات أعلاه.',
                 ] : [
                     'The user agrees that ratings and reviews are public — whether positive or negative — as expressions of the views of their authors.',
                     'TAKI bears no responsibility for the content of ratings, and is not bound to delete or amend any rating at the request of its subject.',
                     'Full responsibility for the content of a rating lies with its publisher — civilly and criminally.',
                     'The administration may, at its discretion, suspend any user proven to be manipulating the ratings system (fake ratings, collusion with others, false information) and bar them from the platform.',
                     'Users are prohibited from advertising in replies, from abuse and insults, from baseless disparagement, or from adding content unrelated to the offer. Such comments are removed and the offender\'s account may be suspended.',
+                    'Each buyer has one rating per store, which they may edit or delete at any time, and the merchant has the right to reply to it publicly.',
+                    'The «product authenticity» vote is available only to buyers who have completed a real booking; it expresses the voter\'s own opinion alone, its tally is displayed publicly, and the same rating provisions above apply to it.',
                 ]} />
             </Section>
 
@@ -642,6 +654,8 @@ const Terms: React.FC = () => {
                     'تَقديم بيانات المستخدم كاملةً لأيّ جهة أمنية أو قضائية سعودية تَطلبها رسمياً.',
                     'التعاون الكامل مع الجهات الأمنية في أيّ تحقيق جنائيّ.',
                     'تَقييد الوصول من مَناطق جغرافية أو شبكات معيّنة لحماية المنصّة.',
+                    'تَشغيل أنظمة فرز آليّ للنصوص والصور تَحجب أو تَحذف المحتوى المخالف فور نشره، مع إصدار إنذارات موثَّقة على الحساب المخالف قد يُؤدّي تراكمها إلى التعليق أو الحظر.',
+                    'تنظيم مسابقات وسحوبات وحملات موسمية اختيارية وفق شروط تُعلَن وقت كلّ فعالية — وللإدارة تَعديلها أو إيقافها أو استبعاد أيّ مشاركة مخالفة دون تعويض.',
                 ] : [
                     'Delete or hide any content it considers non-compliant or suspicious, of poor quality, lacking detail, or in the wrong section.',
                     'Suspend or terminate any account that breaches the Terms or is under suspicion, or against which a report or complaint has been received, or that poses a risk to the platform or its users.',
@@ -651,6 +665,8 @@ const Terms: React.FC = () => {
                     'Provide the user\'s full data to any Saudi security or judicial authority making a formal request.',
                     'Cooperate fully with the security authorities in any criminal investigation.',
                     'Restrict access from certain geographies or networks to protect the platform.',
+                    'Operate automated screening systems for text and images that hide or remove non-compliant content as soon as it is published, and issue documented warnings on the offending account, the accumulation of which may lead to suspension or ban.',
+                    'Organise optional contests, draws and seasonal campaigns under rules announced at the time of each event — the administration may amend or stop them, or exclude any non-compliant entry, without compensation.',
                 ]} />
                 <Paragraph>
                     {isRTL ? (

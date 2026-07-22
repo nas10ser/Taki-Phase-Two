@@ -471,10 +471,12 @@ const DealDetails: React.FC = () => {
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
-    // v12.53 — «اختيارات المنتج»: اختيارات المشتري {قسم → {خيار → كمية}}.
-    // v12.60 — سقوف كميات الخيارات أُلغيت؛ الخيار قد يحمل «سعراً إضافياً»
-    // يُضاف تلقائياً لمبلغ الحجز النهائي (جبنة +٣ ر.س → 10 تصبح 13).
-    const [optSel, setOptSel] = useState<Record<string, Record<string, number>>>({});
+    // v12.66 — «اختيارات لكل قطعة»: كل قطعة محجوزة لها اختياراتها المستقلة
+    // (برغر ١ بدون جبنة، برغر ٢ بجبنة — علم كبير ١ أحمر، علم كبير ٢ أزرق).
+    // البنية: {مفتاح القطعة → {قسم → {خيار → 1}}}. مفتاح القطعة يشتق من
+    // النسخة وترتيبها (vid#i) أو من الكمية للعروض بلا نسخ (q#i).
+    // v12.60 — الخيار قد يحمل «سعراً إضافياً» يدخل في مبلغ الحجز لكل قطعة.
+    const [pieceOpt, setPieceOpt] = useState<Record<string, Record<string, Record<string, 1>>>>({});
     // v12.61-64 — «نسخ المنتج»: اختيار متعدد بكميات (٣ صغير + ١ كبير) —
     // varSel {نسخة → كمية} يدخل كله في مبلغ الحجز، وfocus يحدد السعر
     // والصورة المعروضين أعلى الصفحة (آخر نسخة لمسها المشتري).
@@ -493,26 +495,11 @@ const DealDetails: React.FC = () => {
     const deal = deals.find(d => d.id === id);
 
     // v12.53 — عند فتح ورقة الحجز لعرضٍ له اختيارات: صفّر الاختيارات
-    // (v12.60: لا جلب لاستهلاك الكميات — السقوف أُلغيت).
+    // (v12.66: البنية صارت لكل قطعة).
     useEffect(() => {
         if (!showBookingModal || !deal?.options?.length) return;
-        setOptSel({});
+        setPieceOpt({});
     }, [showBookingModal, deal?.id, deal?.options?.length]);
-
-    // v12.60 — مجموع الأسعار الإضافية للاختيارات المحددة (سعر الخيار × كميته)
-    const optAddOnTotal = useMemo(() => {
-        if (!deal?.options?.length) return 0;
-        let sum = 0;
-        for (const grp of deal.options) {
-            const sel = optSel[grp.id] || {};
-            for (const [cid, q] of Object.entries(sel)) {
-                if (!q || q <= 0) continue;
-                const price = grp.choices.find(c => c.id === cid)?.price || 0;
-                if (price > 0) sum += price * q;
-            }
-        }
-        return Math.round(sum * 100) / 100;
-    }, [deal?.options, optSel]);
 
     // v12.64 — نسخ المنتج: اختيار متعدد بكميات. focusVariant (آخر ما لمسه
     // المشتري — الأولى افتراضياً) يقود السعر الكبير والشطب والصورة، بينما
@@ -535,6 +522,48 @@ const DealDetails: React.FC = () => {
     const variantMoneyTotal = variants.length
         ? Math.round(variants.reduce((s, v) => s + (varSel[v.id] || 0) * v.price, 0) * 100) / 100
         : 0;
+
+    // v12.66 — قائمة «القطع» المحجوزة: قطعة لكل وحدة من كل نسخة مختارة
+    // (علم كبير ١، علم كبير ٢، علم صغير ١…)، أو حسب الكمية للعروض بلا نسخ.
+    // كل قطعة تحمل اختياراتها الخاصة في ورقة الحجز.
+    const bookingPieces = useMemo(() => {
+        if (!deal?.options?.length) return [] as Array<{ key: string; label: string }>;
+        const out: Array<{ key: string; label: string }> = [];
+        if (variants.length) {
+            for (const v of variants) {
+                const q = varSel[v.id] || 0;
+                for (let i = 0; i < q; i++) {
+                    out.push({ key: `${v.id}#${i}`, label: q > 1 ? `${v.label} ${i + 1}` : v.label });
+                }
+            }
+        } else {
+            const total = Math.max(1, selectedQuantity);
+            for (let i = 0; i < total; i++) {
+                out.push({ key: `q#${i}`, label: isRTL ? `القطعة ${i + 1}` : `Item ${i + 1}` });
+            }
+        }
+        return out;
+    }, [deal?.options?.length, variants, varSel, selectedQuantity, isRTL]);
+
+    // v12.66 — مجموع الأسعار الإضافية: سعر كل خيار يُحسب لكل قطعة اختارته
+    // (جبنة +٣ على برغرين = +٦).
+    const optAddOnTotal = useMemo(() => {
+        if (!deal?.options?.length || !bookingPieces.length) return 0;
+        let sum = 0;
+        for (const piece of bookingPieces) {
+            const ps = pieceOpt[piece.key];
+            if (!ps) continue;
+            for (const grp of deal.options) {
+                const sel = ps[grp.id];
+                if (!sel) continue;
+                for (const cid of Object.keys(sel)) {
+                    const price = grp.choices.find(c => c.id === cid)?.price || 0;
+                    if (price > 0) sum += price;
+                }
+            }
+        }
+        return Math.round(sum * 100) / 100;
+    }, [deal?.options, pieceOpt, bookingPieces]);
     // فتح عرض جديد: أول نسخة بكمية ١ (سلاسة — بلا رسائل إلزام)
     React.useEffect(() => {
         setFocusVariantId(null);
@@ -560,22 +589,8 @@ const DealDetails: React.FC = () => {
         ? Math.round((baseTotal + optAddOnTotal) * 100) / 100
         : 0;
 
-    // v12.54 — ربط كميات الخيارات بالكمية الإجمالية (طلب ناصر): مجموع كميات
-    // الأقسام متعددة الاختيار = عدد القطع المحجوزة، فيُخصم من مخزون العرض
-    // ويخضع تلقائياً لـ«حدود الحجز للمشتري» (فحص maxPerBooking أعلاه يقرأه).
-    useEffect(() => {
-        if (!deal?.options?.length) return;
-        // v12.64 — عند وجود نسخ: قطع الحجز تُدار من عدّادات المقاسات، لا من
-        // كميات الاختيارات (حتى لا يتنازع مصدران على selectedQuantity).
-        if (deal?.variants?.length) return;
-        const multiIds = new Set(deal.options.filter(g => g.mode === 'multi').map(g => g.id));
-        let sum = 0;
-        for (const [gid, chs] of Object.entries(optSel)) {
-            if (!multiIds.has(gid)) continue;
-            for (const q of Object.values(chs)) sum += (q || 0);
-        }
-        if (sum > 0) setSelectedQuantity(sum);
-    }, [optSel, deal?.options]);
+    // v12.66 — أُلغي ربط v12.54 (مجموع كميات الاختيارات = الكمية): الكمية
+    // تُضبط من عدّاد الكمية/عدّادات النسخ، وكل قطعة تختار إضافاتها بنفسها.
 
     // Tick once a second so the on-image countdown badge updates live.
     React.useEffect(() => {
@@ -802,29 +817,52 @@ const DealDetails: React.FC = () => {
             }
         }
 
+        // v12.66 — «اختيارات لكل قطعة»: الأقسام المطلوبة تُفحص قطعةً قطعة،
+        // وسطر الملاحظات يفصّل اختيارات كل قطعة على حدة (برغر ١: بدون جبنة —
+        // برغر ٢: جبنة +٣). selected_options يبقى بنفس الشكل المجمّع
+        // {g,c,qty} حفاظاً على توافق القاعدة والبوتات — qty = عدد القطع
+        // التي اختارت هذا الخيار.
         if (deal.options?.length) {
-            const lines: string[] = [];
-            const sels: Array<{ g: string; c: string; qty?: number }> = [];
             for (const grp of deal.options) {
-                const chosen = Object.entries(optSel[grp.id] || {}).filter(([, q]) => q > 0);
-                if (grp.required && chosen.length === 0) {
-                    customAlert(isRTL ? `🧩 اختر «${grp.title}» أولاً لإتمام الحجز.` : `🧩 Please choose "${grp.title}" first.`);
+                if (!grp.required) continue;
+                const missing = bookingPieces.find(p => Object.keys(pieceOpt[p.key]?.[grp.id] || {}).length === 0);
+                if (missing) {
+                    customAlert(isRTL
+                        ? (bookingPieces.length > 1
+                            ? `🧩 اختر «${grp.title}» لكل قطعة — ناقص في «${missing.label}».`
+                            : `🧩 اختر «${grp.title}» أولاً لإتمام الحجز.`)
+                        : (bookingPieces.length > 1
+                            ? `🧩 Please choose "${grp.title}" for every item — missing on "${missing.label}".`
+                            : `🧩 Please choose "${grp.title}" first.`));
                     return;
                 }
-                if (chosen.length === 0) continue;
-                const parts: string[] = [];
-                for (const [cid, q] of chosen) {
-                    const choice = grp.choices.find(c => c.id === cid);
-                    if (!choice) continue;
-                    sels.push({ g: grp.id, c: cid, qty: q });
-                    const priceTag = (choice.price || 0) > 0 ? ` (+${choice.price} ${isRTL ? 'ر.س' : 'SAR'})` : '';
-                    parts.push(`${choice.label}${priceTag}${q > 1 ? ` ×${q}` : ''}`);
-                }
-                if (parts.length) lines.push(`${grp.title}: ${parts.join('، ')}`);
             }
-            if (sels.length) {
-                selectedOptions = sels;
-                let optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
+            const lines: string[] = [];
+            const agg = new Map<string, { g: string; c: string; qty: number }>();
+            for (const piece of bookingPieces) {
+                const ps = pieceOpt[piece.key] || {};
+                const parts: string[] = [];
+                for (const grp of deal.options) {
+                    const chosen = Object.keys(ps[grp.id] || {});
+                    if (!chosen.length) continue;
+                    const labels: string[] = [];
+                    for (const cid of chosen) {
+                        const choice = grp.choices.find(c => c.id === cid);
+                        if (!choice) continue;
+                        const k = `${grp.id}|${cid}`;
+                        const prev = agg.get(k);
+                        if (prev) prev.qty += 1; else agg.set(k, { g: grp.id, c: cid, qty: 1 });
+                        const priceTag = (choice.price || 0) > 0 ? ` (+${choice.price} ${isRTL ? 'ر.س' : 'SAR'})` : '';
+                        labels.push(`${choice.label}${priceTag}`);
+                    }
+                    if (labels.length) parts.push(`${grp.title}: ${labels.join('، ')}`);
+                }
+                if (!parts.length) continue;
+                lines.push(bookingPieces.length > 1 ? `▫️ ${piece.label}: ${parts.join(' | ')}` : parts.join('\n'));
+            }
+            if (agg.size) {
+                selectedOptions = Array.from(agg.values());
+                const optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
                 notesWithOptions = bookingNotes.trim() ? `${optText}\n${bookingNotes}` : optText;
             }
         }
@@ -1845,102 +1883,114 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
                         
-                        {/* v12.53 — «اختيارات المنتج»: أقسام التاجر (نوع البن/المقاس…)
-                            بنفس هوية الوضعين الداكن والفاتح — radio للقسم الأحادي،
-                            وأزرار كمية للقسم المتعدد، مع «متبقي N» للخيارات المسقوفة. */}
-                        {deal.options?.map(grp => {
-                            const sel = optSel[grp.id] || {};
+                        {/* v12.66 — «اختيارات لكل قطعة»: بطاقة لكل قطعة محجوزة
+                            (برغر ١، برغر ٢، علم صغير…) داخلها أقسام التاجر —
+                            radio للقسم الأحادي وcheckbox للمتعدد، فيختار المشتري
+                            لكل قطعة إضافاتها بشكل مستقل. زر «مثل السابقة» ينسخ
+                            اختيارات القطعة السابقة بضغطة. */}
+                        {!!deal.options?.length && bookingPieces.map((piece, pi) => {
+                            const multiPiece = bookingPieces.length > 1;
+                            const prevKey = pi > 0 ? bookingPieces[pi - 1].key : null;
+                            const prevHasSel = !!(prevKey && pieceOpt[prevKey] && Object.values(pieceOpt[prevKey]).some(g => Object.keys(g).length > 0));
                             return (
-                                <div key={grp.id} style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                                        <h3 style={{ fontWeight: 800, fontSize: '0.95rem', margin: 0 }}>🧩 {grp.title}</h3>
-                                        <span style={{
-                                            fontSize: '0.66rem', fontWeight: 800, padding: '4px 10px', borderRadius: 999,
-                                            background: grp.required ? 'var(--danger-light)' : 'var(--gray-100)',
-                                            color: grp.required ? 'var(--danger)' : 'var(--text-secondary)',
-                                        }}>
-                                            {grp.required
-                                                ? (grp.mode === 'single' ? (isRTL ? 'مطلوب — اختر ١' : 'Required — pick 1') : (isRTL ? 'مطلوب' : 'Required'))
-                                                : (isRTL ? 'اختياري' : 'Optional')}
-                                        </span>
-                                    </div>
-                                    {grp.choices.map(choice => {
-                                        const qty = sel[choice.id] || 0;
-                                        const picked = qty > 0;
-                                        const addOn = choice.price || 0;
-                                        const toggle = () => {
-                                            setOptSel(prev => {
-                                                const cur = { ...(prev[grp.id] || {}) };
-                                                if (grp.mode === 'single') {
-                                                    // radio: خيار واحد فقط في القسم
-                                                    return { ...prev, [grp.id]: picked ? {} : { [choice.id]: 1 } };
-                                                }
-                                                if (picked) delete cur[choice.id]; else cur[choice.id] = 1;
-                                                return { ...prev, [grp.id]: cur };
-                                            });
-                                        };
-                                        const setQty = (q: number) => {
-                                            setOptSel(prev => {
-                                                const cur = { ...(prev[grp.id] || {}) };
-                                                if (q <= 0) delete cur[choice.id]; else cur[choice.id] = q;
-                                                return { ...prev, [grp.id]: cur };
-                                            });
-                                        };
+                                <div key={piece.key} style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                    {multiPiece && (
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, paddingBottom: 10, borderBottom: '1px dashed var(--border-color)' }}>
+                                            <div style={{ fontWeight: 900, fontSize: '0.92rem', color: 'var(--primary)' }}>
+                                                🧾 {piece.label}
+                                            </div>
+                                            {prevHasSel && (
+                                                <button type="button"
+                                                    onClick={() => setPieceOpt(prev => ({ ...prev, [piece.key]: JSON.parse(JSON.stringify(prev[prevKey!] || {})) }))}
+                                                    style={{ border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', borderRadius: 999, padding: '5px 12px', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}>
+                                                    📋 {isRTL ? 'مثل السابقة' : 'Same as previous'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {deal.options!.map(grp => {
+                                        const sel = pieceOpt[piece.key]?.[grp.id] || {};
                                         return (
-                                            <div key={choice.id}
-                                                role={grp.mode === 'single' ? 'radio' : 'checkbox'}
-                                                aria-checked={picked}
-                                                tabIndex={0}
-                                                onClick={toggle}
-                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                                                    borderRadius: 14, marginBottom: 8, cursor: 'pointer',
-                                                    border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
-                                                    background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
-                                                    transition: 'all 0.15s ease',
-                                                    WebkitTapHighlightColor: 'transparent',
-                                                }}>
-                                                <div style={{
-                                                    width: 22, height: 22, flexShrink: 0,
-                                                    borderRadius: grp.mode === 'single' ? '50%' : 7,
-                                                    border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)',
-                                                    background: picked && grp.mode === 'multi' ? 'var(--primary)' : 'var(--card-bg)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    color: '#fff', fontSize: '0.7rem', fontWeight: 900, transition: 'all 0.15s ease',
-                                                }}>{picked && grp.mode === 'multi' ? '✓' : ''}</div>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{choice.label}</div>
-                                                </div>
-                                                {/* v12.60 — السعر الإضافي للخيار: يظهر قبل التأكيد ويُضاف للمبلغ */}
-                                                {addOn > 0 && (
+                                            <div key={grp.id} style={{ marginBottom: 8 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                                                    <h3 style={{ fontWeight: 800, fontSize: '0.95rem', margin: 0 }}>🧩 {grp.title}</h3>
                                                     <span style={{
-                                                        fontSize: '0.76rem', fontWeight: 900, flexShrink: 0,
-                                                        color: picked ? 'var(--primary)' : 'var(--text-secondary)',
-                                                        background: picked ? 'var(--primary-light)' : 'var(--gray-100)',
-                                                        borderRadius: 999, padding: '4px 10px',
+                                                        fontSize: '0.66rem', fontWeight: 800, padding: '4px 10px', borderRadius: 999,
+                                                        background: grp.required ? 'var(--danger-light)' : 'var(--gray-100)',
+                                                        color: grp.required ? 'var(--danger)' : 'var(--text-secondary)',
                                                     }}>
-                                                        +{addOn} {isRTL ? 'ر.س' : 'SAR'}
+                                                        {grp.required
+                                                            ? (grp.mode === 'single' ? (isRTL ? 'مطلوب — اختر ١' : 'Required — pick 1') : (isRTL ? 'مطلوب' : 'Required'))
+                                                            : (isRTL ? 'اختياري' : 'Optional')}
                                                     </span>
-                                                )}
-                                                {grp.mode === 'multi' && picked && (
-                                                    <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                        <button type="button" onClick={() => setQty(qty - 1)}
-                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>−</button>
-                                                        <span style={{ fontWeight: 900, minWidth: 18, textAlign: 'center', color: 'var(--text-primary)' }}>{qty}</span>
-                                                        <button type="button" onClick={() => setQty(qty + 1)}
-                                                            style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>+</button>
+                                                </div>
+                                                {grp.choices.map(choice => {
+                                                    const picked = !!sel[choice.id];
+                                                    const addOn = choice.price || 0;
+                                                    const toggle = () => {
+                                                        setPieceOpt(prev => {
+                                                            const pieceSel = { ...(prev[piece.key] || {}) };
+                                                            if (grp.mode === 'single') {
+                                                                // radio: خيار واحد فقط في القسم لهذه القطعة
+                                                                pieceSel[grp.id] = picked ? {} : { [choice.id]: 1 };
+                                                            } else {
+                                                                const cur = { ...(pieceSel[grp.id] || {}) };
+                                                                if (picked) delete cur[choice.id]; else cur[choice.id] = 1;
+                                                                pieceSel[grp.id] = cur;
+                                                            }
+                                                            return { ...prev, [piece.key]: pieceSel };
+                                                        });
+                                                    };
+                                                    return (
+                                                        <div key={choice.id}
+                                                            role={grp.mode === 'single' ? 'radio' : 'checkbox'}
+                                                            aria-checked={picked}
+                                                            tabIndex={0}
+                                                            onClick={toggle}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                                                                borderRadius: 14, marginBottom: 8, cursor: 'pointer',
+                                                                border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                                background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
+                                                                transition: 'all 0.15s ease',
+                                                                WebkitTapHighlightColor: 'transparent',
+                                                            }}>
+                                                            <div style={{
+                                                                width: 22, height: 22, flexShrink: 0,
+                                                                borderRadius: grp.mode === 'single' ? '50%' : 7,
+                                                                border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)',
+                                                                background: picked && grp.mode === 'multi' ? 'var(--primary)' : 'var(--card-bg)',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                color: '#fff', fontSize: '0.7rem', fontWeight: 900, transition: 'all 0.15s ease',
+                                                            }}>{picked && grp.mode === 'multi' ? '✓' : ''}</div>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{choice.label}</div>
+                                                            </div>
+                                                            {/* v12.60 — السعر الإضافي للخيار: يظهر قبل التأكيد ويُضاف للمبلغ */}
+                                                            {addOn > 0 && (
+                                                                <span style={{
+                                                                    fontSize: '0.76rem', fontWeight: 900, flexShrink: 0,
+                                                                    color: picked ? 'var(--primary)' : 'var(--text-secondary)',
+                                                                    background: picked ? 'var(--primary-light)' : 'var(--gray-100)',
+                                                                    borderRadius: 999, padding: '4px 10px',
+                                                                }}>
+                                                                    +{addOn} {isRTL ? 'ر.س' : 'SAR'}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                {grp.mode === 'multi' && (
+                                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
+                                                        {isRTL
+                                                            ? (multiPiece ? '💡 يمكنك اختيار أكثر من إضافة لهذه القطعة — ولكل قطعة اختياراتها الخاصة.' : '💡 يمكنك اختيار أكثر من إضافة.')
+                                                            : (multiPiece ? '💡 Pick as many add-ons as you like — each item has its own choices.' : '💡 Pick as many add-ons as you like.')}
                                                     </div>
                                                 )}
                                             </div>
                                         );
                                     })}
-                                    {/* v12.54 — توضيح ربط الكميات بالإجمالي */}
-                                    {grp.mode === 'multi' && (
-                                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
-                                            {isRTL ? '💡 مجموع الكميات التي تختارها هنا = عدد القطع التي ستُحجز وتُخصم من كمية العرض.' : '💡 The quantities you pick here add up to your total booked pieces.'}
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })}

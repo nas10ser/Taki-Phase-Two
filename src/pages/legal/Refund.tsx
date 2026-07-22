@@ -21,7 +21,7 @@ const Refund: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الاسترداد' : 'Refund Policy'}
             subtitle={isRTL ? 'Refund Policy · TAKI' : 'Refund Policy · TAKI'}
-            lastUpdated="2026-06-01"
+            lastUpdated="2026-07-22"
         >
             <Paragraph>
                 {isRTL ? (
@@ -153,13 +153,17 @@ const Refund: React.FC = () => {
             <Section n={3} title={isRTL ? '📅 إلغاء الحجز (للمشتري)' : '📅 Cancelling a booking (buyers)'}>
                 <Bullets items={isRTL ? [
                     'الحجز التزام مبدئيّ لا دفع — لا يحجز أيّ مبلغ على بطاقتك ولا يلتزم أيّ مال للمنصّة.',
-                    'يحقّ لك إلغاء الحجز في أيّ وقت قبل انتهاء صلاحيّته من صفحة «حجوزاتي»، بضغطة واحدة، دون أيّ رسوم أو غرامات على المنصّة.',
+                    'مدّة صلاحية الحجز ساعتان من التأكيد: إن لم تستلم خلالها يُلغى الحجز تلقائياً وتعود الكمّية (بما فيها كمّيات النسخ المحجوزة) للعرض — دون أيّ التزام مالي عليك.',
+                    'الإجمالي الظاهر عند الحجز (النسخ + الإضافات المختارة) يُدفع للتاجر مباشرةً عند الاستلام — لا تستلم TAKI أيّ جزء منه.',
+                    'يحقّ لك إلغاء الحجز في أيّ وقت قبل انتهاء صلاحيّته من صفحة «حجوزاتي»، بضغطة واحدة، دون أيّ رسوم أو غرامات على المنصّة — وعند الإلغاء تعود الكمّيات المحجوزة للعرض فوراً.',
                     'إذا لم تحضر خلال مدّة العرض، يحقّ للتاجر إلغاء الحجز من جانبه.',
                     'الإلغاء لا يترتّب عليه أيّ مبلغ مالي لأنّه لا دفع تمّ أصلاً عبر TAKI.',
                     'الإكثار من الحجز دون نيّة الحضور قد يُعرّض حسابك لتقييد أو تعليق وفقاً لتقدير الإدارة (لأنّه يُضرّ بثقة التجار في المنصّة).',
                 ] : [
                     'A booking is a preliminary commitment, not a payment — no amount is held on your card and no money is owed to the platform.',
-                    'You may cancel your booking at any time before it expires from the «My Bookings» page in a single tap, with no fees or penalties charged by the platform.',
+                    'A booking is valid for two hours from confirmation: if you do not collect within that window, it is cancelled automatically and the quantity (including reserved version quantities) returns to the offer — at no financial obligation on you.',
+                    'The total shown at booking (versions + selected add-ons) is paid directly to the merchant on receipt — TAKI receives no part of it.',
+                    'You may cancel your booking at any time before it expires from the «My Bookings» page in a single tap, with no fees or penalties charged by the platform — on cancellation, the reserved quantities return to the offer immediately.',
                     'If you do not attend within the offer window, the merchant may cancel the booking from their side.',
                     'Cancellation does not give rise to any financial amount, because no payment was made through TAKI in the first place.',
                     'Frequent bookings without intention to attend may lead to your account being restricted or suspended at the administration\'s discretion (since this undermines merchants\' trust in the platform).',
@@ -193,8 +197,8 @@ const Refund: React.FC = () => {
                                 <li>الاشتراك يُفعَّل فوراً ويبقى نافذاً <strong>للمدّة المحدَّدة في الباقة</strong> من تاريخ الدفع.</li>
                                 <li>في أيّ لحظة خلال المدّة، يحقّ للتاجر إلغاء الاشتراك من إعدادات حسابه.</li>
                                 <li>عند الإلغاء: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف تلقائياً.</li>
-                                <li><strong>لا يُجدَّد الاشتراك تلقائياً</strong> ولا يُسحَب أيّ مبلغ إضافي.</li>
-                                <li>إذا لم يُلغِ التاجر، يُجدَّد الاشتراك تلقائياً بنفس المبلغ في تاريخ بدء الدورة التالية.</li>
+                                <li><strong>لا تجديد تلقائي ولا سحب إضافي</strong>: تصل التاجر تذكيرات قبل انتهاء اشتراكه، وعند انتهاء المدّة دون تجديد يتوقّف الاشتراك ويتوقّف ظهور العروض تلقائياً حتى يُجدِّد بنفسه.</li>
+                                <li>بعد التجديد يُعيد التاجر تفعيل عروضه بما يوافق سقف المواقع في باقته؛ والانتقال لباقة أدنى يسري بسقفها الجديد فور انتهاء الباقة الأعلى.</li>
                             </>
                         ) : (
                             <>
@@ -202,8 +206,8 @@ const Refund: React.FC = () => {
                                 <li>The subscription is activated immediately and remains effective for <strong>the period specified in the plan</strong> from the date of payment.</li>
                                 <li>At any point during the period, the merchant may cancel the subscription from their account settings.</li>
                                 <li>On cancellation: <strong>the subscription remains effective until the end of the paid period</strong>, then ceases automatically.</li>
-                                <li><strong>The subscription is not auto-renewed</strong> and no further amount is charged.</li>
-                                <li>If the merchant does not cancel, the subscription is automatically renewed for the same amount on the start date of the next cycle.</li>
+                                <li><strong>No auto-renewal and no extra charge</strong>: the merchant receives reminders before expiry, and if the period ends without renewal, the subscription stops and the offers stop appearing automatically until the merchant renews.</li>
+                                <li>After renewing, the merchant re-activates their offers within the location cap of their package; a downgrade takes effect at the lower cap as soon as the higher package ends.</li>
                             </>
                         )}
                     </ol>
@@ -211,18 +215,20 @@ const Refund: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            هذا النموذج — «ادفع شهراً، ألغِ متى تشاء، استفد حتى نهاية الشهر» —
-                            مماثل لنماذج Netflix و Spotify و iCloud المعتمَدة دولياً، ومتوافق
+                            هذا النموذج — «ادفع للمدّة المختارة، ألغِ متى تشاء، استفد حتى نهايتها» —
+                            مماثل للنماذج المعتمَدة دولياً (Netflix و Spotify و iCloud)، مع فارق
+                            لمصلحة التاجر: <strong>لا تجديد تلقائي</strong>. وهو متوافق
                             مع مبدأ «العقد شريعة المتعاقدين» المنصوص عليه في نظام المعاملات
                             المدنية السعودي.
                         </>
                     ) : (
                         <>
-                            This model — «Pay monthly, cancel anytime, use until end of paid
-                            month» — mirrors the internationally accepted models of Netflix,
-                            Spotify and iCloud, and is consistent with the principle that
-                            «the contract is the law of the parties» as set out in the Saudi
-                            Civil Transactions Law.
+                            This model — «Pay for the chosen period, cancel anytime, benefit
+                            until it ends» — mirrors internationally accepted models (Netflix,
+                            Spotify, iCloud), with one difference in the merchant's favour:
+                            <strong> no auto-renewal</strong>. It is consistent with the
+                            principle that «the contract is the law of the parties» as set
+                            out in the Saudi Civil Transactions Law.
                         </>
                     )}
                 </Paragraph>
@@ -241,6 +247,7 @@ const Refund: React.FC = () => {
                     'عند تعليق حساب التاجر بسبب مخالفة شروط الاستخدام أو الأنظمة السعودية — لا يُسترَدّ المبلغ المتبقّي من الفترة المدفوعة.',
                     'بعد مرور 7 أيام على تاريخ المعاملة — حتى لو لم يستخدم التاجر الخدمة، تَسقط الفترة النظامية للمطالبة وفقاً لحقّ العدول المنصوص عليه في نظام التجارة الإلكترونية السعودي.',
                     'إذا كان السبب «غيّرت رأيي»، «وجدت بديلاً أرخص»، «النتائج لم ترقَ لتوقّعاتي»، «اكتسبت زبائن أقلّ من المتوقّع» — هذه ليست أسباباً موجبة للاسترداد بعد إتمام الدفع.',
+                    'خدمات الظهور الإضافية المرتبطة بالاشتراك (راعٍ رسمي / إعلان / ⭐ وغيرها) تنتهي بانتهاء اشتراكها ولا يُسترَدّ مقابلها.',
                 ] : [
                     'After payment has been completed — because the service starts immediately and the merchant\'s listing appears on the platform.',
                     'After publishing any offer on the platform (even one offer, even for one minute) — because the merchant has benefited from the paid service.',
@@ -248,6 +255,7 @@ const Refund: React.FC = () => {
                     'Where the merchant\'s account is suspended for breach of the Terms of Service or Saudi laws — no portion of the remaining paid period is refunded.',
                     'After 7 days have elapsed since the transaction date — even if the merchant has not used the service, the statutory window for claiming has expired, in line with the right of withdrawal under the Saudi E-Commerce Law.',
                     'Where the reason is «I changed my mind», «I found a cheaper alternative», «results fell short of expectations», or «I gained fewer customers than expected» — these are not valid grounds for refund after payment.',
+                    'Additional visibility services attached to the subscription (Official Sponsor / Ad / ⭐ and the like) end when their subscription ends and are not refundable.',
                 ]} />
             </Section>
 
