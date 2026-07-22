@@ -83,7 +83,6 @@ const Privacy: React.FC = () => {
                     <><strong>بيانات الاستخدام والبيانات الفنّية</strong>: الصفحات التي تَزورها، الأنشطة على المنصّة، نوع الجهاز ونظام التشغيل، إعدادات اللغة، عنوان بروتوكول الإنترنت (IP).</>,
                     <><strong>بيانات الموقع الجغرافي</strong>: عند تفعيلك خدمات الموقع لعرض العروض القريبة («حولي»)؛ وإن أبقيت خدمة الموقع مفعّلة فقد يُحدَّث موقعك أثناء استخدام التطبيق لتحسين النتائج القريبة — ويمكنك إيقافها من إعدادات جهازك في أيّ وقت.</>,
                     <><strong>بيانات الاستخدام التحليلية</strong>: مشاهدات العروض، النقرات، عمليات البحث، وفترات فتح التطبيق — تُعالَج بشكل مجمّع لتحسين الخدمة، وتُعرض إحصاءات الجمهور على مستوى المدن والمناطق فقط دون كشف مواقع فردية.</>,
-                    <><strong>بيانات ربط قنوات البوت</strong>: عند ربطك حسابك ببوت تيليجرام الرسمي (أو واتساب مستقبلاً) نحفظ معرّف القناة لتوجيه إشعاراتك — دون مشاركة رقم جوّالك مع تلك القناة.</>,
                     <><strong>مشاركات المسابقات والاستبيانات</strong>: إجاباتك تُحفظ للإدارة فقط ولا تُعرض للعموم، وتُعلَن نتائج السحوبات بهوية مموّهة.</>,
                     <><strong>محتوى التواصل</strong>: محادثاتك مع التجار/المشترين عبر شات الحجز، تقييماتك، شكاويك.</>,
                     <><strong>بيانات الموافقات القانونية</strong>: تاريخ ووقت موافقتك على الشروط والسياسات.</>,
@@ -94,7 +93,6 @@ const Privacy: React.FC = () => {
                     <><strong>Usage and technical data</strong>: pages you visit, activity on the platform, device type and operating system, language settings, and IP address.</>,
                     <><strong>Geolocation data</strong>: where you enable location services to surface nearby offers («Nearby»); if you keep location services on, your position may be refreshed while using the app to improve nearby results — you can turn this off from your device settings at any time.</>,
                     <><strong>Analytics usage data</strong>: offer views, clicks, searches and app-open sessions — processed in aggregate to improve the service; audience statistics are presented at city and region level only, with no individual locations disclosed.</>,
-                    <><strong>Bot-channel linking data</strong>: when you link your account to the official Telegram bot (or WhatsApp in the future), we store the channel identifier to route your notifications — without sharing your phone number with that channel.</>,
                     <><strong>Contest and survey entries</strong>: your answers are kept for the administration only and are never displayed publicly, and draw results are announced with masked identities.</>,
                     <><strong>Communications content</strong>: your conversations with merchants/buyers via the booking chat, your reviews, and your complaints.</>,
                     <><strong>Consent records</strong>: the date and time of your acceptance of the terms and policies.</>,
@@ -176,12 +174,12 @@ const Privacy: React.FC = () => {
                 </Paragraph>
                 <Bullets items={isRTL ? [
                     <><strong>الطرف الآخر في المعاملة</strong>: التاجر يَطّلع على ما يَلزم للاتصال بك وتسليم العرض، والمشتري يَطّلع على ما يَنشره التاجر من بيانات متجره وعروضه.</>,
-                    <><strong>الشركاء التشغيليون والتقنيون والمالِيُّون</strong>: بقَدر ما يَلزم لتقديم الخدمات وتشغيلها (استضافة، معالجة بيانات، اتصالات، مدفوعات، تحليلات، مراقبة الأعطال التقنية، قنوات البوتات، وغيرها)، مع التزام كلّ شريك بأنظمة حماية البيانات المعمول بها.</>,
+                    <><strong>الشركاء التشغيليون والتقنيون والمالِيُّون</strong>: بقَدر ما يَلزم لتقديم الخدمات وتشغيلها (استضافة، معالجة بيانات، اتصالات، مدفوعات، تحليلات، مراقبة الأعطال التقنية، وغيرها)، مع التزام كلّ شريك بأنظمة حماية البيانات المعمول بها.</>,
                     <><strong>الجهات النظامية والأمنية والقضائية</strong>: عند ورود طلب رسميّ بموجب الأنظمة، أو عند الحاجة لحماية المنصّة أو مستخدميها أو الغير من ضرر محتمل.</>,
                     <><strong>الأغراض المشروعة الأخرى</strong>: كالتدقيق، حلّ النزاعات، عمليات إعادة الهيكلة أو التَنازل، أو أيّ غرض آخر تَسمح به الأنظمة.</>,
                 ] : [
                     <><strong>The other party to the transaction</strong>: the merchant receives what is needed to contact you and deliver the offer, and the buyer sees what the merchant has published of their store and offer details.</>,
-                    <><strong>Operational, technical and financial partners</strong>: to the extent required to provide and operate the services (hosting, data processing, communications, payments, analytics, technical error monitoring, bot channels, and the like), with each partner committed to applicable data-protection laws.</>,
+                    <><strong>Operational, technical and financial partners</strong>: to the extent required to provide and operate the services (hosting, data processing, communications, payments, analytics, technical error monitoring, and the like), with each partner committed to applicable data-protection laws.</>,
                     <><strong>Regulatory, security and judicial authorities</strong>: upon receipt of an official request under the law, or where necessary to protect the platform, its users or third parties from potential harm.</>,
                     <><strong>Other legitimate purposes</strong>: such as auditing, dispute resolution, restructuring or assignment, or any other purpose permitted by law.</>,
                 ]} />

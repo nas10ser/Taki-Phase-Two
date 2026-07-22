@@ -275,14 +275,12 @@ const Terms: React.FC = () => {
                     'الأسعار المعروضة بالريال السعودي وتُعرَض كما يُحدّدها التاجر. التاجر مسؤول وحده عن دقّة السعر؛ وأيّ خطأ تَسعيريّ يَقع على عاتقه.',
                     'إصدار الفواتير الضريبية يَقع على التاجر (إن انطبق عليه) وفقاً لأنظمة هيئة الزكاة والضريبة والجمارك.',
                     'يُمنع التلاعب بالأسعار بأيّ شكل، أو رفعها صورياً لخصمها لاحقاً، أو الإعلان عن سعر ثمّ المطالبة بسعر أعلى عند الاستلام («طُعم وتَبديل»).',
-                    'عند تَفعيل اشتراك مدفوع للتجار، تُعلَن الأسعار مسبقاً ويُتاح الإلغاء من إعدادات الحساب وفق سياسة الاسترداد المنشورة على /refund.',
-                    'قد تَظهر بعض العروض والمتاجر بشارات ظهور مدفوع («راعٍ رسمي»، «إعلان»، «⭐») ضمن خدمات اشتراك التاجر — وهي خدمات ترتيب وعرض فقط، ولا تُعدّ توصية أو ضماناً من المنصّة لجودة العرض أو التاجر.',
+                    'عند تَفعيل اشتراك مدفوع للتجار، تُعلَن الأسعار مسبقاً، ويتجدّد الاشتراك تلقائياً ما لم يوقف التاجر التجديد من إعدادات حسابه، وفق سياسة الاسترداد المنشورة على /refund.',
                 ] : [
                     'Prices are displayed in Saudi Riyal as set by the merchant. The merchant is solely responsible for the accuracy of the price; any pricing error is borne by the merchant.',
                     'Issuing tax invoices is the merchant\'s responsibility (where applicable) in accordance with the rules of the Zakat, Tax and Customs Authority.',
                     'Manipulating prices in any form, inflating them artificially to discount them later, or advertising a price and then demanding a higher one at receipt («bait-and-switch»), is prohibited.',
-                    'Where a paid merchant subscription is enabled, prices are disclosed in advance and cancellation is available from account settings under the Refund Policy published at /refund.',
-                    'Some offers and stores may appear with paid-visibility badges («Official Sponsor», «Ad», «⭐») as part of merchant subscription services — these are placement and display services only, and are not a recommendation or guarantee by the platform of the quality of the offer or the merchant.',
+                    'Where a paid merchant subscription is enabled, prices are disclosed in advance, and the subscription auto-renews unless the merchant turns off renewal from their account settings, under the Refund Policy published at /refund.',
                 ]} />
             </Section>
 

@@ -5,8 +5,9 @@
  * النموذج المُعتمَد:
  *   • للمشتري: لا دفع للمنصّة أصلاً — سياسة استرداد ثمن المشتريات على عاتق
  *     التاجر وحده، تختلف من تاجر لآخر، وTAKI ليست طرفاً ولا تتدخّل.
- *   • للتاجر (في حال تفعيل الاشتراك المدفوع): نموذج «ادفع شهرياً، ألغِ متى
- *     تشاء، استفد حتى نهاية المدّة» (مماثل لـ Netflix / Spotify / iCloud).
+ *   • للتاجر (في حال تفعيل الاشتراك المدفوع): نموذج «اشترك ويتجدد تلقائياً،
+ *     أوقف التجديد متى تشاء واستفد حتى نهاية المدّة» (v12.67 — مماثل لـ
+ *     Netflix / Spotify / iCloud، مع تذكير قبل كل تجديد).
  */
 
 import React from 'react';
@@ -193,21 +194,19 @@ const Refund: React.FC = () => {
                     <ol className="list-decimal ps-6 space-y-2 text-sm text-emerald-900 font-medium">
                         {isRTL ? (
                             <>
-                                <li>التاجر يدفع المبلغ الشهري عبر بوّابة الدفع المُرخَّصة.</li>
+                                <li>التاجر يدفع مبلغ الباقة عبر بوّابة الدفع المُرخَّصة.</li>
                                 <li>الاشتراك يُفعَّل فوراً ويبقى نافذاً <strong>للمدّة المحدَّدة في الباقة</strong> من تاريخ الدفع.</li>
-                                <li>في أيّ لحظة خلال المدّة، يحقّ للتاجر إلغاء الاشتراك من إعدادات حسابه.</li>
-                                <li>عند الإلغاء: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف تلقائياً.</li>
-                                <li><strong>لا تجديد تلقائي ولا سحب إضافي</strong>: تصل التاجر تذكيرات قبل انتهاء اشتراكه، وعند انتهاء المدّة دون تجديد يتوقّف الاشتراك ويتوقّف ظهور العروض تلقائياً حتى يُجدِّد بنفسه.</li>
-                                <li>بعد التجديد يُعيد التاجر تفعيل عروضه بما يوافق سقف المواقع في باقته؛ والانتقال لباقة أدنى يسري بسقفها الجديد فور انتهاء الباقة الأعلى.</li>
+                                <li><strong>يتجدَّد الاشتراك تلقائياً</strong> بنفس الباقة والمبلغ عند نهاية كلّ مدّة — حتى لا تنقطع عروض التاجر عن الظهور — ويصل التاجر <strong>تذكير قبل التجديد بعدّة أيام</strong>.</li>
+                                <li>في أيّ لحظة، يحقّ للتاجر <strong>إيقاف التجديد التلقائي</strong> من صفحة الاشتراك. وعند الإيقاف: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف <strong>دون أيّ سحب إضافي</strong>.</li>
+                                <li>بعد التوقّف يتوقّف ظهور العروض تلقائياً حتى يُجدِّد التاجر بنفسه، ويُعيد تفعيل عروضه بما يوافق سقف المواقع في باقته؛ والانتقال لباقة أدنى يسري بسقفها الجديد فور انتهاء الباقة الأعلى.</li>
                             </>
                         ) : (
                             <>
-                                <li>The merchant pays the monthly fee through the licensed payment gateway.</li>
+                                <li>The merchant pays the package fee through the licensed payment gateway.</li>
                                 <li>The subscription is activated immediately and remains effective for <strong>the period specified in the plan</strong> from the date of payment.</li>
-                                <li>At any point during the period, the merchant may cancel the subscription from their account settings.</li>
-                                <li>On cancellation: <strong>the subscription remains effective until the end of the paid period</strong>, then ceases automatically.</li>
-                                <li><strong>No auto-renewal and no extra charge</strong>: the merchant receives reminders before expiry, and if the period ends without renewal, the subscription stops and the offers stop appearing automatically until the merchant renews.</li>
-                                <li>After renewing, the merchant re-activates their offers within the location cap of their package; a downgrade takes effect at the lower cap as soon as the higher package ends.</li>
+                                <li><strong>The subscription auto-renews</strong> at the same package and amount at the end of each period — so the merchant's offers never stop appearing — and the merchant receives a <strong>reminder several days before renewal</strong>.</li>
+                                <li>At any moment, the merchant may <strong>turn off auto-renewal</strong> from the subscription page. On turning it off: <strong>the subscription remains effective until the end of the paid period</strong>, then stops <strong>with no further charge</strong>.</li>
+                                <li>After it stops, the offers stop appearing automatically until the merchant renews themselves, re-activating them within the location cap of their package; a downgrade takes effect at the lower cap as soon as the higher package ends.</li>
                             </>
                         )}
                     </ol>
@@ -215,20 +214,20 @@ const Refund: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            هذا النموذج — «ادفع للمدّة المختارة، ألغِ متى تشاء، استفد حتى نهايتها» —
-                            مماثل للنماذج المعتمَدة دولياً (Netflix و Spotify و iCloud)، مع فارق
-                            لمصلحة التاجر: <strong>لا تجديد تلقائي</strong>. وهو متوافق
+                            هذا النموذج — «اشترك ويتجدَّد تلقائياً، وأوقف التجديد متى تشاء
+                            واستفد حتى نهاية المدّة المدفوعة» — مماثل لنماذج Netflix و Spotify
+                            و iCloud المعتمَدة دولياً، مع تذكير مُسبق قبل كلّ تجديد. وهو متوافق
                             مع مبدأ «العقد شريعة المتعاقدين» المنصوص عليه في نظام المعاملات
                             المدنية السعودي.
                         </>
                     ) : (
                         <>
-                            This model — «Pay for the chosen period, cancel anytime, benefit
-                            until it ends» — mirrors internationally accepted models (Netflix,
-                            Spotify, iCloud), with one difference in the merchant's favour:
-                            <strong> no auto-renewal</strong>. It is consistent with the
-                            principle that «the contract is the law of the parties» as set
-                            out in the Saudi Civil Transactions Law.
+                            This model — «Subscribe and it auto-renews; turn off renewal
+                            anytime and benefit until the end of the paid period» — mirrors
+                            the internationally accepted models of Netflix, Spotify and
+                            iCloud, with an advance reminder before every renewal. It is
+                            consistent with the principle that «the contract is the law of
+                            the parties» as set out in the Saudi Civil Transactions Law.
                         </>
                     )}
                 </Paragraph>
@@ -243,19 +242,19 @@ const Refund: React.FC = () => {
                 <Bullets items={isRTL ? [
                     'بعد إتمام عملية الدفع — لأنّ الخدمة بدأت فوراً وبدأ ظهور التاجر على المنصّة.',
                     'بعد نشر أيّ عرض على المنصّة (ولو عرضاً واحداً، ولو لدقيقة) — لأنّه استفاد من الخدمة المدفوعة.',
-                    'عند قرار التاجر إلغاء الاشتراك في أيّ يوم خلال الشهر المدفوع — يبقى الاشتراك نافذاً للنهاية ولا يُسترَدّ جزء منه.',
+                    'عند إيقاف التاجر للتجديد التلقائي في أيّ يوم خلال المدّة المدفوعة — يبقى الاشتراك نافذاً للنهاية ولا يُسترَدّ جزء منه.',
                     'عند تعليق حساب التاجر بسبب مخالفة شروط الاستخدام أو الأنظمة السعودية — لا يُسترَدّ المبلغ المتبقّي من الفترة المدفوعة.',
                     'بعد مرور 7 أيام على تاريخ المعاملة — حتى لو لم يستخدم التاجر الخدمة، تَسقط الفترة النظامية للمطالبة وفقاً لحقّ العدول المنصوص عليه في نظام التجارة الإلكترونية السعودي.',
                     'إذا كان السبب «غيّرت رأيي»، «وجدت بديلاً أرخص»، «النتائج لم ترقَ لتوقّعاتي»، «اكتسبت زبائن أقلّ من المتوقّع» — هذه ليست أسباباً موجبة للاسترداد بعد إتمام الدفع.',
-                    'خدمات الظهور الإضافية المرتبطة بالاشتراك (راعٍ رسمي / إعلان / ⭐ وغيرها) تنتهي بانتهاء اشتراكها ولا يُسترَدّ مقابلها.',
+                    'مبلغ التجديد التلقائي بعد وصول التذكير المُسبق دون إيقاف التجديد — لأنّ التاجر مُكِّن من الإيقاف قبل التجديد بعدّة أيام.',
                 ] : [
                     'After payment has been completed — because the service starts immediately and the merchant\'s listing appears on the platform.',
                     'After publishing any offer on the platform (even one offer, even for one minute) — because the merchant has benefited from the paid service.',
-                    'Where the merchant chooses to cancel the subscription on any day of the paid month — the subscription remains effective until the end and no part of it is refunded.',
+                    'Where the merchant turns off auto-renewal on any day of the paid period — the subscription remains effective until the end and no part of it is refunded.',
                     'Where the merchant\'s account is suspended for breach of the Terms of Service or Saudi laws — no portion of the remaining paid period is refunded.',
                     'After 7 days have elapsed since the transaction date — even if the merchant has not used the service, the statutory window for claiming has expired, in line with the right of withdrawal under the Saudi E-Commerce Law.',
                     'Where the reason is «I changed my mind», «I found a cheaper alternative», «results fell short of expectations», or «I gained fewer customers than expected» — these are not valid grounds for refund after payment.',
-                    'Additional visibility services attached to the subscription (Official Sponsor / Ad / ⭐ and the like) end when their subscription ends and are not refundable.',
+                    'An auto-renewal charge made after the advance reminder was delivered and renewal was not turned off — because the merchant was enabled to stop it several days before the renewal.',
                 ]} />
             </Section>
 

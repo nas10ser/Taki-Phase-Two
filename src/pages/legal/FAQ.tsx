@@ -59,10 +59,6 @@ const howItWorksAR: QA[] = [
         a: <p>نعم، المنصّة تغطّي جغرافياً كل مناطق المملكة. نشاط التجار يتركّز حالياً في المدن الكبرى، ويتوسّع تدريجياً بحسب انضمام التجار في كل منطقة.</p>,
     },
     {
-        q: 'على أيّ قنوات أستطيع استخدام TAKI؟',
-        a: <p>عبر الموقع وتطبيق الويب على جوّالك، وعبر <strong>بوت تيليجرام الرسمي @TakiKSA_bot</strong> — اربط حسابك من داخل التطبيق برمز ربط آمن (لا نطلب رقم جوّالك في تيليجرام)، وتابع منه العروض والحجوزات وتصلك إشعاراتك هناك أيضاً. ودعم واتساب يُضاف تدريجياً. أيّ حساب آخر يدّعي أنّه TAKI لا يُمثّلنا.</p>,
-    },
-    {
         q: 'هل بياناتي محميّة؟',
         a: <p>نعم. نَلتزم بنظام حماية البيانات الشخصية السعودي ولوائحه التنفيذية، ونطبّق إجراءات وقائية فنّية وإدارية معقولة تجارياً لحماية بياناتك. للتفاصيل، راجع <a href="/privacy" className="text-emerald-600 font-bold underline">سياسة الخصوصية</a>.</p>,
     },
@@ -96,10 +92,6 @@ const howItWorksEN: QA[] = [
     {
         q: 'Is TAKI available in every Saudi city?',
         a: <p>Yes — the platform geographically covers every region of the Kingdom. Merchant activity is currently concentrated in the larger cities and expands gradually as merchants join in each region.</p>,
-    },
-    {
-        q: 'On which channels can I use TAKI?',
-        a: <p>Through the website and the web app on your phone, and through the <strong>official Telegram bot @TakiKSA_bot</strong> — link your account from inside the app using a secure linking code (we never ask for your phone number on Telegram), then browse offers, manage bookings and receive your notifications there too. WhatsApp support is being rolled out gradually. Any other account claiming to be TAKI does not represent us.</p>,
     },
     {
         q: 'Is my data protected?',
@@ -220,7 +212,7 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'كيف أحصل على تنبيهات للعروض المهمّة؟',
-        a: <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. وتابع صفحة <strong>«العروض الموسمية»</strong> لعروض المواسم والحملات (رمضان، العيد، التخفيضات الموسمية…) مع تذكيرات قبل انطلاقها. الكلّ اختياري ويمكنك تعطيله متى تشاء — وإن ربطت حسابك ببوت تيليجرام تصلك الإشعارات هناك أيضاً.</p>,
+        a: <p>من صفحة «حسابي» يمكنك ضبط <strong>التنبيهات الذكية</strong>: حدّد فئات تهمّك، تجاراً تَتبَعهم، أو كلمات مفتاحية، وستصلك إشعارات فور نزول عرض يطابق تفضيلاتك. وتابع صفحة <strong>«العروض الموسمية»</strong> لعروض المواسم والحملات (رمضان، العيد، التخفيضات الموسمية…) مع تذكيرات قبل انطلاقها. الكلّ اختياري ويمكنك تعطيله متى تشاء.</p>,
     },
     {
         q: 'هل يمكنني حذف حسابي نهائياً؟',
@@ -330,7 +322,7 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'How do I get alerts for offers that matter to me?',
-        a: <p>From the «My Account» page you can configure <strong>Smart Alerts</strong>: pick categories of interest, merchants to follow, or keywords, and you will be notified whenever an offer matches your preferences. Also check the <strong>«Seasonal Offers»</strong> page for seasons and campaigns (Ramadan, Eid, seasonal sales…) with reminders before they launch. It is all optional and you can disable it at any time — and if you have linked your account to the Telegram bot, notifications reach you there too.</p>,
+        a: <p>From the «My Account» page you can configure <strong>Smart Alerts</strong>: pick categories of interest, merchants to follow, or keywords, and you will be notified whenever an offer matches your preferences. Also check the <strong>«Seasonal Offers»</strong> page for seasons and campaigns (Ramadan, Eid, seasonal sales…) with reminders before they launch. It is all optional and you can disable it at any time.</p>,
     },
     {
         q: 'Can I permanently delete my account?',
@@ -353,7 +345,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. تتعدّد الباقات <strong>بحسب عدد المواقع (اللوكيشنات)</strong> التي يحتاجها متجرك، وتُعرض أسعارها وتفاصيلها <strong>داخل التطبيق وقت الاشتراك وقد تتغيّر</strong> (لا سعر ثابت مُعلَن مسبقاً). النموذج العامّ: «ادفع للمدّة المختارة، ألغِ متى تشاء، واستفد حتى نهايتها» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. تتعدّد الباقات <strong>بحسب عدد المواقع (اللوكيشنات)</strong> التي يحتاجها متجرك، وتُعرض أسعارها وتفاصيلها <strong>داخل التطبيق وقت الاشتراك وقد تتغيّر</strong> (لا سعر ثابت مُعلَن مسبقاً). النموذج العامّ: «اشترك ويتجدّد تلقائياً، وأوقف التجديد متى تشاء واستفد حتى نهاية المدّة المدفوعة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
     },
     {
         q: 'كم سعر الاشتراك؟ وهل هو ثابت؟',
@@ -377,16 +369,8 @@ const merchantFAQ_AR: QA[] = [
         a: <p>نعم. من إعدادات المتجر حدّد <strong>ساعات العمل</strong> لكلّ يوم (حتى فترتين في اليوم الواحد). خارج هذه الساعات يُقفل زرّ الحجز تلقائياً ويظهر للمشتري موعد الفتح، ويستأنف الحجز فور فتح المحلّ — كما يستفيد متجرك من فلتر «مفتوح الآن» في التصفّح.</p>,
     },
     {
-        q: 'ماذا يحدث عند انتهاء اشتراكي؟',
-        a: <p>تصلك <strong>تذكيرات قبل الانتهاء</strong>، وعند انتهاء الاشتراك دون تجديد تتوقّف عروضك عن الظهور تلقائياً — <strong>ولا يوجد تجديد تلقائي ولا سحب إضافي</strong>. بعد التجديد تُعيد تفعيل عروضك بنفسك بما يوافق سقف المواقع في باقتك.</p>,
-    },
-    {
-        q: 'ما خيارات الظهور الإضافية لمتجري؟',
-        a: <p>تتوفّر خدمات ظهور مدفوعة — مثل «راعٍ رسمي» و«إعلان» و«⭐» — تمنح عروضك شارات مميّزة وترتيباً أعلى في التصفّح وفي البوت. تُعرض تفاصيلها وأسعارها داخل التطبيق، وتنتهي بانتهاء اشتراكها.</p>,
-    },
-    {
-        q: 'هل أستطيع إدارة متجري من تيليجرام؟',
-        a: <p>نعم. بعد ربط حسابك بالبوت الرسمي <strong>@TakiKSA_bot</strong> تستطيع إضافة عروض وتعديلها، ومتابعة الحجوزات الواردة وتأكيد الاستلام أو الإلغاء، ومحادثة المشتري — وتصلك إشعارات الحجوزات فور وقوعها.</p>,
+        q: 'هل يتجدّد اشتراكي تلقائياً؟',
+        a: <p>نعم. الاشتراك المدفوع <strong>يتجدّد تلقائياً بنفس الباقة والمبلغ</strong> عند نهاية كلّ مدّة حتى لا تنقطع عروضك عن الظهور، ويصلك <strong>تذكير قبل التجديد بعدّة أيام</strong>. ويمكنك <strong>إيقاف التجديد التلقائي في أيّ لحظة</strong> من صفحة الاشتراك — عندها يبقى اشتراكك نافذاً حتى نهاية المدّة المدفوعة ثم يتوقّف دون أيّ سحب إضافي، وتتوقّف عروضك عن الظهور حتى تجدّد بنفسك (وتُعيد تفعيلها بما يوافق سقف مواقع باقتك).</p>,
     },
     {
         q: 'كيف أستقبل الحجوزات؟',
@@ -442,7 +426,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'كيف أقفل حسابي كتاجر؟',
-        a: <p>من «إعدادات الحساب» ← «حذف الحساب». الحجوزات الجارية يجب تنفيذها أو إلغاؤها أوّلاً. عند تفعيل الاشتراك المدفوع، يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة دون استرداد جزئي (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p>من «إعدادات الحساب» ← «حذف الحساب». الحجوزات الجارية يجب تنفيذها أو إلغاؤها أوّلاً. وعند تفعيل الاشتراك المدفوع، أوقف <strong>التجديد التلقائي</strong> أوّلاً من صفحة الاشتراك؛ يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة دون استرداد جزئي (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
     },
 ];
 
@@ -458,7 +442,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Is merchant registration paid?',
-        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings. There are <strong>several packages that differ by the number of locations</strong> your store needs, and their prices and details are shown <strong>inside the app at the time of subscription and may change</strong> (no fixed price announced in advance). The general model is: «Pay for the chosen period, cancel anytime, and benefit until it ends» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings. There are <strong>several packages that differ by the number of locations</strong> your store needs, and their prices and details are shown <strong>inside the app at the time of subscription and may change</strong> (no fixed price announced in advance). The general model is: «Subscribe and it auto-renews; turn off renewal anytime and benefit until the end of the paid period» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
     {
         q: 'How much is the subscription? Is it fixed?',
@@ -482,16 +466,8 @@ const merchantFAQ_EN: QA[] = [
         a: <p>Yes. From the store settings, set your <strong>working hours</strong> per day (up to two shifts a day). Outside those hours the booking button locks automatically and buyers see the opening time; booking resumes the moment the shop opens — and your store benefits from the «Open now» browsing filter.</p>,
     },
     {
-        q: 'What happens when my subscription expires?',
-        a: <p>You receive <strong>reminders before expiry</strong>. If the subscription ends without renewal, your offers stop appearing automatically — <strong>there is no auto-renewal and no extra charge</strong>. After renewing, you re-activate your offers yourself within the location cap of your package.</p>,
-    },
-    {
-        q: 'What extra visibility options are available for my store?',
-        a: <p>Paid visibility services are available — such as «Official Sponsor», «Ad» and «⭐» — giving your offers distinctive badges and higher placement in browsing and in the bot. Their details and prices are shown inside the app, and they end when their subscription ends.</p>,
-    },
-    {
-        q: 'Can I manage my store from Telegram?',
-        a: <p>Yes. After linking your account to the official bot <strong>@TakiKSA_bot</strong>, you can add and edit offers, track incoming bookings, confirm pickup or cancel, and chat with the buyer — with instant notifications for every new booking.</p>,
+        q: 'Does my subscription auto-renew?',
+        a: <p>Yes. The paid subscription <strong>auto-renews at the same package and amount</strong> at the end of each period so your offers never stop appearing, and you receive a <strong>reminder several days before renewal</strong>. You can <strong>turn off auto-renewal at any moment</strong> from the subscription page — your subscription then remains effective until the end of the paid period and stops with no further charge, and your offers stop appearing until you renew yourself (re-activating them within the location cap of your package).</p>,
     },
     {
         q: 'How do I receive bookings?',
@@ -547,7 +523,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'How do I close my merchant account?',
-        a: <p>From «Account settings» → «Delete account». Ongoing bookings must be fulfilled or cancelled first. Where a paid subscription is enabled, it remains effective until the end of the paid period with no partial refund (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>From «Account settings» → «Delete account». Ongoing bookings must be fulfilled or cancelled first. Where a paid subscription is enabled, turn off <strong>auto-renewal</strong> first from the subscription page; the subscription remains effective until the end of the paid period with no partial refund (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
 ];
 

@@ -64,7 +64,6 @@ const About: React.FC = () => {
                     <><strong>موثوقة</strong>: نظام تقييم وبلاغات شفّاف يحمي الطرفين، مع مركز إدارة يراقب الجودة.</>,
                     <><strong>مجانية للمشتري دائماً</strong>: لا اشتراكات، لا رسوم خفيّة، لا عمولة.</>,
                     <><strong>محايدة</strong>: TAKI وسيط رقميّ فقط، لا تتدخّل في تنفيذ المعاملة بين التاجر والمشتري.</>,
-                    <><strong>متعدّدة القنوات</strong>: الموقع وتطبيق الويب وبوت تيليجرام الرسمي — حساب واحد وإشعاراتك تصلك أينما كنت.</>,
                     <><strong>غنيّة بالمزايا</strong>: نسخ واختيارات للمنتجات مع إجمالي واضح قبل التأكيد، مواسم وحملات، مسابقات وسحوبات، تنبيهات ذكية، وتصويت أصالة يحمي المشتري.</>,
                 ] : [
                     <><strong>Real-time</strong>: offers are live, time-limited, and bookable instantly.</>,
@@ -72,7 +71,6 @@ const About: React.FC = () => {
                     <><strong>Trustworthy</strong>: a transparent ratings and reports system protects both parties, with an admin centre that monitors quality.</>,
                     <><strong>Always free for buyers</strong>: no subscriptions, no hidden fees, no commission.</>,
                     <><strong>Neutral</strong>: TAKI is a digital intermediary only and does not intervene in the transaction between merchant and buyer.</>,
-                    <><strong>Multi-channel</strong>: the website, the web app and the official Telegram bot — one account, with your notifications reaching you wherever you are.</>,
                     <><strong>Feature-rich</strong>: product versions and options with a clear total before confirming, seasons and campaigns, contests and draws, smart alerts, and an authenticity vote that protects buyers.</>,
                 ]} />
             </Section>

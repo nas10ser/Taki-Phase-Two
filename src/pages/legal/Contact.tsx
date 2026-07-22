@@ -51,30 +51,6 @@ const Contact: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section title={isRTL ? '🤖 بوت تيليجرام الرسمي' : '🤖 Official Telegram bot'}>
-                <Paragraph>
-                    {isRTL ? (
-                        <>
-                            يمكنك استخدام TAKI ومتابعة إشعاراتك وحجوزاتك عبر البوت الرسمي{' '}
-                            <strong>@TakiKSA_bot</strong> على تيليجرام. اربط حسابك من داخل
-                            التطبيق (صفحة «حسابي») برمز ربط آمن — <strong>لا نطلب رقم جوّالك
-                            في تيليجرام</strong> ولا كلمة مرورك. وأيّ حساب آخر يدّعي أنّه
-                            TAKI لا يُمثّلنا، فلا تتعامل معه.
-                        </>
-                    ) : (
-                        <>
-                            You can use TAKI and follow your notifications and bookings
-                            through the official bot <strong>@TakiKSA_bot</strong> on
-                            Telegram. Link your account from inside the app (the «My
-                            Account» page) using a secure linking code — <strong>we never
-                            ask for your phone number on Telegram</strong>, nor your
-                            password. Any other account claiming to be TAKI does not
-                            represent us — do not deal with it.
-                        </>
-                    )}
-                </Paragraph>
-            </Section>
-
             <Section title={isRTL ? '🚩 الإبلاغ عن مستخدم أو عرض مُخالف' : '🚩 Reporting a non-compliant user or offer'}>
                 <Paragraph>
                     {isRTL ? (
