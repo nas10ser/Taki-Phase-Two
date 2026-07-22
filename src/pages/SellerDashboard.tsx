@@ -2420,10 +2420,10 @@ const SellerDashboard: React.FC = () => {
                             لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
                             أحجام في صفحة المنتج، والبطاقة العامة تعرض «يبدأ من». */}
                         <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '🧬 أنواع المنتج — لكل نوع سعره (اختياري)' : '🧬 Product variants — each with its own price (optional)'}</label>
+                            <label style={labelStyle}>{isRTL ? '🧬 أنواع المنتج — لكل نوع سعره (اختياري — إذا كان منتجك بشكل واحد فقط فلا تحتاج هذا الخيار)' : '🧬 Product variants — each with its own price (optional — skip it if your product has one form only)'}</label>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
                                 {isRTL
-                                    ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعر مختلف؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير ١٠ / وسط ١٥ / كبير ٢٠، أو عباية سوداء ٩٠ / بنية ١٢٠. أما إذا كان السعر واحداً لكل الأشكال فاستخدم «إضافات المنتج» بالأسفل.'
+                                    ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
                                     : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
                             </div>
                             {variants.map((v, vi) => (
