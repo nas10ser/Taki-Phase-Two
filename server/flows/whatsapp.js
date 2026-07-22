@@ -72,10 +72,17 @@ function create(deps) {
     }
 
     // ── الإرسال منخفض المستوى (no-op حتى تُضبط البيانات) ──────────────────────
+    // v12.77 — مهلة ١٥ ثانية على كل نداء خارجي: اتصال معلّق كان يجمّد
+    // معالجة رسالة المستخدم بلا نهاية.
+    const fetchWithTimeout = (url, opts = {}) => {
+        const c = new AbortController();
+        const t = setTimeout(() => c.abort(), 15_000);
+        return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
+    };
     async function sendWA(to, payload) {
         if (!enabled()) return null;
         try {
-            const r = await fetch(`https://graph.facebook.com/v22.0/${PHONE_ID}/messages`, {
+            const r = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${PHONE_ID}/messages`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, ...payload }),
@@ -134,10 +141,10 @@ function create(deps) {
     async function uploadWaPhoto(mediaId) {
         if (!GATEWAY || !SB_URL || !TOKEN) return null;
         try {
-            const m = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+            const m = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
             const mj = await m.json().catch(() => ({}));
             if (!mj || !mj.url) return null;
-            const r = await fetch(`${SB_URL}/functions/v1/bot-upload-image`, {
+            const r = await fetchWithTimeout(`${SB_URL}/functions/v1/bot-upload-image`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-bot-secret': GATEWAY, Authorization: `Bearer ${SB_KEY}`, apikey: SB_KEY },
                 body: JSON.stringify({ file_url: mj.url, fetch_auth: `Bearer ${TOKEN}` }),
@@ -543,7 +550,11 @@ function create(deps) {
                 : tr('wa_book_err_fail');
             return sendButtons(from, { body: m, buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
         }
-        if (bc) botBookedBarcodes.add(bc);
+        // v12.77 — نفس سقف تيليجرام (٤٠٠٠) ضد التسريب البطيء
+        if (bc) {
+            botBookedBarcodes.add(bc);
+            if (botBookedBarcodes.size > 4000) botBookedBarcodes.delete(botBookedBarcodes.values().next().value);
+        }
         const expiry = r.expiry_at ? fmtDate(new Date(r.expiry_at)) : '—';
         await sendText(from, tr('wa_book_ok', DIV, r.deal_name || dealName, r.shop_name, r.quantity, prepLabel(r.prep_time), bc, expiry));
         await sendButtons(from, { body: tr('wa_pick'), buttons: [

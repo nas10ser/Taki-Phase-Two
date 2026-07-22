@@ -79,9 +79,21 @@ const BOT_VERSION              = '12.33.0';
 // gate (_bot_gate_ok) verifies this header so the sensitive bot_* functions
 // can't be called by anyone else holding the public anon key (impersonation /
 // PII drain). One client → covers Telegram + WhatsApp + sellerDeals. v12.12
+// v12.77 — مهلة ١٥ ثانية على كل طلب للقاعدة: بدونها اتصال TCP معلّق واحد
+// كان يجمّد rpc() للأبد، وأعلام busy في حلقات outbox/email تبقى مرفوعة
+// فتتوقف الإشعارات بصمت حتى إعادة التشغيل.
+const fetchWithTimeout = (url, opts = {}) => {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 15_000);
+    return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
+};
 const supabase = (SUPABASE_URL && SUPABASE_KEY)
-    ? createClient(SUPABASE_URL, SUPABASE_KEY,
-        BOT_GATEWAY_SECRET ? { global: { headers: { 'x-bot-secret': BOT_GATEWAY_SECRET } } } : undefined)
+    ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+        global: {
+            fetch: fetchWithTimeout,
+            ...(BOT_GATEWAY_SECRET ? { headers: { 'x-bot-secret': BOT_GATEWAY_SECRET } } : {}),
+        },
+    })
     : null;
 const bot = TELEGRAM_TOKEN ? new Telegraf(TELEGRAM_TOKEN) : null;
 
@@ -189,7 +201,7 @@ async function uploadPhoto(ctx, fileId) {
     try {
         const link = await ctx.telegram.getFileLink(fileId);
         const fileUrl = link?.href || String(link);
-        const r = await fetch(`${SUPABASE_URL}/functions/v1/bot-upload-image`, {
+        const r = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/bot-upload-image`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1548,7 +1560,12 @@ bot.action('book:confirm', async ctx => {
         return safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1140_browse_deals'),'browse:menu')],[Markup.button.callback(tr('b1140_menu'),'menu:back')]]).reply_markup });
     }
     // Mark this barcode so the outbox skips the duplicate "confirmed" alert below.
-    if (bc) botBookedBarcodes.add(bc);
+    // v12.77 — سقف ٤٠٠٠: العنصر يُحذف عادة عند وصول إشعار الحجز، لكن أي
+    // حالة لا يصل فيها كانت تترك الباركود في الذاكرة للأبد (تسريب بطيء).
+    if (bc) {
+        botBookedBarcodes.add(bc);
+        if (botBookedBarcodes.size > 4000) botBookedBarcodes.delete(botBookedBarcodes.values().next().value);
+    }
     const expiryMs = result.expiry_at ? new Date(result.expiry_at).getTime() : 0;
     const expiry = expiryMs ? fmtDate(new Date(expiryMs)) : '—';
     await ctx.reply(
@@ -3177,7 +3194,7 @@ if (bot && BOT_MODE === 'polling') {
 // No-op locally (no public URL), so it only kicks in on the cloud host.
 const KEEPALIVE_URL = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
 if (KEEPALIVE_URL) {
-    const selfPing = () => { try { fetch(`${KEEPALIVE_URL}/health`).catch(() => {}); } catch { /* fetch unavailable */ } };
+    const selfPing = () => { try { fetchWithTimeout(`${KEEPALIVE_URL}/health`).catch(() => {}); } catch { /* fetch unavailable */ } };
     setTimeout(selfPing, 30_000);                  // first ping shortly after boot
     setInterval(selfPing, 10 * 60_000).unref?.();  // then every 10 minutes
     console.log(`💓 Keep-alive: self-ping every 10 min → ${KEEPALIVE_URL}/health`);
