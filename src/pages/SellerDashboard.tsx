@@ -300,43 +300,46 @@ const SellerDashboard: React.FC = () => {
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const editId = params.get('edit');
-        if (editId) {
-            const dealToEdit = deals.find(d => d.id === editId);
-            if (dealToEdit && editingDealId !== dealToEdit.id) {
-                const origin = params.get('origin') as 'active' | 'expired';
-                const source = params.get('source');
+        if (!editId) return;
+        const dealToEdit = deals.find(d => d.id === editId);
+        // deals لم تصل بعد؟ الرابط يبقى حتى تكتمل فيُستهلك — فلا يفتح نموذج فارغ.
+        if (!dealToEdit) return;
+        const origin = params.get('origin') as 'active' | 'expired';
+        const source = params.get('source');
+        handleEdit(dealToEdit, origin || undefined);
+        setView('form');
+        if (source) (window as any).editSource = source;
+        // v12.72 — استهلاك الرابط مرة واحدة (نفس فخ ?barcode في v12.69):
+        // بقاء ?edit في العنوان كان يعيد تشغيل handleEdit مع كل تحديث لحظي
+        // للعروض (poll/realtime) فيمسح تعديلات التاجر الجارية ويصفّر النموذج
+        // ويومض بقوائم المواقع — الإزالة الفورية توقف كل ذلك نهائياً.
+        history.replace('/seller');
+    }, [location.search, deals]);
 
-                handleEdit(dealToEdit, origin || undefined);
-                setView('form');
-                if (source) (window as any).editSource = source;
-            }
-        }
-    }, [location.search, deals, editingDealId]);
+    // v12.72 — «كل شيء فوري» (طلب ناصر): بلا نافذة تأكيد وبلا نافذة نجاح —
+    // نقرة واحدة، الزر يعرض ⏳ أثناء الحفظ، وعند النجاح يتبدل التبويب فوراً
+    // فيرى التاجر عرضه انتقل بعينه (هذا هو التأكيد). الفشل وحده يعرض سببه.
+    const [busyDealId, setBusyDealId] = useState<string | null>(null);
 
     const reActivateDeal = async (dealId: string) => {
         const deal = deals.find(d => d.id === dealId);
-        if (deal) {
-            const confirmed = await customConfirm(isRTL ? 'هل تريد تجديد هذا العرض ليعود للظهور في الصفحة الرئيسية؟' : 'Do you want to renew this deal to appear on the home page?');
-            if (!confirmed) return;
+        if (!deal || busyDealId) return;
 
-            // Restore original quantity (or default to 10 if missing for old mocks)
-            const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
-            
-            const updatedDeal = {
+        // Restore original quantity (or default to 10 if missing for old mocks)
+        const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
+        setBusyDealId(dealId);
+        try {
+            const ok = await updateDeal({
                 ...deal,
                 quantity: restoreQty,
                 createdAt: Date.now(), // fresh timestamp → same duration, counted from the renew tap
                 status: 'active' as const
-            };
-
-            const ok = await updateDeal(updatedDeal);
+            });
             if (!ok) {
                 // The renew was REJECTED by the DB (most commonly: this
                 // deal's location slot was deleted/changed, so the
                 // server location-cap trigger refuses to re-activate it).
-                // Previously we showed "renewed successfully" anyway and
-                // the deal silently stayed in the past list. Instead,
-                // open it in the edit form — the "deleted location"
+                // Open it in the edit form — the "deleted location"
                 // banner + current-location chips there let the seller
                 // re-pick a valid location, and Save then truly renews.
                 // updateDeal already surfaced the specific DB reason.
@@ -344,44 +347,38 @@ const SellerDashboard: React.FC = () => {
                 setView('form');
                 return;
             }
-            customAlert(isRTL ? '✅ تم تجديد العرض بنجاح!' : '✅ Deal renewed successfully!');
+            setProductsTab('active');
+        } finally {
+            setBusyDealId(null);
         }
     };
 
     const togglePauseDeal = async (dealId: string) => {
         const deal = deals.find(d => d.id === dealId);
-        if (deal) {
-            const isCurrentlyPaused = deal.status === 'paused';
+        if (!deal || busyDealId) return;
+        const isCurrentlyPaused = deal.status === 'paused';
 
-            // v12.32 — أساس طلب ناصر ١٥: الاستئناف باشتراك منتهٍ كان يعرض
-            // «تم الاستئناف بنجاح» بينما القاعدة ترفضه بصمت. الفحص المبكر هنا
-            // يعطي السبب الصريح قبل أي محاولة (والقاعدة تظل الحكم النهائي).
-            if (isCurrentlyPaused && isPaymentEnabled && !isSubscriptionValid) {
-                customAlert(isRTL
-                    ? '🔒 اشتراكك منتهي — لا يمكن استئناف العرض قبل تجديد الاشتراك.\nافتح «الاشتراك» وجدّد باقتك، ثم فعّل عروضك واحداً واحداً.'
-                    : '🔒 Your subscription has expired — renew it before resuming any deal.');
-                return;
-            }
+        // v12.32 — أساس طلب ناصر ١٥: الاستئناف باشتراك منتهٍ كان يعرض
+        // «تم الاستئناف بنجاح» بينما القاعدة ترفضه بصمت. الفحص المبكر هنا
+        // يعطي السبب الصريح قبل أي محاولة (والقاعدة تظل الحكم النهائي).
+        if (isCurrentlyPaused && isPaymentEnabled && !isSubscriptionValid) {
+            customAlert(isRTL
+                ? '🔒 اشتراكك منتهي — لا يمكن استئناف العرض قبل تجديد الاشتراك.\nافتح «الاشتراك» وجدّد باقتك، ثم فعّل عروضك واحداً واحداً.'
+                : '🔒 Your subscription has expired — renew it before resuming any deal.');
+            return;
+        }
 
-            const msg = isCurrentlyPaused
-                ? (isRTL ? 'هل تريد استئناف العرض ليعود نشطاً للمشترين؟' : 'Do you want to resume this deal and make it active for buyers?')
-                : (isRTL ? 'هل تريد إيقاف العرض مؤقتاً؟ سينتقل للعروض السابقة ولن يراه المشترون.' : 'Do you want to pause this deal? It will move to previous deals and buyers won\'t see it.');
-
-            const confirmed = await customConfirm(msg);
-            if (!confirmed) return;
-
-            const updatedDeal = {
+        setBusyDealId(dealId);
+        try {
+            // v12.32 — الفشل (اشتراك منتهٍ / حد المواقع) يعرض سببه من updateDeal.
+            const ok = await updateDeal({
                 ...deal,
                 status: (isCurrentlyPaused ? 'active' : 'paused') as any
-            };
-            // v12.32 — رسالة النجاح فقط عند نجاح الحفظ فعلاً؛ الفشل
-            // (اشتراك منتهٍ / حد المواقع) يعرض سببه من updateDeal نفسه.
-            const ok = await updateDeal(updatedDeal);
+            });
             if (!ok) return;
-            customAlert(isRTL
-                ? (isCurrentlyPaused ? '✅ تم استئناف العرض بنجاح!' : '⏸️ تم إيقاف العرض مؤقتاً!')
-                : (isCurrentlyPaused ? '✅ Deal resumed!' : '⏸️ Deal paused!')
-            );
+            setProductsTab(isCurrentlyPaused ? 'active' : 'expired');
+        } finally {
+            setBusyDealId(null);
         }
     };
 
@@ -3745,34 +3742,33 @@ const SellerDashboard: React.FC = () => {
                                                 {deal.discountedPrice} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{isRTL ? 'ر.س' : 'SAR'}</span>
                                             </div>
                                             <div style={{ display: 'flex', gap: 8 }}>
+                                                {/* v12.72 — أبعاد موحدة لا تفيض عن البطاقة في عمودين
+                                                    (minWidth: 0 يمنع تمدد الشبكة خارج الشاشة) */}
                                                 {isActiveDeal ? (
                                                     <>
-                                                        <button onClick={() => handleEdit(deal)} style={{ flex: 1, background: 'var(--body-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
+                                                        <button onClick={() => handleEdit(deal)} style={{ flex: 1, minWidth: 0, background: 'var(--body-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                                                             ✏️ {isRTL ? 'تعديل' : 'Edit'}
                                                         </button>
-                                                        <button onClick={() => togglePauseDeal(deal.id)} style={{ flex: 1, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
-                                                            ⏸️ {isRTL ? 'إيقاف' : 'Pause'}
+                                                        <button onClick={() => togglePauseDeal(deal.id)} disabled={busyDealId === deal.id} style={{ flex: 1, minWidth: 0, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', opacity: busyDealId === deal.id ? 0.6 : 1 }}>
+                                                            {busyDealId === deal.id ? '⏳' : <>⏸️ {isRTL ? 'إيقاف' : 'Pause'}</>}
                                                         </button>
-                                                        <button onClick={() => handleDelete(deal.id)} style={{ flex: 1, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
+                                                        <button onClick={() => handleDelete(deal.id)} style={{ flex: 1, minWidth: 0, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                                                             🗑️ {isRTL ? 'حذف' : 'Delete'}
                                                         </button>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        {/* v12.71 — نفس بنية وأبعاد أزرار العروض النشطة تماماً
-                                                            (كانت بأحجام وخطوط مختلفة فبدت «غير متناسقة») —
-                                                            الاختلاف الوحيد لون زر الاستئناف/التجديد. */}
                                                         <button onClick={() => {
                                                             if (deal.status === 'paused') togglePauseDeal(deal.id);
                                                             else reActivateDeal(deal.id);
-                                                        }} title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')}
-                                                            style={{ flex: 1, background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
-                                                            {deal.status === 'paused' ? (isRTL ? '▶️ استئناف' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew')}
+                                                        }} disabled={busyDealId === deal.id} title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')}
+                                                            style={{ flex: 1, minWidth: 0, background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', opacity: busyDealId === deal.id ? 0.6 : 1 }}>
+                                                            {busyDealId === deal.id ? '⏳' : (deal.status === 'paused' ? (isRTL ? '▶️ تفعيل' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew'))}
                                                         </button>
-                                                        <button onClick={() => handleEdit(deal)} title={isRTL ? 'تعديل العرض' : 'Edit Deal'} style={{ flex: 1, background: 'var(--body-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+                                                        <button onClick={() => handleEdit(deal)} title={isRTL ? 'تعديل العرض' : 'Edit Deal'} style={{ flex: 1, minWidth: 0, background: 'var(--body-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                                                             ✏️ {isRTL ? 'تعديل' : 'Edit'}
                                                         </button>
-                                                        <button onClick={() => handleDelete(deal.id)} title={isRTL ? 'حذف العرض' : 'Delete Deal'} style={{ flex: 1, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+                                                        <button onClick={() => handleDelete(deal.id)} title={isRTL ? 'حذف العرض' : 'Delete Deal'} style={{ flex: 1, minWidth: 0, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                                                             🗑️ {isRTL ? 'حذف' : 'Delete'}
                                                         </button>
                                                     </>

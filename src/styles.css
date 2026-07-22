@@ -1592,33 +1592,36 @@ input[type="time"]:focus + .time-hint {
 /* DealsList page — Trendyol-style 2-column grid that scales by tier.
    Mobile-first: 2 columns by default; collapses to 1 on Galaxy Fold,
    widens to 3/4 on tablet/desktop. */
-.taki-deals-list-grid { grid-template-columns: repeat(2, 1fr) !important; }
+.taki-deals-list-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 @media (max-width: 319px) {
-  .taki-deals-list-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .taki-deals-list-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
 }
 @media (min-width: 600px) and (max-width: 899px) {
-  .taki-deals-list-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 14px !important; }
+  .taki-deals-list-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 14px !important; }
 }
 @media (min-width: 900px) {
-  .taki-deals-list-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; max-width: 1200px; margin-inline: auto; }
+  .taki-deals-list-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 16px !important; max-width: 1200px; margin-inline: auto; }
 }
 
 /* Shared deal grid used on Home "كل العروض", Seller Dashboard products,
    StoreDetails active/past tabs. Same density tiers so the catalog feels
    consistent everywhere — Noon/Trendyol/SHEIN style: 2 cols on phone,
-   3 on tablet, 4-5 on desktop. Fold-class phones drop to 1 only. */
-.taki-deals-grid { grid-template-columns: repeat(2, 1fr); }
+   3 on tablet, 4-5 on desktop. Fold-class phones drop to 1 only.
+   v12.72: minmax(0, 1fr) بدل 1fr — أي محتوى عريض داخل البطاقة (صف أزرار
+   nowrap مثلاً) كان يمدد عمود الشبكة فتفيض الصفحة كلها أفقياً خارج الشاشة
+   (بلاغ ناصر بالصور على «صفحتي»). minmax(0,…) يقص min-content فيستحيل الفيض. */
+.taki-deals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 319px) {
-  .taki-deals-grid { grid-template-columns: 1fr; }
+  .taki-deals-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (min-width: 600px) and (max-width: 899px) {
-  .taki-deals-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .taki-deals-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 }
 @media (min-width: 900px) and (max-width: 1199px) {
-  .taki-deals-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .taki-deals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 }
 @media (min-width: 1200px) {
-  .taki-deals-grid { grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .taki-deals-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
 }
 
 /* ---------------------------------------------------------------------
