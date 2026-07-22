@@ -71,12 +71,13 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
     const dt = new Date(p.paid_at || p.created_at);
     const isTax = !!s.vat_enabled && !!s.vat_number;
     const tlv = isTax ? zatcaTlvBase64(s.entity_name, s.vat_number || '', dt.toISOString(), total.toFixed(2), vat.toFixed(2)) : '';
+    // 'ar-SA' وحدها تطبع التاريخ هجرياً (أم القرى) — إجبار الميلادي على الفاتورة
     const period = p.period_start && p.period_end
-        ? `${new Date(p.period_start).toLocaleDateString('ar-SA')} ← ${new Date(p.period_end).toLocaleDateString('ar-SA')}` : '—';
+        ? `${new Date(p.period_start).toLocaleDateString('ar-SA-u-ca-gregory')} ← ${new Date(p.period_end).toLocaleDateString('ar-SA-u-ca-gregory')}` : '—';
     return `<div class="inv${pageBreak ? ' pb' : ''}">
  <h1>🧾 ${isTax ? 'فاتورة ضريبية مبسطة' : 'فاتورة'} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
  <div class="sub">${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}</div>
- <div class="meta">رقم الفاتورة: <b>INV-${p.id}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
+ <div class="meta">رقم الفاتورة: <b>INV-${p.id}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
   العميل (التاجر): <b>${merchantName}</b><br>البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''} — الفترة: ${period}</div>
  <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
   <tr><td>قيمة الاشتراك${includeVat && isTax ? ' (قبل الضريبة)' : ''}</td><td>${net.toFixed(2)}</td></tr>

@@ -46,8 +46,10 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
         supabase.from('subscription_payments').select('*')
             .eq('merchant_id', userId).order('created_at', { ascending: false }).limit(24)
             .then(({ data }) => { if (alive && data) setRows(data as unknown as InvoicePayment[]); });
-        supabase.rpc('get_setting', { p_key: 'tax_settings', p_default: {} })
-            .then(({ data }) => { if (alive && data && (data as any).entity_name) setTaxSettings(data as unknown as InvoiceTaxSettings); });
+        // v12.75 — قراءة مباشرة (المفتاح ضمن القائمة العامة في سياسة RLS):
+        // get_setting أُغلقت عن API لأنها كانت تتجاوز RLS وتكشف أي مفتاح.
+        supabase.from('platform_settings').select('value').eq('key', 'tax_settings').maybeSingle()
+            .then(({ data }) => { if (alive && data?.value && (data.value as any).entity_name) setTaxSettings(data.value as unknown as InvoiceTaxSettings); });
         return () => { alive = false; };
     }, [userId]);
 

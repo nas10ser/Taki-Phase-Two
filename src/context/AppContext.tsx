@@ -1878,7 +1878,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             userName: created.userName,
             score: created.score,
             comment: created.comment,
-            date: new Date(created.createdAt).toISOString().split('T')[0],
+            // بتوقيت الجهاز المحلي — toISOString (UTC) كان يرجع التقييم يوماً
+            // للوراء بين منتصف الليل و٣ فجراً بتوقيت السعودية
+            date: (() => { const d = new Date(created.createdAt); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
             reply: created.reply || undefined,
             repliedBy: created.repliedBy || undefined,
             repliedAt: created.repliedAt || undefined,

@@ -29,7 +29,8 @@ export const dealRepository = {
                                 userName: r.user_name,
                                 score: Number(r.score) || 0,
                                 comment: r.comment ?? '',
-                                date: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '',
+                                // بتوقيت الجهاز — toISOString (UTC) يرجع اليوم للوراء قبل ٣ فجراً بتوقيت السعودية
+                                date: r.created_at ? (() => { const d = new Date(r.created_at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '',
                                 reply: r.reply ?? undefined,
                                 repliedBy: r.replied_by ?? undefined,
                                 repliedAt: r.replied_at ?? undefined,
