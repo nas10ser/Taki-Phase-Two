@@ -6,6 +6,8 @@ import { openExternalUrl } from '../utils/helpers';
 interface BannerSliderProps {
     banners: Banner[];
     isRTL: boolean;
+    /** v12.71 — مدة عرض كل بانر بالمللي ثانية (يحددها المدير، الافتراضي ثانيتان). */
+    autoplayMs?: number;
 }
 
 /**
@@ -22,12 +24,13 @@ interface BannerSliderProps {
  * release we ease with a long decelerate curve. A fast flick (velocity-based)
  * advances even on a short drag, so it feels light and responsive.
  */
-const AUTOPLAY_MS = 3000;
+const AUTOPLAY_MS = 2000; // fallback — الفعلي يأتي من إعداد المدير عبر prop
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';   // easeOutQuint — smooth decelerate
 const DIST_RATIO = 0.16;                          // drag past 16% of width → advance
 const VEL_THRESHOLD = 0.35;                        // px/ms → a flick
 
-const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
+const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs }) => {
+    const intervalMs = (autoplayMs && autoplayMs >= 1000) ? autoplayMs : AUTOPLAY_MS;
     const count = banners.length;
     const loop = count > 1;
     // Extended track with a clone on each side for seamless wrap-around.
@@ -59,10 +62,10 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL }) => {
     useEffect(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
         if (loop && !dragging) {
-            timerRef.current = setTimeout(() => { setDuration(0.55); setAnimate(true); setPos(p => p + 1); }, AUTOPLAY_MS);
+            timerRef.current = setTimeout(() => { setDuration(0.55); setAnimate(true); setPos(p => p + 1); }, intervalMs);
         }
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [pos, dragging, loop]);
+    }, [pos, dragging, loop, intervalMs]);
 
     // After easing INTO a clone, snap (no animation) to the identical real slide.
     const handleTransitionEnd = (e: React.TransitionEvent) => {

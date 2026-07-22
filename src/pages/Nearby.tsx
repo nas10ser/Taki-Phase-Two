@@ -198,6 +198,9 @@ const Nearby: React.FC = () => {
             const matchesRegion = !selectedRegion || (dRegion === selectedRegion);
             const matchesCity = !selectedCity || (dCity === selectedCity);
             const matchesLocation = !selectedLocationId || (d.locationId === selectedLocationId);
+            // v12.71 — فلتر «نوع المكان» (مول/سوق/محل) صار يفلتر العروض فعلاً:
+            // كان يضيّق قائمة «اختر المكان» فقط بلا أي أثر على النتائج.
+            const matchesLocType = !locationType || getLocation(d.locationId)?.type === locationType;
             
             // Time-based offers (no stock cap) stay visible until the timer
             // expires, even when quantity reads 0. Only true sold-out deals
@@ -211,9 +214,9 @@ const Nearby: React.FC = () => {
             // The map is for "what can I get RIGHT NOW within X km"; a
             // locked future deal would be visual noise here.
             const matchesOpen = !openNow || getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open;
-            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && matchesOpen && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
+            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && matchesLocType && matchesOpen && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
         }).sort((a, b) => a.distance - b.distance);
-    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, blockedMerchants, openNow, storeProfiles]);
+    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, locationType, blockedMerchants, openNow, storeProfiles]);
 
     // Store-by-name results — same shared engine as Home/DealsList so search
     // is consistent on every page (stores aren't geo-bound, so a name match
@@ -327,6 +330,12 @@ const Nearby: React.FC = () => {
                                     setFollowMode(false);
                                     const loc = LOCATIONS.find(l => l.id === locId);
                                     if (loc) {
+                                        // v12.71 — مواءمة تلقائية: اختيار مكان يضبط مدينته
+                                        // ومنطقته فلا يتعارض فلتر منطقة سابق مع المكان (كان
+                                        // التعارض يصفّر النتائج بصمت).
+                                        const locCity = CITIES.find(c => c.id === loc.cityId);
+                                        setSelectedCity(loc.cityId);
+                                        if (locCity) setSelectedRegion(locCity.regionId);
                                         setUserLat(loc.lat); setUserLng(loc.lng);
                                         setFlyTarget({ lat: loc.lat, lng: loc.lng, zoom: 14, key: Date.now() }); // v12.61
                                     }
@@ -334,7 +343,17 @@ const Nearby: React.FC = () => {
                             }}
                         >
                             <option value="">{isRTL ? 'اختر المكان...' : 'Select Place...'}</option>
-                            {LOCATIONS.filter(l => (!selectedCity || l.cityId === selectedCity) && (!locationType || l.type === locationType)).map(l => (
+                            {/* v12.71 — القائمة تحترم المنطقة المختارة حتى بلا مدينة: كانت
+                                تعرض أماكن كل السعودية فيختار المستخدم مولاً خارج منطقته
+                                وتصير النتيجة صفراً. */}
+                            {LOCATIONS.filter(l => {
+                                if (selectedCity) { if (l.cityId !== selectedCity) return false; }
+                                else if (selectedRegion) {
+                                    const lc = CITIES.find(c => c.id === l.cityId);
+                                    if (!lc || lc.regionId !== selectedRegion) return false;
+                                }
+                                return !locationType || l.type === locationType;
+                            }).map(l => (
                                 <option key={l.id} value={l.id}>{geoName(l, language)}</option>
                             ))}
                         </select>

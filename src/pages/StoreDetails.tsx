@@ -650,47 +650,27 @@ const StoreDetails: React.FC = () => {
                                     <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
                                     {user?.id === store?.id && (
                                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                                            {/* v12.71 — نفس أبعاد أزرار العروض النشطة أعلاه تماماً؛
+                                                الاختلاف الوحيد لون زر الاستئناف/التجديد. */}
                                             <button
                                                 onClick={() => {
                                                     if (deal.status === 'paused') togglePauseDeal(deal);
                                                     else reActivateDeal(deal);
                                                 }}
                                                 title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')}
-                                                style={{
-                                                    flex: 1.3, padding: '7px 4px', fontSize: '0.7rem', borderRadius: 10,
-                                                    border: 'none',
-                                                    background: 'var(--primary)',
-                                                    color: 'white', fontWeight: 900, cursor: 'pointer',
-                                                    boxShadow: 'var(--shadow-sm)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
-                                                    whiteSpace: 'nowrap'
-                                                }}>
+                                                style={{ flex: 1, padding: '6px', fontSize: '0.7rem', borderRadius: 8, border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', fontWeight: 800, whiteSpace: 'nowrap' }}>
                                                 {deal.status === 'paused' ? (isRTL ? '▶️ استئناف' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew')}
                                             </button>
                                             <button
                                                 onClick={() => history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`)}
                                                 title={isRTL ? 'تعديل العرض' : 'Edit Deal'}
-                                                style={{
-                                                    flex: 1, padding: '7px 4px', fontSize: '0.7rem', borderRadius: 10,
-                                                    border: '1px solid var(--border-color)',
-                                                    background: 'var(--card-bg)', color: 'var(--text-primary)',
-                                                    fontWeight: 800, cursor: 'pointer',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
-                                                    whiteSpace: 'nowrap'
-                                                }}>
+                                                style={{ flex: 1, padding: '6px', fontSize: '0.7rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800, whiteSpace: 'nowrap' }}>
                                                 ✏️ {isRTL ? 'تعديل' : 'Edit'}
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteDeal(deal.id)}
                                                 title={isRTL ? 'حذف العرض' : 'Delete Deal'}
-                                                style={{
-                                                    flex: 1, padding: '7px 4px', fontSize: '0.7rem', borderRadius: 10,
-                                                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                                                    background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)',
-                                                    fontWeight: 800, cursor: 'pointer',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
-                                                    whiteSpace: 'nowrap'
-                                                }}>
+                                                style={{ flex: 1, padding: '6px', fontSize: '0.7rem', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800, whiteSpace: 'nowrap' }}>
                                                 🗑️ {isRTL ? 'حذف' : 'Del'}
                                             </button>
                                         </div>

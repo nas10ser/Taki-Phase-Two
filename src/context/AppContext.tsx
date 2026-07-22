@@ -172,7 +172,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout };
+    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout; bannerSeconds: number };
     /** v12.48 — true بعد وصول platform_settings من الخادم؛ البوابات المعتمدة على النوافذ الزمنية تنتظرها قبل أي redirect */
     platformSettingsReady: boolean;
     /** Seller's saved branches (store_branches table). Drives the
@@ -405,6 +405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         seasonalTheme: string;
         seasonCampaign: SeasonCampaign | null;
         sponsorLayout: SponsorLayout;
+        bannerSeconds: number;
     }>(() => {
         // v12.44 — «هوية المواسم»: apply the cached season skin during the very
         // first render (before paint) so returning visitors never see the base
@@ -414,7 +415,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
             if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
         } catch { /* localStorage may be blocked (private mode) */ }
-        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT };
+        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT, bannerSeconds: 2 };
     });
     // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
     const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
@@ -472,6 +473,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } else if (key === 'sponsor_layout') {
                 // v12.50 — «تحكم ترتيب الرعاة»: نمط ظهور الإعلانات في القوائم.
                 setPlatformSettings(prev => ({ ...prev, sponsorLayout: parseSponsorLayout(value) }));
+            } else if (key === 'banner_autoplay_seconds') {
+                // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
+                const n = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
+                setPlatformSettings(prev => ({ ...prev, bannerSeconds: Number.isFinite(n) && n >= 1 && n <= 120 ? n : 2 }));
             }
         };
         (async () => {
@@ -479,7 +484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout']);
+                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout', 'banner_autoplay_seconds']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);

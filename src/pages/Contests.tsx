@@ -59,6 +59,49 @@ const Contests: React.FC = () => {
     );
 };
 
+/**
+ * v12.71 — عدّاد تنازلي حي حتى نهاية المسابقة (طلب ناصر). يظهر فقط عندما
+ * يحدد المدير تاريخ نهاية (ends_at) والمسابقة نشطة — يحدّث كل ثانية،
+ * وعند انقضاء المدة يعرض «انتهى وقت المشاركة».
+ */
+const ContestCountdown: React.FC<{ endsAt: string }> = ({ endsAt }) => {
+    const target = new Date(endsAt).getTime();
+    const [left, setLeft] = useState(() => target - Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setLeft(target - Date.now()), 1000);
+        return () => clearInterval(id);
+    }, [target]);
+
+    if (!Number.isFinite(target)) return null;
+    if (left <= 0) {
+        return (
+            <div className="mt-3 text-center text-sm font-extrabold text-red-600 bg-red-50 border border-red-200 rounded-xl py-2.5">
+                ⏰ انتهى وقت المشاركة
+            </div>
+        );
+    }
+    const s = Math.floor(left / 1000);
+    const parts = [
+        { v: Math.floor(s / 86400), label: 'يوم' },
+        { v: Math.floor((s % 86400) / 3600), label: 'ساعة' },
+        { v: Math.floor((s % 3600) / 60), label: 'دقيقة' },
+        { v: s % 60, label: 'ثانية' },
+    ];
+    return (
+        <div className="mt-3 rounded-xl p-3" style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #a21caf 60%, #db2777 100%)' }}>
+            <div className="text-center text-[11px] font-extrabold text-white/90 mb-2">⏳ الوقت المتبقي للمشاركة</div>
+            <div className="flex justify-center gap-2" dir="rtl">
+                {parts.map((p) => (
+                    <div key={p.label} className="flex flex-col items-center rounded-lg px-2 py-1.5 min-w-[58px]" style={{ background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(4px)' }}>
+                        <span className="text-xl font-extrabold text-white tabular-nums leading-tight">{String(p.v).padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-white/85">{p.label}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const ContestCard: React.FC<{ contest: Contest; onOpen: () => void }> = ({ contest: c, onOpen }) => {
     const [winners, setWinners] = useState<MaskedWinner[] | null>(null);
     useEffect(() => {
@@ -76,6 +119,7 @@ const ContestCard: React.FC<{ contest: Contest; onOpen: () => void }> = ({ conte
             {c.prize && <div className="text-sm text-amber-600 font-bold mt-1">🏆 الجائزة: {c.prize}</div>}
             {c.description && <div className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">{c.description}</div>}
 
+            {c.status === 'active' && c.ends_at && <ContestCountdown endsAt={c.ends_at} />}
             {c.status === 'active' && (
                 <button onClick={onOpen} className="w-full mt-4 py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600 hover:bg-purple-700 active:scale-95">✍️ شارك الآن</button>
             )}
@@ -224,6 +268,7 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
 
     return shell(<>
         {c.prize && <div className="text-sm text-amber-600 font-bold mb-4">🏆 الجائزة: {c.prize}</div>}
+        {c.ends_at && <div className="mb-4 -mt-1"><ContestCountdown endsAt={c.ends_at} /></div>}
 
         {/* Identity comes from the signed-in account — read only, no typing. */}
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-3">

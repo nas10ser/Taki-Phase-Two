@@ -347,7 +347,7 @@ const Home: React.FC = () => {
                 full-bleed): trimmed from both edges to match the rest of the page. */}
             {banners.length > 0 && (
                 <div className="home-banner-wrap">
-                    <BannerSlider banners={banners} isRTL={isRTL} />
+                    <BannerSlider banners={banners} isRTL={isRTL} autoplayMs={platformSettings.bannerSeconds * 1000} />
                 </div>
             )}
 

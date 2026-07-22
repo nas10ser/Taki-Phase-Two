@@ -1074,6 +1074,9 @@ const AdminTools: React.FC = () => {
     const [eventDates, setEventDates] = useState<Record<string, string>>({});
     const [savingDates, setSavingDates] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
+    // v12.71 — مدة عرض كل بانر في الرئيسية (ثوانٍ) — نص للحقل، يُحفظ رقماً
+    const [bannerSeconds, setBannerSeconds] = useState('2');
+    const [savingBannerSeconds, setSavingBannerSeconds] = useState(false);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
     const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = new banner
@@ -1085,7 +1088,7 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes] = await Promise.all([
+        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
@@ -1095,6 +1098,7 @@ const AdminTools: React.FC = () => {
             supabase.from('platform_settings').select('value').eq('key', 'season_event_dates').maybeSingle(),
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
+            supabase.from('platform_settings').select('value').eq('key', 'banner_autoplay_seconds').maybeSingle(),
         ]);
 
         setPaymentEnabled(paymentRes.data?.value === true);
@@ -1125,6 +1129,9 @@ const AdminTools: React.FC = () => {
         setEventDates(Object.fromEntries(SEASONS.map(s => [s.id, typeof dv[s.id] === 'string' ? dv[s.id] : ''])));
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
+        // v12.71 — سرعة تنقّل البانر (ثوانٍ، الافتراضي ٢)
+        const bs = Number(bannerSecRes.data?.value);
+        setBannerSeconds(Number.isFinite(bs) && bs >= 1 && bs <= 120 ? String(bs) : '2');
         setLoading(false);
     }, []);
 
@@ -1771,6 +1778,50 @@ const AdminTools: React.FC = () => {
                         className="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all"
                     >
                         ➕ بانر جديد
+                    </button>
+                </div>
+
+                {/* v12.71 — سرعة تنقّل البانر في الرئيسية بيد المدير (الافتراضي ٢ ثانية) */}
+                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 mb-3 flex flex-wrap items-center gap-3">
+                    <div className="flex-1 min-w-[180px]">
+                        <div className="text-sm font-extrabold text-[var(--text-primary)]">⏱ مدة عرض كل بانر (بالثواني)</div>
+                        <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
+                            كل كم ثانية ينتقل البانر في الصفحة الرئيسية للبانر التالي تلقائياً. يسري فوراً على كل الزوار بعد الحفظ.
+                        </div>
+                    </div>
+                    <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        step={0.5}
+                        inputMode="decimal"
+                        value={bannerSeconds}
+                        onChange={(e) => setBannerSeconds(e.target.value)}
+                        className="w-24 px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-extrabold text-[var(--text-primary)] text-center outline-none focus:border-emerald-500"
+                        dir="ltr"
+                    />
+                    <button
+                        onClick={async () => {
+                            const n = parseFloat(bannerSeconds);
+                            if (!Number.isFinite(n) || n < 1 || n > 120) {
+                                await customAlert('⚠️ أدخل رقماً بين 1 و120 ثانية.');
+                                return;
+                            }
+                            setSavingBannerSeconds(true);
+                            const { error } = await supabase.from('platform_settings').upsert({
+                                key: 'banner_autoplay_seconds',
+                                value: n,
+                                description: 'Home banner autoplay interval in seconds (admin-controlled, default 2)',
+                                updated_at: new Date().toISOString(),
+                            });
+                            setSavingBannerSeconds(false);
+                            if (error) { await customAlert('❌ ' + error.message); return; }
+                            await customAlert(`✅ تم الحفظ — البانر يتنقل الآن كل ${n} ثانية.`);
+                        }}
+                        disabled={savingBannerSeconds}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all"
+                    >
+                        {savingBannerSeconds ? 'جاري الحفظ...' : '💾 حفظ'}
                     </button>
                 </div>
                 {loading ? (

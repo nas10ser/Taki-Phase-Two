@@ -3758,40 +3758,24 @@ const SellerDashboard: React.FC = () => {
                                                         </button>
                                                     </>
                                                 ) : (
-                                                     <div style={{ display: 'flex', gap: 6, width: '100%' }}>
-                                                         <button onClick={(e) => { 
-                                                             e.stopPropagation(); 
-                                                             if (deal.status === 'paused') togglePauseDeal(deal.id);
-                                                             else reActivateDeal(deal.id); 
-                                                         }} title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')} style={{
-                                                            flex: 1.4, background: deal.status === 'paused' ? 'var(--primary)' : 'linear-gradient(135deg, #0284c7, #0369a1)', color: 'white',
-                                                             border: 'none', borderRadius: 12, padding: '10px 4px', fontWeight: 900,
-                                                             cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', fontSize: '0.78rem',
-                                                             boxShadow: deal.status === 'paused' ? '0 4px 12px var(--primary-glow)' : '0 4px 12px rgba(2, 132, 199, 0.25)',
-                                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                                             whiteSpace: 'nowrap'
-                                                         }}>
-                                                             {deal.status === 'paused' ? (isRTL ? '▶️ استئناف' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew')}
-                                                         </button>
-                                                         <button onClick={(e) => { e.stopPropagation(); handleEdit(deal); }} title={isRTL ? 'تعديل العرض' : 'Edit Deal'} style={{
-                                                             flex: 1, background: 'var(--body-bg)', color: 'var(--text-primary)',
-                                                             border: '1px solid var(--border-color)', borderRadius: 12, padding: '10px 4px',
-                                                             fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', fontSize: '0.78rem',
-                                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                                             whiteSpace: 'nowrap'
-                                                         }}>
-                                                             ✏️ {isRTL ? 'تعديل' : 'Edit'}
-                                                         </button>
-                                                         <button onClick={(e) => { e.stopPropagation(); handleDelete(deal.id); }} title={isRTL ? 'حذف العرض' : 'Delete Deal'} style={{
-                                                             flex: 1, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444',
-                                                             border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '10px 4px',
-                                                             fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', fontSize: '0.78rem',
-                                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                                             whiteSpace: 'nowrap'
-                                                         }}>
-                                                             🗑️ {isRTL ? 'حذف' : 'Delete'}
-                                                         </button>
-                                                     </div>
+                                                    <>
+                                                        {/* v12.71 — نفس بنية وأبعاد أزرار العروض النشطة تماماً
+                                                            (كانت بأحجام وخطوط مختلفة فبدت «غير متناسقة») —
+                                                            الاختلاف الوحيد لون زر الاستئناف/التجديد. */}
+                                                        <button onClick={() => {
+                                                            if (deal.status === 'paused') togglePauseDeal(deal.id);
+                                                            else reActivateDeal(deal.id);
+                                                        }} title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')}
+                                                            style={{ flex: 1, background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+                                                            {deal.status === 'paused' ? (isRTL ? '▶️ استئناف' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew')}
+                                                        </button>
+                                                        <button onClick={() => handleEdit(deal)} title={isRTL ? 'تعديل العرض' : 'Edit Deal'} style={{ flex: 1, background: 'var(--body-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+                                                            ✏️ {isRTL ? 'تعديل' : 'Edit'}
+                                                        </button>
+                                                        <button onClick={() => handleDelete(deal.id)} title={isRTL ? 'حذف العرض' : 'Delete Deal'} style={{ flex: 1, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+                                                            🗑️ {isRTL ? 'حذف' : 'Delete'}
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
