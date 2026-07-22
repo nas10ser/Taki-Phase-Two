@@ -19,7 +19,7 @@ import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 
 // ─── الأنواع ─────────────────────────────────────────────────────────────────
-type EventKey = 'sub_new' | 'sub_warning' | 'sub_expired' | 'sub_cancelled' | 'booking_reminder';
+type EventKey = 'sub_new' | 'sub_warning' | 'sub_renewed' | 'sub_expired' | 'sub_cancelled' | 'booking_reminder';
 
 interface EventCfg {
     enabled: boolean;
@@ -53,6 +53,13 @@ const DEFAULTS: MsgSettings = {
         title_ar: '⏳ اشتراكك يقارب الانتهاء', title_en: '⏳ Your subscription is ending soon',
         body_ar: 'يتبقّى {days} يوم على انتهاء اشتراكك (بتاريخ {expires}). جدّد الآن حتى تستمر عروضك بالظهور دون انقطاع.',
         body_en: '{days} day(s) left until your subscription ends (on {expires}). Renew now to keep your deals live.',
+    },
+    // v12.68 — إشعار التجديد التلقائي: إطفاؤه = تجديد صامت (التجديد نفسه يستمر)
+    sub_renewed: {
+        enabled: true, channels: { inapp: true, email: false },
+        title_ar: '🔄 تم تجديد اشتراكك تلقائياً', title_en: '🔄 Your subscription auto-renewed',
+        body_ar: 'تم تجديد اشتراكك تلقائياً حتى {expires} بمبلغ {price} ر.س. عروضك تبقى ظاهرة بلا انقطاع، ويمكنك إيقاف التجديد التلقائي في أي وقت من صفحة الاشتراك.',
+        body_en: 'Your subscription auto-renewed until {expires} for SAR {price}. Your offers stay live without interruption; you can turn off auto-renewal anytime from the subscription page.',
     },
     sub_expired: {
         enabled: true, channels: { inapp: true, email: false },
@@ -89,6 +96,11 @@ const EVENT_META: {
         desc: 'تصل مرة واحدة لكل فترة اشتراك، قبل الانتهاء بعدد الأيام الذي تحدده — لكل مشترك حسب تاريخ انتهائه هو.',
         placeholders: ['{store}', '{days}', '{expires}'],
         numberField: { field: 'days_before', label: 'كم يوم قبل الانتهاء؟', min: 1, max: 60, unit: 'يوم' },
+    },
+    {
+        key: 'sub_renewed', icon: '🔄', name: 'التجديد التلقائي الناجح',
+        desc: 'تصل للتاجر لحظة تجديد اشتراكه تلقائياً (المبلغ والتاريخ الجديد). أطفئها إذا أردت أن يتم التجديد بصمت دون أي إشعار — التجديد نفسه والفاتورة يستمران في الحالتين.',
+        placeholders: ['{store}', '{price}', '{expires}'],
     },
     {
         key: 'sub_expired', icon: '🔴', name: 'انتهاء الاشتراك',
