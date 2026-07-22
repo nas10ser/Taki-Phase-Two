@@ -284,11 +284,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cancelled: 2
     };
 
-    const [promptConfig, setPromptConfig] = useState<{message: string, resolve: (val: string | null) => void} | null>(null);
+    // v12.76 — طابور مثل نوافذ التأكيد: الخانة الواحدة كانت تُسقط وعد نافذة
+    // مفتوحة إذا طُلبت ثانية فيعلق منتظرها للأبد.
+    const [promptQueue, setPromptQueue] = useState<Array<{message: string, resolve: (val: string | null) => void}>>([]);
+    const promptConfig = promptQueue[0] || null;
+    const closePrompt = useCallback(() => setPromptQueue(q => q.slice(1)), []);
 
     const customPrompt = useCallback((message: string): Promise<string | null> => {
         return new Promise(resolve => {
-            setPromptConfig({ message, resolve });
+            setPromptQueue(q => [...q, { message, resolve }]);
         });
     }, []);
 
@@ -296,8 +300,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return (STATUS_RANK[localStatus] || 0) >= (STATUS_RANK[remoteStatus] || 0) ? localStatus : remoteStatus;
     }, []);
     
-    // Custom Dialog State
-    const [dialogConfig, setDialogConfig] = useState<{type: 'alert'|'confirm', message: string, resolve: (val: any) => void} | null>(null);
+    // Custom Dialog State — v12.76: طابور FIFO بدل خانة واحدة. الخانة الواحدة
+    // كانت تعني أن أي نافذة ثانية تظهر والأولى مفتوحة «تستبدلها» فلا يُستدعى
+    // وعد الأولى أبداً — والكود المنتظر (await customConfirm/Alert) يعلق إلى
+    // الأبد (جذر «النقرات تعلق»). الآن تُعرض النوافذ واحدة تلو الأخرى.
+    const [dialogQueue, setDialogQueue] = useState<Array<{type: 'alert'|'confirm', message: string, resolve: (val: any) => void}>>([]);
+    const dialogConfig = dialogQueue[0] || null;
+    const closeDialog = useCallback(() => setDialogQueue(q => q.slice(1)), []);
 
     // Post-purchase rating box: opens automatically for the BUYER the moment
     // their booking is marked completed (seller scanned the QR). Distinct
@@ -324,13 +333,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const customAlert = useCallback((message: string): Promise<void> => {
         return new Promise(resolve => {
-            setDialogConfig({ type: 'alert', message, resolve: () => resolve(undefined) });
+            setDialogQueue(q => [...q, { type: 'alert', message, resolve: () => resolve(undefined) }]);
         });
     }, []);
 
     const customConfirm = useCallback((message: string): Promise<boolean> => {
         return new Promise(resolve => {
-            setDialogConfig({ type: 'confirm', message, resolve });
+            setDialogQueue(q => [...q, { type: 'confirm', message, resolve }]);
         });
     }, []);
 
@@ -2143,12 +2152,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // "New Booking Request" alert to the seller (with prep_time/notes
         // baked in) and the "Booking Confirmed" alert to the buyer. We
         // deliberately do NOT addNotification(...) here to avoid duplicates.
-        bookingRepository.save(booking as any).catch(e =>
-            console.warn('Booking remote sync deferred:', e?.message || e)
-        );
+        // v12.76 — الفشل لم يعد صامتاً: كان «أطلق وانسَ» فإذا رفض الحارس
+        // (سباق حدود/مخزون) أو انقطعت الشبكة يبقى الطلب ظاهراً محلياً ثم
+        // «يختفي» عند أول مزامنة والكمية منخصمة بلا حجز — الآن نتراجع
+        // محلياً ونعيد الكمية ونخبر المشتري ليعيد المحاولة.
+        bookingRepository.save(booking as any).catch(e => {
+            const msg: string = e?.message || '';
+            console.warn('Booking remote save FAILED — rolling back:', msg);
+            setBookings(prev => prev.filter(b => b.barcode !== barcode));
+            if (deal.quantity !== 'unlimited') {
+                const currentDeal = dealsRef.current.find(d => d.id === deal.id);
+                if (currentDeal && currentDeal.quantity !== 'unlimited') {
+                    const restored = (currentDeal.quantity as number) + quantity;
+                    setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, quantity: restored } : d));
+                    dealRepository.updateQuantity(deal.id, restored).catch(() => {});
+                }
+            }
+            customAlertRef.current(language === 'ar'
+                ? `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`
+                : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`);
+        });
 
         return booking;
-    }, [user]);
+    }, [user, language]);
 
     // In-flight tracker: prevents double-tap from a barcode scanner firing
     // two simultaneous status transitions for the same booking. Each entry
@@ -3240,12 +3266,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: 24, lineHeight: 1.6 }}>{dialogConfig.message}</div>
                         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
                             {dialogConfig.type === 'confirm' && (
-                                <button onClick={() => { dialogConfig.resolve(false); setDialogConfig(null); }}
+                                <button onClick={() => { dialogConfig.resolve(false); closeDialog(); }}
                                     style={{ flex: 1, padding: '12px', borderRadius: 14, border: 'none', background: 'var(--gray-100)', color: 'var(--gray-500, #64748b)', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}>
                                     {language === 'ar' ? 'إلغاء' : 'Cancel'}
                                 </button>
                             )}
-                            <button onClick={() => { dialogConfig.resolve(true); setDialogConfig(null); }}
+                            <button onClick={() => { dialogConfig.resolve(true); closeDialog(); }}
                                 style={{ flex: 1, padding: '12px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: 'white', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}>
                                 {language === 'ar' ? 'موافق' : 'OK'}
                             </button>
@@ -3278,13 +3304,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             <button onClick={() => {
                                 const val = (document.getElementById('custom-prompt-input') as HTMLTextAreaElement).value;
                                 promptConfig.resolve(val);
-                                setPromptConfig(null);
+                                closePrompt();
                             }} style={{ flex: 1, padding: '14px', borderRadius: 12, backgroundColor: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, fontSize: '0.95rem' }}>
                                 {language === 'ar' ? 'إرسال' : 'Send'}
                             </button>
                             <button onClick={() => {
                                 promptConfig.resolve(null);
-                                setPromptConfig(null);
+                                closePrompt();
                             }} style={{ flex: 1, padding: '14px', borderRadius: 12, backgroundColor: 'var(--gray-200)', color: 'var(--text-secondary)', border: 'none', fontWeight: 800, fontSize: '0.95rem' }}>
                                 {language === 'ar' ? 'إلغاء' : 'Cancel'}
                             </button>

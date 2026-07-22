@@ -238,11 +238,17 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
             if (q.required !== false && !((answers[q.id] || '').trim())) { setError('يرجى الإجابة على كل الأسئلة الإلزامية'); return; }
         }
         setSubmitting(true);
-        // name + phone are stamped from the account server-side; sent only for the API shape.
-        const res = await contestRepository.submit(c.id, user.name || '', accountPhone, answers, social);
-        setSubmitting(false);
-        if (!res.success) { setError(res.error || 'تعذّر الإرسال'); return; }
-        setResult({ qualified: !!res.qualified, score: res.score, max: res.max });
+        // v12.76 — try/finally: أي استثناء شبكة كان يترك زر الإرسال يدور للأبد
+        try {
+            // name + phone are stamped from the account server-side; sent only for the API shape.
+            const res = await contestRepository.submit(c.id, user.name || '', accountPhone, answers, social);
+            if (!res.success) { setError(res.error || 'تعذّر الإرسال'); return; }
+            setResult({ qualified: !!res.qualified, score: res.score, max: res.max });
+        } catch (e: any) {
+            setError(e?.message || 'تعذّر الإرسال — تحقق من اتصالك وحاول مجدداً');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     if (result) {

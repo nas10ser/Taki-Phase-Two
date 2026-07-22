@@ -218,8 +218,15 @@ const Register: React.FC = () => {
         }
 
         setLoading(true);
-        const { error } = await authService.resetPassword(trimmedEmail);
-        setLoading(false);
+        // v12.76 — أي استثناء (انقطاع شبكة) كان يترك الزر يدور للأبد
+        let error: any = null;
+        try {
+            ({ error } = await authService.resetPassword(trimmedEmail));
+        } catch (e: any) {
+            error = e;
+        } finally {
+            setLoading(false);
+        }
 
         if (error) {
             await customAlert(t(
@@ -439,8 +446,15 @@ const Register: React.FC = () => {
         }
 
         setLoading(true);
-        const { error } = await authService.verifyOtp(email, normalizedCode, 'email');
-        setLoading(false);
+        // v12.76 — أي استثناء (انقطاع شبكة) كان يترك زر التحقق يدور للأبد
+        let error: any = null;
+        try {
+            ({ error } = await authService.verifyOtp(email, normalizedCode, 'email'));
+        } catch (e: any) {
+            error = e;
+        } finally {
+            setLoading(false);
+        }
 
         if (error) {
             await customAlert(t(`الكود غير صحيح أو انتهت صلاحيته: ${error.message}`, `Invalid or expired code: ${error.message}`));
