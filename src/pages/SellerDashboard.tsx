@@ -316,14 +316,16 @@ const SellerDashboard: React.FC = () => {
         history.replace('/seller');
     }, [location.search, deals]);
 
-    // v12.72 — «كل شيء فوري» (طلب ناصر): بلا نافذة تأكيد وبلا نافذة نجاح —
-    // نقرة واحدة، الزر يعرض ⏳ أثناء الحفظ، وعند النجاح يتبدل التبويب فوراً
-    // فيرى التاجر عرضه انتقل بعينه (هذا هو التأكيد). الفشل وحده يعرض سببه.
+    // v12.73 (تصويب طلب ناصر): نافذة التأكيد «هل تريد…؟» تبقى — لكن بعد
+    // «موافق» التنفيذ فوري: بلا نافذة نجاح، الزر يعرض ⏳ أثناء الحفظ،
+    // والتبويب يتبدل تلقائياً فيرى التاجر عرضه انتقل بعينه.
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
 
     const reActivateDeal = async (dealId: string) => {
         const deal = deals.find(d => d.id === dealId);
         if (!deal || busyDealId) return;
+        const confirmed = await customConfirm(isRTL ? 'هل تريد تجديد هذا العرض ليعود للظهور في الصفحة الرئيسية؟' : 'Do you want to renew this deal to appear on the home page?');
+        if (!confirmed) return;
 
         // Restore original quantity (or default to 10 if missing for old mocks)
         const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
@@ -367,6 +369,11 @@ const SellerDashboard: React.FC = () => {
                 : '🔒 Your subscription has expired — renew it before resuming any deal.');
             return;
         }
+
+        const confirmed = await customConfirm(isCurrentlyPaused
+            ? (isRTL ? 'هل تريد استئناف العرض ليعود نشطاً للمشترين؟' : 'Do you want to resume this deal and make it active for buyers?')
+            : (isRTL ? 'هل تريد إيقاف العرض مؤقتاً؟ سينتقل للعروض السابقة ولن يراه المشترون.' : 'Do you want to pause this deal? It will move to previous deals and buyers won\'t see it.'));
+        if (!confirmed) return;
 
         setBusyDealId(dealId);
         try {

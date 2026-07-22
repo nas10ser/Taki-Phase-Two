@@ -158,13 +158,14 @@ const StoreDetails: React.FC = () => {
         customAlert(isRTL ? '✅ تم حفظ التعديلات' : '✅ Changes saved');
     };
 
-    // v12.72 — «كل شيء فوري» (طلب ناصر): نقرة واحدة بلا تأكيد وبلا نافذة
-    // نجاح — الزر يعرض ⏳ أثناء الحفظ والتبويب يتبدل فوراً فيرى التاجر عرضه
-    // انتقل بعينه. الفشل وحده يشرح سببه.
+    // v12.73 (تصويب طلب ناصر): نافذة التأكيد تبقى — وبعد «موافق» التنفيذ
+    // فوري: بلا نافذة نجاح، الزر يعرض ⏳، والتبويب يتبدل تلقائياً.
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
 
     const reActivateDeal = async (deal: any) => {
         if (busyDealId) return;
+        const confirmed = await customConfirm(isRTL ? 'هل تريد تجديد هذا العرض ليعود للظهور في الصفحة الرئيسية؟' : 'Do you want to renew this deal to appear on the home page?');
+        if (!confirmed) return;
         const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
         setBusyDealId(deal.id);
         try {
@@ -197,6 +198,10 @@ const StoreDetails: React.FC = () => {
     const togglePauseDeal = async (deal: any) => {
         if (busyDealId) return;
         const isCurrentlyPaused = deal.status === 'paused';
+        const confirmed = await customConfirm(isCurrentlyPaused
+            ? (isRTL ? 'هل تريد استئناف العرض ليعود نشطاً للمشترين؟' : 'Do you want to resume this deal and make it active for buyers?')
+            : (isRTL ? 'هل تريد إيقاف العرض مؤقتاً؟ سينتقل للعروض السابقة ولن يراه المشترون.' : 'Do you want to pause this deal? It will move to previous deals and buyers won\'t see it.'));
+        if (!confirmed) return;
         setBusyDealId(deal.id);
         try {
             // v12.72 — الفشل يعرض سببه من updateDeal نفسه (كان يَعِد بالنجاح دائماً).
