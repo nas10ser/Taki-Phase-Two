@@ -15,8 +15,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
+import { adminService, AdminUserRow } from '../../services/adminService';
 import { openPrintWindow } from '../../utils/invoice';
 import { downloadCsv } from '../../utils/csvExport';
+import { PROVIDERS } from '../../components/seller/GatewayCard';
 
 interface LogRow {
     id: number;
@@ -85,6 +87,154 @@ const AdminInvoices: React.FC = () => {
     const [merchantFilter, setMerchantFilter] = useState('');
     const [providerFilter, setProviderFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    // v12.84 — بحث برقم الحجز/العملية/مرجع البوابة (prefix مفهرس — لا مسح
+    // كامل مهما بلغ السجل). الإدخال منفصل عن المطبَّق كي لا يُستعلم مع كل حرف.
+    const [searchInput, setSearchInput] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    // عرض العملية على الشاشة كفاتورة متكاملة (بلا أي تحميل — والـPDF يبقى خياراً)
+    const [viewRow, setViewRow] = useState<LogRow | null>(null);
+
+    // v12.84 — «⚙️ إعداد بوابة تاجر»: ناصر يدخل مفاتيح ميسر وأخواتها نيابة عن
+    // التاجر بعد تسجيله وحصوله على API، يختبرها ويفعّلها له من مركز التحكم.
+    const [mgrQuery, setMgrQuery] = useState('');
+    const [mgrResults, setMgrResults] = useState<AdminUserRow[]>([]);
+    const [mgrSearching, setMgrSearching] = useState(false);
+    const [mgrTarget, setMgrTarget] = useState<{ id: string; label: string } | null>(null);
+    const [mgrProvider, setMgrProvider] = useState('sim');
+    const [mgrPub, setMgrPub] = useState('');
+    const [mgrSecret, setMgrSecret] = useState('');
+    const [mgrWh, setMgrWh] = useState('');
+    const [mgrExtra, setMgrExtra] = useState<Record<string, string>>({});
+    const [mgrTestMode, setMgrTestMode] = useState(false);
+    const [mgrGw, setMgrGw] = useState<any | null>(null);
+    const [mgrBusy, setMgrBusy] = useState<string | null>(null);
+    const mgrDef = PROVIDERS.find(p => p.id === mgrProvider) || PROVIDERS[0];
+
+    const GW_ERR_AR: Record<string, string> = {
+        AGREEMENT_REQUIRED: 'التاجر لم يوافق على اتفاقية بوابة الدفع بعد — بياناته جاهزة، يكفيه فتح بطاقة «💳 بوابة الدفع» في لوحته والموافقة ثم التفعيل (أو فعّلها أنت بعد موافقته)',
+        KEYS_REQUIRED: 'أدخل المفتاح السري واحفظه أولاً',
+        VERIFY_REQUIRED: 'اضغط «اختبار الاتصال» بنجاح قبل التفعيل',
+        NO_GATEWAY: 'احفظ بيانات البوابة أولاً',
+        NOT_A_MERCHANT: 'هذا الحساب ليس متجراً',
+        PROVIDER_DISABLED: 'هذا المزود غير مفتوح — افتحه من بطاقة «مزودو الدفع» أعلاه أولاً',
+    };
+    const gwErr = (e: unknown): string => {
+        const raw = String((e as { message?: string })?.message || e || '');
+        for (const k of Object.keys(GW_ERR_AR)) if (raw.includes(k)) return GW_ERR_AR[k];
+        return raw || 'خطأ غير معروف';
+    };
+
+    const mgrHydrate = (data: any) => {
+        setMgrGw(data || null);
+        if (data?.provider) {
+            setMgrProvider(data.provider);
+            setMgrPub(data.publishable_key || '');
+            const ex: Record<string, unknown> = data.extra_config || {};
+            setMgrExtra(Object.fromEntries(Object.entries(ex).filter(([k]) => k !== 'test_mode').map(([k, v]) => [k, String(v ?? '')])));
+            setMgrTestMode(ex.test_mode === true || String(ex.test_mode) === 'true');
+        }
+    };
+
+    const mgrSearch = async () => {
+        if (mgrSearching) return;
+        setMgrSearching(true);
+        const list = await adminService.searchUsers(mgrQuery.trim(), 'seller', 10);
+        setMgrResults(list);
+        setMgrSearching(false);
+    };
+
+    const mgrPick = (u: AdminUserRow) => {
+        setMgrTarget({ id: u.id, label: u.shop || u.name || u.id });
+        setMgrResults([]);
+        setMgrQuery('');
+        setMgrSecret(''); setMgrWh(''); setMgrPub(''); setMgrExtra({}); setMgrTestMode(false);
+        // إن كانت له بوابة قائمة نعبّئ حالتها (المفاتيح تبقى سرية — آخر ٤ فقط)
+        const existing = gateways.find(g => g.merchant_id === u.id);
+        if (existing) {
+            setMgrProvider(existing.provider);
+            setMgrGw({ provider: existing.provider, is_enabled: existing.is_enabled, verified_at: existing.verified_at, agreement_accepted_at: existing.agreement_accepted_at, key_last4: existing.key_last4, payment_modes: existing.payment_modes, has_secret: !!existing.key_last4 });
+        } else {
+            setMgrGw(null);
+            setMgrProvider('sim');
+        }
+    };
+
+    const mgrSave = async () => {
+        if (!mgrTarget || mgrBusy) return;
+        setMgrBusy('save');
+        try {
+            const extraPayload: Record<string, unknown> = { ...mgrExtra };
+            if (mgrDef.hasTestMode) extraPayload.test_mode = mgrTestMode;
+            const { data, error } = await supabase.rpc('admin_set_merchant_gateway', {
+                p_merchant_id: mgrTarget.id,
+                p_provider: mgrProvider,
+                p_publishable_key: mgrPub.trim() || null,
+                p_secret_key: mgrSecret.trim() || null,
+                p_webhook_secret: mgrWh.trim() || null,
+                p_extra: extraPayload,
+            });
+            if (error) throw error;
+            mgrHydrate(data);
+            setMgrSecret(''); setMgrWh('');
+            customAlert('✅ حُفظت بيانات بوابة التاجر بأمان (المفاتيح مشفّرة في الخزنة) — وأُرسل له إشعار بذلك');
+            refresh();
+        } catch (e) {
+            customAlert(`❌ ${gwErr(e)}`);
+        } finally {
+            setMgrBusy(null);
+        }
+    };
+
+    const mgrTest = async () => {
+        if (!mgrTarget || mgrBusy) return;
+        setMgrBusy('test');
+        try {
+            const { data, error } = await supabase.functions.invoke('merchant-pay', { body: { op: 'verify', merchant_id: mgrTarget.id } });
+            if (error) throw error;
+            if (data?.ok) {
+                customAlert('✅ اتصال بوابة التاجر ناجح — مختبرة وجاهزة للتفعيل');
+                setMgrGw((prev: any) => prev ? { ...prev, verified_at: new Date().toISOString() } : prev);
+                refresh();
+            } else {
+                customAlert(`❌ ${GW_ERR_AR[String(data?.error)] || `فشل الاختبار: ${data?.error || 'تحقق من المفاتيح'}`}`);
+            }
+        } catch (e) {
+            customAlert(`❌ ${gwErr(e)}`);
+        } finally {
+            setMgrBusy(null);
+        }
+    };
+
+    const mgrToggle = async (enable: boolean) => {
+        if (!mgrTarget || mgrBusy) return;
+        setMgrBusy('toggle');
+        try {
+            const { data, error } = await supabase.rpc('admin_toggle_merchant_gateway', { p_merchant_id: mgrTarget.id, p_enabled: enable });
+            if (error) throw error;
+            mgrHydrate(data);
+            customAlert(enable ? '✅ فُعّلت بوابة التاجر وأُشعر بذلك' : '⏸ أُوقفت بوابة التاجر — منتجاته على عند الاستلام');
+            refresh();
+        } catch (e) {
+            customAlert(`❌ ${gwErr(e)}`);
+        } finally {
+            setMgrBusy(null);
+        }
+    };
+
+    const mgrSetMode = async (mode: string) => {
+        if (!mgrTarget || mgrBusy) return;
+        setMgrBusy('mode');
+        try {
+            const { data, error } = await supabase.rpc('admin_set_merchant_payment_modes', { p_merchant_id: mgrTarget.id, p_mode: mode });
+            if (error) throw error;
+            mgrHydrate(data);
+            refresh();
+        } catch (e) {
+            customAlert(`❌ ${gwErr(e)}`);
+        } finally {
+            setMgrBusy(null);
+        }
+    };
 
     const filterArgs = useCallback(() => ({
         p_from: fromDate ? new Date(fromDate).toISOString() : null,
@@ -96,10 +246,15 @@ const AdminInvoices: React.FC = () => {
     }), [fromDate, toDate, merchantFilter, providerFilter, statusFilter]);
 
     const loadPage = useCallback(async (beforeId: number | null) => {
-        const { data, error } = await supabase.rpc('admin_payment_log', { ...filterArgs(), p_before_id: beforeId, p_limit: 50 });
+        const { data, error } = await supabase.rpc('admin_payment_log', {
+            ...filterArgs(),
+            p_search: searchTerm.trim() || null,
+            p_before_id: beforeId,
+            p_limit: 50,
+        });
         if (error) throw error;
         return (data || []) as LogRow[];
-    }, [filterArgs]);
+    }, [filterArgs, searchTerm]);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -295,6 +450,28 @@ const AdminInvoices: React.FC = () => {
                 {statCard('🏪', 'بوابات التجار المربوطة', String(gateways.length), 'linear-gradient(135deg, #f59e0b, #f97316)')}
             </div>
 
+            {/* v12.84 — البحث الفوري: رقم حجز / رقم عملية / مرجع بوابة */}
+            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '1.2rem' }}>🔎</span>
+                <input
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') setSearchTerm(searchInput); }}
+                    placeholder="ابحث برقم الحجز أو رقم العملية أو مرجع البوابة — وتظهر لك على الشاشة كفاتورة متكاملة"
+                    style={{ ...inputStyle, flex: 1, minWidth: 220 }}
+                />
+                <button onClick={() => setSearchTerm(searchInput)}
+                    style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    بحث
+                </button>
+                {searchTerm && (
+                    <button onClick={() => { setSearchInput(''); setSearchTerm(''); }}
+                        style={{ padding: '10px 14px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
+                        ✕ مسح
+                    </button>
+                )}
+            </div>
+
             {/* الفلاتر */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>من تاريخ</label>
@@ -328,17 +505,17 @@ const AdminInvoices: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                         <thead>
                             <tr style={{ background: 'var(--body-bg)' }}>
-                                {['#', 'التاريخ', 'المتجر', 'العميل', 'الحجز', 'المبلغ', 'البوابة', 'الحالة', 'PDF'].map(h => (
+                                {['#', 'التاريخ', 'المتجر', 'العميل', 'الحجز', 'المبلغ', 'البوابة', 'الحالة', 'عرض', 'PDF'].map(h => (
                                     <th key={h} style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 900, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>⏳ جاري التحميل…</td></tr>
+                                <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>⏳ جاري التحميل…</td></tr>
                             ) : rows.length === 0 ? (
-                                <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                                    لا توجد عمليات دفع بعد — بمجرد ربط أول تاجر بوابته ودفع أول عميل، تظهر العمليات هنا تلقائياً.
+                                <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                    {searchTerm ? 'لا نتائج لهذا البحث — تأكد من رقم الحجز/العملية.' : 'لا توجد عمليات دفع بعد — بمجرد ربط أول تاجر بوابته ودفع أول عميل، تظهر العمليات هنا تلقائياً.'}
                                 </td></tr>
                             ) : rows.map(r => (
                                 <tr key={r.id} style={{ borderTop: '1px solid var(--border-color)' }}>
@@ -355,6 +532,10 @@ const AdminInvoices: React.FC = () => {
                                             background: r.status === 'paid' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
                                             color: r.status === 'paid' ? '#059669' : '#b45309',
                                         }}>{STATUS_AR[r.status] || r.status}</span>
+                                    </td>
+                                    <td style={{ padding: '10px' }}>
+                                        <button onClick={() => setViewRow(r)} title="عرض على الشاشة كفاتورة متكاملة — بلا أي تحميل"
+                                            style={{ border: 'none', background: 'var(--gray-100)', borderRadius: 10, padding: '6px 10px', cursor: 'pointer', fontWeight: 800 }}>👁</button>
                                     </td>
                                     <td style={{ padding: '10px' }}>
                                         <button onClick={() => printRow(r)} title="فاتورة PDF — تتولد لحظة الضغط فقط"
@@ -415,6 +596,151 @@ const AdminInvoices: React.FC = () => {
                 </div>
             </div>
 
+            {/* v12.84 — إعداد بوابة تاجر بالنيابة: بعد تسجيل التاجر في ميسر
+                وأخواتها وحصوله على مفاتيح API، ناصر يدخلها له من هنا ويختبرها
+                ويفعّلها — بنفس أمان مسار التاجر تماماً (Vault + كتابة فقط) */}
+            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16 }}>
+                <h3 style={{ margin: '0 0 4px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>⚙️ إعداد بوابة تاجر (بالنيابة)</h3>
+                <p style={{ margin: '0 0 12px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                    سجّل التاجر في ميسر أو غيرها وسلّمك مفاتيح API؟ اختره هنا، أدخل مفاتيحه (تُشفَّر في الخزنة ولا تظهر مرة أخرى)،
+                    اختبر الاتصال وفعّل له. يصل التاجر إشعار بكل تغيير، وتُسجَّل كل خطوة في سجل التدقيق باسمك.
+                </p>
+
+                {/* اختيار التاجر */}
+                {!mgrTarget ? (
+                    <div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <input value={mgrQuery} onChange={e => setMgrQuery(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') mgrSearch(); }}
+                                placeholder="ابحث باسم المتجر أو التاجر أو جواله…"
+                                style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                            <button onClick={mgrSearch} disabled={mgrSearching}
+                                style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', opacity: mgrSearching ? 0.6 : 1 }}>
+                                {mgrSearching ? '⏳' : '🔎 بحث'}
+                            </button>
+                        </div>
+                        {mgrResults.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                                {mgrResults.map(u => (
+                                    <button key={u.id} onClick={() => mgrPick(u)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--body-bg)', cursor: 'pointer', textAlign: 'right', fontFamily: 'inherit' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>🏪</span>
+                                        <span style={{ flex: 1, fontWeight: 800, fontSize: '0.82rem', color: 'var(--text-primary)' }}>{u.shop || u.name}</span>
+                                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{u.phone || ''}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '10px 14px' }}>
+                            <span style={{ fontSize: '1.2rem' }}>🏪</span>
+                            <span style={{ flex: 1, fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{mgrTarget.label}</span>
+                            {mgrGw?.is_enabled
+                                ? <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>● بوابة مفعّلة</span>
+                                : <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--text-secondary)' }}>○ غير مفعّلة</span>}
+                            {mgrGw?.verified_at
+                                ? <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>✓ مختبرة</span>
+                                : <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#b45309' }}>⚠ لم تُختبر</span>}
+                            <button onClick={() => { setMgrTarget(null); setMgrGw(null); }}
+                                style={{ padding: '6px 12px', borderRadius: 10, border: '1.5px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', fontWeight: 900, fontSize: '0.7rem', cursor: 'pointer' }}>
+                                تغيير التاجر
+                            </button>
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>المزود</label>
+                            <select value={mgrProvider} onChange={e => setMgrProvider(e.target.value)} style={{ ...inputStyle, minWidth: 220, cursor: 'pointer' }}>
+                                {PROVIDERS.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name}{providerSwitches[p.id] !== true ? ' — ⏸ موقوف (افتحه أعلاه)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {mgrDef.noKeys ? (
+                            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px dashed rgba(245, 158, 11, 0.5)', borderRadius: 12, padding: '10px 12px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                🧪 الوضع التجريبي لا يحتاج مفاتيح — احفظ ثم اختبر ثم فعّل.
+                            </div>
+                        ) : (
+                            <>
+                                {mgrDef.pubLabel && (
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{mgrDef.pubLabel}</label>
+                                        <input style={{ ...inputStyle, width: '100%', direction: 'ltr', textAlign: 'left' }} value={mgrPub} onChange={e => setMgrPub(e.target.value)} autoComplete="off" />
+                                    </div>
+                                )}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                                        {mgrDef.secretLabel} — كتابة فقط، يُشفَّر في الخزنة{mgrGw?.key_last4 ? ` (الحالي: ••••${mgrGw.key_last4})` : ''}
+                                    </label>
+                                    <input style={{ ...inputStyle, width: '100%', direction: 'ltr', textAlign: 'left' }} type="password" value={mgrSecret} onChange={e => setMgrSecret(e.target.value)} autoComplete="new-password" />
+                                </div>
+                                {mgrDef.webhookLabel && (
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{mgrDef.webhookLabel}</label>
+                                        <input style={{ ...inputStyle, width: '100%', direction: 'ltr', textAlign: 'left' }} type="password" value={mgrWh} onChange={e => setMgrWh(e.target.value)} autoComplete="new-password" />
+                                    </div>
+                                )}
+                                {mgrDef.extras?.map(f => (
+                                    <div key={f.k}>
+                                        <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{f.label}</label>
+                                        <input style={{ ...inputStyle, width: '100%', direction: 'ltr', textAlign: 'left' }} value={mgrExtra[f.k] || ''} onChange={e => setMgrExtra(prev => ({ ...prev, [f.k]: e.target.value }))} autoComplete="off" />
+                                    </div>
+                                ))}
+                                {mgrDef.hasTestMode && (
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        <input type="checkbox" checked={mgrTestMode} onChange={e => setMgrTestMode(e.target.checked)} style={{ width: 16, height: 16 }} />
+                                        وضع الاختبار (Sandbox)
+                                    </label>
+                                )}
+                            </>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button onClick={mgrSave} disabled={mgrBusy !== null}
+                                style={{ flex: 1, minWidth: 110, padding: '11px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', opacity: mgrBusy ? 0.6 : 1 }}>
+                                {mgrBusy === 'save' ? '⏳…' : '💾 حفظ'}
+                            </button>
+                            <button onClick={mgrTest} disabled={mgrBusy !== null || !mgrGw?.has_secret && !mgrGw?.key_last4}
+                                style={{ flex: 1, minWidth: 110, padding: '11px', borderRadius: 12, border: '1.5px solid var(--primary)', background: 'transparent', color: 'var(--primary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', opacity: mgrBusy ? 0.6 : 1 }}>
+                                {mgrBusy === 'test' ? '⏳…' : '🔌 اختبار الاتصال'}
+                            </button>
+                            <button onClick={() => mgrToggle(!(mgrGw?.is_enabled))} disabled={mgrBusy !== null || !mgrGw}
+                                style={{ flex: 1, minWidth: 110, padding: '11px', borderRadius: 12, border: 'none', background: mgrGw?.is_enabled ? 'var(--danger)' : '#059669', color: '#fff', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', opacity: (mgrBusy || !mgrGw) ? 0.6 : 1 }}>
+                                {mgrBusy === 'toggle' ? '⏳…' : mgrGw?.is_enabled ? '⏸ إيقاف' : '▶️ تفعيل'}
+                            </button>
+                        </div>
+
+                        {mgrGw && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 6 }}>طرق دفع هذا التاجر</label>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {([['cod', '🏪 عند الاستلام'], ['online', '💳 إلكتروني فقط'], ['both', '🔀 الاثنان']] as const).map(([m, label]) => (
+                                        <button key={m} onClick={() => mgrSetMode(m)} disabled={mgrBusy !== null}
+                                            style={{
+                                                padding: '8px 14px', borderRadius: 999, fontWeight: 900, fontSize: '0.72rem', cursor: 'pointer',
+                                                border: mgrGw?.payment_modes === m ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                background: mgrGw?.payment_modes === m ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
+                                                color: 'var(--text-primary)',
+                                            }}>
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {!mgrGw?.agreement_accepted_at && (
+                                    <p style={{ margin: '8px 0 0', fontSize: '0.68rem', fontWeight: 700, color: '#b45309' }}>
+                                        📜 ملاحظة: التفعيل يتطلب موافقة التاجر نفسه على الاتفاقية من بطاقته (ضغطة واحدة) — حفاظاً على الدرع القانوني.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
             {/* بوابات التجار — إيقاف/تفعيل إداري */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16 }}>
                 <h3 style={{ margin: '0 0 12px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>🏪 بوابات التجار المربوطة</h3>
@@ -454,6 +780,58 @@ const AdminInvoices: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* v12.84 — عرض العملية على الشاشة كفاتورة متكاملة (بلا أي تحميل) */}
+            {viewRow && (
+                <div onClick={() => setViewRow(null)}
+                    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                    <div onClick={e => e.stopPropagation()}
+                        style={{ background: 'var(--card-bg)', borderRadius: 22, maxWidth: 460, width: '100%', maxHeight: '88vh', overflowY: 'auto', padding: 24 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                            <h3 style={{ margin: 0, fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-primary)' }}>🧾 سند عملية دفع إلكتروني</h3>
+                            <button onClick={() => setViewRow(null)}
+                                style={{ width: 34, height: 34, borderRadius: 17, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>✕</button>
+                        </div>
+                        <div style={{ textAlign: 'center', background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 16, marginBottom: 14 }}>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>المبلغ المدفوع لحساب التاجر مباشرة</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary)' }}>{Number(viewRow.amount).toFixed(2)} <span style={{ fontSize: '1rem' }}>ر.س</span></div>
+                            <span style={{
+                                display: 'inline-block', marginTop: 6, padding: '4px 12px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 900,
+                                background: viewRow.status === 'paid' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                                color: viewRow.status === 'paid' ? '#059669' : '#b45309',
+                            }}>{STATUS_AR[viewRow.status] || viewRow.status}</span>
+                        </div>
+                        {([
+                            ['رقم العملية', `PPL-${viewRow.id}`],
+                            ['رقم الحجز', viewRow.booking_barcode],
+                            ['مرجع بوابة الدفع', viewRow.payment_ref],
+                            ['التاريخ والوقت', fmtDate(viewRow.created_at)],
+                            ['المتجر (البائع — مصدر الفاتورة نظاماً)', viewRow.merchant_name || viewRow.merchant_id],
+                            ['العميل', viewRow.buyer_name || viewRow.buyer_id || '—'],
+                            ['بوابة الدفع', PROVIDER_AR[viewRow.provider] || viewRow.provider],
+                        ] as Array<[string, string]>).map(([k, v]) => (
+                            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 4px', borderBottom: '1px dashed var(--border-color)' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', flexShrink: 0 }}>{k}</span>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'left', wordBreak: 'break-all' }}>{v}</span>
+                            </div>
+                        ))}
+                        <p style={{ margin: '12px 0 14px', fontSize: '0.64rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                            سند مرجعي من منصة تاكي بصفتها وسيطاً تقنياً — المبلغ انتقل من العميل لحساب التاجر مباشرة عبر
+                            بوابة مرخصة، والفاتورة الضريبية (ZATCA) تصدر من التاجر بصفته البائع.
+                        </p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => printRow(viewRow)}
+                                style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
+                                🧾 طباعة / PDF (اختياري)
+                            </button>
+                            <button onClick={() => setViewRow(null)}
+                                style={{ padding: '12px 18px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'transparent', color: 'var(--text-primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
+                                إغلاق
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

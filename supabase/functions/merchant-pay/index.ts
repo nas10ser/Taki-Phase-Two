@@ -248,9 +248,17 @@ Deno.serve(async (req: Request) => {
             // JWT فقط — لا مسار بوت هنا: التاجر يختبر بوابته من لوحته
             const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
             const { data: u } = await service.auth.getUser(jwt);
-            const uid = u?.user?.id;
+            let uid = u?.user?.id;
             if (!uid) return json(401, { error: 'AUTH_REQUIRED' });
             if (rateLimited(`v_${uid}`, 5)) return json(429, { error: 'RATE_LIMITED' });
+            // v12.84 — الأدمن يختبر بوابة تاجرٍ آخر من مركز التحكم (بعد التحقق
+            // خادمياً أن المنادي أدمن فعلاً) — نفس المسار والختم تماماً
+            const target = String(body.merchant_id || '').trim();
+            if (target && target !== uid) {
+                const { data: caller } = await service.from('users').select('user_type').eq('id', uid).maybeSingle();
+                if (caller?.user_type !== 'admin') return json(403, { error: 'ADMIN_ONLY' });
+                uid = target;
+            }
             const cfg = await gatewayCfg(uid);
             if (!cfg || !cfg.secret_key) return json(409, { error: 'KEYS_REQUIRED' });
             // v12.82 — مزوّد لم يفتحه ناصر بعد: رسالة واضحة بدل فشل غامض
