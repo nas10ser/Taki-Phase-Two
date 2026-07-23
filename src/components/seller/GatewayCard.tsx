@@ -47,9 +47,7 @@ interface ProviderDef {
     noKeys?: boolean;
 }
 
-// v12.84 — مُصدَّر: لوحة الأدمن «إعداد بوابة تاجر» تعيد استخدام نفس التعريفات
-// (مصدر واحد لأسماء المزودين وحقولهم — أي تعديل هنا ينعكس في الواجهتين)
-export const PROVIDERS: ProviderDef[] = [
+const PROVIDERS: ProviderDef[] = [
     { id: 'sim', name: '🧪 الوضع التجريبي — محاكاة دفع (بدون أموال حقيقية)', secretLabel: '', noKeys: true },
     { id: 'moyasar', name: 'ميسر Moyasar', pubLabel: 'المفتاح العام (pk_...)', secretLabel: 'المفتاح السري (sk_...)', webhookLabel: 'الرمز السري للإشعارات Webhook Secret (اختياري)' },
     { id: 'tap', name: 'تاب Tap', secretLabel: 'المفتاح السري (sk_...)' },
