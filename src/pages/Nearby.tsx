@@ -452,7 +452,12 @@ const Nearby: React.FC = () => {
                 <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                     <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
                     <FlyController target={flyTarget} />
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" detectRetina={true} maxZoom={19} />
+                    <TileLayer
+                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                                        subdomains="abcd"
+                                        maxZoom={20}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                    />
                     
                     {/* Visual Mask for Selection */}
                     {(radius > 0 || selectedRegion || selectedCity) && (

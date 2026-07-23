@@ -70,6 +70,9 @@ const AdminInvoices: React.FC = () => {
     const [stats, setStats] = useState<{ count: number; total: number; vat_total: number } | null>(null);
     const [gateways, setGateways] = useState<GatewayRow[]>([]);
     const [directPayOn, setDirectPayOn] = useState<boolean | null>(null);
+    // v12.82 — مفاتيح المزودين الستة (خدمة خدمة بيد ناصر — الافتراضي: الكل موقوف)
+    const [providerSwitches, setProviderSwitches] = useState<Record<string, boolean>>({});
+    const [savingProvider, setSavingProvider] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -100,11 +103,12 @@ const AdminInvoices: React.FC = () => {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            const [page, { data: st }, { data: gws }, { data: dp }] = await Promise.all([
+            const [page, { data: st }, { data: gws }, { data: dp }, { data: eps }] = await Promise.all([
                 loadPage(null),
                 supabase.rpc('admin_payment_log_stats', filterArgs()),
                 supabase.rpc('admin_list_gateways'),
                 supabase.from('platform_settings').select('value').eq('key', 'direct_pay_enabled').maybeSingle(),
+                supabase.from('platform_settings').select('value').eq('key', 'enabled_pay_providers').maybeSingle(),
             ]);
             setRows(page);
             setHasMore(page.length === 50);
@@ -112,6 +116,8 @@ const AdminInvoices: React.FC = () => {
             setStats(s ? { count: Number(s.count) || 0, total: Number(s.total) || 0, vat_total: Number(s.vat_total) || 0 } : null);
             setGateways((gws || []) as GatewayRow[]);
             setDirectPayOn(dp?.value === true);
+            const sw = (eps?.value || {}) as Record<string, boolean>;
+            setProviderSwitches(Object.fromEntries(Object.keys(PROVIDER_AR).map(k => [k, sw[k] === true])));
         } catch (e: any) {
             customAlert(`❌ تعذّر تحميل السجل: ${e?.message || 'خطأ'}`);
         } finally {
@@ -211,6 +217,32 @@ const AdminInvoices: React.FC = () => {
         });
         if (error) customAlert(`❌ ${error.message}`);
         else { setDirectPayOn(next); customAlert(next ? '✅ الدفع المباشر مفعّل' : '⏸ الدفع المباشر موقوف'); }
+    };
+
+    // v12.82 — فتح/إيقاف مزود بعينه: الموقوف يختفي من بطاقة التاجر، وبوابات
+    // التجار المرتبطة به تسقط تلقائياً لعند الاستلام (لا حجب حجز إطلاقاً)
+    const toggleProvider = async (pid: string) => {
+        if (savingProvider) return;
+        const next = { ...providerSwitches, [pid]: !providerSwitches[pid] };
+        if (!next[pid]) {
+            const affected = gateways.filter(g => g.provider === pid).length;
+            const ok = await customConfirm(
+                `إيقاف مزود «${PROVIDER_AR[pid]}»؟ سيختفي من خيارات التجار${affected ? `، و${affected} بوابة مرتبطة به ستسقط تلقائياً لـ«عند الاستلام»` : ''}.`);
+            if (!ok) return;
+        }
+        setSavingProvider(pid);
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'enabled_pay_providers',
+            value: next as any,
+            description: 'مزودو الدفع المفتوحون للتجار — ناصر يفعّلهم خدمة خدمة من تبويب «فواتير الموقع»',
+            updated_at: new Date().toISOString(),
+        });
+        setSavingProvider(null);
+        if (error) customAlert(`❌ ${error.message}`);
+        else {
+            setProviderSwitches(next);
+            customAlert(next[pid] ? `✅ فُتح مزود «${PROVIDER_AR[pid]}» — صار متاحاً في بطاقات التجار` : `⏸ أُوقف مزود «${PROVIDER_AR[pid]}»`);
+        }
     };
 
     const toggleGatewayBlock = async (g: GatewayRow) => {
@@ -338,6 +370,48 @@ const AdminInvoices: React.FC = () => {
                         {loadingMore ? '⏳ …' : '⬇️ تحميل 50 عملية إضافية'}
                     </button>
                 )}
+            </div>
+
+            {/* v12.82 — مفاتيح المزودين الستة: تفتحهم خدمة خدمة بعد التحقق منهم */}
+            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16 }}>
+                <h3 style={{ margin: '0 0 4px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>🧩 مزودو الدفع — افتحهم خدمة خدمة</h3>
+                <p style={{ margin: '0 0 12px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                    لا يظهر للتجار إلا المزودون المفتوحون هنا — فعّل كل خدمة بعد أن تتحقق منها بنفسك، فلا تحصل أي لخبطة.
+                    إيقاف مزودٍ لاحقاً يسقط بوابات تجاره تلقائياً لـ«عند الاستلام» دون حجب أي حجز.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                    {Object.entries(PROVIDER_AR).map(([pid, name]) => {
+                        const on = providerSwitches[pid] === true;
+                        const linked = gateways.filter(g => g.provider === pid).length;
+                        return (
+                            <button key={pid} onClick={() => toggleProvider(pid)} disabled={savingProvider === pid}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14,
+                                    border: on ? '1.5px solid #059669' : '1.5px solid var(--border-color)',
+                                    background: on ? 'rgba(16,185,129,0.1)' : 'var(--body-bg)',
+                                    cursor: 'pointer', textAlign: 'right', fontFamily: 'inherit',
+                                    opacity: savingProvider === pid ? 0.6 : 1,
+                                }}>
+                                <span style={{
+                                    width: 38, height: 22, borderRadius: 999, flexShrink: 0, position: 'relative',
+                                    background: on ? '#059669' : 'var(--gray-300)', transition: 'background 0.2s',
+                                }}>
+                                    <span style={{
+                                        position: 'absolute', top: 2, width: 18, height: 18, borderRadius: '50%',
+                                        background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                        insetInlineStart: on ? 18 : 2, transition: 'inset-inline-start 0.2s',
+                                    }} />
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ display: 'block', fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)' }}>{name}</span>
+                                    <span style={{ display: 'block', fontWeight: 700, fontSize: '0.64rem', color: on ? '#059669' : 'var(--text-secondary)', marginTop: 2 }}>
+                                        {on ? 'مفتوح للتجار' : 'موقوف'}{linked ? ` · ${linked} بوابة مرتبطة` : ''}
+                                    </span>
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* بوابات التجار — إيقاف/تفعيل إداري */}

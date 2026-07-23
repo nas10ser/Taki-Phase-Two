@@ -38,14 +38,18 @@ function rateLimited(uid: string, max = 8, windowMs = 60_000): boolean {
     return hits.length > max;
 }
 
-/** هوية المنادي: JWT مستخدم حقيقي، أو بوت موثوق عبر x-bot-secret (بوابة v12.12) */
+/** هوية المنادي: JWT مستخدم حقيقي، أو بوت موثوق عبر x-bot-secret (بوابة v12.12).
+ *  v12.82 — تحصين مسار البوت: بعد مطابقة السر (مقارنة ثابتة الزمن) نتحقق أن
+ *  المعرّف مستخدم حقيقي موجود في القاعدة — سر مسرّب وحده لا يكفي لاختراع هوية. */
 async function resolveUid(req: Request, body: Record<string, unknown>): Promise<string | null> {
     const botSecret = req.headers.get('x-bot-secret');
     if (botSecret) {
         const { data } = await service.from('app_secrets').select('value').eq('key', 'bot_gateway_secret').maybeSingle();
         if (data?.value && timingSafeEqual(String(data.value), botSecret)) {
             const uid = String(body?.uid || '').trim();
-            return uid || null;
+            if (!uid) return null;
+            const { data: urow } = await service.from('users').select('id').eq('id', uid).maybeSingle();
+            return urow?.id ? uid : null;
         }
         return null;
     }
@@ -53,6 +57,12 @@ async function resolveUid(req: Request, body: Record<string, unknown>): Promise<
     if (!jwt) return null;
     const { data } = await service.auth.getUser(jwt);
     return data?.user?.id ?? null;
+}
+
+/** قناة الطلب لسجل التدقيق — لا نثق بقيمة src إلا من بوت موثّق بالسر */
+function requestChannel(req: Request, body: Record<string, unknown>): string {
+    if (!req.headers.get('x-bot-secret')) return 'web';
+    return body?.src === 'whatsapp' ? 'whatsapp' : 'telegram';
 }
 
 async function directPayOn(): Promise<boolean> {
@@ -96,9 +106,11 @@ async function gatewayCfg(merchantId: string): Promise<(GatewayCfg & Record<stri
     return data as GatewayCfg & Record<string, unknown>;
 }
 
-/** البوابة صالحة فعلياً لاستقبال دفعات؟ (نفس منطق deal_payment_mode في القاعدة) */
+/** البوابة صالحة فعلياً لاستقبال دفعات؟ (نفس منطق deal_payment_mode في القاعدة)
+ *  v12.82 — يشترط أيضاً أن المزود نفسه مفتوح من ناصر (enabled_pay_providers) */
 function gatewayLive(cfg: Record<string, unknown> | null): boolean {
-    return !!cfg && cfg.is_enabled === true && cfg.disabled_by_admin !== true &&
+    return !!cfg && cfg.provider_enabled === true &&
+        cfg.is_enabled === true && cfg.disabled_by_admin !== true &&
         !!cfg.verified_at && Number(cfg.fail_count || 0) < 5 &&
         (cfg.payment_modes === 'online' || cfg.payment_modes === 'both') && !!cfg.secret_key;
 }
@@ -209,6 +221,15 @@ Deno.serve(async (req: Request) => {
                 await service.from('bookings')
                     .update({ payment_expected: amountSar, payment_ref: created.ref, payment_provider: provider })
                     .eq('barcode', barcode);
+                // v12.82 — أثر تدقيق لكل رابط دفع: من طلبه، من أي قناة، لأي حجز وبأي مبلغ
+                await service.from('activity_log').insert({
+                    user_id: uid,
+                    user_type: 'buyer',
+                    action: 'pay_link_created',
+                    entity_type: 'booking',
+                    entity_id: barcode,
+                    metadata: { provider, amount: amountSar, channel: requestChannel(req, body), merchant_id: merchantId, ref: created.ref },
+                });
                 return json(200, { url: created.url, provider, amount: amountSar });
             } catch (e) {
                 // فشل الإنشاء يرفع عدّاد الفشل — ٥ متتالية = سقوط تلقائي لعند الاستلام
@@ -227,11 +248,18 @@ Deno.serve(async (req: Request) => {
             if (rateLimited(`v_${uid}`, 5)) return json(429, { error: 'RATE_LIMITED' });
             const cfg = await gatewayCfg(uid);
             if (!cfg || !cfg.secret_key) return json(409, { error: 'KEYS_REQUIRED' });
+            // v12.82 — مزوّد لم يفتحه ناصر بعد: رسالة واضحة بدل فشل غامض
+            if (cfg.provider_enabled !== true) return json(200, { ok: false, error: 'PROVIDER_DISABLED' });
             const adapter = ADAPTERS[String(cfg.provider)];
             if (!adapter) return json(500, { error: 'NO_ADAPTER' });
             const res = await adapter.verifyCredentials(cfg);
             if (res.ok) {
                 await service.rpc('_stamp_gateway_verified', { p_merchant_id: uid });
+                await service.from('activity_log').insert({
+                    user_id: uid, user_type: 'seller', action: 'gateway_verified',
+                    entity_type: 'merchant_gateway', entity_id: uid,
+                    metadata: { provider: String(cfg.provider) },
+                });
                 return json(200, { ok: true });
             }
             return json(200, { ok: false, error: res.error || 'VERIFY_FAILED' });

@@ -15,19 +15,23 @@ import { supabase, supabaseConfig } from '../../services/supabaseClient';
 import { MERCHANT_GATEWAY_AGREEMENT, MERCHANT_GATEWAY_AGREEMENT_VERSION } from '../../data/legalTexts';
 
 interface GatewayState {
-    provider: string;
-    publishable_key: string | null;
-    extra_config: Record<string, string>;
-    key_last4: string | null;
-    has_secret: boolean;
-    has_webhook_secret: boolean;
-    payment_modes: 'cod' | 'online' | 'both';
-    is_enabled: boolean;
-    disabled_by_admin: boolean;
-    fail_count: number;
-    verified_at: string | null;
-    agreement_accepted_at: string | null;
-    direct_pay_enabled: boolean;
+    provider?: string;
+    publishable_key?: string | null;
+    extra_config?: Record<string, string>;
+    key_last4?: string | null;
+    has_secret?: boolean;
+    has_webhook_secret?: boolean;
+    payment_modes?: 'cod' | 'online' | 'both';
+    is_enabled?: boolean;
+    disabled_by_admin?: boolean;
+    fail_count?: number;
+    verified_at?: string | null;
+    agreement_accepted_at?: string | null;
+    /** v12.82 — مزود التاجر الحالي مفتوح من ناصر؟ */
+    provider_enabled?: boolean;
+    /** v12.82 — المزودون الذين فتحهم ناصر (خدمة خدمة) — الاختيار مقصور عليهم */
+    enabled_providers?: string[];
+    direct_pay_enabled?: boolean;
 }
 
 interface ExtraField { k: string; label: string; optional?: boolean }
@@ -94,15 +98,26 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
     const [agreeChecked, setAgreeChecked] = useState(false);
 
     const def = useMemo(() => PROVIDERS.find(p => p.id === provider) || PROVIDERS[0], [provider]);
+    // v12.82 — الاختيار مقصور على المزودين الذين فتحهم ناصر (+ مزود التاجر
+    // الحالي إن أُغلق لاحقاً — يظهر معلَّماً «موقوف» بدل أن يختفي بياناته)
+    const enabledIds = gw?.enabled_providers || [];
+    const visibleProviders = useMemo(
+        () => PROVIDERS.filter(p => enabledIds.includes(p.id) || p.id === gw?.provider),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [gw?.enabled_providers, gw?.provider]
+    );
+    const configured = !!gw?.provider;
 
     const hydrate = useCallback((data: GatewayState | null) => {
         setGw(data);
-        if (data) {
+        if (data?.provider) {
             setProvider(data.provider);
             setPub(data.publishable_key || '');
             const ex: Record<string, unknown> = data.extra_config || {};
             setExtra(Object.fromEntries(Object.entries(ex).filter(([k]) => k !== 'test_mode').map(([k, v]) => [k, String(v ?? '')])));
             setTestMode(ex.test_mode === true || String(ex.test_mode) === 'true');
+        } else if (data?.enabled_providers?.length) {
+            setProvider(prev => (data.enabled_providers!.includes(prev) ? prev : data.enabled_providers![0]));
         }
     }, []);
 
@@ -148,6 +163,8 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
             if (data?.ok) {
                 onAlert('✅ الاتصال بالبوابة ناجح — بوابتك مختبرة وجاهزة للتفعيل');
                 await load();
+            } else if (data?.error === 'PROVIDER_DISABLED') {
+                onAlert('⏸ هذا المزود غير مفتوح من الإدارة حالياً — اختر مزوداً مفتوحاً أو انتظر فتحه');
             } else {
                 onAlert(`❌ فشل اختبار الاتصال: ${data?.error || 'تحقق من المفاتيح'}`);
             }
@@ -255,9 +272,28 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     ⛔️ أوقفت الإدارة بوابتك مؤقتاً — منتجاتك على «عند الاستلام» تلقائياً. تواصل مع الإدارة.
                                 </div>
                             )}
+                            {/* v12.82 — مزود التاجر الحالي أغلقته الإدارة */}
+                            {configured && gw?.provider_enabled === false && (
+                                <div style={{ background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: 12, padding: '10px 12px', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    ⏸ مزود بوابتك ({PROVIDERS.find(p => p.id === gw?.provider)?.name || gw?.provider}) غير مفتوح حالياً من الإدارة — بياناتك محفوظة، ومنتجاتك على «عند الاستلام» تلقائياً حتى يُعاد فتحه أو تختار مزوداً مفتوحاً.
+                                </div>
+                            )}
+
+                            {/* v12.82 — الإدارة لم تفتح أي مزود بعد: لا نعرض النموذج إطلاقاً */}
+                            {!configured && enabledIds.length === 0 ? (
+                                <div style={{ background: 'var(--body-bg)', border: '1px dashed var(--border-color)', borderRadius: 14, padding: '18px 16px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.6rem', marginBottom: 6 }}>⏳</div>
+                                    <div style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--text-primary)' }}>خدمة الدفع الإلكتروني قادمة قريباً</div>
+                                    <p style={{ margin: '6px 0 0', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                        الإدارة لم تفتح بوابات الدفع بعد. عند فتحها ستربط حساب بوابتك الخاص هنا وتستقبل مدفوعات عملائك في حسابك مباشرة — دون أي عمولة من تاكي.
+                                    </p>
+                                </div>
+                            ) : (
+                            <>
+
 
                             {/* حالة البوابة */}
-                            {gw && (
+                            {configured && (
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {gw.is_enabled
                                         ? statusChip('rgba(16, 185, 129, 0.15)', '#059669', '● مفعّلة')
@@ -266,7 +302,7 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                         ? statusChip('rgba(16, 185, 129, 0.15)', '#059669', '✓ مختبرة')
                                         : statusChip('rgba(245, 158, 11, 0.15)', '#b45309', '⚠ لم تُختبر بعد')}
                                     {gw.has_secret && statusChip('var(--gray-100)', 'var(--text-secondary)', `🔐 السر: ••••${gw.key_last4 || ''}`)}
-                                    {gw.fail_count >= 5 && statusChip('var(--danger-light)', 'var(--danger)', '⛔ فشل متكرر — سقطت مؤقتاً لعند الاستلام')}
+                                    {(gw.fail_count ?? 0) >= 5 && statusChip('var(--danger-light)', 'var(--danger)', '⛔ فشل متكرر — سقطت مؤقتاً لعند الاستلام')}
                                 </div>
                             )}
 
@@ -278,7 +314,11 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     onChange={(e) => setProvider(e.target.value)}
                                     style={{ ...inputStyle, direction: 'rtl', textAlign: 'right', cursor: 'pointer' }}
                                 >
-                                    {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    {visibleProviders.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.name}{!enabledIds.includes(p.id) ? ' — ⏸ موقوف من الإدارة' : ''}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
 
@@ -332,14 +372,14 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     style={{ flex: 1, minWidth: 120, padding: '12px', borderRadius: 12, border: '1.5px solid var(--primary)', background: 'transparent', color: 'var(--primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', opacity: (testing || !gw?.has_secret) ? 0.5 : 1 }}>
                                     {testing ? '⏳ جاري الاختبار…' : '🔌 اختبار الاتصال'}
                                 </button>
-                                <button type="button" onClick={() => doToggle(!(gw?.is_enabled))} disabled={toggling || !gw}
-                                    style={{ flex: 1, minWidth: 120, padding: '12px', borderRadius: 12, border: 'none', background: gw?.is_enabled ? 'var(--danger)' : '#059669', color: '#fff', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', opacity: (toggling || !gw) ? 0.5 : 1 }}>
+                                <button type="button" onClick={() => doToggle(!(gw?.is_enabled))} disabled={toggling || !configured}
+                                    style={{ flex: 1, minWidth: 120, padding: '12px', borderRadius: 12, border: 'none', background: gw?.is_enabled ? 'var(--danger)' : '#059669', color: '#fff', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer', opacity: (toggling || !configured) ? 0.5 : 1 }}>
                                     {gw?.is_enabled ? '⏸ إيقاف البوابة' : '▶️ تفعيل البوابة'}
                                 </button>
                             </div>
 
                             {/* اختيار طرق الدفع — قرار ناصر: التاجر يتحكم بثلاثة أوضاع */}
-                            {gw && (
+                            {configured && (
                                 <div>
                                     <label style={labelStyle}>طرق الدفع المتاحة لعملائك</label>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -397,6 +437,8 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                 بيانات بطاقات عملائك تُدخل على صفحات بوابتك المرخصة مباشرة ولا تمر بتاكي إطلاقاً.
                                 الفواتير الضريبية تصدر منك لعملائك، ورسوم البوابة (مدى/فيزا) على حسابك لدى المزود.
                             </p>
+                            </>
+                            )}
                         </>
                     )}
                 </div>

@@ -662,7 +662,7 @@ function create(deps) {
             const r = await fetch(`${SB_URL}/functions/v1/merchant-pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-bot-secret': GATEWAY, 'Authorization': `Bearer ${SB_KEY}`, 'apikey': SB_KEY },
-                body: JSON.stringify({ op: 'create', barcode: bc, uid: s.userId }),
+                body: JSON.stringify({ op: 'create', barcode: bc, uid: s.userId, src: 'whatsapp' }),
             });
             const j = await r.json().catch(() => ({}));
             if (j && j.url) {

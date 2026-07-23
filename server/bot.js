@@ -230,7 +230,7 @@ async function createPayLink(userId, barcode) {
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                 'apikey': SUPABASE_KEY,
             },
-            body: JSON.stringify({ op: 'create', barcode, uid: userId }),
+            body: JSON.stringify({ op: 'create', barcode, uid: userId, src: 'telegram' }),
         });
         return await r.json().catch(() => ({ error: 'bad_json' }));
     } catch (e) { console.warn('createPayLink:', e.message); return { error: String(e?.message || e) }; }
