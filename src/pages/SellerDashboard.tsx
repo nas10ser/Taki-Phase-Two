@@ -3521,7 +3521,7 @@ const SellerDashboard: React.FC = () => {
                                     the badge here — the map is a picker, not a
                                     publishing surface. */}
                                 <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" detectRetina={true} maxZoom={19} />
                                     <MapCenterUpdater center={mapPos} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
                                 </MapContainer>

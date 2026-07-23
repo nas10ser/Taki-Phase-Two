@@ -84,7 +84,7 @@ const StatusPill: React.FC<{ status: string }> = ({ status }) => {
 // Main
 // ============================================================
 const AdminReports: React.FC = () => {
-    const { customConfirm, customAlert } = useApp();
+    const { customConfirm, customAlert, customPrompt } = useApp();
     const history = useHistory();
 
     const [view, setView] = useState<'reports' | 'complaints' | 'warnings' | 'suspended'>('reports');
@@ -148,6 +148,25 @@ const AdminReports: React.FC = () => {
         const r = await adminService.updateUser(userId, { is_suspended: suspend });
         if (r.success) { await customAlert(suspend ? '⛔ تم إيقاف الحساب' : '✅ تم إعادة التفعيل'); load(); }
         else customAlert('❌ تعذّر تنفيذ الإجراء');
+    };
+
+    // v12.79 — عقوبة «تعليق الحجز»: المستخدم يبقى نشطاً لكن لا يستطيع الحجز
+    // للمدة المحددة (الحارس tr_booking_ban في القاعدة يغطي الويب والبوتين).
+    const bookingBan = async (userId: string, name: string) => {
+        const raw = await customPrompt(`⏸️ تعليق الحجز على «${name}» — اكتب عدد الأيام (مثال: 7):`);
+        if (raw == null) return;
+        const days = Math.round(Number(String(raw).replace(/[^\d]/g, '')));
+        if (!days || days <= 0) { await customAlert('⚠️ اكتب عدد أيام صحيحاً أكبر من صفر.'); return; }
+        const { data, error } = await supabase.rpc('admin_set_booking_ban', { p_user_id: userId, p_days: days, p_reason: 'قرار إداري' });
+        if (error || !(data as any)?.success) { await customAlert('❌ تعذّر التعليق: ' + (error?.message || '')); return; }
+        await customAlert(`⏸️ تم تعليق الحجز على «${name}» لمدة ${days} يوماً — وصله إشعار بذلك.`);
+    };
+    const bookingBanLift = async (userId: string, name: string) => {
+        const ok = await customConfirm(`▶️ رفع تعليق الحجز عن «${name}»؟`);
+        if (!ok) return;
+        const { error } = await supabase.rpc('admin_set_booking_ban', { p_user_id: userId, p_days: 0 });
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        await customAlert('✅ تم رفع تعليق الحجز.');
     };
 
     const openAccount = (id: string, partyRole: string, name?: string) => {
@@ -480,7 +499,7 @@ const AdminReports: React.FC = () => {
                 ) : (
                     <div className="space-y-3">
                         {warned.map((w) => (
-                            <WarnedUserCard key={w.user_id} user={w} onSuspendToggle={toggleSuspend} />
+                            <WarnedUserCard key={w.user_id} user={w} onSuspendToggle={toggleSuspend} onBookingBan={bookingBan} onBookingBanLift={bookingBanLift} />
                         ))}
                     </div>
                 )
@@ -793,7 +812,9 @@ const PartyButton: React.FC<{
 const WarnedUserCard: React.FC<{
     user: WarnedUser;
     onSuspendToggle: (id: string, suspend: boolean, name: string) => void;
-}> = ({ user: w, onSuspendToggle }) => {
+    onBookingBan: (id: string, name: string) => void;
+    onBookingBanLift: (id: string, name: string) => void;
+}> = ({ user: w, onSuspendToggle, onBookingBan, onBookingBanLift }) => {
     const [open, setOpen] = useState(false);
     const [warnings, setWarnings] = useState<UserWarning[] | null>(null);
     const danger = w.warn_count >= 3;
@@ -837,6 +858,9 @@ const WarnedUserCard: React.FC<{
                 ) : (
                     <button onClick={() => onSuspendToggle(w.user_id, true, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-red-50 text-red-600 border border-red-200">⛔ إيقاف الحساب</button>
                 )}
+                {/* v12.79 — عقوبة أخف من إيقاف الحساب: تعليق الحجز فقط لمدة يقررها المالك */}
+                <button onClick={() => onBookingBan(w.user_id, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200">⏸️ تعليق الحجز لمدة…</button>
+                <button onClick={() => onBookingBanLift(w.user_id, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] text-[var(--text-secondary)] border border-[var(--border-color)]">▶️ رفع تعليق الحجز</button>
             </div>
 
             {open && (

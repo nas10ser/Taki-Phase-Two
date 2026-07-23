@@ -452,7 +452,7 @@ const Nearby: React.FC = () => {
                 <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                     <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
                     <FlyController target={flyTarget} />
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" detectRetina={true} maxZoom={19} />
                     
                     {/* Visual Mask for Selection */}
                     {(radius > 0 || selectedRegion || selectedCity) && (

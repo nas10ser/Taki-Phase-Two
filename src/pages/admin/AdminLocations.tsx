@@ -204,7 +204,7 @@ const AdminLocations: React.FC = () => {
                                 <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]" style={{ height: 240 }}>
                                     {form.city_id || (form.lat && form.lng) ? (
                                         <MapContainer center={mapCenter} zoom={form.lat ? 14 : 11} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" detectRetina={true} maxZoom={19} />
                                             <Recenter center={mapCenter} />
                                             <ClickMarker pos={[Number(form.lat) || 0, Number(form.lng) || 0]} onMove={(lat, lng) => setForm(f => ({ ...f, lat, lng }))} />
                                         </MapContainer>

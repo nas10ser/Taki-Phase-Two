@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
+import { CATEGORIES } from '../../data/mock';
 
 interface StoreRow {
     store_id: string; shop: string | null;
@@ -58,10 +59,14 @@ const AdminModeration: React.FC = () => {
     // v12.53 — تأخير وصول الإنذار للمخالف بالدقائق (٠ = فوري): يوحي بمراجعة بشرية
     const [warnDelay, setWarnDelay] = useState<number>(0);
     const [savingDelay, setSavingDelay] = useState(false);
+    // v12.79 — إعدادات «فلترة إلغاء الطلبات» (cancel_abuse_settings)
+    const CA_DEFAULTS = { enabled: false, categories: [] as string[], window_days: 30, cancel_threshold: 3, count_buyer_cancel: true, count_timeout: true, warn_gap_hours: 72, warnings_before_action: 3, action: 'booking_ban', ban_days: 7 };
+    const [caSettings, setCaSettings] = useState<any>(CA_DEFAULTS);
+    const [savingCa, setSavingCa] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
-        const [ovRes, flRes, tRes, msRes] = await Promise.all([
+        const [ovRes, flRes, tRes, msRes, caRes] = await Promise.all([
             supabase.rpc('admin_moderation_overview', { p_limit: 200 }),
             supabase.rpc('admin_moderation_flags', {
                 p_store: storeFilter,
@@ -70,11 +75,13 @@ const AdminModeration: React.FC = () => {
             }),
             supabase.from('moderation_terms').select('*').order('term'),
             supabase.from('platform_settings').select('value').eq('key', 'moderation_settings').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'cancel_abuse_settings').maybeSingle(),
         ]);
         if (!ovRes.error && ovRes.data) setOverview(ovRes.data as any);
         if (!flRes.error && Array.isArray(flRes.data)) setFlags(flRes.data as FlagRow[]);
         if (!tRes.error && tRes.data) setTerms(tRes.data as TermRow[]);
         setWarnDelay(Number((msRes.data?.value as any)?.warn_delay_minutes) || 0);
+        if (caRes.data?.value) setCaSettings({ ...CA_DEFAULTS, ...(caRes.data.value as any) });
         setLoading(false);
     }, [storeFilter, statusFilter]);
     useEffect(() => { load(); }, [load]);
@@ -92,6 +99,25 @@ const AdminModeration: React.FC = () => {
         await customAlert(warnDelay > 0
             ? `✅ من الآن: أي إنذار ترسله يُسجّل فوراً عندك، ويصل للمخالف بعد ${warnDelay} دقيقة — يوحي بأن فريقاً بشرياً راجع المخالفة.`
             : '✅ الإنذارات ستصل فوراً (بدون تأخير).');
+    };
+
+    // v12.79 — حفظ إعدادات فلترة الإلغاء (الماسح الساعي في القاعدة يقرؤها مباشرة)
+    const saveCaSettings = async () => {
+        setSavingCa(true);
+        try {
+            const { error } = await supabase.from('platform_settings').upsert({
+                key: 'cancel_abuse_settings',
+                value: caSettings,
+                description: 'Cancel-abuse filter: thresholds/categories/action (v12.79)',
+                updated_at: new Date().toISOString(),
+            });
+            if (error) { await customAlert('❌ ' + error.message); return; }
+            await customAlert(caSettings.enabled
+                ? `✅ فلترة الإلغاء مفعّلة: ${caSettings.cancel_threshold} إلغاءات خلال ${caSettings.window_days} يوماً = إنذار، وبعد ${caSettings.warnings_before_action} إنذارات ${caSettings.action === 'suspend' ? 'يوقف الحساب' : `يعلَّق الحجز ${caSettings.ban_days} أيام`}. الماسح يعمل كل ساعة.`
+                : '✅ حُفظت الإعدادات والفلترة متوقفة.');
+        } finally {
+            setSavingCa(false);
+        }
     };
 
     const setFlagStatus = async (f: FlagRow, status: 'open' | 'reviewed') => {
@@ -181,6 +207,81 @@ const AdminModeration: React.FC = () => {
                         {savingDelay ? '⏳' : '💾 حفظ'}
                     </button>
                 </div>
+            </div>
+
+            {/* v12.79 — «فلترة إلغاء الطلبات»: إنذارات آلية للمشترين الذين يحجزون
+                ويلغون/لا يستلمون، بتصنيفات وعتبات ومُهَل وعقوبة يحددها المالك.
+                الماسح يعمل كل ساعة في القاعدة (taki_cancel_abuse_scan) ويغطي
+                الويب والبوتين، والإنذارات تظهر في «المستخدمون المُنذَرون». */}
+            <div className="bg-[var(--card-bg)] border border-amber-300 rounded-2xl p-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                    <div className="font-extrabold text-sm text-[var(--text-primary)]">🚫 فلترة إلغاء الطلبات (المشترون)</div>
+                    <button onClick={() => setCaSettings((p: any) => ({ ...p, enabled: !p.enabled }))}
+                        className={`px-4 py-1.5 rounded-full text-xs font-extrabold border ${caSettings.enabled ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-[var(--body-bg)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}>
+                        {caSettings.enabled ? '🟢 مفعّلة' : '⚪ متوقفة'}
+                    </button>
+                </div>
+                <p className="text-[11px] font-bold text-[var(--text-secondary)] leading-relaxed mb-3">
+                    من يحجز ثم يلغي أو لا يستلم (شكوى التاجر من عدم الحضور) في التصنيفات التي تحددها: يُنذَر آلياً،
+                    وبعد عدد الإنذارات الذي تحدده تُطبَّق العقوبة تلقائياً — تعليق الحجز لمدة تقررها أو إيقاف الحساب مباشرة.
+                    ويمكنك دائماً تعليق الحجز أو إيقاف أي حساب يدوياً من «المستخدمون المُنذَرون» في البلاغات.
+                </p>
+                <div className="mb-3">
+                    <div className="text-[11px] font-extrabold text-[var(--text-primary)] mb-1.5">التصنيفات المشمولة (اتركها كلها بلا تحديد = كل التصنيفات):</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {CATEGORIES.filter(c => c.id !== 'all').map(c => {
+                            const on = (caSettings.categories || []).includes(c.id);
+                            return (
+                                <button key={c.id}
+                                    onClick={() => setCaSettings((p: any) => ({ ...p, categories: on ? (p.categories || []).filter((x: string) => x !== c.id) : [...(p.categories || []), c.id] }))}
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold border ${on ? 'bg-rose-600 text-white border-rose-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
+                                    {c.emoji} {c.ar}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-3">
+                    {[
+                        { k: 'cancel_threshold', label: 'عدد الإلغاءات المسموح قبل الإنذار', min: 1, max: 50 },
+                        { k: 'window_days', label: 'خلال كم يوماً تُحسب الإلغاءات', min: 1, max: 365 },
+                        { k: 'warn_gap_hours', label: 'المدة بين الإنذار والإنذار (ساعات)', min: 1, max: 720 },
+                        { k: 'warnings_before_action', label: 'عدد الإنذارات قبل العقوبة', min: 1, max: 20 },
+                        { k: 'ban_days', label: 'مدة تعليق الحجز (أيام)', min: 1, max: 365 },
+                    ].map(f => (
+                        <label key={f.k} className="block">
+                            <span className="text-[10px] font-extrabold text-[var(--text-secondary)] block mb-1 leading-tight">{f.label}</span>
+                            <input type="number" min={f.min} max={f.max} value={caSettings[f.k] ?? f.min}
+                                onChange={e => setCaSettings((p: any) => ({ ...p, [f.k]: Math.max(f.min, Math.min(f.max, Math.round(Number(e.target.value) || f.min))) }))}
+                                className="w-full px-2 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-center text-[var(--text-primary)]" />
+                        </label>
+                    ))}
+                    <label className="block">
+                        <span className="text-[10px] font-extrabold text-[var(--text-secondary)] block mb-1 leading-tight">العقوبة بعد استنفاد الإنذارات</span>
+                        <select value={caSettings.action || 'booking_ban'}
+                            onChange={e => setCaSettings((p: any) => ({ ...p, action: e.target.value }))}
+                            className="w-full px-2 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
+                            <option value="booking_ban">⏸️ تعليق الحجز للمدة أعلاه</option>
+                            <option value="suspend">⛔ إيقاف الحساب مباشرة</option>
+                        </select>
+                    </label>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap mb-3">
+                    <label className="flex items-center gap-1.5 text-[11px] font-extrabold text-[var(--text-primary)] cursor-pointer">
+                        <input type="checkbox" checked={caSettings.count_buyer_cancel !== false}
+                            onChange={e => setCaSettings((p: any) => ({ ...p, count_buyer_cancel: e.target.checked }))} />
+                        يُحسب إلغاء المشتري بنفسه
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] font-extrabold text-[var(--text-primary)] cursor-pointer">
+                        <input type="checkbox" checked={caSettings.count_timeout !== false}
+                            onChange={e => setCaSettings((p: any) => ({ ...p, count_timeout: e.target.checked }))} />
+                        يُحسب عدم الحضور (انتهاء مهلة الاستلام)
+                    </label>
+                </div>
+                <button onClick={saveCaSettings} disabled={savingCa}
+                    className="px-5 py-2 rounded-xl bg-emerald-500 text-white text-xs font-extrabold shadow hover:shadow-md active:scale-95 transition-all disabled:opacity-60">
+                    {savingCa ? '⏳ جارٍ الحفظ…' : '💾 حفظ إعدادات فلترة الإلغاء'}
+                </button>
             </div>
 
             {loading && !overview ? (

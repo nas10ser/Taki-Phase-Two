@@ -276,7 +276,7 @@ export const authService = {
                         if (msg.includes('invalid login credentials')) {
                             resolve({ error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } });
                         } else if (msg.includes('no-rpc-match')) {
-                            resolve({ error: { message: 'لم يتم العثور على حساب بهذا الرقم. تأكد من الرقم أو سجّل حساباً جديداً' } });
+                            resolve({ error: { message: 'لم يتم العثور على حساب بهذا الرقم. تأكد من الرقم أو سجّل حساباً جديداً — وإن كان حسابك إدارياً فسجّل الدخول بالبريد الإلكتروني (حماية أمنية).' } });
                         } else {
                             resolve({ error: firstError });
                         }
