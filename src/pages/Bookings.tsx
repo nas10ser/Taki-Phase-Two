@@ -7,6 +7,7 @@ import { Booking } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
 import ReportDialog from '../components/ReportDialog';
+import { supabase } from '../services/supabaseClient';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -57,6 +58,73 @@ const Bookings: React.FC = () => {
     useEffect(() => {
         refreshBookings();
     }, [refreshBookings, user?.id]);
+
+    // v12.81 — الدفع المباشر لحساب التاجر: وضع طرق الدفع لكل متجر (يُجلب
+    // كسولاً عند فتح بطاقة حجز غير مدفوع) + زر «ادفع الآن» يفتح صفحة الدفع
+    // المستضافة على بوابة التاجر (الإنشاء والتأكيد خادميان بالكامل).
+    const [storePayModes, setStorePayModes] = useState<Record<string, string>>({});
+    const [payingBarcode, setPayingBarcode] = useState<string | null>(null);
+    useEffect(() => {
+        if (!expandedId) return;
+        const b = bookings.find(x => x.barcode === expandedId);
+        const storeId = b?.deal?.storeId;
+        if (!b || !storeId || b.paidAt || (b.status !== 'pending' && b.status !== 'acknowledged')) return;
+        if (storePayModes[storeId] !== undefined) return;
+        let alive = true;
+        supabase.rpc('deal_payment_mode', { p_store_id: storeId }).then(({ data }) => {
+            if (alive) setStorePayModes(prev => ({ ...prev, [storeId]: String(data || 'cod') }));
+        });
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [expandedId, bookings]);
+
+    const payNow = async (barcode: string) => {
+        if (payingBarcode) return;
+        setPayingBarcode(barcode);
+        try {
+            const { data, error } = await supabase.functions.invoke('merchant-pay', {
+                body: { op: 'create', barcode, lang: isRTL ? 'ar' : 'en' },
+            });
+            let payload: any = data;
+            if (error) {
+                try { payload = await (error as any).context?.json?.(); } catch { /* non-JSON */ }
+            }
+            if (payload?.url) {
+                window.location.href = payload.url;
+                return;
+            }
+            if (payload?.error === 'ALREADY_PAID') {
+                customAlert(isRTL ? '✅ هذا الحجز مدفوع مسبقاً' : '✅ This booking is already paid');
+                refreshBookings();
+                return;
+            }
+            throw new Error(payload?.error || 'CREATE_FAILED');
+        } catch {
+            customAlert(isRTL
+                ? '⚠️ تعذّر فتح صفحة الدفع الآن — حاول بعد قليل أو ادفع عند الاستلام.'
+                : '⚠️ Could not open the payment page — try again shortly, or pay at pickup.');
+        } finally {
+            setPayingBarcode(null);
+        }
+    };
+
+    // العودة من بوابة الدفع: ?paid=1 نجاح مؤكد خادمياً / ?paid=0 لم يكتمل.
+    // (يوضع قبل تأثير ?barcode لأن ذاك يستهلك الرابط بـhistory.replace)
+    useEffect(() => {
+        const paid = new URLSearchParams(location.search).get('paid');
+        if (paid === null) return;
+        if (paid === '1') {
+            customAlert(isRTL
+                ? '✅ تم الدفع بنجاح! وصل المبلغ لحساب التاجر مباشرة وحجزك مُعلّم «مدفوع».'
+                : '✅ Payment successful! The amount went directly to the merchant and your booking is marked paid.');
+        } else {
+            customAlert(isRTL
+                ? 'ℹ️ لم يكتمل الدفع — يمكنك المحاولة مرة أخرى من زر «ادفع الآن»، أو الدفع عند الاستلام.'
+                : 'ℹ️ Payment was not completed — try again with "Pay now", or pay at pickup.');
+        }
+        refreshBookings();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.search]);
 
     // Arriving here from the "✅ تم الحجز — انتقل لحجوزاتي" CTA (or any
     // navigation) keeps the previous page's scroll offset, so the user
@@ -335,12 +403,41 @@ const Bookings: React.FC = () => {
                                                 }}>
                                                     {booking.status === 'acknowledged' ? (isRTL ? 'قيد التجهيز' : 'Preparing') : (isRTL ? 'مؤكد' : 'Confirmed')}
                                                 </div>
+                                                {/* v12.81 — شارة الدفع الإلكتروني المباشر لحساب التاجر */}
+                                                {booking.paidAt && (
+                                                    <div style={{ fontSize: '0.72rem', fontWeight: 900, padding: '5px 10px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#059669', marginBottom: 6 }}>
+                                                        💳 {isRTL ? 'مدفوع' : 'Paid'}
+                                                    </div>
+                                                )}
                                                 <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--primary)' }}>{booking.deal?.discountedPrice} ر.س</div>
                                             </div>
                                         </div>
 
                                         {isExpanded && (
                                             <div className="animate-fade-in" style={{ marginTop: 24, paddingTop: 24, borderTop: '2px dashed var(--gray-100)' }} onClick={e => e.stopPropagation()}>
+                                                {/* v12.81 — الدفع المباشر: مدفوع = سطر توثيق، غير مدفوع وتاجره
+                                                    يستقبل الدفع الإلكتروني = زر «ادفع الآن» يفتح بوابته المرخصة */}
+                                                {booking.paidAt ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.35)', borderRadius: 14, padding: '12px 16px', marginBottom: 20 }}>
+                                                        <span style={{ fontSize: '1.2rem' }}>💳</span>
+                                                        <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#059669' }}>
+                                                            {isRTL
+                                                                ? `مدفوع إلكترونياً${booking.paidAmount ? ` — ${booking.paidAmount} ر.س` : ''} (المبلغ في حساب التاجر مباشرة)`
+                                                                : `Paid online${booking.paidAmount ? ` — ${booking.paidAmount} SAR` : ''} (funds went directly to the merchant)`}
+                                                        </div>
+                                                    </div>
+                                                ) : ((booking.status === 'pending' || booking.status === 'acknowledged') &&
+                                                    ['online', 'both'].includes(storePayModes[booking.deal?.storeId] || '')) && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); payNow(booking.barcode); }}
+                                                        disabled={payingBarcode === booking.barcode}
+                                                        style={{ width: '100%', marginBottom: 20, padding: '14px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #059669, #0d9488)', color: '#fff', fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', boxShadow: '0 6px 18px rgba(13, 148, 136, 0.35)', opacity: payingBarcode === booking.barcode ? 0.6 : 1 }}
+                                                    >
+                                                        {payingBarcode === booking.barcode
+                                                            ? (isRTL ? '⏳ جاري فتح صفحة الدفع…' : '⏳ Opening payment page…')
+                                                            : (isRTL ? '💳 ادفع الآن إلكترونياً — مدى / فيزا / ماستركارد' : '💳 Pay now — mada / Visa / Mastercard')}
+                                                    </button>
+                                                )}
                                                 {/* Timer */}
                                                 {booking.expiryTime > Date.now() && (
                                                     <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

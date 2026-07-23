@@ -35,6 +35,11 @@ export interface Booking {
     /** v12.53 — اختيارات المشتري المهيكلة [{g,c,qty}] — حارس المخزون يقرؤها */
     selectedOptions?: Array<{ g: string; c: string; qty?: number }>;
     merchantNote?: string;   // Seller's note left when acknowledging the order
+    /** v12.81 — الدفع المباشر لحساب التاجر: تُعبّأ من الـwebhook بعد تأكيد
+     *  خادم→خادم لدى بوابة التاجر. paidAt = epoch ms. */
+    paidAt?: number;
+    paymentProvider?: string;
+    paidAmount?: number;
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -114,6 +119,9 @@ export const bookingRepository = {
                     status: b.status as Booking['status'],
                     bookedAt: b.booked_at,
                     completedAt: b.completed_at ? new Date(b.completed_at).getTime() : undefined,
+                    paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
+                    paymentProvider: b.payment_provider || undefined,
+                    paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
                     expiryTime: b.expiry_time
                 } as Booking));
 
@@ -149,6 +157,9 @@ export const bookingRepository = {
                     status: data.status as Booking['status'],
                     bookedAt: data.booked_at,
                     completedAt: data.completed_at ? new Date(data.completed_at).getTime() : undefined,
+                    paidAt: data.paid_at ? new Date(data.paid_at).getTime() : undefined,
+                    paymentProvider: data.payment_provider || undefined,
+                    paidAmount: data.paid_amount != null ? Number(data.paid_amount) : undefined,
                     expiryTime: data.expiry_time
                 };
             }

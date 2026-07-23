@@ -29,6 +29,7 @@ export type AdminTab =
     | 'contests'
     | 'launch'
     | 'tax'
+    | 'invoices'
     | 'messages'
     | 'messaging'
     | 'admins';
@@ -98,6 +99,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-locations', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
         { kind: 'nav', id: 'nav-launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
         { kind: 'nav', id: 'nav-tax',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
+        { kind: 'nav', id: 'nav-invoices',  label: 'فواتير الموقع',    icon: '💳', keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير الموقع سجل', tab: 'invoices' },
         { kind: 'nav', id: 'nav-messaging', label: 'الإشعارات والرسائل', icon: '📨', keywords: 'messaging notifications email templates اشعارات رسائل ايميل بريد قوالب تذكير اشتراك حجز', tab: 'messaging' },
     ], []);
 

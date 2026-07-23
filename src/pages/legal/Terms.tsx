@@ -13,6 +13,7 @@
 import React from 'react';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import { CLIENT_PAYMENT_TERMS, MERCHANT_GATEWAY_AGREEMENT } from '../../data/legalTexts';
 
 const Terms: React.FC = () => {
     const { language } = useApp();
@@ -22,7 +23,7 @@ const Terms: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'شروط الاستخدام' : 'Terms of Service'}
             subtitle={isRTL ? 'Terms of Service · TAKI' : 'Terms of Service · TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated="2026-07-23"
         >
             <Paragraph>
                 {isRTL ? (
@@ -282,6 +283,52 @@ const Terms: React.FC = () => {
                     'Manipulating prices in any form, inflating them artificially to discount them later, or advertising a price and then demanding a higher one at receipt («bait-and-switch»), is prohibited.',
                     'Where a paid merchant subscription is enabled, prices are disclosed in advance, and the subscription auto-renews unless the merchant turns off renewal from their account settings, under the Refund Policy published at /refund.',
                 ]} />
+
+                {/* v12.81 — بندا «الدفع المباشر لحساب التاجر» المعتمدان (الدرع
+                    القانوني): نص العميل + اتفاقية التاجر — من data/legalTexts.ts
+                    (مصدر واحد يظهر هنا وفي بطاقة بوابة التاجر). */}
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>الدفع الإلكتروني المباشر لحساب التاجر:</strong>{' '}
+                            {CLIENT_PAYMENT_TERMS}
+                        </>
+                    ) : (
+                        <>
+                            <strong>Direct online payment to the merchant's account:</strong>{' '}
+                            The platform is a technical intermediary for listing and connection only, and is not a party
+                            to any financial or service contract between buyer and merchant. Online payments — where
+                            available — are made directly through independent payment gateways licensed by the Saudi
+                            Central Bank and belonging to the merchant themselves; the amount moves from the buyer to the
+                            merchant's own account without passing through the platform. The platform does not collect
+                            funds, does not store card or payment data, and bears no responsibility for refund or
+                            cancellation policies or product quality or conformity — every financial dispute is resolved
+                            directly between the buyer, the merchant and the payment gateway. The tax invoice is issued
+                            by the merchant in their capacity as the seller.
+                        </>
+                    )}
+                </Paragraph>
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>اتفاقية استخدام التاجر لبوابة الدفع</strong> (يوافق عليها التاجر
+                            إلكترونياً وبشكل إلزامي قبل تفعيل بوابته):{' '}
+                            {MERCHANT_GATEWAY_AGREEMENT}
+                        </>
+                    ) : (
+                        <>
+                            <strong>Merchant payment-gateway agreement</strong> (accepted electronically and mandatorily
+                            before the merchant activates their gateway): the merchant acknowledges being first and last
+                            responsible for: (1) their payment-gateway account and the accuracy and confidentiality of
+                            the connection keys they enter, (2) collecting their funds directly into their own account,
+                            (3) issuing ZATCA-compliant electronic invoices to customers, (4) handling refund requests,
+                            disputes and chargebacks with the gateway and customers, (5) all gateway fees. The merchant
+                            releases the platform from any claim or liability arising from payments and undertakes to
+                            indemnify it for any damage caused by their breach of this agreement. The platform may
+                            suspend the payment feature for any merchant at any time without prior notice.
+                        </>
+                    )}
+                </Paragraph>
             </Section>
 
             <Section n={7} title={isRTL ? '🚫 المحتوى والعروض المحظورة قطعياً' : '🚫 Strictly prohibited content and offers'}>

@@ -10,6 +10,7 @@ import ReportDialog from '../components/ReportDialog';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
+import GatewayCard from '../components/seller/GatewayCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
@@ -2254,6 +2255,8 @@ const SellerDashboard: React.FC = () => {
                 {view === 'form' && user && (
                     <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                        {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
+                        <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
                         <ReferralCard isRTL={isRTL} onAlert={customAlert} />
                     </div>

@@ -625,14 +625,23 @@ function create(deps) {
         all.forEach(x => { s.temp.bkCache[x.barcode] = x; });
         const b = bkVal(s, bc);
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:bookings', title: tr('menu_bookings_buyer') }] });
+        // v12.81 — الدفع المباشر لحساب التاجر: فحص خفيف (خلف بوابة السر) هل
+        // الحجز قابل للدفع الإلكتروني أو مدفوع أصلاً. لا منطق دفع في البوت.
+        let payInfo = null;
+        if (s.userId && (b.status === 'pending' || b.status === 'acknowledged')) {
+            try { payInfo = await rpc('bot_get_pay_info', { p_uid: s.userId, p_barcode: bc }); } catch { /* يبقى الزر مخفياً */ }
+        }
         let extra = '';
         if (b.notes) extra += tr('wa_bk_note', b.notes);
         extra += bkStatusLines(b);
+        if (payInfo && payInfo.paid) extra += `\n${tr('pay_paid_line')}`;
         const body = tr('wa_bk_detail', bc, DIV, b.deal_name, b.shop_name, b.quantity, prepLabel(b.prep_time), statusLabel(b.status), extra);
         const btns = [{ id: `wa:chat:${bc}`, title: tr('wa_chat_btn') }];
         if (b.status === 'pending') btns.push({ id: `wa:edit:${bc}`, title: tr('wa_bk_edit') });
         else if (b.status === 'completed') btns.push({ id: `wa:rate:${bc}`, title: tr('wa_bk_rate') });
         else btns.push({ id: 'wa:bookings', title: tr('wa_back') });
+        // أزرار الرد سقفها ٣ — «ادفع الآن» ثالثاً في صف البطاقة (٢ موجودة + ١)
+        if (payInfo && payInfo.payable) btns.push({ id: `wa:pay:${bc}`, title: trunc(tr('wa_pay_btn'), LIM.btnTitle) });
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
         const row2 = [];
         if (b.status === 'pending' || b.status === 'acknowledged') row2.push({ id: `wa:cancel:${bc}`, title: tr('wa_bk_cancel') });
@@ -644,6 +653,27 @@ function create(deps) {
         await sendButtons(from, { body: tr('wa_cancel_confirm', bc), buttons: [
             { id: `wa:dcancel:${bc}`, title: tr('wa_cancel_yes') }, { id: `wa:bk1:${bc}`, title: tr('wa_back') },
         ] });
+    }
+    // v12.81 — «ادفع الآن»: نطلب رابط الدفع من Edge Function «merchant-pay»
+    // (خلف بوابة x-bot-secret) ونرسله كنص — واتساب يحوّله رابطاً قابلاً للنقر.
+    async function sendPayLink(from, s, bc) {
+        if (!s.userId) return linkInstructions(from);
+        try {
+            const r = await fetch(`${SB_URL}/functions/v1/merchant-pay`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-bot-secret': GATEWAY, 'Authorization': `Bearer ${SB_KEY}`, 'apikey': SB_KEY },
+                body: JSON.stringify({ op: 'create', barcode: bc, uid: s.userId }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (j && j.url) {
+                await sendText(from, tr('wa_pay_link', bc, j.url));
+            } else {
+                await sendText(from, tr(j && j.error === 'ALREADY_PAID' ? 'pay_already' : 'pay_fail'));
+            }
+        } catch {
+            await sendText(from, tr('pay_fail'));
+        }
+        return sendButtons(from, { body: '—', buttons: [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn()] });
     }
     async function doCancel(from, s, bc) {
         const r = await rpc('bot_cancel_booking', aid(from, { p_barcode: bc }));
@@ -1759,6 +1789,7 @@ function create(deps) {
         if (id === 'wa:bk:cur') return showBuyerBookings(from, s, 'current');
         if (id === 'wa:bk:prev') return showBuyerBookings(from, s, 'previous');
         if (id.startsWith('wa:bk1:')) return bookingDetail(from, s, id.slice(7));
+        if (id.startsWith('wa:pay:')) return sendPayLink(from, s, id.slice(7));
         if (id.startsWith('wa:cancel:')) return askCancel(from, s, id.slice(10));
         if (id.startsWith('wa:dcancel:')) return doCancel(from, s, id.slice(11));
         if (id.startsWith('wa:chat:')) return showChat(from, s, id.slice(8));

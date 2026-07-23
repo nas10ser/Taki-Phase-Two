@@ -216,6 +216,26 @@ async function uploadPhoto(ctx, fileId) {
     } catch (e) { console.warn('uploadPhoto:', e.message); return null; }
 }
 
+// ── v12.81: الدفع المباشر لحساب التاجر — صفر منطق دفع داخل البوت ─────────────
+// ينادي Edge Function «merchant-pay» (خلف بوابة x-bot-secret) التي تفك سر
+// التاجر من Vault وتنشئ الدفعة على حسابه وتعيد رابط الصفحة المستضافة فقط.
+async function createPayLink(userId, barcode) {
+    if (!BOT_GATEWAY_SECRET || !SUPABASE_URL || !userId) return { error: 'off' };
+    try {
+        const r = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/merchant-pay`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-bot-secret': BOT_GATEWAY_SECRET,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'apikey': SUPABASE_KEY,
+            },
+            body: JSON.stringify({ op: 'create', barcode, uid: userId }),
+        });
+        return await r.json().catch(() => ({ error: 'bad_json' }));
+    } catch (e) { console.warn('createPayLink:', e.message); return { error: String(e?.message || e) }; }
+}
+
 // An account can OWN a store while still being typed 'admin' (Nasser runs shop
 // «تاكي» as an admin). Every store-management feature must accept a store-owner,
 // not just user_type==='seller' — the JS twin of the v11.79 SQL identity fix.
@@ -1714,7 +1734,15 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         `📦 ${tr('w1250_quantity')}: *${b.quantity}*  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDate(b.booked_at))}`;
     if (active && b.expiry_time) m += `\n⏰ *${tr('w1251_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
     if (b.notes) m += `\n📝 _${md(b.notes)}_`;
+    // v12.81 — الدفع المباشر: فحص خفيف خلف بوابة السر — «ادفع الآن» يظهر فقط
+    // إن كان تاجر الحجز يستقبل الدفع الإلكتروني والحجز نشطاً غير مدفوع.
+    let payInfo = null;
+    if (!seller && active) {
+        try { payInfo = await rpc('bot_get_pay_info', { p_uid: s.userId, p_barcode: b.barcode }); } catch { /* يبقى الزر مخفياً */ }
+    }
+    if (payInfo?.paid) m += `\n${md(tr('pay_paid_line'))}`;
     const rows = [[Markup.button.callback(b.unread>0?tr('cm_chat_n', b.unread):tr('cm_chat'), `chat:${b.barcode}`), Markup.button.callback(tr('cm_call'), `call:b:${b.barcode}`)]];
+    if (payInfo?.payable) rows.push([Markup.button.callback(tr('pay_btn'), `payb:${b.barcode}`)]);
     if (seller){
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1257_confirm_start_prep'),`ack:${b.barcode}`)]);
         if (active) rows.push([Markup.button.callback(tr('b1258_complete_booking'),`complete:${b.barcode}`)]);
@@ -1731,6 +1759,24 @@ async function renderOneBooking(ctx, barcode, roleCtx){
     rows.push([Markup.button.callback(tr('b1263_back_to_bookings'), listCb)]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+
+// ── v12.81: زر «ادفع الآن» — رابط الدفع المستضاف على بوابة تاجر الحجز ─────────
+bot.action(/^payb:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
+    const bc = ctx.match[1];
+    const r = await createPayLink(s.userId, bc);
+    const backRow = [Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${bc}`)];
+    if (r?.url) {
+        return ctx.reply(md(tr('pay_open_page')), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            [Markup.button.url(tr('pay_open_btn'), r.url)],
+            backRow,
+        ]).reply_markup });
+    }
+    const msg = r?.error === 'ALREADY_PAID' ? tr('pay_already') : tr('pay_fail');
+    return ctx.reply(md(msg), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([backRow]).reply_markup });
+});
 
 // ── Booking chat (buyer ↔ seller, 3 messages each side) ───────────────────────
 bot.action(/^chat:(.+)$/, async ctx => { await ctx.answerCbQuery(); await renderChat(ctx, ctx.match[1]); });

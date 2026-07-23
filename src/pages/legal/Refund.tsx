@@ -13,6 +13,7 @@
 import React from 'react';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import { REFUND_PAYMENT_CLAUSE } from '../../data/legalTexts';
 
 const Refund: React.FC = () => {
     const { language } = useApp();
@@ -22,7 +23,7 @@ const Refund: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الاسترداد' : 'Refund Policy'}
             subtitle={isRTL ? 'Refund Policy · TAKI' : 'Refund Policy · TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated="2026-07-23"
         >
             <Paragraph>
                 {isRTL ? (
@@ -110,6 +111,21 @@ const Refund: React.FC = () => {
                             varies according to the nature of the business (restaurants,
                             retail, services, entertainment, and so on), the nature of the
                             offer, and the merchant's regulatory obligations. Accordingly:
+                        </>
+                    )}
+                </Paragraph>
+                {/* v12.81 — بند المدفوعات الإلكترونية المعتمد (الدفع المباشر لحساب التاجر) */}
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>المدفوعات الإلكترونية:</strong> {REFUND_PAYMENT_CLAUSE}
+                        </>
+                    ) : (
+                        <>
+                            <strong>Online payments:</strong> online payments are refunded by
+                            the merchant directly through their own payment gateway and under
+                            their published policy — the platform has no access to the funds
+                            and no authority to return them.
                         </>
                     )}
                 </Paragraph>

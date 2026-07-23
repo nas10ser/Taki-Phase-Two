@@ -10,6 +10,7 @@
 import React from 'react';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import { PRIVACY_PAYMENT_CLAUSE } from '../../data/legalTexts';
 
 const Privacy: React.FC = () => {
     const { language } = useApp();
@@ -19,7 +20,7 @@ const Privacy: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الخصوصية' : 'Privacy Policy'}
             subtitle={isRTL ? 'Privacy Policy · TAKI' : 'Privacy Policy · TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated="2026-07-23"
         >
             <Paragraph>
                 {isRTL ? (
@@ -374,6 +375,23 @@ const Privacy: React.FC = () => {
                             password confidential and not sharing it with anyone, logging
                             out from shared devices, and notifying us immediately if you
                             suspect any unauthorised use of your account.
+                        </>
+                    )}
+                </Paragraph>
+                {/* v12.81 — بند بيانات الدفع المعتمد (الدفع المباشر لحساب التاجر) */}
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>بيانات الدفع:</strong> {PRIVACY_PAYMENT_CLAUSE}
+                        </>
+                    ) : (
+                        <>
+                            <strong>Payment data:</strong> the platform does not collect or
+                            store card numbers or payment data; entry happens directly on
+                            the pages of the licensed payment gateway, and what the
+                            platform retains is a reference record of the transaction (its
+                            number, amount and status) for display in both parties'
+                            accounts.
                         </>
                     )}
                 </Paragraph>

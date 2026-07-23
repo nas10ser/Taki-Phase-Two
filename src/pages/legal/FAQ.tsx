@@ -127,7 +127,20 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'هل يتم سحب أي مبلغ من بطاقتي عند الحجز؟',
-        a: <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء. الدفع كاملاً يتمّ بينك وبين التاجر في موقعه عند الاستلام.</p>,
+        a: <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء تلقائياً. الدفع الافتراضي يتمّ بينك وبين التاجر في موقعه عند الاستلام، وبعض التجار يتيحون <strong>اختيارياً</strong> زرّ «ادفع الآن» للدفع الإلكتروني المسبق عبر بوابة الدفع المرخصة الخاصّة بهم.</p>,
+    },
+    // v12.81 — أسئلة الدفع الإلكتروني المباشر المعتمدة (الدرع القانوني)
+    {
+        q: 'لمن أدفع عند اختيار «الدفع الإلكتروني»؟',
+        a: <p><strong>للتاجر مباشرة</strong> عبر بوابة دفع مرخصة من البنك المركزي السعودي خاصّة بحسابه هو — تاكي لا تستلم أموالك، ولا يمرّ أيّ ريال بحسابها. ولهذا تظهر لك صفحة الدفع باسم بوابة التاجر (ميسر، تاب، بيتابس، بيفورت، هايبر باي، أو Checkout.com).</p>,
+    },
+    {
+        q: 'هل تحفظ تاكي بيانات بطاقتي؟',
+        a: <p><strong>لا</strong>. إدخال بيانات البطاقة يتمّ على صفحة بوابة الدفع المرخصة نفسها، وتاكي لا ترى ولا تخزّن رقم بطاقتك إطلاقاً — ما تحتفظ به المنصّة هو سجلّ مرجعيّ للعملية (رقمها ومبلغها وحالتها) ليظهر لك وللتاجر.</p>,
+    },
+    {
+        q: 'دفعت إلكترونياً — ممن أطلب الاسترداد؟',
+        a: <p><strong>من التاجر مباشرة</strong> عبر بوابة الدفع الخاصّة به ووفق سياسته المُعلَنة — المنصّة لا تملك الوصول للأموال ولا صلاحية ردّها. تواصل مع التاجر عبر شات الحجز أوّلاً، وإن لم يستجب ارفع شكوى عبر «📣 الشكاوى».</p>,
     },
     {
         q: 'كم مدّة صلاحية الحجز؟',
@@ -237,7 +250,19 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'Is any amount charged to my card on booking?',
-        a: <p><strong>Never.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you. Full payment is made between you and the merchant at their location on receipt.</p>,
+        a: <p><strong>Never.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you automatically. By default you pay the merchant at their location on receipt, and some merchants optionally offer a «Pay now» button for advance online payment through their own licensed gateway.</p>,
+    },
+    {
+        q: 'Who am I paying when I choose «online payment»?',
+        a: <p><strong>The merchant, directly</strong> — through a payment gateway licensed by the Saudi Central Bank and belonging to the merchant's own account. TAKI never receives your money; not a single riyal passes through its account. That is why the payment page carries the merchant's gateway branding (Moyasar, Tap, PayTabs, PayFort, HyperPay or Checkout.com).</p>,
+    },
+    {
+        q: 'Does TAKI store my card details?',
+        a: <p><strong>No.</strong> Card details are entered on the licensed gateway's own page; TAKI never sees or stores your card number. What the platform keeps is a reference record of the transaction (its number, amount and status) shown to you and the merchant.</p>,
+    },
+    {
+        q: 'I paid online — who do I ask for a refund?',
+        a: <p><strong>The merchant, directly</strong>, through their own payment gateway and under their published policy — the platform has no access to the funds and no authority to return them. Contact the merchant via the booking chat first; if they do not respond, file a complaint through «📣 Complaints».</p>,
     },
     {
         q: 'How long does a booking stay valid?',
@@ -535,7 +560,7 @@ const FAQ: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'الأسئلة الشائعة' : 'Frequently Asked Questions'}
             subtitle={isRTL ? 'Frequently Asked Questions · TAKI' : 'الأسئلة الشائعة · TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated="2026-07-23"
             draftNotice={false}
         >
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">

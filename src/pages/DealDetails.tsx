@@ -589,6 +589,61 @@ const DealDetails: React.FC = () => {
         ? Math.round((baseTotal + optAddOnTotal) * 100) / 100
         : 0;
 
+    // v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): وضع طرق دفع تاجر هذا
+    // العرض ('cod' افتراضاً — «ادفع الآن» يظهر فقط لتاجر فعّل بوابته واختبرها).
+    // القاعدة تتكفل بالسقوط التلقائي لعند الاستلام إذا تعطلت بوابة تاجرٍ
+    // وضعُه «إلكتروني فقط».
+    const [payMode, setPayMode] = useState<'cod' | 'online' | 'both'>('cod');
+    const [payChoice, setPayChoice] = useState<'cod' | 'online'>('cod');
+    useEffect(() => {
+        if (!showBookingModal || !deal?.storeId) return;
+        let alive = true;
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data } = await supabase.rpc('deal_payment_mode', { p_store_id: deal.storeId });
+                if (!alive) return;
+                const m = data === 'online' || data === 'both' ? data : 'cod';
+                setPayMode(m);
+                setPayChoice(m === 'online' ? 'online' : 'cod');
+            } catch { /* عند أي فشل يبقى الافتراضي الآمن: الدفع عند الاستلام */ }
+        })();
+        return () => { alive = false; };
+    }, [showBookingModal, deal?.storeId]);
+
+    // إنشاء الدفعة يتم في Edge Function (تفك سر التاجر من Vault وتنشئ الدفعة
+    // على حسابه) — حفظ الحجز fire-and-forget فنعيد المحاولة حتى يصل صفه للقاعدة.
+    const payForBooking = async (barcode: string) => {
+        const { supabase } = await import('../services/supabaseClient');
+        const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+        for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+                const { data, error } = await supabase.functions.invoke('merchant-pay', {
+                    body: { op: 'create', barcode, lang: isRTL ? 'ar' : 'en' },
+                });
+                let payload: any = data;
+                if (error) {
+                    try { payload = await (error as any).context?.json?.(); } catch { /* non-JSON */ }
+                }
+                if (payload?.url) {
+                    window.location.href = payload.url;
+                    return;
+                }
+                if (payload?.error === 'BOOKING_NOT_FOUND') {
+                    await sleep(900);
+                    continue;
+                }
+                throw new Error(payload?.error || 'CREATE_FAILED');
+            } catch {
+                if (attempt < 4) await sleep(900);
+            }
+        }
+        customAlert(isRTL
+            ? '⚠️ حجزك مؤكد لكن تعذّر فتح صفحة الدفع الآن — افتح «حجوزاتي» واضغط «ادفع الآن»، أو ادفع عند الاستلام.'
+            : '⚠️ Your booking is confirmed but the payment page failed to open — use "Pay now" from My Bookings, or pay at pickup.');
+        history.push('/bookings');
+    };
+
     // v12.66 — أُلغي ربط v12.54 (مجموع كميات الاختيارات = الكمية): الكمية
     // تُضبط من عدّاد الكمية/عدّادات النسخ، وكل قطعة تختار إضافاتها بنفسها.
 
@@ -902,7 +957,7 @@ const DealDetails: React.FC = () => {
         }
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
-        bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions);
+        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions);
 
         // Reserve quantity only when the seller set a real stock cap.
         // Time-based offers stay infinitely bookable until the timer ends.
@@ -912,6 +967,16 @@ const DealDetails: React.FC = () => {
         // active, and that previously took booking down with it.
         if (hasStockCap && deal.quantity !== 'unlimited') {
             updateDealStock(deal.id, (deal.quantity as number) - selectedQuantity);
+        }
+
+        // v12.81 — المشتري اختار الدفع الإلكتروني: الحجز يبقى كما هو، ثم
+        // نفتح صفحة الدفع المستضافة على حساب تاجر هذا العرض مباشرة.
+        if (payChoice === 'online' && payMode !== 'cod' && newBooking?.barcode) {
+            customAlert(isRTL
+                ? '✅ تم تأكيد الحجز — جاري تحويلك لصفحة الدفع الآمنة…'
+                : '✅ Booking confirmed — taking you to the secure payment page…');
+            payForBooking(newBooking.barcode);
+            return;
         }
 
         customAlert(isRTL ? "✅ تم تأكيد الحجز بنجاح وسيتم تحويلك لصفحة حجوزاتي" : "✅ Booking confirmed. Redirecting to My Bookings");
@@ -2044,8 +2109,61 @@ const DealDetails: React.FC = () => {
                             />
                         </div>
 
+                        {/* v12.81 — اختيار طريقة الدفع حسب وضع تاجر العرض:
+                            'cod' (الافتراضي) = لا يظهر شيء (كما كان دائماً)،
+                            'both' = المشتري يختار، 'online' = إلكتروني فقط. */}
+                        {payMode !== 'cod' && (
+                            <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                <h3 style={{ fontWeight: 800, marginBottom: 12, fontSize: '0.95rem' }}>💳 {isRTL ? 'طريقة الدفع' : 'Payment Method'}</h3>
+                                {payMode === 'both' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {([
+                                            { id: 'cod' as const, icon: '🏪', title: isRTL ? 'الدفع عند الاستلام' : 'Pay at pickup', sub: isRTL ? 'تدفع للتاجر عند استلام طلبك' : 'Pay the merchant on pickup' },
+                                            { id: 'online' as const, icon: '💳', title: isRTL ? 'ادفع الآن إلكترونياً' : 'Pay now online', sub: isRTL ? 'مدى / فيزا / ماستركارد — عبر بوابة التاجر المرخصة مباشرة' : 'mada / Visa / Mastercard — via the merchant’s licensed gateway' },
+                                        ]).map(opt => {
+                                            const picked = payChoice === opt.id;
+                                            return (
+                                                <div key={opt.id}
+                                                    role="radio" aria-checked={picked} tabIndex={0}
+                                                    onClick={() => setPayChoice(opt.id)}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPayChoice(opt.id); } }}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 14, cursor: 'pointer',
+                                                        border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                        background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
+                                                        transition: 'all 0.15s ease', WebkitTapHighlightColor: 'transparent',
+                                                    }}>
+                                                    <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{opt.icon} {opt.title}</div>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--body-bg)', border: '1.5px solid var(--primary)', borderRadius: 14, padding: '12px 14px' }}>
+                                        <span style={{ fontSize: '1.2rem' }}>💳</span>
+                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                                            {isRTL
+                                                ? 'هذا التاجر يستقبل الدفع الإلكتروني فقط — بعد تأكيد الحجز ستنتقل لصفحة الدفع الآمنة (مدى / فيزا / ماستركارد) عبر بوابته المرخصة، والمبلغ يصل حسابه مباشرة.'
+                                                : 'This merchant accepts online payment only — after confirming you’ll be taken to the secure payment page (mada / Visa / Mastercard) of their licensed gateway.'}
+                                        </div>
+                                    </div>
+                                )}
+                                <p style={{ margin: '10px 0 0', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                    🔒 {isRTL
+                                        ? 'الدفع يتم على صفحة بوابة الدفع المرخصة الخاصة بالتاجر — تاكي لا تستلم أموالك ولا ترى بيانات بطاقتك.'
+                                        : 'Payment happens on the merchant’s licensed gateway page — TAKI never receives your money or sees your card details.'}
+                                </p>
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 16, border: '2px solid var(--gray-200)' }}>
-                                <span style={{ fontWeight: 800 }}>{isRTL ? 'إجمالي الدفع عند الاستلام:' : 'Pay at Pickup Total:'}</span>
+                                <span style={{ fontWeight: 800 }}>{payChoice === 'online' && payMode !== 'cod'
+                                    ? (isRTL ? 'الإجمالي — دفع إلكتروني آمن:' : 'Total — secure online payment:')
+                                    : (isRTL ? 'إجمالي الدفع عند الاستلام:' : 'Pay at Pickup Total:')}</span>
                                 <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>
                                     {bookingTotal} ر.س
                                     {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}
@@ -2083,7 +2201,9 @@ const DealDetails: React.FC = () => {
                         </div>
 
                         <button onClick={() => { setShowBookingModal(false); handleBooking(); }} style={{ width: '100%', padding: '16px', borderRadius: 16, background: 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: 'pointer', boxShadow: '0 8px 20px var(--primary-glow)' }}>
-                            {isRTL ? 'تأكيد الحجز النهائي ✅' : 'Confirm Final Booking ✅'}
+                            {payChoice === 'online' && payMode !== 'cod'
+                                ? (isRTL ? 'تأكيد الحجز والانتقال للدفع 💳' : 'Confirm & Pay Online 💳')
+                                : (isRTL ? 'تأكيد الحجز النهائي ✅' : 'Confirm Final Booking ✅')}
                         </button>
                     </div>
                 </div>
