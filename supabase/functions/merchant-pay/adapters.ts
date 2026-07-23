@@ -13,7 +13,8 @@
  *  - مطابقة المبلغ والعملة مع الحجز قبل التعليم كمدفوع
  *  - idempotency عبر UNIQUE(provider, payment_ref) في قاعدة البيانات
  *
- * إضافة مزود سابع مستقبلاً = كائن جديد هنا + سطر في ADAPTERS. لا شيء آخر.
+ * إضافة مزود جديد = كائن جديد هنا + سطر في ADAPTERS. لا شيء آخر
+ * (v12.83: هكذا أُضيف 'sim' التجريبي — الوعد تحقق حرفياً).
  */
 
 import { basicAuth, hmacSha256Hex, round2, sha256Hex, timingSafeEqual, toMinor } from './helpers.ts';
@@ -37,7 +38,7 @@ export interface PayCtx {
     returnUrl: string;
     /** استقبال إشعارات المزود خادم→خادم */
     webhookUrl: string;
-    /** صفحة وسيطة نستضيفها (payfort form / hyperpay widget) — موقّعة HMAC */
+    /** صفحة وسيطة نستضيفها (payfort/hyperpay/sim) — موقّعة HMAC */
     pageUrl: string;
     lang: 'ar' | 'en';
 }
@@ -57,11 +58,76 @@ export interface ProviderAdapter {
     verifyCredentials(cfg: GatewayCfg): Promise<{ ok: boolean; error?: string }>;
     confirmPayment(cfg: GatewayCfg, ref: string, barcode: string): Promise<ConfirmResult>;
     verifyWebhook(cfg: GatewayCfg, evt: WebhookEvt): Promise<WebhookCheck>;
-    /** payfort/hyperpay فقط: صفحة وسيطة (نموذج موقع / ودجت) — البقية لا تحتاجها */
+    /** payfort/hyperpay/sim: صفحة وسيطة — البقية لا تحتاجها */
     renderPage?(cfg: GatewayCfg, ctx: PayCtx): Promise<string>;
 }
 
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
+
+// ============================================================
+// Sim (🧪 الوضع التجريبي) — محاكاة دفع كاملة بلا أموال حقيقية (v12.83)
+// لعدم امتلاك ناصر وثيقة عمل حر بعد: نفس القناة الآمنة حرفياً
+// (صفحة موقّعة HMAC بمفتاح الخادم + «تأكيد خادمي» عبر رمز لا يمكن
+// للمتصفح تزويره + سجل + إشعارات مصرّحة أنها تجريبية) — والتحول
+// لمزود حقيقي لاحقاً لا يغيّر أي سطر خارج هذا الكائن.
+// ============================================================
+const simKey = () => Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+const sim: ProviderAdapter = {
+    async createHostedPayment(_cfg, ctx) {
+        // صفحة الدفع التجريبية = صفحتنا الوسيطة الموقعة (op=page)
+        return { url: ctx.pageUrl, ref: `SIM-${ctx.barcode}` };
+    },
+    async renderPage(_cfg, ctx) {
+        // رمز نجاح موقّع بمفتاح الخادم — «التأكيد» لاحقاً يتحقق منه خادمياً،
+        // فلا يستطيع متصفحٌ تعليم حجز كمدفوع بمجرد فتح رابط العودة.
+        const exp = String(Date.now() + 30 * 60_000);
+        const sig = await hmacSha256Hex(simKey(), `simpay|${ctx.barcode}|${exp}`);
+        const payUrl = `${ctx.returnUrl}&simref=${exp}.${sig}`;
+        const esc = (s: string) => s.replace(/"/g, '&quot;');
+        return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>محاكاة دفع — تاكي</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="font-family:-apple-system,Tahoma,sans-serif;margin:0;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px">
+<div style="background:#fff;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,0.12);max-width:420px;width:100%;padding:28px 24px;text-align:center">
+  <div style="font-size:2.6rem">🧪</div>
+  <h2 style="margin:8px 0 4px;font-size:1.15rem;font-weight:900;color:#0f172a">صفحة دفع تجريبية</h2>
+  <div style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:999px;padding:6px 14px;font-size:0.72rem;font-weight:800;margin-bottom:14px">
+    وضع محاكاة — لن يُخصم أي مبلغ حقيقي
+  </div>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:16px;margin-bottom:16px">
+    <div style="font-size:0.72rem;font-weight:800;color:#64748b">المبلغ</div>
+    <div style="font-size:1.8rem;font-weight:900;color:#0d9488">${ctx.amountSar.toFixed(2)} <span style="font-size:0.9rem">ر.س</span></div>
+    <div style="font-size:0.7rem;font-weight:700;color:#64748b;margin-top:6px">رقم الحجز: <b style="font-family:monospace">${esc(ctx.barcode)}</b></div>
+  </div>
+  <p style="font-size:0.72rem;font-weight:700;color:#64748b;line-height:1.8;margin:0 0 18px">
+    هذه محاكاة كاملة لتجربة نظام الدفع المباشر قبل ربط بوابة حقيقية —
+    كل الخطوات تعمل (التأكيد، السجل، الإشعارات) دون أي عملية مالية.
+  </p>
+  <a href="${esc(payUrl)}" style="display:block;background:linear-gradient(135deg,#059669,#0d9488);color:#fff;border-radius:14px;padding:15px;font-weight:900;font-size:1rem;text-decoration:none;box-shadow:0 8px 20px rgba(13,148,136,0.35)">✅ إتمام الدفع (محاكاة)</a>
+  <a href="${esc(ctx.returnUrl)}" style="display:block;margin-top:10px;color:#64748b;font-weight:800;font-size:0.8rem;text-decoration:none;padding:10px">إلغاء والعودة</a>
+  <div style="margin-top:14px;font-size:0.62rem;font-weight:700;color:#94a3b8">🔒 قناة مؤمّنة بتوقيع خادمي — منصة تاكي</div>
+</div></body></html>`;
+    },
+    async verifyCredentials() {
+        // لا مفاتيح خارجية في المحاكاة — «اختبار الاتصال» ينجح فوراً
+        return { ok: true };
+    },
+    async confirmPayment(_cfg, ref, barcode) {
+        // ref = "<exp>.<sig>" من زر المحاكاة — HMAC بمفتاح الخادم لا يُزوَّر
+        const dot = String(ref).indexOf('.');
+        if (dot < 1) return { paid: false, reason: 'sim_no_token' };
+        const exp = String(ref).slice(0, dot);
+        const sig = String(ref).slice(dot + 1);
+        if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return { paid: false, reason: 'sim_token_expired' };
+        const calc = await hmacSha256Hex(simKey(), `simpay|${barcode}|${exp}`);
+        if (!timingSafeEqual(calc, sig)) return { paid: false, reason: 'sim_bad_token' };
+        return { paid: true, ref: `SIM-${barcode}` };
+    },
+    async verifyWebhook() {
+        // لا webhooks في المحاكاة — مسار العودة الموقّع هو التأكيد الوحيد
+        return { sigOk: false, reason: 'sim_no_webhooks' };
+    },
+};
 
 // ============================================================
 // Moyasar (ميسر) — فواتير مستضافة، Basic auth بالمفتاح السري
@@ -478,4 +544,4 @@ const checkout: ProviderAdapter = {
     },
 };
 
-export const ADAPTERS: Record<string, ProviderAdapter> = { moyasar, tap, paytabs, payfort, hyperpay, checkout };
+export const ADAPTERS: Record<string, ProviderAdapter> = { sim, moyasar, tap, paytabs, payfort, hyperpay, checkout };

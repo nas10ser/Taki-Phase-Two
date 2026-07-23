@@ -5,9 +5,14 @@
  *   POST ?op=create   إنشاء دفعة مستضافة على حساب التاجر → { url }
  *   POST ?op=verify   «اختبار الاتصال» من بطاقة التاجر → يختم verified_at
  *   POST ?op=confirm  تأكيد server→server بمبادرة العميل (شبكة أمان للـwebhook)
- *   GET  ?op=page     صفحة وسيطة موقّعة HMAC (payfort نموذج / hyperpay ودجت)
+ *   GET  ?op=page     صفحة وسيطة موقّعة HMAC (payfort/hyperpay/sim)
  *   ANY  ?op=webhook  إشعارات المزودين خادم→خادم (توقيع لكل مزود)
  *   ANY  ?op=return   عودة متصفح المشتري → تأكيد خادمي ثم تحويل للموقع
+ *
+ * v12.82 — تحصينات: مفاتيح المزودين بيد ناصر (enabled_pay_providers)،
+ * أثر تدقيق لكل رابط دفع (activity_log مع قناة المصدر web/telegram/whatsapp)،
+ * ومسار البوت يتحقق أن الهوية مستخدم حقيقي في القاعدة.
+ * v12.83 — المزود السابع 'sim': محاكاة دفع كاملة بلا أموال (رمز موقّع خادمياً).
  *
  * قواعد أمان صلبة (من المخطط المعتمد):
  *  - الأسرار تُفك حصراً هنا عبر RPC ‏_gateway_secrets (service_role فقط)
@@ -293,7 +298,7 @@ Deno.serve(async (req: Request) => {
             return json(200, { paid: ok });
         }
 
-        // ──────── الصفحة الوسيطة الموقعة (payfort نموذج / hyperpay ودجت) ────────
+        // ──────── الصفحة الوسيطة الموقعة (payfort نموذج / hyperpay ودجت / sim محاكاة) ────────
         if (op === 'page' && req.method === 'GET') {
             const provider = url.searchParams.get('provider') || '';
             const barcode = url.searchParams.get('barcode') || '';
@@ -359,7 +364,10 @@ Deno.serve(async (req: Request) => {
 
             // مرجع التأكيد لكل مزود — والاستعلام نفسه خادمي دائماً
             let ref = String(booking.payment_ref || '');
-            if (provider === 'hyperpay') {
+            if (provider === 'sim') {
+                // الوضع التجريبي: الرمز الموقّع بمفتاح الخادم هو «تأكيد المزود»
+                ref = url.searchParams.get('simref') || '';
+            } else if (provider === 'hyperpay') {
                 const rp = url.searchParams.get('resourcePath') || '';
                 if (rp.startsWith('/')) ref = rp;
             } else if (provider === 'checkout') {

@@ -43,9 +43,12 @@ interface ProviderDef {
     webhookLabel?: string;
     extras?: ExtraField[];
     hasTestMode?: boolean;
+    /** v12.83 — الوضع التجريبي: لا مفاتيح من التاجر إطلاقاً (سر داخلي يُولَّد تلقائياً) */
+    noKeys?: boolean;
 }
 
 const PROVIDERS: ProviderDef[] = [
+    { id: 'sim', name: '🧪 الوضع التجريبي — محاكاة دفع (بدون أموال حقيقية)', secretLabel: '', noKeys: true },
     { id: 'moyasar', name: 'ميسر Moyasar', pubLabel: 'المفتاح العام (pk_...)', secretLabel: 'المفتاح السري (sk_...)', webhookLabel: 'الرمز السري للإشعارات Webhook Secret (اختياري)' },
     { id: 'tap', name: 'تاب Tap', secretLabel: 'المفتاح السري (sk_...)' },
     { id: 'paytabs', name: 'بيتابس PayTabs', secretLabel: 'مفتاح الخادم Server Key', extras: [{ k: 'profile_id', label: 'رقم الملف Profile ID' }] },
@@ -323,12 +326,22 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                             </div>
 
                             {/* الحقول — المفاتيح السرية كتابة فقط */}
-                            {def.pubLabel && (
+                            {/* v12.83 — المحاكاة بلا مفاتيح: شرح بدل الحقول */}
+                            {def.noKeys && (
+                                <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px dashed rgba(245, 158, 11, 0.5)', borderRadius: 14, padding: '12px 14px', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.8 }}>
+                                    🧪 <b>وضع تجريبي كامل:</b> لا يحتاج أي مفاتيح أو حساب بنكي — كل خطوات الدفع تعمل
+                                    (صفحة دفع، تأكيد، سجل، إشعارات) لكن <b>لا يُخصم أي ريال حقيقي</b>، وكل الرسائل
+                                    تصرّح أنها محاكاة. مناسب لتجربة النظام قبل ربط بوابة حقيقية.
+                                    فقط اضغط «حفظ البيانات» ثم «اختبار الاتصال» ثم «تفعيل».
+                                </div>
+                            )}
+                            {!def.noKeys && def.pubLabel && (
                                 <div>
                                     <label style={labelStyle}>{def.pubLabel}</label>
                                     <input style={inputStyle} value={pub} onChange={e => setPub(e.target.value)} placeholder="pk_..." autoComplete="off" />
                                 </div>
                             )}
+                            {!def.noKeys && (
                             <div>
                                 <label style={labelStyle}>{def.secretLabel} — كتابة فقط، يُخزَّن مشفّراً ولا يظهر مرة أخرى</label>
                                 <input
@@ -338,6 +351,7 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     autoComplete="new-password"
                                 />
                             </div>
+                            )}
                             {def.webhookLabel && (
                                 <div>
                                     <label style={labelStyle}>{def.webhookLabel}</label>
@@ -416,8 +430,8 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                 </div>
                             )}
 
-                            {/* رابط الإشعارات للصقه في لوحة المزود */}
-                            {gw?.has_secret && (
+                            {/* رابط الإشعارات للصقه في لوحة المزود (لا webhooks في المحاكاة) */}
+                            {gw?.has_secret && provider !== 'sim' && (
                                 <div style={{ background: 'var(--body-bg)', border: '1px dashed var(--border-color)', borderRadius: 12, padding: '10px 12px' }}>
                                     <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 6 }}>
                                         🔔 رابط إشعارات الدفع (Webhook) — الصقه في إعدادات حسابك لدى {def.name}:

@@ -48,6 +48,7 @@ interface GatewayRow {
 }
 
 const PROVIDER_AR: Record<string, string> = {
+    sim: '🧪 تجريبي (محاكاة)',
     moyasar: 'ميسر', tap: 'تاب', paytabs: 'بيتابس',
     payfort: 'بيفورت', hyperpay: 'هايبر باي', checkout: 'Checkout.com',
 };
