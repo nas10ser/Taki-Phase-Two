@@ -1029,6 +1029,10 @@ const SellerDashboard: React.FC = () => {
         locationId: locationId === 'other' ? null : locationId,
         mapLocation: { lat: mapPos[0], lng: mapPos[1] }
     });
+    // v12.93 — هل الكمية مُدارة من الفروع (كمية لكل موقع)؟ عندها الحقل العام
+    // للكمية يُصبح مشتقاً (تُدار من قسم المواقع أدناه) فلا نربك التاجر بثلاث خانات.
+    const multiLocPerLocActive = locQtyMode === 'per_location'
+        && mergedLocationChips.some(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
     const locationIsExisting = activeLocationKeys.has(currentCandidateKey);
     // The cap applies on edits too: moving an existing deal to a brand-new
     // location is blocked if the seller is already at 3 distinct locations.
@@ -1568,14 +1572,19 @@ const SellerDashboard: React.FC = () => {
         const hasDuration = expiryType === 'duration' && finalDays > 0;
         const hasStock = expiryType === 'stock' && !isUnlimited && Number(finalQuantity) > 0;
 
-        // v12.91 — عرض متعدد المواقع بكمية لكل فرع: مجموع كميات الفروع هو مخزون
-        // العرض (إشارة انتهاء صالحة)، فلا تُطبَّق شروط «حدد الكمية/حدد الانتهاء».
+        // v12.91/93 — عرض متعدد المواقع بكمية لكل فرع: كل فرع كميته المستقلة أو
+        // «مفتوح» (فارغ = بلا حد). لو كل الفروع مسقوفة فمجموعها مخزون العرض
+        // (إشارة انتهاء صالحة)؛ لو فيها فرع مفتوح فالعرض ينتهي بالوقت وكل فرع
+        // مسقوف يفرض سقفه وحده. الكميات اختيارية ما لم يكن الانتهاء «بالكمية».
         const _multiOthersEarly = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
         const _multiPerLocEarly = _multiOthersEarly.length > 0 && locQtyMode === 'per_location';
+        const _multiKeysEarly = ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)];
+        const _multiAllCapped = _multiPerLocEarly && _multiKeysEarly.every(k => Number(locQtys[k]) > 0);
         const _multiSumEarly = _multiPerLocEarly
-            ? ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)].reduce((s, k) => s + (Number(locQtys[k]) || 0), 0)
+            ? _multiKeysEarly.reduce((s, k) => s + (Number(locQtys[k]) || 0), 0)
             : 0;
-        const _hasMultiStock = _multiPerLocEarly && _multiSumEarly > 0;
+        // إشارة مخزون صالحة فقط عندما تكون كل الفروع مسقوفة (مجموع منتهٍ).
+        const _hasMultiStock = _multiAllCapped && _multiSumEarly > 0;
 
         if (!itemName || !shopName || !originalPrice || !discountedPrice || !category) {
             await customAlert(isRTL ? 'يرجى ملء جميع الحقول الإجبارية (المعلمة بـ *)' : 'Please fill all required fields');
@@ -1638,8 +1647,17 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
+        // v12.93 — الانتهاء «بالكمية» مع فروع متعددة: كل الفروع لازم تكون مسقوفة
+        // (العرض ينتهي عند نفاد المجموع). فرع مفتوح يتطلب انتهاءً زمنياً بدلاً.
+        if (_multiPerLocEarly && expiryType === 'stock' && !_multiAllCapped) {
+            await customAlert(isRTL
+                ? '⚠️ اخترت الانتهاء «بالكمية» مع عدة فروع — حدّد كمية لكل فرع، أو غيّر نظام الانتهاء إلى الساعات/الأيام/التاريخ لتسمح بفروع مفتوحة.'
+                : '⚠️ Stock-based expiry with multiple branches needs a qty for EVERY branch — or switch expiry to time-based to allow open branches.');
+            return;
+        }
+
         // 3. Must have at least one expiration method
-        if (!hasDate && !hasDuration && !hasStock && !hasHours) {
+        if (!hasDate && !hasDuration && !hasStock && !hasHours && !_hasMultiStock) {
             await customAlert(isRTL ? '⚠️ يرجى تحديد تاريخ انتهاء أو مدة بالساعات أو الأيام' : '⚠️ Please specify an end date, hours, or duration');
             return;
         }
@@ -1875,13 +1893,18 @@ const SellerDashboard: React.FC = () => {
             return { region: selectedRegion || undefined, city: selectedCity || undefined };
         })();
 
-        // v12.91 — العرض الواحد في عدة مواقع: نبني قائمة المواقع (الأساسي + الفروع
-        // المختارة). في وضع «كمية لكل موقع» الكمية الإجمالية = مجموع كميات الفروع.
+        // v12.91/93 — العرض الواحد في عدة مواقع: نبني قائمة المواقع (الأساسي +
+        // الفروع المختارة). في وضع «كمية لكل موقع» كل فرع كميته أو «مفتوح» (بلا
+        // حقل كمية = بلا حد). لو كل الفروع مسقوفة → الكمية الإجمالية = مجموعها؛ لو
+        // فيها مفتوح → الإجمالي «غير محدود» (ينتهي بالوقت) والفروع المسقوفة تفرض سقفها.
         const multiOthers = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
         const isMultiLoc = multiOthers.length > 0;
         const multiPerLoc = isMultiLoc && locQtyMode === 'per_location';
+        const qtyOf = (k: string): number | undefined => { const n = Number(locQtys[k]); return n > 0 ? n : undefined; };
+        const capFields = (k: string) => (multiPerLoc && qtyOf(k) !== undefined) ? { quantity: qtyOf(k), initialQuantity: qtyOf(k) } : {};
+        const allBranchKeys = ['primary', ...multiOthers.map(c => c.branchId || c.key)];
+        const multiAllCapped = multiPerLoc && allBranchKeys.every(k => qtyOf(k) !== undefined);
         let dealLocations: DealLocation[] | undefined;
-        let multiSumQty: number | undefined;
         if (isMultiLoc) {
             const primaryName = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
                 || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
@@ -1893,7 +1916,7 @@ const SellerDashboard: React.FC = () => {
                 lat: finalLat, lng: finalLng,
                 region: derivedGeo.region, city: derivedGeo.city,
                 googleMapsLink: googleMapsLink || null,
-                ...(multiPerLoc ? { quantity: Number(locQtys['primary']) || 0, initialQuantity: Number(locQtys['primary']) || 0 } : {}),
+                ...capFields('primary'),
             };
             const rest: DealLocation[] = multiOthers.map(c => {
                 const cid = c.branchId || c.key;
@@ -1903,13 +1926,15 @@ const SellerDashboard: React.FC = () => {
                     name: c.label,
                     lat: c.lat, lng: c.lng,
                     region: c.regionId || undefined, city: c.cityId || undefined,
-                    ...(multiPerLoc ? { quantity: Number(locQtys[cid]) || 0, initialQuantity: Number(locQtys[cid]) || 0 } : {}),
+                    ...capFields(cid),
                 };
             });
             dealLocations = [primaryLoc, ...rest];
-            if (multiPerLoc) multiSumQty = dealLocations.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
         }
-        const effQuantity: number | 'unlimited' = (typeof multiSumQty === 'number') ? multiSumQty : finalQuantity;
+        // الكمية الإجمالية: مجموع الفروع فقط لو كلها مسقوفة، وإلا غير محدود (زمني).
+        const effQuantity: number | 'unlimited' = multiAllCapped
+            ? allBranchKeys.reduce((s, k) => s + (qtyOf(k) || 0), 0)
+            : (multiPerLoc ? 'unlimited' : finalQuantity);
 
         const newDeal: Deal = {
             id: editingDealId || Date.now().toString(),
@@ -2432,7 +2457,7 @@ const SellerDashboard: React.FC = () => {
                                         cursor: 'pointer',
                                         fontSize: '0.75rem'
                                     }}>
-                                        <input type="checkbox" checked={isUnlimited} disabled={variantQtySum != null} onChange={e => {
+                                        <input type="checkbox" checked={isUnlimited} disabled={variantQtySum != null || multiLocPerLocActive} onChange={e => {
                                             setIsUnlimited(e.target.checked);
                                             // 'stock' is the only mode incompatible with unlimited —
                                             // hours / days / date all make sense. Only swap away
@@ -2444,7 +2469,7 @@ const SellerDashboard: React.FC = () => {
                                         {isRTL ? 'لامحدود' : 'Unlim'}
                                     </label>
                                 </label>
-                                <input type="tel" style={{...fieldInputStyle, opacity: (isUnlimited || variantQtySum != null) ? 0.5 : 1}} value={isUnlimited ? '' : quantity} disabled={isUnlimited || variantQtySum != null} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
+                                <input type="tel" style={{...fieldInputStyle, opacity: (isUnlimited || variantQtySum != null || multiLocPerLocActive) ? 0.5 : 1}} value={isUnlimited ? '' : quantity} disabled={isUnlimited || variantQtySum != null || multiLocPerLocActive} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
                                     const val = normalizeArabicNumerals(e.target.value).replace(/\D/g, '');
                                     setQuantity(val === '' ? '' : Number(val));
                                     if (!isUnlimited && val) setExpiryType('stock');
@@ -2455,6 +2480,17 @@ const SellerDashboard: React.FC = () => {
                                         🧬 {isRTL
                                             ? `تُحسب تلقائياً: مجموع كميات النسخ = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`
                                             : `Auto-calculated: versions total = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`}
+                                    </div>
+                                )}
+                                {/* v12.93 — توحيد الكميات: عند «كمية لكل موقع» تُدار من قسم المواقع */}
+                                {multiLocPerLocActive && variantQtySum == null && (
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginTop: 6, lineHeight: 1.5 }}>
+                                        📍 {isRTL ? 'تُدار الكمية من قسم «مواقع العرض» أدناه — كمية لكل فرع (أو مفتوح).' : 'Managed in the “Deal locations” section below — per branch (or open).'}
+                                    </div>
+                                )}
+                                {variantQtySum == null && !multiLocPerLocActive && !isUnlimited && expiryType !== 'stock' && (
+                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.5 }}>
+                                        💡 {isRTL ? 'الكمية اختيارية — إلزامية فقط لو اخترت نظام الانتهاء «بالكمية». وإلا العرض ينتهي بالوقت.' : 'Quantity is optional — required only if you pick “by stock” expiry.'}
                                     </div>
                                 )}
                             </div>
@@ -3786,13 +3822,24 @@ const SellerDashboard: React.FC = () => {
                                             </div>
                                             {perLoc ? (
                                                 <div>
-                                                    {rows.map(r => (
+                                                    {rows.map(r => {
+                                                        const isOpen = !(Number(locQtys[r.id]) > 0);
+                                                        return (
                                                         <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                                                             <span style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {r.label}</span>
-                                                            <NumericField integer value={locQtys[r.id]} onChange={n => setLocQtys(p => ({ ...p, [r.id]: n }))} placeholder={isRTL ? 'مثال: 10' : 'e.g. 10'} style={{ width: 110, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }} />
+                                                            {isOpen && <span style={{ fontSize: '0.62rem', fontWeight: 900, color: 'var(--secondary)', background: 'var(--secondary-light)', padding: '2px 8px', borderRadius: 999, flexShrink: 0 }}>{isRTL ? 'مفتوح' : 'open'}</span>}
+                                                            <NumericField integer value={locQtys[r.id]} onChange={n => setLocQtys(p => ({ ...p, [r.id]: n }))} placeholder={isRTL ? 'مفتوح' : 'open'} style={{ width: 100, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }} />
                                                         </div>
-                                                    ))}
-                                                    <div style={{ fontSize: '0.74rem', fontWeight: 900, color: 'var(--primary)', marginTop: 6 }}>🧮 {isRTL ? `المجموع الإجمالي = ${sum}` : `Total = ${sum}`}</div>
+                                                        );
+                                                    })}
+                                                    <div style={{ fontSize: '0.74rem', fontWeight: 900, color: 'var(--primary)', marginTop: 6 }}>
+                                                        🧮 {rows.every(r => Number(locQtys[r.id]) > 0)
+                                                            ? (isRTL ? `المجموع الإجمالي = ${sum}` : `Total = ${sum}`)
+                                                            : (isRTL ? `المسقوف = ${sum}${rows.some(r => !(Number(locQtys[r.id]) > 0)) ? ' + فروع مفتوحة (بلا حد)' : ''}` : `Capped = ${sum} + open branches`)}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                                                        💡 {isRTL ? 'اترك خانة أي فرع فارغة = «مفتوح» بلا حد (يتطلب انتهاءً زمنياً بالأيام/الساعات/التاريخ). حدّد كمية لكل الفروع لو أردت الانتهاء «بالكمية».' : 'Leave a branch blank = “open/unlimited” (needs time-based expiry). Fill every branch for stock-based expiry.'}
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
@@ -4273,6 +4320,9 @@ const SellerDashboard: React.FC = () => {
                                             items,
                                             totalText,
                                             buyerNote,
+                                            // v12.93 — حالة الدفع على الفاتورة (يقرؤها الكاشير عند المسح)
+                                            paidOnline: !!(order as any).paidAt,
+                                            paidAmount: (order as any).paidAmount,
                                             isRTL,
                                         });
                                     }}

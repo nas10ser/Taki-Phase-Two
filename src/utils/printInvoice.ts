@@ -34,6 +34,9 @@ export interface InvoiceData {
     totalText?: string;
     /** ملاحظة المشتري الحرّة */
     buyerNote?: string;
+    /** v12.93 — حالة الدفع: true = مدفوع إلكترونياً (وصل حساب التاجر)، false/undefined = عند الاستلام */
+    paidOnline?: boolean;
+    paidAmount?: number;
     isRTL: boolean;
 }
 
@@ -96,6 +99,10 @@ const buildHtml = (d: InvoiceData): string => {
   .barcode svg { max-width: 100%; height: auto; }
   .li-sku { font-size: 11px; color: #334155; font-weight: 800; letter-spacing: 1px; font-family: "Courier New", monospace; }
   .total { display: flex; justify-content: space-between; font-size: 17px; font-weight: 900; margin-top: 12px; padding-top: 8px; border-top: 2px solid #0f172a; }
+  .pay { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 15px; font-weight: 900; text-align: center; border: 2px solid; }
+  .pay .pay-sub { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+  .pay.paid { background: #dcfce7; color: #166534; border-color: #16a34a; }
+  .pay.cod { background: #fef3c7; color: #92400e; border-color: #d97706; }
   .stamp { margin-top: 24px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
   .stamp .box { border-top: 1px solid #94a3b8; width: 45%; padding-top: 4px; text-align: center; }
   .note { margin-top: 10px; font-size: 12px; background: #f1f5f9; border-radius: 8px; padding: 8px 10px; }
@@ -121,6 +128,11 @@ const buildHtml = (d: InvoiceData): string => {
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
     ${d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : ''}
+    <div class="pay ${d.paidOnline ? 'paid' : 'cod'}">
+      ${d.paidOnline
+        ? `${L('✅ مدفوع إلكترونياً', '✅ Paid online')}<span class="pay-sub">${L('وصل حساب التاجر — لا تطلب مبلغاً من العميل', 'Sent to merchant — do not collect cash')}${d.paidAmount != null ? ` (${esc(String(d.paidAmount))} ${L('ر.س','SAR')})` : ''}</span>`
+        : `${L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}
+    </div>
     ${d.buyerNote ? `<div class="note">📝 ${L('ملاحظة المشتري', 'Buyer note')}: ${esc(d.buyerNote)}</div>` : ''}
     <div class="stamp">
       <div class="box">${L('توقيع/ختم التاجر', 'Merchant stamp')}</div>

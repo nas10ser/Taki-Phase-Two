@@ -8,7 +8,7 @@ import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
@@ -459,7 +459,7 @@ const DealDetails: React.FC = () => {
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles
+        storeProfiles, liveLocation
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
@@ -529,14 +529,38 @@ const DealDetails: React.FC = () => {
     // والاتجاهات، ويُمرَّر مع الحجز ليُخصم من مخزون ذلك الفرع.
     const dealLocations = (deal?.locations && deal.locations.length > 1) ? deal.locations : null;
     const perLocationQty = deal?.locQtyMode === 'per_location';
+    // v12.93 — عرض عالمي احترافي: نحسب مسافة كل فرع من موقع المشتري ونرتّبها
+    // «الأقرب أولاً»، ونعرض «متوفر» للفرع المفتوح (بلا سقف كمية).
+    const sortedLocations = React.useMemo(() => {
+        if (!dealLocations) return null;
+        const uLat = liveLocation?.lat, uLng = liveLocation?.lng;
+        const withDist = dealLocations.map(l => {
+            const known = l.locationId ? getLocation(l.locationId) : undefined;
+            const lat = known?.lat ?? l.lat;
+            const lng = known?.lng ?? l.lng;
+            const distance = (uLat != null && uLng != null && lat != null && lng != null)
+                ? getDistance(uLat, uLng, lat, lng) : null;
+            return { ...l, distance };
+        });
+        return withDist.sort((a, b) => {
+            if (a.distance == null && b.distance == null) return 0;
+            if (a.distance == null) return 1;
+            if (b.distance == null) return -1;
+            return a.distance - b.distance;
+        });
+    }, [dealLocations, liveLocation?.lat, liveLocation?.lng]);
     const activeLoc = dealLocations
         ? (dealLocations.find(l => l.id === selectedLocId) || dealLocations[0])
         : null;
     React.useEffect(() => {
         if (!deal?.locations || deal.locations.length <= 1) return;
-        if (!deal.locations.some(l => l.id === selectedLocId)) setSelectedLocId(deal.locations[0].id);
+        // بلا ?loc= صريح → اختر الأقرب تلقائياً؛ وإلا تحقّق من صلاحية المختار.
+        if (!deal.locations.some(l => l.id === selectedLocId)) {
+            const nearest = sortedLocations && sortedLocations[0];
+            setSelectedLocId((nearest?.id) || deal.locations[0].id);
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deal?.id]);
+    }, [deal?.id, sortedLocations]);
 
     // v12.66 — قائمة «القطع» المحجوزة: قطعة لكل وحدة من كل نسخة مختارة
     // (علم كبير ١، علم كبير ٢، علم صغير ١…)، أو حسب الكمية للعروض بلا نسخ.
@@ -1528,9 +1552,14 @@ const DealDetails: React.FC = () => {
                                 📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {dealLocations.map(l => {
+                                {(sortedLocations || dealLocations).map((l: any, li: number) => {
                                     const picked = (activeLoc?.id === l.id);
-                                    const out = perLocationQty && typeof l.quantity === 'number' && l.quantity <= 0;
+                                    const capped = perLocationQty && typeof l.quantity === 'number';
+                                    const out = capped && l.quantity <= 0;
+                                    const isNearest = !!(sortedLocations && li === 0 && l.distance != null);
+                                    const distStr = l.distance != null
+                                        ? (l.distance < 1 ? `${Math.round(l.distance * 1000)} ${isRTL ? 'م' : 'm'}` : `${l.distance.toFixed(1)} ${isRTL ? 'كم' : 'km'}`)
+                                        : null;
                                     return (
                                         <div key={l.id}
                                             role="radio"
@@ -1549,12 +1578,18 @@ const DealDetails: React.FC = () => {
                                                 {picked && <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />}
                                             </div>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{l.name || (isRTL ? 'فرع' : 'Branch')}</div>
-                                                {perLocationQty && typeof l.quantity === 'number' && (
-                                                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: out ? 'var(--danger)' : 'var(--text-secondary)', marginTop: 2 }}>
-                                                        {out ? (isRTL ? 'نفذت الكمية' : 'Sold out') : (isRTL ? `المتاح: ${l.quantity}` : `Available: ${l.quantity}`)}
-                                                    </div>
-                                                )}
+                                                <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                    {l.name || (isRTL ? 'فرع' : 'Branch')}
+                                                    {isNearest && <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                    {distStr && <span style={{ color: 'var(--primary)' }}>🚗 {distStr}</span>}
+                                                    <span style={{ color: out ? 'var(--danger)' : capped ? 'var(--text-secondary)' : 'var(--success)' }}>
+                                                        {out ? (isRTL ? 'نفذت الكمية' : 'Sold out')
+                                                            : capped ? (isRTL ? `المتاح: ${l.quantity}` : `Available: ${l.quantity}`)
+                                                            : (isRTL ? '✅ متوفر' : '✅ Available')}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     );
