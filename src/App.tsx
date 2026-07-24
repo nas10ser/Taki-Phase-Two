@@ -220,9 +220,22 @@ const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
 // v12.35 — mobile-browser «ثبّت التطبيق» recommendation (non-blocking).
 const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
 
+// v12.94 — إعادة التمرير للأعلى عند الانتقال لأي صفحة. React Router (BrowserRouter)
+// لا يعيد ضبط التمرير افتراضياً، فيبقى موضع الصفحة السابقة → «المنتج يفتح من
+// الأسفل» (بلاغ ناصر). نتجاهل تغيّر ?query فقط حتى لا نصطدم بتمرير التذكرة عبر
+// رابط الإشعار (?barcode=) داخل صفحة المنتج.
+const ScrollToTop: React.FC = () => {
+    const { pathname } = useLocation();
+    useEffect(() => {
+        try { window.scrollTo(0, 0); } catch { /* ignore */ }
+    }, [pathname]);
+    return null;
+};
+
 const App = () => {
     return (
         <Router>
+            <ScrollToTop />
             <AuthRedirector />
             <InAppBanner />
             {/* v12.45 — عمق الموسم: عناصر متحركة عبر كامل الصفحة في كل صفحات

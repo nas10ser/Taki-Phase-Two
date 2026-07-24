@@ -1092,6 +1092,23 @@ const SellerDashboard: React.FC = () => {
         setGoogleMapsLink('');
         setLastResolvedLink('');
     };
+    // v12.94 — العرض الجديد يبدأ من موقع التاجر الحقيقي (فرعه الأساسي/الأول) بدل
+    // «الرياض» الافتراضية التي كانت تظهر كـ«أساسي» فتربك (بلاغ ناصر: «كيف صارت
+    // الرياض أساسية وهي ليست في مواقعي؟»). يُطبَّق مرة واحدة عند فتح إضافة عرض
+    // جديد، ولا يمسّ التعديل، ولا يفرض شيئاً إن كان التاجر قد حدّد موقعاً بالفعل.
+    const didAutoLocateRef = React.useRef(false);
+    useEffect(() => {
+        if (editingDealId) { didAutoLocateRef.current = true; return; }
+        if (didAutoLocateRef.current) return;
+        if (locationId) return; // التاجر (أو أنا) حدّد موقعاً محدداً بالفعل
+        const mine = branches.filter(b => b.merchantId === user?.id && b.isActive !== false
+            && (b.mapLat != null || (b.locationId && b.locationId !== 'other')));
+        if (mine.length === 0) return; // انتظر تحميل الفروع، أو لا فروع → تبقى الافتراضية
+        const pick = mine.find(b => b.isPrimary) || mine[0];
+        didAutoLocateRef.current = true;
+        adoptLocationChip({ locationId: pick.locationId, regionId: pick.regionId, cityId: pick.cityId, lat: pick.mapLat ?? undefined, lng: pick.mapLng ?? undefined });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [branches, editingDealId, user?.id, locationId]);
     // Delete confirmation for a saved branch (the X button on a chip).
     // Optimistic — context drops it from `branches` immediately and rolls
     // back if the DB delete fails.
