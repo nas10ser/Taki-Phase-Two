@@ -7,6 +7,7 @@ import { Deal, CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock'
 import { getSeasonById, campaignPublicLive, campaignSellerOpen, seasonHeroTexts } from '../data/seasons';
 import { isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, getAuthenticityBadge } from '../utils/helpers';
 import { useNowTick } from '../utils/useNowTick';
+import { smartBack } from '../utils/navHistory';
 import { getShopStatus } from '../utils/workingHours';
 import { dealService } from '../services/dealService';
 
@@ -139,7 +140,7 @@ const SeasonalOffers: React.FC = () => {
             }}>
                 <button
                     type="button"
-                    onClick={() => history.push('/')}
+                    onClick={() => smartBack(history, '/')}
                     aria-label={isRTL ? 'العودة للرئيسية' : 'Back to home'}
                     style={{
                         // v12.53 — zIndex إلزامي: div الإيموجي أدناه يحمل filter

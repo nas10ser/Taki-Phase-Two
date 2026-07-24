@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Switch, Route, Redirect, useHistory, useLocati
 import { useApp } from './context/AppContext';
 import { validationService } from './services/validationService';
 import { normalizeArabicNumerals } from './utils/helpers';
+import { bumpNavDepth } from './utils/navHistory';
 import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
 import InAppBanner from './components/InAppBanner';
@@ -220,28 +221,83 @@ const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
 // v12.35 — mobile-browser «ثبّت التطبيق» recommendation (non-blocking).
 const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
 
-// v12.94 — إعادة التمرير للأعلى عند الانتقال لأي صفحة. React Router (BrowserRouter)
-// لا يعيد ضبط التمرير افتراضياً، فيبقى موضع الصفحة السابقة → «المنتج يفتح من
-// الأسفل» (بلاغ ناصر). نتجاهل تغيّر ?query فقط حتى لا نصطدم بتمرير التذكرة عبر
-// رابط الإشعار (?barcode=) داخل صفحة المنتج.
-const ScrollToTop: React.FC = () => {
-    const { pathname } = useLocation();
+// v12.98 — «استعادة موضع التمرير» بمستوى المواقع العالمية (بلاغ ناصر: زر الرجوع كان
+// يرمي المتسوّق لأعلى الرئيسية بدل إعادته لمكانه). القاعدة الطبيعية للمتصفحات:
+//   • فتح صفحة جديدة (PUSH بمسار مختلف)  → قفزة فورية للأعلى.
+//   • رجوع/تقدّم (POP)                    → استعادة الموضع المحفوظ لتلك الصفحة بالضبط.
+//   • تغيّر ?query/#hash بنفس المسار       → لا نلمس التمرير (الصفحة تدير تمريرها:
+//     تبويبات ?tab= للتاجر، وتمرير تذكرة الإشعار ?barcode= داخل صفحة المنتج).
+// نُعطّل استعادة المتصفح الأصلية (scrollRestoration='manual') لنتحكّم نحن بها.
+const scrollPositions = new Map<string, number>();
+
+const jumpScroll = (y: number) => {
+    try {
+        window.scrollTo(0, y);
+        if (document.scrollingElement) (document.scrollingElement as HTMLElement).scrollTop = y;
+        document.documentElement.scrollTop = y;
+        document.body.scrollTop = y;
+    } catch { /* ignore */ }
+};
+
+// استعادة موضع محفوظ عند الرجوع/التقدّم. الصفحة الهدف (route كسول + بيانات غير
+// متزامنة) قد لا يكون ارتفاعها كافياً في أول إطار، فنعيد المحاولة بلطف بضعة أطر
+// حتى نصل الموضع أو ينتهي الحدّ (بلا وميض: نُصر على نفس القيمة فقط لا غير).
+const restoreScroll = (y: number) => {
+    if (!(y > 0)) { jumpScroll(0); return; }
+    let attempts = 0;
+    const step = () => {
+        jumpScroll(y);
+        attempts++;
+        const reached = Math.abs((window.scrollY || document.documentElement.scrollTop || 0) - y) <= 2;
+        if (reached || attempts >= 12) return;
+        if (attempts <= 4) requestAnimationFrame(step);
+        else setTimeout(step, 60);
+    };
+    requestAnimationFrame(step);
+};
+
+const ScrollManager: React.FC = () => {
+    const location = useLocation();
+    const history = useHistory();
+    const prevPathRef = React.useRef<string>(location.pathname);
+
+    // مرة واحدة: أطفئ استعادة المتصفح الأصلية حتى لا تتضارب مع منطقنا.
     useEffect(() => {
-        try {
-            // قفزة فورية للأعلى (بدون أي انزلاق) عند فتح أي صفحة/منتج.
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-            if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-        } catch { /* ignore */ }
-    }, [pathname]);
+        try { if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'; } catch { /* ignore */ }
+    }, []);
+
+    // سجّل موضع تمرير الصفحة الحالية باستمرار (مخنوق بـrAF) لمفتاحها، ليُستعاد لاحقاً.
+    useEffect(() => {
+        const key = location.key || 'root';
+        let ticking = false;
+        const record = () => { ticking = false; scrollPositions.set(key, window.scrollY || document.documentElement.scrollTop || 0); };
+        const onScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(record); } };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, [location.key]);
+
+    // قرار التمرير عند كل انتقال (قبل الرسم عبر layout-effect لتفادي أي وميض).
+    React.useLayoutEffect(() => {
+        const action = history.action; // 'PUSH' | 'POP' | 'REPLACE'
+        const key = location.key || 'root';
+        const samePath = prevPathRef.current === location.pathname;
+        prevPathRef.current = location.pathname;
+        // عمق السجل داخل التطبيق (لأزرار «الرجوع الذكي») — يُحدَّث لكل انتقال حتى
+        // تغيّر ?query (فهو إدخال سجل جديد أيضاً).
+        bumpNavDepth(action);
+        if (samePath) return; // تغيّر query/hash فقط → الصفحة تدير تمريرها
+        if (action === 'POP') restoreScroll(scrollPositions.get(key) ?? 0);
+        else jumpScroll(0);   // PUSH/REPLACE لمسار جديد → ابدأ من الأعلى فوراً
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.key]);
+
     return null;
 };
 
 const App = () => {
     return (
         <Router>
-            <ScrollToTop />
+            <ScrollManager />
             <AuthRedirector />
             <InAppBanner />
             {/* v12.45 — عمق الموسم: عناصر متحركة عبر كامل الصفحة في كل صفحات
