@@ -260,15 +260,18 @@ const restoreScroll = (y: number) => {
     };
     // نُعيد تأكيد الموضع كل إطار حتى نبلغه فعلاً (الصفحة قد ترتفع تدريجياً بعد
     // الرجوع)، ونتوقّف فور الوصول أو عند تمرير المستخدم يدوياً أو بعد سقف ~2ث.
-    const step = () => {
+    // نعتمد setTimeout لا requestAnimationFrame: الأخير يتجمّد كلياً عندما يكون
+    // التبويب مخفياً (visibility hidden) فلا تُنفَّذ الاستعادة أبداً. الاستعادة قفزة
+    // فورية لا رسم متحرّك، فـ setTimeout كافٍ وسلس (ويعمل ظاهراً ومخفياً).
+    const attempt = () => {
         if (token !== restoreToken || userMoved) { cleanup(); return; }
         jumpScroll(y);
         const cur = window.scrollY || document.documentElement.scrollTop || 0;
         const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-        if (Math.abs(cur - y) <= 2 || now - startedAt > 2000) { cleanup(); return; }
-        requestAnimationFrame(step);
+        if (Math.abs(cur - y) <= 2 || now - startedAt > 2500) { cleanup(); return; }
+        setTimeout(attempt, 32);
     };
-    requestAnimationFrame(step);
+    attempt(); // محاولة أولى فورية (متزامنة داخل layout-effect)
 };
 
 const ScrollManager: React.FC = () => {
