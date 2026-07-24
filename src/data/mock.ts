@@ -154,6 +154,11 @@ export interface DealLocation {
     /** كمية هذا الفرع — تُستخدم فقط في وضع «كمية لكل موقع» */
     quantity?: number;
     initialQuantity?: number;
+    /** v12.97 — مصفوفة نوع×فرع: كمية كل نوع في هذا الفرع (variantId → qty).
+     *  تُستخدم فقط مع الأنواع (variants) + وضع per_location. الخلية الفارغة/الغائبة =
+     *  مفتوحة (بلا سقف) لذلك النوع في ذلك الفرع. `quantity` يبقى = مجموع خلايا الفرع
+     *  المسقوفة (للعرض والتوافق مع الخصم القائم على مستوى الفرع). */
+    variantQtys?: Record<string, number>;
     googleMapsLink?: string | null;
 }
 

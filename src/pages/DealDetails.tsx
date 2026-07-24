@@ -552,6 +552,23 @@ const DealDetails: React.FC = () => {
     const activeLoc = dealLocations
         ? (dealLocations.find(l => l.id === selectedLocId) || dealLocations[0])
         : null;
+    // v12.97 — مصفوفة نوع×فرع: كمية كل نوع تُدار لكل فرع (activeLoc.variantQtys).
+    //  • الخانة غائبة  → النوع «مفتوح» (بلا سقف) في هذا الفرع = متوفر.
+    //  • الخانة = 0    → النوع نفد في هذا الفرع → يظهر رمادياً «غير متوفر بهذا الفرع».
+    //  • الخانة > 0    → متوفر وسقفه = قيمة الخانة.
+    const matrixMode = perLocationQty && variants.length > 0 && !!activeLoc;
+    const cellLeftOf = React.useCallback((vId: string): number | undefined => {
+        if (!matrixMode) return undefined;
+        const vq = activeLoc?.variantQtys;
+        if (!vq || !(vId in vq)) return undefined; // مفتوح في هذا الفرع
+        return Number((vq as Record<string, number>)[vId]);
+    }, [matrixMode, activeLoc]);
+    const isVariantSoldOutHere = React.useCallback((vId: string) => cellLeftOf(vId) === 0, [cellLeftOf]);
+    /** سقف كمية النوع في الفرع المختار (undefined = بلا سقف/مفتوح) */
+    const variantCapHere = React.useCallback((v: { id: string; qty?: number }): number | undefined => {
+        if (matrixMode) { const c = cellLeftOf(v.id); return typeof c === 'number' && c > 0 ? c : (c === 0 ? 0 : undefined); }
+        return typeof v.qty === 'number' ? v.qty : undefined;
+    }, [matrixMode, cellLeftOf]);
     React.useEffect(() => {
         if (!deal?.locations || deal.locations.length <= 1) return;
         // بلا ?loc= صريح → اختر الأقرب تلقائياً؛ وإلا تحقّق من صلاحية المختار.
@@ -561,6 +578,27 @@ const DealDetails: React.FC = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deal?.id, sortedLocations]);
+    // v12.97 — عند تبديل الفرع في المصفوفة: صفّر/قلّم اختيارات الأنواع التي نفدت أو
+    // تجاوزت سقف الفرع الجديد، وحوّل التركيز لأول نوع متوفر بهذا الفرع.
+    React.useEffect(() => {
+        if (!matrixMode) return;
+        setVarSel(prev => {
+            let changed = false;
+            const next: Record<string, number> = {};
+            for (const v of variants) {
+                const q = prev[v.id] || 0;
+                if (q <= 0) continue;
+                const cap = variantCapHere(v);
+                if (cap === 0) { changed = true; continue; }          // نفد بهذا الفرع
+                const capped = typeof cap === 'number' ? Math.min(q, cap) : q;
+                if (capped !== q) changed = true;
+                if (capped > 0) next[v.id] = capped;
+            }
+            return changed ? next : prev;
+        });
+        setFocusVariantId(prev => (prev && !isVariantSoldOutHere(prev)) ? prev : (variants.find(v => !isVariantSoldOutHere(v.id))?.id ?? null));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedLocId, matrixMode]);
 
     // v12.66 — قائمة «القطع» المحجوزة: قطعة لكل وحدة من كل نسخة مختارة
     // (علم كبير ١، علم كبير ٢، علم صغير ١…)، أو حسب الكمية للعروض بلا نسخ.
@@ -902,11 +940,28 @@ const DealDetails: React.FC = () => {
                     : '🧬 Pick at least one version (tap "+ Add" on the size you want).');
                 return;
             }
-            const over = variants.find(v => typeof v.qty === 'number' && (varSel[v.id] || 0) > v.qty);
+            // v12.97 — في مصفوفة نوع×فرع السقف يأتي من كمية النوع في الفرع المختار.
+            const over = variants.find(v => {
+                const sel = varSel[v.id] || 0;
+                if (sel <= 0) return false;
+                const cap = variantCapHere(v);
+                return typeof cap === 'number' && sel > cap;
+            });
             if (over) {
+                const cap = variantCapHere(over) ?? over.qty;
                 customAlert(isRTL
-                    ? `⛔ المتاح من «${over.label}» ${over.qty} فقط — خفّف الكمية.`
-                    : `⛔ Only ${over.qty} available in "${over.label}".`);
+                    ? (matrixMode
+                        ? `⛔ المتاح من «${over.label}» في هذا الفرع ${cap} فقط — خفّف الكمية أو اختر فرعاً آخر.`
+                        : `⛔ المتاح من «${over.label}» ${cap} فقط — خفّف الكمية.`)
+                    : `⛔ Only ${cap} available in "${over.label}"${matrixMode ? ' at this branch' : ''}.`);
+                return;
+            }
+            // v12.97 — منع حجز نوعٍ نفد في الفرع المختار (خانة = 0)
+            const soldHere = variants.find(v => (varSel[v.id] || 0) > 0 && isVariantSoldOutHere(v.id));
+            if (soldHere) {
+                customAlert(isRTL
+                    ? `⛔ «${soldHere.label}» غير متوفر في هذا الفرع — اختر فرعاً آخر أو نوعاً متوفراً.`
+                    : `⛔ "${soldHere.label}" is unavailable at this branch — pick another branch or variant.`);
                 return;
             }
         }
@@ -1452,10 +1507,12 @@ const DealDetails: React.FC = () => {
                             {variants.map(v => {
                                 const q = varSel[v.id] || 0;
                                 const picked = q > 0;
-                                const cap = typeof v.qty === 'number' ? v.qty : undefined;
+                                const cap = variantCapHere(v);           // v12.97 — سقف النوع في الفرع المختار
+                                const soldHere = matrixMode && isVariantSoldOutHere(v.id); // نفد بهذا الفرع
                                 // سعر النسخة الأصلي المشطوب — سعرها الخاص إن وُجد وإلا سعر العرض
                                 const vOriginal = (v.originalPrice && v.originalPrice > 0) ? v.originalPrice : (deal.originalPrice || 0);
                                 const setQ = (next: number) => {
+                                    if (soldHere) return;
                                     const capped = cap !== undefined ? Math.min(next, cap) : next;
                                     setFocusVariantId(v.id);
                                     setVarSel(prev => {
@@ -1468,9 +1525,11 @@ const DealDetails: React.FC = () => {
                                     <div key={v.id}
                                         role="checkbox"
                                         aria-checked={picked}
-                                        tabIndex={0}
-                                        onClick={() => { setFocusVariantId(v.id); if (!picked) setQ(1); }}
-                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusVariantId(v.id); if (!picked) setQ(1); } }}
+                                        aria-disabled={soldHere}
+                                        tabIndex={soldHere ? -1 : 0}
+                                        onClick={() => { if (soldHere) return; setFocusVariantId(v.id); if (!picked) setQ(1); }}
+                                        onKeyDown={(e) => { if (soldHere) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusVariantId(v.id); if (!picked) setQ(1); } }}
+                                        style={soldHere ? { opacity: 0.55, filter: 'grayscale(1)', cursor: 'not-allowed' } : undefined}
                                         className={`taki-variant-row${picked ? ' picked' : ''}`}>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <span style={{ fontWeight: 900, fontSize: '1.02rem', color: 'var(--text-primary)' }}>{v.label}</span>
@@ -1478,13 +1537,21 @@ const DealDetails: React.FC = () => {
                                             {vOriginal > v.price && (
                                                 <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--gray-400)', textDecoration: 'line-through', marginInlineStart: 7 }}>{vOriginal} ر.س</span>
                                             )}
-                                            {cap !== undefined && (
-                                                <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 4 }}>
-                                                    {isRTL ? `المتاح: ${cap}` : `Available: ${cap}`}
+                                            {soldHere ? (
+                                                <div style={{ fontSize: '0.76rem', fontWeight: 900, color: 'var(--danger)', marginTop: 4 }}>
+                                                    {isRTL ? '⛔ غير متوفر بهذا الفرع' : '⛔ Unavailable at this branch'}
                                                 </div>
-                                            )}
+                                            ) : (cap !== undefined && cap > 0 && (
+                                                <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                                    {isRTL ? `المتاح${matrixMode ? ' بهذا الفرع' : ''}: ${cap}` : `Available${matrixMode ? ' here' : ''}: ${cap}`}
+                                                </div>
+                                            ))}
                                         </div>
-                                        {picked ? (
+                                        {soldHere ? (
+                                            <span style={{ fontSize: '0.82rem', fontWeight: 900, color: 'var(--danger)', flexShrink: 0, padding: '6px 12px', borderRadius: 10, border: '1.5px solid var(--danger)', background: 'var(--secondary-light)' }}>
+                                                {isRTL ? 'نفد هنا' : 'Sold out'}
+                                            </span>
+                                        ) : picked ? (
                                             <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 <button type="button" onClick={() => setQ(q - 1)}
                                                     aria-label={isRTL ? `تقليل ${v.label}` : `Decrease ${v.label}`}
@@ -2096,27 +2163,31 @@ const DealDetails: React.FC = () => {
                                 </div>
                                 {variants.map(v => {
                                     const q = varSel[v.id] || 0;
-                                    const cap = typeof v.qty === 'number' ? v.qty : undefined;
+                                    const cap = variantCapHere(v);                            // v12.97 — سقف الفرع المختار
+                                    const soldHere = matrixMode && isVariantSoldOutHere(v.id); // نفد بهذا الفرع
                                     const setQ = (next: number) => {
+                                        if (soldHere) return;
                                         const capped = cap !== undefined ? Math.min(next, cap) : next;
                                         setFocusVariantId(v.id);
                                         setVarSel(prev => { const cur = { ...prev }; if (capped <= 0) delete cur[v.id]; else cur[v.id] = capped; return cur; });
                                     };
                                     return (
-                                        <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: '1px dashed var(--border-color)' }}>
+                                        <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: '1px dashed var(--border-color)', ...(soldHere ? { opacity: 0.55, filter: 'grayscale(1)' } : {}) }}>
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <span style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{v.label}</span>
                                                 <span style={{ fontWeight: 800, fontSize: '0.78rem', color: 'var(--primary)', marginInlineStart: 8 }}>{v.price} ر.س</span>
-                                                {cap !== undefined && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginInlineStart: 6 }}>({isRTL ? `المتاح ${cap}` : `${cap} left`})</span>}
+                                                {soldHere
+                                                    ? <span style={{ fontSize: '0.68rem', fontWeight: 900, color: 'var(--danger)', marginInlineStart: 6 }}>({isRTL ? 'غير متوفر بهذا الفرع' : 'unavailable here'})</span>
+                                                    : (cap !== undefined && cap > 0 && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginInlineStart: 6 }}>({isRTL ? `المتاح ${cap}` : `${cap} left`})</span>)}
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                                                <button type="button" onClick={() => setQ(q - 1)} disabled={q <= 0}
+                                                <button type="button" onClick={() => setQ(q - 1)} disabled={soldHere || q <= 0}
                                                     aria-label={isRTL ? `تقليل ${v.label}` : `Decrease ${v.label}`}
-                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: q <= 0 ? 'default' : 'pointer', opacity: q <= 0 ? 0.4 : 1 }}>−</button>
+                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: (soldHere || q <= 0) ? 'default' : 'pointer', opacity: (soldHere || q <= 0) ? 0.4 : 1 }}>−</button>
                                                 <span style={{ fontWeight: 900, fontSize: '1rem', minWidth: 22, textAlign: 'center', color: 'var(--text-primary)' }}>{q}</span>
-                                                <button type="button" onClick={() => setQ(q + 1)} disabled={cap !== undefined && q >= cap}
+                                                <button type="button" onClick={() => setQ(q + 1)} disabled={soldHere || (cap !== undefined && q >= cap)}
                                                     aria-label={isRTL ? `زيادة ${v.label}` : `Increase ${v.label}`}
-                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: 'pointer', opacity: cap !== undefined && q >= cap ? 0.4 : 1 }}>+</button>
+                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: soldHere ? 'default' : 'pointer', opacity: (soldHere || (cap !== undefined && q >= cap)) ? 0.4 : 1 }}>+</button>
                                             </div>
                                         </div>
                                     );

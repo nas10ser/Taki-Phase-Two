@@ -466,6 +466,9 @@ const SellerDashboard: React.FC = () => {
     const [extraLocKeys, setExtraLocKeys] = useState<string[]>([]);
     const [locQtyMode, setLocQtyMode] = useState<'shared' | 'per_location'>('per_location');
     const [locQtys, setLocQtys] = useState<Record<string, number | undefined>>({});
+    // v12.97 — مصفوفة نوع×فرع: كمية كل نوع في كل فرع (branchKey → variantId → qty).
+    // تظهر بدل حقل الكمية المفرد للفرع عند وجود أنواع + وضع «كمية لكل موقع».
+    const [locVarQtys, setLocVarQtys] = useState<Record<string, Record<string, number | undefined>>>({});
     // v12.92 — طيّ قسمي «الأنواع» و«الإضافات» كـ«حدود الحجز» (طلب ناصر: ترتيب،
     // والشرح يبقى ظاهراً في summary). يُفتحان تلقائياً عند تعديل عرض يحويهما.
     const [variantsOpen, setVariantsOpen] = useState(false);
@@ -1450,10 +1453,16 @@ const SellerDashboard: React.FC = () => {
             setLocQtyMode(deal.locQtyMode === 'shared' ? 'shared' : 'per_location');
             setExtraLocKeys(deal.locations.filter(l => l.id !== 'primary').map(l => l.id));
             const q: Record<string, number | undefined> = {};
-            for (const l of deal.locations) q[l.id] = l.quantity;
+            const vq: Record<string, Record<string, number | undefined>> = {};
+            for (const l of deal.locations) {
+                q[l.id] = l.quantity;
+                // v12.97 — استعادة مصفوفة نوع×فرع
+                if (l.variantQtys && typeof l.variantQtys === 'object') vq[l.id] = { ...l.variantQtys };
+            }
             setLocQtys(q);
+            setLocVarQtys(vq);
         } else {
-            setExtraLocKeys([]); setLocQtyMode('per_location'); setLocQtys({});
+            setExtraLocKeys([]); setLocQtyMode('per_location'); setLocQtys({}); setLocVarQtys({});
         }
 
         // Prefer the seller's original choice (stored on the row) so the
@@ -1605,9 +1614,19 @@ const SellerDashboard: React.FC = () => {
         const _multiOthersEarly = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
         const _multiPerLocEarly = _multiOthersEarly.length > 0 && locQtyMode === 'per_location';
         const _multiKeysEarly = ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)];
-        const _multiAllCapped = _multiPerLocEarly && _multiKeysEarly.every(k => Number(locQtys[k]) > 0);
+        // v12.97 — مصفوفة نوع×فرع: عند وجود أنواع + «كمية لكل موقع» الكمية تُدار خلية
+        // خلية (نوع×فرع)، فـ«كل الفروع مسقوفة» تعني «كل الخلايا مسقوفة»، والمجموع = مجموع
+        // الخلايا. بلا أنواع نبقى على حقل الفرع المفرد كما كان.
+        const _varIdsEarly = completeVariants.map(v => v.id);
+        const _matrixEarly = _multiPerLocEarly && _varIdsEarly.length > 0;
+        const _cellEarly = (k: string, vId: string): number | undefined => { const n = Number(locVarQtys[k]?.[vId]); return n > 0 ? n : undefined; };
+        const _multiAllCapped = _multiPerLocEarly && (_matrixEarly
+            ? _multiKeysEarly.every(k => _varIdsEarly.every(vId => _cellEarly(k, vId) !== undefined))
+            : _multiKeysEarly.every(k => Number(locQtys[k]) > 0));
         const _multiSumEarly = _multiPerLocEarly
-            ? _multiKeysEarly.reduce((s, k) => s + (Number(locQtys[k]) || 0), 0)
+            ? (_matrixEarly
+                ? _multiKeysEarly.reduce((s, k) => s + _varIdsEarly.reduce((a, vId) => a + (_cellEarly(k, vId) || 0), 0), 0)
+                : _multiKeysEarly.reduce((s, k) => s + (Number(locQtys[k]) || 0), 0))
             : 0;
         // إشارة مخزون صالحة فقط عندما تكون كل الفروع مسقوفة (مجموع منتهٍ).
         const _hasMultiStock = _multiAllCapped && _multiSumEarly > 0;
@@ -1649,7 +1668,10 @@ const SellerDashboard: React.FC = () => {
             // التاريخ الكميات اختيارية وحرّة تماماً — يُقبل أن يضع كمية لنوع ويترك
             // آخر مفتوحاً (النوع بلا كمية = بلا سقف حتى ينتهي المؤقّت)، فلا نفرض
             // «الكل أو لا شيء» إلا في وضع «بالكمية».
-            if (expiryType === 'stock' && withQty.length !== completeVariants.length) {
+            // v12.97 — في وضع «كمية لكل موقع» كمية النوع تُدار خلية خلية (نوع×فرع) في
+            // قسم مواقع العرض، لا هنا، فنتجاوز فحص كمية النوع العامة (يُغطّى تمامها
+            // لاحقاً بفحص «كل الخلايا مسقوفة» عند الانتهاء بالكمية).
+            if (expiryType === 'stock' && !_multiPerLocEarly && withQty.length !== completeVariants.length) {
                 await customAlert(isRTL
                     ? '⛔ نظام الانتهاء «بالكمية» مفعّل: حدد كمية لكل نوع — المجموع يصبح الكمية الإجمالية تلقائياً. (أو غيّر نظام الانتهاء إلى الساعات/الأيام/التاريخ لتصبح الكميات اختيارية.)'
                     : '⛔ Stock-based expiry is on: set a qty for EVERY variant — the sum becomes the deal total. (Or switch expiry to hours/days/date to make quantities optional.)');
@@ -1927,9 +1949,35 @@ const SellerDashboard: React.FC = () => {
         const isMultiLoc = multiOthers.length > 0;
         const multiPerLoc = isMultiLoc && locQtyMode === 'per_location';
         const qtyOf = (k: string): number | undefined => { const n = Number(locQtys[k]); return n > 0 ? n : undefined; };
-        const capFields = (k: string) => (multiPerLoc && qtyOf(k) !== undefined) ? { quantity: qtyOf(k), initialQuantity: qtyOf(k) } : {};
         const allBranchKeys = ['primary', ...multiOthers.map(c => c.branchId || c.key)];
-        const multiAllCapped = multiPerLoc && allBranchKeys.every(k => qtyOf(k) !== undefined);
+        // v12.97 — مصفوفة نوع×فرع (تُفعّل فقط مع الأنواع + «كمية لكل موقع»):
+        //  • خلية = كمية نوعٍ في فرعٍ (locVarQtys[branch][variant])، الفارغة = مفتوحة.
+        //  • كمية الفرع (quantity) تُكتب فقط إن كانت كل خلاياه مسقوفة — وإلا يبقى الفرع
+        //    مفتوحاً؛ هذا يمنع انحراف مجموع الفرع في القاعدة عند وجود خلية مفتوحة.
+        const varIdsSave = completeVariants.map(v => v.id);
+        const matrixActive = multiPerLoc && varIdsSave.length > 0;
+        const cellSave = (k: string, vId: string): number | undefined => { const n = Number(locVarQtys[k]?.[vId]); return n > 0 ? n : undefined; };
+        const branchVarQtysSave = (k: string): Record<string, number> | undefined => {
+            const o: Record<string, number> = {};
+            for (const vId of varIdsSave) { const c = cellSave(k, vId); if (c !== undefined) o[vId] = c; }
+            return Object.keys(o).length ? o : undefined;
+        };
+        const branchAllCappedSave = (k: string) => varIdsSave.every(vId => cellSave(k, vId) !== undefined);
+        const branchCellSum = (k: string) => varIdsSave.reduce((s, vId) => s + (cellSave(k, vId) || 0), 0);
+        const capFields = (k: string) => {
+            if (matrixActive) {
+                const vq = branchVarQtysSave(k);
+                const qty = branchAllCappedSave(k) ? branchCellSum(k) : undefined;
+                return {
+                    ...(vq ? { variantQtys: vq } : {}),
+                    ...(qty !== undefined && qty > 0 ? { quantity: qty, initialQuantity: qty } : {}),
+                };
+            }
+            return (multiPerLoc && qtyOf(k) !== undefined) ? { quantity: qtyOf(k), initialQuantity: qtyOf(k) } : {};
+        };
+        const multiAllCapped = multiPerLoc && (matrixActive
+            ? allBranchKeys.every(k => branchAllCappedSave(k))
+            : allBranchKeys.every(k => qtyOf(k) !== undefined));
         let dealLocations: DealLocation[] | undefined;
         if (isMultiLoc) {
             const primaryName = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
@@ -1958,8 +2006,11 @@ const SellerDashboard: React.FC = () => {
             dealLocations = [primaryLoc, ...rest];
         }
         // الكمية الإجمالية: مجموع الفروع فقط لو كلها مسقوفة، وإلا غير محدود (زمني).
+        // v12.97 — في المصفوفة المجموع = مجموع كل الخلايا (نوع×فرع).
         const effQuantity: number | 'unlimited' = multiAllCapped
-            ? allBranchKeys.reduce((s, k) => s + (qtyOf(k) || 0), 0)
+            ? (matrixActive
+                ? allBranchKeys.reduce((s, k) => s + branchCellSum(k), 0)
+                : allBranchKeys.reduce((s, k) => s + (qtyOf(k) || 0), 0))
             : (multiPerLoc ? 'unlimited' : finalQuantity);
 
         const newDeal: Deal = {
@@ -2040,9 +2091,16 @@ const SellerDashboard: React.FC = () => {
                         label: v.label.trim(),
                         price: Number(v.price) || 0,
                         originalPrice: Number(v.originalPrice) > 0 ? Number(v.originalPrice) : undefined,
-                        // v12.94 — بُعد مخزون واحد: عند «كمية لكل موقع» تُلغى كمية النوع
-                        // (المخزون يُدار لكل فرع) فلا يتعارض رقمان.
-                        qty: multiPerLoc ? undefined : (Number(v.qty) > 0 ? Number(v.qty) : undefined),
+                        // v12.94/97 — عند «كمية لكل موقع»: بلا مصفوفة تُلغى كمية النوع
+                        // العامة (المخزون لكل فرع). مع مصفوفة نوع×فرع نضبط كمية النوع
+                        // العامة = مجموع خلاياه عبر الفروع — لكن فقط إن كانت كل خلاياه
+                        // مسقوفة (وإلا يبقى النوع «مفتوحاً» بلا سقف عام) ليبقى الخصم في
+                        // القاعدة متسقاً (خلية + كمية النوع العامة تنخفضان معاً بنفس القدر).
+                        qty: matrixActive
+                            ? (allBranchKeys.every(k => cellSave(k, v.id) !== undefined)
+                                ? allBranchKeys.reduce((s, k) => s + (cellSave(k, v.id) || 0), 0)
+                                : undefined)
+                            : (multiPerLoc ? undefined : (Number(v.qty) > 0 ? Number(v.qty) : undefined)),
                         imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
                         posSku: (v.posSku || '').trim() || undefined, // v12.88 — رمز الكاشير
                     }))
@@ -3827,6 +3885,16 @@ const SellerDashboard: React.FC = () => {
                                 || (isRTL ? 'الموقع الأساسي' : 'Primary location');
                             const rows = isMulti ? [{ id: 'primary', label: primaryLabel }, ...selected.map(c => ({ id: cid(c), label: c.label }))] : [];
                             const sum = rows.reduce((s, r) => s + (Number(locQtys[r.id]) || 0), 0);
+                            // v12.97 — مصفوفة نوع×فرع: عند وجود أنواع نعرض كمية كل نوع لكل فرع بدل حقل واحد.
+                            const mtxVars = completeVariants;
+                            const matrixUI = perLoc && mtxVars.length > 0;
+                            const cellVal = (bid: string, vid: string) => Number(locVarQtys[bid]?.[vid]) || 0;
+                            const setCell = (bid: string, vid: string, n: number | undefined) =>
+                                setLocVarQtys(p => ({ ...p, [bid]: { ...(p[bid] || {}), [vid]: n } }));
+                            const branchSum = (bid: string) => mtxVars.reduce((s, v) => s + cellVal(bid, v.id), 0);
+                            const grandCellSum = rows.reduce((s, r) => s + branchSum(r.id), 0);
+                            const allCellsCapped = rows.length > 0 && rows.every(r => mtxVars.every(v => cellVal(r.id, v.id) > 0));
+                            const anyCellOpen = rows.some(r => mtxVars.some(v => !(cellVal(r.id, v.id) > 0)));
                             return (
                                 <div style={{ marginTop: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
                                     <label style={labelStyle}>{isRTL ? '📍 انشر نفس العرض في عدة مواقع (اختياري)' : '📍 Publish this deal at multiple locations (optional)'}</label>
@@ -3863,7 +3931,40 @@ const SellerDashboard: React.FC = () => {
                                                 <button type="button" onClick={() => setLocQtyMode('per_location')} style={{ flex: 1, padding: '10px', borderRadius: 12, fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', border: perLoc ? '2px solid var(--primary)' : '1.5px solid var(--gray-200)', background: perLoc ? 'var(--notif-unread-bg)' : 'var(--body-bg)', color: 'var(--text-primary)' }}>{isRTL ? '🎯 كمية لكل موقع' : 'Per location'}</button>
                                                 <button type="button" onClick={() => setLocQtyMode('shared')} style={{ flex: 1, padding: '10px', borderRadius: 12, fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', border: !perLoc ? '2px solid var(--primary)' : '1.5px solid var(--gray-200)', background: !perLoc ? 'var(--notif-unread-bg)' : 'var(--body-bg)', color: 'var(--text-primary)' }}>{isRTL ? '🤝 كمية مشتركة' : 'Shared'}</button>
                                             </div>
-                                            {perLoc ? (
+                                            {perLoc ? (matrixUI ? (
+                                                /* v12.97 — شبكة نوع×فرع: لكل فرع كمية كل نوع على حدة */
+                                                <div>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
+                                                        🧬 {isRTL ? 'حدّد كمية كل نوع في كل فرع. اترك خانة نوع فارغة = «مفتوح» بلا حد لذلك النوع في ذلك الفرع.' : 'Set each variant’s qty per branch. Blank = open/unlimited for that variant at that branch.'}
+                                                    </div>
+                                                    {rows.map(r => (
+                                                        <div key={r.id} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 12, padding: 10, marginBottom: 8 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                                                                <span style={{ minWidth: 0, fontSize: '0.82rem', fontWeight: 900, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {r.label}</span>
+                                                                <span style={{ flexShrink: 0, fontSize: '0.68rem', fontWeight: 900, color: 'var(--primary)' }}>{isRTL ? `مجموع الفرع = ${branchSum(r.id)}` : `Branch = ${branchSum(r.id)}`}</span>
+                                                            </div>
+                                                            {mtxVars.map(v => {
+                                                                const cOpen = !(cellVal(r.id, v.id) > 0);
+                                                                return (
+                                                                    <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                                                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🏷️ {v.label}</span>
+                                                                        {cOpen && <span style={{ fontSize: '0.58rem', fontWeight: 900, color: 'var(--secondary)', background: 'var(--secondary-light)', padding: '2px 7px', borderRadius: 999, flexShrink: 0 }}>{isRTL ? 'مفتوح' : 'open'}</span>}
+                                                                        <NumericField integer value={locVarQtys[r.id]?.[v.id]} onChange={n => setCell(r.id, v.id, n)} placeholder={isRTL ? 'مفتوح' : 'open'} style={{ width: 90, padding: '7px 9px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--body-bg)', color: 'var(--text-primary)', fontSize: '0.8rem', fontWeight: 700, textAlign: 'center' }} />
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ))}
+                                                    <div style={{ fontSize: '0.74rem', fontWeight: 900, color: 'var(--primary)', marginTop: 6 }}>
+                                                        🧮 {allCellsCapped
+                                                            ? (isRTL ? `المجموع الإجمالي = ${grandCellSum}` : `Total = ${grandCellSum}`)
+                                                            : (isRTL ? `المسقوف = ${grandCellSum}${anyCellOpen ? ' + خانات مفتوحة (بلا حد)' : ''}` : `Capped = ${grandCellSum} + open cells`)}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                                                        💡 {isRTL ? 'النوع الذي كميته صفر/فارغة في فرعٍ يظهر للمشتري «غير متوفر بهذا الفرع» ويبقى متاحاً في الفروع الأخرى. للانتهاء «بالكمية» حدّد كل الخانات.' : 'A variant left blank at a branch shows “unavailable here” to buyers but stays available at other branches. Fill all cells for stock-based expiry.'}
+                                                    </div>
+                                                </div>
+                                            ) : (
                                                 <div>
                                                     {rows.map(r => {
                                                         const isOpen = !(Number(locQtys[r.id]) > 0);
@@ -3884,7 +3985,7 @@ const SellerDashboard: React.FC = () => {
                                                         💡 {isRTL ? 'اترك خانة أي فرع فارغة = «مفتوح» بلا حد (يتطلب انتهاءً زمنياً بالأيام/الساعات/التاريخ). حدّد كمية لكل الفروع لو أردت الانتهاء «بالكمية».' : 'Leave a branch blank = “open/unlimited” (needs time-based expiry). Fill every branch for stock-based expiry.'}
                                                     </div>
                                                 </div>
-                                            ) : (
+                                            )) : (
                                                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
                                                     {isRTL ? 'المخزون واحد مشترك بين كل المواقع = «الكمية» التي حددتها أعلى النموذج، وأي حجز من أي فرع يخصم من المخزون نفسه.' : 'One shared stock (the Quantity field above) shared across all locations.'}
                                                 </div>
