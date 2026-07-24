@@ -457,6 +457,10 @@ const SellerDashboard: React.FC = () => {
     const [extraLocKeys, setExtraLocKeys] = useState<string[]>([]);
     const [locQtyMode, setLocQtyMode] = useState<'shared' | 'per_location'>('per_location');
     const [locQtys, setLocQtys] = useState<Record<string, number | undefined>>({});
+    // v12.92 — طيّ قسمي «الأنواع» و«الإضافات» كـ«حدود الحجز» (طلب ناصر: ترتيب،
+    // والشرح يبقى ظاهراً في summary). يُفتحان تلقائياً عند تعديل عرض يحويهما.
+    const [variantsOpen, setVariantsOpen] = useState(false);
+    const [optionsOpen, setOptionsOpen] = useState(false);
     // v12.62 (طلب ناصر) — النسخ تقود التسعير والكمية العامة حتى لا يلتبس التاجر:
     // لكل نسخة سعرها الأصلي وبعد الخصم، وأرخص نسخة تضبط السعرين العامين
     // تلقائياً (البطاقة تعرض «يبدأ من»)، ومجموع كميات النسخ = الكمية الإجمالية.
@@ -1363,6 +1367,8 @@ const SellerDashboard: React.FC = () => {
         setExtraLocKeys([]);
         setLocQtyMode('per_location');
         setLocQtys({});
+        setVariantsOpen(false);
+        setOptionsOpen(false);
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1406,6 +1412,8 @@ const SellerDashboard: React.FC = () => {
         setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
         setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
         setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)) : []); // v12.61 — نسخ المنتج
+        setVariantsOpen(!!(deal.variants && deal.variants.length)); // v12.92 — افتح الأقسام المعبّأة عند التعديل
+        setOptionsOpen(!!(deal.options && deal.options.length));
         setPosSku(deal.posSku || ''); // v12.88 — رمز الكاشير للمنتج الأساسي
         // v12.91 — استعادة مواقع العرض المتعددة (المفاتيح = معرّفات المواقع نفسها)
         if (deal.locations && deal.locations.length > 1) {
@@ -2784,13 +2792,21 @@ const SellerDashboard: React.FC = () => {
                         {/* v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام
                             لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
                             أحجام في صفحة المنتج، والبطاقة العامة تعرض «يبدأ من». */}
-                        <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '🧬 أنواع المنتج — لكل نوع سعره (اختياري — إذا كان منتجك بشكل واحد فقط فلا تحتاج هذا الخيار)' : '🧬 Product variants — each with its own price (optional — skip it if your product has one form only)'}</label>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
-                                {isRTL
-                                    ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
-                                    : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
-                            </div>
+                        <details open={variantsOpen} onToggle={(e) => setVariantsOpen((e.currentTarget as HTMLDetailsElement).open)} style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
+                            <summary style={{ cursor: 'pointer' }}>
+                                <span style={{ ...labelStyle, display: 'inline' }}>{isRTL ? '🧬 أنواع المنتج — لكل نوع سعره (اختياري — إذا كان منتجك بشكل واحد فقط فلا تحتاج هذا الخيار)' : '🧬 Product variants — each with its own price (optional — skip it if your product has one form only)'}</span>
+                                {variants.length > 0 && (
+                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.66rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
+                                        ✅ {isRTL ? `${variants.length} نوع مضاف` : `${variants.length} added`}
+                                    </span>
+                                )}
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
+                                    {isRTL
+                                        ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
+                                        : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
+                                </div>
+                            </summary>
+                            <div style={{ marginTop: 12 }} />
                             {variants.map((v, vi) => (
                                 <div key={v.id} style={{ border: '1px solid var(--border-color)', borderRadius: 12, padding: 10, marginBottom: 8, background: 'var(--gray-50)' }}>
                                     <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
@@ -2913,19 +2929,27 @@ const SellerDashboard: React.FC = () => {
                                             : '💡 Time-based expiry: version quantities are optional — if you set them on all versions, the sum auto-fills the deal total.')}
                                 </div>
                             )}
-                        </div>
+                        </details>
 
                         {/* v12.53 — «اختيارات المنتج»: أقسام يعرّفها التاجر (نوع البن،
                             المقاس…) — لكل قسم: اختيار واحد أو عدة، إلزامي أو اختياري.
                             v12.60 — لكل خيار «سعر إضافي» اختياري يُضاف تلقائياً لمبلغ
                             الحجز النهائي (بدل سقف الكمية الملغى). */}
-                        <div style={{ marginBottom: 20 }}>
-                            <label style={labelStyle}>{isRTL ? '🧩 إضافات المنتج (اختياري)' : '🧩 Product add-ons (optional)'}</label>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
-                                {isRTL
-                                    ? '💡 أشياء يختارها المشتري على المنتج نفسه وقت الحجز: إما مجانية مثل «بدون بصل» أو «تغليف هدية»، أو بسعر يُضاف على المبلغ مثل «جبنة +٣ ر.س». اكتب السؤال (مثل: الإضافات؟ نوع التغليف؟) وتحته الخيارات، والمشتري يحدد ما يريده لكل قطعة. الفرق ببساطة: «الأنواع» فوق = المنتج نفسه بسعر مختلف، و«الإضافات» هنا = زيادات فوق المنتج.'
-                                    : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
-                            </div>
+                        <details open={optionsOpen} onToggle={(e) => setOptionsOpen((e.currentTarget as HTMLDetailsElement).open)} style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
+                            <summary style={{ cursor: 'pointer' }}>
+                                <span style={{ ...labelStyle, display: 'inline' }}>{isRTL ? '🧩 إضافات المنتج (اختياري)' : '🧩 Product add-ons (optional)'}</span>
+                                {optionGroups.length > 0 && (
+                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.66rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
+                                        ✅ {isRTL ? `${optionGroups.length} قسم مضاف` : `${optionGroups.length} added`}
+                                    </span>
+                                )}
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
+                                    {isRTL
+                                        ? '💡 أشياء يختارها المشتري على المنتج نفسه وقت الحجز: إما مجانية مثل «بدون بصل» أو «تغليف هدية»، أو بسعر يُضاف على المبلغ مثل «جبنة +٣ ر.س». اكتب السؤال (مثل: الإضافات؟ نوع التغليف؟) وتحته الخيارات، والمشتري يحدد ما يريده لكل قطعة. الفرق ببساطة: «الأنواع» فوق = المنتج نفسه بسعر مختلف، و«الإضافات» هنا = زيادات فوق المنتج.'
+                                        : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
+                                </div>
+                            </summary>
+                            <div style={{ marginTop: 12 }} />
                             {optionGroups.map((g, gi) => (
                                 <div key={g.id} style={{ border: '1px solid var(--border-color)', borderRadius: 12, padding: 10, marginBottom: 8, background: 'var(--gray-50)' }}>
                                     <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -3031,7 +3055,7 @@ const SellerDashboard: React.FC = () => {
                                 style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.84rem', fontWeight: 900, cursor: 'pointer' }}>
                                 {isRTL ? '➕ إضافة قسم اختيارات' : '➕ Add options group'}
                             </button>
-                        </div>
+                        </details>
 
                         {/* v12.28 — حدود الحجز للمشتري: منع السوق السوداء.
                             v12.34 — أُبرز القسم بطلب من ناصر: كان صغيراً والتاجر
@@ -3648,10 +3672,11 @@ const SellerDashboard: React.FC = () => {
                                     publishing surface. */}
                                 <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer
-                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                                        subdomains="abcd"
-                                        maxZoom={20}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        subdomains="abc"
+                                        detectRetina={true}
+                                        maxZoom={19}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                     />
                                     <MapCenterUpdater center={mapPos} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
@@ -4085,6 +4110,34 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{order.deal.itemName}</div>
                                     <div style={{ color: 'var(--primary)', fontWeight: 900, background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>{order.bookedQuantity} {isRTL ? 'قطع' : 'pcs'}</div>
                                 </div>
+                                {/* v12.92 — حالة الدفع واضحة تماماً للتاجر: مدفوع إلكترونياً (وصل حسابه)
+                                    أم الدفع عند الاستلام (يستلم المبلغ من العميل) — بخط واضح بلا لبس. */}
+                                {(() => {
+                                    const paid = !!(order as any).paidAt;
+                                    const amt = (order as any).paidAmount;
+                                    return (
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+                                            padding: '11px 14px', borderRadius: 14,
+                                            background: paid ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+                                            border: `1.5px solid ${paid ? 'rgba(16,185,129,0.55)' : 'rgba(245,158,11,0.6)'}`,
+                                        }}>
+                                            <span style={{ fontSize: '1.35rem', lineHeight: 1 }}>{paid ? '✅' : '💵'}</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 900, fontSize: '0.95rem', color: paid ? '#059669' : '#b45309' }}>
+                                                    {paid
+                                                        ? (isRTL ? 'مدفوع إلكترونياً' : 'Paid online')
+                                                        : (isRTL ? 'الدفع عند الاستلام' : 'Pay at pickup')}
+                                                </div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                                    {paid
+                                                        ? (isRTL ? `وصل حسابك مباشرة${amt != null ? ` — ${amt} ر.س` : ''} — لا تطلب مبلغاً من العميل` : `Sent to your account${amt != null ? ` — ${amt} SAR` : ''} — do not collect cash`)
+                                                        : (isRTL ? 'استلم المبلغ نقداً/شبكة من العميل عند التسليم' : 'Collect payment from the buyer on handover')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600 }}>
                                     {isRTL ? '👤 المشتري:' : '👤 Buyer:'}{' '}
                                     <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>

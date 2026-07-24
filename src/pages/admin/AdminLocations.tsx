@@ -205,10 +205,11 @@ const AdminLocations: React.FC = () => {
                                     {form.city_id || (form.lat && form.lng) ? (
                                         <MapContainer center={mapCenter} zoom={form.lat ? 14 : 11} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                             <TileLayer
-                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                                        subdomains="abcd"
-                                        maxZoom={20}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        subdomains="abc"
+                                        detectRetina={true}
+                                        maxZoom={19}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                     />
                                             <Recenter center={mapCenter} />
                                             <ClickMarker pos={[Number(form.lat) || 0, Number(form.lng) || 0]} onMove={(lat, lng) => setForm(f => ({ ...f, lat, lng }))} />

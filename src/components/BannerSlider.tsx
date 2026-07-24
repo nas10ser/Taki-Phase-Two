@@ -58,36 +58,19 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
     // Reset when the banner set changes (e.g. admin toggles one).
     useEffect(() => { setPos(loop ? 1 : 0); setDragPx(0); /* eslint-disable-next-line */ }, [count]);
 
-    // v12.90 — إزالة الوميض عند وصول شريحة (بلاغ ناصر «القهوة تومض»): السبب أن
-    // الصورة تُفكّ شفرتها (decode) بشكل غير متزامن أثناء انزلاق الشريط، فتظهر
-    // الخلفية المتدرّجة جزءاً من الثانية قبل ظهور الصورة. الحل: نفكّ شفرة كل
-    // صور البانرات مسبقاً (وتُخزَّن مفكوكة في الكاش)، ولا نبدأ الدوران التلقائي
-    // إلا بعد جهوزيتها — فلا وميض على أي شريحة.
-    const [imgsReady, setImgsReady] = useState(false);
-    useEffect(() => {
-        let alive = true;
-        const urls = banners
-            .map(b => (b.kind === 'contest' ? b.contest?.banner_image : b.image_url))
-            .filter((u): u is string => !!u);
-        if (urls.length === 0) { setImgsReady(true); return; }
-        Promise.all(urls.map(u => {
-            const img = new Image();
-            img.src = u;
-            return img.decode ? img.decode().catch(() => {}) : Promise.resolve();
-        })).then(() => { if (alive) setImgsReady(true); });
-        return () => { alive = false; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [banners]);
+    // v12.92 — أُزيل حاجز decode() في v12.90: كان img.decode() يبقى «معلّقاً» أحياناً
+    // (خاصة والتبويب غير مرئي) فلا يبدأ الدوران أبداً = بانر متجمّد (تراجع). وحتى مع
+    // عمله لم يمنع الوميض. الحل الصحيح للوميض في الأسفل: طبقة background-image ثابتة
+    // خلف كل <img> فحين تُفرَّغ الصورة لحظة القفزة تظهر نفس الصورة من الخلفية بلا وميض.
 
     // Autoplay — always "next", paused while dragging.
     useEffect(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
-        // v12.90 — لا نبدأ الدوران قبل جهوزية الصور (منع وميض أول لفة).
-        if (loop && !dragging && imgsReady) {
+        if (loop && !dragging) {
             timerRef.current = setTimeout(() => { setDuration(0.55); setAnimate(true); setPos(p => p + 1); }, intervalMs);
         }
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [pos, dragging, loop, intervalMs, imgsReady]);
+    }, [pos, dragging, loop, intervalMs]);
 
     // After easing INTO a clone, snap (no animation) to the identical real slide.
     const handleTransitionEnd = (e: React.TransitionEvent) => {
@@ -206,22 +189,34 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                     display: 'flex',
                     width: `${slideCount * 100}%`,
                     height: '100%',
-                    transform: `translateX(calc(${basePercent}% + ${dragPx}px))`,
+                    transform: `translate3d(calc(${basePercent}% + ${dragPx}px), 0, 0)`,
                     transition: (dragging || !animate) ? 'none' : `transform ${duration}s ${EASE}`,
                     willChange: 'transform',
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden',
                 }}
             >
-                {slides.map((banner, idx) => (
+                {slides.map((banner, idx) => {
+                    // v12.92 — طبقة صورة خلفية ثابتة (paint-stable) خلف الـ<img>: عند قفزة
+                    // اللف (clone→real) قد تُفرَّغ صورة الـ<img> إطاراً واحداً فيظهر التدرّج
+                    // = وميض. وجود الصورة نفسها كـbackground يمنع أي وميض لأنها تبقى مرسومة.
+                    const bgImg = banner.kind === 'contest' ? banner.contest?.banner_image : banner.image_url;
+                    const gradient = banner.kind === 'contest'
+                        ? 'linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%)'
+                        : 'linear-gradient(135deg, #0f766e, #134e4a)';
+                    return (
                     <div
                         key={`${banner.id}-${idx}`}
                         onClick={() => handleBannerClick(banner)}
                         style={{
                             width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer',
-                            // Branded fallback so a broken/missing image never shows a black void
-                            // (purple for contests, teal for deal/store banners).
-                            background: banner.kind === 'contest'
-                                ? 'linear-gradient(135deg, #7c3aed 0%, #a21caf 55%, #db2777 100%)'
-                                : 'linear-gradient(135deg, #0f766e, #134e4a)',
+                            // Branded gradient fallback + the banner image itself as a stable
+                            // background layer (kills the wrap flicker).
+                            backgroundColor: banner.kind === 'contest' ? '#7c3aed' : '#0f766e',
+                            backgroundImage: bgImg ? `url("${bgImg}"), ${gradient}` : gradient,
+                            backgroundSize: 'cover, cover',
+                            backgroundPosition: 'center, center',
+                            backgroundRepeat: 'no-repeat, no-repeat',
                         }}
                     >
                         {banner.kind === 'contest' ? (
@@ -300,7 +295,8 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                             </>
                         )}
                     </div>
-                ))}
+                    );
+                })}
             </div>
 
             {count > 1 && (

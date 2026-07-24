@@ -2302,16 +2302,14 @@ const DealDetails: React.FC = () => {
                                 )}
                                 <p style={{ margin: '10px 0 0', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                     🔒 {isRTL
-                                        ? 'الدفع يتم على صفحة بوابة الدفع المرخصة الخاصة بالتاجر — تاكي لا تستلم أموالك ولا ترى بيانات بطاقتك.'
-                                        : 'Payment happens on the merchant’s licensed gateway page — TAKI never receives your money or sees your card details.'}
+                                        ? 'الدفع يتم على صفحة بوابة الدفع المرخصة الخاصة بالتاجر — تاكي لا تستلم أموالك.'
+                                        : 'Payment happens on the merchant’s licensed gateway page — TAKI never receives your money.'}
                                 </p>
                             </div>
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 16, border: '2px solid var(--gray-200)' }}>
-                                <span style={{ fontWeight: 800 }}>{payChoice === 'online' && payMode !== 'cod'
-                                    ? (isRTL ? 'الإجمالي — دفع إلكتروني آمن:' : 'Total — secure online payment:')
-                                    : (isRTL ? 'إجمالي الدفع عند الاستلام:' : 'Pay at Pickup Total:')}</span>
+                                <span style={{ fontWeight: 800 }}>{isRTL ? 'الإجمالي:' : 'Total:'}</span>
                                 <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>
                                     {bookingTotal} ر.س
                                     {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}

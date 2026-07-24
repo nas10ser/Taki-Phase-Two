@@ -100,8 +100,9 @@ const buildHtml = (d: InvoiceData): string => {
   .stamp .box { border-top: 1px solid #94a3b8; width: 45%; padding-top: 4px; text-align: center; }
   .note { margin-top: 10px; font-size: 12px; background: #f1f5f9; border-radius: 8px; padding: 8px 10px; }
   .foot { text-align: center; font-size: 10px; color: #94a3b8; margin-top: 16px; line-height: 1.6; }
-  .btns { text-align: center; margin: 16px 0; }
-  .btns button { font-size: 15px; font-weight: 800; padding: 12px 26px; border-radius: 12px; border: none; background: #10b981; color: #fff; cursor: pointer; }
+  .btns { text-align: center; margin: 16px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .btns button { font-size: 15px; font-weight: 800; padding: 12px 22px; border-radius: 12px; border: none; background: #10b981; color: #fff; cursor: pointer; }
+  .btns button.back { background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; }
   @media print { .btns { display: none; } body { padding: 0; } }
 </style>
 </head>
@@ -127,7 +128,10 @@ const buildHtml = (d: InvoiceData): string => {
     </div>
     <div class="foot">${L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}</div>
   </div>
-  <div class="btns"><button onclick="window.print()">${L('🖨 اطبع الآن', '🖨 Print now')}</button></div>
+  <div class="btns">
+    <button onclick="window.print()">${L('🖨 اطبع الآن', '🖨 Print now')}</button>
+    <button class="back" onclick="(function(){ try{ window.close(); }catch(e){} setTimeout(function(){ try{ history.back(); }catch(e2){} }, 60); })()">${L('← عودة للتطبيق', '← Back to app')}</button>
+  </div>
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 400); });</script>
 </body>
 </html>`;
