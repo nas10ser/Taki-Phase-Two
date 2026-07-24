@@ -22,6 +22,7 @@ import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
 import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import { storageService } from '../services/storageService';
+import NumericField from '../components/NumericField';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -1541,6 +1542,22 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
+        // v12.86 — حارس التكرار غير المقصود: عند «إضافة» عرض جديد (لا تعديل) إذا
+        // كان للمتجر عرض نشط بنفس الاسم نحذّر قبل إنشاء نسخة ثانية منفصلة. هذا
+        // هو السبب الجذري لظهور «قهوة اليوم» مرتين: التاجر ظنّ أنه يعدّل بينما
+        // كان يُنشئ من جديد. «إلغاء» يوجّهه لتعديل القائم من «عروضي».
+        if (!editingDealId) {
+            const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+            const myId = user?.id;
+            const dupe = deals.find(d => d.storeId === myId && d.status === 'active' && norm(d.itemName) === norm(itemName));
+            if (dupe) {
+                const proceed = await customConfirm(isRTL
+                    ? `⚠️ لديك عرض منشور بنفس الاسم «${itemName}».\n\nالمتابعة ستُنشئ عرضاً ثانياً منفصلاً (تكراراً). إن كنت تريد فقط تعديل عرضك الحالي — أو إضافة عروض الموسم إليه — فاضغط «إلغاء»، ثم افتحه من تبويب «عروضي 📦» واضغط «تعديل».\n\nهل تريد فعلاً إضافة عرض جديد منفصل بنفس الاسم؟`
+                    : `⚠️ You already have an active deal named "${itemName}".\n\nContinuing creates a SECOND separate deal (a duplicate). If you only want to edit your current deal — or add it to the season — tap Cancel, then open it from "My deals 📦" → Edit.\n\nAdd a new separate deal with the same name anyway?`);
+                if (!proceed) return;
+            }
+        }
+
         // v12.62 — نسخ المنتج: لكل نسخة سعر أصلي أعلى من سعرها بعد الخصم،
         // والكميات إما لكل النسخ (المجموع = الإجمالي تلقائياً) أو لا شيء.
         if (completeVariants.length) {
@@ -2448,20 +2465,18 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
                                         <div>
                                             <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'السعر الأصلي' : 'Original'}</div>
-                                            <input
-                                                type="number" min={0} step="any" inputMode="decimal"
-                                                value={v.originalPrice || ''}
-                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, originalPrice: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
+                                            <NumericField
+                                                value={v.originalPrice}
+                                                onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, originalPrice: n } : x))}
                                                 placeholder={isRTL ? 'مثال: 20' : 'e.g. 20'}
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) <= Number(v.price) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
                                         <div>
                                             <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'بعد الخصم' : 'Discounted'}</div>
-                                            <input
-                                                type="number" min={0} step="any" inputMode="decimal"
-                                                value={v.price || ''}
-                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
+                                            <NumericField
+                                                value={v.price || undefined}
+                                                onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: n ?? 0 } : x))}
                                                 placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
@@ -2471,10 +2486,10 @@ const SellerDashboard: React.FC = () => {
                                             <div style={{ fontSize: '0.64rem', fontWeight: 800, color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 3 }}>
                                                 {isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : `Qty${expiryType === 'stock' ? ' *' : ''}`}
                                             </div>
-                                            <input
-                                                type="number" min={0}
-                                                value={v.qty ?? ''}
-                                                onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : x))}
+                                            <NumericField
+                                                integer
+                                                value={v.qty}
+                                                onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: n } : x))}
                                                 placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
                                                 title={isRTL ? 'كمية هذا النوع — المجموع يصبح الكمية الإجمالية تلقائياً' : 'Qty of this variant — the sum becomes the deal total'}
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(v.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
@@ -2619,13 +2634,9 @@ const SellerDashboard: React.FC = () => {
                                                 placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
                                                 style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
                                             />
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                step="any"
-                                                inputMode="decimal"
-                                                value={c.price ?? ''}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) } : y) } : x))}
+                                            <NumericField
+                                                value={c.price}
+                                                onChange={n => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: n } : y) } : x))}
                                                 placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
                                                 title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
                                                 style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
@@ -3525,10 +3536,9 @@ const SellerDashboard: React.FC = () => {
                                     publishing surface. */}
                                 <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer
-                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                                        subdomains="abcd"
-                                        maxZoom={20}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+                                        maxZoom={19}
+                                        attribution='Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
                                     />
                                     <MapCenterUpdater center={mapPos} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />

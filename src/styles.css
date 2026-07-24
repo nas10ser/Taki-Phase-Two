@@ -2491,3 +2491,51 @@ html.theme-anim *::after {
   animation-duration: 0.45s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ============================================================
+   v12.86 — صفوف اختيار النوع/الحجم في صفحة العرض (DealDetails)
+   ------------------------------------------------------------
+   طلب ناصر: أكبر وأوضح — كانت «تذوب» في الخلفية بالوضع الداكن (صف
+   بلون --card-bg فوق حاوية --card-bg، والحد الفاصل خافت). نكبّرها،
+   ونرفع سطحها بطبقة بيضاء شفافة، ونقوّي الحد بلون شفاف — كلها مستقلة
+   عن درجة الثيم فتعمل مع كل الأوضاع الموسمية الداكنة أيضاً.
+   ============================================================ */
+.taki-variant-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  background: var(--card-bg);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.taki-variant-row.picked {
+  border-color: var(--primary);
+  background: var(--notif-unread-bg);
+  box-shadow: 0 4px 16px var(--primary-light);
+}
+/* الوضع الداكن (نظام أو تبديل يدوي أو أي موسم داكن): ارفع السطح غير
+   المختار وقوِّ حدّه حتى ينفصل بوضوح عن الخلفية. */
+@media (prefers-color-scheme: dark) {
+  html:not(.light-mode) .taki-variant-row:not(.picked) {
+    background: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)), var(--card-bg);
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+}
+html.dark-mode .taki-variant-row:not(.picked) {
+  background: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)), var(--card-bg);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+/* حماية: لو كان نظام الجهاز داكناً والتطبيق فاتحاً، أبقِ المظهر الفاتح. */
+html.light-mode .taki-variant-row:not(.picked) {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}

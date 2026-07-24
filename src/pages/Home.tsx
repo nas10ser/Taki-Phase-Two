@@ -15,6 +15,7 @@ import { UserProfile } from '../services/authService';
 import { useEffect, useCallback } from 'react';
 import BannerSlider from '../components/BannerSlider';
 import SeasonHero from '../components/SeasonHero';
+import { getSeasonById, campaignPublicLive } from '../data/seasons';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
 import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
 
@@ -174,6 +175,27 @@ const Home: React.FC = () => {
         });
         return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout).slice(0, 8);
     }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
+
+    // v12.86 (طلب ناصر) — شريط «عروض الموسم» على الرئيسية بنفس شكل «الأكثر
+    // تداولاً / أقوى الخصومات». يظهر فقط أثناء النافذة العامة للحملة النشطة،
+    // ويعرض العروض الموسومة بموسمها (deals.season_id) مرتّبة بالأقوى خصماً،
+    // ورأس الشريط يفتح صفحة الموسم الكاملة (/seasonal).
+    const seasonCampaign = platformSettings.seasonCampaign;
+    const seasonLive = campaignPublicLive(seasonCampaign);
+    const activeSeason = seasonCampaign ? getSeasonById(seasonCampaign.seasonId) : undefined;
+    const seasonDeals = useMemo(() => {
+        if (!seasonCampaign || !seasonLive) return [] as Deal[];
+        const base = deals.filter(d => d.seasonId === seasonCampaign.seasonId && d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
+        const list = useProximity ? base.slice() : applyLocationFilter(base);
+        list.sort((a, b) => {
+            if (useProximity) {
+                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
+                if (t !== 0) return t;
+            }
+            return b.discountPercentage - a.discountPercentage;
+        });
+        return list.slice(0, 12);
+    }, [deals, seasonCampaign?.seasonId, seasonLive, topLocation, useProximity, homeCity, blockedMerchants, nowTick]);
 
     // v11.20 — Coming Soon carousel. Same look as trending/discount, but
     // ONLY deals whose startsAt is in the future AND ≤7 days out — Nasser's
@@ -372,6 +394,33 @@ const Home: React.FC = () => {
 
 
             </div>
+
+            {/* v12.86 — شريط «عروض الموسم»: نفس نمط الأكثر تداولاً/أقوى الخصومات،
+                يتصدّر الأشرطة أثناء نافذة الحملة العامة فقط، ويحمل هوية الموسم
+                (إيموجي + اسم)، ورأسه يفتح صفحة الموسم الكاملة. */}
+            {seasonLive && activeSeason && seasonDeals.length > 0 && (
+                <div style={{ padding: '20px 0 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
+                        <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '1.25rem' }}>{activeSeason.emoji}</span>
+                            {isRTL ? `عروض ${activeSeason.ar}` : `${activeSeason.en} Deals`}
+                        </h2>
+                        <button
+                            onClick={() => history.push('/seasonal')}
+                            aria-label={isRTL ? 'عرض كل عروض الموسم' : 'View all seasonal deals'}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
+                        {seasonDeals.map(deal => (
+                            <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                                <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* v11.20 — Coming Soon carousel. Only renders when at least one
                 scheduled deal is inside its 7-day visibility window — empty

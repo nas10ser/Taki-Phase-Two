@@ -1380,6 +1380,9 @@ const DealDetails: React.FC = () => {
                         +/−، ولمس أي صف يجعل سعره وصورته هما المعروضين أعلاه. */}
                     {variants.length > 0 && (
                         <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                🧬 {isRTL ? 'اختر النوع أو الحجم' : 'Choose type or size'}
+                            </div>
                             {variants.map(v => {
                                 const q = varSel[v.id] || 0;
                                 const picked = q > 0;
@@ -1402,38 +1405,32 @@ const DealDetails: React.FC = () => {
                                         tabIndex={0}
                                         onClick={() => { setFocusVariantId(v.id); if (!picked) setQ(1); }}
                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFocusVariantId(v.id); if (!picked) setQ(1); } }}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                                            borderRadius: 14, marginBottom: 8, cursor: 'pointer',
-                                            border: picked ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
-                                            background: picked ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
-                                            transition: 'all 0.15s ease', WebkitTapHighlightColor: 'transparent',
-                                        }}>
+                                        className={`taki-variant-row${picked ? ' picked' : ''}`}>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <span style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{v.label}</span>
-                                            <span style={{ fontWeight: 800, fontSize: '0.76rem', color: picked ? 'var(--primary)' : 'var(--text-secondary)', marginInlineStart: 8 }}>{v.price} ر.س</span>
+                                            <span style={{ fontWeight: 900, fontSize: '1.02rem', color: 'var(--text-primary)' }}>{v.label}</span>
+                                            <span style={{ fontWeight: 900, fontSize: '0.92rem', color: picked ? 'var(--primary)' : 'var(--text-secondary)', marginInlineStart: 10 }}>{v.price} ر.س</span>
                                             {vOriginal > v.price && (
-                                                <span style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--gray-400)', textDecoration: 'line-through', marginInlineStart: 6 }}>{vOriginal} ر.س</span>
+                                                <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--gray-400)', textDecoration: 'line-through', marginInlineStart: 7 }}>{vOriginal} ر.س</span>
                                             )}
                                             {cap !== undefined && (
-                                                <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                                <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 4 }}>
                                                     {isRTL ? `المتاح: ${cap}` : `Available: ${cap}`}
                                                 </div>
                                             )}
                                         </div>
                                         {picked ? (
-                                            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 <button type="button" onClick={() => setQ(q - 1)}
                                                     aria-label={isRTL ? `تقليل ${v.label}` : `Decrease ${v.label}`}
-                                                    style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>−</button>
-                                                <span style={{ fontWeight: 900, minWidth: 18, textAlign: 'center', color: 'var(--text-primary)' }}>{q}</span>
+                                                    style={{ width: 38, height: 38, borderRadius: '50%', border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, fontSize: '1.15rem', lineHeight: 1, cursor: 'pointer' }}>−</button>
+                                                <span style={{ fontWeight: 900, fontSize: '1.05rem', minWidth: 24, textAlign: 'center', color: 'var(--text-primary)' }}>{q}</span>
                                                 <button type="button" onClick={() => setQ(q + 1)}
                                                     disabled={cap !== undefined && q >= cap}
                                                     aria-label={isRTL ? `زيادة ${v.label}` : `Increase ${v.label}`}
-                                                    style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer', opacity: cap !== undefined && q >= cap ? 0.4 : 1 }}>+</button>
+                                                    style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '1.15rem', lineHeight: 1, cursor: 'pointer', opacity: cap !== undefined && q >= cap ? 0.4 : 1 }}>+</button>
                                             </div>
                                         ) : (
-                                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary)', flexShrink: 0 }}>
+                                            <span style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--primary)', flexShrink: 0, padding: '6px 12px', borderRadius: 10, border: '1.5px solid var(--primary)', background: 'var(--notif-unread-bg)' }}>
                                                 {isRTL ? '+ أضف' : '+ Add'}
                                             </span>
                                         )}
