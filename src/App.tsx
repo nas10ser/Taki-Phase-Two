@@ -242,16 +242,31 @@ const jumpScroll = (y: number) => {
 // استعادة موضع محفوظ عند الرجوع/التقدّم. الصفحة الهدف (route كسول + بيانات غير
 // متزامنة) قد لا يكون ارتفاعها كافياً في أول إطار، فنعيد المحاولة بلطف بضعة أطر
 // حتى نصل الموضع أو ينتهي الحدّ (بلا وميض: نُصر على نفس القيمة فقط لا غير).
+let restoreToken = 0;
 const restoreScroll = (y: number) => {
+    const token = ++restoreToken;
     if (!(y > 0)) { jumpScroll(0); return; }
-    let attempts = 0;
+    const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    let userMoved = false;
+    const onUser = () => { userMoved = true; };
+    const opts: AddEventListenerOptions = { passive: true };
+    window.addEventListener('wheel', onUser, opts);
+    window.addEventListener('touchmove', onUser, opts);
+    window.addEventListener('keydown', onUser, opts);
+    const cleanup = () => {
+        window.removeEventListener('wheel', onUser, opts as any);
+        window.removeEventListener('touchmove', onUser, opts as any);
+        window.removeEventListener('keydown', onUser, opts as any);
+    };
+    // نُعيد تأكيد الموضع كل إطار حتى نبلغه فعلاً (الصفحة قد ترتفع تدريجياً بعد
+    // الرجوع)، ونتوقّف فور الوصول أو عند تمرير المستخدم يدوياً أو بعد سقف ~2ث.
     const step = () => {
+        if (token !== restoreToken || userMoved) { cleanup(); return; }
         jumpScroll(y);
-        attempts++;
-        const reached = Math.abs((window.scrollY || document.documentElement.scrollTop || 0) - y) <= 2;
-        if (reached || attempts >= 12) return;
-        if (attempts <= 4) requestAnimationFrame(step);
-        else setTimeout(step, 60);
+        const cur = window.scrollY || document.documentElement.scrollTop || 0;
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        if (Math.abs(cur - y) <= 2 || now - startedAt > 2000) { cleanup(); return; }
+        requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
 };
