@@ -263,12 +263,19 @@ const restoreScroll = (y: number) => {
     // نعتمد setTimeout لا requestAnimationFrame: الأخير يتجمّد كلياً عندما يكون
     // التبويب مخفياً (visibility hidden) فلا تُنفَّذ الاستعادة أبداً. الاستعادة قفزة
     // فورية لا رسم متحرّك، فـ setTimeout كافٍ وسلس (ويعمل ظاهراً ومخفياً).
+    //
+    // مهم: لا نتوقّف عند أول «وصول». الرئيسية تُعاد بناؤها والصور تُحمّل تدريجياً،
+    // و«scroll anchoring» في المتصفح يزيح التمرير كلما أُدرج محتوى فوق الموضع — فلو
+    // توقفنا مبكراً يتراكم الانزياح بعدنا (كان يعطي +161px ثابتة). لذا نُعيد تأكيد
+    // الموضع حتى يثبت فعلاً عدّة تكرارات متتالية (استقرار المحتوى)، أو ينتهي السقف.
+    let stable = 0;
     const attempt = () => {
         if (token !== restoreToken || userMoved) { cleanup(); return; }
         jumpScroll(y);
         const cur = window.scrollY || document.documentElement.scrollTop || 0;
         const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-        if (Math.abs(cur - y) <= 2 || now - startedAt > 2500) { cleanup(); return; }
+        stable = (Math.abs(cur - y) <= 2) ? stable + 1 : 0;
+        if (stable >= 6 || now - startedAt > 3000) { cleanup(); return; }
         setTimeout(attempt, 32);
     };
     attempt(); // محاولة أولى فورية (متزامنة داخل layout-effect)

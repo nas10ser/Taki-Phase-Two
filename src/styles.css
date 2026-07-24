@@ -229,6 +229,10 @@ html {
      انزلاق بطيء من الأسفل للأعلى (بلاغ ناصر). التمريرات المقصودة تمرّر
      behavior:'smooth' صراحةً فتبقى ناعمة. */
   height: -webkit-fill-available;
+  /* v13.01 — إيقاف «scroll anchoring»: كان المتصفح يزيح موضع التمرير كلما حُمّل
+     محتوى فوق الموضع أثناء إعادة بناء الرئيسية عند الرجوع، فيبتعد عن الموضع المستعاد
+     (فارق +161px ثابت). القوائم هنا تُلحق أسفل الصفحة لا أعلاها فالإيقاف آمن. */
+  overflow-anchor: none;
   /* Prevent layout shift when scrollbar appears on phones with mouse/trackpad */
   scrollbar-gutter: stable;
   /* Stop iOS rotation auto-zoom + Android text inflation */
