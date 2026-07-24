@@ -1975,6 +1975,62 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
                         
+                        {/* v12.90 — مرونة عالية (طلب ناصر): تعديل الكميات/الأنواع من داخل
+                            ورقة الحجز مباشرة — أضِف نوعاً أو احذفه أو غيّر عدده بلا رجوع.
+                            القطع والإجمالي والاختيارات تتحدّث فوراً. */}
+                        {variants.length > 0 ? (
+                            <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10 }}>
+                                    🧬 {isRTL ? 'عدّل أنواعك وكمياتها' : 'Adjust your variants'}
+                                </div>
+                                {variants.map(v => {
+                                    const q = varSel[v.id] || 0;
+                                    const cap = typeof v.qty === 'number' ? v.qty : undefined;
+                                    const setQ = (next: number) => {
+                                        const capped = cap !== undefined ? Math.min(next, cap) : next;
+                                        setFocusVariantId(v.id);
+                                        setVarSel(prev => { const cur = { ...prev }; if (capped <= 0) delete cur[v.id]; else cur[v.id] = capped; return cur; });
+                                    };
+                                    return (
+                                        <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: '1px dashed var(--border-color)' }}>
+                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                <span style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{v.label}</span>
+                                                <span style={{ fontWeight: 800, fontSize: '0.78rem', color: 'var(--primary)', marginInlineStart: 8 }}>{v.price} ر.س</span>
+                                                {cap !== undefined && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginInlineStart: 6 }}>({isRTL ? `المتاح ${cap}` : `${cap} left`})</span>}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                                <button type="button" onClick={() => setQ(q - 1)} disabled={q <= 0}
+                                                    aria-label={isRTL ? `تقليل ${v.label}` : `Decrease ${v.label}`}
+                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: q <= 0 ? 'default' : 'pointer', opacity: q <= 0 ? 0.4 : 1 }}>−</button>
+                                                <span style={{ fontWeight: 900, fontSize: '1rem', minWidth: 22, textAlign: 'center', color: 'var(--text-primary)' }}>{q}</span>
+                                                <button type="button" onClick={() => setQ(q + 1)} disabled={cap !== undefined && q >= cap}
+                                                    aria-label={isRTL ? `زيادة ${v.label}` : `Increase ${v.label}`}
+                                                    style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1, cursor: 'pointer', opacity: cap !== undefined && q >= cap ? 0.4 : 1 }}>+</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {variantPiecesTotal > 0 && (
+                                    <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary)', marginTop: 8 }}>
+                                        🧺 {variants.filter(v => (varSel[v.id] || 0) > 0).map(v => `${v.label} ×${varSel[v.id]}`).join(' + ')} = {variantMoneyTotal} {isRTL ? 'ر.س' : 'SAR'}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--text-primary)' }}>🔢 {isRTL ? 'الكمية' : 'Quantity'}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <button type="button" onClick={() => setSelectedQuantity(q => Math.max(1, q - 1))} disabled={selectedQuantity <= 1}
+                                        aria-label={isRTL ? 'تقليل' : 'Decrease'}
+                                        style={{ width: 36, height: 36, borderRadius: '50%', border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 900, fontSize: '1.15rem', lineHeight: 1, cursor: selectedQuantity <= 1 ? 'default' : 'pointer', opacity: selectedQuantity <= 1 ? 0.4 : 1 }}>−</button>
+                                    <span style={{ fontWeight: 900, fontSize: '1.1rem', minWidth: 26, textAlign: 'center', color: 'var(--text-primary)' }}>{selectedQuantity}</span>
+                                    <button type="button" onClick={() => setSelectedQuantity(q => q + 1)}
+                                        aria-label={isRTL ? 'زيادة' : 'Increase'}
+                                        style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '1.15rem', lineHeight: 1, cursor: 'pointer' }}>+</button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* v12.66 — «اختيارات لكل قطعة»: بطاقة لكل قطعة محجوزة
                             (برغر ١، برغر ٢، علم صغير…) داخلها أقسام التاجر —
                             radio للقسم الأحادي وcheckbox للمتعدد، فيختار المشتري

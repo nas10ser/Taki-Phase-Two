@@ -3585,9 +3585,10 @@ const SellerDashboard: React.FC = () => {
                                     publishing surface. */}
                                 <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer
-                                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
-                                        maxZoom={19}
-                                        attribution='Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
+                                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                                        subdomains="abcd"
+                                        maxZoom={20}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                                     />
                                     <MapCenterUpdater center={mapPos} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />

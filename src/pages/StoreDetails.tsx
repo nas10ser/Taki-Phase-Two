@@ -715,9 +715,12 @@ const StoreDetails: React.FC = () => {
                                         <div style={{ fontWeight: 800, fontSize: '0.9rem' }}>{r.userName}</div>
                                         <div style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</div>
                                     </div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 8 }}>
-                                        🏷️ {r.itemName}
-                                    </div>
+                                    {/* v12.90 — توضيح أنه اسم المنتج المُقيَّم لا اسم شخص (لبس ناصر) */}
+                                    {r.itemName && (
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 8 }}>
+                                            🏷️ {isRTL ? 'المنتج: ' : 'Product: '}<span style={{ color: 'var(--primary)', fontWeight: 800 }}>{r.itemName}</span>
+                                        </div>
+                                    )}
                                     <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', fontWeight: 500 }}>{r.comment}</p>
                                     <div style={{ marginTop: 8, fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700 }}>{r.date}</div>
 

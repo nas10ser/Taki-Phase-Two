@@ -58,14 +58,36 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
     // Reset when the banner set changes (e.g. admin toggles one).
     useEffect(() => { setPos(loop ? 1 : 0); setDragPx(0); /* eslint-disable-next-line */ }, [count]);
 
+    // v12.90 — إزالة الوميض عند وصول شريحة (بلاغ ناصر «القهوة تومض»): السبب أن
+    // الصورة تُفكّ شفرتها (decode) بشكل غير متزامن أثناء انزلاق الشريط، فتظهر
+    // الخلفية المتدرّجة جزءاً من الثانية قبل ظهور الصورة. الحل: نفكّ شفرة كل
+    // صور البانرات مسبقاً (وتُخزَّن مفكوكة في الكاش)، ولا نبدأ الدوران التلقائي
+    // إلا بعد جهوزيتها — فلا وميض على أي شريحة.
+    const [imgsReady, setImgsReady] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        const urls = banners
+            .map(b => (b.kind === 'contest' ? b.contest?.banner_image : b.image_url))
+            .filter((u): u is string => !!u);
+        if (urls.length === 0) { setImgsReady(true); return; }
+        Promise.all(urls.map(u => {
+            const img = new Image();
+            img.src = u;
+            return img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+        })).then(() => { if (alive) setImgsReady(true); });
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [banners]);
+
     // Autoplay — always "next", paused while dragging.
     useEffect(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
-        if (loop && !dragging) {
+        // v12.90 — لا نبدأ الدوران قبل جهوزية الصور (منع وميض أول لفة).
+        if (loop && !dragging && imgsReady) {
             timerRef.current = setTimeout(() => { setDuration(0.55); setAnimate(true); setPos(p => p + 1); }, intervalMs);
         }
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [pos, dragging, loop, intervalMs]);
+    }, [pos, dragging, loop, intervalMs, imgsReady]);
 
     // After easing INTO a clone, snap (no animation) to the identical real slide.
     const handleTransitionEnd = (e: React.TransitionEvent) => {
