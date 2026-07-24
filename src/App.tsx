@@ -259,6 +259,7 @@ const restoreScroll = (y: number) => {
 const ScrollManager: React.FC = () => {
     const location = useLocation();
     const history = useHistory();
+    const prevKeyRef = React.useRef<string>(location.key || 'root');
     const prevPathRef = React.useRef<string>(location.pathname);
 
     // مرة واحدة: أطفئ استعادة المتصفح الأصلية حتى لا تتضارب مع منطقنا.
@@ -266,28 +267,31 @@ const ScrollManager: React.FC = () => {
         try { if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'; } catch { /* ignore */ }
     }, []);
 
-    // سجّل موضع تمرير الصفحة الحالية باستمرار (مخنوق بـrAF) لمفتاحها، ليُستعاد لاحقاً.
+    // احفظ موضع تمرير الصفحة **المغادِرة** لحظة بدء الانتقال (history.listen يعمل
+    // متزامناً قبل أن يعيد React رسم الصفحة الجديدة وقبل أي تمرير برمجي منّا)، فلا
+    // يتلوّث الموضع المحفوظ بقفزة jumpScroll(0) كما كان يحدث مع مستمع scroll مستمر.
     useEffect(() => {
-        const key = location.key || 'root';
-        let ticking = false;
-        const record = () => { ticking = false; scrollPositions.set(key, window.scrollY || document.documentElement.scrollTop || 0); };
-        const onScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(record); } };
-        window.addEventListener('scroll', onScroll, { passive: true });
-        return () => window.removeEventListener('scroll', onScroll);
-    }, [location.key]);
+        const unlisten = history.listen(() => {
+            scrollPositions.set(prevKeyRef.current, window.scrollY || document.documentElement.scrollTop || 0);
+        });
+        return unlisten;
+    }, [history]);
 
     // قرار التمرير عند كل انتقال (قبل الرسم عبر layout-effect لتفادي أي وميض).
     React.useLayoutEffect(() => {
         const action = history.action; // 'PUSH' | 'POP' | 'REPLACE'
         const key = location.key || 'root';
         const samePath = prevPathRef.current === location.pathname;
-        prevPathRef.current = location.pathname;
         // عمق السجل داخل التطبيق (لأزرار «الرجوع الذكي») — يُحدَّث لكل انتقال حتى
         // تغيّر ?query (فهو إدخال سجل جديد أيضاً).
         bumpNavDepth(action);
-        if (samePath) return; // تغيّر query/hash فقط → الصفحة تدير تمريرها
-        if (action === 'POP') restoreScroll(scrollPositions.get(key) ?? 0);
-        else jumpScroll(0);   // PUSH/REPLACE لمسار جديد → ابدأ من الأعلى فوراً
+        if (!samePath) {
+            if (action === 'POP') restoreScroll(scrollPositions.get(key) ?? 0);
+            else jumpScroll(0);   // PUSH/REPLACE لمسار جديد → ابدأ من الأعلى فوراً
+        }
+        // (تغيّر ?query/#hash بنفس المسار → لا نلمس التمرير؛ الصفحة تديره)
+        prevKeyRef.current = key;
+        prevPathRef.current = location.pathname;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.key]);
 
