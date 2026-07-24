@@ -341,6 +341,15 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                                     🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
                                 </span>
                             )}
+                            {/* v12.91 — عرض متوفر في عدة مواقع */}
+                            {deal.locations && deal.locations.length > 1 && (
+                                <span style={{
+                                    fontSize: '0.62rem', fontWeight: 900, color: 'var(--secondary)',
+                                    background: 'var(--secondary-light)', borderRadius: 999, padding: '3px 8px',
+                                }}>
+                                    📍 {isRTL ? `${deal.locations.length} مواقع` : `${deal.locations.length} locations`}
+                                </span>
+                            )}
                         </div>
                     );
                 })()}

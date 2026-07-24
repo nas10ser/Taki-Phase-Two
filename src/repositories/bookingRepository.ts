@@ -34,6 +34,8 @@ export interface Booking {
     notes?: string;          // Buyer's note attached at booking time
     /** v12.53 — اختيارات المشتري المهيكلة [{g,c,qty}] — حارس المخزون يقرؤها */
     selectedOptions?: Array<{ g: string; c: string; qty?: number }>;
+    /** v12.91 — الفرع المختار (deal_locations.id) عند العرض متعدد المواقع */
+    locationId?: string | null;
     merchantNote?: string;   // Seller's note left when acknowledging the order
     /** v12.81 — الدفع المباشر لحساب التاجر: تُعبّأ من الـwebhook بعد تأكيد
      *  خادم→خادم لدى بوابة التاجر. paidAt = epoch ms. */
@@ -124,6 +126,8 @@ export const bookingRepository = {
                     paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
                     // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
                     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
+                    // v12.91 — الفرع المختار
+                    locationId: b.location_id || undefined,
                     expiryTime: b.expiry_time
                 } as Booking));
 
@@ -193,6 +197,7 @@ export const bookingRepository = {
                 // v12.53 — الاختيارات المهيكلة: يقرؤها tr_booking_options لخصم
                 // كميات الخيارات المسقوفة (النص القارئ للتاجر داخل notes أصلاً)
                 selected_options: (booking.selectedOptions && booking.selectedOptions.length) ? booking.selectedOptions : null,
+                location_id: booking.locationId || null,
                 status: booking.status,
                 booked_at: booking.bookedAt,
                 expiry_time: booking.expiryTime

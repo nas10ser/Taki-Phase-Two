@@ -35,21 +35,48 @@ export const resolveDealLocation = (deal: Deal): { regionId?: string; cityId?: s
 };
 
 /**
+ * v12.91 — كل المواقع المحلولة لعرضٍ (region/city/mall لكل موقع). عرض متعدد
+ * المواقع (deal.locations) يعيد كل فروعه؛ العرض العادي يعيد موقعه الأساسي فقط.
+ * تُستخدم لمطابقة الفلاتر (يطابق لو طابق أي فرع) وترتيب القرب (أقرب فرع).
+ */
+export const dealResolvedLocations = (
+    deal: Deal
+): Array<{ regionId?: string; cityId?: string; locationId?: string | null }> => {
+    if (deal.locations && deal.locations.length > 1) {
+        return deal.locations.map(l => {
+            if (l.region || l.city) return { regionId: l.region, cityId: l.city, locationId: l.locationId };
+            const loc = l.locationId ? LOCATIONS.find(x => x.id === l.locationId) : undefined;
+            if (loc) {
+                const city = CITIES.find(c => c.id === loc.cityId);
+                return { regionId: city?.regionId, cityId: loc.cityId, locationId: l.locationId };
+            }
+            if (l.lat != null && l.lng != null) {
+                const near = findNearestCity(l.lat, l.lng);
+                if (near) return { regionId: near.regionId, cityId: near.id, locationId: l.locationId };
+            }
+            return { locationId: l.locationId };
+        });
+    }
+    const primary = resolveDealLocation(deal);
+    return [{ regionId: primary.regionId, cityId: primary.cityId, locationId: deal.locationId }];
+};
+
+/**
  * True if `deal` matches the location filter (region/city/mall). Falsy
- * filter values mean "no constraint". Mall is checked against
- * deal.locationId directly since malls are concrete LOCATIONS entries.
+ * filter values mean "no constraint". A multi-location deal matches if ANY of
+ * its branches matches. Mall is checked against each location's locationId.
  */
 export const dealMatchesLocation = (
     deal: Deal,
     filter: { region?: string; city?: string; mall?: string }
 ): boolean => {
-    if (filter.mall && deal.locationId !== filter.mall) return false;
-    if (filter.city || filter.region) {
-        const { regionId, cityId } = resolveDealLocation(deal);
+    if (!filter.mall && !filter.city && !filter.region) return true;
+    return dealResolvedLocations(deal).some(({ regionId, cityId, locationId }) => {
+        if (filter.mall && locationId !== filter.mall) return false;
         if (filter.city && cityId !== filter.city) return false;
         if (filter.region && regionId !== filter.region) return false;
-    }
-    return true;
+        return true;
+    });
 };
 
 // =========================================================================
@@ -417,19 +444,22 @@ export const dealProximityTier = (
     home: { regionId?: string; cityId?: string } | null | undefined
 ): number => {
     if (!home || !home.cityId) return 0;
-    const { regionId, cityId } = resolveDealLocation(deal);
-    if (!cityId && !regionId) return 6;
-    if (cityId && cityId === home.cityId) return 0;
-    if (regionId && home.regionId && regionId === home.regionId) return 1;
     const hc = CITIES.find(c => c.id === home.cityId);
-    const dc = cityId ? CITIES.find(c => c.id === cityId) : undefined;
-    if (hc && dc) {
-        const km = getDistance(hc.lat, hc.lng, dc.lat, dc.lng);
-        if (km < 150) return 2;
-        if (km < 400) return 3;
-        return 4;
-    }
-    return 5;
+    // v12.91 — أقرب فرع يحسم الترتيب لعرض متعدد المواقع (أدنى tier).
+    const tierOf = ({ regionId, cityId }: { regionId?: string; cityId?: string }): number => {
+        if (!cityId && !regionId) return 6;
+        if (cityId && cityId === home.cityId) return 0;
+        if (regionId && home.regionId && regionId === home.regionId) return 1;
+        const dc = cityId ? CITIES.find(c => c.id === cityId) : undefined;
+        if (hc && dc) {
+            const km = getDistance(hc.lat, hc.lng, dc.lat, dc.lng);
+            if (km < 150) return 2;
+            if (km < 400) return 3;
+            return 4;
+        }
+        return 5;
+    };
+    return Math.min(...dealResolvedLocations(deal).map(tierOf));
 };
 
 /**

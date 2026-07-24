@@ -125,7 +125,10 @@ export const dealRepository = {
             // v12.61 — نسخ المنتج بأسعار مختلفة (تجريبي) — null = بلا نسخ
             variants: (deal.variants && deal.variants.length) ? deal.variants : null,
             // v12.88 — رمز الكاشير (SKU) للمنتج الأساسي (رموز الأنواع/الإضافات داخل JSONB)
-            pos_sku: (deal.posSku && deal.posSku.trim()) ? deal.posSku.trim() : null
+            pos_sku: (deal.posSku && deal.posSku.trim()) ? deal.posSku.trim() : null,
+            // v12.91 — العرض الواحد في عدة مواقع (null = موقع واحد كالمعتاد)
+            locations: (deal.locations && deal.locations.length > 1) ? deal.locations : null,
+            loc_qty_mode: (deal.locations && deal.locations.length > 1) ? (deal.locQtyMode || 'per_location') : null
         };
 
         // Internal 25s ceiling per attempt. The deal triggers
@@ -323,6 +326,9 @@ export const dealRepository = {
         if ('variants' in d) deal.variants = Array.isArray(d.variants) ? d.variants : undefined;
         // v12.88 — رمز الكاشير للمنتج الأساسي
         if ('pos_sku' in d) deal.posSku = d.pos_sku || undefined;
+        // v12.91 — مواقع العرض المتعددة
+        if ('locations' in d) deal.locations = Array.isArray(d.locations) ? d.locations : undefined;
+        if ('loc_qty_mode' in d) deal.locQtyMode = d.loc_qty_mode || undefined;
         // v11.20 — scheduled launch (Coming Soon). Stored as BIGINT epoch ms.
         if ('starts_at' in d && d.starts_at != null) {
             deal.startsAt = isNaN(Number(d.starts_at)) ? new Date(d.starts_at).getTime() : Number(d.starts_at);

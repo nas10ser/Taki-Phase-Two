@@ -468,6 +468,8 @@ const DealDetails: React.FC = () => {
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [currentImage, setCurrentImage] = useState(0);
     const [selectedQuantity, setSelectedQuantity] = useState(1);
+    // v12.91 — الفرع المختار للعرض متعدد المواقع (من رابط حولي ?loc= أو الأقرب).
+    const [selectedLocId, setSelectedLocId] = useState<string>(() => queryParams.get('loc') || '');
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
@@ -522,6 +524,19 @@ const DealDetails: React.FC = () => {
     const variantMoneyTotal = variants.length
         ? Math.round(variants.reduce((s, v) => s + (varSel[v.id] || 0) * v.price, 0) * 100) / 100
         : 0;
+
+    // v12.91 — مواقع العرض المتعددة: الفرع المختار يحدّد مخزونه (per_location)
+    // والاتجاهات، ويُمرَّر مع الحجز ليُخصم من مخزون ذلك الفرع.
+    const dealLocations = (deal?.locations && deal.locations.length > 1) ? deal.locations : null;
+    const perLocationQty = deal?.locQtyMode === 'per_location';
+    const activeLoc = dealLocations
+        ? (dealLocations.find(l => l.id === selectedLocId) || dealLocations[0])
+        : null;
+    React.useEffect(() => {
+        if (!deal?.locations || deal.locations.length <= 1) return;
+        if (!deal.locations.some(l => l.id === selectedLocId)) setSelectedLocId(deal.locations[0].id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deal?.id]);
 
     // v12.66 — قائمة «القطع» المحجوزة: قطعة لكل وحدة من كل نسخة مختارة
     // (علم كبير ١، علم كبير ٢، علم صغير ١…)، أو حسب الكمية للعروض بلا نسخ.
@@ -975,8 +990,16 @@ const DealDetails: React.FC = () => {
         }
 
 
+        // v12.91 — العرض متعدد المواقع: حارس مخزون الفرع المختار (per_location).
+        if (perLocationQty && activeLoc && typeof activeLoc.quantity === 'number' && selectedQuantity > activeLoc.quantity) {
+            customAlert(isRTL
+                ? `⛔ المتاح في «${activeLoc.name || 'هذا الفرع'}» ${activeLoc.quantity} فقط — قلّل الكمية أو اختر فرعاً آخر.`
+                : `⛔ Only ${activeLoc.quantity} available at "${activeLoc.name || 'this branch'}".`);
+            return;
+        }
+
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
-        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions);
+        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null);
 
         // Reserve quantity only when the seller set a real stock cap.
         // Time-based offers stay infinitely bookable until the timer ends.
@@ -1482,6 +1505,12 @@ const DealDetails: React.FC = () => {
                         })()}
                         <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                             📦 {(() => {
+                                // v12.91 — كمية الفرع المختار عند «كمية لكل موقع»
+                                if (perLocationQty && activeLoc && typeof activeLoc.quantity === 'number') {
+                                    return activeLoc.quantity > 0
+                                        ? (isRTL ? `${activeLoc.quantity} متبقي في ${activeLoc.name || 'الفرع'}` : `${activeLoc.quantity} left at ${activeLoc.name || 'branch'}`)
+                                        : (isRTL ? 'نفذت في هذا الفرع' : 'Sold out here');
+                                }
                                 if (deal.quantity === 'unlimited') return isRTL ? 'كمية لا محدودة' : 'Unlimited quantity';
                                 if (typeof deal.quantity === 'number' && deal.quantity > 0) return isRTL ? `${deal.quantity} متبقي` : `${deal.quantity} left`;
                                 if (!hasStockCap) return isRTL ? '⏱ عرض زمني' : '⏱ Time-limited';
@@ -1490,6 +1519,49 @@ const DealDetails: React.FC = () => {
                         </span>
                         {deal.size && <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>👕 {deal.size}</span>}
                     </div>
+
+                    {/* v12.91 — منتقي الفرع: العرض متوفر في عدة مواقع، يختار المشتري
+                        الأقرب/المناسب له فيتحدّث المخزون والاتجاهات والحجز على أساسه. */}
+                    {dealLocations && (
+                        <div style={{ marginTop: 16 }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {dealLocations.map(l => {
+                                    const picked = (activeLoc?.id === l.id);
+                                    const out = perLocationQty && typeof l.quantity === 'number' && l.quantity <= 0;
+                                    return (
+                                        <div key={l.id}
+                                            role="radio"
+                                            aria-checked={picked}
+                                            tabIndex={0}
+                                            onClick={() => { if (!out) setSelectedLocId(l.id); }}
+                                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !out) { e.preventDefault(); setSelectedLocId(l.id); } }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14,
+                                                cursor: out ? 'not-allowed' : 'pointer', opacity: out ? 0.5 : 1,
+                                                border: picked ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                background: picked ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
+                                                WebkitTapHighlightColor: 'transparent',
+                                            }}>
+                                            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${picked ? 'var(--primary)' : 'var(--border-color)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                {picked && <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{l.name || (isRTL ? 'فرع' : 'Branch')}</div>
+                                                {perLocationQty && typeof l.quantity === 'number' && (
+                                                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: out ? 'var(--danger)' : 'var(--text-secondary)', marginTop: 2 }}>
+                                                        {out ? (isRTL ? 'نفذت الكمية' : 'Sold out') : (isRTL ? `المتاح: ${l.quantity}` : `Available: ${l.quantity}`)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Merchant Contact Section */}
@@ -1542,22 +1614,26 @@ const DealDetails: React.FC = () => {
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.8, fontWeight: 600 }}>{deal.description}</p>
                 </div>
 
-                {/* Location */}
-                {(loc || deal.mapLocation) && (() => {
-                    // Resolve the deal's region + city via the shared helper so
-                    // custom-pin deals (no LOCATIONS entry) still show the
-                    // correct Saudi region/city via map-coord fallback.
-                    const resolved = resolveDealLocation(deal);
+                {/* Location — v12.91: عند تعدد المواقع تعرض الفرع المختار من المنتقي أعلاه. */}
+                {(loc || deal.mapLocation || dealLocations) && (() => {
+                    // v12.91 — الفرع المختار يحكم الاسم والاتجاهات لو العرض متعدد المواقع.
+                    const branch = dealLocations && activeLoc ? activeLoc : null;
+                    const branchKnown = branch?.locationId ? getLocation(branch.locationId) : null;
+                    const dispName = branch ? (branch.name || branchKnown?.name || (isRTL ? 'فرع' : 'Branch')) : (loc?.name || (isRTL ? 'موقع مخصص للتاجر' : 'Seller Custom Location'));
+                    const dispType = branch ? branchKnown : loc;
+                    const resolved = branch
+                        ? (branch.region || branch.city ? { regionId: branch.region, cityId: branch.city } : (branchKnown ? { regionId: CITIES.find(c => c.id === branchKnown.cityId)?.regionId, cityId: branchKnown.cityId } : {}))
+                        : resolveDealLocation(deal);
                     const regionName = resolved.regionId ? REGIONS.find(r => r.id === resolved.regionId)?.name : null;
                     const cityName = resolved.cityId ? CITIES.find(c => c.id === resolved.cityId)?.name : null;
                     return (
                     <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                        <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>{isRTL ? 'الموقع' : 'Location'}</h3>
+                        <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>{isRTL ? (branch ? 'موقع الفرع المختار' : 'الموقع') : (branch ? 'Selected branch' : 'Location')}</h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--body-bg)', padding: '12px 16px', borderRadius: 14, marginBottom: 12 }}>
                             <span style={{ fontSize: '1.5rem' }}>📍</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{loc?.name || (isRTL ? 'موقع مخصص للتاجر' : 'Seller Custom Location')}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600, marginTop: 2 }}>{loc?.type === 'mall' ? '🛍️' : '🏛️'} {loc?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
+                                <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{dispName}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600, marginTop: 2 }}>{dispType?.type === 'mall' ? '🛍️' : '🏛️'} {dispType?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
                                 {(regionName || cityName) && (
                                     <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 800, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                         <span>🗺️</span>
@@ -1567,11 +1643,11 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
                         <button type="button" onClick={() => {
-                            // Prefer the precise name-search link (malls resolve to the REAL
-                            // place on Google) over approximate stored coordinates. v12.04
-                            if (deal.googleMapsLink) { openExternalUrl(deal.googleMapsLink); return; }
-                            const lat = deal.mapLocation?.lat || loc?.lat || 0;
-                            const lng = deal.mapLocation?.lng || loc?.lng || 0;
+                            // Prefer the precise name-search link over approximate coordinates. v12.04
+                            const link = branch ? (branch.googleMapsLink || null) : deal.googleMapsLink;
+                            if (link) { openExternalUrl(link); return; }
+                            const lat = branch ? (branchKnown?.lat || branch.lat || 0) : (deal.mapLocation?.lat || loc?.lat || 0);
+                            const lng = branch ? (branchKnown?.lng || branch.lng || 0) : (deal.mapLocation?.lng || loc?.lng || 0);
                             if(lat && lng) {
                                 openExternalUrl(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
                             }

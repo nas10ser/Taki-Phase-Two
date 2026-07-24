@@ -12,7 +12,7 @@ import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import GatewayCard from '../components/seller/GatewayCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
@@ -452,6 +452,11 @@ const SellerDashboard: React.FC = () => {
     const [variants, setVariants] = useState<DealVariant[]>([]);
     // v12.88 — رمز الكاشير (SKU) للمنتج الأساسي (لمطابقة الباركود مع نظام الكاشير)
     const [posSku, setPosSku] = useState('');
+    // v12.91 — العرض الواحد في عدة مواقع: مفاتيح الفروع الإضافية المختارة (بجانب
+    // الموقع الأساسي) + وضع الكمية + كمية كل فرع (per_location).
+    const [extraLocKeys, setExtraLocKeys] = useState<string[]>([]);
+    const [locQtyMode, setLocQtyMode] = useState<'shared' | 'per_location'>('per_location');
+    const [locQtys, setLocQtys] = useState<Record<string, number | undefined>>({});
     // v12.62 (طلب ناصر) — النسخ تقود التسعير والكمية العامة حتى لا يلتبس التاجر:
     // لكل نسخة سعرها الأصلي وبعد الخصم، وأرخص نسخة تضبط السعرين العامين
     // تلقائياً (البطاقة تعرض «يبدأ من»)، ومجموع كميات النسخ = الكمية الإجمالية.
@@ -1355,6 +1360,9 @@ const SellerDashboard: React.FC = () => {
         setOptionGroups([]);
         setVariants([]);
         setPosSku('');
+        setExtraLocKeys([]);
+        setLocQtyMode('per_location');
+        setLocQtys({});
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1399,6 +1407,16 @@ const SellerDashboard: React.FC = () => {
         setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
         setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)) : []); // v12.61 — نسخ المنتج
         setPosSku(deal.posSku || ''); // v12.88 — رمز الكاشير للمنتج الأساسي
+        // v12.91 — استعادة مواقع العرض المتعددة (المفاتيح = معرّفات المواقع نفسها)
+        if (deal.locations && deal.locations.length > 1) {
+            setLocQtyMode(deal.locQtyMode === 'shared' ? 'shared' : 'per_location');
+            setExtraLocKeys(deal.locations.filter(l => l.id !== 'primary').map(l => l.id));
+            const q: Record<string, number | undefined> = {};
+            for (const l of deal.locations) q[l.id] = l.quantity;
+            setLocQtys(q);
+        } else {
+            setExtraLocKeys([]); setLocQtyMode('per_location'); setLocQtys({});
+        }
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1542,6 +1560,15 @@ const SellerDashboard: React.FC = () => {
         const hasDuration = expiryType === 'duration' && finalDays > 0;
         const hasStock = expiryType === 'stock' && !isUnlimited && Number(finalQuantity) > 0;
 
+        // v12.91 — عرض متعدد المواقع بكمية لكل فرع: مجموع كميات الفروع هو مخزون
+        // العرض (إشارة انتهاء صالحة)، فلا تُطبَّق شروط «حدد الكمية/حدد الانتهاء».
+        const _multiOthersEarly = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+        const _multiPerLocEarly = _multiOthersEarly.length > 0 && locQtyMode === 'per_location';
+        const _multiSumEarly = _multiPerLocEarly
+            ? ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)].reduce((s, k) => s + (Number(locQtys[k]) || 0), 0)
+            : 0;
+        const _hasMultiStock = _multiPerLocEarly && _multiSumEarly > 0;
+
         if (!itemName || !shopName || !originalPrice || !discountedPrice || !category) {
             await customAlert(isRTL ? 'يرجى ملء جميع الحقول الإجبارية (المعلمة بـ *)' : 'Please fill all required fields');
             return;
@@ -1590,7 +1617,7 @@ const SellerDashboard: React.FC = () => {
         // Logic enforcement:
         // 1. If Unlimited -> needs SOME end signal (hours / days / date).
         //    'stock' is incompatible with unlimited. The seller picks which.
-        if (isUnlimited && !hasHours && !hasDuration && !hasDate) {
+        if (isUnlimited && !hasHours && !hasDuration && !hasDate && !_hasMultiStock) {
             await customAlert(isRTL
                 ? '⚠️ عند اختيار "لا محدود" حدّد متى ينتهي العرض: بالساعات أو الأيام أو بتاريخ.'
                 : '⚠️ Unlimited deals still need an end: hours, days, or a date.');
@@ -1598,7 +1625,7 @@ const SellerDashboard: React.FC = () => {
         }
 
         // 2. If Stock-based -> MUST have quantity
-        if (expiryType === 'stock' && !isUnlimited && !finalQuantity) {
+        if (expiryType === 'stock' && !isUnlimited && !finalQuantity && !_hasMultiStock) {
             await customAlert(isRTL ? '⚠️ يرجى تحديد الكمية المتوفرة' : '⚠️ Please specify available quantity');
             return;
         }
@@ -1831,6 +1858,51 @@ const SellerDashboard: React.FC = () => {
         const normDisc = Number(normalizeArabicNumerals(discountedPrice.toString())) || 0;
         const discountPerc = normOrig > 0 ? Math.round((1 - normDisc / normOrig) * 100) : 0;
 
+        // v12.26 — المنطقة/المدينة تتبع أقوى إشارة موقع (مول → دبوس → قائمة).
+        const derivedGeo: { region?: string; city?: string } = (() => {
+            const chosenLoc = LOCATIONS.find(l => l.id === locationId);
+            if (chosenLoc) { const c = CITIES.find(c2 => c2.id === chosenLoc.cityId); return { region: c?.regionId, city: chosenLoc.cityId }; }
+            const pinMoved = Math.abs(finalLat - 24.7136) > 1e-6 || Math.abs(finalLng - 46.6753) > 1e-6;
+            if (pinMoved) { const nearest = findNearestCity(finalLat, finalLng); if (nearest) return { region: nearest.regionId, city: nearest.id }; }
+            return { region: selectedRegion || undefined, city: selectedCity || undefined };
+        })();
+
+        // v12.91 — العرض الواحد في عدة مواقع: نبني قائمة المواقع (الأساسي + الفروع
+        // المختارة). في وضع «كمية لكل موقع» الكمية الإجمالية = مجموع كميات الفروع.
+        const multiOthers = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+        const isMultiLoc = multiOthers.length > 0;
+        const multiPerLoc = isMultiLoc && locQtyMode === 'per_location';
+        let dealLocations: DealLocation[] | undefined;
+        let multiSumQty: number | undefined;
+        if (isMultiLoc) {
+            const primaryName = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
+                || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
+                || (isRTL ? 'الموقع الأساسي' : 'Primary');
+            const primaryLoc: DealLocation = {
+                id: 'primary',
+                locationId: (locationId && locationId !== 'other') ? locationId : null,
+                name: primaryName,
+                lat: finalLat, lng: finalLng,
+                region: derivedGeo.region, city: derivedGeo.city,
+                googleMapsLink: googleMapsLink || null,
+                ...(multiPerLoc ? { quantity: Number(locQtys['primary']) || 0, initialQuantity: Number(locQtys['primary']) || 0 } : {}),
+            };
+            const rest: DealLocation[] = multiOthers.map(c => {
+                const cid = c.branchId || c.key;
+                return {
+                    id: cid,
+                    locationId: c.locationId || null,
+                    name: c.label,
+                    lat: c.lat, lng: c.lng,
+                    region: c.regionId || undefined, city: c.cityId || undefined,
+                    ...(multiPerLoc ? { quantity: Number(locQtys[cid]) || 0, initialQuantity: Number(locQtys[cid]) || 0 } : {}),
+                };
+            });
+            dealLocations = [primaryLoc, ...rest];
+            if (multiPerLoc) multiSumQty = dealLocations.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+        }
+        const effQuantity: number | 'unlimited' = (typeof multiSumQty === 'number') ? multiSumQty : finalQuantity;
+
         const newDeal: Deal = {
             id: editingDealId || Date.now().toString(),
             storeId: user?.id || (existingDeal ? existingDeal.storeId : 'manual'),
@@ -1854,27 +1926,18 @@ const SellerDashboard: React.FC = () => {
             // Was: dropdowns first — selectedCity defaults to riyadh_city, so a
             // deal pinned in Dammam saved as «الرياض» and surfaced under the
             // wrong region in every filter (web + bots read these columns).
-            ...(() => {
-                const chosenLoc = LOCATIONS.find(l => l.id === locationId);
-                if (chosenLoc) {
-                    const c = CITIES.find(c2 => c2.id === chosenLoc.cityId);
-                    return { region: c?.regionId, city: chosenLoc.cityId };
-                }
-                const pinMoved = Math.abs(finalLat - 24.7136) > 1e-6 || Math.abs(finalLng - 46.6753) > 1e-6;
-                if (pinMoved) {
-                    const nearest = findNearestCity(finalLat, finalLng);
-                    if (nearest) return { region: nearest.regionId, city: nearest.id };
-                }
-                return { region: selectedRegion || undefined, city: selectedCity || undefined };
-            })(),
+            ...derivedGeo,
             googleMapsLink,
             mapLocation: { lat: finalLat, lng: finalLng },
+            // v12.91 — مواقع العرض المتعددة (undefined = موقع واحد كالمعتاد)
+            locations: dealLocations,
+            locQtyMode: isMultiLoc ? locQtyMode : undefined,
             reliabilityScore: existingDeal ? existingDeal.reliabilityScore : 100,
             expiresInMinutes: calcExpiryMinutes(),
             expiryType,
             expiryDate: expiryType === 'date' ? (expiryGregorian || undefined) : undefined,
-            quantity: finalQuantity,
-            initialQuantity: finalQuantity,
+            quantity: effQuantity,
+            initialQuantity: effQuantity,
             ratings: existingDeal ? existingDeal.ratings : [],
             createdAt: Date.now(), // Always refresh timestamp on publish/save to ensure fresh countdown
             status: forcePublish ? 'active' : (existingDeal?.status || 'active') as any,
@@ -3650,6 +3713,72 @@ const SellerDashboard: React.FC = () => {
                                 {isRTL ? 'سيتم تحديث المنطقة والمدينة ونوع الموقع تلقائياً' : 'Region, City, and Venue Type will update automatically'}
                             </div>
                         </div>
+
+                        {/* v12.91 — العرض الواحد في عدة مواقع (طلب ناصر): يختار التاجر
+                            فروعه الإضافية من مواقعه المحفوظة (بحدود باقته)، ويحدد إن
+                            كانت الكمية مشتركة أم لكل فرع. */}
+                        {(() => {
+                            const others = mergedLocationChips.filter(c => c.key !== currentCandidateKey);
+                            if (others.length === 0) return null;
+                            const cid = (c: typeof others[number]) => c.branchId || c.key;
+                            const selected = others.filter(c => extraLocKeys.includes(cid(c)));
+                            const isMulti = selected.length > 0;
+                            const perLoc = locQtyMode === 'per_location';
+                            const primaryLabel = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
+                                || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
+                                || (isRTL ? 'الموقع الأساسي' : 'Primary location');
+                            const rows = isMulti ? [{ id: 'primary', label: primaryLabel }, ...selected.map(c => ({ id: cid(c), label: c.label }))] : [];
+                            const sum = rows.reduce((s, r) => s + (Number(locQtys[r.id]) || 0), 0);
+                            return (
+                                <div style={{ marginTop: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
+                                    <label style={labelStyle}>{isRTL ? '📍 انشر نفس العرض في عدة مواقع (اختياري)' : '📍 Publish this deal at multiple locations (optional)'}</label>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
+                                        {isRTL
+                                            ? 'اختر فروعك الإضافية من مواقعك المحفوظة (بحدود باقتك). يظهر العرض مرة واحدة في الرئيسية، وفي «حولي» يظهر عند كل فرع اخترته.'
+                                            : 'Pick extra branches from your saved locations (within your plan). One card on Home; on Nearby it shows at each branch you picked.'}
+                                    </div>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 10 }}>
+                                        ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.68rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {others.map(c => {
+                                            const on = extraLocKeys.includes(cid(c));
+                                            return (
+                                                <button key={c.key} type="button"
+                                                    onClick={() => setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)])}
+                                                    style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                                                    {on ? '✅' : '➕'} {c.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {isMulti && (
+                                        <div style={{ marginTop: 14 }}>
+                                            <div style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8 }}>{isRTL ? '📦 توزيع الكمية' : '📦 Quantity'}</div>
+                                            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                                                <button type="button" onClick={() => setLocQtyMode('per_location')} style={{ flex: 1, padding: '10px', borderRadius: 12, fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', border: perLoc ? '2px solid var(--primary)' : '1.5px solid var(--gray-200)', background: perLoc ? 'var(--notif-unread-bg)' : 'var(--body-bg)', color: 'var(--text-primary)' }}>{isRTL ? '🎯 كمية لكل موقع' : 'Per location'}</button>
+                                                <button type="button" onClick={() => setLocQtyMode('shared')} style={{ flex: 1, padding: '10px', borderRadius: 12, fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', border: !perLoc ? '2px solid var(--primary)' : '1.5px solid var(--gray-200)', background: !perLoc ? 'var(--notif-unread-bg)' : 'var(--body-bg)', color: 'var(--text-primary)' }}>{isRTL ? '🤝 كمية مشتركة' : 'Shared'}</button>
+                                            </div>
+                                            {perLoc ? (
+                                                <div>
+                                                    {rows.map(r => (
+                                                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                                            <span style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {r.label}</span>
+                                                            <NumericField integer value={locQtys[r.id]} onChange={n => setLocQtys(p => ({ ...p, [r.id]: n }))} placeholder={isRTL ? 'مثال: 10' : 'e.g. 10'} style={{ width: 110, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }} />
+                                                        </div>
+                                                    ))}
+                                                    <div style={{ fontSize: '0.74rem', fontWeight: 900, color: 'var(--primary)', marginTop: 6 }}>🧮 {isRTL ? `المجموع الإجمالي = ${sum}` : `Total = ${sum}`}</div>
+                                                </div>
+                                            ) : (
+                                                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
+                                                    {isRTL ? 'المخزون واحد مشترك بين كل المواقع = «الكمية» التي حددتها أعلى النموذج، وأي حجز من أي فرع يخصم من المخزون نفسه.' : 'One shared stock (the Quantity field above) shared across all locations.'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>

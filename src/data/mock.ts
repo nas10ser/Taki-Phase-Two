@@ -139,6 +139,24 @@ export interface DealVariant {
     posSku?: string;
 }
 
+// v12.91 — «العرض الواحد في عدة مواقع» (طلب ناصر): التاجر المشترك بباقة عدة
+// مواقع ينشر نفس العرض في عدة فروع بحدود اشتراكه. الفرع الأول = الموقع الأساسي
+// (يظهر في الرئيسية مرة واحدة)، والقائمة كاملة تُوسَّع في «حولي» فرعاً فرعاً.
+export interface DealLocation {
+    /** معرّف الفرع (store_branches.id) أو 'primary' لموقع العرض الأساسي */
+    id: string;
+    locationId?: string | null;   // مول/سوق معروف من LOCATIONS إن وُجد
+    name?: string;                // اسم الفرع للعرض
+    lat?: number;
+    lng?: number;
+    region?: string;
+    city?: string;
+    /** كمية هذا الفرع — تُستخدم فقط في وضع «كمية لكل موقع» */
+    quantity?: number;
+    initialQuantity?: number;
+    googleMapsLink?: string | null;
+}
+
 export interface Deal {
     id: string;
     storeId: string;
@@ -187,6 +205,13 @@ export interface Deal {
     /** v12.88 — رمز الكاشير (SKU) للمنتج الأساسي: يُطبع باركوداً في فاتورة الطلب
      *  ليمسحه الكاشير فيُضاف المنتج تلقائياً لسلّة نظام الكاشير (مطابقة SKU). */
     posSku?: string;
+    /** v12.91 — مواقع العرض المتعددة (فارغ/غير محدد = موقع واحد كالمعتاد).
+     *  العنصر الأول = الموقع الأساسي (نفس region/city/locationId أدناه). */
+    locations?: DealLocation[];
+    /** v12.91 — وضع الكمية عند تعدد المواقع: 'shared' مخزون واحد مشترك بين كل
+     *  المواقع (= deals.quantity)، 'per_location' لكل فرع كميته (المجموع = الكمية
+     *  الإجمالية، ويُخصم من الفرع المختار عند الحجز). */
+    locQtyMode?: 'shared' | 'per_location';
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { LOCATIONS, getLocation, USER_LOCATION , geoName } from '../data/mock';
+import { LOCATIONS, getLocation, USER_LOCATION , geoName, findNearestCity } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 'react-leaflet';
 import { REGIONS, CITIES } from '../data/mock';
@@ -174,45 +174,49 @@ const Nearby: React.FC = () => {
     }, [liveLocation, followMode]);
 
     const nearbyDeals = useMemo(() => {
-        return deals.map(deal => {
-            // v12.65 (بلاغ ناصر: «الباحة مول يظهر بجانبي بأمتار») — إذا اختار
-            // التاجر مولاً/سوقاً معروفاً فإحداثيات المول هي نقطة الاستلام
-            // الحقيقية؛ mapLocation قد يكون GPS جهاز التاجر لحظة الإنشاء
-            // (بيته!) فتطلع المسافات كلها غلط. المواقع المخصصة تبقى على
-            // mapLocation كما هي.
-            const loc = getLocation(deal.locationId);
-            const lat = loc?.lat || deal.mapLocation?.lat || 0;
-            const lng = loc?.lng || deal.mapLocation?.lng || 0;
-            const distance = getDistance(userLat, userLng, lat, lng);
-            return { ...deal, distance, lat, lng };
-        }).filter(d => {
-            const lName = getLocation(d.locationId)?.name || '';
-            const textToSearch = `${d.itemName} ${d.shopName} ${lName} ${d.category} ${d.description || ''}`;
+        // v12.91 — العرض متعدد المواقع يُوسَّع فرعاً فرعاً: كل فرع دبوس مستقل
+        // بمسافته وكميته (per_location = كمية الفرع). العرض العادي يبقى كما هو.
+        const expanded = deals.flatMap(deal => {
+            const branches = (deal.locations && deal.locations.length > 1) ? deal.locations : [null as any];
+            return branches.map(l => {
+                let lat: number, lng: number, bLocId: string | null | undefined, bName: string;
+                let bRegion: string | undefined, bCity: string | undefined, bId: string | undefined;
+                let perQty: number | undefined;
+                if (l) {
+                    const known = l.locationId ? getLocation(l.locationId) : undefined;
+                    lat = known?.lat ?? l.lat ?? 0;
+                    lng = known?.lng ?? l.lng ?? 0;
+                    bLocId = l.locationId; bName = l.name || known?.name || ''; bId = l.id;
+                    perQty = deal.locQtyMode === 'per_location' ? l.quantity : undefined;
+                    if (l.region || l.city) { bRegion = l.region; bCity = l.city; }
+                    else if (known) { const c = CITIES.find(x => x.id === known.cityId); bRegion = c?.regionId; bCity = known.cityId; }
+                    else if (l.lat != null && l.lng != null) { const n = findNearestCity(l.lat, l.lng); bRegion = n?.regionId; bCity = n?.id; }
+                } else {
+                    // v12.65 — إحداثيات المول المعروف هي نقطة الاستلام الحقيقية.
+                    const known = getLocation(deal.locationId);
+                    lat = known?.lat ?? deal.mapLocation?.lat ?? 0;
+                    lng = known?.lng ?? deal.mapLocation?.lng ?? 0;
+                    bLocId = deal.locationId; bName = known?.name || '';
+                    const rr = resolveDealLocation(deal); bRegion = rr.regionId; bCity = rr.cityId;
+                }
+                const distance = getDistance(userLat, userLng, lat, lng);
+                const base = (perQty !== undefined) ? { ...deal, quantity: perQty } : deal;
+                return { ...base, distance, lat, lng, _key: `${deal.id}__${bId || 'p'}`, _bLocId: bLocId, _bName: bName, _bRegion: bRegion, _bCity: bCity, _bId: bId };
+            });
+        });
+        return expanded.filter(d => {
+            const textToSearch = `${d.itemName} ${d.shopName} ${d._bName} ${d.category} ${d.description || ''}`;
             const matchesSearch = dealService.advancedSearchMatch(searchQuery, textToSearch);
             const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory || (d.category as string) === 'all';
-            
-            // Proximity is the main filter, but we also respect strict selections if they exist.
-            // resolveDealLocation handles both the (loc → city) chain and the
-            // denormalized region/city + map-coord fallback in one call.
-            const { regionId: dRegion, cityId: dCity } = resolveDealLocation(d);
-            const matchesRegion = !selectedRegion || (dRegion === selectedRegion);
-            const matchesCity = !selectedCity || (dCity === selectedCity);
-            const matchesLocation = !selectedLocationId || (d.locationId === selectedLocationId);
-            // v12.71 — فلتر «نوع المكان» (مول/سوق/محل) صار يفلتر العروض فعلاً:
-            // كان يضيّق قائمة «اختر المكان» فقط بلا أي أثر على النتائج.
-            const matchesLocType = !locationType || getLocation(d.locationId)?.type === locationType;
-            
-            // Time-based offers (no stock cap) stay visible until the timer
-            // expires, even when quantity reads 0. Only true sold-out deals
-            // — those the seller capped — are hidden here.
+            const matchesRegion = !selectedRegion || (d._bRegion === selectedRegion);
+            const matchesCity = !selectedCity || (d._bCity === selectedCity);
+            const matchesLocation = !selectedLocationId || (d._bLocId === selectedLocationId);
+            const matchesLocType = !locationType || (d._bLocId ? getLocation(d._bLocId)?.type === locationType : false);
             const hasCap = typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
             const hasStock = d.quantity === 'unlimited'
                 || (typeof d.quantity === 'number' && d.quantity > 0)
                 || !hasCap;
             const matchesRadius = radius === 0 || d.distance <= radius;
-            // v11.20 — exclude Coming Soon deals from the Nearby map+list.
-            // The map is for "what can I get RIGHT NOW within X km"; a
-            // locked future deal would be visual noise here.
             const matchesOpen = !openNow || getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open;
             return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && matchesLocType && matchesOpen && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
         }).sort((a, b) => a.distance - b.distance);
@@ -493,18 +497,20 @@ const Nearby: React.FC = () => {
                         const distStr = d < 1 ? `${Math.round(d * 1000)} ${isRTL ? 'م' : 'm'}` : `${d.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;
                         const driveM = Math.max(1, Math.round((d / 35) * 60));
                         const walkM = Math.max(1, Math.round((d / 5) * 60));
+                        const dealHref = deal._bId ? `/deal/${deal.id}?loc=${encodeURIComponent(deal._bId)}` : `/deal/${deal.id}`;
                         return (
-                            <Marker key={deal.id} position={[deal.lat, deal.lng]}>
+                            <Marker key={(deal as any)._key || deal.id} position={[deal.lat, deal.lng]}>
                                 <Popup>
                                     <div
                                         role="button"
                                         tabIndex={0}
                                         aria-label={deal.itemName}
-                                        onClick={() => history.push(`/deal/${deal.id}`)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
+                                        onClick={() => history.push(dealHref)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(dealHref); } }}
                                         style={{ cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
                                     >
                                         <strong>{deal.itemName}</strong><br />
+                                        {deal._bName ? <><span style={{ color: 'var(--primary)', fontWeight: 700 }}>📍 {deal._bName}</span><br /></> : null}
                                         <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{deal.discountedPrice} {isRTL ? 'ر.س' : 'SAR'}</span><br />
                                         <small>📍 {distStr} · 🚗 {driveM} {isRTL ? 'د' : 'min'}{d <= 1 ? ` · 🚶 ${walkM} ${isRTL ? 'د' : 'min'}` : ''}</small>
                                     </div>
@@ -573,7 +579,9 @@ const Nearby: React.FC = () => {
                     {isRTL ? `النتائج القريبة (${nearbyDeals.length})` : `Nearby Results (${nearbyDeals.length})`}
                 </h2>
                 {nearbyDeals.length > 0 ? nearbyDeals.map(deal => {
-                    const dLoc = getLocation(deal.locationId);
+                    // v12.91 — اسم الفرع للعرض متعدد المواقع، وإلا اسم موقع العرض المعروف.
+                    const locName = deal._bName || getLocation(deal.locationId)?.name || '';
+                    const dealHref = deal._bId ? `/deal/${deal.id}?loc=${encodeURIComponent(deal._bId)}` : `/deal/${deal.id}`;
                     const dist = Number.isFinite(deal.distance) ? deal.distance : 0;
                     const distLabel = dist < 1
                         ? (isRTL ? `${Math.round(dist * 1000)} م` : `${Math.round(dist * 1000)} m`)
@@ -589,13 +597,13 @@ const Nearby: React.FC = () => {
                     const driveLabel = isRTL ? `${driveMin} د` : `${driveMin} min`;
                     return (
                         <div
-                            key={deal.id}
+                            key={(deal as any)._key || deal.id}
                             role="button"
                             tabIndex={0}
                             aria-label={deal.itemName}
                             className="nearby-card animate-fade-in"
-                            onClick={() => history.push(`/deal/${deal.id}`)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/deal/${deal.id}`); } }}
+                            onClick={() => history.push(dealHref)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(dealHref); } }}
                             style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent', position: 'relative' }}
                         >
                             <img src={deal.images[0]} loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
@@ -620,7 +628,7 @@ const Nearby: React.FC = () => {
                                     <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>{deal.discountedPrice} ر.س</span>
                                     <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
                                 </div>
-                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: dLoc ? 4 : 0 }}>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: locName ? 4 : 0 }}>
                                     <span style={{
                                         background: 'var(--body-bg)',
                                         color: 'var(--text-primary)',
@@ -644,9 +652,9 @@ const Nearby: React.FC = () => {
                                         }}>🚶 {walkLabel}</span>
                                     )}
                                 </div>
-                                {dLoc && (
+                                {locName && (
                                     <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        🏷️ {dLoc.name}
+                                        🏷️ {locName}
                                     </div>
                                 )}
                             </div>
