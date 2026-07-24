@@ -227,7 +227,13 @@ const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
 const ScrollToTop: React.FC = () => {
     const { pathname } = useLocation();
     useEffect(() => {
-        try { window.scrollTo(0, 0); } catch { /* ignore */ }
+        try {
+            // قفزة فورية للأعلى (بدون أي انزلاق) عند فتح أي صفحة/منتج.
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+        } catch { /* ignore */ }
     }, [pathname]);
     return null;
 };

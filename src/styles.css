@@ -225,7 +225,9 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* v12.96 — لا نعومة عامة: كانت تُحوّل قفزة «ScrollToTop» عند فتح المنتج إلى
+     انزلاق بطيء من الأسفل للأعلى (بلاغ ناصر). التمريرات المقصودة تمرّر
+     behavior:'smooth' صراحةً فتبقى ناعمة. */
   height: -webkit-fill-available;
   /* Prevent layout shift when scrollbar appears on phones with mouse/trackpad */
   scrollbar-gutter: stable;
@@ -255,7 +257,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.3s ease, color 0.3s ease;
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
   overscroll-behavior-y: none; /* Prevents pull-to-refresh jitter */
   overscroll-behavior-x: none;
   /* Prevent text selection on tap-and-hold on icons & buttons (web on mobile feels native) */
