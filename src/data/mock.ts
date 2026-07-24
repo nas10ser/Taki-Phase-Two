@@ -108,6 +108,8 @@ export interface DealOptionChoice {
     price?: number;
     /** @deprecated v12.60 — سقف الكمية أُلغي؛ يبقى في بيانات العروض القديمة ويُتجاهل */
     qty?: number;
+    /** v12.88 — رمز الكاشير (SKU) لهذه الإضافة: يُطبع باركوداً في الفاتورة ليمسحه الكاشير */
+    posSku?: string;
 }
 export interface DealOptionGroup {
     id: string;
@@ -133,6 +135,8 @@ export interface DealVariant {
     qty?: number;           // كمية هذه النسخة — مجموع الكميات = الكمية الإجمالية للعرض
     imageIndex?: number;    // أي صورة من صور العرض (0-3) تمثل هذه النسخة
     gender?: GenderTarget;  // فئة مستهدفة خاصة بالنسخة (اختياري)
+    /** v12.88 — رمز الكاشير (SKU) لهذا النوع: يُطبع باركوداً في الفاتورة ليمسحه الكاشير */
+    posSku?: string;
 }
 
 export interface Deal {
@@ -180,6 +184,9 @@ export interface Deal {
     options?: DealOptionGroup[];
     /** v12.61 — نسخ المنتج بأسعار مختلفة (تجريبي) */
     variants?: DealVariant[];
+    /** v12.88 — رمز الكاشير (SKU) للمنتج الأساسي: يُطبع باركوداً في فاتورة الطلب
+     *  ليمسحه الكاشير فيُضاف المنتج تلقائياً لسلّة نظام الكاشير (مطابقة SKU). */
+    posSku?: string;
     ratings: Rating[];
     prepTime?: string;
     createdAt: number;

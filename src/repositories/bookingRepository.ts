@@ -122,6 +122,8 @@ export const bookingRepository = {
                     paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
                     paymentProvider: b.payment_provider || undefined,
                     paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
+                    // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
+                    selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
                     expiryTime: b.expiry_time
                 } as Booking));
 

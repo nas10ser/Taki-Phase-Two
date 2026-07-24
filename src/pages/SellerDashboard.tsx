@@ -23,7 +23,7 @@ import { logger } from '../utils/logger';
 import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
-import { printOrderInvoice } from '../utils/printInvoice';
+import { printOrderInvoice, InvoiceLineItem } from '../utils/printInvoice';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -450,6 +450,8 @@ const SellerDashboard: React.FC = () => {
     const [optionGroups, setOptionGroups] = useState<DealOptionGroup[]>([]);
     // v12.61 — «نسخ المنتج» (تجريبي): أحجام بأسعار وكميات وصور مختلفة
     const [variants, setVariants] = useState<DealVariant[]>([]);
+    // v12.88 — رمز الكاشير (SKU) للمنتج الأساسي (لمطابقة الباركود مع نظام الكاشير)
+    const [posSku, setPosSku] = useState('');
     // v12.62 (طلب ناصر) — النسخ تقود التسعير والكمية العامة حتى لا يلتبس التاجر:
     // لكل نسخة سعرها الأصلي وبعد الخصم، وأرخص نسخة تضبط السعرين العامين
     // تلقائياً (البطاقة تعرض «يبدأ من»)، ومجموع كميات النسخ = الكمية الإجمالية.
@@ -1352,6 +1354,7 @@ const SellerDashboard: React.FC = () => {
         setSeasonTag(false);
         setOptionGroups([]);
         setVariants([]);
+        setPosSku('');
         setMaxPerBooking('');
         setMaxBookingsPerBuyer('');
         setRebookCooldownMinutes(0);
@@ -1395,6 +1398,7 @@ const SellerDashboard: React.FC = () => {
         setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
         setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
         setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)) : []); // v12.61 — نسخ المنتج
+        setPosSku(deal.posSku || ''); // v12.88 — رمز الكاشير للمنتج الأساسي
 
         // Prefer the seller's original choice (stored on the row) so the
         // edit form opens on the same tab they last picked. Fall back to
@@ -1899,7 +1903,7 @@ const SellerDashboard: React.FC = () => {
                         ...g,
                         title: g.title.trim(),
                         choices: g.choices
-                            .map(c => ({ ...c, label: c.label.trim(), qty: Number(c.qty) > 0 ? Number(c.qty) : undefined }))
+                            .map(c => ({ ...c, label: c.label.trim(), qty: Number(c.qty) > 0 ? Number(c.qty) : undefined, posSku: (c.posSku || '').trim() || undefined }))
                             .filter(c => c.label),
                     }))
                     .filter(g => g.title && g.choices.length > 0);
@@ -1916,10 +1920,13 @@ const SellerDashboard: React.FC = () => {
                         originalPrice: Number(v.originalPrice) > 0 ? Number(v.originalPrice) : undefined,
                         qty: Number(v.qty) > 0 ? Number(v.qty) : undefined,
                         imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
+                        posSku: (v.posSku || '').trim() || undefined, // v12.88 — رمز الكاشير
                     }))
                     .filter(v => v.label && v.price > 0);
                 return cleaned.length ? cleaned : undefined;
-            })()
+            })(),
+            // v12.88 — رمز الكاشير (SKU) للمنتج الأساسي
+            posSku: posSku.trim() || undefined
         };
 
             // 20s ceiling per DB write. Without this, a stalled Supabase
@@ -2311,6 +2318,27 @@ const SellerDashboard: React.FC = () => {
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'المقاس (اختياري)' : 'Size (Optional)'}</label>
                                 <input style={fieldInputStyle} value={size} onChange={e => setSize(e.target.value)} placeholder="S, M, 42..." />
+                            </div>
+                        </div>
+
+                        {/* v12.88 — رمز الكاشير (SKU) للمنتج الأساسي: يُطبع باركوداً في
+                            فاتورة الطلب فيمسحه الكاشير ويُضاف المنتج تلقائياً لسلّته.
+                            (إن كان للمنتج «أنواع» بالأسفل فلكل نوع رمزه الخاص هناك.) */}
+                        <div style={inputGroupStyle}>
+                            <div style={{ flex: 1 }}>
+                                <label style={labelStyle}>{isRTL ? '🏷 رمز الكاشير SKU (اختياري)' : '🏷 POS SKU (optional)'}</label>
+                                <input
+                                    style={fieldInputStyle}
+                                    value={posSku}
+                                    onChange={e => setPosSku(normalizeArabicNumerals(e.target.value))}
+                                    placeholder={isRTL ? 'مثال: 1002 أو FLAT-01' : 'e.g. 1002 or FLAT-01'}
+                                    dir="ltr"
+                                />
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4, lineHeight: 1.6 }}>
+                                    {isRTL
+                                        ? '📷 رمز منتجك في نظام الكاشير — يُطبع باركوداً في فاتورة الطلب فيمسحه الكاشير ويُضاف المنتج فوراً لسلّته. اتركه فارغاً إن لم تربط بكاشير.'
+                                        : 'Your product code in your POS — printed as a scannable barcode on the order receipt. Leave empty if not using a POS.'}
+                                </div>
                             </div>
                         </div>
 
@@ -2780,6 +2808,16 @@ const SellerDashboard: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
+                                    {/* v12.88 — رمز الكاشير (SKU) لهذا النوع — باركود مستقل في الفاتورة */}
+                                    <input
+                                        type="text"
+                                        dir="ltr"
+                                        value={v.posSku || ''}
+                                        onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, posSku: normalizeArabicNumerals(e.target.value) } : x))}
+                                        placeholder={isRTL ? '🏷 رمز الكاشير لهذا النوع (اختياري) — مثال: FLAT-MED' : '🏷 POS SKU for this variant (optional)'}
+                                        title={isRTL ? 'رمز الكاشير لهذا النوع تحديداً — يُطبع باركوداً في الفاتورة' : 'POS SKU for this specific variant'}
+                                        style={{ width: '100%', marginTop: 8, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.78rem', fontWeight: 700 }}
+                                    />
                                 </div>
                             ))}
                             <button type="button"
@@ -2880,25 +2918,37 @@ const SellerDashboard: React.FC = () => {
                                                 : '🤲 The buyer can combine several choices from this group with a quantity for each (e.g. L ×2 + M ×1).')}
                                     </div>
                                     {g.choices.map((c, ci) => (
-                                        <div key={c.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                                        <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 7 }}>
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                <input
+                                                    type="text"
+                                                    value={c.label}
+                                                    onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, label: e.target.value } : y) } : x))}
+                                                    placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
+                                                    style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
+                                                />
+                                                <NumericField
+                                                    value={c.price}
+                                                    onChange={n => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: n } : y) } : x))}
+                                                    placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
+                                                    title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
+                                                    style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                                />
+                                                <button type="button"
+                                                    onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
+                                                    aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
+                                                    style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
+                                            </div>
+                                            {/* v12.88 — رمز الكاشير (SKU) لهذه الإضافة — باركود مستقل في الفاتورة */}
                                             <input
                                                 type="text"
-                                                value={c.label}
-                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, label: e.target.value } : y) } : x))}
-                                                placeholder={isRTL ? `الخيار ${ci + 1} (مثل: L أو كولومبيا)` : `Choice ${ci + 1}`}
-                                                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700 }}
+                                                dir="ltr"
+                                                value={c.posSku || ''}
+                                                onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, posSku: normalizeArabicNumerals(e.target.value) } : y) } : x))}
+                                                placeholder={isRTL ? '🏷 رمز الكاشير لهذه الإضافة (اختياري)' : '🏷 POS SKU for this add-on (optional)'}
+                                                title={isRTL ? 'رمز الكاشير لهذه الإضافة — يُطبع باركوداً في الفاتورة' : 'POS SKU for this add-on'}
+                                                style={{ width: '100%', padding: '7px 10px', borderRadius: 10, border: '1px dashed var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.74rem', fontWeight: 700 }}
                                             />
-                                            <NumericField
-                                                value={c.price}
-                                                onChange={n => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, price: n } : y) } : x))}
-                                                placeholder={isRTL ? '+ سعر ر.س' : '+ SAR'}
-                                                title={isRTL ? 'سعر إضافي يُضاف لمبلغ الحجز عند اختيار هذا الخيار — فارغ = بدون إضافة' : 'Add-on price joined to the booking total when picked — empty = free'}
-                                                style={{ width: 86, padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
-                                            />
-                                            <button type="button"
-                                                onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
-                                                aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
-                                                style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
                                         </div>
                                     ))}
                                     <button type="button"
@@ -3999,19 +4049,50 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                                    {/* v12.87 — طباعة فاتورة/سند الطلب (طلب ناصر): تجمع الأنواع
-                                        واختياراتها والإجمالي في صفحة مرتّبة قابلة للطباعة أو الحفظ PDF. */}
-                                    <button onClick={() => printOrderInvoice({
-                                        shopName: order.deal.shopName || order.deal.itemName,
-                                        itemName: order.deal.itemName,
-                                        barcode: order.barcode,
-                                        createdAt: (order as any).createdAt,
-                                        quantity: order.bookedQuantity,
-                                        buyerName: (order as any).userName,
-                                        prepTime: order.prepTime,
-                                        details: order.notes,
-                                        isRTL,
-                                    })}
+                                    {/* v12.87/88 — طباعة فاتورة الطلب مع باركود الكاشير (طلب ناصر):
+                                        تبني عناصر مهيكلة من النوع/الإضافات المختارة، ولكل عنصر SKU
+                                        يُطبع باركود Code 128 يمسحه الكاشير. */}
+                                    <button onClick={() => {
+                                        const deal = order.deal as any;
+                                        const sel = ((order as any).selectedOptions || []) as Array<{ g: string; c: string; qty?: number }>;
+                                        const dvariants = (deal.variants || []) as any[];
+                                        const doptions = (deal.options || []) as any[];
+                                        const items: InvoiceLineItem[] = [];
+                                        const pickedVariants = sel.filter(s => s.g === '__variant__');
+                                        if (pickedVariants.length) {
+                                            for (const s of pickedVariants) {
+                                                const v = dvariants.find(vv => vv.id === s.c);
+                                                if (v) items.push({ label: v.label, qty: s.qty || 1, sku: v.posSku, kind: 'variant' });
+                                            }
+                                        } else {
+                                            items.push({ label: deal.itemName, qty: Number(order.bookedQuantity) || 1, sku: deal.posSku, kind: 'main' });
+                                        }
+                                        for (const s of sel) {
+                                            if (s.g === '__variant__') continue;
+                                            const grp = doptions.find(g => g.id === s.g);
+                                            const choice = grp?.choices?.find((c: any) => c.id === s.c);
+                                            if (!choice) continue;
+                                            items.push({ label: grp ? `${grp.title}: ${choice.label}` : choice.label, qty: s.qty || 1, sku: choice.posSku, kind: 'addon' });
+                                        }
+                                        const notes = order.notes || '';
+                                        const tm = notes.match(/الإجمالي:\s*([\d.]+)/);
+                                        const totalText = tm ? `${tm[1]} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
+                                        const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
+                                        const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
+                                        printOrderInvoice({
+                                            shopName: deal.shopName || deal.itemName,
+                                            itemName: deal.itemName,
+                                            barcode: order.barcode,
+                                            createdAt: (order as any).bookedAt,
+                                            quantity: order.bookedQuantity,
+                                            buyerName: (order as any).userName,
+                                            prepTime: order.prepTime,
+                                            items,
+                                            totalText,
+                                            buyerNote,
+                                            isRTL,
+                                        });
+                                    }}
                                         style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginBottom: 8 }}>
                                         {isRTL ? '🖨 طباعة فاتورة الطلب' : '🖨 Print order invoice'}
                                     </button>
