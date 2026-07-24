@@ -116,6 +116,15 @@ const SellerDashboard: React.FC = () => {
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
+    // v12.93 — تمرير موثوق لأعلى عند فتح أي تبويب/نموذج (بلاغ ناصر: يفتح المنتج
+    // للتعديل فيجد نفسه في أسفل الصفحة). السبب: التمرير «الأملس» يُقطَع بتحميل
+    // خريطة Leaflet والصور. الحل: تمرير فوري بعد الرسم + تمريرة متابعة قصيرة.
+    React.useEffect(() => {
+        const toTop = () => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); } };
+        const raf = requestAnimationFrame(toTop);
+        const t = setTimeout(toTop, 220);
+        return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+    }, [view]);
     // ساعات عمل المحل — تُحفظ في ملف التاجر (ثابتة عبر المنتجات حتى يغيّرها). v11.77
     const [hoursSaving, setHoursSaving] = useState(false);
     const myWorkingHours = (storeProfiles[user?.id || ''] as any)?.workingHours ?? (user as any)?.workingHours;
@@ -1542,7 +1551,7 @@ const SellerDashboard: React.FC = () => {
         }
         
         setView('form');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'auto' });
     };
 
 
@@ -2014,7 +2023,9 @@ const SellerDashboard: React.FC = () => {
                         label: v.label.trim(),
                         price: Number(v.price) || 0,
                         originalPrice: Number(v.originalPrice) > 0 ? Number(v.originalPrice) : undefined,
-                        qty: Number(v.qty) > 0 ? Number(v.qty) : undefined,
+                        // v12.94 — بُعد مخزون واحد: عند «كمية لكل موقع» تُلغى كمية النوع
+                        // (المخزون يُدار لكل فرع) فلا يتعارض رقمان.
+                        qty: multiPerLoc ? undefined : (Number(v.qty) > 0 ? Number(v.qty) : undefined),
                         imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
                         posSku: (v.posSku || '').trim() || undefined, // v12.88 — رمز الكاشير
                     }))
@@ -2215,7 +2226,7 @@ const SellerDashboard: React.FC = () => {
                                 // not waiting for the URL effect to round-trip.
                                 setView(tab);
                                 history.push(`/seller?tab=${tab}`);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                window.scrollTo({ top: 0, behavior: 'auto' });
                                 if (tab === 'orders') {
                                     notifications.filter(n => n.userId === user?.id && !n.isRead && n.type === 'booking').forEach(n => markNotifRead(n.id));
                                 }
@@ -2282,7 +2293,7 @@ const SellerDashboard: React.FC = () => {
                 const pendingCount = myOrders.filter(b => b.status === 'pending').length;
                 const ackCount = myOrders.filter(b => b.status === 'acknowledged').length;
                 if (pendingCount === 0 && ackCount === 0) return null;
-                const goOrders = () => { setView('orders'); history.push('/seller?tab=orders'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+                const goOrders = () => { setView('orders'); history.push('/seller?tab=orders'); window.scrollTo({ top: 0, behavior: 'auto' }); };
                 const bannerStyle = (bg: string, shadow: string): React.CSSProperties => ({
                     display: 'flex', alignItems: 'center', gap: 12,
                     margin: '12px 16px 0',
@@ -2469,21 +2480,21 @@ const SellerDashboard: React.FC = () => {
                                         {isRTL ? 'لامحدود' : 'Unlim'}
                                     </label>
                                 </label>
-                                <input type="tel" style={{...fieldInputStyle, opacity: (isUnlimited || variantQtySum != null || multiLocPerLocActive) ? 0.5 : 1}} value={isUnlimited ? '' : quantity} disabled={isUnlimited || variantQtySum != null || multiLocPerLocActive} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
+                                <input type="tel" style={{...fieldInputStyle, opacity: (isUnlimited || variantQtySum != null || multiLocPerLocActive) ? 0.5 : 1}} value={(isUnlimited || multiLocPerLocActive) ? '' : quantity} disabled={isUnlimited || variantQtySum != null || multiLocPerLocActive} placeholder={isRTL ? 'مثال: 50' : 'e.g. 50'} onChange={e => {
                                     const val = normalizeArabicNumerals(e.target.value).replace(/\D/g, '');
                                     setQuantity(val === '' ? '' : Number(val));
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
-                                {/* v12.62 — مجموع كميات النسخ يقود الكمية الإجمالية تلقائياً */}
-                                {variantQtySum != null && (
+                                {/* v12.62/94 — مجموع كميات النسخ يقود الكمية (إلا عند «كمية لكل موقع») */}
+                                {variantQtySum != null && !multiLocPerLocActive && (
                                     <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginTop: 6, lineHeight: 1.5 }}>
                                         🧬 {isRTL
                                             ? `تُحسب تلقائياً: مجموع كميات النسخ = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`
                                             : `Auto-calculated: versions total = ${variantQtySum} (${completeVariants.map(v => `${v.label} ${v.qty}`).join(' + ')})`}
                                     </div>
                                 )}
-                                {/* v12.93 — توحيد الكميات: عند «كمية لكل موقع» تُدار من قسم المواقع */}
-                                {multiLocPerLocActive && variantQtySum == null && (
+                                {/* v12.93/94 — توحيد الكميات: عند «كمية لكل موقع» المصدر الوحيد هو الفروع */}
+                                {multiLocPerLocActive && (
                                     <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginTop: 6, lineHeight: 1.5 }}>
                                         📍 {isRTL ? 'تُدار الكمية من قسم «مواقع العرض» أدناه — كمية لكل فرع (أو مفتوح).' : 'Managed in the “Deal locations” section below — per branch (or open).'}
                                     </div>
@@ -2859,7 +2870,7 @@ const SellerDashboard: React.FC = () => {
                                             style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 10, padding: '6px 10px', fontWeight: 900, cursor: 'pointer' }}>✕</button>
                                     </div>
                                     {/* v12.62 — لكل نسخة سعرها الأصلي وخصمها وكميتها */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: multiLocPerLocActive ? '1fr 1fr' : '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
                                         <div>
                                             <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'السعر الأصلي' : 'Original'}</div>
                                             <NumericField
@@ -2878,6 +2889,9 @@ const SellerDashboard: React.FC = () => {
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
+                                        {/* v12.94 — توحيد المخزون ببُعد واحد: عند «كمية لكل موقع» تُخفى كمية
+                                            النوع (تُدار الكميات لكل فرع أدناه) فلا يتعارض رقمان. */}
+                                        {!multiLocPerLocActive && (
                                         <div>
                                             {/* v12.63 — انتهاء «بالكمية» يجعل كمية كل نسخة إلزامية */}
                                             <div style={{ fontSize: '0.64rem', fontWeight: 800, color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 3 }}>
@@ -2892,7 +2906,13 @@ const SellerDashboard: React.FC = () => {
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(v.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
+                                        )}
                                     </div>
+                                    {multiLocPerLocActive && (
+                                        <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 8, lineHeight: 1.5 }}>
+                                            📍 {isRTL ? 'الكميات تُدار لكل فرع في قسم «مواقع العرض» أدناه (بُعد واحد للمخزون).' : 'Stock is managed per branch in the Locations section below.'}
+                                        </div>
+                                    )}
                                     {Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) > Number(v.price) && (
                                         <div style={{ fontSize: '0.66rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
                                             {isRTL
@@ -3798,8 +3818,14 @@ const SellerDashboard: React.FC = () => {
                                             ? 'اختر فروعك الإضافية من مواقعك المحفوظة (بحدود باقتك). يظهر العرض مرة واحدة في الرئيسية، وفي «حولي» يظهر عند كل فرع اخترته.'
                                             : 'Pick extra branches from your saved locations (within your plan). One card on Home; on Nearby it shows at each branch you picked.'}
                                     </div>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 10 }}>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 6 }}>
                                         ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.68rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
+                                    </div>
+                                    {/* v12.94 — توضيح «الأساسي» (لبس ناصر: من أين جاءت «الرياض»؟) */}
+                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                                        ℹ️ {isRTL
+                                            ? '«الأساسي» = موقع العرض الرئيسي الذي حددته بالخريطة/المول أعلى. لو ظهر باسم مدينة (مثل «الرياض») فهذا موقع الدبوس الافتراضي — حرّك الدبوس أو اختر مولك أعلى ليصبح فرعاً حقيقياً.'
+                                            : '“Primary” = the deal’s main location from the map/mall above. A bare city name means the default pin — move it or pick your mall above.'}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                         {others.map(c => {
