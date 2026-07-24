@@ -872,11 +872,11 @@ const DealDetails: React.FC = () => {
             }
         }
 
-        // v12.66 — «اختيارات لكل قطعة»: الأقسام المطلوبة تُفحص قطعةً قطعة،
-        // وسطر الملاحظات يفصّل اختيارات كل قطعة على حدة (برغر ١: بدون جبنة —
-        // برغر ٢: جبنة +٣). selected_options يبقى بنفس الشكل المجمّع
-        // {g,c,qty} حفاظاً على توافق القاعدة والبوتات — qty = عدد القطع
-        // التي اختارت هذا الخيار.
+        // v12.66/v12.87 — «اختيارات لكل قطعة» + عرض مجمّع واضح (طلب ناصر):
+        // (أ) نتحقق أن الأقسام المطلوبة مختارة لكل قطعة، (ب) نبني selected_options
+        // المهيكل للقاعدة/البوتات (qty = عدد القطع التي اختارت الخيار — بلا تغيير)،
+        // (ج) نص «تفاصيل الطلب» حيث كل نوع/صنف تحته اختياراته مباشرة بدل فصل
+        // «كل المواصفات» عن «كل الاختيارات» (كان يسبّب لخبطة).
         if (deal.options?.length) {
             for (const grp of deal.options) {
                 if (!grp.required) continue;
@@ -892,45 +892,42 @@ const DealDetails: React.FC = () => {
                     return;
                 }
             }
-            const lines: string[] = [];
             const agg = new Map<string, { g: string; c: string; qty: number }>();
             for (const piece of bookingPieces) {
                 const ps = pieceOpt[piece.key] || {};
-                const parts: string[] = [];
                 for (const grp of deal.options) {
-                    const chosen = Object.keys(ps[grp.id] || {});
-                    if (!chosen.length) continue;
-                    const labels: string[] = [];
-                    for (const cid of chosen) {
-                        const choice = grp.choices.find(c => c.id === cid);
-                        if (!choice) continue;
+                    for (const cid of Object.keys(ps[grp.id] || {})) {
+                        if (!grp.choices.find(c => c.id === cid)) continue;
                         const k = `${grp.id}|${cid}`;
                         const prev = agg.get(k);
                         if (prev) prev.qty += 1; else agg.set(k, { g: grp.id, c: cid, qty: 1 });
-                        const priceTag = (choice.price || 0) > 0 ? ` (+${choice.price} ${isRTL ? 'ر.س' : 'SAR'})` : '';
-                        labels.push(`${choice.label}${priceTag}`);
                     }
-                    if (labels.length) parts.push(`${grp.title}: ${labels.join('، ')}`);
-                }
-                if (!parts.length) continue;
-                // كل قطعة في سطر مستقل، وكل اختيار فرعي تحتها بسطر خاص بعلامة ↳
-                if (bookingPieces.length > 1) {
-                    lines.push(`▪️ ${piece.label}:`);
-                    for (const p of parts) lines.push(`   ↳ ${p}`);
-                } else {
-                    for (const p of parts) lines.push(`↳ ${p}`);
                 }
             }
-            if (agg.size) {
-                selectedOptions = Array.from(agg.values());
-                const optText = `🧩 ${isRTL ? 'الاختيارات' : 'Options'}:\n${lines.join('\n')}`;
-                notesWithOptions = bookingNotes.trim() ? `${optText}\n${bookingNotes}` : optText;
-            }
+            if (agg.size) selectedOptions = Array.from(agg.values());
         }
 
+        // اختيارات قطعة واحدة كنصوص «العنوان: الاختيار (+سعر)»
+        const pieceParts = (pieceKey: string): string[] => {
+            const ps = pieceOpt[pieceKey] || {};
+            const parts: string[] = [];
+            for (const grp of (deal.options || [])) {
+                const chosen = Object.keys(ps[grp.id] || {});
+                if (!chosen.length) continue;
+                const labels: string[] = [];
+                for (const cid of chosen) {
+                    const choice = grp.choices.find(c => c.id === cid);
+                    if (!choice) continue;
+                    const priceTag = (choice.price || 0) > 0 ? ` (+${choice.price} ${isRTL ? 'ر.س' : 'SAR'})` : '';
+                    labels.push(`${choice.label}${priceTag}`);
+                }
+                if (labels.length) parts.push(`${grp.title}: ${labels.join('، ')}`);
+            }
+            return parts;
+        };
+
         // v12.65 — النسخ المختارة تُمرَّر مهيكلة في selected_options بوسم
-        // g='__variant__' — حارس القاعدة يخصمها من كمية كل نسخة (المتاح)
-        // ويعيدها عند الإلغاء، والفحص يرفض ما يتجاوز المتبقي.
+        // g='__variant__' — حارس القاعدة يخصمها من كمية كل نسخة (المتاح).
         if (variants.length && variantPiecesTotal > 0) {
             const ventries = variants
                 .filter(v => (varSel[v.id] || 0) > 0)
@@ -938,15 +935,36 @@ const DealDetails: React.FC = () => {
             selectedOptions = [...(selectedOptions || []), ...ventries];
         }
 
-        // v12.64 — سطر المقاسات المختارة بكمياتها يتصدّر الملاحظات، وسطر
-        // «الإجمالي» الموحّد يختمها (يشمل النسخ + الإضافات) — يصل كما هو
-        // لكل واجهات التاجر والبوتات.
+        // v12.87 — «تفاصيل الطلب» المجمّعة: كل نوع/صنف تحته اختياراته مباشرة،
+        // ثم ملاحظة المشتري، ثم سطر الإجمالي — يصل موحّداً لكل واجهات التاجر والبوتات.
+        const detailLines: string[] = [];
         if (variants.length && variantPiecesTotal > 0) {
-            const parts = variants
-                .filter(v => (varSel[v.id] || 0) > 0)
-                .map(v => `• ${v.label} ×${varSel[v.id]} (${v.price} ${isRTL ? 'ر.س' : 'SAR'})`);
-            const vLine = `📦 ${isRTL ? 'المواصفات' : 'Items'}:\n${parts.join('\n')}`;
-            notesWithOptions = notesWithOptions.trim() ? `${vLine}\n${notesWithOptions}` : vLine;
+            for (const v of variants) {
+                const q = varSel[v.id] || 0;
+                if (q <= 0) continue;
+                detailLines.push(`• ${v.label} ×${q} (${v.price} ${isRTL ? 'ر.س' : 'SAR'})`);
+                for (let i = 0; i < q; i++) {
+                    const parts = pieceParts(`${v.id}#${i}`);
+                    if (!parts.length) continue;
+                    const prefix = q > 1 ? `   ↳ (${i + 1}) ` : '   ↳ ';
+                    for (const p of parts) detailLines.push(`${prefix}${p}`);
+                }
+            }
+        } else if (deal.options?.length) {
+            for (const piece of bookingPieces) {
+                const parts = pieceParts(piece.key);
+                if (!parts.length) continue;
+                if (bookingPieces.length > 1) {
+                    detailLines.push(`▪️ ${piece.label}:`);
+                    for (const p of parts) detailLines.push(`   ↳ ${p}`);
+                } else {
+                    for (const p of parts) detailLines.push(`↳ ${p}`);
+                }
+            }
+        }
+        if (detailLines.length) {
+            const detailText = `📦 ${isRTL ? 'تفاصيل الطلب' : 'Order details'}:\n${detailLines.join('\n')}`;
+            notesWithOptions = bookingNotes.trim() ? `${detailText}\n\n📝 ${bookingNotes}` : detailText;
         }
         if ((variants.length && variantPiecesTotal > 0) || optAddOnTotal > 0) {
             const detail = optAddOnTotal > 0
@@ -955,6 +973,7 @@ const DealDetails: React.FC = () => {
             const tLine = `💰 ${isRTL ? `الإجمالي: ${bookingTotal} ر.س` : `Total: ${bookingTotal} SAR`}${detail}`;
             notesWithOptions = notesWithOptions.trim() ? `${notesWithOptions}\n${tLine}` : tLine;
         }
+
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions);
