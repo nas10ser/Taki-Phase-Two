@@ -625,9 +625,25 @@ const Nearby: React.FC = () => {
                                     }}>📍 {distLabel}</span>
                                 </div>
                                 <div style={{ fontWeight: 900, fontSize: '0.95rem', marginBottom: 4, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.itemName}</div>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                                    <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>{deal.discountedPrice} ر.س</span>
-                                    <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
+                                {/* v13.08 — «يبدأ من» + شارة الخيارات للأنواع (توحيد مع بطاقة الرئيسية) */}
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                                    {(() => {
+                                        const vs = deal.variants || [];
+                                        const fromPrice = vs.length ? Math.min(...vs.map(v => v.price)) : deal.discountedPrice;
+                                        return (
+                                            <>
+                                                <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>
+                                                    {vs.length ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`) : `${deal.discountedPrice} ر.س`}
+                                                </span>
+                                                <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
+                                                {vs.length > 0 && (
+                                                    <span style={{ fontSize: '0.6rem', fontWeight: 900, color: 'var(--primary)', background: 'var(--primary-light)', borderRadius: 999, padding: '2px 7px' }}>
+                                                        🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
+                                                    </span>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: locName ? 4 : 0 }}>
                                     <span style={{

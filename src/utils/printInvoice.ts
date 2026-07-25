@@ -140,37 +140,65 @@ const buildHtml = (d: InvoiceData): string => {
     </div>
     <div class="foot">${L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}</div>
   </div>
-  <div class="btns">
-    <button onclick="window.print()">${L('🖨 اطبع الآن', '🖨 Print now')}</button>
-    <button class="back" onclick="(function(){ try{ window.close(); }catch(e){} setTimeout(function(){ try{ history.back(); }catch(e2){} }, 60); })()">${L('← عودة للتطبيق', '← Back to app')}</button>
-  </div>
-  <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 400); });</script>
 </body>
 </html>`;
 };
 
+// v13.08 — نعرض الفاتورة كطبقة داخل التطبيق (لا تبويب جديد). على آيفون PWA كان
+// التبويب الجديد يجعل «اطبع الآن» (window.print) و«عودة للتطبيق» (window.close/
+// history.back) لا تعمل — بلاغ ناصر. الآن الفاتورة داخل iframe مستقل (عزل الطباعة)
+// فوق التطبيق، والأزرار يتحكّم بها التطبيق: «اطبع» يطبع الـiframe فقط، و«عودة»
+// تُزيل الطبقة وتُبقيك في مكانك بالتطبيق. زر أندرويد الخلفي يُغلقها أيضاً.
 export const printOrderInvoice = (data: InvoiceData): void => {
     const html = buildHtml(data);
-    // المحاولة الأولى: تبويب جديد (الأكثر توافقاً على الديسكتوب وأندرويد ويعطي
-    // آيفون صفحة يشاركها/يحفظها PDF من زر المشاركة).
-    const w = window.open('', '_blank');
-    if (w && w.document) {
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
-        return;
-    }
-    // البديل (نافذة ممنوعة داخل PWA): iframe مخفي نطبع محتواه.
+    const rtl = data.isRTL;
+    const L = (ar: string, en: string) => (rtl ? ar : en);
+
+    const overlay = document.createElement('div');
+    overlay.dir = rtl ? 'rtl' : 'ltr';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#f8fafc;display:flex;flex-direction:column;';
+
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:10px;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 12px;background:#0f172a;flex-shrink:0;';
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.textContent = L('🖨 اطبع الآن', '🖨 Print now');
+    printBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:none;background:#10b981;color:#fff;cursor:pointer;';
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.textContent = L('← عودة للتطبيق', '← Back to app');
+    backBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:1px solid #cbd5e1;background:#f1f5f9;color:#0f172a;cursor:pointer;';
+    bar.appendChild(printBtn);
+    bar.appendChild(backBtn);
+
     const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-    document.body.appendChild(iframe);
+    iframe.style.cssText = 'flex:1;width:100%;border:0;background:#fff;';
+    iframe.setAttribute('title', L('فاتورة الطلب', 'Order invoice'));
+
+    overlay.appendChild(bar);
+    overlay.appendChild(iframe);
+    document.body.appendChild(overlay);
+    // امنع تمرير التطبيق خلف الطبقة
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const doc = iframe.contentWindow?.document;
-    if (!doc) { document.body.removeChild(iframe); return; }
-    doc.open();
-    doc.write(html);
-    doc.close();
-    setTimeout(() => {
+    if (doc) { doc.open(); doc.write(html); doc.close(); }
+
+    let closed = false;
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = prevBodyOverflow;
+        try { document.body.removeChild(overlay); } catch { /* ignore */ }
+    };
+    // Esc يُغلق أيضاً (ديسكتوب). لا نلمس سجل المتصفح حتى لا نتضارب مع الراوتر.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+
+    backBtn.onclick = close;
+    printBtn.onclick = () => {
         try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { /* ignore */ }
-        setTimeout(() => { try { document.body.removeChild(iframe); } catch { /* ignore */ } }, 1500);
-    }, 500);
+    };
 };

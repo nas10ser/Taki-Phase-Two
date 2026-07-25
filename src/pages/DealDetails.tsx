@@ -459,7 +459,7 @@ const DealDetails: React.FC = () => {
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles, liveLocation
+        storeProfiles, liveLocation, requestLiveLocation
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
@@ -1077,6 +1077,31 @@ const DealDetails: React.FC = () => {
             return;
         }
 
+        // v13.08 — حدّ المسافة + تنبيه «ليس الأقرب» (عرض متعدد المواقع + موقع المشتري
+        // معروف). مهلة الاستلام ساعتان، فالفرع الأبعد من 100 كم يتعذّر الوصول إليه
+        // ضمنها فيُلغى الحجز تلقائياً — نمنعه مسبقاً. ولو اختار فرعاً أبعد من الأقرب
+        // نُنبّهه ونؤكّد قبل المتابعة.
+        if (dealLocations && activeLoc && liveLocation?.lat != null && liveLocation?.lng != null) {
+            const aSorted = (sortedLocations || []).find(l => l.id === activeLoc.id) as any;
+            const d = aSorted && typeof aSorted.distance === 'number' ? aSorted.distance : null;
+            if (typeof d === 'number') {
+                if (d > 100) {
+                    customAlert(isRTL
+                        ? `⛔ «${activeLoc.name || 'هذا الفرع'}» يبعد ${Math.round(d)} كم عنك (أكثر من 100 كم). لن تصل خلال مهلة الاستلام (ساعتان) وسيُلغى الحجز تلقائياً — اختر فرعاً أقرب.`
+                        : `⛔ "${activeLoc.name || 'this branch'}" is ${Math.round(d)} km away (over 100 km). You can't arrive within the 2-hour pickup window and the booking would auto-cancel — pick a closer branch.`);
+                    return;
+                }
+                const nearest = (sortedLocations || [])[0] as any;
+                if (nearest && nearest.id !== activeLoc.id && typeof nearest.distance === 'number' && nearest.distance < d - 0.05) {
+                    const fmt = (km: number) => km < 1 ? `${Math.round(km * 1000)} ${isRTL ? 'م' : 'm'}` : `${km.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;
+                    const ok = await customConfirm(isRTL
+                        ? `⚠️ «${activeLoc.name || 'هذا الفرع'}» (${fmt(d)}) ليس الأقرب لك.\nالأقرب هو «${nearest.name || 'فرع'}» على بعد ${fmt(nearest.distance)}.\n\nهل تريد الحجز من «${activeLoc.name || 'هذا الفرع'}» رغم ذلك؟`
+                        : `⚠️ "${activeLoc.name || 'this branch'}" (${fmt(d)}) is not the closest to you.\nNearest is "${nearest.name || 'branch'}" at ${fmt(nearest.distance)}.\n\nBook from "${activeLoc.name || 'this branch'}" anyway?`);
+                    if (!ok) return;
+                }
+            }
+        }
+
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null);
 
@@ -1618,6 +1643,14 @@ const DealDetails: React.FC = () => {
                             <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
                             </div>
+                            {/* v13.08 — بلا موقع = بلا مسافات. نعرض دعوة لتفعيل الموقع فتظهر
+                                المسافة/الأقرب (مثل صفحة «حولي») ويعمل حدّ الـ100 كم وتنبيه «ليس الأقرب». */}
+                            {(liveLocation?.lat == null || liveLocation?.lng == null) && (
+                                <button type="button" onClick={() => { try { requestLiveLocation?.(); } catch { /* ignore */ } }}
+                                    style={{ width: '100%', marginBottom: 10, padding: '11px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
+                                    📍 {isRTL ? 'فعّل موقعك لعرض المسافة واختيار الأقرب' : 'Enable location to see distances & pick nearest'}
+                                </button>
+                            )}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {(sortedLocations || dealLocations).map((l: any, li: number) => {
                                     const picked = (activeLoc?.id === l.id);
