@@ -2515,6 +2515,454 @@ const SellerDashboard: React.FC = () => {
                             </div>
                         )}
 
+                        <div style={{ marginBottom: 15 }}>
+                            <label style={labelStyle}>{isRTL ? 'الموقع والمكان' : 'Location & Venue'}</label>
+
+                            {/* Location-limit hint. Computed from the seller's active
+                                deals (rounded coords / location IDs). Turns amber on
+                                3/3 with a new pin and red when blocked. Visible during
+                                edits too — the cap applies to both create and edit. */}
+                            {user?.userType !== 'admin' && (
+                                <div
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                        padding: '8px 12px', borderRadius: 10, marginBottom: 10,
+                                        background: wouldExceedLimit
+                                            ? 'rgba(239, 68, 68, 0.12)'
+                                            : (activeLocationKeys.size >= MAX_LOCATIONS && !locationIsExisting
+                                                ? 'rgba(245, 158, 11, 0.12)'
+                                                : 'rgba(16, 185, 129, 0.10)'),
+                                        border: '1px solid ' + (wouldExceedLimit
+                                            ? 'rgba(239, 68, 68, 0.35)'
+                                            : 'rgba(16, 185, 129, 0.25)'),
+                                        fontSize: '0.78rem', fontWeight: 800,
+                                        color: wouldExceedLimit ? 'var(--danger)' : 'var(--text-primary)',
+                                        lineHeight: 1.5
+                                    }}
+                                >
+                                    <span style={{ fontSize: '1rem' }}>📍</span>
+                                    <span style={{ flex: 1 }}>
+                                        {isRTL
+                                            ? `${packageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
+                                            : `${packageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
+                                        {wouldExceedLimit && (
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
+                                                {isRTL
+                                                    ? (editingDealId
+                                                        ? '⚠️ نقل المنتج لموقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.'
+                                                        : '⚠️ موقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.')
+                                                    : (editingDealId
+                                                        ? '⚠️ Moving this deal to a new location is blocked — pick an existing one or empty a slot first.'
+                                                        : '⚠️ This is a new location — limit reached. Pick an existing one or free a slot.')}
+                                            </span>
+                                        )}
+                                        {!wouldExceedLimit && locationIsExisting && activeLocationKeys.size > 0 && (
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3, color: 'var(--primary)' }}>
+                                                {isRTL ? '✓ موقع مستخدم من قبل — لن يُحسب كخانة جديدة.' : '✓ Existing location — no new slot used.'}
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Renewal banner: the seller hit "تجديد" on an expired
+                                deal that used a now-deleted/over-cap location.
+                                v12.74 — نص إرشادي فقط بلا شرائح: كانت شرائحه تحل محل
+                                صندوق «مواقعك» فيتبادلان الظهور والاختفاء مع كل نقرة
+                                (بلاغ ناصر) — الآن الصندوق ثابت دائماً والبانر يظهر
+                                فوقه كتحذير فقط ما دام الموقع المختار غير صالح. */}
+                            {editingFromDeletedLocation && (
+                                <div
+                                    style={{
+                                        padding: '12px 14px', borderRadius: 14, marginBottom: 12,
+                                        background: 'rgba(245, 158, 11, 0.12)',
+                                        border: '1.5px solid rgba(245, 158, 11, 0.4)'
+                                    }}
+                                >
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--secondary)', marginBottom: 4 }}>
+                                        {isRTL
+                                            ? '⚠️ موقع العرض السابق لم يعد ضمن باقتك'
+                                            : '⚠️ This deal\'s previous location is no longer on your package'}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                        {isRTL
+                                            ? `لتجديد هذا العرض اختر موقعاً نشطاً (🔒) من قائمة «مواقعك» بالأسفل (${activeLocationKeys.size}/${MAX_LOCATIONS} مستخدم)، ثم احفظ.`
+                                            : `To renew this deal, pick an active (🔒) location from the "Your locations" list below (${activeLocationKeys.size}/${MAX_LOCATIONS} used), then save.`}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedRegion} onChange={e => { setSelectedRegion(e.target.value); setSelectedCity(''); }}>
+                                    <option value="">{isRTL ? 'اختر المنطقة' : 'Region'}</option>
+                                    {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
+                                </select>
+                                <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedCity} onChange={e => {
+                                    const val = e.target.value;
+                                    setSelectedCity(val);
+                                    if (val !== 'other') {
+                                        const city = CITIES.find(c => c.id === val);
+                                        if (city) setMapPos([city.lat, city.lng]);
+                                    }
+                                }}>
+                                    <option value="">{isRTL ? 'اختر المدينة' : 'City'}</option>
+                                    {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
+                                    <option value="other">{isRTL ? 'أخرى' : 'Other'}</option>
+                                </select>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                <select style={{ ...fieldInputStyle, flex: 1 }} value={locationType} onChange={e => { setLocationType(e.target.value as any); setLocationId(''); }}>
+                                    <option value="mall">{isRTL ? 'مول 🛍️' : 'Mall 🛍️'}</option>
+                                    <option value="market">{isRTL ? 'سوق 🏛️' : 'Market 🏛️'}</option>
+                                    <option value="store">{isRTL ? 'محل 🏪' : 'Store 🏪'}</option>
+                                    <option value="other">{isRTL ? 'أخرى 📍' : 'Other 📍'}</option>
+                                </select>
+                                <select style={{ ...fieldInputStyle, flex: 2 }} value={locationId} onChange={e => {
+                                    const val = e.target.value;
+                                    setLocationId(val);
+                                    if(val !== 'other') {
+                                        const loc = LOCATIONS.find(l => l.id === val);
+                                        if (loc) setMapPos([loc.lat, loc.lng]);
+                                    }
+                                }}>
+                                    <option value="">{isRTL ? 'اختر المكان...' : 'Select Location...'}</option>
+                                    {LOCATIONS.filter(l => l.cityId === selectedCity && l.type === locationType).map(l => (
+                                        <option key={l.id} value={l.id}>{geoName(l, language)}</option>
+                                    ))}
+                                    <option value="other">{isRTL ? 'أخرى (منطقة مخصصة)' : 'Other'}</option>
+                                </select>
+                            </div>
+                            
+                            {locationId === 'other' && (
+                                <input style={{ ...fieldInputStyle, marginBottom: 8 }} placeholder={isRTL ? 'اسم الموقع المخصص' : 'Custom Location Name'} value={customLocationName} onChange={e => setCustomLocationName(e.target.value)} />
+                            )}
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 6 }}>
+                                {isRTL
+                                    ? '💡 يمكنك لصق رابط قوقل ماب (مختصر أو طويل) أو الإحداثيات مباشرة بصيغة: 24.7136, 46.6753'
+                                    : '💡 Paste a Google Maps link (short or long) — or coordinates as: 24.7136, 46.6753'}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                <input
+                                    style={{ ...fieldInputStyle, flex: 1 }}
+                                    placeholder={isRTL ? 'رابط قوقل ماب أو إحداثيات' : 'Google Maps link or coordinates'}
+                                    value={googleMapsLink}
+                                    onChange={e => setGoogleMapsLink(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleMapLinkUpdate(true);
+                                        }
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    disabled={resolvingLink}
+                                    onClick={() => handleMapLinkUpdate(true)}
+                                    style={{
+                                        padding: '0 16px',
+                                        borderRadius: 12,
+                                        background: resolvingLink ? 'var(--gray-300)' : 'var(--primary)',
+                                        color: 'white',
+                                        border: 'none',
+                                        fontWeight: 800,
+                                        fontSize: '0.85rem',
+                                        cursor: resolvingLink ? 'default' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        boxShadow: 'var(--shadow-sm)'
+                                    }}
+                                >
+                                    {resolvingLink ? (
+                                        <div className="spinner" style={{ width: 16, height: 16, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                                    ) : '📍'}
+                                    {isRTL ? (resolvingLink ? 'جاري..' : 'تحديد') : (resolvingLink ? 'Wait..' : 'Set')}
+                                </button>
+                            </div>
+                            {/* Always-on "previous location" picker — saved branches
+                                from store_branches (DB-backed, X to delete) merged
+                                with active-deal locations (auto-derived, no delete).
+                                One tap adopts region+city+type+pin so the map and
+                                filters update together. v12.74: ثابت دائماً حتى مع
+                                بانر الموقع المحذوف — إخفاؤه كان سبب «يختفي ويظهر». */}
+                            {mergedLocationChips.length > 0 && (
+                                <div style={{
+                                    background: 'var(--card-bg)',
+                                    border: '1.5px solid var(--gray-200)',
+                                    borderRadius: 14,
+                                    padding: '10px 12px',
+                                    marginBottom: 8
+                                }}>
+                                    <div style={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 800,
+                                        color: 'var(--text-primary)',
+                                        marginBottom: 6,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6
+                                    }}>
+                                        📍 {isRTL ? 'مواقعك — اضغط لاستخدامه فوراً' : 'Your locations — tap to reuse'}
+                                    </div>
+                                    {/* Legend: green = tied to live deals (counts toward the
+                                        package, locked from deletion). amber = a free saved
+                                        slot the seller can delete to make room. */}
+                                    <div style={{
+                                        display: 'flex', flexWrap: 'wrap', gap: 12,
+                                        fontSize: '0.68rem', fontWeight: 700,
+                                        color: 'var(--text-secondary)', marginBottom: 9, lineHeight: 1.5
+                                    }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(16,185,129,0.85)', display: 'inline-block' }} />
+                                            {isRTL ? '🔒 نشط — مرتبط بعروض ويُحتسب (لا يُحذف حتى تنتهي/تُحذف عروضه)' : '🔒 Active — tied to deals & counted (locked until its deals end)'}
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(245,158,11,0.9)', display: 'inline-block' }} />
+                                            {isRTL ? 'شاغر — لا يُحتسب، يمكنك حذفه ✕ لتفريغ خانة' : 'Vacant — not counted, delete ✕ to free a slot'}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {mergedLocationChips.map(chip => {
+                                            const isSelected = chip.key === currentCandidateKey;
+                                            // Locked = this location currently powers ≥1 active
+                                            // deal → it consumes a package slot and MUST NOT be
+                                            // deletable until those deals end/are removed.
+                                            const isLocked = activeLocationKeys.has(chip.key);
+                                            // Vacant = a saved branch with no live deal → free,
+                                            // safe to delete to open a slot.
+                                            const isVacant = !!chip.branchId && !isLocked;
+
+                                            const colors = isSelected
+                                                ? { bg: 'var(--primary)', fg: '#fff', bd: 'var(--primary)' }
+                                                : isLocked
+                                                    ? { bg: 'rgba(16,185,129,0.14)', fg: 'var(--text-primary)', bd: 'rgba(16,185,129,0.55)' }
+                                                    : isVacant
+                                                        ? { bg: 'rgba(245,158,11,0.14)', fg: 'var(--text-primary)', bd: 'rgba(245,158,11,0.6)' }
+                                                        : { bg: 'var(--body-bg)', fg: 'var(--text-primary)', bd: 'var(--gray-200)' };
+
+                                            return (
+                                                <div
+                                                    key={chip.key}
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'stretch',
+                                                        background: colors.bg,
+                                                        color: colors.fg,
+                                                        border: '1.5px solid ' + colors.bd,
+                                                        borderRadius: 999,
+                                                        overflow: 'hidden',
+                                                        transition: 'background 0.15s ease, color 0.15s ease'
+                                                    }}
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adoptLocationChip(chip)}
+                                                        title={isLocked
+                                                            ? (isRTL ? 'مرتبط بعروض نشطة — يُحتسب ضمن باقتك' : 'Tied to active deals — counts toward your package')
+                                                            : (isRTL ? 'موقع شاغر محفوظ' : 'Vacant saved location')}
+                                                        style={{
+                                                            background: 'transparent',
+                                                            color: 'inherit',
+                                                            border: 'none',
+                                                            padding: '7px 13px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 800,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            WebkitTapHighlightColor: 'transparent'
+                                                        }}
+                                                    >
+                                                        {isLocked ? '🔒' : '📍'} {chip.label}
+                                                        {isVacant && (
+                                                            <span style={{ fontSize: '0.62rem', fontWeight: 800, opacity: 0.85 }}>
+                                                                {isRTL ? '• شاغر' : '• vacant'}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                    {isVacant ? (
+                                                        <button
+                                                            type="button"
+                                                            aria-label={isRTL ? 'حذف اللوكيشن الشاغر' : 'Delete vacant location'}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRemoveBranch(chip.branchId!, chip.label);
+                                                            }}
+                                                            style={{
+                                                                background: 'rgba(220,38,38,0.10)',
+                                                                color: 'var(--danger)',
+                                                                border: 'none',
+                                                                borderInlineStart: '1px solid rgba(245,158,11,0.5)',
+                                                                padding: '0 11px',
+                                                                fontSize: '0.85rem',
+                                                                fontWeight: 900,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                WebkitTapHighlightColor: 'transparent'
+                                                            }}
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    ) : isLocked ? (
+                                                        <span
+                                                            aria-hidden
+                                                            title={isRTL ? 'لا يمكن حذفه حتى تنتهي أو تُحذف كل عروضه' : 'Cannot delete until all its deals end or are removed'}
+                                                            style={{
+                                                                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(16,185,129,0.18)',
+                                                                color: isSelected ? '#fff' : 'rgb(5,150,105)',
+                                                                borderInlineStart: '1px solid ' + (isSelected ? 'rgba(255,255,255,0.35)' : 'rgba(16,185,129,0.4)'),
+                                                                padding: '0 10px',
+                                                                fontSize: '0.78rem',
+                                                                fontWeight: 900,
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center'
+                                                            }}
+                                                        >
+                                                            🔒
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                            <div style={{
+                                fontSize: '0.7rem',
+                                color: 'var(--text-secondary)',
+                                background: 'var(--notif-unread-bg)',
+                                padding: '8px 12px',
+                                borderRadius: 10,
+                                marginBottom: 8,
+                                lineHeight: 1.5
+                            }}>
+                                💡 {isRTL
+                                    ? 'إذا لم يتعرّف على رابط قوقل ماب، اضغط على الخريطة مباشرة لتثبيت الدبوس على موقع متجرك (يمكنك سحبه أيضاً).'
+                                    : "If the Google Maps link doesn't resolve, tap the map directly to drop a pin (you can drag it too)."}
+                            </div>
+                            <div style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
+                                {/* attributionControl=false drops the default Leaflet
+                                    badge, which includes a Ukraine flag glyph baked
+                                    into the library's prefix string. We don't need
+                                    the badge here — the map is a picker, not a
+                                    publishing surface. */}
+                                <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                    <TileLayer
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        subdomains="abc"
+                                        detectRetina={true}
+                                        maxZoom={19}
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    />
+                                    <MapCenterUpdater center={mapPos} />
+                                    <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
+                                </MapContainer>
+                            </div>
+                            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                                <button
+                                    type="button"
+                                    onClick={handleLocateMe}
+                                    disabled={locating}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        borderRadius: 12,
+                                        background: 'var(--primary)',
+                                        color: 'white',
+                                        fontWeight: 800,
+                                        border: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 8,
+                                        boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)',
+                                        cursor: locating ? 'default' : 'pointer',
+                                        opacity: locating ? 0.7 : 1,
+                                    }}
+                                >
+                                    {locating
+                                        ? <>⏳ {isRTL ? 'جاري التحديد...' : 'Locating…'}</>
+                                        : <>📍 {isRTL ? 'تحديد موقعي' : 'Locate Me'}</>}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={saveShopLocation}
+                                    disabled={savingShopLocation}
+                                    style={{
+                                        flex: 1.5,
+                                        padding: '12px',
+                                        borderRadius: 12,
+                                        background: savingShopLocation ? 'var(--gray-300)' : 'var(--primary)',
+                                        color: '#ffffff',
+                                        fontWeight: 900,
+                                        border: '2px solid ' + (savingShopLocation ? 'var(--gray-300)' : 'var(--primary)'),
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 8,
+                                        cursor: savingShopLocation ? 'default' : 'pointer'
+                                    }}
+                                >
+                                    {savingShopLocation ? (
+                                        <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                                    ) : (
+                                        <>⭐ {isRTL ? 'حفظ كموقع دائم للمتجر' : 'Set Permanent Shop Loc'}</>
+                                    )}
+                                </button>
+                            </div>
+                            <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--gray-400)', textAlign: 'center', fontWeight: 600 }}>
+                                {isRTL ? 'سيتم تحديث المنطقة والمدينة ونوع الموقع تلقائياً' : 'Region, City, and Venue Type will update automatically'}
+                            </div>
+                        </div>
+
+                        {/* v12.91 — العرض الواحد في عدة مواقع (طلب ناصر): يختار التاجر
+                            فروعه الإضافية من مواقعه المحفوظة (بحدود باقته)، ويحدد إن
+                            كانت الكمية مشتركة أم لكل فرع. */}
+                        {(() => {
+                            const others = mergedLocationChips.filter(c => c.key !== currentCandidateKey);
+                            if (others.length === 0) return null;
+                            // v13.03 — قسم المواقع صار لاختيار الفروع فقط (بلا كميات).
+                            // الكميات تُدار بالأسفل: كمية عامة للمنتج، أو لكل نوع/موقع من «أنواع المنتج».
+                            const cid = (c: typeof others[number]) => c.branchId || c.key;
+                            const primaryLabel = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
+                                || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
+                                || (isRTL ? 'الموقع الأساسي' : 'Primary location');
+                            return (
+                                <div style={{ marginTop: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
+                                    <label style={labelStyle}>{isRTL ? '📍 انشر نفس العرض في عدة مواقع (اختياري)' : '📍 Publish this deal at multiple locations (optional)'}</label>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
+                                        {isRTL
+                                            ? 'اختر فقط المواقع التي تريد نشر العرض فيها (بحدود باقتك). الكميات تُحدَّد بالأسفل: كمية واحدة للمنتج، أو كمية لكل نوع وموقع من قسم «أنواع المنتج». يظهر العرض مرة في الرئيسية، وفي «حولي» عند كل فرع اخترته.'
+                                            : 'Pick only the branches to publish at (within your plan). Quantities are set below — one product quantity, or per variant & branch under “Product variants”. One card on Home; per-branch pins on Nearby.'}
+                                    </div>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 6 }}>
+                                        ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.68rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
+                                    </div>
+                                    {/* v12.94 — توضيح «الأساسي» (لبس ناصر: من أين جاءت «الرياض»؟) */}
+                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                                        ℹ️ {isRTL
+                                            ? '«الأساسي» = موقع العرض الرئيسي الذي حددته بالخريطة/المول أعلى. لو ظهر باسم مدينة (مثل «الرياض») فهذا موقع الدبوس الافتراضي — حرّك الدبوس أو اختر مولك أعلى ليصبح فرعاً حقيقياً.'
+                                            : '“Primary” = the deal’s main location from the map/mall above. A bare city name means the default pin — move it or pick your mall above.'}
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {others.map(c => {
+                                            const on = extraLocKeys.includes(cid(c));
+                                            return (
+                                                <button key={c.key} type="button"
+                                                    onClick={() => setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)])}
+                                                    style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                                                    {on ? '✅' : '➕'} {c.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'اسم المنتج' : 'Item Name'}</label>
@@ -3535,455 +3983,6 @@ const SellerDashboard: React.FC = () => {
                                 placeholder={isRTL ? 'اكتب تفاصيل منتجك هنا بحرية...' : 'Write your product details here...'} />
                             <div style={{ fontSize: '0.7rem', textAlign: 'left', opacity: 0.6, marginTop: 4 }}>{description.split(/\s+/).filter(w => w.length > 0).length} {isRTL ? 'كلمة' : 'words'}</div>
                         </div>
-
-                        <div style={{ marginBottom: 15 }}>
-                            <label style={labelStyle}>{isRTL ? 'الموقع والمكان' : 'Location & Venue'}</label>
-
-                            {/* Location-limit hint. Computed from the seller's active
-                                deals (rounded coords / location IDs). Turns amber on
-                                3/3 with a new pin and red when blocked. Visible during
-                                edits too — the cap applies to both create and edit. */}
-                            {user?.userType !== 'admin' && (
-                                <div
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                        padding: '8px 12px', borderRadius: 10, marginBottom: 10,
-                                        background: wouldExceedLimit
-                                            ? 'rgba(239, 68, 68, 0.12)'
-                                            : (activeLocationKeys.size >= MAX_LOCATIONS && !locationIsExisting
-                                                ? 'rgba(245, 158, 11, 0.12)'
-                                                : 'rgba(16, 185, 129, 0.10)'),
-                                        border: '1px solid ' + (wouldExceedLimit
-                                            ? 'rgba(239, 68, 68, 0.35)'
-                                            : 'rgba(16, 185, 129, 0.25)'),
-                                        fontSize: '0.78rem', fontWeight: 800,
-                                        color: wouldExceedLimit ? 'var(--danger)' : 'var(--text-primary)',
-                                        lineHeight: 1.5
-                                    }}
-                                >
-                                    <span style={{ fontSize: '1rem' }}>📍</span>
-                                    <span style={{ flex: 1 }}>
-                                        {isRTL
-                                            ? `${packageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
-                                            : `${packageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
-                                        {wouldExceedLimit && (
-                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
-                                                {isRTL
-                                                    ? (editingDealId
-                                                        ? '⚠️ نقل المنتج لموقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.'
-                                                        : '⚠️ موقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.')
-                                                    : (editingDealId
-                                                        ? '⚠️ Moving this deal to a new location is blocked — pick an existing one or empty a slot first.'
-                                                        : '⚠️ This is a new location — limit reached. Pick an existing one or free a slot.')}
-                                            </span>
-                                        )}
-                                        {!wouldExceedLimit && locationIsExisting && activeLocationKeys.size > 0 && (
-                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3, color: 'var(--primary)' }}>
-                                                {isRTL ? '✓ موقع مستخدم من قبل — لن يُحسب كخانة جديدة.' : '✓ Existing location — no new slot used.'}
-                                            </span>
-                                        )}
-                                    </span>
-                                </div>
-                            )}
-
-                            {/* Renewal banner: the seller hit "تجديد" on an expired
-                                deal that used a now-deleted/over-cap location.
-                                v12.74 — نص إرشادي فقط بلا شرائح: كانت شرائحه تحل محل
-                                صندوق «مواقعك» فيتبادلان الظهور والاختفاء مع كل نقرة
-                                (بلاغ ناصر) — الآن الصندوق ثابت دائماً والبانر يظهر
-                                فوقه كتحذير فقط ما دام الموقع المختار غير صالح. */}
-                            {editingFromDeletedLocation && (
-                                <div
-                                    style={{
-                                        padding: '12px 14px', borderRadius: 14, marginBottom: 12,
-                                        background: 'rgba(245, 158, 11, 0.12)',
-                                        border: '1.5px solid rgba(245, 158, 11, 0.4)'
-                                    }}
-                                >
-                                    <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--secondary)', marginBottom: 4 }}>
-                                        {isRTL
-                                            ? '⚠️ موقع العرض السابق لم يعد ضمن باقتك'
-                                            : '⚠️ This deal\'s previous location is no longer on your package'}
-                                    </div>
-                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                                        {isRTL
-                                            ? `لتجديد هذا العرض اختر موقعاً نشطاً (🔒) من قائمة «مواقعك» بالأسفل (${activeLocationKeys.size}/${MAX_LOCATIONS} مستخدم)، ثم احفظ.`
-                                            : `To renew this deal, pick an active (🔒) location from the "Your locations" list below (${activeLocationKeys.size}/${MAX_LOCATIONS} used), then save.`}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedRegion} onChange={e => { setSelectedRegion(e.target.value); setSelectedCity(''); }}>
-                                    <option value="">{isRTL ? 'اختر المنطقة' : 'Region'}</option>
-                                    {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
-                                </select>
-                                <select style={{ ...fieldInputStyle, flex: 1 }} value={selectedCity} onChange={e => {
-                                    const val = e.target.value;
-                                    setSelectedCity(val);
-                                    if (val !== 'other') {
-                                        const city = CITIES.find(c => c.id === val);
-                                        if (city) setMapPos([city.lat, city.lng]);
-                                    }
-                                }}>
-                                    <option value="">{isRTL ? 'اختر المدينة' : 'City'}</option>
-                                    {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
-                                    <option value="other">{isRTL ? 'أخرى' : 'Other'}</option>
-                                </select>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <select style={{ ...fieldInputStyle, flex: 1 }} value={locationType} onChange={e => { setLocationType(e.target.value as any); setLocationId(''); }}>
-                                    <option value="mall">{isRTL ? 'مول 🛍️' : 'Mall 🛍️'}</option>
-                                    <option value="market">{isRTL ? 'سوق 🏛️' : 'Market 🏛️'}</option>
-                                    <option value="store">{isRTL ? 'محل 🏪' : 'Store 🏪'}</option>
-                                    <option value="other">{isRTL ? 'أخرى 📍' : 'Other 📍'}</option>
-                                </select>
-                                <select style={{ ...fieldInputStyle, flex: 2 }} value={locationId} onChange={e => {
-                                    const val = e.target.value;
-                                    setLocationId(val);
-                                    if(val !== 'other') {
-                                        const loc = LOCATIONS.find(l => l.id === val);
-                                        if (loc) setMapPos([loc.lat, loc.lng]);
-                                    }
-                                }}>
-                                    <option value="">{isRTL ? 'اختر المكان...' : 'Select Location...'}</option>
-                                    {LOCATIONS.filter(l => l.cityId === selectedCity && l.type === locationType).map(l => (
-                                        <option key={l.id} value={l.id}>{geoName(l, language)}</option>
-                                    ))}
-                                    <option value="other">{isRTL ? 'أخرى (منطقة مخصصة)' : 'Other'}</option>
-                                </select>
-                            </div>
-                            
-                            {locationId === 'other' && (
-                                <input style={{ ...fieldInputStyle, marginBottom: 8 }} placeholder={isRTL ? 'اسم الموقع المخصص' : 'Custom Location Name'} value={customLocationName} onChange={e => setCustomLocationName(e.target.value)} />
-                            )}
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 6 }}>
-                                {isRTL
-                                    ? '💡 يمكنك لصق رابط قوقل ماب (مختصر أو طويل) أو الإحداثيات مباشرة بصيغة: 24.7136, 46.6753'
-                                    : '💡 Paste a Google Maps link (short or long) — or coordinates as: 24.7136, 46.6753'}
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <input
-                                    style={{ ...fieldInputStyle, flex: 1 }}
-                                    placeholder={isRTL ? 'رابط قوقل ماب أو إحداثيات' : 'Google Maps link or coordinates'}
-                                    value={googleMapsLink}
-                                    onChange={e => setGoogleMapsLink(e.target.value)}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleMapLinkUpdate(true);
-                                        }
-                                    }}
-                                />
-                                <button
-                                    type="button"
-                                    disabled={resolvingLink}
-                                    onClick={() => handleMapLinkUpdate(true)}
-                                    style={{
-                                        padding: '0 16px',
-                                        borderRadius: 12,
-                                        background: resolvingLink ? 'var(--gray-300)' : 'var(--primary)',
-                                        color: 'white',
-                                        border: 'none',
-                                        fontWeight: 800,
-                                        fontSize: '0.85rem',
-                                        cursor: resolvingLink ? 'default' : 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 6,
-                                        boxShadow: 'var(--shadow-sm)'
-                                    }}
-                                >
-                                    {resolvingLink ? (
-                                        <div className="spinner" style={{ width: 16, height: 16, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
-                                    ) : '📍'}
-                                    {isRTL ? (resolvingLink ? 'جاري..' : 'تحديد') : (resolvingLink ? 'Wait..' : 'Set')}
-                                </button>
-                            </div>
-                            {/* Always-on "previous location" picker — saved branches
-                                from store_branches (DB-backed, X to delete) merged
-                                with active-deal locations (auto-derived, no delete).
-                                One tap adopts region+city+type+pin so the map and
-                                filters update together. v12.74: ثابت دائماً حتى مع
-                                بانر الموقع المحذوف — إخفاؤه كان سبب «يختفي ويظهر». */}
-                            {mergedLocationChips.length > 0 && (
-                                <div style={{
-                                    background: 'var(--card-bg)',
-                                    border: '1.5px solid var(--gray-200)',
-                                    borderRadius: 14,
-                                    padding: '10px 12px',
-                                    marginBottom: 8
-                                }}>
-                                    <div style={{
-                                        fontSize: '0.75rem',
-                                        fontWeight: 800,
-                                        color: 'var(--text-primary)',
-                                        marginBottom: 6,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 6
-                                    }}>
-                                        📍 {isRTL ? 'مواقعك — اضغط لاستخدامه فوراً' : 'Your locations — tap to reuse'}
-                                    </div>
-                                    {/* Legend: green = tied to live deals (counts toward the
-                                        package, locked from deletion). amber = a free saved
-                                        slot the seller can delete to make room. */}
-                                    <div style={{
-                                        display: 'flex', flexWrap: 'wrap', gap: 12,
-                                        fontSize: '0.68rem', fontWeight: 700,
-                                        color: 'var(--text-secondary)', marginBottom: 9, lineHeight: 1.5
-                                    }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(16,185,129,0.85)', display: 'inline-block' }} />
-                                            {isRTL ? '🔒 نشط — مرتبط بعروض ويُحتسب (لا يُحذف حتى تنتهي/تُحذف عروضه)' : '🔒 Active — tied to deals & counted (locked until its deals end)'}
-                                        </span>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                            <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(245,158,11,0.9)', display: 'inline-block' }} />
-                                            {isRTL ? 'شاغر — لا يُحتسب، يمكنك حذفه ✕ لتفريغ خانة' : 'Vacant — not counted, delete ✕ to free a slot'}
-                                        </span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {mergedLocationChips.map(chip => {
-                                            const isSelected = chip.key === currentCandidateKey;
-                                            // Locked = this location currently powers ≥1 active
-                                            // deal → it consumes a package slot and MUST NOT be
-                                            // deletable until those deals end/are removed.
-                                            const isLocked = activeLocationKeys.has(chip.key);
-                                            // Vacant = a saved branch with no live deal → free,
-                                            // safe to delete to open a slot.
-                                            const isVacant = !!chip.branchId && !isLocked;
-
-                                            const colors = isSelected
-                                                ? { bg: 'var(--primary)', fg: '#fff', bd: 'var(--primary)' }
-                                                : isLocked
-                                                    ? { bg: 'rgba(16,185,129,0.14)', fg: 'var(--text-primary)', bd: 'rgba(16,185,129,0.55)' }
-                                                    : isVacant
-                                                        ? { bg: 'rgba(245,158,11,0.14)', fg: 'var(--text-primary)', bd: 'rgba(245,158,11,0.6)' }
-                                                        : { bg: 'var(--body-bg)', fg: 'var(--text-primary)', bd: 'var(--gray-200)' };
-
-                                            return (
-                                                <div
-                                                    key={chip.key}
-                                                    style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'stretch',
-                                                        background: colors.bg,
-                                                        color: colors.fg,
-                                                        border: '1.5px solid ' + colors.bd,
-                                                        borderRadius: 999,
-                                                        overflow: 'hidden',
-                                                        transition: 'background 0.15s ease, color 0.15s ease'
-                                                    }}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => adoptLocationChip(chip)}
-                                                        title={isLocked
-                                                            ? (isRTL ? 'مرتبط بعروض نشطة — يُحتسب ضمن باقتك' : 'Tied to active deals — counts toward your package')
-                                                            : (isRTL ? 'موقع شاغر محفوظ' : 'Vacant saved location')}
-                                                        style={{
-                                                            background: 'transparent',
-                                                            color: 'inherit',
-                                                            border: 'none',
-                                                            padding: '7px 13px',
-                                                            fontSize: '0.8rem',
-                                                            fontWeight: 800,
-                                                            cursor: 'pointer',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 6,
-                                                            WebkitTapHighlightColor: 'transparent'
-                                                        }}
-                                                    >
-                                                        {isLocked ? '🔒' : '📍'} {chip.label}
-                                                        {isVacant && (
-                                                            <span style={{ fontSize: '0.62rem', fontWeight: 800, opacity: 0.85 }}>
-                                                                {isRTL ? '• شاغر' : '• vacant'}
-                                                            </span>
-                                                        )}
-                                                    </button>
-                                                    {isVacant ? (
-                                                        <button
-                                                            type="button"
-                                                            aria-label={isRTL ? 'حذف اللوكيشن الشاغر' : 'Delete vacant location'}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleRemoveBranch(chip.branchId!, chip.label);
-                                                            }}
-                                                            style={{
-                                                                background: 'rgba(220,38,38,0.10)',
-                                                                color: 'var(--danger)',
-                                                                border: 'none',
-                                                                borderInlineStart: '1px solid rgba(245,158,11,0.5)',
-                                                                padding: '0 11px',
-                                                                fontSize: '0.85rem',
-                                                                fontWeight: 900,
-                                                                cursor: 'pointer',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                WebkitTapHighlightColor: 'transparent'
-                                                            }}
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    ) : isLocked ? (
-                                                        <span
-                                                            aria-hidden
-                                                            title={isRTL ? 'لا يمكن حذفه حتى تنتهي أو تُحذف كل عروضه' : 'Cannot delete until all its deals end or are removed'}
-                                                            style={{
-                                                                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(16,185,129,0.18)',
-                                                                color: isSelected ? '#fff' : 'rgb(5,150,105)',
-                                                                borderInlineStart: '1px solid ' + (isSelected ? 'rgba(255,255,255,0.35)' : 'rgba(16,185,129,0.4)'),
-                                                                padding: '0 10px',
-                                                                fontSize: '0.78rem',
-                                                                fontWeight: 900,
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center'
-                                                            }}
-                                                        >
-                                                            🔒
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                            <div style={{
-                                fontSize: '0.7rem',
-                                color: 'var(--text-secondary)',
-                                background: 'var(--notif-unread-bg)',
-                                padding: '8px 12px',
-                                borderRadius: 10,
-                                marginBottom: 8,
-                                lineHeight: 1.5
-                            }}>
-                                💡 {isRTL
-                                    ? 'إذا لم يتعرّف على رابط قوقل ماب، اضغط على الخريطة مباشرة لتثبيت الدبوس على موقع متجرك (يمكنك سحبه أيضاً).'
-                                    : "If the Google Maps link doesn't resolve, tap the map directly to drop a pin (you can drag it too)."}
-                            </div>
-                            <div style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
-                                {/* attributionControl=false drops the default Leaflet
-                                    badge, which includes a Ukraine flag glyph baked
-                                    into the library's prefix string. We don't need
-                                    the badge here — the map is a picker, not a
-                                    publishing surface. */}
-                                <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
-                                    <TileLayer
-                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        subdomains="abc"
-                                        detectRetina={true}
-                                        maxZoom={19}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                    />
-                                    <MapCenterUpdater center={mapPos} />
-                                    <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
-                                </MapContainer>
-                            </div>
-                            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                                <button
-                                    type="button"
-                                    onClick={handleLocateMe}
-                                    disabled={locating}
-                                    style={{
-                                        flex: 1,
-                                        padding: '12px',
-                                        borderRadius: 12,
-                                        background: 'var(--primary)',
-                                        color: 'white',
-                                        fontWeight: 800,
-                                        border: 'none',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: 8,
-                                        boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)',
-                                        cursor: locating ? 'default' : 'pointer',
-                                        opacity: locating ? 0.7 : 1,
-                                    }}
-                                >
-                                    {locating
-                                        ? <>⏳ {isRTL ? 'جاري التحديد...' : 'Locating…'}</>
-                                        : <>📍 {isRTL ? 'تحديد موقعي' : 'Locate Me'}</>}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={saveShopLocation}
-                                    disabled={savingShopLocation}
-                                    style={{
-                                        flex: 1.5,
-                                        padding: '12px',
-                                        borderRadius: 12,
-                                        background: savingShopLocation ? 'var(--gray-300)' : 'var(--primary)',
-                                        color: '#ffffff',
-                                        fontWeight: 900,
-                                        border: '2px solid ' + (savingShopLocation ? 'var(--gray-300)' : 'var(--primary)'),
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: 8,
-                                        cursor: savingShopLocation ? 'default' : 'pointer'
-                                    }}
-                                >
-                                    {savingShopLocation ? (
-                                        <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
-                                    ) : (
-                                        <>⭐ {isRTL ? 'حفظ كموقع دائم للمتجر' : 'Set Permanent Shop Loc'}</>
-                                    )}
-                                </button>
-                            </div>
-                            <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--gray-400)', textAlign: 'center', fontWeight: 600 }}>
-                                {isRTL ? 'سيتم تحديث المنطقة والمدينة ونوع الموقع تلقائياً' : 'Region, City, and Venue Type will update automatically'}
-                            </div>
-                        </div>
-
-                        {/* v12.91 — العرض الواحد في عدة مواقع (طلب ناصر): يختار التاجر
-                            فروعه الإضافية من مواقعه المحفوظة (بحدود باقته)، ويحدد إن
-                            كانت الكمية مشتركة أم لكل فرع. */}
-                        {(() => {
-                            const others = mergedLocationChips.filter(c => c.key !== currentCandidateKey);
-                            if (others.length === 0) return null;
-                            // v13.03 — قسم المواقع صار لاختيار الفروع فقط (بلا كميات).
-                            // الكميات تُدار بالأسفل: كمية عامة للمنتج، أو لكل نوع/موقع من «أنواع المنتج».
-                            const cid = (c: typeof others[number]) => c.branchId || c.key;
-                            const primaryLabel = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
-                                || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
-                                || (isRTL ? 'الموقع الأساسي' : 'Primary location');
-                            return (
-                                <div style={{ marginTop: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
-                                    <label style={labelStyle}>{isRTL ? '📍 انشر نفس العرض في عدة مواقع (اختياري)' : '📍 Publish this deal at multiple locations (optional)'}</label>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
-                                        {isRTL
-                                            ? 'اختر فقط المواقع التي تريد نشر العرض فيها (بحدود باقتك). الكميات تُحدَّد بالأسفل: كمية واحدة للمنتج، أو كمية لكل نوع وموقع من قسم «أنواع المنتج». يظهر العرض مرة في الرئيسية، وفي «حولي» عند كل فرع اخترته.'
-                                            : 'Pick only the branches to publish at (within your plan). Quantities are set below — one product quantity, or per variant & branch under “Product variants”. One card on Home; per-branch pins on Nearby.'}
-                                    </div>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 6 }}>
-                                        ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.68rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
-                                    </div>
-                                    {/* v12.94 — توضيح «الأساسي» (لبس ناصر: من أين جاءت «الرياض»؟) */}
-                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
-                                        ℹ️ {isRTL
-                                            ? '«الأساسي» = موقع العرض الرئيسي الذي حددته بالخريطة/المول أعلى. لو ظهر باسم مدينة (مثل «الرياض») فهذا موقع الدبوس الافتراضي — حرّك الدبوس أو اختر مولك أعلى ليصبح فرعاً حقيقياً.'
-                                            : '“Primary” = the deal’s main location from the map/mall above. A bare city name means the default pin — move it or pick your mall above.'}
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {others.map(c => {
-                                            const on = extraLocKeys.includes(cid(c));
-                                            return (
-                                                <button key={c.key} type="button"
-                                                    onClick={() => setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)])}
-                                                    style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
-                                                    {on ? '✅' : '➕'} {c.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
                                 <div style={{ display: 'flex', gap: 10 }}>
