@@ -105,7 +105,7 @@ const StoreDetails: React.FC = () => {
                     // v13.11 — نتركه فارغاً ليتكفّل منطق العرض بإظهار الموقع المحفوظ
                     // أو زر «حدّد موقعك» بدل نص ثابت «غير متوفرة».
                     address: (user as any).address || ''
-                };
+                } as any;
             } else {
                 const inferDeal = deals.find(d => d.storeId === id);
                 if (inferDeal) {
@@ -117,7 +117,7 @@ const StoreDetails: React.FC = () => {
                         lng: 0,
                         googleMapsLink: '',
                         address: ''
-                    };
+                    } as any;
                 }
             }
         }

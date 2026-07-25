@@ -3490,7 +3490,7 @@ const SellerDashboard: React.FC = () => {
                                 )}
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
-                                        ? '💡 نفس المنتج بأكثر من شكل (حجم/لون/نكهة) ولكل شكل سعره الخاص؟ أضف «نوعاً» لكل شكل: اسم + سعر + كمية + صورة. المشتري يضغط النوع فيتغيّر السعر والصورة أمامه فوراً. مثال: صغير ١٠ / وسط ١٥ / كبير ٢٠. لو كل الأشكال بنفس السعر فاستخدم «إضافات المنتج» بالأسفل.'
+                                        ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
                                         : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
                                 </div>
                             </summary>
@@ -3691,7 +3691,7 @@ const SellerDashboard: React.FC = () => {
                                 )}
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
-                                        ? '💡 تفضيلات يختارها المشتري على نفس المنتج وقت الحجز — مجانية (بدون بصل، تغليف هدية) أو بسعر إضافي (جبنة +٣ ر.س). اكتب السؤال (نوع التغليف؟ الإضافات؟) وتحته الخيارات. أمثلة: برجر → خس/طماطم أو جبن +٣، قهوة → كوب ورقي/سيراميك ونوع الحليب، تيشيرت → اللون. باختصار: «الأنواع» = سعر مختلف، و«الإضافات» = زيادات على نفس المنتج.'
+                                        ? '💡 تفضيلات يختارها المشتري على نفس المنتج وقت الحجز — مجانية (بدون بصل، تغليف هدية) أو بسعر إضافي (جبنة +٣ ر.س). اكتب السؤال (نوع التغليف؟ الإضافات؟) وتحته الخيارات. أمثلة: برجر → خس/طماطم أو جبن +٣، قهوة → كوب ورقي/سيراميك ونوع الحليب، تيشيرت → اللون المفضل.'
                                         : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
                                 </div>
                             </summary>
