@@ -74,6 +74,13 @@ const buildHtml = (d: InvoiceData): string => {
         return `<div class="li ${it.kind}">${nameLine}${barcode}</div>`;
     }).join('');
 
+    // v13.10 — باركود رقم الطلب دائماً (حتى بلا رمز كاشير للأصناف) — طلب ناصر:
+    // فيمسحه التاجر/الكاشير فيفتح الطلب مباشرةً. رقم الطلب أبجدي-رقمي فيدعمه Code128.
+    const orderSvg = code128SVG(d.barcode, { height: 54, moduleWidth: 2 });
+    const orderBarcodeHtml = orderSvg
+        ? `<div class="ordercode"><div class="barcode">${orderSvg}</div><div class="li-sku">${L('رقم الطلب', 'Order #')}: ${esc(d.barcode)}</div></div>`
+        : '';
+
     return `<!doctype html>
 <html lang="${rtl ? 'ar' : 'en'}" dir="${dir}">
 <head>
@@ -90,6 +97,7 @@ const buildHtml = (d: InvoiceData): string => {
   .row { display: flex; justify-content: space-between; font-size: 13px; margin: 3px 0; }
   .row .k { color: #64748b; font-weight: 700; }
   .row .v { font-weight: 800; }
+  .ordercode { text-align: center; padding: 8px 0 12px; border-bottom: 2px dashed #cbd5e1; margin-bottom: 8px; }
   .items { border-top: 1px dashed #cbd5e1; margin-top: 10px; padding-top: 6px; }
   .li { padding: 10px 0; border-bottom: 1px dashed #e2e8f0; text-align: center; }
   .li.addon { padding: 6px 0; }
@@ -119,6 +127,7 @@ const buildHtml = (d: InvoiceData): string => {
       <div class="shop">${esc(d.shopName)}</div>
       <div class="sub">${L('فاتورة / سند طلب', 'Order receipt')}</div>
     </div>
+    ${orderBarcodeHtml}
     <div class="row"><span class="k">${L('رقم الطلب', 'Order #')}</span><span class="v">${esc(d.barcode)}</span></div>
     ${dateStr ? `<div class="row"><span class="k">${L('التاريخ', 'Date')}</span><span class="v">${esc(dateStr)}</span></div>` : ''}
     ${d.buyerName ? `<div class="row"><span class="k">${L('المشتري', 'Buyer')}</span><span class="v">${esc(d.buyerName)}</span></div>` : ''}
