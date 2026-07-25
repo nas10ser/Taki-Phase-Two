@@ -19,6 +19,11 @@ import { getSeasonById, campaignPublicLive } from '../data/seasons';
 import { bannerRepository, Banner } from '../repositories/bannerRepository';
 import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
 
+// v13.04 — كاش وحدة للبنرات: يبقى بين إعادة تركيب الرئيسية (الرجوع من صفحة المنتج)
+// فيظهر شريط البنر **فوراً** بدل أن يبقى فارغاً منهاراً حتى ينتهي الجلب — كان اختفاؤه
+// ثوانٍ ثم عودته يزيح المحتوى ويربك استعادة موضع التمرير (بلاغ ناصر).
+let _homeBannersCache: Banner[] = [];
+
 const Home: React.FC = () => {
     const history = useHistory();
     const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings } = useApp();
@@ -45,7 +50,8 @@ const Home: React.FC = () => {
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
     const [matchingStores, setMatchingStores] = useState<UserProfile[]>([]);
-    const [banners, setBanners] = useState<Banner[]>([]);
+    // v13.04 — يُبذَر من كاش الوحدة فيظهر البنر فوراً عند العودة للرئيسية (بلا وميض/اختفاء)
+    const [banners, setBanners] = useState<Banner[]>(() => _homeBannersCache);
     // Advances every ~15s while visible so time-expired deals drop out of the
     // live lists on their own — no data change or refetch needed. v12.06
     const nowTick = useNowTick(15000);
@@ -70,8 +76,10 @@ const Home: React.FC = () => {
                 image_url: '', target_url: '/contests',
                 position: 'home_top', is_active: true, display_order: -1,
             }));
-            setBanners([...contestBanners, ...imgBanners]);
-        }).catch(() => { bannerRepository.getActive('home_top').then(setBanners); });
+            const merged = [...contestBanners, ...imgBanners];
+            _homeBannersCache = merged; // v13.04 — حدّث الكاش ليظهر فوراً في العودة القادمة
+            setBanners(merged);
+        }).catch(() => { bannerRepository.getActive('home_top').then(b => { _homeBannersCache = b; setBanners(b); }); });
     }, [user?.userType]);
 
     // Initial fetch on mount. Deals tab-switch refetching is handled centrally in
