@@ -1521,9 +1521,68 @@ const DealDetails: React.FC = () => {
                         )}
                     </div>
 
-                    {/* v12.64 — نسخ المنتج: اختيار متعدد بعدّادات (طلب ناصر: ٣ صغير
-                        + ١ كبير في نفس الحجز) — كل صف: اسم + سعر + المتاح + عدّاد
-                        +/−، ولمس أي صف يجعل سعره وصورته هما المعروضين أعلاه. */}
+                    {/* v13.08 — منتقي الفرع أولاً (طلب ناصر: الموقع قبل الكميات): يختار
+                        المشتري الفرع فتتحدّث الأنواع المتوفرة فيه ومخزونها والحجز. */}
+                    {dealLocations && (
+                        <div style={{ marginTop: 16 }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
+                            </div>
+                            {/* v13.08 — بلا موقع = بلا مسافات. نعرض دعوة لتفعيل الموقع فتظهر
+                                المسافة/الأقرب (مثل صفحة «حولي») ويعمل حدّ الـ100 كم وتنبيه «ليس الأقرب». */}
+                            {(liveLocation?.lat == null || liveLocation?.lng == null) && (
+                                <button type="button" onClick={() => { try { requestLiveLocation?.(); } catch { /* ignore */ } }}
+                                    style={{ width: '100%', marginBottom: 10, padding: '11px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
+                                    📍 {isRTL ? 'فعّل موقعك لعرض المسافة واختيار الأقرب' : 'Enable location to see distances & pick nearest'}
+                                </button>
+                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {(sortedLocations || dealLocations).map((l: any, li: number) => {
+                                    const picked = (activeLoc?.id === l.id);
+                                    const capped = perLocationQty && typeof l.quantity === 'number';
+                                    const out = capped && l.quantity <= 0;
+                                    const isNearest = !!(sortedLocations && li === 0 && l.distance != null);
+                                    const distStr = l.distance != null
+                                        ? (l.distance < 1 ? `${Math.round(l.distance * 1000)} ${isRTL ? 'م' : 'm'}` : `${l.distance.toFixed(1)} ${isRTL ? 'كم' : 'km'}`)
+                                        : null;
+                                    return (
+                                        <div key={l.id}
+                                            role="radio"
+                                            aria-checked={picked}
+                                            tabIndex={0}
+                                            onClick={() => { if (!out) setSelectedLocId(l.id); }}
+                                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !out) { e.preventDefault(); setSelectedLocId(l.id); } }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14,
+                                                cursor: out ? 'not-allowed' : 'pointer', opacity: out ? 0.5 : 1,
+                                                border: picked ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                background: picked ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
+                                                WebkitTapHighlightColor: 'transparent',
+                                            }}>
+                                            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${picked ? 'var(--primary)' : 'var(--border-color)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                {picked && <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                    {l.name || (isRTL ? 'فرع' : 'Branch')}
+                                                    {isNearest && <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                    {distStr && <span style={{ color: 'var(--primary)' }}>🚗 {distStr}</span>}
+                                                    <span style={{ color: out ? 'var(--danger)' : capped ? 'var(--text-secondary)' : 'var(--success)' }}>
+                                                        {out ? (isRTL ? 'نفذت الكمية' : 'Sold out')
+                                                            : capped ? (isRTL ? `المتاح: ${l.quantity}` : `Available: ${l.quantity}`)
+                                                            : (isRTL ? '✅ متوفر' : '✅ Available')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {variants.length > 0 && (
                         <div style={{ marginBottom: 16 }}>
                             <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1636,67 +1695,6 @@ const DealDetails: React.FC = () => {
                         {deal.size && <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>👕 {deal.size}</span>}
                     </div>
 
-                    {/* v12.91 — منتقي الفرع: العرض متوفر في عدة مواقع، يختار المشتري
-                        الأقرب/المناسب له فيتحدّث المخزون والاتجاهات والحجز على أساسه. */}
-                    {dealLocations && (
-                        <div style={{ marginTop: 16 }}>
-                            <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
-                            </div>
-                            {/* v13.08 — بلا موقع = بلا مسافات. نعرض دعوة لتفعيل الموقع فتظهر
-                                المسافة/الأقرب (مثل صفحة «حولي») ويعمل حدّ الـ100 كم وتنبيه «ليس الأقرب». */}
-                            {(liveLocation?.lat == null || liveLocation?.lng == null) && (
-                                <button type="button" onClick={() => { try { requestLiveLocation?.(); } catch { /* ignore */ } }}
-                                    style={{ width: '100%', marginBottom: 10, padding: '11px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
-                                    📍 {isRTL ? 'فعّل موقعك لعرض المسافة واختيار الأقرب' : 'Enable location to see distances & pick nearest'}
-                                </button>
-                            )}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {(sortedLocations || dealLocations).map((l: any, li: number) => {
-                                    const picked = (activeLoc?.id === l.id);
-                                    const capped = perLocationQty && typeof l.quantity === 'number';
-                                    const out = capped && l.quantity <= 0;
-                                    const isNearest = !!(sortedLocations && li === 0 && l.distance != null);
-                                    const distStr = l.distance != null
-                                        ? (l.distance < 1 ? `${Math.round(l.distance * 1000)} ${isRTL ? 'م' : 'm'}` : `${l.distance.toFixed(1)} ${isRTL ? 'كم' : 'km'}`)
-                                        : null;
-                                    return (
-                                        <div key={l.id}
-                                            role="radio"
-                                            aria-checked={picked}
-                                            tabIndex={0}
-                                            onClick={() => { if (!out) setSelectedLocId(l.id); }}
-                                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !out) { e.preventDefault(); setSelectedLocId(l.id); } }}
-                                            style={{
-                                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14,
-                                                cursor: out ? 'not-allowed' : 'pointer', opacity: out ? 0.5 : 1,
-                                                border: picked ? '2px solid var(--primary)' : '1.5px solid var(--border-color)',
-                                                background: picked ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
-                                                WebkitTapHighlightColor: 'transparent',
-                                            }}>
-                                            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${picked ? 'var(--primary)' : 'var(--border-color)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                {picked && <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />}
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                    {l.name || (isRTL ? 'فرع' : 'Branch')}
-                                                    {isNearest && <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
-                                                </div>
-                                                <div style={{ fontSize: '0.72rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                                    {distStr && <span style={{ color: 'var(--primary)' }}>🚗 {distStr}</span>}
-                                                    <span style={{ color: out ? 'var(--danger)' : capped ? 'var(--text-secondary)' : 'var(--success)' }}>
-                                                        {out ? (isRTL ? 'نفذت الكمية' : 'Sold out')
-                                                            : capped ? (isRTL ? `المتاح: ${l.quantity}` : `Available: ${l.quantity}`)
-                                                            : (isRTL ? '✅ متوفر' : '✅ Available')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* Merchant Contact Section */}
