@@ -1495,7 +1495,9 @@ const SellerDashboard: React.FC = () => {
             // v13.03 — إعادة بناء «مجموعات الكمية» من خلايا variantQtys: لكل نوع، تُجمَّع
             // الفروع ذات الكمية المتساوية في مجموعة واحدة (فرع بلا خلية = مفتوح، لا يدخل).
             const groups: Record<string, Array<{ qty?: number; locs: string[] }>> = {};
+            const noVariants = !(deal.variants && deal.variants.length);
             for (const l of deal.locations) {
+                // أنواع×مواقع → variantQtys
                 const vq = (l.variantQtys && typeof l.variantQtys === 'object') ? l.variantQtys : {};
                 for (const vId of Object.keys(vq)) {
                     const qv = Number((vq as Record<string, number>)[vId]);
@@ -1503,6 +1505,13 @@ const SellerDashboard: React.FC = () => {
                     if (!groups[vId]) groups[vId] = [];
                     let g = groups[vId].find(gg => gg.qty === qv);
                     if (!g) { g = { qty: qv, locs: [] }; groups[vId].push(g); }
+                    g.locs.push(l.id);
+                }
+                // v13.06 — منتج واحد×مواقع → location.quantity في مجموعة '__base__'
+                if (noVariants && deal.locQtyMode === 'per_location' && typeof l.quantity === 'number' && l.quantity > 0) {
+                    if (!groups['__base__']) groups['__base__'] = [];
+                    let g = groups['__base__'].find(gg => gg.qty === l.quantity);
+                    if (!g) { g = { qty: l.quantity, locs: [] }; groups['__base__'].push(g); }
                     g.locs.push(l.id);
                 }
             }
@@ -1661,17 +1670,20 @@ const SellerDashboard: React.FC = () => {
         const _multiOthersEarly = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
         const _isMultiLocEarly = _multiOthersEarly.length > 0;
         const _multiKeysEarly = ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)];
-        // v13.03 — المصفوفة (أنواع + عدة مواقع) تُدار عبر «مجموعات الكمية». «كل مسقوف» =
-        // لكل خلية (نوع×فرع) كمية؛ والمجموع = مجموع الخلايا. بلا أنواع = كمية عامة مشتركة.
+        // v13.03/06 — «مجموعات الكمية»: أنواع×مواقع (variantQtys) أو منتج واحد×مواقع
+        // (__base__ → location.quantity). «كل مسقوف» = لكل خلية/فرع كمية؛ والمجموع = مجموعها.
         const _varIdsEarly = completeVariants.map(v => v.id);
         const _matrixEarly = _isMultiLocEarly && _varIdsEarly.length > 0;
         const _cellEarly = (k: string, vId: string): number | undefined => cellFromGroups(vId, k);
+        const _baseCellEarly = (k: string): number | undefined => cellFromGroups('__base__', k);
+        const _baseEarly = _isMultiLocEarly && _varIdsEarly.length === 0 && _multiKeysEarly.some(k => _baseCellEarly(k) !== undefined);
         const _multiAllCapped = _matrixEarly
-            && _multiKeysEarly.every(k => _varIdsEarly.every(vId => _cellEarly(k, vId) !== undefined));
+            ? _multiKeysEarly.every(k => _varIdsEarly.every(vId => _cellEarly(k, vId) !== undefined))
+            : (_baseEarly && _multiKeysEarly.every(k => _baseCellEarly(k) !== undefined));
         const _multiSumEarly = _matrixEarly
             ? _multiKeysEarly.reduce((s, k) => s + _varIdsEarly.reduce((a, vId) => a + (_cellEarly(k, vId) || 0), 0), 0)
-            : 0;
-        // إشارة مخزون صالحة فقط عندما تكون كل الخلايا مسقوفة (مجموع منتهٍ).
+            : (_baseEarly ? _multiKeysEarly.reduce((s, k) => s + (_baseCellEarly(k) || 0), 0) : 0);
+        // إشارة مخزون صالحة فقط عندما تكون كل الخلايا/الفروع مسقوفة (مجموع منتهٍ).
         const _hasMultiStock = _multiAllCapped && _multiSumEarly > 0;
 
         if (!itemName || !shopName || !originalPrice || !discountedPrice || !category) {
@@ -1737,12 +1749,12 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
-        // v13.03 — الانتهاء «بالكمية» مع أنواع + عدة مواقع: لازم كل خلية (نوع×فرع) لها
-        // كمية (كل المواقع مغطّاة لكل نوع). خانة مفتوحة تتطلب انتهاءً زمنياً بدلاً.
-        if (_matrixEarly && expiryType === 'stock' && !_multiAllCapped) {
+        // v13.03/06 — الانتهاء «بالكمية» مع مجموعات عدة مواقع (أنواع أو منتج واحد): لازم
+        // كل موقع مغطّى بكمية (لا موقع مفتوح). موقع مفتوح يتطلب انتهاءً زمنياً بدلاً.
+        if ((_matrixEarly || _baseEarly) && expiryType === 'stock' && !_multiAllCapped) {
             await customAlert(isRTL
-                ? '⚠️ اخترت الانتهاء «بالكمية» مع أنواع وعدة مواقع — حدّد كمية كل نوع في كل موقع (لا تترك موقعاً مفتوحاً)، أو غيّر نظام الانتهاء إلى الساعات/الأيام/التاريخ لتسمح بمواقع مفتوحة.'
-                : '⚠️ Stock-based expiry with variants across branches needs a qty for every variant at every branch — or switch expiry to time-based to allow open branches.');
+                ? '⚠️ اخترت الانتهاء «بالكمية» مع عدة مواقع — حدّد كمية لكل موقع (لا تترك موقعاً مفتوحاً)، أو غيّر نظام الانتهاء إلى الساعات/الأيام/التاريخ لتسمح بمواقع مفتوحة.'
+                : '⚠️ Stock-based expiry across branches needs a qty for every branch — or switch expiry to time-based to allow open branches.');
             return;
         }
 
@@ -2004,16 +2016,29 @@ const SellerDashboard: React.FC = () => {
         };
         const branchAllCappedSave = (k: string) => varIdsSave.every(vId => cellSave(k, vId) !== undefined);
         const branchCellSum = (k: string) => varIdsSave.reduce((s, vId) => s + (cellSave(k, vId) || 0), 0);
+        // v13.06 — «مجموعات كمية» للمنتج الواحد (بلا أنواع) عبر عدة مواقع (طلب ناصر):
+        // تُسطَّح إلى locations[branch].quantity (آلية v12.91)، والفرع غير المُغطّى = مفتوح.
+        const baseKey = '__base__';
+        const baseCellOf = (k: string): number | undefined => cellFromGroups(baseKey, k);
+        const baseGroupsActive = !matrixActive && isMultiLoc && allBranchKeys.some(k => baseCellOf(k) !== undefined);
         const capFields = (k: string) => {
-            if (!matrixActive) return {}; // منتج واحد متعدد المواقع = مخزون مشترك عام
-            const vq = branchVarQtysSave(k);
-            const qty = branchAllCappedSave(k) ? branchCellSum(k) : undefined;
-            return {
-                ...(vq ? { variantQtys: vq } : {}),
-                ...(qty !== undefined && qty > 0 ? { quantity: qty, initialQuantity: qty } : {}),
-            };
+            if (matrixActive) {
+                const vq = branchVarQtysSave(k);
+                const qty = branchAllCappedSave(k) ? branchCellSum(k) : undefined;
+                return {
+                    ...(vq ? { variantQtys: vq } : {}),
+                    ...(qty !== undefined && qty > 0 ? { quantity: qty, initialQuantity: qty } : {}),
+                };
+            }
+            if (baseGroupsActive) {
+                const q = baseCellOf(k);
+                return (q !== undefined && q > 0) ? { quantity: q, initialQuantity: q } : {}; // غير مُغطّى = مفتوح
+            }
+            return {}; // منتج واحد متعدد المواقع بلا مجموعات = مخزون مشترك عام
         };
-        const multiAllCapped = matrixActive && allBranchKeys.every(k => branchAllCappedSave(k));
+        const multiAllCapped = matrixActive
+            ? allBranchKeys.every(k => branchAllCappedSave(k))
+            : (baseGroupsActive && allBranchKeys.every(k => baseCellOf(k) !== undefined));
         let dealLocations: DealLocation[] | undefined;
         if (isMultiLoc) {
             const primaryName = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
@@ -2042,11 +2067,14 @@ const SellerDashboard: React.FC = () => {
             dealLocations = [primaryLoc, ...rest];
         }
         // الكمية الإجمالية:
-        // v13.03 — مع المصفوفة: مجموع كل الخلايا إن غُطّي الكل، وإلا غير محدود (زمني).
-        //          بلا مصفوفة (منتج واحد بموقع/عدة مواقع مشترك): الكمية العامة كما هي.
+        // v13.03 — مع المصفوفة (أنواع×مواقع): مجموع الخلايا إن غُطّي الكل، وإلا غير محدود.
+        // v13.06 — مع مجموعات المنتج الواحد لكل موقع: مجموع كميات الفروع إن غُطّي الكل، وإلا غير محدود.
+        //          غير ذلك (منتج واحد بموقع/عدة مواقع مشترك): الكمية العامة كما هي.
         const effQuantity: number | 'unlimited' = matrixActive
             ? (multiAllCapped ? allBranchKeys.reduce((s, k) => s + branchCellSum(k), 0) : 'unlimited')
-            : finalQuantity;
+            : baseGroupsActive
+                ? (multiAllCapped ? allBranchKeys.reduce((s, k) => s + (baseCellOf(k) || 0), 0) : 'unlimited')
+                : finalQuantity;
 
         const newDeal: Deal = {
             id: editingDealId || Date.now().toString(),
@@ -2078,7 +2106,7 @@ const SellerDashboard: React.FC = () => {
             locations: dealLocations,
             // v13.03 — الوضع مشتقّ: أنواع+عدة مواقع = per_location (خلايا variantQtys)؛
             // منتج واحد بعدة مواقع = shared (مخزون عام)؛ موقع واحد = undefined.
-            locQtyMode: isMultiLoc ? (matrixActive ? 'per_location' : 'shared') : undefined,
+            locQtyMode: isMultiLoc ? ((matrixActive || baseGroupsActive) ? 'per_location' : 'shared') : undefined,
             reliabilityScore: existingDeal ? existingDeal.reliabilityScore : 100,
             expiresInMinutes: calcExpiryMinutes(),
             expiryType,
@@ -2963,6 +2991,11 @@ const SellerDashboard: React.FC = () => {
                             );
                         })()}
 
+                        {/* v13.06 — صندوق «تفاصيل المنتج» مستقل بمسافة واضحة عن قسم الموقع (طلب ناصر) */}
+                        <div style={{ marginTop: 22, marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: '16px 14px 2px' }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                🛍️ {isRTL ? 'تفاصيل المنتج' : 'Product details'}
+                            </div>
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>
                                 <label style={labelStyle}>{isRTL ? 'اسم المنتج' : 'Item Name'}</label>
@@ -3008,6 +3041,7 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                        </div>{/* /صندوق تفاصيل المنتج */}
 
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>
@@ -3347,10 +3381,12 @@ const SellerDashboard: React.FC = () => {
                             )}
                         </div>
 
-                        {/* v13.03 — الكمية العامة للمنتج (طلب ناصر: نقلها ودمجها بقسم الأنواع).
-                            تظهر فقط للمنتج الواحد (بلا أنواع): كمية واحدة مشتركة بين كل المواقع
-                            المختارة. مع الأنواع تُدار الكمية داخل قسم «أنواع المنتج» بالأسفل. */}
-                        {variants.length === 0 && (
+                        {/* v13.03/06 — كمية المنتج الواحد (بلا أنواع):
+                            • موقع واحد → حقل كمية مفرد + «لامحدود» (كما هو).
+                            • عدة مواقع → «مجموعات كمية» للمنتج الأساسي (طلب ناصر: كميات مختلفة
+                              لكل موقع لمنتج واحد) عبر المفتاح '__base__' → تُسطَّح إلى
+                              locations[].quantity، والمواقع غير المحدّدة تبقى مفتوحة. */}
+                        {variants.length === 0 && !isMultiLocSel && (
                             <div style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
                                 <label style={labelStyle}>
                                     {isRTL ? '📦 الكمية' : '📦 Quantity'}
@@ -3368,16 +3404,63 @@ const SellerDashboard: React.FC = () => {
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
                                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
-                                    💡 {isRTL
-                                        ? (isMultiLocSel
-                                            ? 'كمية واحدة مشتركة بين كل المواقع المختارة، وأي حجز من أي فرع يخصم منها. لكميات مختلفة لكل موقع، استخدم «أنواع المنتج» بالأسفل.'
-                                            : 'الكمية اختيارية — إلزامية فقط لو اخترت الانتهاء «بالكمية». وإلا العرض ينتهي بالوقت.')
-                                        : (isMultiLocSel
-                                            ? 'One shared quantity across all selected branches. For different per-branch quantities, use “Product variants” below.'
-                                            : 'Quantity is optional — required only if you pick “by stock” expiry.')}
+                                    💡 {isRTL ? 'الكمية اختيارية — إلزامية فقط لو اخترت الانتهاء «بالكمية». وإلا العرض ينتهي بالوقت.' : 'Quantity is optional — required only if you pick “by stock” expiry.'}
                                 </div>
                             </div>
                         )}
+                        {variants.length === 0 && isMultiLocSel && (() => {
+                            const bkey = '__base__';
+                            const groups = variantLocGroups[bkey] || [];
+                            const coveredKeys = new Set<string>(groups.flatMap(g => g.locs));
+                            const openBranches = selectedBranches.filter(b => !coveredKeys.has(b.key));
+                            return (
+                                <div style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
+                                    <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        📦 {isRTL ? 'الكمية لكل موقع' : 'Quantity per branch'}
+                                    </div>
+                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                                        💡 {isRTL ? 'اخترت عدة مواقع. أضف كمية واختر المواقع التي تشترك فيها، واضغط «➕ أضف كمية» لكمية مختلفة لمواقع أخرى. المواقع غير المحدّدة تبقى مفتوحة. (لكمية موحّدة: أضف كمية واحدة واختر كل المواقع.)' : 'Add a quantity and pick which branches share it. “➕ Add quantity” for a different amount at other branches. Unpicked branches stay open.'}
+                                    </div>
+                                    {groups.map((g, gi) => {
+                                        const usedElsewhere = branchesUsedElsewhere(bkey, gi);
+                                        return (
+                                            <div key={gi} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 8, marginBottom: 8, background: 'var(--card-bg)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                    <NumericField integer value={g.qty} onChange={n => setVarGroupQty(bkey, gi, n)} placeholder={isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : 'qty'}
+                                                        style={{ width: 92, padding: '8px 9px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(g.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--body-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }} />
+                                                    <span style={{ flex: 1, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
+                                                    <button type="button" onClick={() => removeVarGroup(bkey, gi)} aria-label={isRTL ? 'حذف المجموعة' : 'Remove group'}
+                                                        style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 9, padding: '5px 9px', fontWeight: 900, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                    {selectedBranches.map(b => {
+                                                        const on = g.locs.includes(b.key);
+                                                        const blocked = usedElsewhere.has(b.key) && !on;
+                                                        return (
+                                                            <button key={b.key} type="button" disabled={blocked}
+                                                                onClick={() => toggleVarGroupLoc(bkey, gi, b.key)}
+                                                                title={blocked ? (isRTL ? 'مستخدم في مجموعة أخرى' : 'used in another group') : undefined}
+                                                                style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.74rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
+                                                                {on ? '✅' : '➕'} {b.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    <button type="button" onClick={() => addVarGroup(bkey)}
+                                        style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
+                                        {isRTL ? '➕ أضف كمية' : '➕ Add quantity'}
+                                    </button>
+                                    <div style={{ fontSize: '0.66rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
+                                        {openBranches.length
+                                            ? `🔓 ${isRTL ? 'مواقع مفتوحة (بلا حد)' : 'Open branches'}: ${openBranches.map(b => b.label).join('، ')}`
+                                            : `✅ ${isRTL ? 'كل المواقع محدّدة بكمية' : 'All branches have a quantity'}`}
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         {/* v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام
                             لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
