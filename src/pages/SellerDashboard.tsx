@@ -1057,9 +1057,10 @@ const SellerDashboard: React.FC = () => {
         ..._selectedExtraChips.map(c => ({ key: c.branchId || c.key, label: c.label })),
     ];
     const isMultiLocSel = _selectedExtraChips.length > 0;
-    // v13.03 — «كمية لكل موقع» صار يعني: أنواع + عدة مواقع (تُدار عبر مجموعات الكمية
-    // داخل قسم الأنواع). بلا أنواع = كمية عامة واحدة مشتركة بين كل المواقع.
-    const multiLocPerLocActive = isMultiLocSel && completeVariants.length > 0;
+    // v13.03/06 — «كمية لكل موقع» = وجود نوع (ولو لم يكتمل سعره بعد) + عدة مواقع، فتظهر
+    // «مجموعات الكمية» لكل نوع مباشرةً وهو يُعبّئ (لا ننتظر إكمال السعر). بلا أنواع =
+    // كمية عامة/مجموعات المنتج الأساسي.
+    const multiLocPerLocActive = isMultiLocSel && variants.length > 0;
     // v13.03 — أدوات «مجموعات الكمية» لكل نوع (variantLocGroups[variantId] = [{qty, locs}]).
     const addVarGroup = (vId: string) =>
         setVariantLocGroups(p => ({ ...p, [vId]: [...(p[vId] || []), { qty: undefined, locs: [] }] }));

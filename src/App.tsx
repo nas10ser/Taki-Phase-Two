@@ -253,10 +253,15 @@ const restoreScroll = (y: number) => {
     window.addEventListener('wheel', onUser, opts);
     window.addEventListener('touchmove', onUser, opts);
     window.addEventListener('keydown', onUser, opts);
+    // v13.07 — نُوقف «scroll anchoring» **مؤقتاً أثناء الاستعادة فقط** حتى لا يزيح
+    // المتصفح موضعنا كلما ارتفع محتوى فوق العرض؛ ونعيده بعدها فيبقى التصفّح العادي
+    // (نموذج التاجر…) بلا قفزات.
+    try { document.documentElement.style.overflowAnchor = 'none'; } catch { /* ignore */ }
     const cleanup = () => {
         window.removeEventListener('wheel', onUser, opts as any);
         window.removeEventListener('touchmove', onUser, opts as any);
         window.removeEventListener('keydown', onUser, opts as any);
+        try { document.documentElement.style.overflowAnchor = ''; } catch { /* ignore */ }
     };
     // نُعيد تأكيد الموضع كل إطار حتى نبلغه فعلاً (الصفحة قد ترتفع تدريجياً بعد
     // الرجوع)، ونتوقّف فور الوصول أو عند تمرير المستخدم يدوياً أو بعد سقف ~2ث.
