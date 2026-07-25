@@ -1103,7 +1103,10 @@ const DealDetails: React.FC = () => {
         }
 
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
-        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null);
+        // v13.11 — نمرّر نية الدفع: إن كان وضع التاجر «عند الاستلام» فالنية cod دائماً،
+        // وإلا اختيار المشتري (payChoice). يُخفي زر «ادفع الآن» عن حجوزات COD.
+        const paymentIntent: 'cod' | 'online' = payMode === 'cod' ? 'cod' : payChoice;
+        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null, paymentIntent);
 
         // Reserve quantity only when the seller set a real stock cap.
         // Time-based offers stay infinitely bookable until the timer ends.
@@ -1521,10 +1524,43 @@ const DealDetails: React.FC = () => {
                         )}
                     </div>
 
-                    {/* v13.08 — منتقي الفرع أولاً (طلب ناصر: الموقع قبل الكميات): يختار
-                        المشتري الفرع فتتحدّث الأنواع المتوفرة فيه ومخزونها والحجز. */}
-                    {dealLocations && (
-                        <div style={{ marginTop: 16 }}>
+                    {/* v13.11 — الشارات (تقييم/مصداقية/مخزون/مقاس) تبقى مع العنوان والسعر في الصندوق نفسه */}
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 800 }}>
+                            ★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')} {count > 0 && `(${count} ${isRTL ? 'تعليق' : 'reviews'})`}
+                        </span>
+                        {/* Authenticity badge from buyer real/fake votes. v11.97 */}
+                        {(() => {
+                            const ab = getAuthenticityBadge(deal.authReal, deal.authFake, isRTL);
+                            if (!ab.show) return null;
+                            return (
+                                <span style={{ background: ab.bg, color: ab.color, padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900 }}>
+                                    {ab.label} <span style={{ opacity: 0.7, fontWeight: 700 }}>({ab.total} {isRTL ? 'صوت' : 'votes'})</span>
+                                </span>
+                            );
+                        })()}
+                        <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            📦 {(() => {
+                                // v12.91 — كمية الفرع المختار عند «كمية لكل موقع»
+                                if (perLocationQty && activeLoc && typeof activeLoc.quantity === 'number') {
+                                    return activeLoc.quantity > 0
+                                        ? (isRTL ? `${activeLoc.quantity} متبقي في ${activeLoc.name || 'الفرع'}` : `${activeLoc.quantity} left at ${activeLoc.name || 'branch'}`)
+                                        : (isRTL ? 'نفذت في هذا الفرع' : 'Sold out here');
+                                }
+                                if (deal.quantity === 'unlimited') return isRTL ? 'كمية لا محدودة' : 'Unlimited quantity';
+                                if (typeof deal.quantity === 'number' && deal.quantity > 0) return isRTL ? `${deal.quantity} متبقي` : `${deal.quantity} left`;
+                                if (!hasStockCap) return isRTL ? '⏱ عرض زمني' : '⏱ Time-limited';
+                                return isRTL ? 'نفذت الكمية' : 'Sold Out';
+                            })()}
+                        </span>
+                        {deal.size && <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>👕 {deal.size}</span>}
+                    </div>
+                </div>
+
+                {/* v13.11 (طلب ناصر): «المواقع» في صندوق مستقل و«الأنواع/الكمية» في صندوق
+                    مستقل — بلا تداخل. منتقي الفرع أولاً (الموقع قبل الكميات). */}
+                {dealLocations && (
+                    <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
                             <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 📍 {isRTL ? `متوفر في ${dealLocations.length} مواقع — اختر الأقرب لك` : `Available at ${dealLocations.length} locations — pick one`}
                             </div>
@@ -1583,8 +1619,8 @@ const DealDetails: React.FC = () => {
                         </div>
                     )}
 
-                    {variants.length > 0 && (
-                        <div style={{ marginBottom: 16 }}>
+                {variants.length > 0 && (
+                    <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 24, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
                             <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 🧬 {isRTL ? 'اختر النوع أو الحجم' : 'Choose type or size'}
                             </div>
@@ -1662,40 +1698,7 @@ const DealDetails: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <span style={{ background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 800 }}>
-                            ★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')} {count > 0 && `(${count} ${isRTL ? 'تعليق' : 'reviews'})`}
-                        </span>
-                        {/* Authenticity badge from buyer real/fake votes. v11.97 */}
-                        {(() => {
-                            const ab = getAuthenticityBadge(deal.authReal, deal.authFake, isRTL);
-                            if (!ab.show) return null;
-                            return (
-                                <span style={{ background: ab.bg, color: ab.color, padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900 }}>
-                                    {ab.label} <span style={{ opacity: 0.7, fontWeight: 700 }}>({ab.total} {isRTL ? 'صوت' : 'votes'})</span>
-                                </span>
-                            );
-                        })()}
-                        <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                            📦 {(() => {
-                                // v12.91 — كمية الفرع المختار عند «كمية لكل موقع»
-                                if (perLocationQty && activeLoc && typeof activeLoc.quantity === 'number') {
-                                    return activeLoc.quantity > 0
-                                        ? (isRTL ? `${activeLoc.quantity} متبقي في ${activeLoc.name || 'الفرع'}` : `${activeLoc.quantity} left at ${activeLoc.name || 'branch'}`)
-                                        : (isRTL ? 'نفذت في هذا الفرع' : 'Sold out here');
-                                }
-                                if (deal.quantity === 'unlimited') return isRTL ? 'كمية لا محدودة' : 'Unlimited quantity';
-                                if (typeof deal.quantity === 'number' && deal.quantity > 0) return isRTL ? `${deal.quantity} متبقي` : `${deal.quantity} left`;
-                                if (!hasStockCap) return isRTL ? '⏱ عرض زمني' : '⏱ Time-limited';
-                                return isRTL ? 'نفذت الكمية' : 'Sold Out';
-                            })()}
-                        </span>
-                        {deal.size && <span style={{ background: 'var(--gray-100)', padding: '6px 14px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>👕 {deal.size}</span>}
-                    </div>
-
-                </div>
+                )}
 
                 {/* Merchant Contact Section */}
                 {(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone) && (

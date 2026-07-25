@@ -8,6 +8,7 @@ import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
 import ReportDialog from '../components/ReportDialog';
 import { supabase } from '../services/supabaseClient';
+import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -427,6 +428,9 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 ) : ((booking.status === 'pending' || booking.status === 'acknowledged') &&
+                                                    // v13.11 (طلب ناصر): لا نعرض «ادفع الآن» لمن اختار الدفع عند الاستلام
+                                                    // حتى لا تحصل لخبطة بين التاجر والمشتري (يدفع نقداً عند الاستلام فقط).
+                                                    booking.paymentMethod !== 'cod' &&
                                                     ['online', 'both'].includes(storePayModes[booking.deal?.storeId] || '')) && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); payNow(booking.barcode); }}
@@ -512,6 +516,16 @@ const Bookings: React.FC = () => {
                                                     <BookingThread barcode={booking.barcode} myRole="buyer" />
                                                 )}
 
+                                                {/* v13.11 (طلب ناصر): طباعة الفاتورة بعد اكتمال الدفع —
+                                                    هنا (نشطة) تظهر فقط للمدفوع إلكترونياً؛ الدفع عند
+                                                    الاستلام تُطبع بعد اكتمال الطلب من «السابقة». */}
+                                                {booking.paidAt && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
+                                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginBottom: 20 }}>
+                                                        {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
+                                                    </button>
+                                                )}
                                                 {/* Code & QR */}
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -661,6 +675,15 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
+                                                {/* v13.11 (طلب ناصر): طباعة فاتورة الطلب بعد اكتماله —
+                                                    اكتمال الطلب = اكتمل الدفع (نقداً عند الاستلام أو بطاقة). */}
+                                                {booking.status === 'completed' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
+                                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginTop: 16 }}>
+                                                        {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </div>

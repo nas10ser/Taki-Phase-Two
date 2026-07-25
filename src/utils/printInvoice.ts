@@ -45,6 +45,55 @@ const esc = (s: string): string =>
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
     ));
 
+// v13.11 — بناء بيانات الفاتورة من صفّ حجز واحد (طلب ناصر: يستخدمها التاجر
+// (لوحته) والمشتري (حجوزاتي) معاً بلا تكرار). تبني العناصر المهيكلة من النوع/
+// الإضافات المختارة، وتقرأ الإجمالي وملاحظة المشتري من نص الملاحظات، وحالة
+// الدفع من paidAt (مدفوع إلكترونياً) وإلا الدفع عند الاستلام.
+export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => {
+    const deal = (order?.deal || {}) as any;
+    const sel = ((order?.selectedOptions || []) as Array<{ g: string; c: string; qty?: number }>);
+    const dvariants = (deal.variants || []) as any[];
+    const doptions = (deal.options || []) as any[];
+    const items: InvoiceLineItem[] = [];
+    const pickedVariants = sel.filter(s => s.g === '__variant__');
+    if (pickedVariants.length) {
+        for (const s of pickedVariants) {
+            const v = dvariants.find(vv => vv.id === s.c);
+            if (v) items.push({ label: v.label, qty: s.qty || 1, sku: v.posSku, kind: 'variant' });
+        }
+    } else {
+        items.push({ label: deal.itemName, qty: Number(order?.bookedQuantity) || 1, sku: deal.posSku, kind: 'main' });
+    }
+    for (const s of sel) {
+        if (s.g === '__variant__') continue;
+        const grp = doptions.find(g => g.id === s.g);
+        const choice = grp?.choices?.find((c: any) => c.id === s.c);
+        if (!choice) continue;
+        items.push({ label: grp ? `${grp.title}: ${choice.label}` : choice.label, qty: s.qty || 1, sku: choice.posSku, kind: 'addon' });
+    }
+    const notes: string = order?.notes || '';
+    const tm = notes.match(/الإجمالي:\s*([\d.]+)/);
+    const totalText = tm ? `${tm[1]} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
+    const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
+    const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
+    return {
+        shopName: deal.shopName || deal.itemName,
+        itemName: deal.itemName,
+        barcode: order?.barcode,
+        createdAt: order?.bookedAt,
+        quantity: order?.bookedQuantity,
+        buyerName: order?.userName,
+        prepTime: order?.prepTime,
+        items,
+        totalText,
+        buyerNote,
+        // v12.93 — حالة الدفع: مدفوع إلكترونياً (paidAt) وإلا الدفع عند الاستلام
+        paidOnline: !!order?.paidAt,
+        paidAmount: order?.paidAmount,
+        isRTL,
+    };
+};
+
 const buildHtml = (d: InvoiceData): string => {
     const rtl = d.isRTL;
     const dir = rtl ? 'rtl' : 'ltr';

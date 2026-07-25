@@ -117,7 +117,7 @@ interface AppContextType {
     addSmartAlert: (rule: SmartAlertRule) => Promise<boolean>;
     removeSmartAlert: (idx: number) => Promise<boolean>;
     bookings: any[];
-    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null) => any;
+    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online') => any;
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
     acknowledgeBooking: (barcode: string, note?: string) => void;
@@ -1299,7 +1299,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // (≥75 m) AND ≥60 s, or a 5-min heartbeat. Sellers are skipped (not shoppers).
     const persistLiveLocation = useCallback(async (lat: number, lng: number) => {
         const u = liveUserRef.current;
-        if (!u?.id || u.userType === 'seller') return;
+        // v13.11 (طلب ناصر): لا نكتب الموقع الحي إلا لحساب مشترٍ صِرف. التاجر —
+        // وكذلك المتجر المملوك لأدمن — له موقع ثابت على الخريطة يحفظه من لوحته؛
+        // لو كتبنا فوق users.lat/lng بموقع الجهاز الحي لضاع دبوس المتجر المحفوظ
+        // (كان يظهر «معلومات الموقع غير متوفرة» ويطلب التفعيل كل مرة).
+        if (!u?.id || u.userType !== 'buyer') return;
         const last = lastSaveRef.current;
         if (last) {
             const movedM = getDistance(last.lat, last.lng, lat, lng) * 1000;
@@ -1365,7 +1369,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // On app open: a shopper who already granted location is tracked silently
     // (no re-ask). Otherwise we surface the permission state so the UI prompts.
     useEffect(() => {
-        const isShopper = !!user && user.userType !== 'seller';
+        // v13.11 — التتبّع التلقائي والبانر للمشتري فقط. التاجر/المالك لا يُلاحَق
+        // بطلب التفعيل، ولا يُكتب فوق موقع متجره الثابت (طلب ناصر).
+        const isShopper = !!user && user.userType === 'buyer';
         if (!isShopper) { stopLiveWatch(); liveAlertedRef.current = false; lastSaveRef.current = null; return; }
         if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return; }
         let cancelled = false;
@@ -2111,7 +2117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [smartAlerts, user]);
 
     // Booking logic - uses generateBarcode from helpers
-    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null) => {
+    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online') => {
         const barcode = generateBarcode(8);
 
         // Bookings get a full 2-hour pickup hold from the moment they're made.
@@ -2141,6 +2147,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             selectedOptions,
             // v12.91 — الفرع المختار عند العرض متعدد المواقع (null = موقع واحد)
             locationId: locationId || null,
+            // v13.11 — نية الدفع وقت الحجز (طلب ناصر): يخفي زر «ادفع الآن» عن COD
+            paymentMethod: paymentMethod || undefined,
             status: 'pending' as const
         };
 

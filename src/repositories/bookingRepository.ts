@@ -42,6 +42,10 @@ export interface Booking {
     paidAt?: number;
     paymentProvider?: string;
     paidAmount?: number;
+    /** v13.11 — نية الدفع التي اختارها المشتري وقت الحجز: 'cod' (عند الاستلام)
+     *  أو 'online' (إلكتروني). undefined = حجز قديم قبل هذه الميزة. يُستخدم
+     *  لإخفاء زر «ادفع الآن» عن حجوزات الدفع عند الاستلام (طلب ناصر). */
+    paymentMethod?: 'cod' | 'online';
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -124,6 +128,8 @@ export const bookingRepository = {
                     paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
                     paymentProvider: b.payment_provider || undefined,
                     paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
+                    // v13.11 — نية الدفع وقت الحجز (يخفي «ادفع الآن» عن حجوزات COD)
+                    paymentMethod: (b.payment_method === 'cod' || b.payment_method === 'online') ? b.payment_method : undefined,
                     // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
                     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
                     // v12.91 — الفرع المختار
@@ -166,6 +172,7 @@ export const bookingRepository = {
                     paidAt: data.paid_at ? new Date(data.paid_at).getTime() : undefined,
                     paymentProvider: data.payment_provider || undefined,
                     paidAmount: data.paid_amount != null ? Number(data.paid_amount) : undefined,
+                    paymentMethod: (data.payment_method === 'cod' || data.payment_method === 'online') ? data.payment_method : undefined,
                     expiryTime: data.expiry_time
                 };
             }
@@ -198,6 +205,8 @@ export const bookingRepository = {
                 // كميات الخيارات المسقوفة (النص القارئ للتاجر داخل notes أصلاً)
                 selected_options: (booking.selectedOptions && booking.selectedOptions.length) ? booking.selectedOptions : null,
                 location_id: booking.locationId || null,
+                // v13.11 — نية الدفع وقت الحجز (cod/online) لإخفاء «ادفع الآن» عن COD
+                payment_method: booking.paymentMethod || null,
                 status: booking.status,
                 booked_at: booking.bookedAt,
                 expiry_time: booking.expiryTime

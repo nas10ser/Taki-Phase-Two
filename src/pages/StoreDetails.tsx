@@ -99,9 +99,12 @@ const StoreDetails: React.FC = () => {
                     id: user.id,
                     name: user.name || (user as any).shop || 'متجر جديد',
                     rating: 5,
-                    lat: 0,
-                    lng: 0,
-                    address: isRTL ? 'معلومات الموقع غير متوفرة' : 'Location Not Available'
+                    lat: (user as any).lat ?? 0,
+                    lng: (user as any).lng ?? 0,
+                    googleMapsLink: (user as any).googleMapsLink || '',
+                    // v13.11 — نتركه فارغاً ليتكفّل منطق العرض بإظهار الموقع المحفوظ
+                    // أو زر «حدّد موقعك» بدل نص ثابت «غير متوفرة».
+                    address: (user as any).address || ''
                 };
             } else {
                 const inferDeal = deals.find(d => d.storeId === id);
@@ -112,7 +115,8 @@ const StoreDetails: React.FC = () => {
                         rating: 5,
                         lat: 0,
                         lng: 0,
-                        address: isRTL ? 'معلومات الموقع غير متوفرة' : 'Location Not Available'
+                        googleMapsLink: '',
+                        address: ''
                     };
                 }
             }
@@ -127,13 +131,17 @@ const StoreDetails: React.FC = () => {
         if (id) {
             userRepository.findById(id).then(u => {
                 if (u) {
+                    // v13.11 (طلب ناصر): نقرأ موقع المتجر المحفوظ فعلاً (إحداثيات +
+                    // رابط خرائط + عنوان نصّي) بدل تثبيت «غير متوفرة» — فالتاجر يحفظ
+                    // موقعه من «لوحتي» ثم يظهر هنا في «صفحتي».
                     setStore({
                         id: u.id,
                         name: u.shop || u.name || 'متجر',
                         rating: 5,
-                        lat: 0,
-                        lng: 0,
-                        address: u.address || (isRTL ? 'معلومات الموقع غير متوفرة' : 'Location Not Available')
+                        lat: (u as any).lat ?? 0,
+                        lng: (u as any).lng ?? 0,
+                        googleMapsLink: (u as any).googleMapsLink || '',
+                        address: u.address || ''
                     });
                 }
                 setLoadingStore(false);
@@ -369,7 +377,11 @@ const StoreDetails: React.FC = () => {
                         {isRTL ? '→ رجوع' : '← Back'}
                     </button>
                     {user?.id === store.id && (
-                        <button onClick={() => setIsEditingStore(!isEditingStore)} style={{ background: isEditingStore ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', color: 'white', border: 'none', borderRadius: 12, padding: '8px 16px', fontSize: '0.85rem', fontWeight: 800 }}>
+                        <button onClick={() => {
+                            // v13.11 — عند فتح التعديل، عبّئ حقل العنوان بالمحفوظ فعلاً
+                            if (!isEditingStore) setEditAddress(profile.address || store.address || '');
+                            setIsEditingStore(!isEditingStore);
+                        }} style={{ background: isEditingStore ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', color: 'white', border: 'none', borderRadius: 12, padding: '8px 16px', fontSize: '0.85rem', fontWeight: 800 }}>
                             {isEditingStore ? (isRTL ? 'إلغاء' : 'Cancel') : (isRTL ? 'تعديل البروفايل' : 'Edit Profile')}
                         </button>
                     )}
@@ -401,7 +413,42 @@ const StoreDetails: React.FC = () => {
                     </div>
                     
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: 4 }}>{store.name}</h1>
-                    <div style={{ fontSize: '1rem', opacity: 0.9, fontWeight: 700, marginBottom: 4 }}>📍 {profile.address || store.address}</div>
+                    {/* v13.11 (طلب ناصر): يعرض موقع المتجر المحفوظ — عنوان نصّي إن وُجد،
+                        وإلا رابط الخريطة/الإحداثيات كزر «عرض على الخريطة». لصاحب المتجر
+                        دون موقع محفوظ: زر «حدّد موقع متجرك» ينقله لمحرّر الخريطة في لوحته. */}
+                    {(() => {
+                        const addr = (profile.address || store.address || '').trim();
+                        const mapHref = (store.googleMapsLink && String(store.googleMapsLink).trim())
+                            || ((store.lat && store.lng) ? `https://www.google.com/maps?q=${store.lat},${store.lng}` : '');
+                        const isOwner = user?.id === store.id;
+                        if (addr) {
+                            return (
+                                <div style={{ fontSize: '1rem', opacity: 0.9, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span>📍 {addr}</span>
+                                    {mapHref && (
+                                        <a href={mapHref} target="_blank" rel="noopener noreferrer" style={{ color: '#fff', background: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 800, textDecoration: 'none' }}>
+                                            🗺 {isRTL ? 'الخريطة' : 'Map'}
+                                        </a>
+                                    )}
+                                </div>
+                            );
+                        }
+                        if (mapHref) {
+                            return (
+                                <a href={mapHref} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff', background: 'rgba(255,255,255,0.18)', borderRadius: 12, padding: '6px 14px', fontSize: '0.9rem', fontWeight: 800, textDecoration: 'none', marginBottom: 4 }}>
+                                    📍 {isRTL ? 'عرض موقع المتجر على الخريطة' : 'View store location on map'}
+                                </a>
+                            );
+                        }
+                        if (isOwner) {
+                            return (
+                                <button onClick={() => history.push('/seller?loc=1')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff', background: 'rgba(255,255,255,0.22)', border: '1px dashed rgba(255,255,255,0.5)', borderRadius: 12, padding: '8px 16px', fontSize: '0.88rem', fontWeight: 900, cursor: 'pointer', marginBottom: 4 }}>
+                                    📍 {isRTL ? 'حدّد موقع متجرك على الخريطة' : 'Set your store location'}
+                                </button>
+                            );
+                        }
+                        return <div style={{ fontSize: '1rem', opacity: 0.75, fontWeight: 700, marginBottom: 4 }}>📍 {isRTL ? 'معلومات الموقع غير متوفرة' : 'Location Not Available'}</div>;
+                    })()}
                     <div style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600, marginBottom: 16 }}>📅 {isRTL ? 'تاريخ الانضمام: ' : 'Joined: '} {new Date().getFullYear()}/01</div>
                     
                     {/* Stats strip — three clean metric cells (rating · authenticity ·
@@ -510,6 +557,16 @@ const StoreDetails: React.FC = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'رقم التواصل:' : 'Contact Phone:'}</label>
                                 <input value={editPhone} onChange={e => setEditPhone(e.target.value)} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
+                            </div>
+                            {/* v13.11 (طلب ناصر): تحديد الموقع من «صفحتي» — عنوان نصّي يظهر
+                                للمشترين، وزر ينقل التاجر لمحرّر الخريطة في لوحته لتثبيت
+                                الدبوس/الإحداثيات بدقّة. */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'موقع المتجر (المدينة / الحي / الوصف):' : 'Store location (city / district):'}</label>
+                                <input value={editAddress} onChange={e => setEditAddress(e.target.value)} placeholder={isRTL ? 'مثال: الخبر — حي العليا' : 'e.g. Khobar — Olaya'} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
+                                <button type="button" onClick={() => history.push('/seller?loc=1')} style={{ background: 'rgba(255,255,255,0.14)', color: 'white', border: '1px dashed rgba(255,255,255,0.5)', borderRadius: 14, padding: '12px', fontSize: '0.9rem', fontWeight: 900, cursor: 'pointer' }}>
+                                    📍 {isRTL ? 'تحديد الموقع على الخريطة (دبوس دقيق)' : 'Pin location on map'}
+                                </button>
                             </div>
                             <button onClick={handleSaveProfile} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 14, padding: '14px', fontSize: '1rem', fontWeight: 900 }}>
                                 {isRTL ? 'حفظ البيانات' : 'Save Profile'}

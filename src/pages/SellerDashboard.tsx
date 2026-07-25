@@ -23,7 +23,7 @@ import { logger } from '../utils/logger';
 import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
-import { printOrderInvoice, InvoiceLineItem } from '../utils/printInvoice';
+import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -281,6 +281,20 @@ const SellerDashboard: React.FC = () => {
             setView(tab as any);
         } else if (!tab) {
             setView('form');
+        }
+        // v13.11 (طلب ناصر): «حدّد موقع متجرك» من «صفحتي» يفتح /seller?loc=1 →
+        // نضمن نموذج الإضافة ونمرّر لمحرّر موقع المتجر ونومض حوله.
+        if (params.get('loc')) {
+            setView('form');
+            window.setTimeout(() => {
+                const el = document.getElementById('taki-shop-location');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('taki-order-highlight');
+                    window.setTimeout(() => el.classList.remove('taki-order-highlight'), 2600);
+                }
+                history.replace('/seller');
+            }, 400);
         }
     }, [location.search]);
 
@@ -2872,7 +2886,7 @@ const SellerDashboard: React.FC = () => {
                                     ? 'إذا لم يتعرّف على رابط قوقل ماب، اضغط على الخريطة مباشرة لتثبيت الدبوس على موقع متجرك (يمكنك سحبه أيضاً).'
                                     : "If the Google Maps link doesn't resolve, tap the map directly to drop a pin (you can drag it too)."}
                             </div>
-                            <div style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
+                            <div id="taki-shop-location" style={{ height: 200, borderRadius: 16, overflow: 'hidden', border: '1.5px solid var(--gray-200)' }}>
                                 {/* attributionControl=false drops the default Leaflet
                                     badge, which includes a Ukraine flag glyph baked
                                     into the library's prefix string. We don't need
@@ -3405,7 +3419,7 @@ const SellerDashboard: React.FC = () => {
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
                                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
-                                    💡 {isRTL ? 'الكمية اختيارية — إلزامية فقط لو اخترت الانتهاء «بالكمية». وإلا العرض ينتهي بالوقت.' : 'Quantity is optional — required only if you pick “by stock” expiry.'}
+                                    💡 {isRTL ? 'منتج بشكل واحد؟ اكتب كميته هنا فقط وتجاهل «أنواع المنتج» بالأسفل. الكمية إلزامية فقط لو اخترت الانتهاء «بالكمية»، وإلا العرض ينتهي بالوقت.' : 'One-form product? Just enter its quantity here. Required only if you pick “by stock” expiry.'}
                                 </div>
                             </div>
                         )}
@@ -3476,7 +3490,7 @@ const SellerDashboard: React.FC = () => {
                                 )}
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
-                                        ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
+                                        ? '💡 نفس المنتج بأكثر من شكل (حجم/لون/نكهة) ولكل شكل سعره الخاص؟ أضف «نوعاً» لكل شكل: اسم + سعر + كمية + صورة. المشتري يضغط النوع فيتغيّر السعر والصورة أمامه فوراً. مثال: صغير ١٠ / وسط ١٥ / كبير ٢٠. لو كل الأشكال بنفس السعر فاستخدم «إضافات المنتج» بالأسفل.'
                                         : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
                                 </div>
                             </summary>
@@ -3677,7 +3691,7 @@ const SellerDashboard: React.FC = () => {
                                 )}
                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
-                                        ? '💡 أشياء يختارها المشتري على المنتج نفسه وقت الحجز: إما مجانية مثل «بدون بصل» أو «تغليف هدية»، أو بسعر يُضاف على المبلغ مثل «جبنة +٣ ر.س». اكتب السؤال (مثل: الإضافات؟ نوع التغليف؟) وتحته الخيارات، والمشتري يحدد ما يريده لكل قطعة. الفرق ببساطة: «الأنواع» فوق = المنتج نفسه بسعر مختلف، و«الإضافات» هنا = زيادات فوق المنتج.'
+                                        ? '💡 تفضيلات يختارها المشتري على نفس المنتج وقت الحجز — مجانية (بدون بصل، تغليف هدية) أو بسعر إضافي (جبنة +٣ ر.س). اكتب السؤال (نوع التغليف؟ الإضافات؟) وتحته الخيارات. أمثلة: برجر → خس/طماطم أو جبن +٣، قهوة → كوب ورقي/سيراميك ونوع الحليب، تيشيرت → اللون. باختصار: «الأنواع» = سعر مختلف، و«الإضافات» = زيادات على نفس المنتج.'
                                         : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
                                 </div>
                             </summary>
@@ -4497,50 +4511,7 @@ const SellerDashboard: React.FC = () => {
                                     {/* v12.87/88 — طباعة فاتورة الطلب مع باركود الكاشير (طلب ناصر):
                                         تبني عناصر مهيكلة من النوع/الإضافات المختارة، ولكل عنصر SKU
                                         يُطبع باركود Code 128 يمسحه الكاشير. */}
-                                    <button onClick={() => {
-                                        const deal = order.deal as any;
-                                        const sel = ((order as any).selectedOptions || []) as Array<{ g: string; c: string; qty?: number }>;
-                                        const dvariants = (deal.variants || []) as any[];
-                                        const doptions = (deal.options || []) as any[];
-                                        const items: InvoiceLineItem[] = [];
-                                        const pickedVariants = sel.filter(s => s.g === '__variant__');
-                                        if (pickedVariants.length) {
-                                            for (const s of pickedVariants) {
-                                                const v = dvariants.find(vv => vv.id === s.c);
-                                                if (v) items.push({ label: v.label, qty: s.qty || 1, sku: v.posSku, kind: 'variant' });
-                                            }
-                                        } else {
-                                            items.push({ label: deal.itemName, qty: Number(order.bookedQuantity) || 1, sku: deal.posSku, kind: 'main' });
-                                        }
-                                        for (const s of sel) {
-                                            if (s.g === '__variant__') continue;
-                                            const grp = doptions.find(g => g.id === s.g);
-                                            const choice = grp?.choices?.find((c: any) => c.id === s.c);
-                                            if (!choice) continue;
-                                            items.push({ label: grp ? `${grp.title}: ${choice.label}` : choice.label, qty: s.qty || 1, sku: choice.posSku, kind: 'addon' });
-                                        }
-                                        const notes = order.notes || '';
-                                        const tm = notes.match(/الإجمالي:\s*([\d.]+)/);
-                                        const totalText = tm ? `${tm[1]} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
-                                        const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
-                                        const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
-                                        printOrderInvoice({
-                                            shopName: deal.shopName || deal.itemName,
-                                            itemName: deal.itemName,
-                                            barcode: order.barcode,
-                                            createdAt: (order as any).bookedAt,
-                                            quantity: order.bookedQuantity,
-                                            buyerName: (order as any).userName,
-                                            prepTime: order.prepTime,
-                                            items,
-                                            totalText,
-                                            buyerNote,
-                                            // v12.93 — حالة الدفع على الفاتورة (يقرؤها الكاشير عند المسح)
-                                            paidOnline: !!(order as any).paidAt,
-                                            paidAmount: (order as any).paidAmount,
-                                            isRTL,
-                                        });
-                                    }}
+                                    <button onClick={() => printOrderInvoice(buildBookingInvoice(order, isRTL))}
                                         style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginBottom: 8 }}>
                                         {isRTL ? '🖨 طباعة فاتورة الطلب' : '🖨 Print order invoice'}
                                     </button>
