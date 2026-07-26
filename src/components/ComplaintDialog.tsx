@@ -52,9 +52,10 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
                 ? '✅ تم إرسال شكواك للإدارة. سنراجعها ونتواصل معك إن لزم.'
                 : '✅ Your complaint was sent to the admin. We will review it.');
         } else {
-            customAlert(isRTL
+            // v13.15 — رسالة حدّ الطلبات (⏳ بلاغات كثيرة…) تُعرض كما هي من القاعدة
+            customAlert(res.msg || (isRTL
                 ? '❌ تعذّر الإرسال. تحقق من الاتصال وحاول مرة أخرى.'
-                : '❌ Could not send. Check your connection and try again.');
+                : '❌ Could not send. Check your connection and try again.'));
         }
     };
 

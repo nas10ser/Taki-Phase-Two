@@ -101,7 +101,7 @@ interface AppContextType {
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
     markAllNotifsRead: () => void;
-    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean | 'duplicate'>;
+    addRating: (dealId: string, ratingData: { score: number, comment: string }) => Promise<boolean | 'duplicate' | 'rate_limited'>;
     updateRating: (dealId: string, ratingId: string, ratingData: { score: number, comment: string }) => Promise<boolean>;
     addReply: (dealId: string, ratingId: string, reply: string) => Promise<void>;
     toggleRatingLike: (dealId: string, ratingId: string) => Promise<void>;
@@ -1871,7 +1871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // toast. Previously this returned void and any RLS/network failure
     // looked identical to success — the form closed, no error was raised,
     // and the buyer wondered why their review never appeared.
-    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }): Promise<boolean | 'duplicate'> => {
+    const addRating = useCallback(async (dealId: string, ratingData: { score: number, comment: string }): Promise<boolean | 'duplicate' | 'rate_limited'> => {
         const dealToUpdate = deals.find(d => d.id === dealId);
         if (!dealToUpdate || !user) return false;
 
@@ -1885,6 +1885,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         // DB blocked a second rating of this store (anti-inflation backstop). v11.97b
         if (created === 'duplicate') return 'duplicate';
+        // v13.15 — حدّ الطلبات: تقييمات كثيرة خلال ساعة
+        if (created === 'rate_limited') return 'rate_limited';
         if (!created) return false;
 
         const local = {
@@ -2193,10 +2195,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             // v13.14 — رسالة رفض المخزون الذري تصل هنا الآن (نفدت الكمية —
             // سبقك مشترون آخرون) وتُعرض كما هي بالعربية من القاعدة.
+            // v13.15 — وكذلك رسائل حدّ الطلبات (⏳ محاولات كثيرة…) تُعرض كما هي.
             const isStockReject = /نفدت|سبقك/.test(msg);
+            const isRateReject = /محاولات|الحد الأقصى لعدد/.test(msg);
             customAlertRef.current(language === 'ar'
-                ? (isStockReject ? `⛔ ${msg}` : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
-                : (isStockReject ? `⛔ ${msg}` : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
+                ? (isRateReject ? msg : isStockReject ? `⛔ ${msg}` : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
+                : (isRateReject ? msg : isStockReject ? `⛔ ${msg}` : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
         });
 
         return booking;

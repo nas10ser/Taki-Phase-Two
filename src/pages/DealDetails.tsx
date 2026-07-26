@@ -1179,6 +1179,13 @@ const DealDetails: React.FC = () => {
                 : 'You already rated this store — tap “Edit your rating” to update it.');
             return;
         }
+        // v13.15 — حدّ الطلبات: تقييمات كثيرة خلال وقت قصير
+        if (ok === 'rate_limited') {
+            customAlert(isRTL
+                ? '⏳ تقييمات كثيرة خلال وقت قصير — انتظر قليلاً ثم أعد المحاولة.'
+                : '⏳ Too many reviews in a short time — please wait a bit and try again.');
+            return;
+        }
         if (!ok) {
             customAlert(isRTL
                 ? '❌ تعذّر إرسال التقييم. تحقق من الاتصال وحاول مرة أخرى.'

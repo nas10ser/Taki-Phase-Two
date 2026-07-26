@@ -1597,6 +1597,7 @@ async function execBooking(ctx) {
                 : e==='deal_not_found'  ? tr('b1134_deal_not_found')
                 : e==='shop_closed'     ? tr('b1135_shop_closed', result.opens_in_min!=null?tr('b1135_opens_in', md(HRS.fmtMins(result.opens_in_min))):'')
                 : e==='no_quantity'     ? tr('b1136_no_quantity', result.available??0)
+                : e==='rate_limited'    ? tr('bk_rate_limited')
                 : e==='max_qty'         ? tr('bk_err_max_qty', result.limit??1)
                 : e==='rebook_limit'    ? tr('bk_err_rebook_limit', result.limit??1)
                 : e==='rebook_wait'     ? tr('bk_err_rebook_wait', md(HRS.fmtMins(result.wait_minutes??1)))

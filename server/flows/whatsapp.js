@@ -554,6 +554,7 @@ function create(deps) {
                 : e === 'deal_not_found' ? tr('wa_book_err_notfound')
                 : e === 'shop_closed' ? tr('wa_book_err_closed', r.opens_in_min != null ? tr('wa_book_err_opensin', HRS.fmtMins(r.opens_in_min)) : '')
                 : e === 'no_quantity' ? tr('wa_book_err_noqty', r.available ?? 0)
+                : e === 'rate_limited' ? tr('bk_rate_limited')
                 : e === 'max_qty' ? tr('bk_err_max_qty', r.limit ?? 1)
                 : e === 'rebook_limit' ? tr('bk_err_rebook_limit', r.limit ?? 1)
                 : e === 'rebook_wait' ? tr('bk_err_rebook_wait', HRS.fmtMins(r.wait_minutes ?? 1))

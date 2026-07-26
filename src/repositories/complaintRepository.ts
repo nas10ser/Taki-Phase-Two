@@ -17,7 +17,7 @@ export const complaintRepository = {
         subject?: string;
         message: string;
         targetId?: string | null;
-    }): Promise<{ ok: boolean }> => {
+    }): Promise<{ ok: boolean; msg?: string }> => {
         const { error } = await supabase.from('complaints').insert({
             user_id: input.userId,
             user_role: input.userRole ?? null,
@@ -28,7 +28,8 @@ export const complaintRepository = {
         });
         if (error) {
             console.warn('complaint insert failed:', error.message);
-            return { ok: false };
+            // v13.15 — حدّ الطلبات (P0011): نعيد رسالة القاعدة العربية ليعرضها الحوار
+            return { ok: false, msg: (error as any).code === 'P0011' ? error.message : undefined };
         }
         return { ok: true };
     },
