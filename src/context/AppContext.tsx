@@ -1784,22 +1784,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ? '⚠️ اشتراكك بموقع واحد فقط.\n\nهذا العرض في موقع مختلف عن منتجاتك النشطة — استخدم نفس موقع المنتج الأول، أو أوقف/احذف منتجات الموقع الحالي أولاً لتتمكن من اختيار موقع آخر. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».'
                 : `⚠️ وصلت لحد المواقع المسموح في باقتك${capN > 1 ? ` (${capN} مواقع)` : ''}.\n\nاختر موقعاً من مواقعك الحالية، أو أوقف/احذف كل منتجات أحد المواقع لتفريغ خانة قبل تفعيل عرض في موقع جديد. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».`;
             console.error('Failed to update deal in database:', error);
+            // v13.17 (طلب ناصر): كل رسالة سببها الباقة تعطي خياراً مباشراً
+            // «ترقية الباقة / إلغاء» بدل طريق مسدود — تنقله لصفحة الاشتراك.
+            if (isLocationCap || isSubRequired) {
+                const goUpgrade = await customConfirm(
+                    language === 'ar'
+                        ? (isSubRequired
+                            ? '🔒 اشتراكك منتهي — لا يمكن نشر أو استئناف أي عرض قبل تجديده.\n\n• «موافق» = فتح صفحة الاشتراك الآن.\n• «إلغاء» = لاحقاً.'
+                            : `${capMsgAr}\n\n• «موافق» = فتح صفحة الاشتراك للترقية.\n• «إلغاء» = أعالجها بنفسي.`)
+                        : (isSubRequired
+                            ? '🔒 Your subscription has expired.\n\n• OK = open Subscription.\n• Cancel = later.'
+                            : `⚠️ Package location limit reached.\n\n• OK = open Subscription to upgrade.\n• Cancel = I'll fix it myself.`)
+                );
+                if (goUpgrade) window.location.assign('/subscription');
+                return false;
+            }
             customAlert(
                 language === 'ar'
-                    ? (isSubRequired
-                        ? '🔒 اشتراكك منتهي — لا يمكن نشر أو استئناف أي عرض قبل تجديد الاشتراك.\nافتح «الاشتراك» وجدّد باقتك، ثم فعّل عروضك واحداً واحداً.'
-                        : isLocationCap
-                        ? capMsgAr
-                        : isTransientLock
+                    ? (isTransientLock
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
-                    : (isSubRequired
-                        ? '🔒 Your subscription has expired — renew it before publishing or resuming any deal.'
-                        : isLocationCap
-                        ? (capN === 1
-                            ? '⚠️ Your plan allows ONE location. Use the same location as your active products, or pause/delete them first to pick a new location.'
-                            : '⚠️ You\'ve reached your package\'s location limit. Pick an existing location or free a vacant slot. Upgrade from «Subscription» for more.')
-                        : isTransientLock
+                    : (isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
             );

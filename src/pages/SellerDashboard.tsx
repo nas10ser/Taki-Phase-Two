@@ -17,6 +17,7 @@ import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
+import { dealLocationCount, trimDealLocationsToCap, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
@@ -365,20 +366,53 @@ const SellerDashboard: React.FC = () => {
     // والتبويب يتبدل تلقائياً فيرى التاجر عرضه انتقل بعينه.
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
 
+    /**
+     * v13.17 — يُهيّئ عرضاً للتفعيل/التجديد بما يوافق باقة التاجر الحالية.
+     * يُعيد `null` إن اختار التاجر «ترقية الباقة» (نُحوّله لصفحة الاشتراك) أو ألغى.
+     */
+    const prepareDealForActivation = async (
+        deal: Deal,
+        opts: { restoreQuantity: boolean }
+    ): Promise<Deal | null> => {
+        let out = deal;
+        const count = dealLocationCount(deal);
+        if (count > MAX_LOCATIONS) {
+            // طلب ناصر: كل رسالة فيها ترقية باقة تعطي خياراً واضحاً بدل طريق مسدود.
+            const goUpgrade = await customConfirm(isRTL
+                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}.\n\n• «موافق» = ترقية الباقة الآن (ننقلك لصفحة الاشتراك).\n• «إلغاء» = تفعيله بأقرب ${MAX_LOCATIONS === 1 ? 'موقع واحد' : `${MAX_LOCATIONS} مواقع`} فقط وإزالة الباقي.`
+                : `⚠️ This deal spans ${count} locations; your plan allows ${MAX_LOCATIONS}.\n\n• OK = upgrade now.\n• Cancel = activate with the first ${MAX_LOCATIONS} location(s) only.`);
+            if (goUpgrade) {
+                history.push('/subscription');
+                return null;
+            }
+            const trimmed = trimDealLocationsToCap(deal, MAX_LOCATIONS);
+            out = trimmed.deal;
+        }
+        // تجديد العمر: عند التجديد دائماً، وعند التفعيل فقط إن كان منتهياً زمنياً
+        // (وإلا عاد نشطاً واختفى فوراً — كان عيباً حقيقياً في «تفعيل»).
+        if (opts.restoreQuantity || needsLifespanRefresh(out)) {
+            out = refreshDealLifespan(out, opts.restoreQuantity);
+        }
+        return out;
+    };
+
     const reActivateDeal = async (dealId: string) => {
         const deal = deals.find(d => d.id === dealId);
         if (!deal || busyDealId) return;
         const confirmed = await customConfirm(isRTL ? 'هل تريد تجديد هذا العرض ليعود للظهور في الصفحة الرئيسية؟' : 'Do you want to renew this deal to appear on the home page?');
         if (!confirmed) return;
 
-        // Restore original quantity (or default to 10 if missing for old mocks)
-        const restoreQty = deal.initialQuantity !== undefined ? deal.initialQuantity : (deal.quantity === 0 ? 10 : deal.quantity);
+        // v13.17 (طلب ناصر): قبل التجديد نُوائم العرض مع الباقة الحالية —
+        // (أ) قصّ فروع النشر المتعدد الزائدة (كانت تُمرَّر كما هي فيرفض حارس
+        //     القاعدة برسالة «منشور في ٤ مواقع» رغم أن التاجر لا يرى أي فرع).
+        // (ب) تجديد العمر: createdAt من الآن + تاريخ الانتهاء المعروض يُعاد
+        //     حسابه بنفس المدة الأصلية + استعادة الكمية الأولية.
+        const prepared = await prepareDealForActivation(deal, { restoreQuantity: true });
+        if (!prepared) return;   // ألغى التاجر بعد رسالة الباقة
         setBusyDealId(dealId);
         try {
             const ok = await updateDeal({
-                ...deal,
-                quantity: restoreQty,
-                createdAt: Date.now(), // fresh timestamp → same duration, counted from the renew tap
+                ...prepared,
                 status: 'active' as const
             });
             if (!ok) {
@@ -419,11 +453,18 @@ const SellerDashboard: React.FC = () => {
             : (isRTL ? 'هل تريد إيقاف العرض مؤقتاً؟ سينتقل للعروض السابقة ولن يراه المشترون.' : 'Do you want to pause this deal? It will move to previous deals and buyers won\'t see it.'));
         if (!confirmed) return;
 
+        // v13.17 — الاستئناف يمرّ بنفس المواءمة (قصّ المواقع + تجديد العمر إن انتهى)
+        let payload: Deal = deal;
+        if (isCurrentlyPaused) {
+            const prepared = await prepareDealForActivation(deal, { restoreQuantity: false });
+            if (!prepared) return;
+            payload = prepared;
+        }
         setBusyDealId(dealId);
         try {
             // v12.32 — الفشل (اشتراك منتهٍ / حد المواقع) يعرض سببه من updateDeal.
             const ok = await updateDeal({
-                ...deal,
+                ...payload,
                 status: (isCurrentlyPaused ? 'active' : 'paused') as any
             });
             if (!ok) {
