@@ -46,6 +46,8 @@ export interface Booking {
      *  أو 'online' (إلكتروني). undefined = حجز قديم قبل هذه الميزة. يُستخدم
      *  لإخفاء زر «ادفع الآن» عن حجوزات الدفع عند الاستلام (طلب ناصر). */
     paymentMethod?: 'cod' | 'online';
+    /** v13.13 — من ألغى الطلب (يظهر على الفاتورة): 'buyer'|'seller'|'system'|'expired' */
+    cancelledBy?: string;
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -130,6 +132,8 @@ export const bookingRepository = {
                     paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
                     // v13.11 — نية الدفع وقت الحجز (يخفي «ادفع الآن» عن حجوزات COD)
                     paymentMethod: (b.payment_method === 'cod' || b.payment_method === 'online') ? b.payment_method : undefined,
+                    // v13.13 — من ألغى الطلب (للفاتورة)
+                    cancelledBy: b.cancelled_by || undefined,
                     // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
                     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
                     // v12.91 — الفرع المختار
@@ -173,6 +177,7 @@ export const bookingRepository = {
                     paymentProvider: data.payment_provider || undefined,
                     paidAmount: data.paid_amount != null ? Number(data.paid_amount) : undefined,
                     paymentMethod: (data.payment_method === 'cod' || data.payment_method === 'online') ? data.payment_method : undefined,
+                    cancelledBy: data.cancelled_by || undefined,
                     expiryTime: data.expiry_time
                 };
             }

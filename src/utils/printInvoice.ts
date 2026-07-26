@@ -37,6 +37,11 @@ export interface InvoiceData {
     /** v12.93 — حالة الدفع: true = مدفوع إلكترونياً (وصل حساب التاجر)، false/undefined = عند الاستلام */
     paidOnline?: boolean;
     paidAmount?: number;
+    /** v13.13 — حالة الطلب على الفاتورة: 'completed' (مكتمل) | 'cancelled' (ملغي)
+     *  | غيرها/undefined (نشط). للطلبات المنتهية يُطبع بانر واضح. */
+    status?: string;
+    /** v13.13 — من ألغى الطلب (للملغية): 'buyer'|'seller'|'system'|'expired'… */
+    cancelledBy?: string;
     isRTL: boolean;
 }
 
@@ -90,6 +95,9 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
         // v12.93 — حالة الدفع: مدفوع إلكترونياً (paidAt) وإلا الدفع عند الاستلام
         paidOnline: !!order?.paidAt,
         paidAmount: order?.paidAmount,
+        // v13.13 — حالة الطلب ومن ألغاه (للطلبات المنتهية على الفاتورة)
+        status: order?.status,
+        cancelledBy: order?.cancelledBy,
         isRTL,
     };
 };
@@ -160,6 +168,10 @@ const buildHtml = (d: InvoiceData): string => {
   .pay .pay-sub { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
   .pay.paid { background: #dcfce7; color: #166534; border-color: #16a34a; }
   .pay.cod { background: #fef3c7; color: #92400e; border-color: #d97706; }
+  .status { margin-top: 10px; padding: 11px 12px; border-radius: 10px; font-size: 15px; font-weight: 900; text-align: center; border: 2px solid; }
+  .status .status-sub { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+  .status.done { background: #dcfce7; color: #166534; border-color: #16a34a; }
+  .status.void { background: #fee2e2; color: #991b1b; border-color: #dc2626; }
   .stamp { margin-top: 24px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
   .stamp .box { border-top: 1px solid #94a3b8; width: 45%; padding-top: 4px; text-align: center; }
   .note { margin-top: 10px; font-size: 12px; background: #f1f5f9; border-radius: 8px; padding: 8px 10px; }
@@ -186,11 +198,28 @@ const buildHtml = (d: InvoiceData): string => {
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
     ${d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : ''}
-    <div class="pay ${d.paidOnline ? 'paid' : 'cod'}">
-      ${d.paidOnline
-        ? `${L('✅ مدفوع إلكترونياً', '✅ Paid online')}<span class="pay-sub">${L('وصل حساب التاجر — لا تطلب مبلغاً من العميل', 'Sent to merchant — do not collect cash')}${d.paidAmount != null ? ` (${esc(String(d.paidAmount))} ${L('ر.س','SAR')})` : ''}</span>`
-        : `${L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}
-    </div>
+    ${(() => {
+        // v13.13 — بانر حالة الطلب على الفاتورة (طلب ناصر): الملغي لا تُطبع له
+        // «طريقة الدفع» (لم تتم محاسبة)، بل «الطلب ملغي» مع ذكر من ألغاه؛ والمكتمل
+        // يُطبع «الطلب مكتمل» + كيف حوسب العميل (نقداً/إلكترونياً).
+        if (d.status === 'cancelled') {
+            const who = d.cancelledBy === 'buyer'
+                ? L('أُلغِي من العميل', 'Cancelled by the buyer')
+                : d.cancelledBy === 'seller'
+                    ? L('أُلغِي من التاجر', 'Cancelled by the merchant')
+                    : (d.cancelledBy === 'expired' || d.cancelledBy === 'system')
+                        ? L('أُلغِي تلقائياً (انتهت مهلة الاستلام)', 'Auto-cancelled (pickup window expired)')
+                        : L('أُلغِي', 'Cancelled');
+            return `<div class="status void">${L('❌ الطلب ملغي', '❌ Order cancelled')}<span class="status-sub">${who} — ${L('لم تتم أي محاسبة على العميل', 'No charge was made')}</span></div>`;
+        }
+        const payHtml = `<div class="pay ${d.paidOnline ? 'paid' : 'cod'}">${d.paidOnline
+            ? `${L('✅ مدفوع إلكترونياً', '✅ Paid online')}<span class="pay-sub">${L('وصل حساب التاجر — لا تطلب مبلغاً من العميل', 'Sent to merchant — do not collect cash')}${d.paidAmount != null ? ` (${esc(String(d.paidAmount))} ${L('ر.س','SAR')})` : ''}</span>`
+            : `${L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}</div>`;
+        const doneHtml = d.status === 'completed'
+            ? `<div class="status done">${L('✅ الطلب مكتمل', '✅ Order completed')}<span class="status-sub">${d.paidOnline ? L('حوسب العميل إلكترونياً — وصل حساب التاجر', 'Charged online — sent to merchant') : L('حوسب العميل عند الاستلام (نقداً/شبكة)', 'Charged at pickup (cash/card)')}</span></div>`
+            : '';
+        return payHtml + doneHtml;
+    })()}
     ${d.buyerNote ? `<div class="note">📝 ${L('ملاحظة المشتري', 'Buyer note')}: ${esc(d.buyerNote)}</div>` : ''}
     <div class="stamp">
       <div class="box">${L('توقيع/ختم التاجر', 'Merchant stamp')}</div>

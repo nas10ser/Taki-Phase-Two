@@ -675,15 +675,14 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
-                                                {/* v13.11 (طلب ناصر): طباعة فاتورة الطلب بعد اكتماله —
-                                                    اكتمال الطلب = اكتمل الدفع (نقداً عند الاستلام أو بطاقة). */}
-                                                {booking.status === 'completed' && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
-                                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginTop: 16 }}>
-                                                        {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
-                                                    </button>
-                                                )}
+                                                {/* v13.11/13 (طلب ناصر): فاتورة لكل طلب منتهٍ للمراجعة —
+                                                    المكتمل (كيف حوسب العميل + «الطلب مكتمل»)، والملغي
+                                                    («الطلب ملغي» + من ألغاه: العميل/التاجر). */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
+                                                    style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginTop: 16 }}>
+                                                    {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
+                                                </button>
                                             </div>
                                         )}
                                     </div>

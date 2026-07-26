@@ -852,6 +852,56 @@ const DealDetails: React.FC = () => {
     const closingSoon = shopStatus.configured && shopStatus.open && (shopStatus.closesInMin ?? 99999) <= CLOSING_SOON_MIN;
     const canBook = !isSoldOut && !isComingSoon && !shopClosed;
 
+    // v13.13 (طلب ناصر): فحص حدود التاجر (كمية الحجز الواحد + عدد المرات + مدة
+    // الانتظار) صار يُستدعى مبكراً عند الضغط على «احجز الآن» — قبل فتح ورقة الحجز
+    // — لا فقط عند «تأكيد الحجز النهائي». يعيد true إن كان مسموحاً، وإلا يعرض
+    // السبب ويعيد false. (التريغر tr_enforce_booking_rules يفرضها نهائياً أيضاً.)
+    const checkBookingLimits = async (): Promise<boolean> => {
+        if (!user) return true;
+        if (deal.maxPerBooking && selectedQuantity > deal.maxPerBooking) {
+            customAlert(isRTL
+                ? `🛡 حدد التاجر ${deal.maxPerBooking} كحد أقصى للقطع في الحجز الواحد.`
+                : `🛡 The merchant allows at most ${deal.maxPerBooking} unit(s) per booking.`);
+            return false;
+        }
+        if (deal.maxBookingsPerBuyer || deal.rebookCooldownMinutes) {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data: mine } = await supabase
+                    .from('bookings')
+                    .select('status, completed_at')
+                    .eq('deal_id', deal.id)
+                    .eq('user_id', user.id);
+                const rows = mine || [];
+                if (deal.maxBookingsPerBuyer) {
+                    const used = rows.filter(b => ['pending', 'acknowledged', 'completed'].includes(b.status)).length;
+                    if (used >= deal.maxBookingsPerBuyer) {
+                        customAlert(isRTL
+                            ? `⛔ وصلت الحد الأقصى لحجوزات هذا العرض (${deal.maxBookingsPerBuyer} لكل عميل) — حدّده التاجر لإتاحة الفرصة للجميع.`
+                            : `⛔ You reached this deal's booking limit (${deal.maxBookingsPerBuyer} per customer).`);
+                        return false;
+                    }
+                }
+                if (deal.rebookCooldownMinutes) {
+                    const lastDone = rows
+                        .filter(b => b.status === 'completed' && b.completed_at)
+                        .map(b => new Date(b.completed_at as string).getTime())
+                        .sort((a, b) => b - a)[0];
+                    if (lastDone) {
+                        const waitMin = Math.ceil((lastDone + deal.rebookCooldownMinutes * 60000 - Date.now()) / 60000);
+                        if (waitMin > 0) {
+                            customAlert(isRTL
+                                ? `⏳ حدد التاجر مدة انتظار بين الحجوزات — يمكنك حجز هذا العرض مرة أخرى بعد ${fmtDuration(waitMin, true)}.`
+                                : `⏳ You can book this deal again in ${fmtDuration(waitMin, false)}.`);
+                            return false;
+                        }
+                    }
+                }
+            } catch { /* التريغر في القاعدة يفرض الحدود على أي حال */ }
+        }
+        return true;
+    };
+
     const handleBooking = async () => {
         if (!user) {
             history.push('/register');
@@ -879,50 +929,9 @@ const DealDetails: React.FC = () => {
             if (!ok) return;
         }
 
-        // v12.28 — حدود التاجر: كمية الحجز الواحد + عدد المرات + مدة الانتظار.
-        // تُفرض نهائياً بتريغر في القاعدة (tr_enforce_booking_rules)؛ الفحص هنا
-        // يمنع الحجز المتفائل محلياً ويعرض سبباً واضحاً بدل فشل صامت في المزامنة.
-        if (deal.maxPerBooking && selectedQuantity > deal.maxPerBooking) {
-            customAlert(isRTL
-                ? `🛡 حدد التاجر ${deal.maxPerBooking} كحد أقصى للقطع في الحجز الواحد.`
-                : `🛡 The merchant allows at most ${deal.maxPerBooking} unit(s) per booking.`);
-            return;
-        }
-        if (deal.maxBookingsPerBuyer || deal.rebookCooldownMinutes) {
-            try {
-                const { supabase } = await import('../services/supabaseClient');
-                const { data: mine } = await supabase
-                    .from('bookings')
-                    .select('status, completed_at')
-                    .eq('deal_id', deal.id)
-                    .eq('user_id', user.id);
-                const rows = mine || [];
-                if (deal.maxBookingsPerBuyer) {
-                    const used = rows.filter(b => ['pending', 'acknowledged', 'completed'].includes(b.status)).length;
-                    if (used >= deal.maxBookingsPerBuyer) {
-                        customAlert(isRTL
-                            ? `⛔ وصلت الحد الأقصى لحجوزات هذا العرض (${deal.maxBookingsPerBuyer} لكل عميل) — حدّده التاجر لإتاحة الفرصة للجميع.`
-                            : `⛔ You reached this deal's booking limit (${deal.maxBookingsPerBuyer} per customer).`);
-                        return;
-                    }
-                }
-                if (deal.rebookCooldownMinutes) {
-                    const lastDone = rows
-                        .filter(b => b.status === 'completed' && b.completed_at)
-                        .map(b => new Date(b.completed_at as string).getTime())
-                        .sort((a, b) => b - a)[0];
-                    if (lastDone) {
-                        const waitMin = Math.ceil((lastDone + deal.rebookCooldownMinutes * 60000 - Date.now()) / 60000);
-                        if (waitMin > 0) {
-                            customAlert(isRTL
-                                ? `⏳ حدد التاجر مدة انتظار بين الحجوزات — يمكنك حجز هذا العرض مرة أخرى بعد ${fmtDuration(waitMin, true)}.`
-                                : `⏳ You can book this deal again in ${fmtDuration(waitMin, false)}.`);
-                            return;
-                        }
-                    }
-                }
-            } catch { /* التريغر في القاعدة يفرض الحدود على أي حال */ }
-        }
+        // v12.28/13.13 — حدود التاجر (الكمية/عدد المرات/الانتظار). صارت تُفحص
+        // مبكراً عند «احجز الآن»؛ نعيد فحصها هنا دفاعاً (والتريغر يفرضها نهائياً).
+        if (!(await checkBookingLimits())) return;
 
         // v12.53 — «اختيارات المنتج»: تحقق من الأقسام المطلوبة، ثم ابنِ نص
         // الاختيارات داخل الملاحظات (يراه التاجر في كل الواجهات والبوتات بلا
@@ -2122,7 +2131,7 @@ const DealDetails: React.FC = () => {
                                         </div>
                                     )}
                                     <button
-                                        onClick={() => {
+                                        onClick={async () => {
                                             if (!user) {
                                                 history.push('/register');
                                                 return;
@@ -2131,6 +2140,9 @@ const DealDetails: React.FC = () => {
                                                 history.push('/bookings');
                                                 return;
                                             }
+                                            // v13.13 (طلب ناصر): تنبيه حدود الحجز يظهر هنا — عند
+                                            // «احجز الآن» — لا عند «تأكيد الحجز النهائي» فقط.
+                                            if (!(await checkBookingLimits())) return;
                                             setShowBookingModal(true);
                                         }}
                                         disabled={isSoldOut && !booked}
