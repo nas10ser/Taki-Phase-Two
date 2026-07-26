@@ -220,7 +220,11 @@ export const bookingRepository = {
             if (error) throw error;
             logger.log('✅ Booking saved to remote');
         } catch (e) {
+            // v13.14 — لا ابتلاع: الرفض (نفدت الكمية/حظر/حدود) يجب أن يصل
+            // للمستدعي ليتراجع محلياً ويعرض السبب للمشتري. كان الابتلاع هنا
+            // يجعل rollback الـv12.76 في bookDeal لا يعمل أبداً.
             console.error('Remote booking sync failed:', e);
+            throw e;
         }
     },
 

@@ -2157,6 +2157,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return updated;
         });
 
+        // v13.14 — الخصم الحقيقي للمخزون يتم ذرّياً في القاعدة (تريغر
+        // tr_booking_stock_reserve يقفل صف العرض ويرفض عند النفاد، ثم
+        // trg_adjust_deal_quantity يخصم). هنا خصم محلي تفاؤلي فقط ليتحدث
+        // العداد فوراً أمام المشتري — وRealtime يجلب الرقم الحقيقي خلال أقل
+        // من ثانية. (كتابة العميل السابقة updateDealStock بقيمة مطلقة أُزيلت —
+        // كانت تفسد المخزون تحت التزامن العالي.)
+        const hadStockCap = deal.quantity !== 'unlimited'
+            && typeof deal.quantity === 'number'
+            && typeof (deal as any).initialQuantity === 'number'
+            && (deal as any).initialQuantity > 0;
+        if (hadStockCap) {
+            setDeals(prev => prev.map(d => d.id === deal.id && typeof d.quantity === 'number'
+                ? { ...d, quantity: Math.max(0, d.quantity - quantity) } : d));
+        }
+
         // Persist to remote — the server-side trigger
         // `tr_booking_notification` (migration v8.7) emits both the
         // "New Booking Request" alert to the seller (with prep_time/notes
@@ -2170,17 +2185,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const msg: string = e?.message || '';
             console.warn('Booking remote save FAILED — rolling back:', msg);
             setBookings(prev => prev.filter(b => b.barcode !== barcode));
-            if (deal.quantity !== 'unlimited') {
-                const currentDeal = dealsRef.current.find(d => d.id === deal.id);
-                if (currentDeal && currentDeal.quantity !== 'unlimited') {
-                    const restored = (currentDeal.quantity as number) + quantity;
-                    setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, quantity: restored } : d));
-                    dealRepository.updateQuantity(deal.id, restored).catch(() => {});
-                }
+            // v13.14 — استرجاع محلي فقط: الحفظ فشل = التريغر لم يخصم في القاعدة
+            // أصلاً، فلا نكتب فيها شيئاً (الكتابة السابقة كانت تفسد المخزون).
+            if (hadStockCap) {
+                setDeals(prev => prev.map(d => d.id === deal.id && typeof d.quantity === 'number'
+                    ? { ...d, quantity: d.quantity + quantity } : d));
             }
+            // v13.14 — رسالة رفض المخزون الذري تصل هنا الآن (نفدت الكمية —
+            // سبقك مشترون آخرون) وتُعرض كما هي بالعربية من القاعدة.
+            const isStockReject = /نفدت|سبقك/.test(msg);
             customAlertRef.current(language === 'ar'
-                ? `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`
-                : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`);
+                ? (isStockReject ? `⛔ ${msg}` : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
+                : (isStockReject ? `⛔ ${msg}` : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
         });
 
         return booking;
@@ -2203,15 +2219,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         try {
             await bookingRepository.updateStatus(barcode, 'cancelled');
-            // Restore reserved quantity AFTER the cancel actually committed.
+            // v13.14 — استرجاع الكمية يتم ذرّياً في القاعدة (trg_adjust_deal_quantity
+            // على status→cancelled). كتابة العميل السابقة (updateQuantity بقيمة مطلقة
+            // من قراءة قديمة) كانت تُضخّم المخزون تحت التزامن (استرجاع مزدوج) —
+            // أُزيلت. هنا تحديث محلي تفاؤلي فقط، وRealtime يجلب الرقم الحقيقي فوراً.
             if (target.deal && target.deal.quantity !== 'unlimited') {
                 const currentDeal = dealsRef.current.find(d => d.id === target.deal.id);
                 if (currentDeal && currentDeal.quantity !== 'unlimited') {
                     const restored = (currentDeal.quantity as number) + (target.bookedQuantity || 1);
                     setDeals(prev => prev.map(d => d.id === currentDeal.id ? { ...d, quantity: restored } : d));
-                    dealRepository.updateQuantity(currentDeal.id, restored).catch(e =>
-                        console.warn('Deal qty restore sync deferred:', e?.message || e)
-                    );
                 }
             }
         } catch (e: any) {

@@ -317,6 +317,8 @@ function create(deps) {
         if (at) L.push(at);
         const startsMs = d.starts_at ? Number(d.starts_at) : 0;
         if (startsMs > Date.now()) L.push('⏳ ' + tr('soon_starts_in', waCountdown(startsMs - Date.now())));
+        // v13.14 — عرض متعدد المواقع: «متوفر في N فروع» والاختيار عند الحجز
+        if (Array.isArray(d.locations) && d.locations.length > 1) L.push(tr('bk_branches_line', d.locations.length).replace(/^\n/, ''));
         if (d.description) L.push(tr('q2530_wa_description', String(d.description).slice(0, 400)));
         return L.join('\n');
     }
@@ -411,6 +413,7 @@ function create(deps) {
         if (!d) return sendButtons(from, { body: tr('wa_deal_gone'), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
         s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
         s.temp.dealId = d.id; s.temp.dealName = d.item_name;
+        s.temp.locId = null;                                  // v13.14 — عرض جديد = بلا فرع محفوظ
         const geo = s.geo;
         const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
         if (img) await sendImage(from, img, dealText(d, geo));
@@ -468,7 +471,7 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     async function startBook(from, s, id) {
         if (!s.userId) return sendButtons(from, { body: tr('wa_login_first'), buttons: [{ id: 'wa:link', title: tr('menu_login_link') }, menuBtn()] });
-        if (id) { s.temp.dealId = id; const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null }); s.temp.dealName = d ? d.item_name : ''; s.temp.dealMaxPer = Number(d && d.max_per_booking) || 0; }
+        if (id) { s.temp.dealId = id; s.temp.locId = null; const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null }); s.temp.dealName = d ? d.item_name : ''; s.temp.dealMaxPer = Number(d && d.max_per_booking) || 0; }
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
         s.step = 'idle';
         // v12.28 — سقف التاجر للحجز الواحد: نخفي الكميات الأعلى منه ونظهر السقف
@@ -527,10 +530,19 @@ function create(deps) {
     }
     async function doBook(from, s) {
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
-        const r = await rpc('bot_book_deal', aid(from, { p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty || 1, p_notes: s.temp.notes || null, p_prep_time: s.temp.prepTime || 'arrival' }));
+        const r = await rpc('bot_book_deal', aid(from, { p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty || 1, p_notes: s.temp.notes || null, p_prep_time: s.temp.prepTime || 'arrival', p_location_id: s.temp.locId || null }));
         const bc = r && r.barcode; const dealName = s.temp.dealName;
         const bookedDealId = s.temp.dealId; // v12.53 — لرابط «أكمل من الموقع» عند needs_options
-        s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null;
+        // v13.14 — يحتاج اختيار فرع: لا نمسح الجلسة — قائمة فروع (سقف واتساب ١٠ صفوف)
+        // والاختيار يعيد doBook من نفس الجلسة بالفرع المحدد.
+        if (r && !r.success && r.error === 'needs_location') {
+            const locs = Array.isArray(r.locations) ? r.locations.slice(0, 9) : [];
+            return sendList(from, { header: tr('wa_pick_branch'), body: tr('bk_needs_location'), button: tr('wa_pick_branch'), sections: [{ rows: [
+                ...locs.map(l => row(`wa:bkloc:${l.id}`, `📍 ${String(l.name || '').slice(0, 20)}`, l.quantity != null ? tr('bk_loc_left', l.quantity) : '')),
+                menuRow(),
+            ] }] });
+        }
+        s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null; s.temp.locId = null;
         if (!r || !r.success) {
             const e = r && r.error;
             // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل الحجز من الموقع
@@ -556,7 +568,9 @@ function create(deps) {
             if (botBookedBarcodes.size > 4000) botBookedBarcodes.delete(botBookedBarcodes.values().next().value);
         }
         const expiry = r.expiry_at ? fmtDate(new Date(r.expiry_at)) : '—';
-        await sendText(from, tr('wa_book_ok', DIV, r.deal_name || dealName, r.shop_name, r.quantity, prepLabel(r.prep_time), bc, expiry));
+        // v13.14 — سطر الفرع المختار (عرض متعدد المواقع)
+        await sendText(from, tr('wa_book_ok', DIV, r.deal_name || dealName, r.shop_name, r.quantity, prepLabel(r.prep_time), bc, expiry)
+            + (r.location_name ? tr('wa_book_ok_loc', r.location_name) : ''));
         await sendButtons(from, { body: tr('wa_pick'), buttons: [
             { id: `wa:chat:${bc}`, title: tr('wa_chat_btn') },
             { id: 'wa:bookings', title: tr('menu_bookings_buyer') },
@@ -1779,6 +1793,9 @@ function create(deps) {
         if (id === 'wa:bback:prep') return askPrep(from, s);
         if (id === 'wa:bback:note') return askNote(from, s);
         if (id === 'wa:bookok') return doBook(from, s);
+        // v13.14 — اختيار الفرع (عرض متعدد المواقع) ثم إتمام الحجز نفسه.
+        // ids الفروع تحوي نقطة (br_epoch.hex) — slice وليس regex (درس v12.08).
+        if (id.startsWith('wa:bkloc:')) { s.temp.locId = id.slice('wa:bkloc:'.length); return doBook(from, s); }
         if (id === 'wa:bqc') { s.step = 'await_book_qty'; return sendText(from, tr('wa_ask_qty_custom')); }
         if (k === 'bq') return setQty(from, s, +p[2] || 1);
         if (id === 'wa:prepc') { s.step = 'await_prep'; return sendText(from, tr('wa_ask_prep_custom')); }

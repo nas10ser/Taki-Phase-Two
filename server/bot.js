@@ -1073,6 +1073,7 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     if (!d) return ctx.reply(tr('b802_deal_expired'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b802_available_deals'),'browse:menu')]]).reply_markup });
     const s = getSession(tgId(ctx));
     s.temp.dealId = dealId; s.temp.dealName = d.item_name; s.temp.dealQty = 1;
+    s.temp.locId = null;                                  // v13.14 — عرض جديد = بلا فرع محفوظ
     s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
     const tag  = sponsorTag(d);
     const cat  = d.category ? tr('b806_category_line', md(catLabel(d.category))) : '';
@@ -1108,10 +1109,13 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     const startsMs = d.starts_at ? Number(d.starts_at) : 0;
     const comingSoon = startsMs > Date.now();
     const soonBlock = comingSoon ? `\n⏳ *${md(tr('soon_starts_in', fmtSoonCountdown(startsMs - Date.now())))}*` : '';
+    // v13.14 — عرض متعدد المواقع: سطر «متوفر في N فروع» (الاختيار يتم عند الحجز)
+    const locsArr = Array.isArray(d.locations) ? d.locations : [];
+    const locBlock = locsArr.length > 1 ? tr('bk_branches_line', locsArr.length) : '';
     const caption =
         `${tag?tag+'\n':''}🏷 *${md(d.item_name)}*\n${DIV}\n🏪 ${md(d.shop_name)}   📍 ${md(d.city||d.region||'—')}${cat}${rating}${authBlock}\n\n` +
         priceBlock(d.original_price, d.discounted_price, d.discount_percentage) +
-        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${hoursBlock}${soonBlock}${desc}`;
+        `\n\n${dealTypeBlock(d)}${prep}${geoBlock}${hoursBlock}${soonBlock}${locBlock}${desc}`;
     const btns = [];
     if (s.userId && s.userType !== 'seller') {
         if (comingSoon)      btns.push([Markup.button.callback(tr('soon_locked').slice(0,62), `dealsoon:${dealId}`)]);
@@ -1552,12 +1556,34 @@ async function bookConfirm(ctx, s) {
 }
 bot.action('book:confirm', async ctx => {
     await ctx.answerCbQuery(tr('b1125_booking_in_progress'));
+    return execBooking(ctx);
+});
+// v13.14 — العروض متعددة المواقع: المشتري يختار الفرع ثم يكتمل الحجز بنفس المسار.
+// (ids الفروع تحوي نقطة br_epoch.hex — النمط الشامل ضروري، درس v12.08)
+bot.action(/^bkloc:([\s\S]+)$/, async ctx => {
+    await ctx.answerCbQuery(tr('b1125_booking_in_progress'));
     const s = getSession(tgId(ctx));
     if (!s.temp.dealId) return ctx.reply(tr('b1127_session_ended'), { parse_mode:'MarkdownV2' });
-    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival' });
+    s.temp.locId = ctx.match[1];
+    return execBooking(ctx);
+});
+async function execBooking(ctx) {
+    const s = getSession(tgId(ctx));
+    if (!s.temp.dealId) return ctx.reply(tr('b1127_session_ended'), { parse_mode:'MarkdownV2' });
+    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival', p_location_id: s.temp.locId||null });
     const bc = result?.barcode;
     const bookedDealId = s.temp.dealId; // v12.53 — يلزمنا لرابط «أكمل من الموقع» عند needs_options
-    s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null;
+    // v13.14 — يحتاج اختيار فرع: لا نمسح الجلسة — نعرض أزرار الفروع (بكمية كل فرع
+    // إن كانت «كمية لكل موقع») وإعادة الضغط تكمل الحجز من نفس الجلسة.
+    if (!result?.success && result?.error === 'needs_location') {
+        const locs = Array.isArray(result.locations) ? result.locations.slice(0, 12) : [];
+        const rows = locs.map(l => [Markup.button.callback(
+            `📍 ${l.name}${l.quantity != null ? ` — ${tr('bk_loc_left', l.quantity)}` : ''}`.slice(0, 62),
+            `bkloc:${l.id}`)]);
+        rows.push([Markup.button.callback(tr('b1121_cancel'), 'menu:back')]);
+        return safeReplyMd(ctx, tr('bk_needs_location'), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+    }
+    s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null; s.temp.locId = null;
     if (!result?.success) {
         const e = result?.error;
         // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل من الموقع
@@ -1588,8 +1614,11 @@ bot.action('book:confirm', async ctx => {
     }
     const expiryMs = result.expiry_at ? new Date(result.expiry_at).getTime() : 0;
     const expiry = expiryMs ? fmtDate(new Date(expiryMs)) : '—';
+    // v13.14 — سطر الفرع المختار في رسالة النجاح (عرض متعدد المواقع)
+    let okMsg = tr('q1147_booking_success', DIV, md(result.deal_name), md(result.shop_name), result.quantity, md(prepLabel(result.prep_time)), md(bc), md(expiry), countdownBlock(expiryMs));
+    if (result.location_name) okMsg += tr('bk_loc_line', md(String(result.location_name)));
     await ctx.reply(
-        tr('q1147_booking_success', DIV, md(result.deal_name), md(result.shop_name), result.quantity, md(prepLabel(result.prep_time)), md(bc), md(expiry), countdownBlock(expiryMs)),
+        okMsg,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback(tr('b1149_chat_merchant'),`chat:${bc}`), Markup.button.callback(tr('b1149_call_merchant'),`call:b:${bc}`)],
             ...(expiryMs && bc ? [[Markup.button.callback(tr('b1150_countdown'),`cd:${bc}`)]] : []),
@@ -1602,7 +1631,7 @@ bot.action('book:confirm', async ctx => {
             [Markup.button.callback(tr('b1152_my_bookings'),'buyer:bookings'), Markup.button.callback(tr('b1152_deals'),'deals:0')],
             [Markup.button.callback(tr('b1153_menu'),'menu:back')]
         ]).reply_markup });
-});
+}
 
 // ── Buyer: my bookings (split: current vs previous) ───────────────────────────
 bot.command('bookings', ctx => buyerBookingsMenu(ctx));

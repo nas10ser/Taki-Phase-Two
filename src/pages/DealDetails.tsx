@@ -1117,15 +1117,10 @@ const DealDetails: React.FC = () => {
         const paymentIntent: 'cod' | 'online' = payMode === 'cod' ? 'cod' : payChoice;
         const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null, paymentIntent);
 
-        // Reserve quantity only when the seller set a real stock cap.
-        // Time-based offers stay infinitely bookable until the timer ends.
-        // Use updateDealStock (partial UPDATE on quantity only) so we don't
-        // re-write the `status` column — the v9.1 trigger blocks any
-        // implicit-status write when the merchant's subscription isn't
-        // active, and that previously took booking down with it.
-        if (hasStockCap && deal.quantity !== 'unlimited') {
-            updateDealStock(deal.id, (deal.quantity as number) - selectedQuantity);
-        }
+        // v13.14 — خصم المخزون صار ذرّياً بالكامل في القاعدة (تريغر يقفل صف
+        // العرض ويرفض عند النفاد) + خصم محلي تفاؤلي داخل bookDeal نفسه.
+        // استدعاء updateDealStock من هنا (قراءة-ثم-كتابة من العميل) أُزيل —
+        // كان يفسد المخزون تحت التزامن العالي (ملايين الحجوزات المتزامنة).
 
         // v12.81 — المشتري اختار الدفع الإلكتروني: الحجز يبقى كما هو، ثم
         // نفتح صفحة الدفع المستضافة على حساب تاجر هذا العرض مباشرة.
