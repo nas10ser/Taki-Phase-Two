@@ -6,8 +6,9 @@
  * 1) «تجيني رسالة أن العرض منشور في ٤ مواقع رغم أني لا أستطيع اختيار مواقع»
  *    السبب: مسار التجديد/التفعيل يمرّر كائن العرض **كما هو مخزَّن** — ومعه
  *    مصفوفة `locations` القديمة (٤ فروع) — فحارس القاعدة v13.16 يعدّها ويرفض،
- *    بينما نموذج التعديل كان قد قصّها في الواجهة فقط. الحل: قصّ المصفوفة نفسها
- *    قبل الحفظ (نُبقي الأساسي ثم الأقدم فالأقدم حتى سقف الباقة).
+ *    بينما نموذج التعديل كان قد قصّها في الواجهة فقط. الحل (v13.18، قرار ناصر):
+ *    نكشف التجاوز بـ`dealLocationCount` وننقل التاجر لنموذج التعديل ليقرر بنفسه
+ *    أي فرع يبقي — لا نقصّ مواقعه نيابةً عنه.
  *
  * 2) «عند التجديد حدّث التاريخ/الأيام/الساعات مثل ما كانت»
  *    عمر العرض = createdAt + expiresInMinutes، فإعادة createdAt للآن تُجدّد المدة
@@ -41,46 +42,6 @@ export const dealLocationCount = (deal: Deal): number => {
         keys.add(locKey(l.locationId, l.lat, l.lng));
     }
     return keys.size;
-};
-
-/**
- * يقصّ فروع النشر المتعدد لتتوافق مع سقف الباقة الحالي.
- * يُبقي «primary» دائماً ثم الفروع بترتيبها حتى يبلغ السقف.
- * يُعيد العرض كما هو إن كان متوافقاً أصلاً (بلا نسخ لا لزوم له).
- */
-export const trimDealLocationsToCap = (deal: Deal, maxLocations: number): { deal: Deal; removed: number } => {
-    const locs = Array.isArray((deal as any).locations) ? (deal as any).locations : [];
-    if (locs.length <= 1) return { deal, removed: 0 };
-
-    const cap = Math.max(1, maxLocations);
-    const kept: any[] = [];
-    const keys = new Set<string>();
-    let removed = 0;
-
-    for (const l of locs) {
-        if (!l) continue;
-        const isPrimary = l.id === 'primary';
-        const k = locKey(l.locationId, l.lat, l.lng);
-        // الأساسي يُحفظ دائماً؛ وغيره يدخل ما دام الاتحاد داخل السقف.
-        if (isPrimary || keys.has(k) || keys.size < cap) {
-            kept.push(l);
-            keys.add(k);
-        } else {
-            removed++;
-        }
-    }
-    if (removed === 0) return { deal, removed: 0 };
-
-    // فرع واحد فقط باقٍ = عرض أحادي الموقع: نُفرِّغ الحقول المتعددة تماماً
-    // (المستودع يكتب null عندما تقل المصفوفة عن عنصرين).
-    const next: any = { ...deal };
-    if (kept.length > 1) {
-        next.locations = kept;
-    } else {
-        next.locations = undefined;
-        next.locQtyMode = undefined;
-    }
-    return { deal: next as Deal, removed };
 };
 
 /**

@@ -10,7 +10,7 @@ import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 import { getAuthenticityBadge } from '../utils/helpers';
-import { dealLocationCount, trimDealLocationsToCap, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 
 const StoreDetails: React.FC = () => {
@@ -186,23 +186,21 @@ const StoreDetails: React.FC = () => {
         return () => { alive = false; };
     }, [user?.id, id]);
 
-    /** v13.17 — نفس مواءمة لوحة التاجر: قصّ المواقع الزائدة (بخيار الترقية) + تجديد العمر. */
+    /** v13.17/18 — نفس مواءمة لوحة التاجر: العرض المتجاوز يُنقل لصفحة التعديل
+     *  ليقرر التاجر بنفسه (لا نقصّ مواقعه نيابةً عنه)، وإلا نجدّد عمره فقط. */
     const prepareDealForActivation = async (
         deal: any,
         opts: { restoreQuantity: boolean }
     ): Promise<any | null> => {
-        let out = deal;
         const count = dealLocationCount(deal);
         if (count > ownerMaxLocations) {
-            const goUpgrade = await customConfirm(isRTL
-                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${ownerMaxLocations === 1 ? 'موقع واحد فقط' : `${ownerMaxLocations} مواقع`}.\n\n• «موافق» = ترقية الباقة الآن (ننقلك لصفحة الاشتراك).\n• «إلغاء» = تفعيله بأقرب ${ownerMaxLocations === 1 ? 'موقع واحد' : `${ownerMaxLocations} مواقع`} فقط وإزالة الباقي.`
-                : `⚠️ This deal spans ${count} locations; your plan allows ${ownerMaxLocations}.\n\n• OK = upgrade now.\n• Cancel = activate with the first ${ownerMaxLocations} location(s) only.`);
-            if (goUpgrade) {
-                history.push('/subscription');
-                return null;
-            }
-            out = trimDealLocationsToCap(deal, ownerMaxLocations).deal;
+            await customAlert(isRTL
+                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${ownerMaxLocations === 1 ? 'موقع واحد فقط' : `${ownerMaxLocations} مواقع`}.\n\nسنفتح لك صفحة التعديل بكامل بيانات العرض — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. وإن أردت الإبقاء عليها كلها فرقِّ باقتك من هناك.`
+                : `⚠️ This deal spans ${count} locations; your plan allows ${ownerMaxLocations}.\n\nOpening the edit form — remove the extra branches and save, or upgrade your plan there.`);
+            history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`);
+            return null;
         }
+        let out = deal;
         if (opts.restoreQuantity || needsLifespanRefresh(out)) {
             out = refreshDealLifespan(out, opts.restoreQuantity);
         }

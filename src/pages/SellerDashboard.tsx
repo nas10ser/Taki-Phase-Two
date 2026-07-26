@@ -17,7 +17,7 @@ import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
-import { dealLocationCount, trimDealLocationsToCap, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
@@ -367,29 +367,31 @@ const SellerDashboard: React.FC = () => {
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
 
     /**
-     * v13.17 — يُهيّئ عرضاً للتفعيل/التجديد بما يوافق باقة التاجر الحالية.
-     * يُعيد `null` إن اختار التاجر «ترقية الباقة» (نُحوّله لصفحة الاشتراك) أو ألغى.
+     * v13.17/18 — يُهيّئ عرضاً للتفعيل/التجديد بما يوافق باقة التاجر الحالية.
+     *
+     * v13.18 (طلب ناصر): إن كانت مواقع العرض أكثر مما تسمح به الباقة، **لا نقصّها
+     * نيابةً عنه** — ننقله لنموذج التعديل (إضافة +) ليقرر بنفسه أي فرع يبقي، وهناك
+     * يجد خيار «ترقية الباقة» عند محاولة اختيار فرع زائد. (قد لا يريد تغيير الموقع
+     * أصلاً فيلغي بلا أن نلمس عرضه.)
+     * يُعيد `null` = لا تُكمل الحفظ (انتقلنا للتعديل أو ألغى).
      */
     const prepareDealForActivation = async (
         deal: Deal,
         opts: { restoreQuantity: boolean }
     ): Promise<Deal | null> => {
-        let out = deal;
         const count = dealLocationCount(deal);
         if (count > MAX_LOCATIONS) {
-            // طلب ناصر: كل رسالة فيها ترقية باقة تعطي خياراً واضحاً بدل طريق مسدود.
-            const goUpgrade = await customConfirm(isRTL
-                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}.\n\n• «موافق» = ترقية الباقة الآن (ننقلك لصفحة الاشتراك).\n• «إلغاء» = تفعيله بأقرب ${MAX_LOCATIONS === 1 ? 'موقع واحد' : `${MAX_LOCATIONS} مواقع`} فقط وإزالة الباقي.`
-                : `⚠️ This deal spans ${count} locations; your plan allows ${MAX_LOCATIONS}.\n\n• OK = upgrade now.\n• Cancel = activate with the first ${MAX_LOCATIONS} location(s) only.`);
-            if (goUpgrade) {
-                history.push('/subscription');
-                return null;
-            }
-            const trimmed = trimDealLocationsToCap(deal, MAX_LOCATIONS);
-            out = trimmed.deal;
+            await customAlert(isRTL
+                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}.\n\nسنفتح لك صفحة التعديل بكامل بيانات العرض — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. وإن أردت الإبقاء عليها كلها فرقِّ باقتك من هناك.`
+                : `⚠️ This deal spans ${count} locations; your plan allows ${MAX_LOCATIONS}.\n\nOpening the edit form — remove the extra branches from the multi-location section and save, or upgrade your plan there.`);
+            _skipTrimNoticeRef.current = true;   // الرسالة عُرضت للتوّ — لا تُكرَّر
+            handleEdit(deal);
+            setView('form');
+            return null;
         }
         // تجديد العمر: عند التجديد دائماً، وعند التفعيل فقط إن كان منتهياً زمنياً
         // (وإلا عاد نشطاً واختفى فوراً — كان عيباً حقيقياً في «تفعيل»).
+        let out = deal;
         if (opts.restoreQuantity || needsLifespanRefresh(out)) {
             out = refreshDealLifespan(out, opts.restoreQuantity);
         }
@@ -1138,6 +1140,8 @@ const SellerDashboard: React.FC = () => {
     // تسمح به الباقة كان يبقيها كلها مختارة (والقاعدة سترفض الحفظ). الآن نقصّها
     // تلقائياً لسقف الباقة ونخبر التاجر مرة واحدة — فيحفظ مباشرة بلا رفض.
     const _trimNoticeRef = useRef<string | null>(null);
+    // v13.18 — عند القدوم من «تجديد/تفعيل» تكون الرسالة قد عُرضت للتوّ، فلا نكرّرها.
+    const _skipTrimNoticeRef = useRef(false);
     useEffect(() => {
         if (view !== 'form') return;
         const allowedExtras = Math.max(0, MAX_LOCATIONS - 1);   // الأساسي يحتسب
@@ -1146,6 +1150,7 @@ const SellerDashboard: React.FC = () => {
         const trimmed = validKeys.slice(0, allowedExtras);
         const dropped = validKeys.length - trimmed.length;
         setExtraLocKeys(trimmed);
+        if (_skipTrimNoticeRef.current) { _skipTrimNoticeRef.current = false; return; }
         const noticeId = `${editingDealId || 'new'}:${MAX_LOCATIONS}:${dropped}`;
         if (_trimNoticeRef.current === noticeId) return;
         _trimNoticeRef.current = noticeId;
@@ -3178,11 +3183,14 @@ const SellerDashboard: React.FC = () => {
                                                         const locked = !on && full;   // لا يمكن إضافة فرع جديد بعد امتلاء الباقة
                                                         return (
                                                             <button key={c.key} type="button"
-                                                                onClick={() => {
+                                                                onClick={async () => {
                                                                     if (locked) {
-                                                                        customAlert(isRTL
-                                                                            ? `⚠️ باقتك تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`} لكل عرض (الأساسي محسوب ضمنها).\n\nألغِ اختيار أحد الفروع أولاً، أو رقِّ باقتك من «الاشتراك».`
-                                                                            : `⚠️ Your plan allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} per deal (the primary counts).\n\nUnselect a branch first, or upgrade your plan.`);
+                                                                        // v13.18 (طلب ناصر): هنا بالضبط مكان خيار الترقية —
+                                                                        // عند محاولة إضافة فرع فوق حد الباقة، لا عند التجديد.
+                                                                        const goUpgrade = await customConfirm(isRTL
+                                                                            ? `⚠️ باقتك تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`} لكل عرض (الموقع الأساسي محسوب ضمنها).\n\n• «موافق» = ترقية الباقة الآن (ننقلك لصفحة الاشتراك).\n• «إلغاء» = أبقى على باقتي وألغي اختيار فرع آخر.`
+                                                                            : `⚠️ Your plan allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} per deal (the primary counts).\n\n• OK = upgrade now.\n• Cancel = keep my plan and unselect another branch.`);
+                                                                        if (goUpgrade) history.push('/subscription');
                                                                         return;
                                                                     }
                                                                     setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)]);
@@ -4563,6 +4571,14 @@ const SellerDashboard: React.FC = () => {
                                                     💬 {order.merchantNote}
                                                 </div>
                                             )}
+                                            {/* v13.18 (طلب ناصر المتكرر): فاتورة لكل طلب منتهٍ في «السجل» —
+                                                المكتمل يُطبع ببانر «الطلب مكتمل» وطريقة المحاسبة (نقداً/إلكترونياً)،
+                                                والملغي ببانر «الطلب ملغي» ومن ألغاه. كان الزر موجوداً في
+                                                «نشطة» فقط فلم يجد ناصر فاتورةً لأي طلب منتهٍ. */}
+                                            <button onClick={() => printOrderInvoice(buildBookingInvoice(order, isRTL))}
+                                                style={{ width: '100%', marginTop: 12, padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer' }}>
+                                                {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
+                                            </button>
                                         </div>
                                     );
                                 })
