@@ -162,8 +162,21 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
                 await adminService.setPlatformSetting('basic_plan_price_sar', effectivePrice(def));
             }
         } catch { /* non-fatal — the picker re-syncs on next change */ }
+        // v13.16 (طلب ناصر: «قد أعدّل على عدد المواقع») — عدد المواقع كان لقطة
+        // وقت الاشتراك، فتعديل الباقة لا يصل لمشتركيها أبداً. الآن نُطابق كل
+        // متجر مرتبط بالباقة على عددها الجديد (الترقية فورية؛ والتخفيض يجمّد
+        // العروض عبر tr_freeze_on_downgrade فيعيد التاجر تفعيلها بحدوده الجديدة).
+        let syncedMsg = '';
+        try {
+            const { supabase } = await import('../../services/supabaseClient');
+            const { data, error } = await supabase.rpc('admin_sync_package_limits');
+            if (!error && data?.success) {
+                const n = Number(data.stores_updated) || 0;
+                if (n > 0) syncedMsg = `\n🔄 حُدّث عدد المواقع لـ${n} ${n === 1 ? 'متجر' : 'متاجر'} مشترك في الباقات المعدّلة.`;
+            }
+        } catch { /* المزامنة لا تُفشل حفظ الباقات */ }
         setDirty(false);
-        await customAlert('✅ تم حفظ الباقات. ستظهر للتجار بأسعارها الجديدة فوراً.');
+        await customAlert('✅ تم حفظ الباقات. ستظهر للتجار بأسعارها الجديدة فوراً.' + syncedMsg);
         onSaved?.();
         load();
     };

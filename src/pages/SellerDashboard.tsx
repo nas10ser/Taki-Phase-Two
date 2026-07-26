@@ -156,6 +156,24 @@ const SellerDashboard: React.FC = () => {
     // The store's location package size (store_profiles.max_branches): 1/3/6/10.
     // Admin-controlled from Admin → Sellers. Falls back to the base 3.
     const [maxLocations, setMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
+    // v13.16 (طلب ناصر: «قد أضيف باقة تاسعة وعاشرة») — اسم الباقة يُقرأ من
+    // الكتالوج الحيّ (platform_settings.location_packages) لا من الثوابت المدمجة،
+    // وإلا ظهرت أي باقة جديدة باسم عام («٥٠ مواقع») بدل اسمها الذي كتبه ناصر.
+    const [livePackages, setLivePackages] = useState<Array<{ id: number; max: number; ar: string; en: string }>>([]);
+    useEffect(() => {
+        let alive = true;
+        import('../repositories/packageRepository')
+            .then(({ packageRepository }) => packageRepository.get())
+            .then(list => { if (alive) setLivePackages(list.map(p => ({ id: p.id, max: p.max, ar: p.ar, en: p.en }))); })
+            .catch(() => { /* الثوابت المدمجة تغطي الحالة */ });
+        return () => { alive = false; };
+    }, []);
+    /** اسم باقة عدد المواقع من الكتالوج الحيّ، وإلا صيغة عامة واضحة. */
+    const livePackageLabel = useCallback((max: number, rtl: boolean): string => {
+        const hit = livePackages.find(p => p.max === max);
+        if (hit) return rtl ? hit.ar : hit.en;
+        return packageLabel(max, rtl);
+    }, [livePackages]);
 
     // Fetch payment settings + check subscription status.
     //
@@ -408,7 +426,16 @@ const SellerDashboard: React.FC = () => {
                 ...deal,
                 status: (isCurrentlyPaused ? 'active' : 'paused') as any
             });
-            if (!ok) return;
+            if (!ok) {
+                // v13.16 (طلب ناصر): «تفعيل» المرفوض بحد المواقع كان يعرض الرسالة
+                // ويقف — بينما «تجديد» يفتح نموذج التعديل. الآن كلاهما يفتحه
+                // فيغيّر التاجر الموقع ويحفظ بدل أن يعلق أمام رسالة بلا مخرج.
+                if (isCurrentlyPaused) {
+                    handleEdit(deal);
+                    setView('form');
+                }
+                return;
+            }
             setProductsTab(isCurrentlyPaused ? 'active' : 'expired');
         } finally {
             setBusyDealId(null);
@@ -1066,6 +1093,25 @@ const SellerDashboard: React.FC = () => {
         || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
         || (isRTL ? 'الموقع الأساسي' : 'Primary location');
     const _selectedExtraChips = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+    // v13.16 (طلب ناصر): بعد تخفيض الباقة، فتح عرض قديم منشور على فروع أكثر مما
+    // تسمح به الباقة كان يبقيها كلها مختارة (والقاعدة سترفض الحفظ). الآن نقصّها
+    // تلقائياً لسقف الباقة ونخبر التاجر مرة واحدة — فيحفظ مباشرة بلا رفض.
+    const _trimNoticeRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (view !== 'form') return;
+        const allowedExtras = Math.max(0, MAX_LOCATIONS - 1);   // الأساسي يحتسب
+        const validKeys = extraLocKeys.filter(k => mergedLocationChips.some(c => (c.branchId || c.key) === k && c.key !== currentCandidateKey));
+        if (validKeys.length <= allowedExtras) return;
+        const trimmed = validKeys.slice(0, allowedExtras);
+        const dropped = validKeys.length - trimmed.length;
+        setExtraLocKeys(trimmed);
+        const noticeId = `${editingDealId || 'new'}:${MAX_LOCATIONS}:${dropped}`;
+        if (_trimNoticeRef.current === noticeId) return;
+        _trimNoticeRef.current = noticeId;
+        customAlert(isRTL
+            ? `⚠️ باقتك الحالية تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}، وهذا العرض كان منشوراً في مواقع أكثر.\n\nأزلنا ${dropped} ${dropped === 1 ? 'فرعاً' : 'فروع'} من قسم «انشر نفس العرض في عدة مواقع» ليتوافق مع باقتك — راجع الاختيار ثم احفظ. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».`
+            : `⚠️ Your plan allows ${MAX_LOCATIONS} location(s); this deal had more.\n\nWe removed ${dropped} branch(es) from the multi-location section — review and save. Upgrade your plan for more.`);
+    }, [view, MAX_LOCATIONS, extraLocKeys, mergedLocationChips, currentCandidateKey, editingDealId, isRTL, customAlert]);
     const selectedBranches: Array<{ key: string; label: string }> = [
         { key: 'primary', label: _primaryLabelTop },
         ..._selectedExtraChips.map(c => ({ key: c.branchId || c.key, label: c.label })),
@@ -1177,6 +1223,33 @@ const SellerDashboard: React.FC = () => {
             await removeBranch(branchId);
         } catch {
             await customAlert(isRTL ? '❌ فشل حذف اللوكيشن. حاول مرة أخرى.' : '❌ Failed to delete. Try again.');
+        }
+    };
+
+    // v13.16 (طلب ناصر: «خاصية إضافة موقع ويحط اسمها مثلاً فرع حي الريان»):
+    // تسمية الفرع باسم يعرفه التاجر والمشتري بدل الاسم المشتق تلقائياً من
+    // المول/المدينة. إعادة التسمية بلا تحريك الموقع مسموحة في حارس القاعدة
+    // (v_old_key = v_new_key ⇒ تمر)، فلا تستهلك خانة جديدة من الباقة.
+    const handleRenameBranch = async (branchId: string, currentLabel: string) => {
+        const raw = await customPrompt(
+            isRTL
+                ? `اسم الفرع كما يظهر لك وللمشترين (مثال: فرع حي الريان).\nالاسم الحالي: ${currentLabel}`
+                : `Branch name shown to you and buyers (e.g. Al-Rayyan branch).\nCurrent: ${currentLabel}`
+        );
+        if (raw === null) return;                       // ألغى
+        const name = String(raw).trim();
+        if (!name) {
+            await customAlert(isRTL ? '⚠️ اكتب اسماً للفرع.' : '⚠️ Please enter a branch name.');
+            return;
+        }
+        if (name === currentLabel) return;
+        const b = branches.find(x => x.id === branchId);
+        if (!b) return;
+        try {
+            await saveBranch({ ...b, id: branchId, nameAr: name });
+            await customAlert(isRTL ? `✅ صار اسم الفرع: «${name}»` : `✅ Branch renamed: “${name}”`);
+        } catch {
+            await customAlert(isRTL ? '❌ تعذّرت إعادة التسمية. حاول مرة أخرى.' : '❌ Rename failed. Try again.');
         }
     };
 
@@ -1706,6 +1779,19 @@ const SellerDashboard: React.FC = () => {
             return;
         }
 
+        // v13.16 (طلب ناصر): مواقع العرض الواحد (الأساسي + فروع النشر المتعدد)
+        // لا تتجاوز حد الباقة. حارس القاعدة enforce_seller_location_cap يرفضها
+        // نهائياً؛ هذا الفحص يمنع الرحلة الضائعة ويشرح السبب بدقة قبل الحفظ.
+        {
+            const _dealLocCount = 1 + _multiOthersEarly.length;
+            if (_dealLocCount > MAX_LOCATIONS) {
+                await customAlert(isRTL
+                    ? `⚠️ هذا العرض منشور في ${_dealLocCount} مواقع، وباقتك تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}.\n\nأزل ${_dealLocCount - MAX_LOCATIONS} من فروع قسم «انشر نفس العرض في عدة مواقع» ثم احفظ، أو رقِّ باقتك من «الاشتراك».`
+                    : `⚠️ This deal spans ${_dealLocCount} locations but your plan allows ${MAX_LOCATIONS}.\n\nRemove ${_dealLocCount - MAX_LOCATIONS} branch(es) from the multi-location section, or upgrade your plan.`);
+                return;
+            }
+        }
+
         // v12.86 — حارس التكرار غير المقصود: عند «إضافة» عرض جديد (لا تعديل) إذا
         // كان للمتجر عرض نشط بنفس الاسم نحذّر قبل إنشاء نسخة ثانية منفصلة. هذا
         // هو السبب الجذري لظهور «قهوة اليوم» مرتين: التاجر ظنّ أنه يعدّل بينما
@@ -1921,8 +2007,8 @@ const SellerDashboard: React.FC = () => {
 
                 if (!activeKeys.has(candidateKey) && activeKeys.size >= MAX_LOCATIONS) {
                     await customAlert(isRTL
-                        ? `⚠️ ${packageLabel(MAX_LOCATIONS, true)}: تسمح بـ${MAX_LOCATIONS} ${MAX_LOCATIONS === 1 ? 'موقع' : 'مواقع'} فقط (${activeKeys.size}/${MAX_LOCATIONS}).\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل إضافة موقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.`
-                        : `⚠️ ${packageLabel(MAX_LOCATIONS, false)}: allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} only (${activeKeys.size}/${MAX_LOCATIONS}).\n\nPick one of your existing locations, or free a vacant slot first. Contact TAKI admin to upgrade.`);
+                        ? `⚠️ ${livePackageLabel(MAX_LOCATIONS, true)}: تسمح بـ${MAX_LOCATIONS} ${MAX_LOCATIONS === 1 ? 'موقع' : 'مواقع'} فقط (${activeKeys.size}/${MAX_LOCATIONS}).\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل إضافة موقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.`
+                        : `⚠️ ${livePackageLabel(MAX_LOCATIONS, false)}: allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} only (${activeKeys.size}/${MAX_LOCATIONS}).\n\nPick one of your existing locations, or free a vacant slot first. Contact TAKI admin to upgrade.`);
                     return;
                 }
             }
@@ -2056,7 +2142,10 @@ const SellerDashboard: React.FC = () => {
             : (baseGroupsActive && allBranchKeys.every(k => baseCellOf(k) !== undefined));
         let dealLocations: DealLocation[] | undefined;
         if (isMultiLoc) {
-            const primaryName = (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
+            // v13.16 — الاسم الذي سمّاه التاجر لهذا الفرع (إن كان محفوظاً) يسبق
+            // الاسم المشتق من المول/المدينة، فيرى المشتري «فرع حي الريان».
+            const primaryName = mergedLocationChips.find(c => c.key === currentCandidateKey && c.branchId)?.label
+                || (locationId && locationId !== 'other' ? LOCATIONS.find(l => l.id === locationId)?.name : '')
                 || (selectedCity ? (CITIES.find(c => c.id === selectedCity)?.name || '') : '')
                 || (isRTL ? 'الموقع الأساسي' : 'Primary');
             const primaryLoc: DealLocation = {
@@ -2586,8 +2675,8 @@ const SellerDashboard: React.FC = () => {
                                     <span style={{ fontSize: '1rem' }}>📍</span>
                                     <span style={{ flex: 1 }}>
                                         {isRTL
-                                            ? `${packageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
-                                            : `${packageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
+                                            ? `${livePackageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
+                                            : `${livePackageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
                                         {wouldExceedLimit && (
                                             <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
                                                 {isRTL
@@ -2748,6 +2837,12 @@ const SellerDashboard: React.FC = () => {
                                     }}>
                                         📍 {isRTL ? 'مواقعك — اضغط لاستخدامه فوراً' : 'Your locations — tap to reuse'}
                                     </div>
+                                    {/* v13.16 — تلميح التسمية (طلب ناصر) */}
+                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
+                                        ✏️ {isRTL
+                                            ? 'اضغط قلم التسمية على أي موقع لتسميه باسمك (مثال: «فرع حي الريان») — يظهر لك وللمشترين، ولا يستهلك خانة من باقتك.'
+                                            : 'Tap the pencil on any location to name it (e.g. “Al-Rayyan branch”) — shown to you and buyers, and it never uses a package slot.'}
+                                    </div>
                                     {/* Legend: green = tied to live deals (counts toward the
                                         package, locked from deletion). amber = a free saved
                                         slot the seller can delete to make room. */}
@@ -2825,6 +2920,35 @@ const SellerDashboard: React.FC = () => {
                                                             </span>
                                                         )}
                                                     </button>
+                                                    {/* v13.16 — تسمية الفرع (طلب ناصر): متاحة لكل موقع
+                                                        محفوظ، نشطاً كان أو شاغراً — إعادة التسمية لا
+                                                        تحرّك الموقع فلا تستهلك خانة من الباقة. */}
+                                                    {chip.branchId && (
+                                                        <button
+                                                            type="button"
+                                                            aria-label={isRTL ? 'تسمية الفرع' : 'Rename branch'}
+                                                            title={isRTL ? 'سمِّ الفرع (مثال: فرع حي الريان)' : 'Name this branch'}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRenameBranch(chip.branchId!, chip.label);
+                                                            }}
+                                                            style={{
+                                                                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(2,132,199,0.12)',
+                                                                color: isSelected ? '#fff' : '#0284c7',
+                                                                border: 'none',
+                                                                borderInlineStart: '1px solid ' + (isSelected ? 'rgba(255,255,255,0.35)' : 'rgba(2,132,199,0.35)'),
+                                                                padding: '0 10px',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: 900,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                WebkitTapHighlightColor: 'transparent'
+                                                            }}
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                    )}
                                                     {isVacant ? (
                                                         <button
                                                             type="button"
@@ -2990,18 +3114,47 @@ const SellerDashboard: React.FC = () => {
                                             ? '«الأساسي» = موقع العرض الرئيسي الذي حددته بالخريطة/المول أعلى. لو ظهر باسم مدينة (مثل «الرياض») فهذا موقع الدبوس الافتراضي — حرّك الدبوس أو اختر مولك أعلى ليصبح فرعاً حقيقياً.'
                                             : '“Primary” = the deal’s main location from the map/mall above. A bare city name means the default pin — move it or pick your mall above.'}
                                     </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {others.map(c => {
-                                            const on = extraLocKeys.includes(cid(c));
-                                            return (
-                                                <button key={c.key} type="button"
-                                                    onClick={() => setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)])}
-                                                    style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
-                                                    {on ? '✅' : '➕'} {c.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    {/* v13.16 (طلب ناصر): هذا القسم صار مقيَّداً بحد الباقة الحيّ.
+                                        كان بلا سقف إطلاقاً — فتاجر نزل من باقة ٣ مواقع لموقع واحد
+                                        يظل ينشر على فروعه القديمة. العدّ = الأساسي + الفروع
+                                        المختارة (نفس منطق حارس القاعدة enforce_seller_location_cap). */}
+                                    {(() => {
+                                        const usedNow = 1 + extraLocKeys.filter(k => others.some(c => cid(c) === k)).length;
+                                        const full = usedNow >= MAX_LOCATIONS;
+                                        return (
+                                            <>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: '0.72rem', fontWeight: 800, marginBottom: 8, color: full ? '#b45309' : 'var(--text-secondary)' }}>
+                                                    <span style={{ background: full ? 'rgba(245,158,11,0.15)' : 'var(--body-bg)', border: `1px solid ${full ? '#f59e0b' : 'var(--border-color)'}`, borderRadius: 999, padding: '4px 10px' }}>
+                                                        {isRTL ? `مواقع هذا العرض: ${usedNow} / ${MAX_LOCATIONS}` : `Deal locations: ${usedNow} / ${MAX_LOCATIONS}`}
+                                                    </span>
+                                                    {full && (
+                                                        <span>{isRTL ? '⚠️ وصلت حد باقتك — ألغِ اختيار فرع لإضافة آخر' : '⚠️ Plan limit reached — unselect a branch first'}</span>
+                                                    )}
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                    {others.map(c => {
+                                                        const on = extraLocKeys.includes(cid(c));
+                                                        const locked = !on && full;   // لا يمكن إضافة فرع جديد بعد امتلاء الباقة
+                                                        return (
+                                                            <button key={c.key} type="button"
+                                                                onClick={() => {
+                                                                    if (locked) {
+                                                                        customAlert(isRTL
+                                                                            ? `⚠️ باقتك تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`} لكل عرض (الأساسي محسوب ضمنها).\n\nألغِ اختيار أحد الفروع أولاً، أو رقِّ باقتك من «الاشتراك».`
+                                                                            : `⚠️ Your plan allows ${MAX_LOCATIONS} location${MAX_LOCATIONS === 1 ? '' : 's'} per deal (the primary counts).\n\nUnselect a branch first, or upgrade your plan.`);
+                                                                        return;
+                                                                    }
+                                                                    setExtraLocKeys(prev => on ? prev.filter(k => k !== cid(c)) : [...prev, cid(c)]);
+                                                                }}
+                                                                style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.45 : 1, WebkitTapHighlightColor: 'transparent' }}>
+                                                                {on ? '✅' : locked ? '🔒' : '➕'} {c.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             );
                         })()}

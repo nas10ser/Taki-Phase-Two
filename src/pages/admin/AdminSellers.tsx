@@ -276,6 +276,9 @@ const SubscriptionModal = memo<{
                 notes: notes || undefined,
                 sendNotification: sendNotif,
                 maxBranches,
+                // v13.16 — نربط المتجر بالباقة نفسها (لا بعدد مواقعها فقط)، فتصله
+                // تعديلات عدد المواقع لاحقاً عبر admin_sync_package_limits.
+                packageId: pkgCatalog.find(p => p.max === maxBranches)?.id,
             };
             res = await adminService.applySubscription(params);
         } catch (e: any) {

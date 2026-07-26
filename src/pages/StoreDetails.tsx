@@ -217,7 +217,18 @@ const StoreDetails: React.FC = () => {
                 ...deal,
                 status: isCurrentlyPaused ? 'active' : 'paused'
             });
-            if (!ok) return;
+            if (!ok) {
+                // v13.16 (طلب ناصر): «تفعيل» المرفوض بحد المواقع كان يقف عند
+                // الرسالة — الآن ينقل التاجر لنموذج التعديل بكامل بيانات العرض
+                // (مثل «تجديد») ليختار موقعاً متاحاً ويحفظ.
+                if (isCurrentlyPaused) {
+                    await customAlert(isRTL
+                        ? '⚠️ تعذّر التفعيل — موقع العرض لم يعد متاحاً ضمن باقتك.\nسنفتح لك نموذج التعديل بكامل بيانات العرض — اختر موقعاً من مواقعك ثم احفظ.'
+                        : '⚠️ Couldn\'t activate — this deal\'s location is no longer available on your package.\nOpening the edit form — re-pick a location and save.');
+                    history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`);
+                }
+                return;
+            }
             setViewTab(isCurrentlyPaused ? 'active' : 'past');
         } finally {
             setBusyDealId(null);

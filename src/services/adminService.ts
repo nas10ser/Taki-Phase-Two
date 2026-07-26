@@ -89,8 +89,12 @@ export interface ApplySubscriptionParams {
     amount?: number;
     notes?: string;
     sendNotification?: boolean;
-    /** Location package size: 1 | 3 | 6 | 10. Omit/undefined = leave as-is. */
+    /** Location package size (any number the admin defined). Omit = leave as-is. */
     maxBranches?: number;
+    /** v13.16 — معرّف الباقة من الكتالوج الحيّ. يربط المتجر بباقته فتنتشر
+     *  تعديلات عدد المواقع لاحقاً (admin_sync_package_limits). تُستنتج من
+     *  maxBranches إن لم تُمرَّر. */
+    packageId?: number;
 }
 
 export interface AdminReportRow {
@@ -313,6 +317,7 @@ export const adminService = {
             p_notes: p.notes ?? null,
             p_send_notification: p.sendNotification ?? true,
             p_max_branches: p.maxBranches ?? null,
+            p_package_id: p.packageId ?? null,
         });
         if (error) {
             console.error('[adminService.applySubscription]', error);
