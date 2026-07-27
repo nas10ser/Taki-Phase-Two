@@ -41,7 +41,7 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
 };
 
 const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
-    const { toggleFollowMerchant, followedMerchants, language, storeProfiles } = useApp();
+    const { toggleFollowMerchant, followedMerchants, language, storeProfiles, incrementDealClick } = useApp();
     const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
     // v13.24 — العدّاد المثبَّت على الصف (trigger في القاعدة) هو المصدر متى وُجد،
     // فتسقط عن كل صفحة عروض جولةُ جلب صفوف التقييمات لحساب المتوسط. المسارات
@@ -89,10 +89,18 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
         toggleFollowMerchant(deal.storeId);
     };
 
+    // v13.27 — عدّاد النقرات كان معرّفاً في السياق ولا يُنادى من أي مكان، فبقي
+    // `deals.clicks` صفراً للأبد وأي مقياس «نقرة ← حجز» يقيس العدم. النقرة على
+    // البطاقة هي الحدث الصحيح: fire-and-forget فلا تؤخّر فتح صفحة المنتج.
+    const handleCardClick = () => {
+        try { incrementDealClick(deal.id); } catch { /* قياس فقط — لا يعطّل التنقّل */ }
+        onClick(deal.id);
+    };
+
     return (
         <div
             className={`deal-card animate-fade-in ${isSponsored ? 'taki-sponsored' : ''}`}
-            onClick={() => onClick(deal.id)}
+            onClick={handleCardClick}
             style={isSponsored ? {
                 position: 'relative',
                 // Premium double gold ring + warm glow. Works on both light and
