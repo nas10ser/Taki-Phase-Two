@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Deal, Booking, CATEGORIES, Category } from '../../data/mock';
 
 /**
@@ -50,20 +50,42 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
     const nf = (n: number) => Math.round(n).toLocaleString(isRTL ? 'ar-EG' : 'en-US');
     const money = (n: number) => `${nf(n)} ${t('ر.س', 'SAR')}`;
 
-    // ===== Core aggregates (lifetime) =====
-    const valid = useMemo(() => myOrders.filter(o => o.status !== 'cancelled'), [myOrders]);
-    const totals = useMemo(() => {
-        const views = myDeals.reduce((a, d) => a + (d.views || 0), 0);
-        const bookings = valid.length;
-        const revenue = valid.reduce((a, o) => a + (o.deal.discountedPrice || 0) * (o.bookedQuantity || 1), 0);
-        const savings = valid.reduce((a, o) => a + Math.max(0, (o.deal.originalPrice || 0) - (o.deal.discountedPrice || 0)) * (o.bookedQuantity || 1), 0);
-        const completed = valid.filter(o => o.status === 'completed').length;
-        const activeDeals = myDeals.filter(d => d.status === 'active').length;
-        const conv = views > 0 ? (bookings / views) * 100 : 0;
-        return { views, bookings, revenue, savings, completed, activeDeals, conv };
-    }, [myDeals, valid]);
+    // ═══ v13.28 — كل التجميع صار على القاعدة ═══
+    // بعد ترقيم الطلبات صارت `myOrders` صفحةً واحدة، فلو بقي الحساب محلياً
+    // لصارت هذه اللوحة «إحصاءات آخر ٢٠ طلباً» وهي تدّعي أنها إجمالية — وهذا
+    // أسوأ من البطء الذي عالجناه. الآن رقم واحد يأتي من القاعدة كاملةً.
+    const [stats, setStats] = useState<any>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+    useEffect(() => {
+        let alive = true;
+        setStatsLoading(true);
+        import('../../services/supabaseClient')
+            .then(({ supabase }) => supabase.rpc('seller_order_stats', { p_days: range }))
+            .then(({ data }) => { if (alive) setStats(data || null); })
+            .catch(() => { if (alive) setStats(null); })
+            .finally(() => { if (alive) setStatsLoading(false); });
+        return () => { alive = false; };
+    }, [range]);
 
-    // ===== Trend over the selected window =====
+    const life = stats?.lifetime || {};
+    const dealAgg = stats?.deals || {};
+
+    const totals = useMemo(() => {
+        const views = Number(dealAgg.views) || 0;
+        const bookings = Number(life.orders) || 0;
+        return {
+            views,
+            bookings,
+            revenue: Number(life.revenue) || 0,
+            savings: Number(life.savings) || 0,
+            completed: Number(life.completed) || 0,
+            activeDeals: Number(dealAgg.active) || 0,
+            conv: views > 0 ? (bookings / views) * 100 : 0,
+        };
+    }, [stats]);
+
+    // الاتجاه: نبني كل أيام النافذة ثم نُسقط عليها ما أعادته القاعدة، فتظهر
+    // الأيام الصفرية فجواتٍ حقيقية بدل أن تُطوى.
     const trend = useMemo(() => {
         const days: { key: string; label: string }[] = [];
         const now = Date.now();
@@ -76,81 +98,68 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
         const idx = new Map(days.map((d, i) => [d.key, i]));
         const bookingsPerDay = new Array(days.length).fill(0);
         const revenuePerDay = new Array(days.length).fill(0);
-        for (const o of valid) {
-            const { key } = riyadhParts(o.bookedAt || 0);
-            const i = idx.get(key);
+        for (const row of (stats?.trend || [])) {
+            const i = idx.get(String(row.d));
             if (i === undefined) continue;
-            bookingsPerDay[i] += 1;
-            revenuePerDay[i] += (o.deal.discountedPrice || 0) * (o.bookedQuantity || 1);
+            bookingsPerDay[i] = Number(row.orders) || 0;
+            revenuePerDay[i] = Number(row.revenue) || 0;
         }
         return {
-            days,
-            bookingsPerDay,
-            revenuePerDay,
+            days, bookingsPerDay, revenuePerDay,
             periodBookings: bookingsPerDay.reduce((a: number, b: number) => a + b, 0),
             periodRevenue: revenuePerDay.reduce((a: number, b: number) => a + b, 0),
         };
-    }, [valid, range]);
+    }, [stats, range]);
 
-    // ===== Peak hours (0–23, Riyadh) =====
     const hours = useMemo(() => {
         const h = new Array(24).fill(0);
-        for (const o of valid) h[riyadhParts(o.bookedAt || 0).hour] += 1;
+        for (const row of (stats?.hours || [])) {
+            const i = Number(row.h);
+            if (i >= 0 && i < 24) h[i] = Number(row.n) || 0;
+        }
         return h;
-    }, [valid]);
+    }, [stats]);
     const peakHour = useMemo(() => hours.indexOf(Math.max(...hours)), [hours]);
 
-    // ===== Top deals =====
-    const topDeals = useMemo(() => {
-        return myDeals.map(d => {
-            const os = valid.filter(o => o.deal.id === d.id);
-            const bookings = os.length;
-            const revenue = os.reduce((a, o) => a + (d.discountedPrice || 0) * (o.bookedQuantity || 1), 0);
-            const conv = (d.views || 0) > 0 ? (bookings / (d.views || 1)) * 100 : 0;
-            return { id: d.id, name: d.itemName, image: d.images?.[0], views: d.views || 0, bookings, revenue, conv };
-        }).sort((a, b) => b.bookings - a.bookings || b.views - a.views).slice(0, 8);
-    }, [myDeals, valid]);
+    interface TopDeal { id: string; name: string; image?: string; views: number; bookings: number; revenue: number; conv: number; }
+    const topDeals: TopDeal[] = useMemo(() => (stats?.top_deals || []).map((d: any) => {
+        const views = Number(d.views) || 0;
+        const bookings = Number(d.orders) || 0;
+        return {
+            id: d.id, name: d.name, image: d.image || undefined, views, bookings,
+            revenue: Number(d.revenue) || 0,
+            conv: views > 0 ? (bookings / views) * 100 : 0,
+        };
+    }), [stats]);
 
-    // ===== Category performance =====
-    const catPerf = useMemo(() => {
-        const map = new Map<Category, number>();
-        for (const o of valid) {
-            const c = o.deal.category as Category;
-            map.set(c, (map.get(c) || 0) + 1);
-        }
-        return Array.from(map, ([cat, count]) => {
-            const info = CATEGORIES.find(x => x.id === cat);
-            return { label: `${info?.emoji || '🏷️'} ${info ? (isRTL ? info.ar : info.en) : cat}`, value: count };
-        }).sort((a, b) => b.value - a.value).slice(0, 7);
-    }, [valid, isRTL]);
+    const catPerf = useMemo(() => (stats?.categories || []).map((c: any) => {
+        const info = CATEGORIES.find(x => x.id === c.cat);
+        return {
+            label: `${info?.emoji || '🏷️'} ${info ? (isRTL ? info.ar : info.en) : c.cat}`,
+            value: Number(c.orders) || 0,
+        };
+    }), [stats, isRTL]);
 
-    // ===== Discount effectiveness =====
     const discBands = useMemo(() => {
         const bands = [
-            { label: '1–20%', min: 1, max: 20, value: 0 },
-            { label: '21–40%', min: 21, max: 40, value: 0 },
-            { label: '41–60%', min: 41, max: 60, value: 0 },
-            { label: '61%+', min: 61, max: 1000, value: 0 },
+            { label: '1–20%', key: '1-20', value: 0 },
+            { label: '21–40%', key: '21-40', value: 0 },
+            { label: '41–60%', key: '41-60', value: 0 },
+            { label: '61%+', key: '61+', value: 0 },
         ];
-        for (const o of valid) {
-            const p = o.deal.discountPercentage || 0;
-            const b = bands.find(x => p >= x.min && p <= x.max);
-            if (b) b.value += 1;
+        for (const row of (stats?.disc_bands || [])) {
+            const b = bands.find(x => x.key === row.band);
+            if (b) b.value = Number(row.n) || 0;
         }
         return bands;
-    }, [valid]);
+    }, [stats]);
 
-    // ===== Status mix =====
-    const statusMix = useMemo(() => {
-        const order: { k: NonNullable<Booking['status']>; label: string; color: string }[] = [
-            { k: 'completed', label: t('مكتمل', 'Completed'), color: C.green },
-            { k: 'acknowledged', label: t('مؤكَّد', 'Confirmed'), color: C.blue },
-            { k: 'pending', label: t('قيد الانتظار', 'Pending'), color: C.amber },
-            { k: 'cancelled', label: t('ملغى', 'Cancelled'), color: C.slate },
-        ];
-        return order.map(s => ({ ...s, value: myOrders.filter(o => (o.status || 'pending') === s.k).length }))
-            .filter(s => s.value > 0);
-    }, [myOrders, isRTL]);
+    const statusMix = useMemo(() => ([
+        { k: 'completed',    label: t('مكتمل', 'Completed'),        color: C.green, value: Number(life.completed) || 0 },
+        { k: 'acknowledged', label: t('مؤكَّد', 'Confirmed'),        color: C.blue,  value: Number(life.acknowledged) || 0 },
+        { k: 'pending',      label: t('قيد الانتظار', 'Pending'),   color: C.amber, value: Number(life.pending) || 0 },
+        { k: 'cancelled',    label: t('ملغى', 'Cancelled'),         color: C.slate, value: Number(life.cancelled) || 0 },
+    ] as any[]).filter(s => s.value > 0), [stats, isRTL]);
 
     // ===================== Render =====================
     if (myDeals.length === 0) {

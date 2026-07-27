@@ -15,6 +15,7 @@ import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
+import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
 import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
@@ -2461,9 +2462,21 @@ const SellerDashboard: React.FC = () => {
         (user?.shop && d.shopName === user.shop) ||
         (user?.name && d.shopName === user.name)
     );
-    const myOrders = bookings.filter(b => myProducts.some(p => p.id === b.deal.id));
-    const activeOrders = myOrders.filter(b => b.status === 'pending' || b.status === 'acknowledged');
-    const pastOrders = myOrders.filter(b => b.status === 'completed' || b.status === 'cancelled');
+    // v13.28 — طلبات التاجر تأتي من الخادم صفحةً صفحة بترقيم keyset. كانت
+    // تُرشَّح من مصفوفة تحمل **كل** طلبات التاجر منذ اليوم الأول: تاجر ناجح
+    // بعشرات الآلاف من الطلبات كان ينزّلها كلها عند كل فتح للوحة.
+    const {
+        bookings: activeOrders, total: activeOrdersTotal, hasMore: activeOrdersMore,
+        loadingMore: activeOrdersLoadingMore, loadMore: loadMoreActiveOrders, reload: reloadActiveOrders,
+    } = useBookingBrowse({ scope: 'seller', state: 'active' });
+
+    const {
+        bookings: pastOrders, total: pastOrdersTotal, hasMore: pastOrdersMore,
+        loadingMore: pastOrdersLoadingMore, loadMore: loadMorePastOrders,
+    } = useBookingBrowse({ scope: 'seller', state: 'past' });
+
+    // النافذة العامة تبقى لما يحتاج «آخر الطلبات» فقط (البانرات والتنبيهات).
+    const myOrders = activeOrders.concat(pastOrders);
     // v10.73 — the blocking center "موافق" box that fired for EVERY unread
     // booking notification was removed. A merchant taking hundreds of orders
     // could not work through a modal-per-order. Booking/message alerts now
@@ -4482,7 +4495,7 @@ const SellerDashboard: React.FC = () => {
                             merchant scroll back through completed + cancelled orders. */}
                         <div style={{ display: 'flex', gap: 8, padding: 6, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
                             {(['active', 'history'] as const).map(f => {
-                                const count = f === 'active' ? activeOrders.length : pastOrders.length;
+                                const count = f === 'active' ? activeOrdersTotal : pastOrdersTotal;
                                 const label = f === 'active'
                                     ? (isRTL ? 'نشطة' : 'Active')
                                     : (isRTL ? 'السجل' : 'History');
@@ -4823,6 +4836,23 @@ const SellerDashboard: React.FC = () => {
                             </div>
                         )) : (
                             <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders'}</div>
+                        )}
+
+                        {/* v13.28 — الطلبات تصل صفحةً صفحة؛ هذا الزر يجلب التالية.
+                            بدونه لا يرى التاجر إلا أول ٢٠ طلباً. */}
+                        {((ordersFilter === 'active' && activeOrdersMore) || (ordersFilter === 'history' && pastOrdersMore)) && (
+                            <button
+                                onClick={() => ordersFilter === 'active' ? loadMoreActiveOrders() : loadMorePastOrders()}
+                                disabled={ordersFilter === 'active' ? activeOrdersLoadingMore : pastOrdersLoadingMore}
+                                style={{
+                                    width: '100%', marginTop: 14, padding: '14px', borderRadius: 16,
+                                    background: 'var(--card-bg)', border: '1px solid var(--border-color)',
+                                    fontWeight: 900, color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.95rem',
+                                }}>
+                                {(ordersFilter === 'active' ? activeOrdersLoadingMore : pastOrdersLoadingMore)
+                                    ? (isRTL ? '⏳ جاري التحميل…' : '⏳ Loading…')
+                                    : (isRTL ? '⬇️ تحميل طلبات أقدم' : '⬇️ Load older orders')}
+                            </button>
                         )}
                     </div>
                 ) : view === 'insights' ? (

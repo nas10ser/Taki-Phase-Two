@@ -16,6 +16,35 @@ export interface BookingMessage {
     readAt: number | null;
 }
 
+/**
+ * v13.28 — سقف نافذة الطلبات في الحالة العامة. القوائم الكاملة تُطلب صفحةً
+ * صفحة عبر `browse()`، فهذا السقف لا يُخفي شيئاً عن المستخدم — إنما يمنع
+ * تحميلاً ينمو بلا حد مع نجاح التاجر.
+ */
+export const BOOKINGS_WINDOW = 200;
+
+/** حجم صفحة قوائم الطلبات المُرقَّمة. */
+export const BOOKINGS_PAGE_SIZE = 20;
+
+/** مؤشّر keyset للطلبات: طابع الإنشاء + الباركود فاصلاً حاسماً. */
+export interface BookingCursor { ts: string; id: string; }
+
+export interface BookingBrowseParams {
+    scope?: 'buyer' | 'seller';
+    state?: 'active' | 'past' | 'all';
+    query?: string | null;
+    cursor?: BookingCursor | null;
+    limit?: number;
+}
+
+export interface BookingBrowseResult {
+    bookings: Booking[];
+    total: number;
+    totalCapped: boolean;
+    hasMore: boolean;
+    cursor: BookingCursor | null;
+}
+
 export interface Booking {
     deal: any;
     barcode: string;
@@ -78,12 +107,81 @@ const STATUS_RANK: Record<Booking['status'], number> = {
 const moreAdvanced = (a: Booking['status'], b: Booking['status']) =>
     STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
 
+/** صفّ طلب من القاعدة → كائن الطلب في الواجهة. مصدر تحويل واحد لكل المسارات. */
+const mapBookingRow = (b: any, deal?: any): Booking => ({
+    barcode: b.barcode,
+    backupCode: b.backup_code,
+    deal: deal || { id: b.deal_id, storeId: b.store_id, itemName: 'تخفيض' },
+    userId: b.user_id,
+    userName: b.user_name || undefined,
+    userPhone: b.user_phone || undefined,
+    bookedQuantity: b.booked_quantity,
+    prepTime: b.prep_time,
+    notes: b.notes,
+    merchantNote: b.merchant_note,
+    status: b.status,
+    bookedAt: b.booked_at,
+    completedAt: b.completed_at ? new Date(b.completed_at).getTime() : undefined,
+    paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
+    paymentProvider: b.payment_provider || undefined,
+    paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
+    paymentMethod: (b.payment_method === 'cod' || b.payment_method === 'online') ? b.payment_method : undefined,
+    cancelledBy: b.cancelled_by || undefined,
+    selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
+    locationId: b.location_id || undefined,
+    expiryTime: b.expiry_time,
+} as Booking);
+
 export const bookingRepository = {
+    /**
+     * v13.28 — صفحة طلبات من الخادم بترقيم keyset.
+     *
+     * الترشيح (مشترٍ/تاجر، جارٍ/سابق) والبحث والعدّ كلها على القاعدة، والعرض
+     * مُرفَق في نفس الصف — فلا جولة شبكة ثانية لجلب المنتجات. البحث يمرّ على
+     * محرك التطبيع العربي نفسه، فـ«قهوه» تجد «قهوة».
+     */
+    browse: async (p: BookingBrowseParams = {}): Promise<BookingBrowseResult> => {
+        const empty: BookingBrowseResult = { bookings: [], total: 0, totalCapped: false, hasMore: false, cursor: null };
+        try {
+            const { data, error } = await supabase.rpc('browse_bookings', {
+                p_scope:     p.scope || 'buyer',
+                p_state:     p.state || 'all',
+                p_query:     p.query?.trim() || null,
+                p_cursor_ts: p.cursor ? p.cursor.ts : null,
+                p_cursor_id: p.cursor ? p.cursor.id : null,
+                p_limit:     Math.max(1, Math.min(50, p.limit ?? BOOKINGS_PAGE_SIZE)),
+            });
+            if (error) throw error;
+            const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+            return {
+                bookings: rows.map(r => mapBookingRow(r, r.deal ? dealRepository.mapRowToDeal(r.deal) : undefined)),
+                total: Number(data?.total) || 0,
+                totalCapped: !!data?.total_capped,
+                hasMore: !!data?.has_more,
+                cursor: (data?.has_more && data?.next_ts && data?.next_id)
+                    ? { ts: String(data.next_ts), id: String(data.next_id) }
+                    : null,
+            };
+        } catch (e) {
+            console.error('❌ browse_bookings failed:', e);
+            return empty;
+        }
+    },
+
     getAll: async (): Promise<Booking[]> => {
         // Return empty array if not specific to a user, as we don't fetch all bookings anymore
         return [];
     },
 
+    /**
+     * نافذة الطلبات الأحدث للمستخدم (مشترياً أو تاجراً) — تُغذّي الحالة العامة.
+     *
+     * v13.28 — كانت بلا حد ولا ترتيب: التاجر الناجح بعشرات الآلاف من الطلبات
+     * ينزّلها **كلها** عند كل فتح للتطبيق. الآن سقف ثابت بترتيب الأحدث، فحجم
+     * التحميل لا يكبر مع نجاح التاجر أبداً. القوائم الكاملة تأتي من
+     * `browse()` المُرقَّم، والإحصاءات من `seller_order_stats` على القاعدة —
+     * فلا شيء يعتمد على هذه النافذة ليكون صحيحاً.
+     */
     getByUser: async (userId: string, knownDeals?: any[]): Promise<Booking[]> => {
         try {
             // Fetch bookings where user is buyer (user_id) OR seller (store_id),
@@ -91,7 +189,9 @@ export const bookingRepository = {
             const { data, error } = await supabase
                 .from('bookings')
                 .select('*')
-                .or(`user_id.eq.${userId},store_id.eq.${userId}`);
+                .or(`user_id.eq.${userId},store_id.eq.${userId}`)
+                .order('created_at', { ascending: false })
+                .limit(BOOKINGS_WINDOW);
             if (data && !error) {
                 // Resolve the deal object WITHOUT re-fetching the entire deals
                 // (+ ratings) tables. Before v10.71 this called

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useBookingBrowse } from '../hooks/useBookingBrowse';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import { Booking } from '../repositories/bookingRepository';
@@ -96,7 +98,7 @@ const Bookings: React.FC = () => {
             }
             if (payload?.error === 'ALREADY_PAID') {
                 customAlert(isRTL ? '✅ هذا الحجز مدفوع مسبقاً' : '✅ This booking is already paid');
-                refreshBookings();
+                refreshBookings(); reloadActive(); reloadPast();
                 return;
             }
             throw new Error(payload?.error || 'CREATE_FAILED');
@@ -142,33 +144,32 @@ const Bookings: React.FC = () => {
     // Guard against bookings whose `deal` payload didn't come back from the
     // server (e.g. the deal was deleted but the booking row remains). Without
     // this, `b.deal.itemName` throws and blanks the whole page on refresh.
-    const matchesSearch = (b: any) => {
-        const name = b?.deal?.itemName?.toLowerCase?.() ?? '';
-        return name.includes(searchTerm.toLowerCase());
-    };
+    // v13.28 — القائمتان تأتيان من الخادم بترقيم keyset بدل ترشيح مصفوفة
+    // محلية. التاجر/المشتري كثير الطلبات لم يعد ينزّل تاريخه كله عند كل فتح،
+    // والبحث يمرّ على محرك التطبيع العربي («قهوه» تجد «قهوة»).
+    const {
+        bookings: activeRows, total: activeTotal,
+        hasMore: activeHasMore, loadingMore: activeLoadingMore, loadMore: activeLoadMore,
+        loading: activeLoading, reload: reloadActive,
+    } = useBookingBrowse({ scope: 'buyer', state: 'active', query: searchTerm });
 
-    const sortBookings = (list: any[]) => {
-        const sign = sortOrder === 'newest' ? -1 : 1;
-        return [...list].sort((a, b) => sign * ((a.bookedAt || 0) - (b.bookedAt || 0)));
-    };
+    const {
+        bookings: pastRows, total: pastTotal,
+        hasMore: pastHasMore, loadingMore: pastLoadingMore, loadMore: pastLoadMore,
+        reload: reloadPast,
+    } = useBookingBrowse({ scope: 'buyer', state: 'past', query: searchTerm });
 
-    const filteredActive = useMemo(() =>
-        sortBookings(
-            bookings.filter(b => b.userId === user?.id && b.status !== 'completed' && b.status !== 'cancelled')
-                    .filter(matchesSearch)
-        ),
+    // الترتيب على القاعدة تنازلي بطابع الإنشاء؛ زر «الأقدم» يعكس الصفحة
+    // المعروضة (وهو ما يتوقعه المستخدم من زر داخل القائمة الظاهرة).
+    const sortBookings = (list: any[]) =>
+        sortOrder === 'newest' ? list : [...list].reverse();
+
+    const filteredActive = useMemo(() => sortBookings(activeRows),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [bookings, user?.id, searchTerm, sortOrder]
-    );
-
-    const filteredPast = useMemo(() =>
-        sortBookings(
-            bookings.filter(b => b.userId === user?.id && (b.status === 'completed' || b.status === 'cancelled'))
-                    .filter(matchesSearch)
-        ),
+        [activeRows, sortOrder]);
+    const filteredPast = useMemo(() => sortBookings(pastRows),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [bookings, user?.id, searchTerm, sortOrder]
-    );
+        [pastRows, sortOrder]);
 
     // Auto-expand if only one active booking — ONCE per visit (v12.69).
     // كان يعيد فتح الحجز النشط الوحيد بعد كل محاولة إغلاق أو نقر على حجز
@@ -215,7 +216,7 @@ const Bookings: React.FC = () => {
         <PullToRefresh isRTL={isRTL} onRefresh={() => {
             // Only the bookings table — the rest of the data on this page
             // (notifications, deals) doesn't need to round-trip on a swipe.
-            refreshBookings();
+            refreshBookings(); reloadActive(); reloadPast();
             return Promise.resolve();
         }}>
         <div style={{ minHeight: '100vh', background: 'var(--bg-color)', direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -345,6 +346,7 @@ const Bookings: React.FC = () => {
                     <div style={{ marginBottom: 40 }}>
                         <h3 style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--primary)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                             🚀 {isRTL ? 'حجوزات نشطة' : 'Active Bookings'}
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)' }}>({activeTotal.toLocaleString('en-US')})</span>
                             <div style={{ height: 1, flex: 1, background: 'var(--primary)', opacity: 0.1 }} />
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -562,6 +564,7 @@ const Bookings: React.FC = () => {
                     <div>
                         <h3 style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-secondary)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                             📜 {isRTL ? 'سجل الطلبات السابقة' : 'Past Orders History'}
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)' }}>({pastTotal.toLocaleString('en-US')})</span>
                             <div style={{ height: 1, flex: 1, background: 'var(--gray-200)', opacity: 0.5 }} />
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -692,7 +695,7 @@ const Bookings: React.FC = () => {
                     </div>
                 )}
 
-                {filteredActive.length === 0 && filteredPast.length === 0 && (
+                {!activeLoading && filteredActive.length === 0 && filteredPast.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '100px 20px' }}>
                         <div style={{ fontSize: '4rem', marginBottom: 20 }}>🎟️</div>
                         <div style={{ fontWeight: 800, color: 'var(--gray-400)', fontSize: '1.1rem' }}>{isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found'}</div>
@@ -706,6 +709,13 @@ const Bookings: React.FC = () => {
         </PullToRefresh>
         {/* Sibling, not child — PullToRefresh's translateY() would otherwise
             re-anchor `position: fixed` to the wrapper instead of the viewport. */}
+        <InfiniteScrollSentinel
+            hasMore={activeHasMore || pastHasMore}
+            loading={activeLoadingMore || pastLoadingMore}
+            onLoadMore={async () => { if (activeHasMore) await activeLoadMore(); else await pastLoadMore(); }}
+            isRTL={isRTL}
+        />
+
         <BottomNav />
         {reportStore && (
             <ReportDialog

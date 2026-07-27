@@ -882,10 +882,15 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
 
     // ───── Tech (تقني) ─────
     { id: 'sw',              category: 'tech',     status: 'ready',       label: 'Service Worker + cache versioning',         detail: 'CACHE_NAME يُرفع كل deploy' },
+    { id: 'scale-deals',     category: 'tech',     status: 'ready',       label: 'محرك التصفّح — ترقيم keyset على كل ترتيب',   detail: 'browse_deals: الترشيح والترتيب والعدّ على القاعدة؛ الصفحة الألف بسرعة الأولى (v13.24)' },
+    { id: 'scale-search',    category: 'tech',     status: 'ready',       label: 'بحث عربي مُطبَّع (٣ طبقات مفهرسة)',          detail: 'taki_norm + search_vec + trgm: «مويه»=«موية» و«راشد» داخل «الراشد» (v13.24)' },
+    { id: 'scale-nearby',    category: 'tech',     status: 'ready',       label: 'حولي — طبقة جغرافية على مستوى الفرع',        detail: 'deal_branches + مرشّح صندوقي على الفهرس ثم haversine (v13.26)' },
+    { id: 'scale-bookings',  category: 'tech',     status: 'ready',       label: 'ترقيم الطلبات (المشتري والتاجر)',            detail: 'browse_bookings بمؤشّر keyset + seller_order_stats للتحليلات — لا تحميل ينمو مع نجاح التاجر (v13.28)' },
+    { id: 'alerts-arabic',   category: 'tech',     status: 'ready',       label: 'التنبيهات الذكية تطابق العربية',             detail: 'taki_norm على الطرفين — كانت ٤ من ٤ كلمات لا تُطابق شيئاً قبل v13.25' },
     { id: 'pwa',             category: 'tech',     status: 'ready',       label: 'PWA installable على iOS وأندرويد',         detail: 'manifest + viewport-fit=cover' },
     { id: 'realtime',        category: 'tech',     status: 'ready',       label: 'Realtime channels تعمل',                    detail: '3 قنوات + heartbeat + bfcache' },
     { id: 'backup',          category: 'tech',     status: 'ready',       label: 'النسخ الاحتياطي اليومي',                    detail: 'Supabase يأخذ snapshots تلقائية' },
-    { id: 'analytics',       category: 'tech',     status: 'ready',       label: 'Analytics tracking داخلي',                   detail: 'activity_log + store_analytics_events موجودة' },
+    { id: 'analytics',       category: 'tech',     status: 'needs_work',  label: 'Analytics tracking داخلي',                   detail: '⚠️ فحص v13.27: جدول store_analytics_events موجود لكن **لا أحد يكتب فيه** (صفر حدث) ولا يقرأ منه — إمّا يُشغَّل أو يُحذف. المُتاح فعلياً: activity_log + عدّادات العرض (views/clicks) + تحليلات التاجر من seller_order_stats' },
     { id: 'errorboundary',   category: 'tech',     status: 'ready',       label: 'Error Boundary لكل التطبيق',                detail: 'يلتقط الأخطاء + يمسح SW عند ChunkLoadError' },
     { id: '404',             category: 'tech',     status: 'ready',       label: 'صفحة 404 مخصصة',                            detail: 'NotFound.tsx — تظهر لأي رابط غير معروف' },
     { id: 'sitemap',         category: 'tech',     status: 'ready',       label: 'sitemap.xml + robots.txt',                  detail: 'منشوران في الجذر للـSEO' },
