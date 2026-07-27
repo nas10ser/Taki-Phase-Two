@@ -74,6 +74,10 @@ export interface BrowseParams {
     mode?: 'live' | 'coming_soon';
     openNow?: boolean;
     verified?: boolean;
+    /** التجار الذين حظرهم المشتري — يُستبعدون على القاعدة لا في المتصفح. */
+    blocked?: string[] | null;
+    /** استبعاد عروض ظهرت في نداء سابق (يُستخدم للتوسّع التدريجي في الأشرطة). */
+    excludeIds?: string[] | null;
     cursor?: BrowseCursor | null;
     limit?: number;
 }
@@ -142,6 +146,8 @@ export const dealRepository = {
                     p_cursor_key: p.cursor ? p.cursor.key : null,
                     p_cursor_id:  p.cursor ? p.cursor.id : null,
                     p_limit:      Math.max(1, Math.min(60, p.limit ?? DEALS_PAGE_SIZE)),
+                    p_blocked:      (p.blocked && p.blocked.length) ? p.blocked : null,
+                    p_exclude_ids:  (p.excludeIds && p.excludeIds.length) ? p.excludeIds : null,
                 }) as unknown as Promise<{ data: any; error: any }>,
                 20000
             );

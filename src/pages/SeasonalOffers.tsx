@@ -3,13 +3,12 @@ import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import BottomNav from '../components/BottomNav';
 import DealCard from '../components/DealCard';
-import { Deal, CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
+import { CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
 import { getSeasonById, campaignPublicLive, campaignSellerOpen, seasonHeroTexts } from '../data/seasons';
-import { isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, getAuthenticityBadge } from '../utils/helpers';
-import { useNowTick } from '../utils/useNowTick';
+import { useDealBrowse } from '../hooks/useDealBrowse';
+import { useDealRail } from '../hooks/useDealRail';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { smartBack } from '../utils/navHistory';
-import { getShopStatus } from '../utils/workingHours';
-import { dealService } from '../services/dealService';
 
 /**
  * v12.48 — صفحة عروض الموسم الحصرية (أعيد بناؤها من placeholder «قريباً»).
@@ -24,9 +23,8 @@ import { dealService } from '../services/dealService';
  */
 const SeasonalOffers: React.FC = () => {
     const history = useHistory();
-    const { language, deals, platformSettings, blockedMerchants, user, storeProfiles } = useApp();
+    const { language, platformSettings, blockedMerchants, user } = useApp();
     const isRTL = language === 'ar';
-    const nowTick = useNowTick(15000);
 
     const camp = platformSettings.seasonCampaign;
     const season = camp ? getSeasonById(camp.seasonId) : undefined;
@@ -46,84 +44,40 @@ const SeasonalOffers: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'discount' | 'price' | 'new' | 'reliability'>('discount');
 
-    const hasStock = (d: Deal) => {
-        if (d.quantity === 'unlimited') return true;
-        if (typeof d.quantity === 'number' && d.quantity > 0) return true;
-        const initial = d.initialQuantity;
-        return !(typeof initial === 'number' && initial > 0);
-    };
+    // v13.25 — الترشيح والترتيب والعدّ على القاعدة (نفس محرك بقية الصفحات).
+    // كانت الصفحة ترشّح النافذة المُحمّلة، فمع امتلاء الموسم بعروض التجار كانت
+    // ستعرض جزءاً منها فقط — والعدّاد «س عرض حصري» يكذب.
+    const {
+        deals: seasonDeals, total: seasonTotal, totalCapped: seasonCapped,
+        hasMore: seasonHasMore, loadingMore: seasonLoadingMore, loadMore: seasonLoadMore,
+    } = useDealBrowse({
+        seasonId: camp?.seasonId || null,
+        query: searchQuery,
+        category: activeCategory,
+        gender: activeGender,
+        sort: searchQuery.trim() ? 'best' : sortBy,
+        openNow,
+        verified: verifiedOnly,
+        blocked: blockedMerchants,
+        // v12.52 — سرية المشاركات قبل الإطلاق: التاجر يرى عروضه هو فقط.
+        storeId: sellerPreviewOwnOnly && user ? user.id : null,
+    });
 
-    const seasonDeals = useMemo(() => {
-        if (!camp) return [];
-        let list = deals.filter(d => d.seasonId === camp.seasonId
-            && d.status === 'active'
-            && !isDealComingSoon(d)
-            && !isDealExpiredByTime(d)
-            && hasStock(d)
-            && !blockedMerchants.includes(d.storeId));
-
-        // v12.52 — قبل الإطلاق العام: كل تاجر يرى مشاركاته فقط (سرية المنافسة)
-        if (sellerPreviewOwnOnly && user) list = list.filter(d => d.storeId === user.id);
-
-        if (activeCategory !== 'all') {
-            list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
-        }
-        if (activeGender !== 'all') {
-            list = list.filter(d => d.gender === activeGender || d.gender === 'all');
-        }
-        if (openNow) {
-            list = list.filter(d => getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open);
-        }
-        if (verifiedOnly) {
-            list = list.filter(d => {
-                const b = getAuthenticityBadge(d.authReal, d.authFake, isRTL);
-                return b.show && b.real;
-            });
-        }
-
-        if (searchQuery.trim()) {
-            return list
-                .map(d => ({
-                    d,
-                    score: Math.max(
-                        dealService.searchScore(searchQuery, d.itemName) * 1.0,
-                        dealService.searchScore(searchQuery, d.shopName) * 0.9,
-                        dealService.searchScore(searchQuery, `${d.category} ${d.description || ''}`) * 0.5,
-                    ),
-                }))
-                .filter(x => x.score > 0)
-                .sort((a, b) => b.score - a.score)
-                .map(x => x.d);
-        }
-
-        if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
-        else if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
-        else if (sortBy === 'reliability') list.sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0));
-        else list.sort((a, b) => b.createdAt - a.createdAt);
-        return list;
-    }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, openNow, verifiedOnly, searchQuery, sortBy, storeProfiles, isRTL, sellerPreviewOwnOnly, user?.id]);
-
-    // v12.59-60 (قاعدة ناصر المتفق عليها) — قسم «عروض قادمة» في صفحة الموسم
-    // يعرض العرض المجدول فقط عندما يبقى ≤٧ أيام على انطلاقه (نفس قاعدة كل
-    // العروض العامة — isDealVisibleComingSoon)، بقفل وعدّاد يرسمهما DealCard
-    // تلقائياً. الأقرب انطلاقاً أولاً. فلاتر «المفتوحة الآن/حقيقية/البحث» تخص
-    // الحجز الفوري فلا تُطبَّق هنا — التصنيف والفئة يُطبَّقان.
-    const comingSeasonDeals = useMemo(() => {
-        if (!camp) return [];
-        let list = deals.filter(d => d.seasonId === camp.seasonId
-            && d.status === 'active'
-            && isDealVisibleComingSoon(d)
-            && hasStock(d)
-            && !blockedMerchants.includes(d.storeId));
-        if (sellerPreviewOwnOnly && user) list = list.filter(d => d.storeId === user.id);
-        if (activeCategory !== 'all') {
-            list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
-        }
-        if (activeGender !== 'all') {
-            list = list.filter(d => d.gender === activeGender || d.gender === 'all');
-        }
-        return list.sort((a, b) => (a.startsAt || 0) - (b.startsAt || 0));
-    }, [deals, camp?.seasonId, blockedMerchants, nowTick, activeCategory, activeGender, sellerPreviewOwnOnly, user?.id]);
+    // v12.59-60 (قاعدة ناصر) — «عروض قادمة» ≤٧ أيام على الانطلاق، الأقرب أولاً.
+    // فلاتر «المفتوحة الآن/حقيقية/البحث» تخص الحجز الفوري فلا تُطبَّق هنا.
+    const { deals: comingSeasonDeals } = useDealRail(
+        {
+            seasonId: camp?.seasonId || null,
+            category: activeCategory,
+            gender: activeGender,
+            sort: 'soon',
+            mode: 'coming_soon',
+            limit: 24,
+            blocked: blockedMerchants,
+            storeId: sellerPreviewOwnOnly && user ? user.id : null,
+        },
+        { expand: false },
+        !!camp);
 
     if (!season || !camp) return null; // البوابة في App.tsx تمنع الوصول أصلاً
 
@@ -259,7 +213,7 @@ const SeasonalOffers: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px' }}>
                             <h2 style={{ fontSize: '1.02rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                                {isRTL ? `${seasonDeals.length} عرض حصري 🎯` : `${seasonDeals.length} exclusive deals 🎯`}
+                                {isRTL ? `${seasonTotal.toLocaleString('en-US')}${seasonCapped ? '+' : ''} عرض حصري 🎯` : `${seasonTotal.toLocaleString('en-US')}${seasonCapped ? '+' : ''} exclusive deals 🎯`}
                             </h2>
                         </div>
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
@@ -319,6 +273,13 @@ const SeasonalOffers: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            <InfiniteScrollSentinel
+                hasMore={seasonHasMore}
+                loading={seasonLoadingMore}
+                onLoadMore={seasonLoadMore}
+                isRTL={isRTL}
+            />
 
             <BottomNav />
         </div>

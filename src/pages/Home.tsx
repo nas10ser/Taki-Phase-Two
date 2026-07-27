@@ -3,11 +3,14 @@ import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import DealCard from '../components/DealCard';
-import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, Deal , geoName } from '../data/mock';
+import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, geoName } from '../data/mock';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, dealProximityTier, isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { isDealExpiredByTime, interleaveSponsored, DisplayDeal } from '../utils/helpers';
+import { useDealBrowse } from '../hooks/useDealBrowse';
+import { useDealRail } from '../hooks/useDealRail';
+import type { BrowseSort } from '../repositories/dealRepository';
 import { useNowTick } from '../utils/useNowTick';
 import LocationGate from '../components/LocationGate';
 import PullToRefresh from '../components/PullToRefresh';
@@ -27,7 +30,7 @@ let _homeBannersCache: Banner[] = [];
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals } = useApp();
+    const { language, topLocation, setTopLocation, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
@@ -44,9 +47,9 @@ const Home: React.FC = () => {
     // own dashboards), shown once until a home city is chosen/persisted.
     const isShopper = user?.userType !== 'seller' && user?.userType !== 'admin';
     const showLocationGate = isShopper && !homeCity && !gateClosed;
-    // Explicit dropdown filter wins; otherwise we rank by home-city proximity.
+    // Explicit dropdown filter wins; otherwise the rails expand outward from
+    // the user's home city (see railScope below). v13.25
     const explicitLocationFilter = !!(topLocation.region || topLocation.city || topLocation.mall);
-    const useProximity = !explicitLocationFilter && !!homeCity;
     const [activeCategory, setActiveCategory] = useState<Category | 'all'>('all');
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
@@ -115,22 +118,8 @@ const Home: React.FC = () => {
         import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'home')).catch(() => {});
     }, [searchQuery, storeProfiles]);
 
-    // v13.23 (بلاغ ناصر) — البحث يذهب **للقاعدة**، لا للصفحة المُحمّلة فقط.
-    // بعد ترقيم v13.22 صارت `deals` نافذة، فعرضٌ بعيد في الكتالوج لم يكن
-    // يظهر عند البحث عنه. نجلب المطابقات من الخادم وندخلها للنافذة، فيلتقطها
-    // منطق الترتيب/الترشيح القائم كما هو. التأخير ٣٥٠ms يمنع طلباً لكل حرف.
-    useEffect(() => {
-        const q = searchQuery.trim();
-        if (q.length < 2) return;
-        let alive = true;
-        const t = setTimeout(() => {
-            import('../repositories/dealRepository')
-                .then(({ dealRepository: dr }) => dr.searchDeals({ query: q }))
-                .then(found => { if (alive && found.length) ingestDeals(found); })
-                .catch(() => { /* البحث المحلي يبقى عاملاً */ });
-        }, 350);
-        return () => { alive = false; clearTimeout(t); };
-    }, [searchQuery, ingestDeals]);
+    // v13.25 — سقط جلب البحث اليدوي إلى النافذة: الشبكة نفسها صارت تسأل القاعدة
+    // مباشرة عبر `useDealBrowse` أدناه، فلا حاجة لحقن النتائج في `deals`.
 
     const filteredCities = useMemo(() => {
         if (!topLocation.region) return [];
@@ -142,65 +131,36 @@ const Home: React.FC = () => {
         return LOCATIONS.filter(l => l.cityId === topLocation.city);
     }, [topLocation.city]);
 
-    // A deal is "in stock" if either: quantity is unlimited, the live counter
-    // is positive, OR the seller never set a stock cap (initialQuantity 0/unset)
-    // — those are time-based offers where the timer alone gates visibility.
-    const hasStock = (d: Deal) => {
-        if (d.quantity === 'unlimited') return true;
-        if (typeof d.quantity === 'number' && d.quantity > 0) return true;
-        const initial = d.initialQuantity;
-        const hasCap = typeof initial === 'number' && initial > 0;
-        return !hasCap;
-    };
+    // v13.25 — كل أقسام الرئيسية صارت تُرتَّب على **القاعدة كلها**، لا على
+    // النافذة المُحمّلة. الفرق عملياً: «أقوى الخصومات» كانت تعرض أقوى خصم بين
+    // آخر ٣٠ عرضاً؛ الآن تعرض أقوى خصم عندك فعلاً.
+    //
+    // القرب: بدل فرز الكتالوج كله بـtier (فرز كامل عند كل فتح للرئيسية — مستحيل
+    // على الملايين) نستخدم **توسّعاً تدريجياً**: مدينة المستخدم أولاً، ثم منطقته،
+    // ثم المملكة — كل خطوة ضربة فهرس واحدة، والنتيجة المرئية هي نفسها: القائمة
+    // لا تتوقف عند مدينته.
+    const railScope = useMemo(() => (
+        explicitLocationFilter
+            ? { city: topLocation.city || null, region: topLocation.region || null, expand: false }
+            : { city: homeCity?.cityId || null, region: homeCity?.regionId || null, expand: true }
+    ), [explicitLocationFilter, topLocation.city, topLocation.region, homeCity?.cityId, homeCity?.regionId]);
 
-    /**
-     * Apply the same region/city/mall filter that "كل العروض" uses, so
-     * Trending + Top Discounts only show deals from where the user is.
-     * Distance-based filtering is intentionally NOT used here — that's the
-     * "حولي / Nearby" page's job. This is a city-level cut.
-     */
-    const applyLocationFilter = (list: Deal[]) =>
-        list.filter(d => dealMatchesLocation(d, topLocation));
+    // المول ليس نطاقاً في التوسّع — يُمرَّر كفلتر صريح حين يختاره المستخدم.
+    const railMall = explicitLocationFilter ? (topLocation.mall || null) : null;
 
-    // In proximity mode we do NOT cut at the city — we keep every deal and
-    // let the tier be the PRIMARY sort key, so the customer's city shows
-    // first, then بلجرشي/قلوة/الباحة … expanding outward until the list ends,
-    // while each section still ranks by its own metric within a tier.
-    // v11.20 — every "live" section excludes Coming Soon deals; they live
-    // exclusively in the dedicated "العروض القادمة" carousel below.
-    // "Live" = bookable right now: not scheduled for the future AND not past
-    // its lifespan. Checking expiry HERE (by the clock) — instead of trusting
-    // the DB `status` — is what stops expired offers from lingering when the
-    // background status-flip tick was paused (iOS) or the server cron lagged.
-    const isLive = (d: Deal) => !isDealComingSoon(d) && !isDealExpiredByTime(d);
+    const { deals: trendingBase } = useDealRail(
+        { sort: 'reliability', limit: 8, mall: railMall, blocked: blockedMerchants }, railScope);
+    const { deals: discountBase } = useDealRail(
+        { sort: 'discount', limit: 8, mall: railMall, blocked: blockedMerchants }, railScope);
 
-    const trendingDeals = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
-        const list = useProximity ? base.slice() : applyLocationFilter(base);
-        list.sort((a, b) => {
-            if (useProximity) {
-                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
-                if (t !== 0) return t;
-            }
-            return (b.reliabilityScore || 0) - (a.reliabilityScore || 0);
-        });
-        // v11.25 — sponsors lead this carousel too (gold first, then every 5),
-        // then cap at 8 cards so the section stays a tidy horizontal strip.
-        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
+    const trendingDeals = useMemo(
+        // v11.25 — sponsors lead this carousel too (gold first, then every 5).
+        () => interleaveSponsored(trendingBase.filter(d => !isDealExpiredByTime(d)), sponsors, platformSettings.sponsorLayout).slice(0, 8),
+        [trendingBase, sponsors, platformSettings.sponsorLayout, nowTick]);
 
-    const bestDiscounts = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
-        const list = useProximity ? base.slice() : applyLocationFilter(base);
-        list.sort((a, b) => {
-            if (useProximity) {
-                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
-                if (t !== 0) return t;
-            }
-            return b.discountPercentage - a.discountPercentage;
-        });
-        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout).slice(0, 8);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants, sponsors, nowTick, platformSettings.sponsorLayout]);
+    const bestDiscounts = useMemo(
+        () => interleaveSponsored(discountBase.filter(d => !isDealExpiredByTime(d)), sponsors, platformSettings.sponsorLayout).slice(0, 8),
+        [discountBase, sponsors, platformSettings.sponsorLayout, nowTick]);
 
     // v12.86 (طلب ناصر) — شريط «عروض الموسم» على الرئيسية بنفس شكل «الأكثر
     // تداولاً / أقوى الخصومات». يظهر فقط أثناء النافذة العامة للحملة النشطة،
@@ -209,88 +169,43 @@ const Home: React.FC = () => {
     const seasonCampaign = platformSettings.seasonCampaign;
     const seasonLive = campaignPublicLive(seasonCampaign);
     const activeSeason = seasonCampaign ? getSeasonById(seasonCampaign.seasonId) : undefined;
-    const seasonDeals = useMemo(() => {
-        if (!seasonCampaign || !seasonLive) return [] as Deal[];
-        const base = deals.filter(d => d.seasonId === seasonCampaign.seasonId && d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
-        const list = useProximity ? base.slice() : applyLocationFilter(base);
-        list.sort((a, b) => {
-            if (useProximity) {
-                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
-                if (t !== 0) return t;
-            }
-            return b.discountPercentage - a.discountPercentage;
-        });
-        return list.slice(0, 12);
-    }, [deals, seasonCampaign?.seasonId, seasonLive, topLocation, useProximity, homeCity, blockedMerchants, nowTick]);
 
-    // v11.20 — Coming Soon carousel. Same look as trending/discount, but
-    // ONLY deals whose startsAt is in the future AND ≤7 days out — Nasser's
-    // agreed rule for general listings (v12.60; the season page is the one
-    // surface that previews further-out deals). Same proximity/location
-    // ranking so the section respects the user's region/city/home filter.
-    const comingSoonDeals = useMemo(() => {
-        const base = deals.filter(d => d.status === 'active' && isDealVisibleComingSoon(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
-        const list = useProximity ? base.slice() : applyLocationFilter(base);
-        // Soonest-to-launch first — that's the most actionable for the buyer.
-        list.sort((a, b) => {
-            if (useProximity) {
-                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
-                if (t !== 0) return t;
-            }
-            return (a.startsAt || 0) - (b.startsAt || 0);
-        });
-        return list.slice(0, 12);
-    }, [deals, topLocation, useProximity, homeCity, blockedMerchants]);
+    const { deals: seasonDeals } = useDealRail(
+        { sort: 'discount', limit: 12, mall: railMall, blocked: blockedMerchants, seasonId: seasonCampaign?.seasonId || null },
+        railScope,
+        !!(seasonCampaign && seasonLive));
+
+    // v11.20 — Coming Soon carousel: عروض تبدأ خلال ٧ أيام فقط (قاعدة ناصر
+    // المعتمدة v12.60)، الأقرب إطلاقاً أولاً.
+    const { deals: comingSoonDeals } = useDealRail(
+        { sort: 'soon', mode: 'coming_soon', limit: 12, mall: railMall, blocked: blockedMerchants }, railScope);
+
+    // الشبكة الرئيسية — بحث/تصنيف/ترتيب على القاعدة مع ترقيم keyset.
+    // أثناء البحث ينتقل الترتيب تلقائياً إلى «أفضل مطابقة».
+    const gridSort: BrowseSort = searchQuery.trim() ? 'best' : sortBy;
+    const {
+        deals: gridDeals, total: gridTotal, hasMore: gridHasMore,
+        loading: gridLoading, loadingMore: gridLoadingMore, loadMore: gridLoadMore,
+    } = useDealBrowse({
+        query: searchQuery,
+        category: activeCategory,
+        gender: activeGender,
+        // نطاق الشبكة: اختيار المستخدم الصريح يحكم؛ وإلا مدينته (والتمرير يكشف
+        // الباقي عبر keyset — الشبكة مرقّمة أصلاً فلا تحتاج توسّعاً يدوياً).
+        region: explicitLocationFilter ? (topLocation.region || null) : null,
+        city: explicitLocationFilter ? (topLocation.city || null) : null,
+        mall: explicitLocationFilter ? (topLocation.mall || null) : null,
+        sort: gridSort,
+        blocked: blockedMerchants,
+    });
 
     const filteredDeals = useMemo(() => {
-        let list = deals.filter(d => d.status === 'active' && isLive(d) && hasStock(d) && !blockedMerchants.includes(d.storeId));
-
-        if (activeCategory !== 'all') list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
-        if (activeGender !== 'all') list = list.filter(d => d.gender === activeGender || d.gender === 'all');
-
-        // Only hard-cut when the user explicitly picked a region/city/mall.
-        // Otherwise keep ALL deals and let home-city proximity rank them so
-        // the list never "stops" at the customer's city.
-        if (explicitLocationFilter) list = list.filter(d => dealMatchesLocation(d, topLocation));
-
-        if (searchQuery.trim()) {
-            // While the user is actively searching, RELEVANCE wins over the
-            // sort toggle and the sponsored interleave — they want what they
-            // typed, ranked best-match first (item name carries the most
-            // weight, then shop, then category/description).
-            const scored = list
-                .map(d => ({
-                    d,
-                    score: Math.max(
-                        dealService.searchScore(searchQuery, d.itemName) * 1.0,
-                        dealService.searchScore(searchQuery, d.shopName) * 0.9,
-                        dealService.searchScore(searchQuery, `${d.category} ${d.description || ''}`) * 0.5,
-                    ),
-                }))
-                .filter(x => x.score > 0)
-                .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0));
-            // While searching, no sponsored interleave — relevance wins.
-            return scored.map(x => ({ deal: x.d, sponsored: false })) as DisplayDeal[];
-        }
-
-        const metricCmp = (a: Deal, b: Deal) => {
-            if (sortBy === 'discount') return b.discountPercentage - a.discountPercentage;
-            if (sortBy === 'price') return a.discountedPrice - b.discountedPrice;
-            return b.reliabilityScore - a.reliabilityScore; // 'reliability' / default
-        };
-        list.sort((a, b) => {
-            if (useProximity) {
-                const t = dealProximityTier(a, homeCity) - dealProximityTier(b, homeCity);
-                if (t !== 0) return t;
-            }
-            return metricCmp(a, b);
-        });
-
-        // v11.23 — Official Sponsors: pull on-target sponsor deals out of the
-        // stream and re-insert them as gold ads (spacing/tier order/rotation
-        // follow the owner's sponsor_layout config — v12.50).
-        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, storeProfiles, sponsors, useProximity, homeCity, explicitLocationFilter, blockedMerchants, nowTick, platformSettings.sponsorLayout]);
+        const live = gridDeals.filter(d => !isDealExpiredByTime(d));
+        // While searching, no sponsored interleave — relevance wins.
+        if (searchQuery.trim()) return live.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
+        // v11.23 — Official Sponsors: gold ads interleaved per sponsor_layout.
+        return interleaveSponsored(live, sponsors, platformSettings.sponsorLayout);
+    }, [gridDeals, searchQuery, sponsors, platformSettings.sponsorLayout, nowTick]);
 
     return (
         <>
@@ -307,7 +222,7 @@ const Home: React.FC = () => {
             {/* No more full-screen blocker — modern apps show content shells while
                 data hydrates in the background. A thin top progress bar gives a
                 subtle hint that data is still arriving without blocking taps. */}
-            {loading && (
+            {gridLoading && (
                 <div
                     aria-hidden
                     style={{
@@ -571,7 +486,7 @@ const Home: React.FC = () => {
                     filteredDeals.map(({ deal, sponsored, sponsorLabel }) => (
                         <DealCard key={deal.id} deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={sponsored} sponsorLabel={sponsorLabel} />
                     ))
-                ) : loading ? (
+                ) : gridLoading ? (
                     // Skeleton placeholders while initial fetch is in flight.
                     // Shows immediately so the user never sees a blank screen.
                     Array.from({ length: 8 }).map((_, i) => (
@@ -587,9 +502,9 @@ const Home: React.FC = () => {
 
             {/* v13.22 — التمرير اللانهائي بدل تنزيل الكتالوج كله دفعة واحدة. */}
             <InfiniteScrollSentinel
-                hasMore={hasMoreDeals}
-                loading={loadingMoreDeals}
-                onLoadMore={loadMoreDeals}
+                hasMore={gridHasMore}
+                loading={gridLoadingMore}
+                onLoadMore={gridLoadMore}
                 isRTL={isRTL}
             />
 
