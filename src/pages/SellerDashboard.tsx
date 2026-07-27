@@ -17,7 +17,7 @@ import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
-import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
@@ -380,10 +380,14 @@ const SellerDashboard: React.FC = () => {
         opts: { restoreQuantity: boolean }
     ): Promise<Deal | null> => {
         const count = dealLocationCount(deal);
-        if (count > MAX_LOCATIONS) {
+        // v13.19 — السقف يُقرأ من القاعدة لحظة الضغط (لا من الحالة) فلا يسقط
+        // الاعتراض أبداً وتُعرض رسالة واحدة فقط بدل رفض القاعدة وتوالي الرسائل.
+        const liveMax = (user?.id ? await fetchStoreMaxBranches(user.id) : null) ?? MAX_LOCATIONS;
+        if (liveMax !== maxLocations) setMaxLocations(liveMax);
+        if (count > liveMax) {
             await customAlert(isRTL
-                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `${MAX_LOCATIONS} مواقع`}.\n\nسنفتح لك صفحة التعديل بكامل بيانات العرض — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. وإن أردت الإبقاء عليها كلها فرقِّ باقتك من هناك.`
-                : `⚠️ This deal spans ${count} locations; your plan allows ${MAX_LOCATIONS}.\n\nOpening the edit form — remove the extra branches from the multi-location section and save, or upgrade your plan there.`);
+                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${liveMax === 1 ? 'موقع واحد فقط' : `${liveMax} مواقع`}.\n\nسنفتح لك صفحة التعديل — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. ولترقية باقتك اضغط على أي فرع إضافي هناك.`
+                : `⚠️ This deal spans ${count} locations; your plan allows ${liveMax}.\n\nOpening the edit form — remove the extra branches and save. To upgrade, tap any extra branch there.`);
             _skipTrimNoticeRef.current = true;   // الرسالة عُرضت للتوّ — لا تُكرَّر
             handleEdit(deal);
             setView('form');

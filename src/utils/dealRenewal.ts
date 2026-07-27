@@ -79,3 +79,27 @@ export const refreshDealLifespan = (deal: Deal, restoreQuantity: boolean): Deal 
 
 /** هل يحتاج هذا العرض تجديد عمره عند التفعيل؟ (موقوف لكنه انتهى زمنياً) */
 export const needsLifespanRefresh = (deal: Deal): boolean => isDealExpiredByTime(deal);
+
+/**
+ * v13.19 — سقف مواقع الباقة **مقروءاً من القاعدة لحظة القرار**.
+ *
+ * الاعتماد على حالة React كان يُسقط الفحص: القيمة الافتراضية ٣، فعرض بموقعين
+ * على باقة موقع واحد يمرّ (٢ > ٣ خطأ) فترفضه القاعدة، فتتوالى ثلاث رسائل على
+ * التاجر. القراءة الحيّة هنا تجعل الاعتراض في العميل مضموناً دائماً.
+ * عند تعذّر القراءة نُعيد `null` فيتصرّف المستدعي بحذر (لا يمنع ولا يدّعي).
+ */
+export const fetchStoreMaxBranches = async (storeId: string): Promise<number | null> => {
+    try {
+        const { supabase } = await import('../services/supabaseClient');
+        const { data, error } = await supabase
+            .from('store_profiles')
+            .select('max_branches')
+            .eq('store_id', storeId)
+            .maybeSingle();
+        if (error) return null;
+        const n = Number(data?.max_branches);
+        return n > 0 ? n : null;
+    } catch {
+        return null;
+    }
+};

@@ -1784,27 +1784,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ? '⚠️ اشتراكك بموقع واحد فقط.\n\nهذا العرض في موقع مختلف عن منتجاتك النشطة — استخدم نفس موقع المنتج الأول، أو أوقف/احذف منتجات الموقع الحالي أولاً لتتمكن من اختيار موقع آخر. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».'
                 : `⚠️ وصلت لحد المواقع المسموح في باقتك${capN > 1 ? ` (${capN} مواقع)` : ''}.\n\nاختر موقعاً من مواقعك الحالية، أو أوقف/احذف كل منتجات أحد المواقع لتفريغ خانة قبل تفعيل عرض في موقع جديد. وللمزيد من المواقع رقِّ باقتك من «الاشتراك».`;
             console.error('Failed to update deal in database:', error);
-            // v13.17 (طلب ناصر): كل رسالة سببها الباقة تعطي خياراً مباشراً
-            // «ترقية الباقة / إلغاء» بدل طريق مسدود — تنقله لصفحة الاشتراك.
-            if (isLocationCap || isSubRequired) {
+            // v13.19 (تصحيح طلب ناصر): انتهاء الاشتراك وحده يعرض خيار فتح صفحة
+            // الاشتراك. أما **حد المواقع** فلا يقترح الترقية هنا إطلاقاً —
+            // مسار التاجر المتفق عليه: رسالة واحدة ثم صفحة التعديل، والترقية
+            // تُعرض هناك عند ضغط فرع إضافي. (كان يعرض تأكيداً يقفز للباقات
+            // فتتوالى ثلاث رسائل على التاجر.)
+            if (isSubRequired) {
                 const goUpgrade = await customConfirm(
                     language === 'ar'
-                        ? (isSubRequired
-                            ? '🔒 اشتراكك منتهي — لا يمكن نشر أو استئناف أي عرض قبل تجديده.\n\n• «موافق» = فتح صفحة الاشتراك الآن.\n• «إلغاء» = لاحقاً.'
-                            : `${capMsgAr}\n\n• «موافق» = فتح صفحة الاشتراك للترقية.\n• «إلغاء» = أعالجها بنفسي.`)
-                        : (isSubRequired
-                            ? '🔒 Your subscription has expired.\n\n• OK = open Subscription.\n• Cancel = later.'
-                            : `⚠️ Package location limit reached.\n\n• OK = open Subscription to upgrade.\n• Cancel = I'll fix it myself.`)
+                        ? '🔒 اشتراكك منتهي — لا يمكن نشر أو استئناف أي عرض قبل تجديده.\n\n• «موافق» = فتح صفحة الاشتراك الآن.\n• «إلغاء» = لاحقاً.'
+                        : '🔒 Your subscription has expired.\n\n• OK = open Subscription.\n• Cancel = later.'
                 );
                 if (goUpgrade) window.location.assign('/subscription');
                 return false;
             }
             customAlert(
                 language === 'ar'
-                    ? (isTransientLock
+                    ? (isLocationCap
+                        ? capMsgAr
+                        : isTransientLock
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
                         : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
-                    : (isTransientLock
+                    : (isLocationCap
+                        ? '⚠️ You have reached your package location limit. Remove extra branches from the deal and save.'
+                        : isTransientLock
                         ? '⚠️ Sync delayed — try again in a few seconds.'
                         : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
             );

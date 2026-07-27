@@ -10,7 +10,7 @@ import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 import { getAuthenticityBadge } from '../utils/helpers';
-import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 
 const StoreDetails: React.FC = () => {
@@ -186,17 +186,20 @@ const StoreDetails: React.FC = () => {
         return () => { alive = false; };
     }, [user?.id, id]);
 
-    /** v13.17/18 — نفس مواءمة لوحة التاجر: العرض المتجاوز يُنقل لصفحة التعديل
-     *  ليقرر التاجر بنفسه (لا نقصّ مواقعه نيابةً عنه)، وإلا نجدّد عمره فقط. */
+    /** v13.17/19 — العرض المتجاوز يُنقل لصفحة التعديل ليقرر التاجر بنفسه.
+     *  v13.19: السقف يُقرأ **من القاعدة لحظة الضغط** — الاعتماد على الحالة
+     *  (افتراضها ٣) كان يُسقط الاعتراض فترفض القاعدة وتتوالى ثلاث رسائل. */
     const prepareDealForActivation = async (
         deal: any,
         opts: { restoreQuantity: boolean }
     ): Promise<any | null> => {
         const count = dealLocationCount(deal);
-        if (count > ownerMaxLocations) {
+        const liveMax = (user?.id ? await fetchStoreMaxBranches(user.id) : null) ?? ownerMaxLocations;
+        if (liveMax !== ownerMaxLocations) setOwnerMaxLocations(liveMax);
+        if (count > liveMax) {
             await customAlert(isRTL
-                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${ownerMaxLocations === 1 ? 'موقع واحد فقط' : `${ownerMaxLocations} مواقع`}.\n\nسنفتح لك صفحة التعديل بكامل بيانات العرض — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. وإن أردت الإبقاء عليها كلها فرقِّ باقتك من هناك.`
-                : `⚠️ This deal spans ${count} locations; your plan allows ${ownerMaxLocations}.\n\nOpening the edit form — remove the extra branches and save, or upgrade your plan there.`);
+                ? `⚠️ هذا العرض منشور في ${count} مواقع، وباقتك الحالية تسمح بـ${liveMax === 1 ? 'موقع واحد فقط' : `${liveMax} مواقع`}.\n\nسنفتح لك صفحة التعديل — أزل المواقع الزائدة من قسم «انشر نفس العرض في عدة مواقع» ثم احفظ. ولترقية باقتك اضغط على أي فرع إضافي هناك.`
+                : `⚠️ This deal spans ${count} locations; your plan allows ${liveMax}.\n\nOpening the edit form — remove the extra branches and save. To upgrade, tap any extra branch there.`);
             history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`);
             return null;
         }
@@ -228,9 +231,8 @@ const StoreDetails: React.FC = () => {
                 // banner there lets the seller re-pick with one tap) —
                 // previously we dumped him on a blank dashboard form and it
                 // read as «حذفت كل بيانات العرض».
-                await customAlert(isRTL
-                    ? '⚠️ تعذّر التجديد — موقع العرض السابق لم يعد متاحاً في باقتك.\nسنفتح لك نموذج التعديل بكامل بيانات العرض — اختر موقعاً من مواقعك ثم احفظ.'
-                    : '⚠️ Couldn\'t renew — the deal\'s old location is no longer available on your package.\nOpening the edit form with the deal\'s data — re-pick a location and save.');
+                // v13.19 — `updateDeal` عرض السبب بالفعل، فلا نضيف رسالة ثانية:
+                // ننقله مباشرة لنموذج التعديل (رسالة واحدة فقط — طلب ناصر).
                 history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`);
                 return;
             }
@@ -265,10 +267,8 @@ const StoreDetails: React.FC = () => {
                 // v13.16 (طلب ناصر): «تفعيل» المرفوض بحد المواقع كان يقف عند
                 // الرسالة — الآن ينقل التاجر لنموذج التعديل بكامل بيانات العرض
                 // (مثل «تجديد») ليختار موقعاً متاحاً ويحفظ.
+                // v13.19 — رسالة واحدة فقط: `updateDeal` شرح السبب، وننقله للتعديل.
                 if (isCurrentlyPaused) {
-                    await customAlert(isRTL
-                        ? '⚠️ تعذّر التفعيل — موقع العرض لم يعد متاحاً ضمن باقتك.\nسنفتح لك نموذج التعديل بكامل بيانات العرض — اختر موقعاً من مواقعك ثم احفظ.'
-                        : '⚠️ Couldn\'t activate — this deal\'s location is no longer available on your package.\nOpening the edit form — re-pick a location and save.');
                     history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`);
                 }
                 return;
