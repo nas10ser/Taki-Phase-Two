@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import DealCard from '../components/DealCard';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, Deal , geoName } from '../data/mock';
 import { useHistory } from 'react-router-dom';
@@ -26,7 +27,7 @@ let _homeBannersCache: Banner[] = [];
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
@@ -566,6 +567,14 @@ const Home: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* v13.22 — التمرير اللانهائي بدل تنزيل الكتالوج كله دفعة واحدة. */}
+            <InfiniteScrollSentinel
+                hasMore={hasMoreDeals}
+                loading={loadingMoreDeals}
+                onLoadMore={loadMoreDeals}
+                isRTL={isRTL}
+            />
 
         </div>
         </PullToRefresh>

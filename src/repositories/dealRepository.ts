@@ -3,7 +3,112 @@ import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 import { withTimeout } from '../utils/helpers';
 
+/**
+ * v13.22 — ترطيب التقييمات لمجموعة عروض (صفحة واحدة).
+ * كان هذا المنطق محشوراً داخل getAll ويعمل على **كل** العروض؛ استُخرج ليعمل
+ * على الصفحة المطلوبة فقط، فيبقى الطلب صغيراً مهما كبر الكتالوج.
+ */
+const hydrateRatings = async (deals: Deal[]): Promise<Deal[]> => {
+    if (deals.length === 0) return deals;
+    const ids = deals.map(d => d.id);
+    const { data: ratingRows } = await supabase
+        .from('ratings')
+        .select('*')
+        .in('deal_id', ids)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+    const byDeal: Record<string, any[]> = {};
+    for (const r of (ratingRows || [])) {
+        (byDeal[r.deal_id] ||= []).push({
+            id: r.id,
+            userId: r.user_id,
+            userName: r.user_name,
+            score: Number(r.score) || 0,
+            comment: r.comment ?? '',
+            // بتوقيت الجهاز — toISOString (UTC) يرجع اليوم للوراء قبل ٣ فجراً
+            date: r.created_at ? (() => { const d = new Date(r.created_at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '',
+            reply: r.reply ?? undefined,
+            repliedBy: r.replied_by ?? undefined,
+            repliedAt: r.replied_at ?? undefined,
+            likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
+            likeCount: Number(r.like_count) || 0,
+        });
+    }
+    for (const d of deals) d.ratings = byDeal[d.id] || [];
+    return deals;
+};
+
+/** مؤشّر الصفحة التالية (keyset) — آخر عنصر رأيناه. */
+export interface DealCursor { createdAt: number; id: string; }
+
+/** حجم صفحة الواجهة الافتراضي — يملأ عدة شاشات دون إثقال أول رسمة. */
+export const DEALS_PAGE_SIZE = 30;
+
 export const dealRepository = {
+    /**
+     * v13.22 — صفحة من واجهة العروض بترقيم **keyset** (أسلوب التطبيقات الكبرى).
+     *
+     * لماذا keyset لا OFFSET: مع OFFSET تُجبَر القاعدة على عدّ وتخطّي كل الصفوف
+     * السابقة، فتتباطأ الصفحة كلما تعمّق المستخدم (الصفحة ١٠٠ أبطأ ١٠٠ مرة من
+     * الأولى). أما keyset فيسأل «أعطني ما بعد هذا العنصر» فيقفز الفهرس مباشرة —
+     * زمن ثابت مهما بلغ عمق التمرير أو حجم الكتالوج.
+     *
+     * الترتيب `created_at DESC, id DESC` يطابق الفهرس `idx_deals_feed_keyset`
+     * تماماً، و`id` فاصلٌ حاسم يمنع تكرار أو تخطّي عرض عند تساوي الطابع الزمني.
+     */
+    getFeedPage: async (opts?: { limit?: number; cursor?: DealCursor | null }): Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }> => {
+        const limit = Math.max(1, opts?.limit ?? DEALS_PAGE_SIZE);
+        try {
+            let q = supabase.from('deals').select('*').neq('status', 'deleted');
+            const c = opts?.cursor;
+            if (c) {
+                // (created_at < c) OR (created_at = c AND id < c.id)
+                q = q.or(`created_at.lt.${c.createdAt},and(created_at.eq.${c.createdAt},id.lt.${JSON.stringify(c.id)})`);
+            }
+            const { data, error } = await q
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: false })
+                .limit(limit + 1);           // +1 لمعرفة وجود المزيد بلا عدّ إضافي
+            if (error) throw error;
+            const rows = data || [];
+            const hasMore = rows.length > limit;
+            const page = rows.slice(0, limit).map(dealRepository.mapRowToDeal);
+            await hydrateRatings(page);
+            const last = page[page.length - 1];
+            return {
+                deals: page,
+                nextCursor: (hasMore && last) ? { createdAt: Number(last.createdAt) || 0, id: last.id } : null,
+                hasMore,
+            };
+        } catch (e) {
+            console.error('❌ Deal feed page fetch failed:', e);
+            return { deals: [], nextCursor: null, hasMore: false };
+        }
+    },
+
+    /**
+     * v13.22 — كل عروض متجر واحد (لوحة التاجر + صفحة المتجر).
+     * كانت هاتان الصفحتان تُرشّحان المصفوفة العامة، فمع الترقيم كانتا سترى ما
+     * حُمّل في النافذة فقط. الاستعلام الموجّه يضمن اكتمالها دائماً — وهو أسرع
+     * أصلاً (فهرس `idx_deals_store_created`).
+     */
+    getByStore: async (storeId: string): Promise<Deal[]> => {
+        try {
+            const { data, error } = await supabase
+                .from('deals').select('*')
+                .eq('store_id', storeId)
+                .neq('status', 'deleted')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            const list = (data || []).map(dealRepository.mapRowToDeal);
+            await hydrateRatings(list);
+            return list;
+        } catch (e) {
+            console.error('❌ Store deals fetch failed:', e);
+            return [];
+        }
+    },
+
     getAll: async (): Promise<Deal[]> => {
         try {
             const { data, error } = await supabase.from('deals').select('*').neq('status', 'deleted').order('created_at', { ascending: false });

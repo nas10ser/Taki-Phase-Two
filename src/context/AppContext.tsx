@@ -4,7 +4,7 @@ import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } 
 import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
 import { storageService } from '../services/storageService';
-import { dealRepository } from '../repositories/dealRepository';
+import { dealRepository, DEALS_PAGE_SIZE, type DealCursor } from '../repositories/dealRepository';
 import { userRepository, mapUserRowToProfile } from '../repositories/userRepository';
 import { authService, UserProfile } from '../services/authService';
 import { dealService } from '../services/dealService';
@@ -127,6 +127,14 @@ interface AppContextType {
     customPrompt: (message: string) => Promise<string | null>;
     refreshBookings: () => Promise<void>;
     refreshDeals: () => Promise<void>;
+    /** v13.22 — التمرير اللانهائي: تحميل الصفحة التالية من الواجهة. */
+    loadMoreDeals: () => Promise<void>;
+    /** v13.22 — إدخال عروض مجلوبة باستعلام موجّه (متجر بعينه) إلى النافذة. */
+    ingestDeals: (incoming: Deal[]) => void;
+    /** هل بقيت صفحات؟ (تُخفي زر/مؤشّر التحميل عند النهاية) */
+    hasMoreDeals: boolean;
+    /** جارٍ تحميل صفحة إضافية الآن. */
+    loadingMoreDeals: boolean;
     storeProfiles: Record<string, StoreProfile>;
     sponsors: Record<string, Sponsor>;
     updateStoreProfile: (storeId: string, profile: StoreProfile) => void;
@@ -186,6 +194,31 @@ interface AppContextType {
 
 const DATA_VERSION = '4.0'; // Persistence upgrade
 
+/**
+ * v13.22 — دمج صفحتين من الواجهة مع الحفاظ على الترتيب وبلا تكرار.
+ * `primary` له الأولوية عند تكرار المعرّف (الصفحة الأحدث من القاعدة تغلب
+ * النسخة القديمة في الذاكرة)، والترتيب النهائي `created_at` تنازلياً — نفس
+ * ترتيب الاستعلام تماماً فلا «تقفز» البطاقات أمام المستخدم.
+ */
+const mergeDealPages = (primary: Deal[], secondary: Deal[]): Deal[] => {
+    const byId = new Map<string, Deal>();
+    for (const d of secondary) byId.set(d.id, d);
+    for (const d of primary) {
+        const old = byId.get(d.id);
+        // نحافظ على الحقول المُرطَّبة محلياً (تصويت المصداقية) كما في مسار البث
+        byId.set(d.id, old ? {
+            ...old, ...d,
+            authReal: (d as any).authReal ?? (old as any).authReal,
+            authFake: (d as any).authFake ?? (old as any).authFake,
+            myAuthVote: ((old as any).myAuthVote === true || (old as any).myAuthVote === false)
+                ? (old as any).myAuthVote : (d as any).myAuthVote,
+        } as Deal : d);
+    }
+    return Array.from(byId.values())
+        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
+            || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -197,6 +230,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // fetch in initData still runs and overwrites this; the snapshot is a
     // render cache, never the source of truth.
     const [deals, setDeals] = useState<Deal[]>(() => readSnapshot<Deal[]>('deals') || []);
+    // v13.22 — نافذة الواجهة المُحمّلة + مؤشّر الصفحة التالية (keyset).
+    // `deals` لم تعد «كل العروض» بل ما حُمّل من الواجهة؛ الصفحات المتخصّصة
+    // (لوحة التاجر / صفحة المتجر) تستعلم عن متجرها مباشرة فتبقى مكتملة.
+    const dealsCursorRef = useRef<DealCursor | null>(null);
+    const loadingMoreRef = useRef(false);
+    const [hasMoreDeals, setHasMoreDeals] = useState(false);
+    const [loadingMoreDeals, setLoadingMoreDeals] = useState(false);
     const dealsRef = useRef<Deal[]>(deals);
     useEffect(() => { dealsRef.current = deals; }, [deals]);
 
@@ -623,8 +663,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const poll = () => {
             if (document.visibilityState !== 'visible') return;
             if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-            dealRepository.getAll()
-                .then(fresh => { if (!cancelled && fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } })
+            // v13.22 — الاستطلاع الدوري يجدّد **الصفحة الأولى** ويدمجها فوق
+            // المُحمّل (كان يُعيد تنزيل الكتالوج كله كل ٣٠ ثانية لكل جهاز).
+            dealRepository.getFeedPage()
+                .then(({ deals: firstPage }) => {
+                    if (cancelled || !firstPage?.length) return;
+                    setDeals(prev => {
+                        const merged = mergeDealPages(firstPage, prev);
+                        writeSnapshot('deals', merged.slice(0, DEALS_PAGE_SIZE * 2));
+                        return merged;
+                    });
+                })
                 .catch(() => { /* transient — the next tick retries */ });
         };
         const interval = setInterval(poll, 30000);
@@ -736,10 +785,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                 // PARALLEL — global data fetch. Doesn't block auth gate.
                 Promise.allSettled([
-                    dealRepository.getAll().then(fetchedDeals => {
-                        if (fetchedDeals) {
-                            setDeals(fetchedDeals);
-                            writeSnapshot('deals', fetchedDeals);
+                    // v13.22 — أول صفحة فقط بدل الكتالوج كله (الترقيم بالمفتاح)
+                    dealRepository.getFeedPage().then(({ deals: firstPage, nextCursor, hasMore }) => {
+                        if (firstPage) {
+                            setDeals(firstPage);
+                            dealsCursorRef.current = nextCursor;
+                            setHasMoreDeals(hasMore);
+                            writeSnapshot('deals', firstPage);
                         }
                     }),
                     userRepository.getAllSellers().then(sellers => {
@@ -2391,12 +2443,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Same idea for deals — Home calls this on mount / focus so a freshly
     // posted deal appears even if the global realtime packet was dropped.
+    //
+    // v13.22 — يُحدّث **الصفحة الأولى فقط** ويدمجها فوق ما حُمّل، فلا يفقد
+    // المستخدم الصفحات التي مرّرها ولا نُعيد تنزيل الكتالوج كله.
     const refreshDeals = useCallback(async () => {
         try {
-            const fresh = await dealRepository.getAll();
-            if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); }
+            const { deals: firstPage, nextCursor, hasMore } = await dealRepository.getFeedPage();
+            setDeals(prev => {
+                const merged = mergeDealPages(firstPage, prev);
+                writeSnapshot('deals', merged.slice(0, DEALS_PAGE_SIZE * 2));
+                return merged;
+            });
+            // لم نكن قد مرّرنا بعد؟ إذاً مؤشّر الصفحة الأولى هو الصحيح.
+            if (!dealsCursorRef.current) { dealsCursorRef.current = nextCursor; setHasMoreDeals(hasMore); }
         } catch (e) {
             console.warn('refreshDeals failed:', e);
+        }
+    }, []);
+
+    /**
+     * v13.22 — إدخال عروض مجلوبة باستعلام موجّه (عروض متجر بعينه) إلى النافذة.
+     *
+     * بعد الترقيم لم تعد `deals` تحوي الكتالوج كله، فصفحات المتجر التي تُرشّح
+     * المصفوفة (`deals.filter(d => d.storeId === …)`) كانت سترى المُحمّل فقط.
+     * بدل إعادة كتابة كل مواضع الترشيح، تجلب تلك الصفحات عروض متجرها وتُدخلها
+     * هنا — فتبقى الشيفرة القائمة صحيحة تماماً والنتيجة مكتملة دائماً.
+     */
+    const ingestDeals = useCallback((incoming: Deal[]) => {
+        if (!incoming?.length) return;
+        setDeals(prev => mergeDealPages(incoming, prev));
+    }, []);
+
+    /**
+     * v13.22 — تحميل الصفحة التالية (التمرير اللانهائي).
+     * محميّ من الاستدعاء المتزامن بمرجع (ref) فلا تُحمَّل الصفحة مرتين لو
+     * أطلق المراقب الحدث سريعاً مرتين.
+     */
+    const loadMoreDeals = useCallback(async () => {
+        if (loadingMoreRef.current || !dealsCursorRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMoreDeals(true);
+        try {
+            const { deals: page, nextCursor, hasMore } = await dealRepository.getFeedPage({ cursor: dealsCursorRef.current });
+            if (page.length) setDeals(prev => mergeDealPages(prev, page));
+            dealsCursorRef.current = nextCursor;
+            setHasMoreDeals(hasMore);
+        } catch (e) {
+            console.warn('loadMoreDeals failed:', e);
+        } finally {
+            loadingMoreRef.current = false;
+            setLoadingMoreDeals(false);
         }
     }, []);
 
@@ -2879,7 +2975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
-        refreshBookings, refreshDeals,
+        refreshBookings, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
         addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,
@@ -2908,7 +3004,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
-        refreshBookings, refreshDeals,
+        refreshBookings, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
         addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,

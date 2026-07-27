@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import DealCard from '../components/DealCard';
 import BottomNav from '../components/BottomNav';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { useApp } from '../context/AppContext';
 import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
@@ -35,7 +36,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings } = useApp();
+    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -374,6 +375,16 @@ const DealsList: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* v13.22 — التمرير اللانهائي: تُحمّل الصفحة التالية قبل بلوغ النهاية
+                بشاشة تقريباً، فلا يرى المستخدم انتظاراً. */}
+            <InfiniteScrollSentinel
+                hasMore={hasMoreDeals}
+                loading={loadingMoreDeals}
+                onLoadMore={loadMoreDeals}
+                isRTL={isRTL}
+                endLabel={filteredDeals.length > 0 ? (isRTL ? '— وصلت لنهاية العروض —' : '— End of results —') : undefined}
+            />
 
             <BottomNav />
         </div>

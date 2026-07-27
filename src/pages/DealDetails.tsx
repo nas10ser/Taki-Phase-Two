@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -459,7 +459,7 @@ const DealDetails: React.FC = () => {
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles, liveLocation, requestLiveLocation
+        storeProfiles, liveLocation, requestLiveLocation, ingestDeals
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
@@ -495,6 +495,21 @@ const DealDetails: React.FC = () => {
 
     const isRTL = language === 'ar';
     const deal = deals.find(d => d.id === id);
+
+    // v13.22 — بعد ترقيم الواجهة قد لا يكون العرض ضمن النافذة المُحمّلة (رابط
+    // مباشر من بوت/إشعار/مشاركة، أو عرض قديم لم يصل إليه التمرير). نجلبه
+    // بمعرّفه وندخله للسياق فتفتح الصفحة طبيعياً بدل «العرض غير موجود».
+    const fetchedMissingRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!id || deal || fetchedMissingRef.current === id) return;
+        fetchedMissingRef.current = id;
+        let alive = true;
+        import('../repositories/dealRepository')
+            .then(({ dealRepository: dr }) => dr.getById(id))
+            .then(d => { if (alive && d) ingestDeals([d]); })
+            .catch(() => { /* تُعرض حالة «غير موجود» كما كانت */ });
+        return () => { alive = false; };
+    }, [id, deal, ingestDeals]);
 
     // v12.53 — عند فتح ورقة الحجز لعرضٍ له اختيارات: صفّر الاختيارات
     // (v12.66: البنية صارت لكل قطعة).

@@ -16,7 +16,18 @@ import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const history = useHistory();
-    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm, addReply } = useApp();
+    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm, addReply, ingestDeals } = useApp();
+
+    // v13.22 — عروض هذا المتجر باستعلام موجّه (النافذة المُرقّمة قد لا تحويها كلها)
+    useEffect(() => {
+        if (!id) return;
+        let alive = true;
+        import('../repositories/dealRepository')
+            .then(({ dealRepository: dr }) => dr.getByStore(id))
+            .then(list => { if (alive && list.length) ingestDeals(list); })
+            .catch(() => { /* غير قاتل */ });
+        return () => { alive = false; };
+    }, [id, ingestDeals]);
     const isRTL = language === 'ar';
     const isFollowed = followedMerchants.includes(id);
     const isBlocked = blockedMerchants.includes(id);

@@ -113,9 +113,22 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings, ingestDeals } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
+
+    // v13.22 — بعد ترقيم الواجهة لم تعد `deals` تحوي الكتالوج كله، فنجلب عروض
+    // هذا المتجر باستعلام موجّه (فهرس store_id) وندخلها للنافذة — فتبقى كل
+    // مواضع `deals.filter(d => d.storeId === user.id)` صحيحة ومكتملة.
+    useEffect(() => {
+        if (!user?.id) return;
+        let alive = true;
+        import('../repositories/dealRepository')
+            .then(({ dealRepository: dr }) => dr.getByStore(user.id))
+            .then(list => { if (alive && list.length) ingestDeals(list); })
+            .catch(() => { /* الاستطلاع الدوري يغطّي */ });
+        return () => { alive = false; };
+    }, [user?.id, ingestDeals]);
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
     // v12.93 — تمرير موثوق لأعلى عند فتح أي تبويب/نموذج (بلاغ ناصر: يفتح المنتج
     // للتعديل فيجد نفسه في أسفل الصفحة). السبب: التمرير «الأملس» يُقطَع بتحميل
