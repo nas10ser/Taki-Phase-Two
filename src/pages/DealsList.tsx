@@ -36,7 +36,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals } = useApp();
+    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -54,6 +54,24 @@ const DealsList: React.FC = () => {
         if (!searchQuery.trim()) return;
         import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'deals')).catch(() => {});
     }, [searchQuery]);
+
+    // v13.23 (بلاغ ناصر) — البحث **والتصنيف** يذهبان للقاعدة لا للنافذة
+    // المُحمّلة. بعد ترقيم v13.22 كان عرضٌ بعيد لا يظهر عند البحث عنه أو عند
+    // فتح تصنيفه. نجلب المطابقات من الخادم وندخلها للنافذة فيلتقطها الترشيح
+    // القائم. التأخير ٣٥٠ms يمنع طلباً لكل حرف.
+    useEffect(() => {
+        const q = searchQuery.trim();
+        const cat = activeCategory !== 'all' ? activeCategory : null;
+        if (q.length < 2 && !cat) return;
+        let alive = true;
+        const t = setTimeout(() => {
+            import('../repositories/dealRepository')
+                .then(({ dealRepository: dr }) => dr.searchDeals({ query: q.length >= 2 ? q : '', category: cat }))
+                .then(found => { if (alive && found.length) ingestDeals(found); })
+                .catch(() => { /* الترشيح المحلي يبقى عاملاً */ });
+        }, 350);
+        return () => { alive = false; clearTimeout(t); };
+    }, [searchQuery, activeCategory, ingestDeals]);
     // «مفتوح الآن» (العروض الحيّة) هو الافتراضي. v11.77
     const [openNow, setOpenNow] = useState(true);
     // «عروض حقيقية» — يُظهر فقط العروض التي صوّت المشترون أنها حقيقية (أغلبية).

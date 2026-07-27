@@ -27,7 +27,7 @@ let _homeBannersCache: Banner[] = [];
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals } = useApp();
+    const { deals, language, topLocation, setTopLocation, loading, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
@@ -114,6 +114,23 @@ const Home: React.FC = () => {
         // v12.40 — «المحلل الذكي»: سجّل الكلمة المبحوثة (debounce داخلي)
         import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'home')).catch(() => {});
     }, [searchQuery, storeProfiles]);
+
+    // v13.23 (بلاغ ناصر) — البحث يذهب **للقاعدة**، لا للصفحة المُحمّلة فقط.
+    // بعد ترقيم v13.22 صارت `deals` نافذة، فعرضٌ بعيد في الكتالوج لم يكن
+    // يظهر عند البحث عنه. نجلب المطابقات من الخادم وندخلها للنافذة، فيلتقطها
+    // منطق الترتيب/الترشيح القائم كما هو. التأخير ٣٥٠ms يمنع طلباً لكل حرف.
+    useEffect(() => {
+        const q = searchQuery.trim();
+        if (q.length < 2) return;
+        let alive = true;
+        const t = setTimeout(() => {
+            import('../repositories/dealRepository')
+                .then(({ dealRepository: dr }) => dr.searchDeals({ query: q }))
+                .then(found => { if (alive && found.length) ingestDeals(found); })
+                .catch(() => { /* البحث المحلي يبقى عاملاً */ });
+        }, 350);
+        return () => { alive = false; clearTimeout(t); };
+    }, [searchQuery, ingestDeals]);
 
     const filteredCities = useMemo(() => {
         if (!topLocation.region) return [];

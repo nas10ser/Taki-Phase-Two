@@ -87,6 +87,45 @@ export const dealRepository = {
     },
 
     /**
+     * v13.23 — بحث/تصفية على مستوى **الخادم** — يغطي الكتالوج كله.
+     *
+     * بعد الترقيم صارت `deals` نافذة، فالبحث المحلي كان يرى المُحمّل فقط
+     * (بلاغ ناصر: «عرض رأيته سابقاً لا يظهر»). هنا نسأل القاعدة مباشرة، ثم
+     * تُدخل النتائج للنافذة (`ingestDeals`) فيجدها منطق العرض القائم كما هو.
+     *
+     * `ilike` على الاسم/المحل/الوصف مدعوم بفهارس GIN ثلاثية الحروف (pg_trgm)
+     * فيبقى سريعاً مهما كبر الكتالوج، ويلتقط المطابقة الجزئية.
+     */
+    searchDeals: async (opts: { query?: string; category?: string | null; limit?: number }): Promise<Deal[]> => {
+        const q = (opts.query || '').trim();
+        const cat = opts.category && opts.category !== 'all' ? opts.category : null;
+        if (!q && !cat) return [];
+        try {
+            let sel = supabase.from('deals').select('*').neq('status', 'deleted');
+            if (cat) sel = sel.eq('category', cat);
+            if (q) {
+                // نُهرّب الأحرف الخاصة بنمط like حتى لا تُفسَّر كرموز بحث
+                const safe = q.replace(/[\\%_,()]/g, ' ').trim();
+                if (safe) {
+                    sel = sel.or(
+                        `item_name.ilike.%${safe}%,shop_name.ilike.%${safe}%,description.ilike.%${safe}%`
+                    );
+                }
+            }
+            const { data, error } = await sel
+                .order('created_at', { ascending: false })
+                .limit(Math.max(1, opts.limit ?? 60));
+            if (error) throw error;
+            const list = (data || []).map(dealRepository.mapRowToDeal);
+            await hydrateRatings(list);
+            return list;
+        } catch (e) {
+            console.error('❌ Deal search failed:', e);
+            return [];
+        }
+    },
+
+    /**
      * v13.22 — كل عروض متجر واحد (لوحة التاجر + صفحة المتجر).
      * كانت هاتان الصفحتان تُرشّحان المصفوفة العامة، فمع الترقيم كانتا سترى ما
      * حُمّل في النافذة فقط. الاستعلام الموجّه يضمن اكتمالها دائماً — وهو أسرع
