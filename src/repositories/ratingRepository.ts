@@ -37,7 +37,10 @@ export const ratingRepository = {
             .select('*')
             .eq('deal_id', dealId)
             .is('deleted_at', null)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            // v13.29 — أحدث ١٠٠ مراجعة. المتوسط والعدد من `deals.rating_avg` /
+            // `rating_count` فلا يتأثران بالسقف (نفس نهج المتاجر العالمية).
+            .limit(100);
         if (error) {
             console.warn('listForDeal failed:', error.message);
             return [];

@@ -87,13 +87,22 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     const handleFollowClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         toggleFollowMerchant(deal.storeId);
+        import('../services/analyticsTracker')
+            .then(({ trackEvent }) => trackEvent('click_favorite', deal.storeId, deal.id))
+            .catch(() => { /* صامت */ });
     };
 
     // v13.27 — عدّاد النقرات كان معرّفاً في السياق ولا يُنادى من أي مكان، فبقي
     // `deals.clicks` صفراً للأبد وأي مقياس «نقرة ← حجز» يقيس العدم. النقرة على
     // البطاقة هي الحدث الصحيح: fire-and-forget فلا تؤخّر فتح صفحة المنتج.
     const handleCardClick = () => {
-        try { incrementDealClick(deal.id); } catch { /* قياس فقط — لا يعطّل التنقّل */ }
+        try {
+            incrementDealClick(deal.id);
+            // v13.29 — نفس النقرة تُغذّي التحليل القِمعي للتاجر (مشاهدة ← نقرة ← حجز)
+            import('../services/analyticsTracker')
+                .then(({ trackEvent }) => trackEvent('deal_click', deal.storeId, deal.id))
+                .catch(() => { /* صامت */ });
+        } catch { /* قياس فقط — لا يعطّل التنقّل */ }
         onClick(deal.id);
     };
 

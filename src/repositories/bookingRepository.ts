@@ -377,7 +377,8 @@ export const bookingRepository = {
             .from('booking_messages')
             .select('*')
             .eq('barcode', barcode)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .limit(200);   // v13.29 — المحادثة محدودة بقاعدة العمل (٣+٣)؛ السقف حارس
         if (error) {
             console.warn('Fetch booking messages failed:', error.message);
             return [];

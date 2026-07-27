@@ -800,11 +800,19 @@ const DealDetails: React.FC = () => {
     }, [linkedBarcode, activeBooking?.status]);
 
     const { incrementDealView } = useApp();
+    // v13.29 — المشاهدة تُحتسب **مرة واحدة** لكل (جلسة، منتج) خلال ٣٠ دقيقة،
+    // ولا تُحتسب على التاجر وهو يتصفّح منتجه. قبل ذلك كان كل فتحٍ للصفحة يرفع
+    // العدّاد — فتحديث الصفحة عشر مرات = «١٠ مشاهدات»، ومعدّل التحويل يُقسَم
+    // على رقم متضخّم فيبدو أسوأ مما هو. `trackDealView` يحرس التكرار ويُرجع
+    // false إن كانت مكرّرة، فلا يرتفع العدّاد الدائم أيضاً.
     React.useEffect(() => {
-        if (id) {
-            incrementDealView(id);
-        }
-    }, [id]);
+        if (!id || !deal?.storeId) return;
+        import('../services/analyticsTracker')
+            .then(({ trackDealView }) => {
+                if (trackDealView(deal.storeId, id)) incrementDealView(id);
+            })
+            .catch(() => { /* القياس لا يُعطّل الصفحة */ });
+    }, [id, deal?.storeId]);
 
     // Pre-decode every gallery image the moment the deal is known, so tapping a
     // thumbnail/dot swaps the hero INSTANTLY with no per-image fetch+decode lag.

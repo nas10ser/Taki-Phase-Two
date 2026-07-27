@@ -2255,7 +2255,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // (سباق حدود/مخزون) أو انقطعت الشبكة يبقى الطلب ظاهراً محلياً ثم
         // «يختفي» عند أول مزامنة والكمية منخصمة بلا حجز — الآن نتراجع
         // محلياً ونعيد الكمية ونخبر المشتري ليعيد المحاولة.
-        bookingRepository.save(booking as any).catch(e => {
+        // v13.29 — نهاية القِمع: حجز اكتمل فعلاً. يُسجَّل **بعد** نجاح الحفظ فقط،
+        // فلا يُحتسب حجزٌ تراجعنا عنه (مخزون نفد/شبكة انقطعت) — وإلا لأظهرت
+        // لوحة التاجر تحويلاً لم يحدث.
+        bookingRepository.save(booking as any).then(() => {
+            import('../services/analyticsTracker')
+                .then(({ trackEvent }) => trackEvent('booking_completed', deal.storeId, deal.id, {
+                    metadata: { qty: quantity },
+                }))
+                .catch(() => { /* صامت */ });
+        }).catch(e => {
             const msg: string = e?.message || '';
             console.warn('Booking remote save FAILED — rolling back:', msg);
             setBookings(prev => prev.filter(b => b.barcode !== barcode));
@@ -2474,6 +2483,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
      * بدل إعادة كتابة كل مواضع الترشيح، تجلب تلك الصفحات عروض متجرها وتُدخلها
      * هنا — فتبقى الشيفرة القائمة صحيحة تماماً والنتيجة مكتملة دائماً.
      */
+    // v13.29 — أبلغ ناقل القياس بهوية المتجر الحالي حتى لا تُحتسب مشاهدات
+    // التاجر ونقراته على منتجاته هو (كان أكبر مصدر تضخّم في الأرقام).
+    useEffect(() => {
+        import('../services/analyticsTracker')
+            .then(({ setAnalyticsIdentity }) =>
+                setAnalyticsIdentity(user?.userType === 'seller' || user?.userType === 'admin' ? (user?.id || null) : null))
+            .catch(() => { /* صامت */ });
+    }, [user?.id, user?.userType]);
+
     const ingestDeals = useCallback((incoming: Deal[]) => {
         if (!incoming?.length) return;
         setDeals(prev => mergeDealPages(incoming, prev));

@@ -890,7 +890,7 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
     { id: 'pwa',             category: 'tech',     status: 'ready',       label: 'PWA installable على iOS وأندرويد',         detail: 'manifest + viewport-fit=cover' },
     { id: 'realtime',        category: 'tech',     status: 'ready',       label: 'Realtime channels تعمل',                    detail: '3 قنوات + heartbeat + bfcache' },
     { id: 'backup',          category: 'tech',     status: 'ready',       label: 'النسخ الاحتياطي اليومي',                    detail: 'Supabase يأخذ snapshots تلقائية' },
-    { id: 'analytics',       category: 'tech',     status: 'needs_work',  label: 'Analytics tracking داخلي',                   detail: '⚠️ فحص v13.27: جدول store_analytics_events موجود لكن **لا أحد يكتب فيه** (صفر حدث) ولا يقرأ منه — إمّا يُشغَّل أو يُحذف. المُتاح فعلياً: activity_log + عدّادات العرض (views/clicks) + تحليلات التاجر من seller_order_stats' },
+    { id: 'analytics',       category: 'tech',     status: 'ready',       label: 'Analytics tracking داخلي',                   detail: 'v13.29: ناقل أحداث دفعي (٨ أنواع) يغذّي التحليلات القِمعية للتاجر — يعمل للزائر غير المسجّل أيضاً، مع إزالة تكرار المشاهدة واستثناء التاجر من أرقامه، وسياسة احتفاظ مجدولة (٩٠/١٨٠/٣٠ يوماً)' },
     { id: 'errorboundary',   category: 'tech',     status: 'ready',       label: 'Error Boundary لكل التطبيق',                detail: 'يلتقط الأخطاء + يمسح SW عند ChunkLoadError' },
     { id: '404',             category: 'tech',     status: 'ready',       label: 'صفحة 404 مخصصة',                            detail: 'NotFound.tsx — تظهر لأي رابط غير معروف' },
     { id: 'sitemap',         category: 'tech',     status: 'ready',       label: 'sitemap.xml + robots.txt',                  detail: 'منشوران في الجذر للـSEO' },

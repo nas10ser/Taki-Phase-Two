@@ -383,11 +383,21 @@ const StoreDetails: React.FC = () => {
 
     // Real average rating across all of this store's deals (active + expired
     // alike — historical reviews are still meaningful).
+    // v13.29 — متوسط **موزون** من العدّادات المثبّتة على كل عرض
+    // (`rating_avg` × `rating_count`) بدل تجميع صفوف التقييمات. صفوف التقييمات
+    // صار لها سقف جلب (منتج رائج بعشرات الآلاف كان يُنزّلها كلها)، فحسابُ
+    // المتوسط منها كان سيصير خاطئاً بصمت. العدّادات يحدّثها trigger في القاعدة
+    // فتبقى دقيقة مهما بلغ العدد.
     const storeRating = useMemo(() => {
-        const allRatings = deals
-            .filter(d => d.storeId === id)
-            .flatMap(d => d.ratings || []);
-        return dealService.calculateRating(allRatings);
+        const mine = deals.filter(d => d.storeId === id);
+        let sum = 0, count = 0;
+        for (const d of mine) {
+            const n = d.ratingCount ?? 0;
+            if (n > 0) { sum += (d.ratingAvg || 0) * n; count += n; }
+        }
+        if (count > 0) return { average: sum / count, count };
+        // مسار احتياطي للعروض التي لم تصلها العدّادات بعد (بيانات قديمة)
+        return dealService.calculateRating(mine.flatMap(d => d.ratings || []));
     }, [deals, id]);
 
     // Overall authenticity across the store's offers — sum of buyer real/fake

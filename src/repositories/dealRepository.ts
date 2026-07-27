@@ -16,7 +16,11 @@ const hydrateRatings = async (deals: Deal[]): Promise<Deal[]> => {
         .select('*')
         .in('deal_id', ids)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        // v13.29 — سقف. منتج رائج بعشرات آلاف التقييمات كان سيُنزّلها كلها مع
+        // الصفحة. المتوسط والعدد يأتيان من `rating_avg`/`rating_count` المثبّتين
+        // على الصف، وهذه القائمة للعرض فقط — فالسقف لا يُفقد رقماً.
+        .limit(RATINGS_HYDRATE_CAP);
     const byDeal: Record<string, any[]> = {};
     for (const r of (ratingRows || [])) {
         (byDeal[r.deal_id] ||= []).push({
@@ -43,6 +47,9 @@ export interface DealCursor { createdAt: number; id: string; }
 
 /** حجم صفحة الواجهة الافتراضي — يملأ عدة شاشات دون إثقال أول رسمة. */
 export const DEALS_PAGE_SIZE = 30;
+
+/** سقف صفوف التقييمات المجلوبة مع صفحة عروض (العرض فقط — الإحصاء مثبَّت). */
+const RATINGS_HYDRATE_CAP = 300;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // v13.24 — محرك التصفّح التجاري (browse)

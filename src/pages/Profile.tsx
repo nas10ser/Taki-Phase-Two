@@ -127,8 +127,14 @@ const Profile: React.FC = () => {
         return followedMerchants.map(id => {
             const profile = storeProfiles[id];
             const storeDeals = deals.filter(d => d.storeId === id);
-            const allRatings = storeDeals.flatMap(d => d.ratings || []);
-            const avg = allRatings.length > 0 ? (allRatings.reduce((acc, r) => acc + r.score, 0) / allRatings.length).toFixed(1) : null;
+            // v13.29 — متوسط موزون من العدّادات المثبّتة (لا يتأثر بسقف جلب
+            // صفوف التقييمات، ويظل دقيقاً على منتج بعشرات آلاف المراجعات).
+            let rSum = 0, rCount = 0;
+            for (const d of storeDeals) {
+                const n = d.ratingCount ?? 0;
+                if (n > 0) { rSum += (d.ratingAvg || 0) * n; rCount += n; }
+            }
+            const avg = rCount > 0 ? (rSum / rCount).toFixed(1) : null;
 
             if (profile) {
                 const sp = profile as any;
