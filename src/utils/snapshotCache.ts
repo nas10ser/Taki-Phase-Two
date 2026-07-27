@@ -25,10 +25,29 @@
 
 const PREFIX = 'taki_snap_';
 const SCHEMA = 'v1';
-// Purely a render cache; the live fetch always revalidates. A generous
-// TTL is fine — it just bounds how stale the very first paint can be
-// before we fall back to the spinner.
+// Default bound on how stale the very FIRST paint may be. The live fetch
+// always revalidates on top of it.
 const TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+
+/**
+ * v13.21 (طلب ناصر: «أريد كل شيء من الداتابيس ولا أريد بيانات عالقة»)
+ *
+ * صلاحية أقصر لما هو **حسّاس زمنياً**. العروض تحمل مخزوناً وسعراً ووقت
+ * انتهاء تتغير بالثانية، فلقطة عمرها أيام قد تُظهر سعراً أو كمية لم تعد
+ * صحيحة لو تأخّرت الشبكة. خمس دقائق تكفي تماماً لغرض «أول رسمة فورية»
+ * (التحديث الدوري كل ٣٠ ثانية + البث اللحظي يغطّيان ما بعدها)، وما بعدها
+ * نعرض المؤشّر ونقرأ من القاعدة بدل إظهار رقم قديم.
+ */
+const TTL_BY_KEY: Array<[RegExp, number]> = [
+    [/^deals$/, 1000 * 60 * 5],       // العروض: ٥ دقائق (مخزون/سعر/انتهاء)
+    [/^bk_/, 1000 * 60 * 5],          // الحجوزات: ٥ دقائق (حالة الطلب تتغير)
+    [/^sellers$/, 1000 * 60 * 60],    // ملفات المتاجر: ساعة (تتغير ببطء)
+];
+
+const ttlFor = (key: string): number => {
+    for (const [re, ms] of TTL_BY_KEY) if (re.test(key)) return ms;
+    return TTL_MS;
+};
 
 interface Envelope<T> {
     s: string;
@@ -42,7 +61,7 @@ export function readSnapshot<T>(key: string): T | null {
         if (!raw) return null;
         const env = JSON.parse(raw) as Envelope<T>;
         if (!env || env.s !== SCHEMA) return null;
-        if (Date.now() - env.t > TTL_MS) return null;
+        if (Date.now() - env.t > ttlFor(key)) return null;
         return env.d;
     } catch {
         return null;

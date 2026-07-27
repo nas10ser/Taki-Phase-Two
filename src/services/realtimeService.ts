@@ -365,18 +365,31 @@ function setupChannels(config: RealtimeConfig) {
     });
 
     // Store profiles (sellers)
+    //
+    // v13.21 — SCALE-CRITICAL: this used to subscribe to EVERY row of `users`
+    // and discard non-sellers on the CLIENT. The server still had to evaluate
+    // and fan out every buyer row change to every connected client — and the
+    // live-location watcher writes users.lat/lng for every shopper as they
+    // move. At a million shoppers that is a permanent firehose broadcast to a
+    // million sockets (the single most expensive thing the app did).
+    // The server-side filter below drops buyers at the source; the merchant's
+    // own profile updates still arrive on the per-user channel above
+    // (filter: id=eq.<me>), so nothing is lost.
+    //
+    // The filter is `neq.buyer`, NOT `eq.seller`: Nasser's own store is
+    // ADMIN-owned, and every `user_type='seller'` filter in this codebase has
+    // historically hidden it (see the admin-owner gate lessons). `neq.buyer`
+    // keeps sellers AND admin-owned stores while still dropping the millions
+    // of shopper rows that cause the fan-out.
     globalChannel.on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'users'
+        table: 'users',
+        filter: 'user_type=neq.buyer'
     }, (payload) => {
-        const newUser = payload.new as any;
-        const oldUser = payload.old as any;
-        if (newUser?.user_type === 'seller' || oldUser?.user_type === 'seller') {
-            lastActivityAt = Date.now();
-            lastSyncAt.storeProfiles = Date.now();
-            config.onUserChange(payload);
-        }
+        lastActivityAt = Date.now();
+        lastSyncAt.storeProfiles = Date.now();
+        config.onUserChange(payload);
     });
 
     globalChannel.subscribe((status) => {

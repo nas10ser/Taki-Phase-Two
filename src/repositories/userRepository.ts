@@ -3,6 +3,42 @@ import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 import { withTimeout } from '../utils/helpers';
 
+/**
+ * v13.21 — الأعمدة التي تحتاجها واجهة «ملفات المتاجر» فعلاً.
+ * كان الجلب `select('*')` فينزّل كل حقول كل تاجر لكل عميل عند كل تغيير.
+ */
+export const SELLER_PROFILE_COLUMNS =
+    'id,name,phone,email,user_type,shop,contact_phone,avatar_url,bio,savings,bookings_count,' +
+    'notif_keywords,smart_alerts,preferred_lang,followed_merchants,blocked_merchants,' +
+    'lat,lng,google_maps_link,working_hours';
+
+/**
+ * مُحوِّل واحد لصف `users` ← ملف المتجر. مشترك بين الجلب الكامل والتحديث
+ * اللحظي التفاضلي في AppContext، فلا ينحرف الشكلان أبداً.
+ */
+export const mapUserRowToProfile = (d: any): UserProfile => ({
+    id: d.id,
+    name: d.name,
+    phone: d.phone,
+    email: d.email,
+    userType: d.user_type,
+    shop: d.shop,
+    contactPhone: d.contact_phone,
+    avatar_url: d.avatar_url,
+    bio: d.bio,
+    savings: d.savings,
+    bookingsCount: d.bookings_count,
+    notifKeywords: d.notif_keywords,
+    smartAlerts: Array.isArray(d.smart_alerts) ? d.smart_alerts : [],
+    preferredLang: d.preferred_lang || 'ar',
+    followedMerchants: Array.isArray(d.followed_merchants) ? d.followed_merchants : [],
+    blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
+    lat: d.lat,
+    lng: d.lng,
+    googleMapsLink: d.google_maps_link,
+    workingHours: d.working_hours,
+} as UserProfile);
+
 export const userRepository = {
     getCurrentUser: async (): Promise<UserProfile | null> => {
         const memory = authService.getUser();
@@ -339,35 +375,15 @@ export const userRepository = {
 
     getAllSellers: async (): Promise<UserProfile[]> => {
         try {
+            // v13.21 — نطلب الأعمدة المستخدمة فقط (كان select('*') ينزّل كل
+            // صفوف التجار بكل حقولها لكل عميل عند كل تغيير — حمل هائل عند
+            // آلاف المتاجر، وبلا داعٍ فالواجهة تستخدم هذه الحقول وحدها).
             const { data, error } = await supabase
                 .from('users')
-                .select('*')
+                .select(SELLER_PROFILE_COLUMNS)
                 .eq('user_type', 'seller');
-            
-            if (data && !error) {
-                return data.map(d => ({
-                    id: d.id,
-                    name: d.name,
-                    phone: d.phone,
-                    email: d.email,
-                    userType: d.user_type,
-                    shop: d.shop,
-                    contactPhone: d.contact_phone,
-                    avatar_url: d.avatar_url,
-                    bio: d.bio,
-                    savings: d.savings,
-                    bookingsCount: d.bookings_count,
-                    notifKeywords: d.notif_keywords,
-                    smartAlerts: Array.isArray(d.smart_alerts) ? d.smart_alerts : [],
-                    preferredLang: d.preferred_lang || 'ar',
-                    followedMerchants: Array.isArray(d.followed_merchants) ? d.followed_merchants : [],
-                    blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
-                    lat: d.lat,
-                    lng: d.lng,
-                    googleMapsLink: d.google_maps_link,
-                    workingHours: d.working_hours
-                }));
-            }
+
+            if (data && !error) return (data as any[]).map(mapUserRowToProfile);
         } catch (e) {
             console.error('Failed to fetch all sellers', e);
         }

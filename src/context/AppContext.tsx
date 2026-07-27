@@ -5,7 +5,7 @@ import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository } from '../repositories/dealRepository';
-import { userRepository } from '../repositories/userRepository';
+import { userRepository, mapUserRowToProfile } from '../repositories/userRepository';
 import { authService, UserProfile } from '../services/authService';
 import { dealService } from '../services/dealService';
 import { notificationRepository } from '../repositories/notificationRepository';
@@ -2647,21 +2647,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // A rating written anywhere (bot/app/another device) → re-pull deals so
             // its ratings (and the store average) surface within seconds, not on the
             // next manual reload. Ratings are infrequent, so a refetch is cheap.
-            onRatingChange: () => {
-                import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => { if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } }));
+            // v13.21 — SCALE-CRITICAL: this used to call `dealRepository.getAll()`
+            // on EVERY rating change anywhere on the platform — re-downloading
+            // the entire deals table + every rating to EVERY connected client.
+            // One review by one buyer cost N clients a full catalogue download.
+            // Now we apply the delta from the payload to the one affected deal.
+            onRatingChange: (payload: any) => {
+                const row = (payload?.new ?? payload?.old) as any;
+                const dealId = row?.deal_id;
+                if (!dealId) return;
+                const removed = payload?.eventType === 'DELETE' || !!payload?.new?.deleted_at;
+                const mapped = payload?.new ? {
+                    id: payload.new.id,
+                    userId: payload.new.user_id,
+                    userName: payload.new.user_name,
+                    score: Number(payload.new.score) || 0,
+                    comment: payload.new.comment ?? '',
+                    // بتوقيت الجهاز — toISOString (UTC) يرجع اليوم للوراء قبل ٣ فجراً
+                    date: payload.new.created_at
+                        ? (() => { const d = new Date(payload.new.created_at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()
+                        : '',
+                    reply: payload.new.reply ?? undefined,
+                    repliedBy: payload.new.replied_by ?? undefined,
+                    repliedAt: payload.new.replied_at ?? undefined,
+                    likedBy: Array.isArray(payload.new.liked_by) ? payload.new.liked_by : [],
+                    likeCount: Number(payload.new.like_count) || 0,
+                } : null;
+                setDeals(prev => prev.map(d => {
+                    if (d.id !== dealId) return d;
+                    const list = Array.isArray(d.ratings) ? d.ratings : [];
+                    const without = list.filter((r: any) => r.id !== row.id);
+                    return { ...d, ratings: (removed || !mapped) ? without : [mapped, ...without] } as any;
+                }));
             },
             onUserChange: (payload) => {
                 const newUser = payload.new as any;
                 const oldUser = payload.old as any;
-                // Update store profiles if seller
-                if (newUser?.user_type === 'seller' || oldUser?.user_type === 'seller' || payload.eventType === 'DELETE') {
-                    import('../repositories/userRepository').then(({ userRepository: ur }) => {
-                        ur.getAllSellers().then(sellers => {
-                            const profiles: Record<string, any> = {};
-                            sellers.forEach(s => { profiles[s.id] = s; });
-                            setStoreProfiles(profiles);
+                // v13.21 — SCALE-CRITICAL: was `getAllSellers()` (a full
+                // download of every merchant row, with select('*')) on EVERY
+                // merchant row change, for every connected client. Now the
+                // changed merchant is merged in place — O(1) instead of O(N).
+                // Gate is «not a buyer» (never `=== 'seller'`): Nasser's own
+                // store is admin-owned and a seller-only check drops it.
+                const roleOf = newUser?.user_type ?? oldUser?.user_type;
+                if (roleOf && roleOf !== 'buyer') {
+                    const sid = newUser?.id ?? oldUser?.id;
+                    if (sid) {
+                        setStoreProfiles(prev => {
+                            const next = { ...prev };
+                            if (payload.eventType === 'DELETE' || newUser?.deleted_at) delete next[sid];
+                            else if (newUser) next[sid] = { ...(prev as any)[sid], ...mapUserRowToProfile(newUser) };
+                            return next;
                         });
-                    });
+                    }
                 }
                 // Update current user if it's me
                 if (user?.id && newUser?.id === user.id && payload.eventType === 'UPDATE') {
