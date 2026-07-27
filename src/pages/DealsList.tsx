@@ -4,13 +4,17 @@ import DealCard from '../components/DealCard';
 import BottomNav from '../components/BottomNav';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { useApp } from '../context/AppContext';
-import { Deal, CATEGORIES, GENDERS, Category, GenderTarget, LOCATIONS, CITIES } from '../data/mock';
+import { CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
 import { dealService } from '../services/dealService';
-import { dealMatchesLocation, isDealComingSoon, isDealVisibleComingSoon, isDealExpiredByTime, interleaveSponsored, DisplayDeal, getAuthenticityBadge } from '../utils/helpers';
+import { interleaveSponsored, DisplayDeal, isDealExpiredByTime } from '../utils/helpers';
 import { useNowTick } from '../utils/useNowTick';
-import { getShopStatus } from '../utils/workingHours';
+import { useDealBrowse } from '../hooks/useDealBrowse';
+import type { BrowseSort } from '../repositories/dealRepository';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
+
+/** ترتيب الواجهة → ترتيب المحرك. `best` يُختار تلقائياً أثناء البحث. */
+type UiSort = 'reliability' | 'discount' | 'price' | 'new';
 
 const useQuery = () => {
     const { search } = useLocation();
@@ -36,7 +40,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { deals, language, storeProfiles, sponsors, topLocation, loading, followedMerchants, toggleFollowMerchant, platformSettings, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals } = useApp();
+    const { language, storeProfiles, sponsors, topLocation, followedMerchants, toggleFollowMerchant, platformSettings } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -45,41 +49,19 @@ const DealsList: React.FC = () => {
 
     const [activeCategory, setActiveCategory] = useState<Category | 'all'>(initialCat);
     const [activeGender, setActiveGender] = useState<GenderTarget>(initialGender);
-    const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>(
-        type === 'discount' ? 'discount' : type === 'trending' ? 'reliability' : 'reliability'
-    );
+    const [sortBy, setSortBy] = useState<UiSort>(type === 'discount' ? 'discount' : 'reliability');
     const [searchQuery, setSearchQuery] = useState('');
-    // v12.40 — «المحلل الذكي»: سجّل الكلمة المبحوثة (debounce داخل المتتبع)
-    useEffect(() => {
-        if (!searchQuery.trim()) return;
-        import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'deals')).catch(() => {});
-    }, [searchQuery]);
-
-    // v13.23 (بلاغ ناصر) — البحث **والتصنيف** يذهبان للقاعدة لا للنافذة
-    // المُحمّلة. بعد ترقيم v13.22 كان عرضٌ بعيد لا يظهر عند البحث عنه أو عند
-    // فتح تصنيفه. نجلب المطابقات من الخادم وندخلها للنافذة فيلتقطها الترشيح
-    // القائم. التأخير ٣٥٠ms يمنع طلباً لكل حرف.
-    useEffect(() => {
-        const q = searchQuery.trim();
-        const cat = activeCategory !== 'all' ? activeCategory : null;
-        if (q.length < 2 && !cat) return;
-        let alive = true;
-        const t = setTimeout(() => {
-            import('../repositories/dealRepository')
-                .then(({ dealRepository: dr }) => dr.searchDeals({ query: q.length >= 2 ? q : '', category: cat }))
-                .then(found => { if (alive && found.length) ingestDeals(found); })
-                .catch(() => { /* الترشيح المحلي يبقى عاملاً */ });
-        }, 350);
-        return () => { alive = false; clearTimeout(t); };
-    }, [searchQuery, activeCategory, ingestDeals]);
     // «مفتوح الآن» (العروض الحيّة) هو الافتراضي. v11.77
     const [openNow, setOpenNow] = useState(true);
     // «عروض حقيقية» — يُظهر فقط العروض التي صوّت المشترون أنها حقيقية (أغلبية).
     // اختياري (افتراضياً مُطفأ) ليشجّع التجار على عروض صادقة. v11.98
     const [verifiedOnly, setVerifiedOnly] = useState(false);
-    // Re-evaluate the list every ~15s so time-expired deals fall off on their
-    // own without needing a data change. v12.06
-    const nowTick = useNowTick(15000);
+
+    // v12.40 — «المحلل الذكي»: سجّل الكلمة المبحوثة (debounce داخل المتتبع)
+    useEffect(() => {
+        if (!searchQuery.trim()) return;
+        import('../services/searchTracker').then(({ trackSearch }) => trackSearch(searchQuery, 'deals')).catch(() => {});
+    }, [searchQuery]);
 
     // Smooth-scroll to top on type change so navigating between sections doesn't
     // leave the user mid-list.
@@ -87,83 +69,40 @@ const DealsList: React.FC = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [type]);
 
-    const hasStock = (d: Deal) => {
-        if (d.quantity === 'unlimited') return true;
-        if (typeof d.quantity === 'number' && d.quantity > 0) return true;
-        const initial = d.initialQuantity;
-        const hasCap = typeof initial === 'number' && initial > 0;
-        return !hasCap;
-    };
+    const isComingSoonView = type === 'coming_soon';
 
-    const filteredDeals = useMemo(() => {
-        // v11.20 — Coming Soon view shows ONLY scheduled deals in their 7-day
-        // visibility window; every other view EXCLUDES them (they can't be
-        // booked and would just bloat the live grid).
-        let list = deals.filter(d => {
-            if (d.status !== 'active' || !hasStock(d)) return false;
-            if (type === 'coming_soon') return isDealVisibleComingSoon(d);
-            // Time-expired offers drop out here, live by the clock — not
-            // waiting on the DB status field to flip. v12.06
-            return !isDealComingSoon(d) && !isDealExpiredByTime(d);
-        });
+    // v13.24 — الترشيح والترتيب والعدّ كلها على القاعدة. أثناء البحث يتحوّل
+    // الترتيب تلقائياً إلى `best` (الأفضل مطابقةً) كما في متاجر العالم، ويعود
+    // لاختيار المستخدم فور مسح البحث.
+    const sort: BrowseSort = isComingSoonView ? 'soon' : (searchQuery.trim() ? 'best' : sortBy);
 
-        if (activeCategory !== 'all') {
-            list = list.filter(d => d.category === activeCategory || (d.category as string) === 'all');
-        }
-        if (activeGender !== 'all') {
-            list = list.filter(d => d.gender === activeGender || d.gender === 'all');
-        }
+    const { deals, total, totalCapped, hasMore, loading, loadingMore, loadMore } = useDealBrowse({
+        query: searchQuery,
+        category: activeCategory,
+        gender: activeGender,
+        region: topLocation.region || null,
+        city: topLocation.city || null,
+        mall: topLocation.mall || null,
+        sort,
+        mode: isComingSoonView ? 'coming_soon' : 'live',
+        // «قادم قريباً» لا يخضع لساعات العمل (لم يُفتح بعد).
+        openNow: openNow && !isComingSoonView,
+        verified: verifiedOnly,
+    });
 
-        // Honor the user's location filter from Home so they don't get
-        // out-of-region offers when drilling in.
-        list = list.filter(d => dealMatchesLocation(d, topLocation));
+    // Re-evaluate every ~15s so an offer that expires while the user is looking
+    // at the page falls off on its own. v12.06 — يُسقِط فقط ما انتهى وقته، فلا
+    // يمكن أن يُخفي منتجاً قائماً (ذلك الترشيح كله صار على القاعدة).
+    const nowTick = useNowTick(15000);
 
-        // «مفتوح الآن» — العروض الحيّة من محلات مفتوحة الآن (الافتراضي). المحلات
-        // بلا ساعات معلَنة تُعدّ مفتوحة دائماً. لا يُطبَّق على «قادم قريباً». v11.77
-        if (openNow && type !== 'coming_soon') {
-            list = list.filter(d => getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open);
-        }
-
-        // «عروض حقيقية» — يبقي فقط ما صوّت المشترون أنه حقيقي (أغلبية + صوت واحد على الأقل).
-        if (verifiedOnly) {
-            list = list.filter(d => {
-                const b = getAuthenticityBadge(d.authReal, d.authFake, isRTL);
-                return b.show && b.real;
-            });
-        }
-
-        if (searchQuery.trim()) {
-            // Active search => rank by relevance (same engine as Home), best
-            // match first, instead of the section's default sort.
-            return list
-                .map(d => ({
-                    d,
-                    score: Math.max(
-                        dealService.searchScore(searchQuery, d.itemName) * 1.0,
-                        dealService.searchScore(searchQuery, d.shopName) * 0.9,
-                        dealService.searchScore(searchQuery, `${d.category} ${d.description || ''}`) * 0.5,
-                    ),
-                }))
-                .filter(x => x.score > 0)
-                .sort((a, b) => b.score - a.score || (b.d.reliabilityScore || 0) - (a.d.reliabilityScore || 0))
-                .map(x => ({ deal: x.d, sponsored: false })) as DisplayDeal[];
-        }
-
-        // v11.20 — Coming Soon defaults to sort-by-launch (soonest first).
-        // The user-facing sort toggle still works (price/discount/etc.) but
-        // the natural default for "what's about to open" is chronological.
-        if (type === 'coming_soon') {
-            list.sort((a, b) => (a.startsAt || Infinity) - (b.startsAt || Infinity));
-        } else if (sortBy === 'discount') list.sort((a, b) => b.discountPercentage - a.discountPercentage);
-        else if (sortBy === 'price') list.sort((a, b) => a.discountedPrice - b.discountedPrice);
-        else if (sortBy === 'reliability') list.sort((a, b) => (b.reliabilityScore || 0) - (a.reliabilityScore || 0));
-        else list.sort((a, b) => b.createdAt - a.createdAt);
-
+    const displayDeals = useMemo(() => {
+        void nowTick;
+        const live = isComingSoonView ? deals : deals.filter(d => !isDealExpiredByTime(d));
         // v11.23 — interleave gold sponsor ads (every 5, rotated, targeted).
         // Coming-soon view stays ad-free (those deals aren't bookable yet).
-        if (type === 'coming_soon') return list.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
-        return interleaveSponsored(list, sponsors, platformSettings.sponsorLayout);
-    }, [deals, activeCategory, activeGender, topLocation, searchQuery, sortBy, type, sponsors, openNow, verifiedOnly, isRTL, storeProfiles, nowTick, platformSettings.sponsorLayout]);
+        if (isComingSoonView) return live.map(deal => ({ deal, sponsored: false })) as DisplayDeal[];
+        return interleaveSponsored(live, sponsors, platformSettings.sponsorLayout);
+    }, [deals, isComingSoonView, sponsors, platformSettings.sponsorLayout, nowTick]);
 
     // Store directory search — mirrors Home so "find a shop by name" works
     // identically when browsing the full lists too.
@@ -209,8 +148,10 @@ const DealsList: React.FC = () => {
                     <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {(isRTL ? title.ar : title.en)} {title.emoji}
                     </div>
+                    {/* v13.24 — العدّاد يقرأ عدد المطابقات في **القاعدة** لا عدد
+                        المُحمّل على الشاشة. «+» تعني أن المطابقات تجاوزت سقف العدّ. */}
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
-                        {filteredDeals.length} {isRTL ? 'منتج' : 'items'}
+                        {loading ? '…' : `${total.toLocaleString('en-US')}${totalCapped ? '+' : ''}`} {isRTL ? 'منتج' : 'items'}
                     </div>
                 </div>
 
@@ -360,8 +301,8 @@ const DealsList: React.FC = () => {
                 gridTemplateColumns: 'repeat(2, 1fr)',
                 gap: 10,
             }} className="taki-deals-list-grid">
-                {filteredDeals.length > 0 ? (
-                    filteredDeals.map(({ deal, sponsored, sponsorLabel }) => (
+                {displayDeals.length > 0 ? (
+                    displayDeals.map(({ deal, sponsored, sponsorLabel }) => (
                         <DealCard
                             key={deal.id}
                             deal={deal}
@@ -397,11 +338,11 @@ const DealsList: React.FC = () => {
             {/* v13.22 — التمرير اللانهائي: تُحمّل الصفحة التالية قبل بلوغ النهاية
                 بشاشة تقريباً، فلا يرى المستخدم انتظاراً. */}
             <InfiniteScrollSentinel
-                hasMore={hasMoreDeals}
-                loading={loadingMoreDeals}
-                onLoadMore={loadMoreDeals}
+                hasMore={hasMore}
+                loading={loadingMore}
+                onLoadMore={loadMore}
                 isRTL={isRTL}
-                endLabel={filteredDeals.length > 0 ? (isRTL ? '— وصلت لنهاية العروض —' : '— End of results —') : undefined}
+                endLabel={displayDeals.length > 0 ? (isRTL ? '— وصلت لنهاية العروض —' : '— End of results —') : undefined}
             />
 
             <BottomNav />

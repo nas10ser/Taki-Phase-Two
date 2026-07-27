@@ -44,7 +44,126 @@ export interface DealCursor { createdAt: number; id: string; }
 /** حجم صفحة الواجهة الافتراضي — يملأ عدة شاشات دون إثقال أول رسمة. */
 export const DEALS_PAGE_SIZE = 30;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v13.24 — محرك التصفّح التجاري (browse)
+//
+// المشكلة التي يحلّها: بعد ترقيم v13.22 صارت `deals` **نافذة** من ٣٠ عرضاً،
+// بينما الترشيح والترتيب بقيا في المتصفح على تلك النافذة. عملياً:
+//   • «الأقل سعراً» كانت ترتّب أرخص ٣٠ محمَّلاً، لا أرخص الكتالوج.
+//   • فلترة مدينة صغيرة تعطي «لا نتائج» رغم وجود آلاف العروض فيها.
+//   • العدّاد أعلى الصفحة يعرض حجم النافذة لا عدد المنتجات الحقيقي.
+// الحل: نداء واحد `browse_deals` يفعل كل شيء على القاعدة (ترشيح + ترتيب +
+// بحث + عدّ + مؤشّر keyset) — فما تراه الواجهة هو ما في القاعدة حرفياً.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type BrowseSort = 'new' | 'price' | 'discount' | 'reliability' | 'best' | 'soon';
+
+/** مؤشّر keyset مُعمَّم: قيمة مفتاح الترتيب + مُعرّف الفاصل الحاسم. */
+export interface BrowseCursor { key: number; id: string; }
+
+export interface BrowseParams {
+    query?: string | null;
+    category?: string | null;
+    gender?: string | null;
+    region?: string | null;
+    city?: string | null;
+    mall?: string | null;
+    storeId?: string | null;
+    seasonId?: string | null;
+    sort?: BrowseSort;
+    mode?: 'live' | 'coming_soon';
+    openNow?: boolean;
+    verified?: boolean;
+    cursor?: BrowseCursor | null;
+    limit?: number;
+}
+
+export interface BrowseResult {
+    deals: Deal[];
+    /** عدد المطابقات الكلي في القاعدة — لا عدد المُحمّل. مسقوف بـ5000. */
+    total: number;
+    /** true = المطابقات تتجاوز السقف، فيُعرض «+5000». */
+    totalCapped: boolean;
+    hasMore: boolean;
+    cursor: BrowseCursor | null;
+}
+
+const EMPTY_BROWSE: BrowseResult = { deals: [], total: 0, totalCapped: false, hasMore: false, cursor: null };
+
+/**
+ * أعمدة العرض التي تحتاجها الواجهة.
+ *
+ * v13.24 — استبدلت `select('*')`. القاعدة صار فيها ثلاثة أعمدة بحث **مُولَّدة**
+ * (`search_vec` و`name_norm` و`loc_keys`) تخدم الفهارس ولا تعني الواجهة في شيء؛
+ * لو بقي `*` لانتقل متجه البحث الكامل لكل عرض عبر شبكة الجوال بلا فائدة.
+ * `browse_deals` تُسقطها من جهة الخادم أصلاً، وهذه القائمة تفعل الشيء نفسه
+ * للمسارات المباشرة.
+ *
+ * ⚠️ عند إضافة عمود جديد لجدول `deals`: أضفه هنا وفي `mapRowToDeal` معاً.
+ */
+export const DEAL_SELECT = [
+    'id', 'store_id', 'shop_name', 'item_name', 'category', 'gender', 'size',
+    'original_price', 'discounted_price', 'discount_percentage', 'images', 'description',
+    'location_id', 'custom_location_name', 'google_maps_link', 'map_lat', 'map_lng',
+    'reliability_score', 'expires_in_minutes', 'quantity', 'is_unlimited', 'initial_quantity',
+    'prep_time', 'status', 'created_at', 'expiry_hijri', 'expiry_gregorian', 'updated_at',
+    'city', 'region', 'expiry_type', 'expiry_date', 'views', 'clicks', 'starts_at',
+    'coming_soon_notified_at', 'subscription_frozen', 'source', 'max_per_booking',
+    'max_bookings_per_buyer', 'rebook_cooldown_minutes', 'season_id', 'options', 'variants',
+    'pos_sku', 'locations', 'loc_qty_mode', 'auth_real_count', 'auth_fake_count',
+    'rating_avg', 'rating_count',
+].join(',');
+
 export const dealRepository = {
+    /**
+     * v13.24 — صفحة تصفّح/بحث كاملة من الخادم: نداء واحد يعيد العروض + العدد
+     * الكلي + مؤشّر الصفحة التالية.
+     *
+     * لماذا نداء واحد: كل جولة شبكة إضافية تُضاف مباشرة لزمن ظهور الصفحة على
+     * جوال المستخدم. العدّادات (التقييم/الأصالة) صارت مثبّتة على صف العرض
+     * بـtriggers، فلا حاجة لجلب صفوف التقييمات ولا لنداء عدّ الأصالة.
+     */
+    browse: async (p: BrowseParams = {}): Promise<BrowseResult> => {
+        try {
+            const { data, error } = await withTimeout(
+                supabase.rpc('browse_deals', {
+                    p_query:      p.query?.trim() || null,
+                    p_category:   p.category && p.category !== 'all' ? p.category : null,
+                    p_gender:     p.gender && p.gender !== 'all' ? p.gender : null,
+                    p_region:     p.region || null,
+                    p_city:       p.city || null,
+                    p_mall:       p.mall || null,
+                    p_store_id:   p.storeId || null,
+                    p_season_id:  p.seasonId || null,
+                    p_sort:       p.sort || 'new',
+                    p_mode:       p.mode || 'live',
+                    p_open_now:   !!p.openNow,
+                    p_verified:   !!p.verified,
+                    p_cursor_key: p.cursor ? p.cursor.key : null,
+                    p_cursor_id:  p.cursor ? p.cursor.id : null,
+                    p_limit:      Math.max(1, Math.min(60, p.limit ?? DEALS_PAGE_SIZE)),
+                }) as unknown as Promise<{ data: any; error: any }>,
+                20000
+            );
+            if (error) throw error;
+            const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+            const nextKey = data?.next_key;
+            const nextId  = data?.next_id;
+            return {
+                deals: rows.map(dealRepository.mapRowToDeal),
+                total: Number(data?.total) || 0,
+                totalCapped: !!data?.total_capped,
+                hasMore: !!data?.has_more,
+                cursor: (data?.has_more && nextId != null && nextKey != null)
+                    ? { key: Number(nextKey), id: String(nextId) }
+                    : null,
+            };
+        } catch (e) {
+            console.error('❌ browse_deals failed:', e);
+            return EMPTY_BROWSE;
+        }
+    },
+
     /**
      * v13.22 — صفحة من واجهة العروض بترقيم **keyset** (أسلوب التطبيقات الكبرى).
      *
@@ -59,7 +178,7 @@ export const dealRepository = {
     getFeedPage: async (opts?: { limit?: number; cursor?: DealCursor | null }): Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }> => {
         const limit = Math.max(1, opts?.limit ?? DEALS_PAGE_SIZE);
         try {
-            let q = supabase.from('deals').select('*').neq('status', 'deleted');
+            let q = supabase.from('deals').select(DEAL_SELECT).neq('status', 'deleted');
             const c = opts?.cursor;
             if (c) {
                 // (created_at < c) OR (created_at = c AND id < c.id)
@@ -87,42 +206,23 @@ export const dealRepository = {
     },
 
     /**
-     * v13.23 — بحث/تصفية على مستوى **الخادم** — يغطي الكتالوج كله.
+     * بحث سريع يعيد أفضل المطابقات فقط (شريط بحث الرئيسية).
      *
-     * بعد الترقيم صارت `deals` نافذة، فالبحث المحلي كان يرى المُحمّل فقط
-     * (بلاغ ناصر: «عرض رأيته سابقاً لا يظهر»). هنا نسأل القاعدة مباشرة، ثم
-     * تُدخل النتائج للنافذة (`ingestDeals`) فيجدها منطق العرض القائم كما هو.
-     *
-     * `ilike` على الاسم/المحل/الوصف مدعوم بفهارس GIN ثلاثية الحروف (pg_trgm)
-     * فيبقى سريعاً مهما كبر الكتالوج، ويلتقط المطابقة الجزئية.
+     * v13.24 — صار غلافاً رفيعاً حول `browse` بدل استعلام `ilike` مستقل:
+     * مسار بحث **واحد** في كل المنصة، فلا يمكن أن تختلف نتيجة الرئيسية عن
+     * نتيجة صفحة العروض. الترتيب `best` = الأفضل مطابقةً لا الأحدث.
      */
     searchDeals: async (opts: { query?: string; category?: string | null; limit?: number }): Promise<Deal[]> => {
         const q = (opts.query || '').trim();
         const cat = opts.category && opts.category !== 'all' ? opts.category : null;
         if (!q && !cat) return [];
-        try {
-            let sel = supabase.from('deals').select('*').neq('status', 'deleted');
-            if (cat) sel = sel.eq('category', cat);
-            if (q) {
-                // نُهرّب الأحرف الخاصة بنمط like حتى لا تُفسَّر كرموز بحث
-                const safe = q.replace(/[\\%_,()]/g, ' ').trim();
-                if (safe) {
-                    sel = sel.or(
-                        `item_name.ilike.%${safe}%,shop_name.ilike.%${safe}%,description.ilike.%${safe}%`
-                    );
-                }
-            }
-            const { data, error } = await sel
-                .order('created_at', { ascending: false })
-                .limit(Math.max(1, opts.limit ?? 60));
-            if (error) throw error;
-            const list = (data || []).map(dealRepository.mapRowToDeal);
-            await hydrateRatings(list);
-            return list;
-        } catch (e) {
-            console.error('❌ Deal search failed:', e);
-            return [];
-        }
+        const { deals } = await dealRepository.browse({
+            query: q || null,
+            category: cat,
+            sort: q ? 'best' : 'new',
+            limit: opts.limit ?? 60,
+        });
+        return deals;
     },
 
     /**
@@ -134,7 +234,7 @@ export const dealRepository = {
     getByStore: async (storeId: string): Promise<Deal[]> => {
         try {
             const { data, error } = await supabase
-                .from('deals').select('*')
+                .from('deals').select(DEAL_SELECT)
                 .eq('store_id', storeId)
                 .neq('status', 'deleted')
                 .order('created_at', { ascending: false });
@@ -150,7 +250,7 @@ export const dealRepository = {
 
     getAll: async (): Promise<Deal[]> => {
         try {
-            const { data, error } = await supabase.from('deals').select('*').neq('status', 'deleted').order('created_at', { ascending: false });
+            const { data, error } = await supabase.from('deals').select(DEAL_SELECT).neq('status', 'deleted').order('created_at', { ascending: false });
             if (error) throw error;
             if (data) {
                 const mappedData: Deal[] = data.map(dealRepository.mapRowToDeal);
@@ -212,7 +312,7 @@ export const dealRepository = {
 
     getById: async (id: string): Promise<Deal | undefined> => {
         try {
-            const { data, error } = await supabase.from('deals').select('*').eq('id', id).maybeSingle();
+            const { data, error } = await supabase.from('deals').select(DEAL_SELECT).eq('id', id).maybeSingle();
             if (error) throw error;
             return data ? dealRepository.mapRowToDeal(data) : undefined;
         } catch (e) {
@@ -481,6 +581,13 @@ export const dealRepository = {
         // Analytics counters (migration v13). Optional — older rows may be null.
         if ('views' in d && d.views != null)   deal.views  = Number(d.views)  || 0;
         if ('clicks' in d && d.clicks != null) deal.clicks = Number(d.clicks) || 0;
+
+        // v13.24 — عدّادات مثبّتة على الصف بـtriggers في القاعدة. وجودها يُغني
+        // الصفحة عن جولتَي شبكة (صفوف التقييمات + نداء عدّ الأصالة).
+        if ('auth_real_count' in d && d.auth_real_count != null) deal.authReal = Number(d.auth_real_count) || 0;
+        if ('auth_fake_count' in d && d.auth_fake_count != null) deal.authFake = Number(d.auth_fake_count) || 0;
+        if ('rating_avg'   in d && d.rating_avg   != null) deal.ratingAvg   = Number(d.rating_avg)   || 0;
+        if ('rating_count' in d && d.rating_count != null) deal.ratingCount = Number(d.rating_count) || 0;
 
         return deal;
     }

@@ -43,7 +43,12 @@ const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boo
 const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
     const { toggleFollowMerchant, followedMerchants, language, storeProfiles } = useApp();
     const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
-    const { average, count } = dealService.calculateRating(deal.ratings);
+    // v13.24 — العدّاد المثبَّت على الصف (trigger في القاعدة) هو المصدر متى وُجد،
+    // فتسقط عن كل صفحة عروض جولةُ جلب صفوف التقييمات لحساب المتوسط. المسارات
+    // التي تجلب التقييمات كاملة (تفاصيل العرض) تُحسب كما كانت.
+    const { average, count } = deal.ratingCount != null
+        ? { average: deal.ratingAvg || 0, count: deal.ratingCount }
+        : dealService.calculateRating(deal.ratings);
     const authBadge = getAuthenticityBadge(deal.authReal, deal.authFake, language === 'ar');
     const loc = getLocation(deal.locationId);
     const isFollowed = followedMerchants.includes(deal.storeId);

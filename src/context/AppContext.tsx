@@ -212,6 +212,11 @@ const mergeDealPages = (primary: Deal[], secondary: Deal[]): Deal[] => {
             authFake: (d as any).authFake ?? (old as any).authFake,
             myAuthVote: ((old as any).myAuthVote === true || (old as any).myAuthVote === false)
                 ? (old as any).myAuthVote : (d as any).myAuthVote,
+            // v13.24 — لا نمحو تقييمات مُرطَّبة بمصفوفة فارغة. المسارات السريعة
+            // (browse) لا تجلب صفوف التقييمات لأن البطاقة تكتفي بالمتوسط المثبَّت،
+            // فلولا هذا الحارس لأفقدت صفحةَ المتجر وتفاصيلَ العرض مراجعاتها.
+            ratings: (Array.isArray(d.ratings) && d.ratings.length) ? d.ratings
+                   : ((old.ratings && old.ratings.length) ? old.ratings : (d.ratings || [])),
         } as Deal : d);
     }
     return Array.from(byId.values())

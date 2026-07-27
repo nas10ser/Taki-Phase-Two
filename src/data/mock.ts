@@ -241,6 +241,11 @@ export interface Deal {
     /** The signed-in buyer's own vote on this deal: true=real, false=fake,
      *  null/undefined = hasn't voted. Used to skip re-asking after purchase. */
     myAuthVote?: boolean | null;
+    /** v13.24 — متوسط التقييم وعدده، مثبَّتان على الصف في القاعدة (trigger على
+     *  `ratings`). البطاقة تقرأهما مباشرة بدل جلب صفوف التقييمات لحساب المتوسط،
+     *  فتسقط جولة شبكة كاملة عن كل صفحة عروض. `ratings` يبقى للتفاصيل. */
+    ratingAvg?: number;
+    ratingCount?: number;
 }
 
 export const CATEGORIES: { id: Category | 'all'; ar: string; en: string; emoji: string }[] = [
