@@ -351,6 +351,9 @@ const SellerDashboard: React.FC = () => {
         if (!dealToEdit) return;
         const origin = params.get('origin') as 'active' | 'expired';
         const source = params.get('source');
+        // v13.19 — القادم من «صفحتي» رأى رسالة عدد المواقع هناك للتوّ، فلا
+        // نُكرّرها عبر إشعار القصّ التلقائي (رسالة واحدة فقط — طلب ناصر).
+        if (source === 'store') _skipTrimNoticeRef.current = true;
         handleEdit(dealToEdit, origin || undefined);
         setView('form');
         if (source) (window as any).editSource = source;
