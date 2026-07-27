@@ -118,7 +118,105 @@ export const DEAL_SELECT = [
     'rating_avg', 'rating_count',
 ].join(',');
 
+/** عرضٌ مرتبط بفرع محدد + مسافته عن المستخدم (صفحة «حولي»). */
+export interface NearbyDeal extends Deal {
+    distance: number;
+    lat: number;
+    lng: number;
+    /** مفتاح فريد للفرع: `<dealId>__<branchId>` — العرض الواحد قد يظهر لفروعه. */
+    _key: string;
+    _bId?: string;
+    _bLocId?: string | null;
+    _bName?: string;
+    _bRegion?: string;
+    _bCity?: string;
+}
+
+export interface NearbyParams {
+    lat: number;
+    lng: number;
+    /** 0 = بلا حد مسافة. */
+    radiusKm?: number;
+    query?: string | null;
+    category?: string | null;
+    region?: string | null;
+    city?: string | null;
+    locationId?: string | null;
+    locType?: string | null;
+    openNow?: boolean;
+    blocked?: string[] | null;
+    cursor?: { dist: number; key: string } | null;
+    limit?: number;
+}
+
+export interface NearbyResult {
+    deals: NearbyDeal[];
+    total: number;
+    totalCapped: boolean;
+    hasMore: boolean;
+    cursor: { dist: number; key: string } | null;
+}
+
 export const dealRepository = {
+    /**
+     * v13.26 — «حولي» على مستوى **الفرع** ومن الخادم.
+     *
+     * كانت الصفحة توسّع فروع العروض وتحسب المسافات في المتصفح على النافذة
+     * المُحمّلة — أي أن «أقرب العروض إليك» كانت أقرب ما بين آخر ٣٠ عرضاً.
+     * الآن القاعدة تقصّ الجوار بمرشّح صندوقي على فهرس الإحداثيات ثم تحسب
+     * المسافة الدقيقة للناجين فقط، وترتّب بالأقرب مع ترقيم keyset.
+     */
+    browseNearby: async (p: NearbyParams): Promise<NearbyResult> => {
+        const empty: NearbyResult = { deals: [], total: 0, totalCapped: false, hasMore: false, cursor: null };
+        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return empty;
+        try {
+            const { data, error } = await withTimeout(
+                supabase.rpc('browse_nearby', {
+                    p_lat: p.lat,
+                    p_lng: p.lng,
+                    p_radius_km: p.radiusKm ?? 0,
+                    p_query: p.query?.trim() || null,
+                    p_category: p.category && p.category !== 'all' ? p.category : null,
+                    p_region: p.region || null,
+                    p_city: p.city || null,
+                    p_location_id: p.locationId || null,
+                    p_loc_type: p.locType || null,
+                    p_open_now: !!p.openNow,
+                    p_blocked: (p.blocked && p.blocked.length) ? p.blocked : null,
+                    p_limit: Math.max(1, Math.min(60, p.limit ?? DEALS_PAGE_SIZE)),
+                    p_cursor_dist: p.cursor ? p.cursor.dist : null,
+                    p_cursor_key: p.cursor ? p.cursor.key : null,
+                }) as unknown as Promise<{ data: any; error: any }>,
+                20000
+            );
+            if (error) throw error;
+            const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+            const deals = rows.map(r => Object.assign(dealRepository.mapRowToDeal(r), {
+                distance: Number(r.distance) || 0,
+                lat: Number(r.lat) || 0,
+                lng: Number(r.lng) || 0,
+                _key: String(r._key),
+                _bId: r._bId ?? undefined,
+                _bLocId: r._bLocId ?? undefined,
+                _bName: r._bName ?? undefined,
+                _bRegion: r._bRegion ?? undefined,
+                _bCity: r._bCity ?? undefined,
+            }) as NearbyDeal);
+            return {
+                deals,
+                total: Number(data?.total) || 0,
+                totalCapped: !!data?.total_capped,
+                hasMore: !!data?.has_more,
+                cursor: (data?.has_more && data?.next_key != null && data?.next_dist != null)
+                    ? { dist: Number(data.next_dist), key: String(data.next_key) }
+                    : null,
+            };
+        } catch (e) {
+            console.error('❌ browse_nearby failed:', e);
+            return empty;
+        }
+    },
+
     /**
      * v13.24 — صفحة تصفّح/بحث كاملة من الخادم: نداء واحد يعيد العروض + العدد
      * الكلي + مؤشّر الصفحة التالية.

@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { LOCATIONS, getLocation, USER_LOCATION , geoName, findNearestCity } from '../data/mock';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
+import { LOCATIONS, getLocation, USER_LOCATION , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
+import { useNearbyDeals } from '../hooks/useNearbyDeals';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 'react-leaflet';
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { getDistance, resolveDealLocation, isDealComingSoon } from '../utils/helpers';
-import { getShopStatus } from '../utils/workingHours';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -94,7 +94,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { deals, language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, requestLiveLocation } = useApp();
+    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, requestLiveLocation } = useApp();
 
     // Deep-link filters (Telegram bot opens /nearby?lat&lng&radius&region&city&mall&cat).
     // The bot's Nearby page + smart-alert radius preview reuse THIS exact map so the
@@ -173,54 +173,27 @@ const Nearby: React.FC = () => {
         }
     }, [liveLocation, followMode]);
 
-    const nearbyDeals = useMemo(() => {
-        // v12.91 — العرض متعدد المواقع يُوسَّع فرعاً فرعاً: كل فرع دبوس مستقل
-        // بمسافته وكميته (per_location = كمية الفرع). العرض العادي يبقى كما هو.
-        const expanded = deals.flatMap(deal => {
-            const branches = (deal.locations && deal.locations.length > 1) ? deal.locations : [null as any];
-            return branches.map(l => {
-                let lat: number, lng: number, bLocId: string | null | undefined, bName: string;
-                let bRegion: string | undefined, bCity: string | undefined, bId: string | undefined;
-                let perQty: number | undefined;
-                if (l) {
-                    const known = l.locationId ? getLocation(l.locationId) : undefined;
-                    lat = known?.lat ?? l.lat ?? 0;
-                    lng = known?.lng ?? l.lng ?? 0;
-                    bLocId = l.locationId; bName = l.name || known?.name || ''; bId = l.id;
-                    perQty = deal.locQtyMode === 'per_location' ? l.quantity : undefined;
-                    if (l.region || l.city) { bRegion = l.region; bCity = l.city; }
-                    else if (known) { const c = CITIES.find(x => x.id === known.cityId); bRegion = c?.regionId; bCity = known.cityId; }
-                    else if (l.lat != null && l.lng != null) { const n = findNearestCity(l.lat, l.lng); bRegion = n?.regionId; bCity = n?.id; }
-                } else {
-                    // v12.65 — إحداثيات المول المعروف هي نقطة الاستلام الحقيقية.
-                    const known = getLocation(deal.locationId);
-                    lat = known?.lat ?? deal.mapLocation?.lat ?? 0;
-                    lng = known?.lng ?? deal.mapLocation?.lng ?? 0;
-                    bLocId = deal.locationId; bName = known?.name || '';
-                    const rr = resolveDealLocation(deal); bRegion = rr.regionId; bCity = rr.cityId;
-                }
-                const distance = getDistance(userLat, userLng, lat, lng);
-                const base = (perQty !== undefined) ? { ...deal, quantity: perQty } : deal;
-                return { ...base, distance, lat, lng, _key: `${deal.id}__${bId || 'p'}`, _bLocId: bLocId, _bName: bName, _bRegion: bRegion, _bCity: bCity, _bId: bId };
-            });
-        });
-        return expanded.filter(d => {
-            const textToSearch = `${d.itemName} ${d.shopName} ${d._bName} ${d.category} ${d.description || ''}`;
-            const matchesSearch = dealService.advancedSearchMatch(searchQuery, textToSearch);
-            const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory || (d.category as string) === 'all';
-            const matchesRegion = !selectedRegion || (d._bRegion === selectedRegion);
-            const matchesCity = !selectedCity || (d._bCity === selectedCity);
-            const matchesLocation = !selectedLocationId || (d._bLocId === selectedLocationId);
-            const matchesLocType = !locationType || (d._bLocId ? getLocation(d._bLocId)?.type === locationType : false);
-            const hasCap = typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
-            const hasStock = d.quantity === 'unlimited'
-                || (typeof d.quantity === 'number' && d.quantity > 0)
-                || !hasCap;
-            const matchesRadius = radius === 0 || d.distance <= radius;
-            const matchesOpen = !openNow || getShopStatus((storeProfiles[d.storeId] as any)?.workingHours).open;
-            return matchesRadius && matchesSearch && matchesCategory && matchesRegion && matchesCity && matchesLocation && matchesLocType && matchesOpen && d.status === 'active' && hasStock && !isDealComingSoon(d) && !blockedMerchants.includes(d.storeId);
-        }).sort((a, b) => a.distance - b.distance);
-    }, [deals, userLat, userLng, radius, searchQuery, selectedCategory, selectedRegion, selectedCity, selectedLocationId, locationType, blockedMerchants, openNow, storeProfiles]);
+    // v13.26 — «حولي» صارت مدفوعة من الخادم على مستوى الفرع.
+    // كانت توسّع الفروع وتحسب المسافات في المتصفح على النافذة المُحمّلة، أي أن
+    // «أقرب العروض إليك» كانت أقرب ما بين آخر ٣٠ عرضاً — لا أقرب ما حولك فعلاً.
+    // الآن القاعدة تقصّ الجوار بمرشّح صندوقي على فهرس الإحداثيات، ثم تحسب
+    // المسافة الدقيقة للناجين فقط وترتّب بالأقرب.
+    const {
+        deals: nearbyDeals, total: nearbyTotal, totalCapped: nearbyCapped,
+        hasMore: nearbyHasMore, loadingMore: nearbyLoadingMore, loadMore: nearbyLoadMore,
+    } = useNearbyDeals({
+        lat: userLat,
+        lng: userLng,
+        radiusKm: radius,
+        query: searchQuery,
+        category: selectedCategory,
+        region: selectedRegion || null,
+        city: selectedCity || null,
+        locationId: selectedLocationId || null,
+        locType: locationType || null,
+        openNow,
+        blocked: blockedMerchants,
+    });
 
     // Store-by-name results — same shared engine as Home/DealsList so search
     // is consistent on every page (stores aren't geo-bound, so a name match
@@ -390,7 +363,7 @@ const Nearby: React.FC = () => {
                         <option value={100}>100 {isRTL ? 'كم' : 'km'}</option>
                     </select>
                     <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))', whiteSpace: 'nowrap' }}>
-                        {nearbyDeals.length} {isRTL ? 'عرض' : 'deals'}
+                        {nearbyTotal.toLocaleString('en-US')}{nearbyCapped ? '+' : ''} {isRTL ? 'عرض' : 'deals'}
                     </span>
                     <div style={{ flex: 1, minWidth: 10 }} />
                     <button onClick={async () => {
@@ -577,7 +550,7 @@ const Nearby: React.FC = () => {
                     </div>
                 )}
                 <h2 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16, color: 'var(--text-primary)' }}>
-                    {isRTL ? `النتائج القريبة (${nearbyDeals.length})` : `Nearby Results (${nearbyDeals.length})`}
+                    {isRTL ? `النتائج القريبة (${nearbyTotal.toLocaleString('en-US')}${nearbyCapped ? '+' : ''})` : `Nearby Results (${nearbyTotal.toLocaleString('en-US')}${nearbyCapped ? '+' : ''})`}
                 </h2>
                 {nearbyDeals.length > 0 ? nearbyDeals.map(deal => {
                     // v12.91 — اسم الفرع للعرض متعدد المواقع، وإلا اسم موقع العرض المعروف.
@@ -685,6 +658,13 @@ const Nearby: React.FC = () => {
                 )}
             </div>
             )}
+
+            <InfiniteScrollSentinel
+                hasMore={nearbyHasMore}
+                loading={nearbyLoadingMore}
+                onLoadMore={nearbyLoadMore}
+                isRTL={isRTL}
+            />
 
             <BottomNav />
         </div>
