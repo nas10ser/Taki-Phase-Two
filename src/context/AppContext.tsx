@@ -2277,11 +2277,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // v13.14 — رسالة رفض المخزون الذري تصل هنا الآن (نفدت الكمية —
             // سبقك مشترون آخرون) وتُعرض كما هي بالعربية من القاعدة.
             // v13.15 — وكذلك رسائل حدّ الطلبات (⏳ محاولات كثيرة…) تُعرض كما هي.
-            const isStockReject = /نفدت|سبقك/.test(msg);
+            // v13.31 — كشفه اختبار التزاحم: نفاد كمية «النوع» يرفعه
+            // tr_validate_booking_options برمز آلي `VARIANT_STOCK:الاسم:المتبقي`
+            // (وطلبُ خيارٍ إلزامي بـ`NEEDS_OPTIONS`) — وكانا يسقطان في فرع
+            // «تحقق من اتصالك» فيرى المشتري رمزاً إنجليزياً بدل السبب الحقيقي.
+            const variantOut = msg.match(/VARIANT_STOCK:([^:]*):(\d+)/);
+            const stockMsg = variantOut
+                ? (language === 'ar'
+                    ? `نفدت كمية «${variantOut[1]}» — سبقك مشترون آخرون إليها (المتاح الآن: ${variantOut[2]})`
+                    : `"${variantOut[1]}" is sold out — others booked it first (available now: ${variantOut[2]})`)
+                : msg;
+            if (/NEEDS_OPTIONS/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '⚠️ اختر خيارات المنتج المطلوبة أولاً ثم أعد المحاولة.'
+                    : '⚠️ Please choose the required product options first, then try again.');
+                return;
+            }
+            const isStockReject = !!variantOut || /نفدت|سبقك/.test(msg);
+            if (isStockReject) {
+                customAlertRef.current(`⛔ ${stockMsg}`);
+                return;
+            }
+            // v13.31 — كشفه اختبار التزاحم: حدود الحجز يرفعها
+            // taki_enforce_booking_rules برموز آلية، وكانت تصل للمشتري كما هي
+            // («TAKI_REBOOK_LIMIT:2») داخل رسالة «تحقق من اتصالك» المضلِّلة.
+            const limitCode = msg.match(/TAKI_(MAX_QTY|REBOOK_LIMIT|REBOOK_WAIT):(\d+)/);
+            if (limitCode) {
+                const n = limitCode[2];
+                const ar = limitCode[1] === 'MAX_QTY'
+                    ? `⛔ الحد الأقصى ${n} قطعة في الطلب الواحد لهذا العرض — قلّل الكمية وأعد المحاولة.`
+                    : limitCode[1] === 'REBOOK_LIMIT'
+                        ? `⛔ وصلت للحد المسموح (${n}) من الحجوزات على هذا العرض.`
+                        : `⏳ لا يمكنك إعادة الحجز على هذا العرض إلا بعد ${n} دقيقة.`;
+                const en = limitCode[1] === 'MAX_QTY'
+                    ? `⛔ Max ${n} per order for this deal — lower the quantity and try again.`
+                    : limitCode[1] === 'REBOOK_LIMIT'
+                        ? `⛔ You reached the limit (${n}) of bookings on this deal.`
+                        : `⏳ You can rebook this deal in ${n} minute(s).`;
+                customAlertRef.current(language === 'ar' ? ar : en);
+                return;
+            }
+            if (/DEAL_NOT_ACTIVE/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '⛔ هذا العرض لم يعد متاحاً — أوقفه التاجر أو انتهى. حدّث الصفحة لترى العروض السارية.'
+                    : '⛔ This deal is no longer available — the merchant paused it or it ended. Refresh to see live deals.');
+                return;
+            }
             const isRateReject = /محاولات|الحد الأقصى لعدد/.test(msg);
             customAlertRef.current(language === 'ar'
-                ? (isRateReject ? msg : isStockReject ? `⛔ ${msg}` : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
-                : (isRateReject ? msg : isStockReject ? `⛔ ${msg}` : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
+                ? (isRateReject ? msg : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
+                : (isRateReject ? msg : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
         });
 
         return booking;

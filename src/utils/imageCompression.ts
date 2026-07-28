@@ -18,10 +18,14 @@ type CompressOptions = {
     skipUnderBytes?: number; // already-small JPEGs are passed through as-is
 };
 
+// v13.31 — شُدِّدت بعد قياس صور الإنتاج الفعلية: متوسط الصورة كان ٨٣٨ كيلوبايت
+// وأكبرها ٥.٤ ميجابايت، أي أن صفحة ٣٠ منتجاً تُنزّل ~٢٤ ميجابايت على شبكة
+// الجوال. بطاقة المنتج تعرض الصورة بعرض ٢٠٠–٤٠٠ بكسل، فـ١٦٠٠ بكسل كانت أربعة
+// أضعاف ما تحتاجه الشاشة. ١٢٠٠ بكسل تكفي التكبير داخل صفحة المنتج أيضاً.
 const DEFAULTS: Required<CompressOptions> = {
-    maxDim: 1600,
-    quality: 0.82,
-    skipUnderBytes: 280 * 1024,
+    maxDim: 1200,
+    quality: 0.75,
+    skipUnderBytes: 120 * 1024,
 };
 
 // Decode a File to something canvas-drawable. Prefer createImageBitmap
