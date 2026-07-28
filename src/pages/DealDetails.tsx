@@ -10,6 +10,7 @@ import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
+import { thumbUrl, imgFallback } from '../utils/thumb';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -2205,7 +2206,7 @@ const DealDetails: React.FC = () => {
                         {/* Product Summary */}
                         <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: '16px 20px', marginBottom: 12, border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 12 }}>
                             <div style={{ width: 60, height: 60, borderRadius: 12, background: 'var(--gray-100)', overflow: 'hidden' }}>
-                                <img src={images[0]} alt="Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={thumbUrl(images[0])} onError={imgFallback(images[0])} alt="Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             </div>
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 4 }}>

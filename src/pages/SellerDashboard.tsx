@@ -27,6 +27,7 @@ import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { KSA_VAT_RATE, splitInclusive, fmtSAR } from '../utils/vat';
+import { thumbUrl, imgFallback } from '../utils/thumb';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -4454,10 +4455,10 @@ const SellerDashboard: React.FC = () => {
                                         decoding="async"
                                         width={400}
                                         height={180}
-                                        src={deal.images[0]}
+                                        src={thumbUrl(deal.images[0])}
                                         alt={deal.itemName}
                                         style={{ width: '100%', height: 180, objectFit: 'cover', filter: !isActiveDeal ? 'grayscale(50%)' : 'none' }}
-                                        onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=400'; }}
+                                        onError={imgFallback(deal.images[0])}
                                     />
                                     <div style={{ padding: 16 }}>
                                         <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

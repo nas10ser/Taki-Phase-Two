@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { supabase } from './supabaseClient';
 import { logger } from '../utils/logger';
-import { compressImage } from '../utils/imageCompression';
+import { compressImage, THUMB } from '../utils/imageCompression';
 
 export const storageService = {
     /**
@@ -72,8 +72,13 @@ export const storageService = {
             // so compressing here guarantees no raw multi-MB photo ever
             // hits the network. This is the fix for the ~10s/image uploads.
             const file = await compressImage(rawFile);
-            logger.info(`📸 Uploading image: ${file.name} — ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB`);
-            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.jpg`;
+            // v13.32 — نسخة مصغّرة إضافية للبطاقات والقوائم. تُرفع باسم
+            // `<الاسم>_t.jpg` بجوار الأصل، وتقرؤها الواجهة عبر thumbUrl()
+            // التي ترتدّ للأصل تلقائياً لو لم توجد (صور ما قبل هذا الإصدار).
+            const thumb = await compressImage(rawFile, THUMB);
+            const stem = `${Date.now()}_${Math.random().toString(36).substring(2)}`;
+            const fileName = `${stem}.jpg`;
+            logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB (مصغّرة ${Math.round(thumb.size/1024)}KB)`);
 
             // Create a timeout promise
             const timeoutPromise = new Promise<null>((_, reject) => 
@@ -84,12 +89,22 @@ export const storageService = {
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('deals')
                     .upload(fileName, file, {
-                        cacheControl: '3600',
+                        // v13.32 — سنة كاملة بدل ساعة: اسم الملف فريد ولا يُعاد
+                        // استخدامه أبداً، فتخزين المتصفح والوسيط له آمن تماماً —
+                        // والزائر العائد لا يُعيد تنزيل صورة رآها.
+                        cacheControl: '31536000',
                         upsert: false
                     });
 
                 if (uploadError) throw uploadError;
-                
+
+                // المصغّرة: رفعها لا يُعطّل المنتج أبداً — لو فشلت تبقى الواجهة
+                // على الأصل عبر ارتداد thumbUrl.
+                supabase.storage.from('deals')
+                    .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false })
+                    .then(({ error }) => { if (error) logger.warn('thumb upload failed:', error.message); })
+                    .catch(() => { /* صامت */ });
+
                 const { data } = supabase.storage.from('deals').getPublicUrl(fileName);
                 return data.publicUrl;
             })();

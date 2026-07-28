@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus } from '../utils/workingHours';
+import { thumbUrl, imgFallback } from '../utils/thumb';
 
 interface Props {
     deal: Deal;
@@ -158,7 +159,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
             )}
             <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
                 <img
-                    src={imageUrl}
+                    /* v13.32 — البطاقة تعرض النسخة المصغّرة (٦٠٠ بكسل ~٥٠ كيلوبايت
+                       بدل ~٢٠٠): البطاقة تُرسم بعرض ~١٨٠ نقطة فأدق شاشة لا تُظهر
+                       أكثر. الصور المرفوعة قبل v13.32 بلا مصغّرة، فـonError يرتدّ
+                       للأصل ثم للصورة البديلة. */
+                    src={thumbUrl(imageUrl)}
                     loading="lazy"
                     decoding="async"
                     width={400}
@@ -173,9 +178,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         // instantly as "not bookable" without removing the photo.
                         filter: comingSoon ? 'brightness(0.6) saturate(0.85)' : undefined
                     }}
-                    onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=600';
-                    }}
+                    onError={imgFallback(imageUrl)}
                 />
                 {/* v11.20 — Coming Soon lock overlay. Sits above the image, below
                     the follow / discount / countdown chips so those remain

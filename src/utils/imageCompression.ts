@@ -18,14 +18,28 @@ type CompressOptions = {
     skipUnderBytes?: number; // already-small JPEGs are passed through as-is
 };
 
-// v13.31 — شُدِّدت بعد قياس صور الإنتاج الفعلية: متوسط الصورة كان ٨٣٨ كيلوبايت
-// وأكبرها ٥.٤ ميجابايت، أي أن صفحة ٣٠ منتجاً تُنزّل ~٢٤ ميجابايت على شبكة
-// الجوال. بطاقة المنتج تعرض الصورة بعرض ٢٠٠–٤٠٠ بكسل، فـ١٦٠٠ بكسل كانت أربعة
-// أضعاف ما تحتاجه الشاشة. ١٢٠٠ بكسل تكفي التكبير داخل صفحة المنتج أيضاً.
+// v13.32 — نسختان لكل صورة (طلب ناصر بعد قياس النقل الفعلي):
+//
+//  • النسخة الكاملة (هذه) — لصفحة المنتج وعارض التكبير. رُفعت جودتها عن v13.31
+//    (١٤٠٠ بكسل / ٠.٨٢ بدل ١٢٠٠ / ٠.٧٥) لأن البطاقات لم تعد تُنزّلها، فصار
+//    بالإمكان إعطاء أوضح صورة حيث ينظر المشتري فعلاً.
+//  • النسخة المصغّرة (THUMB أدناه) — للبطاقات والقوائم.
+//
+// القياس الذي دفع هذا: صور الإنتاج كان متوسطها ٨٣٨ كيلوبايت وأكبرها ٥.٤
+// ميجابايت، فصفحة ٣٠ منتجاً تُنزّل ~٢٤ ميجابايت على شبكة الجوال — بينما بطاقة
+// المنتج تعرض الصورة بعرض ~١٨٠ نقطة فقط.
 const DEFAULTS: Required<CompressOptions> = {
-    maxDim: 1200,
-    quality: 0.75,
-    skipUnderBytes: 120 * 1024,
+    maxDim: 1400,
+    quality: 0.82,
+    skipUnderBytes: 150 * 1024,
+};
+
+// ٦٠٠ بكسل: البطاقة تُرسم بعرض ~١٨٠ نقطة، وحتى على شاشة آيفون برو (3x) تحتاج
+// ٥٤٠ بكسل — فـ٦٠٠ أوضح مما تستطيع الشاشة إظهاره. الناتج ~٤٠–٦٠ كيلوبايت.
+export const THUMB: Required<CompressOptions> = {
+    maxDim: 600,
+    quality: 0.72,
+    skipUnderBytes: 0,   // المصغّرة تُنتَج دائماً — لا تمرير
 };
 
 // Decode a File to something canvas-drawable. Prefer createImageBitmap
@@ -73,6 +87,7 @@ export const compressImage = async (
     // adds generation-loss artefacts for no bandwidth win.
     if (!file.type.startsWith('image/')) return file;
     if (
+        skipUnderBytes > 0 &&
         (file.type === 'image/jpeg' || file.type === 'image/webp') &&
         file.size <= skipUnderBytes
     ) {

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsQR from 'jsqr';
 import { useApp } from '../context/AppContext';
 import { useBooking, Booking } from '../hooks/useBooking';
+import { thumbUrl, imgFallback } from '../utils/thumb';
 
 interface Props {
     isOpen: boolean;
@@ -273,7 +274,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                             </div>
 
                             <div style={{ display: 'flex', gap: 15, marginBottom: 20, background: 'var(--gray-100)', borderRadius: 16, padding: 16 }}>
-                                <img src={scanResult.deal.images[0]} loading="lazy" alt=""
+                                <img src={thumbUrl(scanResult.deal.images[0])} onError={imgFallback(scanResult.deal.images[0])} loading="lazy" alt=""
                                     style={{ width: 70, height: 70, borderRadius: 14, objectFit: 'cover' }} />
                                 <div>
                                     <div style={{ fontWeight: 900, color: 'var(--dark)', marginBottom: 4 }}>{scanResult.deal.itemName}</div>
