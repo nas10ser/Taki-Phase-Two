@@ -12,6 +12,7 @@ import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../u
 import { getAuthenticityBadge } from '../utils/helpers';
 import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
+import { AVATAR } from '../utils/imageCompression';
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -304,7 +305,8 @@ const StoreDetails: React.FC = () => {
         setIsUploading(true);
         try {
             const { storageService } = await import('../services/storageService');
-            const url = await storageService.uploadImage(file);
+            // v13.33 — شعار المتجر يُعرض في دائرة ٦٤ نقطة: ٤٠٠ بكسل تكفيه
+            const url = await storageService.uploadImage(file, { compress: AVATAR, thumb: false });
             if (url) {
                 updateStoreProfile(id, { ...profile, avatar_url: url });
             } else if (storageService.lastBlockReason === 'nsfw') {

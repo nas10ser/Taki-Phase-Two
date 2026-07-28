@@ -42,6 +42,25 @@ export const THUMB: Required<CompressOptions> = {
     skipUnderBytes: 0,   // المصغّرة تُنتَج دائماً — لا تمرير
 };
 
+// v13.33 — البنر: يُعرض بعرض الشاشة كاملاً (١٢٠٠×٦٠٠ من محرّر البنر) فلا تصلح
+// له المصغّرة إطلاقاً — تُخطّى بـthumb:false. قياس فعلي بمحرّك المتصفح على بنر
+// إنتاج حقيقي: الأصل ٢٣٦ كيلوبايت ← ٠.٧٢ يعطي ٨٨ و٠.٧٨ يعطي ١٠٢. اخترنا ٠.٧٨:
+// الفرق ١٤ كيلوبايت فقط، والبنر أول ما تقع عليه العين فلا نساوم على وضوحه.
+export const BANNER: Required<CompressOptions> = {
+    maxDim: 1200,
+    quality: 0.78,
+    skipUnderBytes: 100 * 1024,
+};
+
+// v13.33 — شعار المتجر: يُعرض في دائرة قطرها ٦٤ نقطة (١٩٢ بكسل على 3x).
+// كان يُرفع بمقاس صورة منتج كاملة — أي عشرات أضعاف ما تحتاجه الدائرة.
+// قياس فعلي: ١٧ كيلوبايت بدل ~١١٣.
+export const AVATAR: Required<CompressOptions> = {
+    maxDim: 400,
+    quality: 0.8,
+    skipUnderBytes: 40 * 1024,
+};
+
 // Decode a File to something canvas-drawable. Prefer createImageBitmap
 // (off-main-thread, honours EXIF orientation via the options bag on
 // modern Safari/Chrome). Fall back to an <img> for older engines.

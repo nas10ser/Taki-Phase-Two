@@ -6,6 +6,7 @@ import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
     ContestStatus, QuestionType, DrawSource, DrawRole, DrawWinner, CustomDraw,
 } from '../../repositories/contestRepository';
+import { BANNER } from '../../utils/imageCompression';
 
 /**
  * AdminContests (v11.44) — create surveys/quizzes with prizes, auto-grade
@@ -83,7 +84,8 @@ const AdminContests: React.FC = () => {
     const onBannerCropApply = async (file: File) => {
         setBannerEditorSrc(null);
         setUploadingBanner(true);
-        const url = await storageService.uploadImage(file);
+        // v13.33 — بنر المسابقة: نفس مقاس بنرات الرئيسية
+        const url = await storageService.uploadImage(file, { compress: BANNER, thumb: false });
         setUploadingBanner(false);
         if (url) setField({ banner_image: url });
         else await customAlert(storageService.lastBlockReason === 'nsfw'

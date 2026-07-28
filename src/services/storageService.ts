@@ -50,7 +50,18 @@ export const storageService = {
         localStorage.clear();
     },
 
-    uploadImage: async (rawFile: File): Promise<string | null> => {
+    /**
+     * v13.33 — لكل نوع صورة مقاسه (طلب ناصر: «والبنرات لا تنساها»):
+     *   • منتج  (الافتراضي) — كاملة ١٤٠٠ + مصغّرة ٦٠٠ للبطاقات
+     *   • بنر   `BANNER`    — عريض بلا مصغّرة (لا يُعرض صغيراً أبداً)
+     *   • شعار متجر `AVATAR` — يُعرض بقطر ٦٤ نقطة فقط، فـ٤٠٠ بكسل تكفيه بسخاء
+     * كان الجميع يُرفع بمقاس المنتج نفسه، فشعار المتجر (دائرة ٦٤ نقطة) كان
+     * يُنزَّل بحجم صورة منتج كاملة على كل فتح للصفحة.
+     */
+    uploadImage: async (
+        rawFile: File,
+        opts?: { compress?: Partial<{ maxDim: number; quality: number; skipUnderBytes: number }>; thumb?: boolean },
+    ): Promise<string | null> => {
         try {
             // v12.31 — فحص الصور الإباحية قبل الرفع (NSFWJS داخل المتصفح).
             // نقطة اختناق واحدة = كل مسارات الرفع (منتجات/بنرات/مسابقات)
@@ -71,14 +82,16 @@ export const storageService = {
             // crop-applied, crop-skipped, decode-fail) flows through here,
             // so compressing here guarantees no raw multi-MB photo ever
             // hits the network. This is the fix for the ~10s/image uploads.
-            const file = await compressImage(rawFile);
+            const file = await compressImage(rawFile, opts?.compress);
             // v13.32 — نسخة مصغّرة إضافية للبطاقات والقوائم. تُرفع باسم
             // `<الاسم>_t.jpg` بجوار الأصل، وتقرؤها الواجهة عبر thumbUrl()
             // التي ترتدّ للأصل تلقائياً لو لم توجد (صور ما قبل هذا الإصدار).
-            const thumb = await compressImage(rawFile, THUMB);
+            // البنرات والشعارات لا تحتاجها (تُعرض بمقاس واحد) فتُخطّى.
+            const wantThumb = opts?.thumb !== false;
+            const thumb = wantThumb ? await compressImage(rawFile, THUMB) : null;
             const stem = `${Date.now()}_${Math.random().toString(36).substring(2)}`;
             const fileName = `${stem}.jpg`;
-            logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB (مصغّرة ${Math.round(thumb.size/1024)}KB)`);
+            logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB${thumb ? ` (مصغّرة ${Math.round(thumb.size/1024)}KB)` : ''}`);
 
             // Create a timeout promise
             const timeoutPromise = new Promise<null>((_, reject) => 
@@ -100,10 +113,12 @@ export const storageService = {
 
                 // المصغّرة: رفعها لا يُعطّل المنتج أبداً — لو فشلت تبقى الواجهة
                 // على الأصل عبر ارتداد thumbUrl.
-                supabase.storage.from('deals')
-                    .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false })
-                    .then(({ error }) => { if (error) logger.warn('thumb upload failed:', error.message); })
-                    .catch(() => { /* صامت */ });
+                if (thumb) {
+                    supabase.storage.from('deals')
+                        .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false })
+                        .then(({ error }) => { if (error) logger.warn('thumb upload failed:', error.message); })
+                        .catch(() => { /* صامت */ });
+                }
 
                 const { data } = supabase.storage.from('deals').getPublicUrl(fileName);
                 return data.publicUrl;

@@ -18,6 +18,7 @@ import { Tooltip } from '../../components/admin/Tooltip';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
 import { SEASONS, campaignSellerOpen, campaignPublicLive, SeasonCampaign } from '../../data/seasons';
+import { BANNER } from '../../utils/imageCompression';
 
 // ============================================================
 // Setting Toggle Card
@@ -221,7 +222,8 @@ const BannerModal: React.FC<{
     const handleEditorApply = async (file: File) => {
         closeEditor();
         setUploading(true);
-        const url = await storageService.uploadImage(file);
+        // v13.33 — البنر: مقاسه الخاص بلا مصغّرة (لا يُعرض صغيراً أبداً)
+        const url = await storageService.uploadImage(file, { compress: BANNER, thumb: false });
         setUploading(false);
         if (!url) {
             await customAlert(storageService.lastBlockReason === 'nsfw'
