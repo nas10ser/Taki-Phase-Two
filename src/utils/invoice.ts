@@ -65,9 +65,13 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
     const rate = s.vat_rate ?? 15;
     const includeVat = s.prices_include_vat !== false;
     const gross = Number(p.amount) || 0;
-    const vat = s.vat_enabled ? (includeVat ? (gross * rate) / (100 + rate) : (gross * rate) / 100) : 0;
-    const net = includeVat ? gross - vat : gross;
-    const total = includeVat ? gross : gross + vat;
+    // v13.30 — تقريب مقفول: الضريبة تُقرَّب أولاً لأقرب هللة ثم الأساس يُشتق
+    // منها — فيبقى (الأساس + الضريبة = الإجمالي) صحيحاً على كل فاتورة، وهو ما
+    // تدقّقه الهيئة (ZATCA) في الفواتير المبسطة.
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const vat = s.vat_enabled ? round2(includeVat ? (gross * rate) / (100 + rate) : (gross * rate) / 100) : 0;
+    const net = round2(includeVat ? gross - vat : gross);
+    const total = round2(includeVat ? gross : gross + vat);
     const dt = new Date(p.paid_at || p.created_at);
     const isTax = !!s.vat_enabled && !!s.vat_number;
     const tlv = isTax ? zatcaTlvBase64(s.entity_name, s.vat_number || '', dt.toISOString(), total.toFixed(2), vat.toFixed(2)) : '';

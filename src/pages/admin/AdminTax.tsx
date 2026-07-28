@@ -142,10 +142,13 @@ const AdminTax: React.FC = () => {
 
     // ─── حسابات المبيعات ─────────────────────────────────────────────────────
     const paid = useMemo(() => payments.filter(isPaid), [payments]);
+    // v13.30 — الضريبة تُقرَّب على مستوى كل فاتورة (لأقرب هللة) ثم تُجمَع —
+    // فتطابق مجاميع الإقرار ما هو مطبوع على وجه كل فاتورة حرفياً (منهج الهيئة).
+    const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
     const vatOf = useCallback((gross: number): number => {
         if (!settings.vat_enabled) return 0;
         const r = settings.vat_rate;
-        return settings.prices_include_vat ? (gross * r) / (100 + r) : (gross * r) / 100;
+        return round2(settings.prices_include_vat ? (gross * r) / (100 + r) : (gross * r) / 100);
     }, [settings]);
 
     const rev12m = useMemo(() => {
@@ -196,8 +199,12 @@ const AdminTax: React.FC = () => {
             if (!inQ(t)) continue;
             purchGross += Number(e.amount_gross) || 0; purchVat += Number(e.vat_amount) || 0; purchCount += 1;
         }
-        const netDue = salesVat - purchVat;   // موجب = تدفع للهيئة، سالب = رصيد استرداد
-        return { salesGross, salesVat, salesNet, salesCount, purchGross, purchVat, purchNet: purchGross - purchVat, purchCount, netDue };
+        // v13.30 — تصفير انجراف الفاصلة العائمة بعد الجمع: كل بند في الإقرار
+        // مُقرَّب لأقرب هللة، والبند ٧ = البند ٥ − البند ٦ حرفياً (بلا فرق هللة).
+        salesGross = round2(salesGross); salesVat = round2(salesVat);
+        purchGross = round2(purchGross); purchVat = round2(purchVat);
+        const netDue = round2(salesVat - purchVat);   // موجب = تدفع للهيئة، سالب = رصيد استرداد
+        return { salesGross, salesVat, salesNet: round2(salesNet), salesCount, purchGross, purchVat, purchNet: round2(purchGross - purchVat), purchCount, netDue };
     }, [paid, expenses, quarter, vatOf, settings.prices_include_vat]);
 
     // ─── الزكاة (حاسبة الوعاء) ───────────────────────────────────────────────
@@ -471,6 +478,11 @@ const AdminTax: React.FC = () => {
                 </div>
                 {settings.vat_enabled && !settings.vat_number && (
                     <div className="text-[11px] font-bold text-amber-600 mt-2">⚠️ الضريبة مفعّلة بلا رقم ضريبي — أدخل الرقم ليظهر على الفواتير مع QR.</div>
+                )}
+                {/* v13.30 — فحص صيغة الرقم الضريبي حسب معيار الهيئة: ١٥ رقماً يبدأ
+                    وينتهي بـ«3». رقم بصيغة خاطئة = فواتير مرفوضة عند التدقيق. */}
+                {!!settings.vat_number && !/^3\d{13}3$/.test(settings.vat_number.trim()) && (
+                    <div className="text-[11px] font-bold text-red-600 mt-2">⛔ صيغة الرقم الضريبي غير صحيحة — يجب أن يكون ١٥ رقماً يبدأ وينتهي بـ«3» (مثل 300000000000003). تحقق منه قبل إصدار أي فاتورة ضريبية.</div>
                 )}
             </section>
 

@@ -8,6 +8,7 @@ import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings } from '../utils/invoice';
+import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
 
 // Gold ring that works on light AND dark themes: interior = theme card colour,
 // the 2px border is the gold gradient. Selected cards get a warm amber tint
@@ -89,6 +90,15 @@ const Subscription: React.FC = () => {
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [isPaying, setIsPaying] = useState(false);
     const [isPaymentEnabled, setIsPaymentEnabled] = useState(true);
+    // v13.30 — إعدادات الضريبة (من مركز التحكم): لعرض تفصيل ضريبة القيمة
+    // المضافة على سعر الباقة قبل الدفع — نفس أرقام الفاتورة والإيميل بالضبط.
+    const [taxSettings, setTaxSettings] = useState<InvoiceTaxSettings | null>(null);
+    useEffect(() => {
+        let alive = true;
+        supabase.from('platform_settings').select('value').eq('key', 'tax_settings').maybeSingle()
+            .then(({ data }) => { if (alive && data?.value) setTaxSettings(data.value as unknown as InvoiceTaxSettings); });
+        return () => { alive = false; };
+    }, []);
 
     const profile = storeProfiles[user?.id || ''];
     const currentMax = profile?.max_branches || 0;
@@ -268,6 +278,36 @@ const Subscription: React.FC = () => {
                     {!isPaying && <span>💳</span>}
                 </button>
             )}
+            {/* v13.30 — تفصيل ضريبة القيمة المضافة على سعر الباقة (طلب ناصر):
+                نفس حساب الفاتورة والإيميل حرفياً — إن كانت الضريبة مفعّلة تُعرض
+                القسمة (أساس + ضريبة)، وقبل التسجيل الضريبي يُوضَّح أن لا ضريبة تُحصَّل. */}
+            {selected && (() => {
+                const price = effectivePrice(selected);
+                const on = !!taxSettings?.vat_enabled;
+                const rate = taxSettings?.vat_rate ?? 15;
+                const incl = taxSettings?.prices_include_vat !== false;
+                if (!on) {
+                    return (
+                        <p className="text-center text-[11px] font-bold text-[var(--text-secondary)] mt-3 leading-relaxed">
+                            🧾 لا تُحصَّل ضريبة قيمة مضافة على الاشتراك حالياً (المنشأة قبل التسجيل الضريبي) — عند التفعيل تُحتسب {rate}٪ وتظهر في فاتورتك تلقائياً.
+                        </p>
+                    );
+                }
+                if (incl) {
+                    const s = splitInclusive(price, rate);
+                    return (
+                        <p className="text-center text-[11px] font-extrabold mt-3 leading-relaxed" style={{ color: '#0d9488' }}>
+                            🧾 السعر شامل ضريبة القيمة المضافة {rate}٪ — الأساس {fmtSAR(s.base)} ر.س + الضريبة {fmtSAR(s.vat)} ر.س = {fmtSAR(s.total)} ر.س.
+                        </p>
+                    );
+                }
+                const vat = vatOnTop(price, rate);
+                return (
+                    <p className="text-center text-[11px] font-extrabold mt-3 leading-relaxed" style={{ color: '#0d9488' }}>
+                        🧾 يُضاف على السعر ضريبة قيمة مضافة {rate}٪ ({fmtSAR(vat)} ر.س) — الإجمالي {fmtSAR(price + vat)} ر.س.
+                    </p>
+                );
+            })()}
             <p className="text-center text-xs text-[var(--text-secondary)] mt-4">بوابة دفع آمنة وموثوقة (PayTabs / Moyasar)</p>
 
             {/* فواتير التاجر — تصدر تلقائياً بعد كل اشتراك (v12.17) */}

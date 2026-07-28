@@ -11,6 +11,7 @@
 // الضريبية (زاتكا) — تلك يصدرها التاجر من نظامه لأن الدفع يتم على حسابه.
 
 import { code128SVG } from './barcode128';
+import { KSA_VAT_RATE, splitInclusive, fmtSAR } from './vat';
 
 export interface InvoiceLineItem {
     label: string;
@@ -32,6 +33,8 @@ export interface InvoiceData {
     items?: InvoiceLineItem[];
     /** سطر الإجمالي (نص جاهز مثل «26 ر.س») */
     totalText?: string;
+    /** v13.30 — الإجمالي رقماً (شامل الضريبة) لطباعة تفصيل ضريبة القيمة المضافة */
+    totalAmount?: number;
     /** ملاحظة المشتري الحرّة */
     buyerNote?: string;
     /** v12.93 — حالة الدفع: true = مدفوع إلكترونياً (وصل حساب التاجر)، false/undefined = عند الاستلام */
@@ -79,6 +82,9 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
     const notes: string = order?.notes || '';
     const tm = notes.match(/الإجمالي:\s*([\d.]+)/);
     const totalText = tm ? `${tm[1]} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
+    // v13.30 — الإجمالي رقماً: من سطر الملاحظات، وإلا من مبلغ الدفع الإلكتروني —
+    // لطباعة تفصيل ضريبة القيمة المضافة على الفواتير القديمة والجديدة سواء.
+    const totalAmount = tm ? parseFloat(tm[1]) : (Number(order?.paidAmount) > 0 ? Number(order?.paidAmount) : undefined);
     const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
     const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
     return {
@@ -91,6 +97,7 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
         prepTime: order?.prepTime,
         items,
         totalText,
+        totalAmount,
         buyerNote,
         // v12.93 — حالة الدفع: مدفوع إلكترونياً (paidAt) وإلا الدفع عند الاستلام
         paidOnline: !!order?.paidAt,
@@ -197,7 +204,20 @@ const buildHtml = (d: InvoiceData): string => {
     <div class="items">
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
-    ${d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : ''}
+    ${(() => {
+        // v13.30 — تفصيل ضريبة القيمة المضافة (١٥٪ مضمّنة في السعر — نظام العرض
+        // السعودي): يظهر على كل فاتورة لها إجمالي رقمي، قديمة كانت أم جديدة،
+        // لأن الفاتورة تُبنى لحظة الطباعة. الأساس + الضريبة = الإجمالي دائماً.
+        if (!(Number(d.totalAmount) > 0)) {
+            return d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : '';
+        }
+        const s = splitInclusive(Number(d.totalAmount));
+        const cur = L('ر.س', 'SAR');
+        return `
+    <div class="row" style="margin-top:10px"><span class="k">${L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)')}</span><span class="v">${fmtSAR(s.base)} ${cur}</span></div>
+    <div class="row"><span class="k">${L(`ضريبة القيمة المضافة ${KSA_VAT_RATE}٪ (مضمّنة)`, `VAT ${KSA_VAT_RATE}% (included)`)}</span><span class="v">${fmtSAR(s.vat)} ${cur}</span></div>
+    <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(s.total)} ${cur}</span></div>`;
+    })()}
     ${(() => {
         // v13.13 — بانر حالة الطلب على الفاتورة (طلب ناصر): الملغي لا تُطبع له
         // «طريقة الدفع» (لم تتم محاسبة)، بل «الطلب ملغي» مع ذكر من ألغاه؛ والمكتمل

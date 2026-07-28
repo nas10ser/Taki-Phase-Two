@@ -156,7 +156,7 @@ const Bookings: React.FC = () => {
     const {
         bookings: pastRows, total: pastTotal,
         hasMore: pastHasMore, loadingMore: pastLoadingMore, loadMore: pastLoadMore,
-        reload: reloadPast,
+        loading: pastLoading, reload: reloadPast,
     } = useBookingBrowse({ scope: 'buyer', state: 'past', query: searchTerm });
 
     // الترتيب على القاعدة تنازلي بطابع الإنشاء؛ زر «الأقدم» يعكس الصفحة
@@ -695,7 +695,16 @@ const Bookings: React.FC = () => {
                     </div>
                 )}
 
-                {!activeLoading && filteredActive.length === 0 && filteredPast.length === 0 && (
+                {/* «تصفح العروض» كانت تومض لأن الشرط ينتظر القائمة النشطة فقط
+                    بينما السابقة ما زالت تُحمَّل — الآن ننتظر القائمتين معاً،
+                    وأثناء التحميل الأول نعرض مؤشراً بدل الشاشة الفارغة. */}
+                {(activeLoading || pastLoading) && filteredActive.length === 0 && filteredPast.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '100px 20px' }}>
+                        <div className="spinner" style={{ width: 36, height: 36, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+                        <div style={{ fontWeight: 800, color: 'var(--gray-400)', fontSize: '0.95rem' }}>{isRTL ? 'جاري تحميل حجوزاتك…' : 'Loading your bookings…'}</div>
+                    </div>
+                )}
+                {!activeLoading && !pastLoading && filteredActive.length === 0 && filteredPast.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '100px 20px' }}>
                         <div style={{ fontSize: '4rem', marginBottom: 20 }}>🎟️</div>
                         <div style={{ fontWeight: 800, color: 'var(--gray-400)', fontSize: '1.1rem' }}>{isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found'}</div>

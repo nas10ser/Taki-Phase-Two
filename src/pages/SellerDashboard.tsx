@@ -26,6 +26,7 @@ import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDe
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
+import { KSA_VAT_RATE, splitInclusive, fmtSAR } from '../utils/vat';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -3305,7 +3306,7 @@ const SellerDashboard: React.FC = () => {
 
                         <div style={inputGroupStyle}>
                             <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>{isRTL ? 'السعر الأصلي' : 'Original Price'}</label>
+                                <label style={labelStyle}>{isRTL ? 'السعر الأصلي (شامل الضريبة)' : 'Original Price (VAT incl.)'}</label>
                                 <input
                                     type="text"
                                     inputMode="decimal"
@@ -3322,7 +3323,7 @@ const SellerDashboard: React.FC = () => {
                                 />
                             </div>
                             <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>{isRTL ? 'السعر بعد الخصم' : 'Final Price'}</label>
+                                <label style={labelStyle}>{isRTL ? 'السعر بعد الخصم (شامل الضريبة)' : 'Final Price (VAT incl.)'}</label>
                                 <input
                                     type="text"
                                     inputMode="decimal"
@@ -3339,6 +3340,25 @@ const SellerDashboard: React.FC = () => {
                                 />
                             </div>
                         </div>
+                        {/* v13.30 — حاسبة ضريبة القيمة المضافة (طلب ناصر): السعر يُدخل
+                            شاملاً (نظام العرض السعودي)، والحاسبة تستخرج الضريبة المضمّنة
+                            لحظياً، ونفس القيمة تظهر على فاتورة الطلب تلقائياً. */}
+                        {(() => {
+                            const sell = Number(normalizedDiscountedPrice) || 0;
+                            if (!(sell > 0)) return null;
+                            const s = splitInclusive(sell);
+                            return (
+                                <div style={{
+                                    margin: '-12px 0 16px', padding: '10px 14px', borderRadius: 12,
+                                    background: 'rgba(13, 148, 136, 0.08)', border: '1px solid rgba(13, 148, 136, 0.35)',
+                                    color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800, lineHeight: 1.8,
+                                }}>
+                                    🧾 {isRTL
+                                        ? <>حاسبة الضريبة (السعودية {KSA_VAT_RATE}٪): سعر البيع <b>{fmtSAR(s.total)}</b> ر.س شامل الضريبة = الأساس <b>{fmtSAR(s.base)}</b> ر.س + ضريبة <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> ر.س — تُطبع تلقائياً على فاتورة كل طلب.</>
+                                        : <>VAT calculator (KSA {KSA_VAT_RATE}%): selling price <b>{fmtSAR(s.total)}</b> SAR incl. VAT = base <b>{fmtSAR(s.base)}</b> + VAT <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> — shown automatically on every order invoice.</>}
+                                </div>
+                            );
+                        })()}
                         {/* v12.62 — عندما توجد نسخ: السعران العامان يُضبطان تلقائياً
                             على أرخص نسخة حتى لا يلتبس التاجر بين سعرين. */}
                         {variantsDriving && (
