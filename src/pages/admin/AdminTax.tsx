@@ -24,12 +24,14 @@ import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid } from '../../utils/invoice';
+import { invoiceQrForPayment } from '../../utils/zatcaQr';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
 interface TaxSettings {
     entity_name: string;
     cr_number: string;
     vat_number: string;
+    entity_address: string;
     vat_enabled: boolean;
     prices_include_vat: boolean;
     vat_rate: number;
@@ -40,13 +42,13 @@ interface TaxSettings {
 }
 
 const DEFAULT_SETTINGS: TaxSettings = {
-    entity_name: 'TAKI — تاكي', cr_number: '', vat_number: '',
+    entity_name: 'TAKI — تاكي', cr_number: '', vat_number: '', entity_address: '',
     vat_enabled: false, prices_include_vat: true, vat_rate: 15, zakat_rate: 2.5,
     zakat_capital: 0, zakat_profit: 0, zakat_fixed_assets: 0,
 };
 
 interface PaymentRow {
-    id: string; merchant_id: string; plan_id: string | null; amount: number;
+    id: string; merchant_id: string; plan_id: string | null; amount: number; invoice_no?: number | null;
     currency: string | null; status: string | null; branches_count: number | null;
     period_start: string | null; period_end: string | null; discount_percent: number | null;
     paid_at: string | null; created_at: string;
@@ -251,13 +253,18 @@ const AdminTax: React.FC = () => {
     const print = (title: string, bodyHtml: string) => {
         if (!openPrintWindow(title, bodyHtml)) customAlert('السماح بالنوافذ المنبثقة مطلوب للطباعة.');
     };
-    const openInvoice = (p: PaymentRow) => print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false));
+    // v13.35 — توليد QR قابل للمسح قبل الطباعة (شرط الهيئة للفاتورة المبسطة)
+    const openInvoice = async (p: PaymentRow) => {
+        const qr = await invoiceQrForPayment(p, settings);
+        print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false, { qrDataUrl: qr }));
+    };
 
     // زر واحد: كل فواتير العملاء في الفترة المختارة (فاتورة لكل صفحة).
-    const printAllInvoices = () => {
+    const printAllInvoices = async () => {
         const inQ = paid.filter(p => { const t = new Date(p.paid_at || p.created_at).getTime(); return t >= quarter.start && t < quarter.end; });
         if (!inQ.length) { customAlert(`لا توجد فواتير مدفوعة في ${quarter.label}.`); return; }
-        const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1)).join('\n');
+        const qrs = await Promise.all(inQ.map(p => invoiceQrForPayment(p, settings)));
+        const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i] })).join('\n');
         print(`فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
     };
 
@@ -461,6 +468,8 @@ const AdminTax: React.FC = () => {
                         <input className={inputCls} value={settings.cr_number} onChange={e => upd({ cr_number: e.target.value })} placeholder="اختياري" /></label>
                     <label className="block"><span className={lbl}>الرقم الضريبي (بعد التسجيل)</span>
                         <input className={inputCls} value={settings.vat_number} onChange={e => upd({ vat_number: e.target.value })} placeholder="3XXXXXXXXXXXXXX3" /></label>
+                    <label className="block md:col-span-3"><span className={lbl}>العنوان الوطني للمنشأة (يظهر على الفاتورة — تشترطه الهيئة)</span>
+                        <input className={inputCls} value={settings.entity_address} onChange={e => upd({ entity_address: e.target.value })} placeholder="مثال: RRRD1234، شارع الملك فهد، الرياض 12345" /></label>
                 </div>
                 <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => upd({ vat_enabled: !settings.vat_enabled })}

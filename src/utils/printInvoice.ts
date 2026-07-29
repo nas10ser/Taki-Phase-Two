@@ -12,6 +12,8 @@
 
 import { code128SVG } from './barcode128';
 import { KSA_VAT_RATE, splitInclusive, fmtSAR } from './vat';
+import { zatcaQrDataUrl, isValidSaudiVat } from './zatcaQr';
+import { supabase } from '../services/supabaseClient';
 
 export interface InvoiceLineItem {
     label: string;
@@ -45,6 +47,11 @@ export interface InvoiceData {
     status?: string;
     /** v13.13 — من ألغى الطلب (للملغية): 'buyer'|'seller'|'system'|'expired'… */
     cancelledBy?: string;
+    /** v13.35 — لجلب الرقم الضريبي للتاجر (توافق الهيئة): مسجّل ← فاتورة مبسطة بQR */
+    storeId?: string;
+    sellerVatNumber?: string | null;
+    /** يُملأ داخلياً قبل الطباعة — صورة QR للفوترة الإلكترونية */
+    qrDataUrl?: string;
     isRTL: boolean;
 }
 
@@ -102,6 +109,8 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
         // v12.93 — حالة الدفع: مدفوع إلكترونياً (paidAt) وإلا الدفع عند الاستلام
         paidOnline: !!order?.paidAt,
         paidAmount: order?.paidAmount,
+        // v13.35 — لجلب الرقم الضريبي للتاجر لحظة الطباعة (توافق الهيئة)
+        storeId: deal.storeId || deal.store_id || order?.storeId,
         // v13.13 — حالة الطلب ومن ألغاه (للطلبات المنتهية على الفاتورة)
         status: order?.status,
         cancelledBy: order?.cancelledBy,
@@ -193,7 +202,14 @@ const buildHtml = (d: InvoiceData): string => {
   <div class="invoice">
     <div class="head">
       <div class="shop">${esc(d.shopName)}</div>
-      <div class="sub">${L('فاتورة / سند طلب', 'Order receipt')}</div>
+      ${(() => {
+        // v13.35 — توافق الهيئة: التاجر المسجّل ضريبياً تُطبع له «فاتورة ضريبية
+        // مبسطة» باسمها الصحيح ورقمه الضريبي؛ غير المسجّل يبقى «سند طلب».
+        if (isValidSaudiVat(d.sellerVatNumber)) {
+            return `<div class="sub"><b>${L('فاتورة ضريبية مبسطة', 'Simplified Tax Invoice')}</b><br>${L('الرقم الضريبي', 'VAT No')}: ${esc(String(d.sellerVatNumber))}</div>`;
+        }
+        return `<div class="sub">${L('فاتورة / سند طلب', 'Order receipt')}</div>`;
+      })()}
     </div>
     ${orderBarcodeHtml}
     <div class="row"><span class="k">${L('رقم الطلب', 'Order #')}</span><span class="v">${esc(d.barcode)}</span></div>
@@ -205,18 +221,25 @@ const buildHtml = (d: InvoiceData): string => {
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
     ${(() => {
-        // v13.30 — تفصيل ضريبة القيمة المضافة (١٥٪ مضمّنة في السعر — نظام العرض
-        // السعودي): يظهر على كل فاتورة لها إجمالي رقمي، قديمة كانت أم جديدة،
-        // لأن الفاتورة تُبنى لحظة الطباعة. الأساس + الضريبة = الإجمالي دائماً.
+        // v13.30 — تفصيل ضريبة القيمة المضافة. v13.35 (توافق الهيئة): سطر الضريبة
+        // يُطبع فقط للتاجر المسجّل ضريبياً — غير المسجّل لا يجوز له تحصيل الضريبة
+        // ولا إظهارها، فيُطبع الإجمالي مع إيضاح نظامي.
         if (!(Number(d.totalAmount) > 0)) {
             return d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : '';
         }
-        const s = splitInclusive(Number(d.totalAmount));
         const cur = L('ر.س', 'SAR');
+        const registered = isValidSaudiVat(d.sellerVatNumber);
+        if (!registered) {
+            return `
+    <div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
+    <div class="note" style="text-align:center">${L('المتجر غير مسجّل في ضريبة القيمة المضافة — لم تُحصَّل ضريبة على هذا الطلب.', 'Store not VAT-registered — no VAT was charged.')}</div>`;
+        }
+        const s = splitInclusive(Number(d.totalAmount));
         return `
     <div class="row" style="margin-top:10px"><span class="k">${L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)')}</span><span class="v">${fmtSAR(s.base)} ${cur}</span></div>
     <div class="row"><span class="k">${L(`ضريبة القيمة المضافة ${KSA_VAT_RATE}٪ (مضمّنة)`, `VAT ${KSA_VAT_RATE}% (included)`)}</span><span class="v">${fmtSAR(s.vat)} ${cur}</span></div>
-    <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(s.total)} ${cur}</span></div>`;
+    <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(s.total)} ${cur}</span></div>
+    ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${d.qrDataUrl}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
     })()}
     ${(() => {
         // v13.13 — بانر حالة الطلب على الفاتورة (طلب ناصر): الملغي لا تُطبع له
@@ -245,7 +268,9 @@ const buildHtml = (d: InvoiceData): string => {
       <div class="box">${L('توقيع/ختم التاجر', 'Merchant stamp')}</div>
       <div class="box">${L('استلمت الطلب', 'Received')}</div>
     </div>
-    <div class="foot">${L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}</div>
+    <div class="foot">${isValidSaudiVat(d.sellerVatNumber)
+        ? L('فاتورة ضريبية مبسطة صادرة إلكترونياً عبر منصة تاكي نيابةً عن المتجر (المرحلة الأولى من الفوترة الإلكترونية).', 'Simplified tax invoice issued electronically via TAKI on behalf of the store.')
+        : L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}</div>
   </div>
 </body>
 </html>`;
@@ -256,7 +281,27 @@ const buildHtml = (d: InvoiceData): string => {
 // history.back) لا تعمل — بلاغ ناصر. الآن الفاتورة داخل iframe مستقل (عزل الطباعة)
 // فوق التطبيق، والأزرار يتحكّم بها التطبيق: «اطبع» يطبع الـiframe فقط، و«عودة»
 // تُزيل الطبقة وتُبقيك في مكانك بالتطبيق. زر أندرويد الخلفي يُغلقها أيضاً.
-export const printOrderInvoice = (data: InvoiceData): void => {
+export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
+    // v13.35 — توافق الهيئة: اجلب الرقم الضريبي للمتجر لحظة الطباعة، وإن كان
+    // مسجّلاً ولّد رمز QR (TLV) محلياً — فتخرج «فاتورة ضريبية مبسطة» مكتملة.
+    // كل خطوة best-effort: أي فشل يطبع السند كما كان ولا يعطّل الزر أبداً.
+    try {
+        if (data.storeId && data.sellerVatNumber === undefined) {
+            const { data: prof } = await supabase.from('store_profiles')
+                .select('vat_number').eq('store_id', data.storeId).maybeSingle();
+            data.sellerVatNumber = (prof as any)?.vat_number ?? null;
+        }
+        if (isValidSaudiVat(data.sellerVatNumber) && Number(data.totalAmount) > 0 && !data.qrDataUrl) {
+            const s = splitInclusive(Number(data.totalAmount));
+            data.qrDataUrl = await zatcaQrDataUrl({
+                sellerName: data.shopName,
+                vatNumber: String(data.sellerVatNumber),
+                isoDateTime: new Date(data.createdAt || Date.now()).toISOString(),
+                totalWithVat: fmtSAR(s.total),
+                vatAmount: fmtSAR(s.vat),
+            });
+        }
+    } catch { /* السند يُطبع بلا QR عند أي فشل */ }
     const html = buildHtml(data);
     const rtl = data.isRTL;
     const L = (ar: string, en: string) => (rtl ? ar : en);

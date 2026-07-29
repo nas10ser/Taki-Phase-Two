@@ -16,6 +16,8 @@ export interface InvoiceTaxSettings {
     vat_enabled?: boolean;
     prices_include_vat?: boolean;
     vat_rate?: number;
+    /** v13.35 — العنوان الوطني للمنشأة (تشترطه الهيئة على الفاتورة الضريبية) */
+    entity_address?: string;
 }
 
 export interface InvoicePayment {
@@ -27,6 +29,8 @@ export interface InvoicePayment {
     branches_count?: number | null;
     period_start?: string | null;
     period_end?: string | null;
+    /** v13.35 — الرقم التسلسلي (تسلسل قاعدة البيانات — تشترطه الهيئة) */
+    invoice_no?: number | null;
 }
 
 export const invoiceIsPaid = (p: InvoicePayment): boolean =>
@@ -60,8 +64,15 @@ const PRINT_CSS = `
  @media print{body{padding:0}.noprint{display:none}.inv{border:none}}
 `;
 
-/** فاتورة واحدة كـHTML (pageBreak=true عند الطباعة الجماعية — فاتورة لكل صفحة). */
-export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merchantName: string, pageBreak = false): string {
+/** v13.35 — رقم الفاتورة المعروض: التسلسلي (INV-000001) وإلا المعرّف القديم. */
+export const invoiceDisplayNo = (p: InvoicePayment): string =>
+    p.invoice_no != null ? `INV-${String(p.invoice_no).padStart(6, '0')}` : `INV-${p.id}`;
+
+/** فاتورة واحدة كـHTML (pageBreak=true عند الطباعة الجماعية — فاتورة لكل صفحة).
+ *  opts.qrDataUrl: صورة QR جاهزة (zatcaQrDataUrl) — تُطبع صورةً قابلة للمسح كما
+ *  تشترط الهيئة؛ بدونها يُطبع نص TLV احتياطاً (فواتير قديمة/فشل توليد). */
+/** v13.35 — حسابات الفاتورة (مصدر واحد للأرقام: HTML الفاتورة ورمز QR معاً). */
+export function invoiceAmounts(p: InvoicePayment, s: InvoiceTaxSettings) {
     const rate = s.vat_rate ?? 15;
     const includeVat = s.prices_include_vat !== false;
     const gross = Number(p.amount) || 0;
@@ -74,20 +85,31 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
     const total = round2(includeVat ? gross : gross + vat);
     const dt = new Date(p.paid_at || p.created_at);
     const isTax = !!s.vat_enabled && !!s.vat_number;
+    return { rate, includeVat, vat, net, total, dt, isTax };
+}
+
+export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merchantName: string, pageBreak = false, opts?: { qrDataUrl?: string; merchantVat?: string | null }): string {
+    const { rate, includeVat, vat, net, total, dt, isTax } = invoiceAmounts(p, s);
     const tlv = isTax ? zatcaTlvBase64(s.entity_name, s.vat_number || '', dt.toISOString(), total.toFixed(2), vat.toFixed(2)) : '';
     // 'ar-SA' وحدها تطبع التاريخ هجرياً (أم القرى) — إجبار الميلادي على الفاتورة
     const period = p.period_start && p.period_end
         ? `${new Date(p.period_start).toLocaleDateString('ar-SA-u-ca-gregory')} ← ${new Date(p.period_end).toLocaleDateString('ar-SA-u-ca-gregory')}` : '—';
+    // v13.35 — QR صورةً قابلة للمسح (شرط الهيئة للفاتورة المبسطة)؛ نص TLV احتياط
+    const qrBlock = !isTax
+        ? '<div class="qr">منشأة غير مسجلة في ضريبة القيمة المضافة بعد — لا تُحصَّل ضريبة على هذه الفاتورة.</div>'
+        : (opts?.qrDataUrl
+            ? `<div style="text-align:center;margin-top:14px"><img src="${opts.qrDataUrl}" alt="ZATCA QR" width="150" height="150" style="border:1px solid #eee;border-radius:8px"><div style="font-size:10px;color:#999">رمز الفوترة الإلكترونية (المرحلة الأولى)</div></div>`
+            : `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${tlv}</div>`);
     return `<div class="inv${pageBreak ? ' pb' : ''}">
  <h1>🧾 ${isTax ? 'فاتورة ضريبية مبسطة' : 'فاتورة'} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
- <div class="sub">${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}</div>
- <div class="meta">رقم الفاتورة: <b>INV-${p.id}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
-  العميل (التاجر): <b>${merchantName}</b><br>البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''} — الفترة: ${period}</div>
+ <div class="sub">${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}${s.entity_address ? '<br>العنوان: ' + s.entity_address : ''}</div>
+ <div class="meta">رقم الفاتورة: <b>${invoiceDisplayNo(p)}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
+  العميل (التاجر): <b>${merchantName}</b>${opts?.merchantVat ? '<br>الرقم الضريبي للعميل: <b>' + opts.merchantVat + '</b>' : ''}<br>البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''} — الفترة: ${period}</div>
  <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
   <tr><td>قيمة الاشتراك${includeVat && isTax ? ' (قبل الضريبة)' : ''}</td><td>${net.toFixed(2)}</td></tr>
   ${isTax ? `<tr><td>ضريبة القيمة المضافة ${rate}٪</td><td>${vat.toFixed(2)}</td></tr>` : ''}
   <tr class="tot"><td>الإجمالي${isTax ? ' شامل الضريبة' : ''}</td><td>${total.toFixed(2)}</td></tr></table>
- ${isTax ? `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${tlv}</div>` : '<div class="qr">منشأة غير مسجلة في ضريبة القيمة المضافة بعد — لا تُحصَّل ضريبة على هذه الفاتورة.</div>'}
+ ${qrBlock}
  <div class="foot">فاتورة صادرة إلكترونياً من منصة تاكي</div></div>`;
 }
 

@@ -71,6 +71,10 @@ const StoreDetails: React.FC = () => {
         : `Specialized in providing the best products and exclusive deals. We take pride in serving you with an exceptional shopping experience.\n\nContact: ${profile.phone || ''}`);
     const [editBio, setEditBio] = useState(defaultBio);
     const [editAddress, setEditAddress] = useState(profile.address || '');
+    // v13.35 — الرقم الضريبي للتاجر (توافق الهيئة): وجوده يحوّل سند طلباته
+    // المطبوع إلى «فاتورة ضريبية مبسطة» بQR. يُخزَّن في store_profiles.vat_number.
+    const [editVat, setEditVat] = useState('');
+    const [vatSaving, setVatSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [viewTab, setViewTab] = useState<'active' | 'past' | 'reviews'>('active');
     // FB-style inline reply state for the Reviews tab — same pattern as
@@ -457,7 +461,13 @@ const StoreDetails: React.FC = () => {
                     {user?.id === store.id && (
                         <button onClick={() => {
                             // v13.11 — عند فتح التعديل، عبّئ حقل العنوان بالمحفوظ فعلاً
-                            if (!isEditingStore) setEditAddress(profile.address || store.address || '');
+                            if (!isEditingStore) {
+                                setEditAddress(profile.address || store.address || '');
+                                // v13.35 — عبّئ الرقم الضريبي من القاعدة عند فتح التعديل
+                                import('../services/supabaseClient').then(({ supabase }) =>
+                                    supabase.from('store_profiles').select('vat_number').eq('store_id', id).maybeSingle()
+                                        .then(({ data }) => setEditVat((data as any)?.vat_number || '')));
+                            }
                             setIsEditingStore(!isEditingStore);
                         }} style={{ background: isEditingStore ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', color: 'white', border: 'none', borderRadius: 12, padding: '8px 16px', fontSize: '0.85rem', fontWeight: 800 }}>
                             {isEditingStore ? (isRTL ? 'إلغاء' : 'Cancel') : (isRTL ? 'تعديل البروفايل' : 'Edit Profile')}
@@ -646,8 +656,31 @@ const StoreDetails: React.FC = () => {
                                     📍 {isRTL ? 'تحديد الموقع على الخريطة (دبوس دقيق)' : 'Pin location on map'}
                                 </button>
                             </div>
-                            <button onClick={handleSaveProfile} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 14, padding: '14px', fontSize: '1rem', fontWeight: 900 }}>
-                                {isRTL ? 'حفظ البيانات' : 'Save Profile'}
+                            {/* v13.35 — الرقم الضريبي (توافق الهيئة): وجوده يجعل سند
+                                طلباتك «فاتورة ضريبية مبسطة» بQR. اتركه فارغاً إن لم
+                                تكن مسجّلاً في ضريبة القيمة المضافة. */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'الرقم الضريبي (اختياري — بعد التسجيل في الهيئة):' : 'VAT number (optional):'}</label>
+                                <input value={editVat} onChange={e => setEditVat(e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" placeholder="3XXXXXXXXXXXXXX3" style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none', direction: 'ltr' }} />
+                                {editVat && !/^3\d{13}3$/.test(editVat) && (
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fca5a5' }}>⚠️ {isRTL ? 'يجب أن يكون ١٥ رقماً يبدأ وينتهي بـ3' : 'Must be 15 digits starting and ending with 3'}</span>
+                                )}
+                            </div>
+                            <button onClick={async () => {
+                                // الرقم الضريبي يُحفظ مباشرة في store_profiles (خارج saveProfile)
+                                if (editVat && !/^3\d{13}3$/.test(editVat)) {
+                                    customAlert(isRTL ? '⚠️ الرقم الضريبي غير صحيح — صحّحه أو اتركه فارغاً.' : '⚠️ Invalid VAT number.');
+                                    return;
+                                }
+                                setVatSaving(true);
+                                try {
+                                    const { supabase } = await import('../services/supabaseClient');
+                                    await supabase.from('store_profiles').update({ vat_number: editVat.trim() || null }).eq('store_id', id);
+                                } catch { /* غير حاجب للحفظ العام */ }
+                                setVatSaving(false);
+                                handleSaveProfile();
+                            }} disabled={vatSaving} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 14, padding: '14px', fontSize: '1rem', fontWeight: 900, opacity: vatSaving ? 0.6 : 1 }}>
+                                {vatSaving ? (isRTL ? 'جاري الحفظ…' : 'Saving…') : (isRTL ? 'حفظ البيانات' : 'Save Profile')}
                             </button>
                         </div>
                     ) : (

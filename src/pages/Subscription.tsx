@@ -9,6 +9,7 @@ import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings } from '../utils/invoice';
 import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
+import { invoiceQrForPayment } from '../utils/zatcaQr';
 
 // Gold ring that works on light AND dark themes: interior = theme card colour,
 // the 2px border is the gold gradient. Selected cards get a warm amber tint
@@ -71,7 +72,10 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
                             </div>
                         </div>
                         <button
-                            onClick={() => { if (!openPrintWindow(`فاتورة ${p.id}`, buildInvoiceHtml(p, taxSettings, merchantName))) onBlocked(); }}
+                            onClick={async () => {
+                                const qr = await invoiceQrForPayment(p, taxSettings);
+                                if (!openPrintWindow(`فاتورة ${p.id}`, buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr }))) onBlocked();
+                            }}
                             className="px-3 py-1.5 rounded-lg text-[11px] font-extrabold bg-teal-50 text-teal-700 border border-teal-200 active:scale-95">
                             🖨 فاتورة
                         </button>
