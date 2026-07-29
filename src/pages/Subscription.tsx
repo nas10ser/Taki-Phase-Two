@@ -130,15 +130,27 @@ const Subscription: React.FC = () => {
 
     const selected = packages.find((p) => p.id === selectedId) || null;
 
+    // v13.36 (قرار ناصر): ضريبة القيمة المضافة تُضاف فوق سعر الباقة —
+    // «الاشتراكات الشهرية ضيف عليها الضريبة». سعر الكتالوج يبقى صافياً،
+    // والمبلغ المُحصَّل من بوابة الدفع = الصافي + الضريبة، بينما تُسجَّل
+    // الدفعة بالصافي (حساب الفاتورة/الإقرار يبني الضريبة فوقه — مصدر واحد).
+    // لا تُحصَّل ضريبة إلا بعد تفعيلها من مركز التحكم (بعد التسجيل في الهيئة).
+    const chargeVat = (net: number): number => {
+        if (!taxSettings?.vat_enabled) return 0;
+        if (taxSettings?.prices_include_vat !== false) return 0;   // شامل: لا إضافة
+        return vatOnTop(net, taxSettings?.vat_rate ?? 15);
+    };
+
     const handleSubscribe = async () => {
         if (!user || !selected) return;
         setIsPaying(true);
         try {
             const price = effectivePrice(selected);
+            const vatDue = chargeVat(price);
             const response = await paymentService.initiateMoyasarPayment({
-                amount: price,
+                amount: Math.round((price + vatDue) * 100) / 100,
                 currency: 'SAR',
-                description: `TAKI ${selected.ar} — ${selected.max} locations`,
+                description: `TAKI ${selected.ar} — ${selected.max} locations${vatDue > 0 ? ` (incl. ${fmtSAR(vatDue)} VAT)` : ''}`,
                 customerEmail: user.email || '',
                 customerName: user.name || '',
             });
@@ -278,7 +290,15 @@ const Subscription: React.FC = () => {
                 >
                     {isPaying
                         ? 'جاري التحويل لبوابة الدفع...'
-                        : `اشترك في ${selected.ar} — ${effectivePrice(selected).toLocaleString('ar-SA')} ر.س/شهر`}
+                        : (() => {
+                            // v13.36 — الزر يعرض ما سيُحصَّل فعلاً: مع ضريبة مضافة
+                            // فوق السعر يظهر الإجمالي شاملاً (شفافية كاملة قبل الدفع)
+                            const net = effectivePrice(selected);
+                            const vatDue = chargeVat(net);
+                            return vatDue > 0
+                                ? `اشترك في ${selected.ar} — ${fmtSAR(net + vatDue)} ر.س/شهر (شامل الضريبة)`
+                                : `اشترك في ${selected.ar} — ${net.toLocaleString('ar-SA')} ر.س/شهر`;
+                        })()}
                     {!isPaying && <span>💳</span>}
                 </button>
             )}
@@ -293,7 +313,7 @@ const Subscription: React.FC = () => {
                 if (!on) {
                     return (
                         <p className="text-center text-[11px] font-bold text-[var(--text-secondary)] mt-3 leading-relaxed">
-                            🧾 لا تُحصَّل ضريبة قيمة مضافة على الاشتراك حالياً (المنشأة قبل التسجيل الضريبي) — عند التفعيل تُحتسب {rate}٪ وتظهر في فاتورتك تلقائياً.
+                            🧾 لا تُحصَّل ضريبة قيمة مضافة على الاشتراك حالياً (المنشأة قبل التسجيل الضريبي) — عند التفعيل تُضاف {rate}٪ فوق سعر الباقة وتظهر في فاتورتك تلقائياً.
                         </p>
                     );
                 }
@@ -305,11 +325,14 @@ const Subscription: React.FC = () => {
                         </p>
                     );
                 }
+                // v13.36 — الوضع المعتمد: الضريبة تُضاف فوق سعر الباقة. نعرض
+                // التفصيل الكامل قبل الدفع (سعر الباقة + الضريبة = المحصَّل).
                 const vat = vatOnTop(price, rate);
                 return (
-                    <p className="text-center text-[11px] font-extrabold mt-3 leading-relaxed" style={{ color: '#0d9488' }}>
-                        🧾 يُضاف على السعر ضريبة قيمة مضافة {rate}٪ ({fmtSAR(vat)} ر.س) — الإجمالي {fmtSAR(price + vat)} ر.س.
-                    </p>
+                    <div className="text-center mt-3 leading-relaxed rounded-xl py-2 px-3 mx-auto max-w-sm" style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.3)' }}>
+                        <div className="text-[11px] font-bold text-[var(--text-secondary)]">سعر الباقة {fmtSAR(price)} ر.س + ضريبة القيمة المضافة {rate}٪ ({fmtSAR(vat)} ر.س)</div>
+                        <div className="text-[13px] font-extrabold" style={{ color: '#0d9488' }}>💳 الإجمالي المستحق: {fmtSAR(price + vat)} ر.س</div>
+                    </div>
                 );
             })()}
             <p className="text-center text-xs text-[var(--text-secondary)] mt-4">بوابة دفع آمنة وموثوقة (PayTabs / Moyasar)</p>

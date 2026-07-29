@@ -172,6 +172,26 @@ async function rpc(fn, args) {
     } catch(e) { console.error(`RPC ${fn} ex:`, e.message); return null; }
 }
 
+// ── v13.36 (قرار ناصر: «الاشتراكات الشهرية ضيف عليها الضريبة») ────────────────
+// ضريبة القيمة المضافة تُضاف فوق سعر الباقة عندما تكون مفعّلة ووضعها «غير شامل».
+// يُقرأ الوضع من القاعدة (bot_vat_mode) ويُخزَّن مؤقتاً ٥ دقائق — فتغييرك من مركز
+// التحكم ينعكس على البوتين تلقائياً بلا نشر. صفر ضريبة = لا سطر إطلاقاً.
+let _vatModeCache = { at: 0, val: null };
+async function vatMode() {
+    if (Date.now() - _vatModeCache.at < 300000 && _vatModeCache.val) return _vatModeCache.val;
+    const m = await rpc('bot_vat_mode', {}).catch(() => null);
+    const val = (m && typeof m === 'object') ? m : { enabled: false, add_on_top: false, rate: 15 };
+    _vatModeCache = { at: Date.now(), val };
+    return val;
+}
+async function vatOnPlan(netPrice) {
+    const m = await vatMode();
+    if (!m.enabled || !m.add_on_top) return { vat: 0, total: netPrice, rate: Number(m.rate) || 15 };
+    const rate = Number(m.rate) || 15;
+    const vat = Math.round(netPrice * rate / 100 * 100) / 100;
+    return { vat, total: Math.round((netPrice + vat) * 100) / 100, rate };
+}
+
 // ── «هوية المواسم» (v12.45) — سطر الموسم المفعّل من لوحة المدير يتصدّر القوائم ──
 // كاش ٦٠ث عبر bot_active_season (نمط bot_is_enabled). مشترك بين البوتين.
 const SEASON = require('./lib/season').create({ rpc });
@@ -2691,8 +2711,10 @@ bot.action(/^subpkg:(\d+)$/, async ctx => {
     const en = I18N.lang()==='en';
     const name = (en ? (p.en||p.ar) : (p.ar||p.en)) || tr('q2073_package_fallback', p.id);
     const price = Math.round((Number(p.price)||0) * (1 - (Number(p.discount)||0)/100) * 100) / 100;   // خانتان عشريتان. v12.15
+    const vq = await vatOnPlan(price);
+    const vatLine = vq.vat > 0 ? tr('sub_vat_line', numEsc(vq.rate), money(vq.vat), money(vq.total)) : '';
     await ctx.reply(
-        tr('b2074_confirm_subscription', DIV, md(name), numEsc(Math.max(1,Number(p.max)||1)), money(price), numEsc(Number(p.durationDays)||30)),
+        tr('b2074_confirm_subscription', DIV, md(name), numEsc(Math.max(1,Number(p.max)||1)), money(price), numEsc(Number(p.durationDays)||30)) + vatLine,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2075_confirm_and_subscribe'),`subgo:${p.id}`)],[Markup.button.callback(tr('b2075_cancel'),'seller:packages')]]).reply_markup });
 });
 bot.action(/^subgo:(\d+)$/, async ctx => {
@@ -2705,8 +2727,11 @@ bot.action(/^subgo:(\d+)$/, async ctx => {
         const msg = e==='not_seller' ? tr('b2081_sellers_only') : e==='bad_package' ? tr('b2081_package_unavailable') : tr('b2081_subscribe_failed');
         return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     }
+    const doneVat = Number(r.vat) > 0
+        ? tr('sub_vat_line', numEsc(Number(r.rate) || 15), money(Number(r.vat)), money(Number(r.total)))
+        : '';
     await ctx.reply(
-        tr('b2085_subscription_activated', DIV, md(r.plan_ar), r.max_branches, money(r.price), md(fmtDay(r.expires_at))),
+        tr('b2085_subscription_activated', DIV, md(r.plan_ar), r.max_branches, money(r.price), md(fmtDay(r.expires_at))) + doneVat,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2086_my_deals'),'seller:deals'), Markup.button.callback(tr('b2086_add_deal'),'seller:addDeal')],[Markup.button.callback(tr('b2086_menu'),'menu:back')]]).reply_markup });
 });
 

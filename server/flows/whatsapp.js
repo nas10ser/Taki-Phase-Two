@@ -1665,7 +1665,14 @@ function create(deps) {
     }
     async function subscribe(from, s, pkgId) {
         const r = await rpc('bot_subscribe_plan', aid(from, { p_package_id: +pkgId }));
-        if (r && r.success) return sendButtons(from, { body: tr('wa_sub_ok', r.max_branches), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, menuBtn()] });
+        // v13.36 — الضريبة تُضاف فوق سعر الباقة عند تفعيلها (قرار ناصر):
+        // الـRPC يعيد vat/total، ونعرض الإجمالي المدفوع بشفافية.
+        if (r && r.success) {
+            const body = Number(r.vat) > 0
+                ? tr('wa_sub_ok_vat', r.max_branches, Number(r.total).toFixed(2), Number(r.vat).toFixed(2))
+                : tr('wa_sub_ok', r.max_branches);
+            return sendButtons(from, { body, buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, menuBtn()] });
+        }
         // v12.50 — رفض القاعدة في الوضع المجاني.
         if (r && r.error === 'free_mode') return sendButtons(from, { body: tr('wa_sub_free_mode'), buttons: [menuBtn()] });
         await sendButtons(from, { body: tr('wa_sub_fail'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }] });
