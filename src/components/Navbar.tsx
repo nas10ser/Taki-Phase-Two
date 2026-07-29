@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SearchInput from './SearchInput';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import Sidebar from './Sidebar';
@@ -55,12 +56,13 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                 {/* Search */}
                 {onSearchChange && (
                     <div className="search-box" style={{ background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(100, 100, 100, 0.15)', borderRadius: 16, display: 'flex', alignItems: 'center', height: 48 }}>
-                        <input
+                        {/* v13.34 — حقل بحالة محلية: الحرف يظهر فوراً، والصفحة
+                            تُبلَّغ بعد سكوت قصير — يُنهي «تعليق الكتابة» (بلاغ ناصر) */}
+                        <SearchInput
                             className="search-input"
-                            type="text"
                             placeholder={isRTL ? 'ابحث عن منتج أو محل...' : 'Search for product or store...'}
                             value={searchQuery || ''}
-                            onChange={e => onSearchChange(e.target.value)}
+                            onChange={onSearchChange}
                             style={{
                                 direction: isRTL ? 'rtl' : 'ltr',
                                 color: 'white',

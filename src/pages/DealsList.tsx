@@ -10,6 +10,7 @@ import { interleaveSponsored, DisplayDeal, isDealExpiredByTime } from '../utils/
 import { useNowTick } from '../utils/useNowTick';
 import { useDealBrowse } from '../hooks/useDealBrowse';
 import type { BrowseSort } from '../repositories/dealRepository';
+import SearchInput from '../components/SearchInput';
 
 type DealsType = 'trending' | 'discount' | 'all' | 'coming_soon';
 
@@ -238,12 +239,12 @@ const DealsList: React.FC = () => {
                     gap: 8,
                 }}>
                     <span style={{ fontSize: '1.1rem' }}>🔍</span>
-                    <input
+                    <SearchInput
                         type="search"
                         inputMode="search"
                         autoComplete="off"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={setSearchQuery}
                         placeholder={isRTL ? 'ابحث في هذه القائمة...' : 'Search in this list...'}
                         style={{
                             flex: 1,

@@ -19,6 +19,7 @@ import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
 import { SEASONS, campaignSellerOpen, campaignPublicLive, SeasonCampaign } from '../../data/seasons';
 import { BANNER } from '../../utils/imageCompression';
+import ImageOptimizer from '../../components/admin/ImageOptimizer';
 
 // ============================================================
 // Setting Toggle Card
@@ -1770,6 +1771,9 @@ const AdminTools: React.FC = () => {
                     );
                 })()}
             </section>
+
+            {/* v13.34 — ضغط الصور القديمة بضغطة واحدة (بلاغ ناصر: الموقع يعلق عند الدخول) */}
+            <ImageOptimizer />
 
             {/* Banners */}
             <section>

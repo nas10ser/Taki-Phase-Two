@@ -10,6 +10,7 @@ import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
 import { thumbUrl, imgFallback } from '../utils/thumb';
+import SearchInput from '../components/SearchInput';
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -339,9 +340,9 @@ const Nearby: React.FC = () => {
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <input 
+                    <SearchInput
                         value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
+                        onChange={setSearchQuery}
                         placeholder={isRTL ? "البحث عن عرض، مول، محل..." : "Search deal, mall, store..."}
                         style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', outline: 'none', fontWeight: 700, boxShadow: 'var(--shadow-sm)', fontSize: '0.85rem' }}
                     />
