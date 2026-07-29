@@ -7,7 +7,7 @@ import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings } from '../utils/invoice';
+import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings, InvoiceCustomer } from '../utils/invoice';
 import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
 import { invoiceQrForPayment } from '../utils/zatcaQr';
 
@@ -34,6 +34,17 @@ const Feature: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         <span className="text-[12.5px] leading-relaxed font-semibold text-[var(--text-secondary)]">{children}</span>
     </div>
 );
+
+/**
+ * v13.37 — بيانات العميل الضريبية للفاتورة القياسية. Supabase builder كائن
+ * thenable لا Promise حقيقي، فلا يملك .catch — نلفّه بـPromise.resolve.
+ */
+const fetchInvoiceCustomer = async (merchantId: string): Promise<InvoiceCustomer | null> => {
+    try {
+        const { data } = await supabase.rpc('invoice_customer_details', { p_merchant_id: merchantId });
+        return (data as InvoiceCustomer) || null;
+    } catch { return null; }
+};
 
 /**
  * «🧾 فواتيري» (v12.17): فواتير اشتراكات التاجر نفسه — تُنشأ تلقائياً بعد كل
@@ -73,8 +84,13 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
                         </div>
                         <button
                             onClick={async () => {
-                                const qr = await invoiceQrForPayment(p, taxSettings);
-                                if (!openPrintWindow(`فاتورة ${p.id}`, buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr }))) onBlocked();
+                                // v13.37 — فاتورة قياسية (B2B): تُجلب بيانات العميل
+                                // الضريبية كاملة، وبدونها لا يخصم ضريبة مدخلاته.
+                                const [qr, cust] = await Promise.all([
+                                    invoiceQrForPayment(p, taxSettings),
+                                    fetchInvoiceCustomer(userId),
+                                ]);
+                                if (!openPrintWindow(`فاتورة ${p.id}`, buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr, customer: cust }))) onBlocked();
                             }}
                             className="px-3 py-1.5 rounded-lg text-[11px] font-extrabold bg-teal-50 text-teal-700 border border-teal-200 active:scale-95">
                             🖨 فاتورة

@@ -23,7 +23,7 @@ import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
-import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid } from '../../utils/invoice';
+import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
@@ -72,6 +72,15 @@ const EXPENSE_CATS = [
     { id: 'equipment', label: '💻 أجهزة ومعدات' }, { id: 'services', label: '🤝 خدمات مهنية' },
     { id: 'other', label: '📦 أخرى' },
 ];
+
+// v13.37 — بيانات العميل الضريبية للفاتورة القياسية (B2B). builder الخاص
+// بـSupabase كائن thenable لا Promise، فلا .catch عليه — نلفّه هنا.
+const fetchInvoiceCustomer = async (merchantId: string): Promise<InvoiceCustomer | null> => {
+    try {
+        const { data } = await supabase.rpc('invoice_customer_details', { p_merchant_id: merchantId });
+        return (data as InvoiceCustomer) || null;
+    } catch { return null; }
+};
 
 const isPaid = invoiceIsPaid;   // المصدر الموحّد في utils/invoice (v12.17)
 const fmt = (n: number): string => n.toLocaleString('ar-SA', { maximumFractionDigits: 2 });
@@ -255,16 +264,24 @@ const AdminTax: React.FC = () => {
     };
     // v13.35 — توليد QR قابل للمسح قبل الطباعة (شرط الهيئة للفاتورة المبسطة)
     const openInvoice = async (p: PaymentRow) => {
-        const qr = await invoiceQrForPayment(p, settings);
-        print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false, { qrDataUrl: qr }));
+        // v13.37 — فاتورة قياسية (B2B): بيانات العميل الضريبية كاملة
+        const [qr, cust] = await Promise.all([
+            invoiceQrForPayment(p, settings),
+            fetchInvoiceCustomer(p.merchant_id),
+        ]);
+        print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false, { qrDataUrl: qr, customer: cust }));
     };
 
     // زر واحد: كل فواتير العملاء في الفترة المختارة (فاتورة لكل صفحة).
     const printAllInvoices = async () => {
         const inQ = paid.filter(p => { const t = new Date(p.paid_at || p.created_at).getTime(); return t >= quarter.start && t < quarter.end; });
         if (!inQ.length) { customAlert(`لا توجد فواتير مدفوعة في ${quarter.label}.`); return; }
-        const qrs = await Promise.all(inQ.map(p => invoiceQrForPayment(p, settings)));
-        const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i] })).join('\n');
+        const [qrs, custs] = await Promise.all([
+            Promise.all(inQ.map(p => invoiceQrForPayment(p, settings))),
+            // v13.37 — بيانات كل عميل مرة واحدة (طباعة جماعية = فواتير قياسية)
+            Promise.all(inQ.map(p => fetchInvoiceCustomer(p.merchant_id))),
+        ]);
+        const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i], customer: custs[i] })).join('\n');
         print(`فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
     };
 

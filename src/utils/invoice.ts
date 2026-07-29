@@ -68,6 +68,22 @@ const PRINT_CSS = `
 export const invoiceDisplayNo = (p: InvoicePayment): string =>
     p.invoice_no != null ? `INV-${String(p.invoice_no).padStart(6, '0')}` : `INV-${p.id}`;
 
+/**
+ * v13.37 — بيانات العميل على الفاتورة القياسية.
+ *
+ * اشتراك التاجر عملية **بين منشأتين (B2B)**، والهيئة تشترط لها «فاتورة ضريبية»
+ * قياسية تحمل بيانات المشتري كاملة — لا «مبسطة» (تلك للأفراد). وبدون الرقم
+ * الضريبي للعميل لا يستطيع خصم ضريبة المدخلات، فتفقد الفاتورة قيمتها له.
+ */
+export interface InvoiceCustomer {
+    name?: string | null;
+    vat?: string | null;
+    cr?: string | null;
+    address?: string | null;
+    email?: string | null;
+    phone?: string | null;
+}
+
 /** فاتورة واحدة كـHTML (pageBreak=true عند الطباعة الجماعية — فاتورة لكل صفحة).
  *  opts.qrDataUrl: صورة QR جاهزة (zatcaQrDataUrl) — تُطبع صورةً قابلة للمسح كما
  *  تشترط الهيئة؛ بدونها يُطبع نص TLV احتياطاً (فواتير قديمة/فشل توليد). */
@@ -88,7 +104,7 @@ export function invoiceAmounts(p: InvoicePayment, s: InvoiceTaxSettings) {
     return { rate, includeVat, vat, net, total, dt, isTax };
 }
 
-export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merchantName: string, pageBreak = false, opts?: { qrDataUrl?: string; merchantVat?: string | null }): string {
+export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merchantName: string, pageBreak = false, opts?: { qrDataUrl?: string; merchantVat?: string | null; customer?: InvoiceCustomer | null }): string {
     const { rate, includeVat, vat, net, total, dt, isTax } = invoiceAmounts(p, s);
     const tlv = isTax ? zatcaTlvBase64(s.entity_name, s.vat_number || '', dt.toISOString(), total.toFixed(2), vat.toFixed(2)) : '';
     // 'ar-SA' وحدها تطبع التاريخ هجرياً (أم القرى) — إجبار الميلادي على الفاتورة
@@ -100,11 +116,26 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
         : (opts?.qrDataUrl
             ? `<div style="text-align:center;margin-top:14px"><img src="${opts.qrDataUrl}" alt="ZATCA QR" width="150" height="150" style="border:1px solid #eee;border-radius:8px"><div style="font-size:10px;color:#999">رمز الفوترة الإلكترونية (المرحلة الأولى)</div></div>`
             : `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${tlv}</div>`);
+    // v13.37 — نوع الفاتورة: عميلنا منشأة (اشتراك B2B) فالواجب **فاتورة ضريبية
+    // قياسية** لا مبسطة. المبسطة للأفراد. الفرق ليس شكلياً: القياسية تحمل بيانات
+    // المشتري كاملة (اسم/عنوان/رقم ضريبي) وبها وحدها يخصم ضريبة مدخلاته.
+    const c = opts?.customer || {};
+    const custVat = c.vat || opts?.merchantVat || '';
+    const custName = c.name || merchantName;
+    const invTitle = isTax ? 'فاتورة ضريبية' : 'فاتورة';
+    const custRows = isTax ? `
+ <table style="margin-top:6px"><tr><th colspan="2" style="text-align:center">بيانات العميل (المشتري)</th></tr>
+  <tr><td>الاسم</td><td>${custName}</td></tr>
+  <tr><td>الرقم الضريبي</td><td>${custVat || '<span style="color:#b45309">غير مسجّل ضريبياً</span>'}</td></tr>
+  ${c.cr ? `<tr><td>السجل التجاري</td><td>${c.cr}</td></tr>` : ''}
+  ${c.address ? `<tr><td>العنوان</td><td>${c.address}</td></tr>` : ''}
+ </table>` : '';
     return `<div class="inv${pageBreak ? ' pb' : ''}">
- <h1>🧾 ${isTax ? 'فاتورة ضريبية مبسطة' : 'فاتورة'} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
- <div class="sub">${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}${s.entity_address ? '<br>العنوان: ' + s.entity_address : ''}</div>
- <div class="meta">رقم الفاتورة: <b>${invoiceDisplayNo(p)}</b><br>التاريخ: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
-  العميل (التاجر): <b>${merchantName}</b>${opts?.merchantVat ? '<br>الرقم الضريبي للعميل: <b>' + opts.merchantVat + '</b>' : ''}<br>البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''} — الفترة: ${period}</div>
+ <h1>🧾 ${invTitle} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
+ <div class="sub"><b>البائع:</b> ${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}${s.entity_address ? '<br>العنوان: ' + s.entity_address : ''}</div>
+ <div class="meta">رقم الفاتورة: <b>${invoiceDisplayNo(p)}</b><br>تاريخ الإصدار: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
+  تاريخ التوريد: <b>${period}</b><br>${isTax ? '' : `العميل: <b>${custName}</b><br>`}البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''}</div>
+ ${custRows}
  <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
   <tr><td>قيمة الاشتراك${includeVat && isTax ? ' (قبل الضريبة)' : ''}</td><td>${net.toFixed(2)}</td></tr>
   ${isTax ? `<tr><td>ضريبة القيمة المضافة ${rate}٪</td><td>${vat.toFixed(2)}</td></tr>` : ''}

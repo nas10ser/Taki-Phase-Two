@@ -74,6 +74,8 @@ const StoreDetails: React.FC = () => {
     // v13.35 — الرقم الضريبي للتاجر (توافق الهيئة): وجوده يحوّل سند طلباته
     // المطبوع إلى «فاتورة ضريبية مبسطة» بQR. يُخزَّن في store_profiles.vat_number.
     const [editVat, setEditVat] = useState('');
+    // v13.37 — السجل التجاري: يظهر على الفاتورة القياسية التي يستلمها التاجر منّا
+    const [editCr, setEditCr] = useState('');
     const [vatSaving, setVatSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [viewTab, setViewTab] = useState<'active' | 'past' | 'reviews'>('active');
@@ -465,8 +467,11 @@ const StoreDetails: React.FC = () => {
                                 setEditAddress(profile.address || store.address || '');
                                 // v13.35 — عبّئ الرقم الضريبي من القاعدة عند فتح التعديل
                                 import('../services/supabaseClient').then(({ supabase }) =>
-                                    supabase.from('store_profiles').select('vat_number').eq('store_id', id).maybeSingle()
-                                        .then(({ data }) => setEditVat((data as any)?.vat_number || '')));
+                                    supabase.from('store_profiles').select('vat_number, cr_number').eq('store_id', id).maybeSingle()
+                                        .then(({ data }) => {
+                                            setEditVat((data as any)?.vat_number || '');
+                                            setEditCr((data as any)?.cr_number || '');
+                                        }));
                             }
                             setIsEditingStore(!isEditingStore);
                         }} style={{ background: isEditingStore ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', color: 'white', border: 'none', borderRadius: 12, padding: '8px 16px', fontSize: '0.85rem', fontWeight: 800 }}>
@@ -666,6 +671,10 @@ const StoreDetails: React.FC = () => {
                                     <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fca5a5' }}>⚠️ {isRTL ? 'يجب أن يكون ١٥ رقماً يبدأ وينتهي بـ3' : 'Must be 15 digits starting and ending with 3'}</span>
                                 )}
                             </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'السجل التجاري / وثيقة العمل الحر (اختياري):' : 'CR / freelance doc (optional):'}</label>
+                                <input value={editCr} onChange={e => setEditCr(e.target.value)} placeholder={isRTL ? 'يظهر على فاتورة اشتراكك' : 'Shown on your subscription invoice'} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
+                            </div>
                             <button onClick={async () => {
                                 // الرقم الضريبي يُحفظ مباشرة في store_profiles (خارج saveProfile)
                                 if (editVat && !/^3\d{13}3$/.test(editVat)) {
@@ -675,7 +684,10 @@ const StoreDetails: React.FC = () => {
                                 setVatSaving(true);
                                 try {
                                     const { supabase } = await import('../services/supabaseClient');
-                                    await supabase.from('store_profiles').update({ vat_number: editVat.trim() || null }).eq('store_id', id);
+                                    await supabase.from('store_profiles').update({
+                                        vat_number: editVat.trim() || null,
+                                        cr_number: editCr.trim() || null,
+                                    }).eq('store_id', id);
                                 } catch { /* غير حاجب للحفظ العام */ }
                                 setVatSaving(false);
                                 handleSaveProfile();
