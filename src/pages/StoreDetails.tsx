@@ -684,10 +684,13 @@ const StoreDetails: React.FC = () => {
                                 setVatSaving(true);
                                 try {
                                     const { supabase } = await import('../services/supabaseClient');
-                                    await supabase.from('store_profiles').update({
+                                    // upsert: من لا صفّ متجر له كان حفظه يضيع بصمت
+                                    await supabase.from('store_profiles').upsert({
+                                        store_id: id,
                                         vat_number: editVat.trim() || null,
                                         cr_number: editCr.trim() || null,
-                                    }).eq('store_id', id);
+                                        vat_status: editVat.trim() ? 'registered' : 'not_registered',
+                                    }, { onConflict: 'store_id' });
                                 } catch { /* غير حاجب للحفظ العام */ }
                                 setVatSaving(false);
                                 handleSaveProfile();

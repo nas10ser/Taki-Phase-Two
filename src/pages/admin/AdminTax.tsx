@@ -25,6 +25,7 @@ import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
+import { invalidateVatMode } from '../../hooks/useVatMode';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
 interface TaxSettings {
@@ -100,6 +101,59 @@ function lastQuarters(): Quarter[] {
     return out;
 }
 
+/**
+ * VatStatusPanel (v13.38) — من أعلن وضعه الضريبي ومن لم يفعل.
+ * «لم يحدّد» هي الخانة الخطرة: قد يكون بينهم مسجّل تصدر فواتيره بلا ضريبة.
+ */
+const VatStatusPanel: React.FC = () => {
+    const [data, setData] = useState<any>(null);
+    useEffect(() => {
+        supabase.rpc('admin_vat_status_summary').then(({ data }) => setData(data));
+    }, []);
+    if (!data) return null;
+    const cardCls = 'bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm';
+    const undeclared = Number(data.undeclared) || 0;
+    const chip = (label: string, n: number, color: string) => (
+        <div className="rounded-xl border border-[var(--border-color)] p-3 text-center">
+            <div className="text-[10px] font-bold text-[var(--text-secondary)]">{label}</div>
+            <div className="text-lg font-black" style={{ color }}>{n}</div>
+        </div>
+    );
+    return (
+        <section className={cardCls} style={{ borderTop: '3px solid #6366f1' }}>
+            <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-1">🏪 الأوضاع الضريبية للتجار</h3>
+            <p className="text-[11px] text-[var(--text-secondary)] font-bold mb-3 leading-relaxed">
+                التاجر المسجّل تصدر فواتير طلباته «فاتورة ضريبية مبسطة» برمز QR. ومن <b>لم يحدّد</b> قد يكون
+                مسجّلاً دون أن ينتبه لإدخال رقمه — فتصدر فواتيره بلا ضريبة، وهي مخالفة عليه.
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+                {chip('مسجّل ✅', Number(data.registered) || 0, '#0d9488')}
+                {chip('غير مسجّل', Number(data.not_registered) || 0, 'var(--text-secondary)')}
+                {chip('لم يحدّد ⚠️', undeclared, undeclared > 0 ? '#b45309' : 'var(--text-secondary)')}
+            </div>
+            {undeclared > 0 && (
+                <div className="text-[11px] font-bold text-amber-600 leading-relaxed">
+                    ⚠️ {undeclared} تاجر لم يحدّد وضعه بعد — تظهر لهم بطاقة السؤال في لوحاتهم تلقائياً.
+                </div>
+            )}
+            {Array.isArray(data.merchants) && data.merchants.length > 0 && (
+                <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
+                    {data.merchants.map((m: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between gap-2 border border-[var(--border-color)] rounded-lg px-3 py-1.5">
+                            <span className="text-[11px] font-extrabold text-[var(--text-primary)] truncate">{m.name}</span>
+                            <span className="text-[10px] font-bold shrink-0" style={{
+                                color: m.status === 'registered' ? '#0d9488' : m.status === 'undeclared' ? '#b45309' : 'var(--text-secondary)',
+                            }}>
+                                {m.status === 'registered' ? `✅ ${m.vat || 'مسجّل'}` : m.status === 'undeclared' ? '⚠️ لم يحدّد' : 'غير مسجّل'}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+};
+
 // ─── المكوّن ─────────────────────────────────────────────────────────────────
 const AdminTax: React.FC = () => {
     const { customAlert, customConfirm, user } = useApp();
@@ -148,7 +202,12 @@ const AdminTax: React.FC = () => {
         setSaving(false);
         if (!res.success) { await customAlert('❌ تعذّر الحفظ: ' + (res.error || '')); return; }
         setDirty(false);
-        await customAlert('✅ حُفظت إعدادات الزكاة والضريبة.');
+        // v13.38 — كل واجهات الضريبة تقرأ من useVatMode المخزّن؛ نُبطله هنا
+        // فتظهر آثار التفعيل فوراً في كل الصفحات بلا إعادة تحميل.
+        invalidateVatMode();
+        await customAlert(settings.vat_enabled && settings.vat_number
+            ? '✅ حُفظت الإعدادات — الضريبة مفعّلة الآن وستظهر تلقائياً على الاشتراكات والفواتير وبطاقات التجار.'
+            : '✅ حُفظت إعدادات الزكاة والضريبة.');
     };
 
     // ─── حسابات المبيعات ─────────────────────────────────────────────────────
@@ -474,6 +533,9 @@ const AdminTax: React.FC = () => {
                     </div>
                 )}
             </section>
+
+            {/* v13.38 — الأوضاع الضريبية للتجار */}
+            <VatStatusPanel />
 
             {/* الإعدادات */}
             <section className={card}>

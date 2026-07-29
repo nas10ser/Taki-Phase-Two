@@ -11,6 +11,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import GatewayCard from '../components/seller/GatewayCard';
+import VatStatusCard from '../components/seller/VatStatusCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
@@ -2709,6 +2710,9 @@ const SellerDashboard: React.FC = () => {
                 {view === 'form' && user && (
                     <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                        {/* v13.38 — الوضع الضريبي للتاجر: يحدّد شكل فواتير طلباته،
+                            ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
+                        <VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
                         <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
