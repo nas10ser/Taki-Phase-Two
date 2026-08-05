@@ -281,7 +281,63 @@ const buildHtml = (d: InvoiceData): string => {
 // history.back) لا تعمل — بلاغ ناصر. الآن الفاتورة داخل iframe مستقل (عزل الطباعة)
 // فوق التطبيق، والأزرار يتحكّم بها التطبيق: «اطبع» يطبع الـiframe فقط، و«عودة»
 // تُزيل الطبقة وتُبقيك في مكانك بالتطبيق. زر أندرويد الخلفي يُغلقها أيضاً.
+// v13.57 — بلاغ ناصر: «الطباعة تتأخر، وإن ضغطت مرات دخلت الفاتورة واحتجت عودة
+// ٣ مرات». السبب: جلب الرقم الضريبي (طلب شبكة) كان يسبق ظهور أي شيء على الشاشة،
+// فيبدو الزر متجمداً؛ ولأن لا حارس، كل نقرة كانت تبني طبقة فاتورة مستقلة تتكدّس
+// فوق سابقتها فيلزم «عودة» بعددها. الآن: الطبقة تظهر فوراً وفيها «جارٍ التجهيز»،
+// وحارس وحيد يتجاهل النقرات الإضافية حتى تُغلق الطبقة.
+let invoiceOverlayOpen = false;
+
 export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
+    if (invoiceOverlayOpen) return;
+    invoiceOverlayOpen = true;
+
+    const rtl = data.isRTL;
+    const L = (ar: string, en: string) => (rtl ? ar : en);
+
+    const overlay = document.createElement('div');
+    overlay.dir = rtl ? 'rtl' : 'ltr';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#f8fafc;display:flex;flex-direction:column;';
+
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:10px;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 12px;background:#0f172a;flex-shrink:0;';
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.textContent = L('⏳ جارٍ التجهيز…', '⏳ Preparing…');
+    printBtn.disabled = true;
+    printBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:none;background:#64748b;color:#fff;cursor:progress;';
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.textContent = L('← عودة للتطبيق', '← Back to app');
+    backBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:1px solid #cbd5e1;background:#f1f5f9;color:#0f172a;cursor:pointer;';
+    bar.appendChild(printBtn);
+    bar.appendChild(backBtn);
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'flex:1;width:100%;border:0;background:#fff;';
+    iframe.setAttribute('title', L('فاتورة الطلب', 'Order invoice'));
+
+    overlay.appendChild(bar);
+    overlay.appendChild(iframe);
+    document.body.appendChild(overlay);
+    // امنع تمرير التطبيق خلف الطبقة
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    let closed = false;
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        invoiceOverlayOpen = false;
+        document.removeEventListener('keydown', onKey);
+        document.body.style.overflow = prevBodyOverflow;
+        try { document.body.removeChild(overlay); } catch { /* ignore */ }
+    };
+    // Esc يُغلق أيضاً (ديسكتوب). لا نلمس سجل المتصفح حتى لا نتضارب مع الراوتر.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    backBtn.onclick = close;
+
     // v13.35 — توافق الهيئة: اجلب الرقم الضريبي للمتجر لحظة الطباعة، وإن كان
     // مسجّلاً ولّد رمز QR (TLV) محلياً — فتخرج «فاتورة ضريبية مبسطة» مكتملة.
     // كل خطوة best-effort: أي فشل يطبع السند كما كان ولا يعطّل الزر أبداً.
@@ -302,54 +358,16 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
             });
         }
     } catch { /* السند يُطبع بلا QR عند أي فشل */ }
-    const html = buildHtml(data);
-    const rtl = data.isRTL;
-    const L = (ar: string, en: string) => (rtl ? ar : en);
 
-    const overlay = document.createElement('div');
-    overlay.dir = rtl ? 'rtl' : 'ltr';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#f8fafc;display:flex;flex-direction:column;';
-
-    const bar = document.createElement('div');
-    bar.style.cssText = 'display:flex;gap:10px;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 12px;background:#0f172a;flex-shrink:0;';
-    const printBtn = document.createElement('button');
-    printBtn.type = 'button';
-    printBtn.textContent = L('🖨 اطبع الآن', '🖨 Print now');
-    printBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:none;background:#10b981;color:#fff;cursor:pointer;';
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.textContent = L('← عودة للتطبيق', '← Back to app');
-    backBtn.style.cssText = 'font-size:15px;font-weight:800;padding:12px 22px;border-radius:12px;border:1px solid #cbd5e1;background:#f1f5f9;color:#0f172a;cursor:pointer;';
-    bar.appendChild(printBtn);
-    bar.appendChild(backBtn);
-
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'flex:1;width:100%;border:0;background:#fff;';
-    iframe.setAttribute('title', L('فاتورة الطلب', 'Order invoice'));
-
-    overlay.appendChild(bar);
-    overlay.appendChild(iframe);
-    document.body.appendChild(overlay);
-    // امنع تمرير التطبيق خلف الطبقة
-    const prevBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (closed) return;   // أُغلقت الطبقة أثناء الانتظار — لا تكتب في iframe مُزال
 
     const doc = iframe.contentWindow?.document;
-    if (doc) { doc.open(); doc.write(html); doc.close(); }
+    if (doc) { doc.open(); doc.write(buildHtml(data)); doc.close(); }
 
-    let closed = false;
-    const close = () => {
-        if (closed) return;
-        closed = true;
-        document.removeEventListener('keydown', onKey);
-        document.body.style.overflow = prevBodyOverflow;
-        try { document.body.removeChild(overlay); } catch { /* ignore */ }
-    };
-    // Esc يُغلق أيضاً (ديسكتوب). لا نلمس سجل المتصفح حتى لا نتضارب مع الراوتر.
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    document.addEventListener('keydown', onKey);
-
-    backBtn.onclick = close;
+    printBtn.disabled = false;
+    printBtn.textContent = L('🖨 اطبع الآن', '🖨 Print now');
+    printBtn.style.background = '#10b981';
+    printBtn.style.cursor = 'pointer';
     printBtn.onclick = () => {
         try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { /* ignore */ }
     };
