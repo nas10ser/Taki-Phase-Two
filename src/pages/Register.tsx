@@ -6,6 +6,7 @@ import { authService } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
+import TurnstileWidget from '../components/TurnstileWidget';
 
 const Register: React.FC = () => {
     const history = useHistory();
@@ -86,6 +87,9 @@ const Register: React.FC = () => {
     // are the ones who created this signup — an email alone used to be enough
     // for anybody to delete anybody else's pending registration.
     const [pendingUserId, setPendingUserId] = useState('');
+    // v13.52 — Turnstile proof-of-human, handed to signUp. Empty until the
+    // visitor clears the check (or after it expires and needs redoing).
+    const [captchaToken, setCaptchaToken] = useState('');
     const [password, setPassword] = useState('');
     const [shopName, setShopName] = useState('');
     const [code, setCode] = useState('');
@@ -395,7 +399,7 @@ const Register: React.FC = () => {
                 referred_by_code: refCode || null,
             };
 
-            const response = await authService.signUpWithEmail(trimmedEmail, password, userData);
+            const response = await authService.signUpWithEmail(trimmedEmail, password, userData, captchaToken);
 
             setLoading(false);
 
@@ -1182,6 +1186,11 @@ const Register: React.FC = () => {
                                 </div>
                             </div>
                         )}
+
+                        {/* v13.52 — bot check, sign-up only. Login is already
+                            rate-limited per account; registration was the one
+                            door a script could walk through unlimited times. */}
+                        {!isLogin && <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} />}
 
                         <button className="auth-submit" onClick={isLogin ? handleLoginSubmit : handleProceedToVerify} disabled={isSubmitDisabled} style={{ ...primaryButtonStyle, background: isSubmitDisabled ? 'rgba(15,23,42,0.2)' : activeBtnColor, opacity: buttonOpacity, marginTop: 16, cursor: isSubmitDisabled ? 'not-allowed' : 'pointer', boxShadow: isSubmitDisabled ? 'none' : activeBtnGlow, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                             {loading ? t('جاري المعالجة...', 'Processing...') : isLogin ? t('تسجيل الدخول', 'Sign In') : t('إرسال كود التحقق', 'Send Verification Code')}

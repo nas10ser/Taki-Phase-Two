@@ -147,11 +147,17 @@ export const authService = {
         });
     },
 
-    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string, referral_source?: string | null, referral_source_detail?: string | null, referred_by_code?: string | null }) => {
+    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string, referral_source?: string | null, referral_source_detail?: string | null, referred_by_code?: string | null }, captchaToken?: string) => {
         return await supabase.auth.signUp({
             email,
             password,
             options: {
+                // v13.52 — Cloudflare Turnstile. Passing a token while the auth
+                // server still has CAPTCHA switched off is a no-op: GoTrue only
+                // looks at this field once the feature is enabled. That is the
+                // whole point of shipping the client half first — the day the
+                // server switch flips, every page is already sending a token.
+                ...(captchaToken ? { captchaToken } : {}),
                 // Pin the confirmation link's redirect target to the current
                 // origin (https://taki-test-eight.vercel.app in production,
                 // or whatever the user's browser shows). Without this, Supabase
