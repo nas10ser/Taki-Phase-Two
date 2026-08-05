@@ -81,6 +81,11 @@ const Register: React.FC = () => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
+    // v13.40 (security): the id signUp() returned for the account awaiting
+    // verification. cancel_unverified_signup now requires it as proof that we
+    // are the ones who created this signup — an email alone used to be enough
+    // for anybody to delete anybody else's pending registration.
+    const [pendingUserId, setPendingUserId] = useState('');
     const [password, setPassword] = useState('');
     const [shopName, setShopName] = useState('');
     const [code, setCode] = useState('');
@@ -184,7 +189,7 @@ const Register: React.FC = () => {
     React.useEffect(() => {
         if (mode !== 'verify' || !email) return;
         const timeoutId = setTimeout(async () => {
-            await authService.cancelUnverifiedSignup(email);
+            await authService.cancelUnverifiedSignup(email, pendingUserId);
             await customAlert(t(
                 '⏰ انتهت مهلة التحقق (10 دقائق). تم إلغاء التسجيل، يرجى البدء من جديد.',
                 '⏰ Verification timeout (10 min). Registration cancelled, please start again.'
@@ -195,10 +200,11 @@ const Register: React.FC = () => {
             setPhone('');
             setShopName('');
             setCode('');
+            setPendingUserId('');
             setMode('landing');
         }, 10 * 60 * 1000);
         return () => clearTimeout(timeoutId);
-    }, [mode, email, customAlert, t]);
+    }, [mode, email, pendingUserId, customAlert, t]);
 
     const handleForgotPassword = async () => {
         const trimmedEmail = email.trim();
@@ -430,6 +436,7 @@ const Register: React.FC = () => {
             await customAlert(t('نرجو اتمام التحقق لاكتمال التسجيل، راجع بريدك الإلكتروني', 'Please complete verification to finish registration. Check your email.'));
 
             setPhone(normalizedPhone);
+            setPendingUserId(userDataObj?.id || '');
             setMode('verify');
         } catch (error) {
             setLoading(false);

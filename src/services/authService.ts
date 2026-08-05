@@ -337,9 +337,23 @@ export const authService = {
     // Cancel an unverified signup. Calls the SQL function which removes the
     // auth.users row only if the email is still unconfirmed. Used by the
     // 10-minute verification timeout in the registration flow.
-    cancelUnverifiedSignup: async (email: string) => {
+    //
+    // v13.40 (security): the RPC used to take the email ALONE, from any
+    // anonymous caller. That let anyone delete anyone else's pending signup
+    // just by naming their address — and repeating it keeps that person from
+    // ever completing registration. The RPC now also demands the account UUID
+    // that signUp() handed back, which only the person who actually signed up
+    // has. Callers must therefore pass `userId` through.
+    cancelUnverifiedSignup: async (email: string, userId: string) => {
+        if (!userId) {
+            console.error('cancelUnverifiedSignup: userId is required');
+            return { error: { message: 'userId is required' } } as any;
+        }
         try {
-            return await supabase.rpc('cancel_unverified_signup', { target_email: email });
+            return await supabase.rpc('cancel_unverified_signup', {
+                target_email: email,
+                target_id: userId,
+            });
         } catch (e) {
             console.error('Failed to cancel unverified signup:', e);
             return { error: e } as any;
