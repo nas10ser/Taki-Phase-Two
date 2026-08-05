@@ -3194,7 +3194,42 @@ if (supabase && bot) {
 let mailer = null, mailerFrom = '';
 if (supabase) {
     try {
-        if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        // v13.53 — prefer Resend's HTTPS API over SMTP.
+        //
+        // Render (like most PaaS hosts) blocks outbound SMTP ports to stop spam
+        // from compromised apps. The symptom is nasty: nodemailer neither
+        // connects nor errors, it just hangs, so a queued mail sits on
+        // status='sending' forever with no error to explain it — which is
+        // exactly what we observed. Port 443 is never blocked, so the HTTPS
+        // API sidesteps the whole class of problem and moves cleanly to any
+        // host later, Oracle included.
+        //
+        // SMTP stays as a fallback so an existing Gmail/app-password setup
+        // keeps working untouched.
+        const resendKey = process.env.RESEND_API_KEY
+            || (process.env.SMTP_HOST === 'smtp.resend.com' ? process.env.SMTP_PASS : '');
+
+        if (resendKey) {
+            mailerFrom = process.env.SMTP_FROM || 'onboarding@resend.dev';
+            mailer = {
+                via: 'resend-api',
+                sendMail: async ({ from, to, subject, html }) => {
+                    const res = await fetch('https://api.resend.com/emails', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${resendKey}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ from, to: [to], subject, html }),
+                    });
+                    if (!res.ok) {
+                        const body = await res.text().catch(() => '');
+                        throw new Error(`resend ${res.status}: ${body.slice(0, 200)}`);
+                    }
+                    return res.json();
+                },
+            };
+        } else if (process.env.SMTP_USER && process.env.SMTP_PASS) {
             const nodemailer = require('nodemailer');
             const smtpPort = Number(process.env.SMTP_PORT || 465);
             mailerFrom = process.env.SMTP_FROM || process.env.SMTP_USER;
@@ -3204,6 +3239,7 @@ if (supabase) {
                 secure: smtpPort === 465,
                 auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
             });
+            mailer.via = 'smtp';
         }
     } catch (e) { console.error('mailer init:', e.message); }
     // Tell the admin tab whether email delivery is live (best-effort, on boot).
@@ -3229,7 +3265,7 @@ if (supabase) {
         };
         setInterval(drainEmails, 45_000).unref?.();
         drainEmails();
-        console.log(`📧 مرسل الإيميل مفعّل عبر SMTP (${mailerFrom}) — سحب من email_outbox كل 45 ثانية`);
+        console.log(`📧 مرسل الإيميل مفعّل عبر ${mailer.via === 'resend-api' ? 'Resend API' : 'SMTP'} (${mailerFrom}) — سحب من email_outbox كل 45 ثانية`);
     } else {
         console.log('📧 مرسل الإيميل غير مهيأ — اضبط SMTP_USER و SMTP_PASS في Render لتفعيله');
     }
