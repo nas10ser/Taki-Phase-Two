@@ -3,7 +3,6 @@ import { useHistory } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useApp } from '../context/AppContext';
 import { paymentService } from '../services/paymentService';
-import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
@@ -171,15 +170,27 @@ const Subscription: React.FC = () => {
                 customerName: user.name || '',
             });
             if (response.success) {
-                await subscriptionRepository.updateSubscription(user.id, 'premium', selected.durationDays || 30, {
-                    amount: price,
-                    maxBranches: selected.max,
-                });
+                // v13.43 (security): activation moved server-side. This used to
+                // write store_profiles straight from the browser — plan, expiry,
+                // price and branch cap all chosen client-side — which meant any
+                // merchant could grant themselves any package free, forever,
+                // straight from the console. Now we send only the package id and
+                // the server reads price/duration/cap out of the catalogue in
+                // platform_settings.location_packages, which only admins edit.
+                const { data: applied, error: subErr } = await supabase.rpc(
+                    'subscribe_self_to_package',
+                    { p_package_id: selected.id },
+                );
+                if (subErr || !applied?.success) {
+                    await customAlert('❌ تعذّر تفعيل الاشتراك: ' + (subErr?.message || applied?.error || 'خطأ غير معروف'));
+                    return;
+                }
                 // تسجيل الدفعة → تصدر الفاتورة ويصل الإشعار تلقائياً (تريغر v12.17). best-effort.
+                // الأرقام من ردّ الخادم لا من الواجهة، فتطابق الفاتورةُ ما فُعِّل فعلاً.
                 try {
                     await supabase.rpc('record_subscription_payment', {
-                        p_amount: price, p_days: selected.durationDays || 30,
-                        p_max: selected.max, p_plan_label: selected.ar,
+                        p_amount: applied.amount, p_days: applied.days,
+                        p_max: applied.max_branches, p_plan_label: selected.ar,
                     });
                 } catch { /* الفاتورة لا تعطّل الاشتراك */ }
                 await customAlert('✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي. 🧾 فاتورتك جاهزة أسفل هذه الصفحة.');
