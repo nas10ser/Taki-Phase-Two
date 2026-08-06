@@ -91,11 +91,19 @@ export const branchRepository = {
     },
 
     /** v13.61 — إظهار/إخفاء فرع على صفحة المتجر. القاعدة هي التي تفرض حدّ
-     *  الباقة؛ نُرجع رسالة عربية واضحة عند الرفض بدل خطأ تقني. */
+     *  الباقة؛ نُرجع رسالة عربية واضحة عند الرفض بدل خطأ تقني.
+     *  v13.66 — نطلب الصفوف المتأثّرة (`select`) ونتحقّق أن الكتابة **وقعت**:
+     *  سياسة RLS ترفض الكتابة بلا خطأ — تُرجع صفر صفوف و`error=null` — فكانت
+     *  الواجهة تقول «تم» ولا شيء تغيّر في القاعدة. */
     async setDisplayed(id: string, show: boolean): Promise<{ ok: boolean; error?: string; cap?: number }> {
-        const { error } = await supabase.from('store_branches')
-            .update({ show_on_store_page: show }).eq('id', id);
-        if (!error) return { ok: true };
+        const { data, error } = await supabase.from('store_branches')
+            .update({ show_on_store_page: show }).eq('id', id).select('id');
+        if (!error) {
+            if (!data || data.length === 0) {
+                return { ok: false, error: 'لم يُحفَظ التغيير في قاعدة البيانات (لا صلاحية على هذا الفرع). حدّث الصفحة وحاول مجدداً.' };
+            }
+            return { ok: true };
+        }
         const m = /BRANCH_DISPLAY_CAP:(\d+)/.exec(error.message || '');
         if (m) return { ok: false, cap: Number(m[1]), error: `باقتك تسمح بعرض ${m[1]} موقع على صفحتك. أخفِ موقعاً آخر أولاً أو رقِّ باقتك.` };
         return { ok: false, error: error.message };
@@ -111,14 +119,29 @@ export const branchRepository = {
         return (data || []).map(fromRow);
     },
 
+    /**
+     * حذف فرع من القاعدة نهائياً.
+     *
+     * v13.66 — `.select()` إلزامي هنا: حذفٌ ترفضه سياسة RLS يعود بـ`error=null`
+     * وصفر صفوف، فكانت الواجهة تُسقط الشريحة من الشاشة والصفّ باقٍ في القاعدة —
+     * ويعود عند أول تحديث. الآن نتأكّد أن صفاً حُذف فعلاً وإلا نرمي خطأً
+     * فيتراجع السياق ويرى التاجر رسالة صريحة. (بلاغ ناصر: «تأكد أن الإضافة
+     * والحذف مربوطان بالداتابيس».)
+     */
     async remove(id: string): Promise<void> {
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('store_branches')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .select('id');
         if (error) {
             console.error('branches delete error', error);
             throw error;
+        }
+        if (!data || data.length === 0) {
+            const e = new Error('BRANCH_DELETE_NOOP: الصف لم يُحذف من القاعدة (لا صلاحية أو مُعرّف غير موجود).');
+            console.error(e.message, id);
+            throw e;
         }
     },
 };

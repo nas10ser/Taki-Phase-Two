@@ -14,6 +14,11 @@ import { getAuthenticityBadge } from '../utils/helpers';
 import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 import { AVATAR } from '../utils/imageCompression';
+import { placeLink, directionsLink, coordsOf } from '../utils/mapLinks';
+
+// v13.66 — خريطة فروع المتجر تُحمَّل عند الطلب فقط: مكتبة الخرائط ثقيلة ولا
+// داعي لتحميلها مع كل فتح لصفحة متجر، فأغلب الزوار لا يضغطون الزرّ.
+const StoreBranchesMap = React.lazy(() => import('../components/StoreBranchesMap'));
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -42,6 +47,8 @@ const StoreDetails: React.FC = () => {
     const [branches, setBranches] = useState<StoreBranch[]>([]);
     const [branchBusy, setBranchBusy] = useState<string | null>(null);
     const [branchMsg, setBranchMsg] = useState<string>('');
+    // v13.66 — خريطة «اعرض كل المواقع» داخل التطبيق (بدل بحث قوقل بالاسم).
+    const [showBranchMap, setShowBranchMap] = useState(false);
     const [followerCount, setFollowerCount] = useState<number | null>(null);
     const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -195,6 +202,13 @@ const StoreDetails: React.FC = () => {
     // v12.73 (تصويب طلب ناصر): نافذة التأكيد تبقى — وبعد «موافق» التنفيذ
     // فوري: بلا نافذة نجاح، الزر يعرض ⏳، والتبويب يتبدل تلقائياً.
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
+    // v13.66 — الفروع التي تدخل الخريطة = عين ما تعرضه بطاقة «مواقع المتجر»:
+    // صاحب المتجر يرى فروعه كلها، والزائر يرى ما اختار التاجر إظهاره فقط.
+    // (مصدر واحد للاثنين حتى لا تختلف الخريطة عن القائمة أبداً.)
+    const mapBranches = useMemo(
+        () => (user?.id === id ? branches : branches.filter(b => b.showOnStorePage)),
+        [branches, user?.id, id]);
+
     // v13.17 — «صفحتي» تُجدّد/تُفعّل العروض أيضاً، فتحتاج سقف الباقة نفسه الذي
     // تقرؤه لوحة التاجر (store_profiles.max_branches) لتوائم المواقع قبل الحفظ.
     const [ownerMaxLocations, setOwnerMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
@@ -551,8 +565,8 @@ const StoreDetails: React.FC = () => {
                         دون موقع محفوظ: زر «حدّد موقع متجرك» ينقله لمحرّر الخريطة في لوحته. */}
                     {(() => {
                         const addr = (profile.address || store.address || '').trim();
-                        const mapHref = (store.googleMapsLink && String(store.googleMapsLink).trim())
-                            || ((store.lat && store.lng) ? `https://www.google.com/maps?q=${store.lat},${store.lng}` : '');
+                        // v13.66 — قاعدة الروابط موحّدة في `utils/mapLinks`.
+                        const mapHref = placeLink({ lat: store.lat, lng: store.lng, googleMapsLink: store.googleMapsLink });
                         const isOwner = user?.id === store.id;
                         if (addr) {
                             return (
@@ -580,7 +594,11 @@ const StoreDetails: React.FC = () => {
                                 </button>
                             );
                         }
-                        return <div style={{ fontSize: '1rem', opacity: 0.75, fontWeight: 700, marginBottom: 4 }}>📍 {isRTL ? 'معلومات الموقع غير متوفرة' : 'Location Not Available'}</div>;
+                        // v13.66 (أمر ناصر): لا سطر «معلومات الموقع غير متوفرة».
+                        // إخبار الزبون بما **لا** نملكه ليس معلومة — هو ضجيج تحت
+                        // اسم المتجر مباشرة، ويوحي بنقصٍ في متجرٍ قد تكون مواقعه
+                        // معروضة كاملة في بطاقة «مواقع المتجر» أسفل الصفحة.
+                        return null;
                     })()}
                     <div style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600, marginBottom: 16 }}>📅 {isRTL ? 'تاريخ الانضمام: ' : 'Joined: '} {new Date().getFullYear()}/01</div>
                     
@@ -796,12 +814,17 @@ const StoreDetails: React.FC = () => {
                 const shown = branches.filter(b => b.showOnStorePage);
                 const visible = isOwner ? branches : shown;
                 if (visible.length === 0 && !isOwner) return null;
+                // v13.66 — الاتجاهات تمرّ بقاعدة `mapLinks` الموحّدة: الإحداثي
+                // يفوز على أي رابط «بحث بالاسم» محفوظ (صفوف v12.04 القديمة).
                 const linkOf = (b: StoreBranch) =>
-                    (b.googleMapsLink && String(b.googleMapsLink).trim())
-                    || ((b.mapLat && b.mapLng) ? `https://www.google.com/maps?q=${b.mapLat},${b.mapLng}` : '');
-                const allLink = shown.length > 1
-                    ? `https://www.google.com/maps/search/${encodeURIComponent(store.name)}`
-                    : '';
+                    directionsLink({ lat: b.mapLat, lng: b.mapLng, googleMapsLink: b.googleMapsLink });
+                // v13.66 — «اعرض كل المواقع على الخريطة» كان يفتح **بحثاً في قوقل
+                // باسم المتجر**، فلا يعرض فروع المتجر إطلاقاً (بلاغ ناصر: «لا
+                // يعرضلي الثلاث الظاهرة بالأعلى»). صار يفتح خريطة داخل التطبيق
+                // تُظهر الفروع نفسها المعروضة أعلاه بدبابيسها الحقيقية.
+                const mapPins = visible
+                    .map(b => ({ b, c: coordsOf({ lat: b.mapLat, lng: b.mapLng }) }))
+                    .filter((x): x is { b: StoreBranch; c: { lat: number; lng: number } } => x.c !== null);
                 return (
                     <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, margin: '16px 12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -869,11 +892,11 @@ const StoreDetails: React.FC = () => {
                             })}
                         </div>
 
-                        {allLink && (
-                            <a href={allLink} target="_blank" rel="noopener noreferrer"
-                               style={{ display: 'inline-block', marginTop: 10, fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>
-                                🗺️ {isRTL ? 'اعرض كل المواقع على الخريطة' : 'View all locations on the map'}
-                            </a>
+                        {mapPins.length > 1 && (
+                            <button onClick={() => setShowBranchMap(true)}
+                               style={{ display: 'inline-block', marginTop: 10, fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
+                                🗺️ {isRTL ? `اعرض كل المواقع على الخريطة (${mapPins.length})` : `View all ${mapPins.length} locations on the map`}
+                            </button>
                         )}
                     </div>
                 );
@@ -1146,6 +1169,19 @@ const StoreDetails: React.FC = () => {
                     isRTL={isRTL}
                     onClose={() => setShowReport(false)}
                 />
+            )}
+
+            {/* v13.66 — «اعرض كل المواقع على الخريطة»: نفس الفروع المعروضة في
+                البطاقة أعلاه، بدبابيسها الحقيقية داخل التطبيق. */}
+            {showBranchMap && (
+                <React.Suspense fallback={null}>
+                    <StoreBranchesMap
+                        branches={mapBranches}
+                        storeName={store?.name || ''}
+                        isRTL={isRTL}
+                        onClose={() => setShowBranchMap(false)}
+                    />
+                </React.Suspense>
             )}
 
             <BottomNav />

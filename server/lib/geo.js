@@ -55,20 +55,36 @@ async function resolveGoogleLocation(text) {
     return null;
 }
 
+// v13.66 — رابط «بحث بالاسم» في قوقل ماب: أي رابط بحث لا يحمل زوج إحداثيات.
+// (`search/?api=1&query=24.7,46.6` بحثٌ بإحداثيات = مكان دقيق، فلا يُهمَل.)
+function isNameSearchLink(url) {
+    const u = String(url || '').trim();
+    if (!u) return false;
+    if (!/google\.[^/]+\/maps\/search/i.test(u)) return false;
+    let dec = u; try { dec = decodeURIComponent(u); } catch { /* يبقى كما هو */ }
+    return !/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/.test(dec);
+}
+
 // رابط مكان قوقل (فتح موقع العرض). يقبل صف عرض أو {map_lat,map_lng,google_maps_link}.
-// نُفضّل رابط البحث بالاسم (مثل «اسم المول + المدينة») على الإحداثيات التقريبية —
-// فقوقل يثبّت المكان الحقيقي بدقة بدل دبّوس مركز المدينة. v12.04
+//
+// v13.66 — نُقض قرار v12.04. كان يفضّل «رابط بحث بالاسم» (اسم المول + المدينة)
+// على الإحداثيات بحجّة أن قوقل يثبّت المكان الحقيقي بدقة. الواقع: البحث بالاسم
+// يفتح **صفحة نتائج** لا مكاناً، ونجاحه رهن فهرسة قوقل لذلك المول — «الباحة مول»
+// نجح و«كادي مول» فشل (بلاغ ناصر)، وهذا وحده يكفي: سلوك لا يمكن التنبؤ به.
+// القاعدة الآن: الإحداثي يفوز، ولا يُحترم الرابط المحفوظ إلا إن كان رابط مكانٍ
+// حقيقي لصقه التاجر بنفسه. نفس القاعدة حرفياً في الويب (src/utils/mapLinks.ts).
 function placeLink(d) {
-    if (d.google_maps_link) return d.google_maps_link;
-    if (d.map_lat != null && d.map_lng != null) return `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}`;
-    return null;
+    const saved = d.google_maps_link ? String(d.google_maps_link).trim() : '';
+    if (d.map_lat != null && d.map_lng != null) {
+        if (saved && !isNameSearchLink(saved)) return saved;
+        return `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}`;
+    }
+    return saved || null;
 }
 // رابط اتجاهات قيادة قوقل (ملاحة فعلية عند الفتح).
 function dirLink(d, geo) {
-    // رابط الاسم الدقيق أفضل من اتجاهات لإحداثيات تقريبية (يفتح المكان الصحيح ثم
-    // يبدأ المستخدم الملاحة منه). v12.04
-    if (d.google_maps_link) return d.google_maps_link;
-    if (d.map_lat == null || d.map_lng == null) return null;
+    const saved = d.google_maps_link ? String(d.google_maps_link).trim() : '';
+    if (d.map_lat == null || d.map_lng == null) return saved || null;
     const org = geo ? `&origin=${geo.lat},${geo.lng}` : '';
     return `https://www.google.com/maps/dir/?api=1${org}&destination=${d.map_lat},${d.map_lng}&travelmode=driving`;
 }

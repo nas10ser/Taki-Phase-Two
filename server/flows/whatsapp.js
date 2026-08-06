@@ -1170,7 +1170,9 @@ function create(deps) {
     async function askLocEdit(from, s, d) {
         const place = [d.city, d.region].filter(Boolean).join(' • ');
         const nm = d.custom_location_name || place || tr('wa_custom_location');
-        const link = d.google_maps_link || ((d.map_lat != null && d.map_lng != null) ? `https://www.google.com/maps/search/?api=1&query=${d.map_lat},${d.map_lng}` : '');
+        // v13.66 — قاعدة الروابط الموحّدة (lib/geo.placeLink): الإحداثي يفوز على
+        // أي «بحث بالاسم» محفوظ، فلا يفتح التاجر صفحة نتائج بدل موقعه.
+        const link = G.placeLink(d) || '';
         return askLocationStep(from, s, tr('wa_ed_loc_cur', nm, place && place !== nm ? ` — ${place}` : '', link ? `\n🗺 ${link}` : ''));
     }
     async function editCat(from, s, cat) { const r = await rpc('bot_update_deal', aid(from, { p_deal_id: s.temp.editDealId, p_category: cat })); return afterDealEdit(from, s, r); }

@@ -19,7 +19,7 @@ const {
     normalizeDigits, parseFlexibleDate, priceBlock, statusLabel, stripMd,
 } = F;
 const { catLabel, catKeyboard, genderLabel, GENDER } = C;
-const { remainingText, resolveGoogleLocation } = G;
+const { remainingText, resolveGoogleLocation, placeLink } = G;
 
 const MAX_IMAGES = 4;
 const YEAR_MIN   = 525600;            // مدة افتراضية لعرض «بالكمية» (سنة)
@@ -693,9 +693,9 @@ async function onScheduleChosen(ctx, startsAt, clear) {
 // ════════════════════════════════════════════════════════════════════════════════
 // رابط خريطة لموقع محفوظ (إحداثيات إن وُجدت، وإلا رابط قوقل المخزّن).
 function chipMapUrl(b) {
-    if (b.google_maps_link) return b.google_maps_link;   // name-search → precise place. v12.04
-    if (b.map_lat != null && b.map_lng != null) return `https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng}`;
-    return null;
+    // v13.66 — قاعدة واحدة لكل النظام في lib/geo.placeLink: الإحداثي يفوز على أي
+    // «بحث بالاسم» محفوظ (قرار v12.04 نُقض — راجع التعليق هناك).
+    return placeLink(b);
 }
 const mdUrl = u => String(u).replace(/([)\\])/g, '\\$1'); // تهريب آمن لرابط داخل [..](..)
 async function askLocation(ctx, intro) {
@@ -1140,9 +1140,9 @@ async function previewDeal(ctx, d) {
 //  مواقعي (الفروع) — كل المواقع (محفوظة + مواقع عروض) مع وسم وإتاحة حذف/تعديل
 // ════════════════════════════════════════════════════════════════════════════════
 function branchPlace(b) {
-    if (b.google_maps_link) return `[🗺 ${tr('sd873_location')}](${b.google_maps_link})`;   // name-search → precise. v12.04
-    if (b.map_lat != null && b.map_lng != null) return `[🗺 ${tr('sd872_map_location')}](https://www.google.com/maps/search/?api=1&query=${b.map_lat},${b.map_lng})`;
-    return '';
+    // v13.66 — نفس قاعدة الروابط الموحّدة (lib/geo.placeLink).
+    const u = placeLink(b);
+    return u ? `[🗺 ${tr('sd872_map_location')}](${mdUrl(u)})` : '';
 }
 function branchWhere(b) { const p = [b.city, b.region].filter(Boolean); return p.length ? md(p.join(' • ')) : tr('sd878_custom_location'); }
 async function showBranches(ctx) {
