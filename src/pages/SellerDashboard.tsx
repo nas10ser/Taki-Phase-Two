@@ -3161,7 +3161,10 @@ const SellerDashboard: React.FC = () => {
                                     {savingShopLocation ? (
                                         <div className="spinner" style={{ width: 18, height: 18, border: '2.5px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
                                     ) : (
-                                        <>⭐ {isRTL ? 'حفظ كموقع دائم للمتجر' : 'Set Permanent Shop Loc'}</>
+                                        // v13.68 (أمر ناصر): الاسم اختُصر إلى «حفظ الموقع».
+                                        // «دائم للمتجر» صار مضلِّلاً بعد نظام المواقع
+                                        // المتعدّدة — الزرّ يحفظ دبّوس الخريطة، لا أكثر.
+                                        <>⭐ {isRTL ? 'حفظ الموقع' : 'Save location'}</>
                                     )}
                                 </button>
                             </div>

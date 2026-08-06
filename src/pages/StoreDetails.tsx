@@ -580,13 +580,10 @@ const StoreDetails: React.FC = () => {
                                 </div>
                             );
                         }
-                        if (mapHref) {
-                            return (
-                                <a href={mapHref} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff', background: 'rgba(255,255,255,0.18)', borderRadius: 12, padding: '6px 14px', fontSize: '0.9rem', fontWeight: 800, textDecoration: 'none', marginBottom: 4 }}>
-                                    📍 {isRTL ? 'عرض موقع المتجر على الخريطة' : 'View store location on map'}
-                                </a>
-                            );
-                        }
+                        // v13.68 (أمر ناصر): حُذف زرّ «عرض موقع المتجر على الخريطة».
+                        // كان يفتح دبّوساً واحداً للمتجر، وقد صارت بطاقة «مواقع
+                        // المتجر» أسفل الصفحة تعرض **كل** مواقعه مع اتجاهات لكلٍّ
+                        // منها وخريطة تجمعها — فلم يبقَ للزرّ ما يضيفه.
                         if (isOwner) {
                             return (
                                 <button onClick={() => history.push('/seller?loc=1')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff', background: 'rgba(255,255,255,0.22)', border: '1px dashed rgba(255,255,255,0.5)', borderRadius: 12, padding: '8px 16px', fontSize: '0.88rem', fontWeight: 900, cursor: 'pointer', marginBottom: 4 }}>
