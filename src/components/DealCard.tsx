@@ -1,3 +1,7 @@
+// v13.60 — أُزيلت كل مؤثرات backdrop-filter من هذه البطاقة: كانت أربعة لكل
+// بطاقة، وبعشرين بطاقة على الشاشة تصير ثمانين طبقة ضباب يُعاد حسابها في كل
+// إطار أثناء التمرير — وهذا سبب «الوميض» الذي أبلغ عنه ناصر. كلها كانت فوق
+// خلفيات معتمة أصلاً فلا فرق بصري يُذكر (رُفعت العتامة قليلاً للتعويض).
 import React, { useEffect, useState } from 'react';
 import { Deal, getLocation , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
@@ -191,8 +195,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         pointerEvents: 'none'
                     }}>
                         <div style={{
-                            background: 'rgba(15,23,42,0.78)',
-                            backdropFilter: 'blur(10px)',
+                            background: 'rgba(15,23,42,0.88)',
                             color: 'white',
                             padding: '10px 16px',
                             borderRadius: 14,
@@ -220,8 +223,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 8,
                         [isRTL ? 'left' : 'right']: 8,
                         zIndex: 11,
-                        background: 'rgba(255, 255, 255, 0.95)',
-                        backdropFilter: 'blur(8px)',
+                        background: 'rgba(255, 255, 255, 0.98)',
                         border: 'none',
                         /* 36×36 visible — keeps the deal card visually clean — but the global
                            `min-height: 44px` rule from styles.css gives it a real 44px hit area. */
@@ -296,7 +298,6 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     borderRadius: 8,
                     fontSize: '0.7rem',
                     fontWeight: 900,
-                    backdropFilter: 'blur(8px)',
                     boxShadow: (remaining.urgent || comingSoon) ? '0 2px 10px rgba(99,102,241,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
                     animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',
                     display: 'flex', alignItems: 'center', gap: 4,
@@ -320,7 +321,6 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         borderRadius: 8,
                         fontSize: '0.6rem',
                         fontWeight: 600,
-                        backdropFilter: 'blur(8px)',
                         maxWidth: 100,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',

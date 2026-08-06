@@ -704,7 +704,6 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 3px;
-  backdrop-filter: blur(8px);
 }
 
 .badge-location {
@@ -717,7 +716,6 @@ textarea:focus {
   border-radius: 8px;
   font-size: 0.65rem;
   font-weight: 500;
-  backdrop-filter: blur(8px);
 }
 
 /* ===== LOCATION FILTER ===== */
@@ -919,8 +917,7 @@ textarea:focus {
 }
 
 .profile-stat-box {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.22);
   padding: 12px 20px;
   border-radius: var(--radius);
   text-align: center;
@@ -1052,14 +1049,12 @@ textarea:focus {
 
 /* ===== GLASSMORPHISM ===== */
 .glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .glass-dark {
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(15, 23, 42, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1704,9 +1699,7 @@ button, .nav-item, .filter-chip, .cat-chip, .segment-chip {
  * follow the global theme toggle.
  * ===================================================================== */
 .bg-card-glass {
-  background-color: rgba(255, 255, 255, 0.82);
-  backdrop-filter: saturate(160%) blur(14px);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  background-color: rgba(255, 255, 255, 0.94);
 }
 .dark-mode .bg-card-glass,
 :root:not(.light-mode) .bg-card-glass {
@@ -2544,3 +2537,39 @@ html.light-mode .taki-variant-row:not(.picked) {
   border-color: var(--border-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
+
+/* =====================================================================
+ * v13.60 — أداء التمرير (بلاغ ناصر: «وميض عند النزول والطلوع»)
+ *
+ * السبب المُقاس: ثمانون عنصراً على الصفحة الواحدة تحمل backdrop-filter.
+ * كل واحد منها يُجبر المتصفح على إعادة أخذ عيّنة من الخلفية وإعادة تمويهها
+ * في كل إطار أثناء التمرير — فيظهر كوميض. أُزيلت من كل العناصر المتكرّرة
+ * (شارات البطاقات والصناديق) وبقيت في أسطح الواجهة الثابتة فقط لأنها
+ * جزء من الهوية البصرية — وهذه نعزلها على طبقة GPU مستقلّة حتى لا تُجبر
+ * المحتوى المتحرّك خلفها على إعادة الرسم.
+ * ===================================================================== */
+.navbar,
+.bottom-nav,
+.detail-header,
+.book-cta {
+  transform: translateZ(0);
+  will-change: transform;
+  contain: paint;
+}
+
+/* البطاقات خارج الشاشة لا تُرسم أصلاً — أهم مكسب للسلاسة على القوائم
+   الطويلة. المقاس الاحتياطي يمنع أي قفزة في شريط التمرير. */
+.deal-card,
+.premium-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 380px;
+}
+
+/* بطاقات العرض لا تُعيد تشغيل أنيميشن الدخول عند التمرير.
+   مع content-visibility تصبح البطاقة «ذات صلة» لحظة دخولها الشاشة، ولو بقي
+   fadeInUp لأُعيد تشغيله في كل مرة — أي وميض عند كل تمرير. القائمة تظهر
+   مباشرة كما تفعل التطبيقات السريعة. */
+.deal-card.animate-fade-in { animation: none; }
+
+/* ملاحظة: لا نضع scroll-behavior: smooth على html — فهو يحوّل استعادة موضع
+   التمرير (ScrollManager) إلى رحلة مرئية بدل قفزة فورية. */
