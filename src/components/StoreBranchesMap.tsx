@@ -40,14 +40,30 @@ const MapController: React.FC<{ points: [number, number][]; focus: Focus; fitSeq
 
     useEffect(() => {
         if (points.length === 0) return;
-        if (points.length === 1) { map.setView(points[0], 15); return; }
-        map.fitBounds(L.latLngBounds(points), { padding: [48, 48], maxZoom: 15 });
+        try {
+            if (points.length === 1) { map.setView(points[0], 15); return; }
+            map.fitBounds(L.latLngBounds(points), { padding: [48, 48], maxZoom: 15 });
+        } catch { /* حركة خريطة — لا تُسقط الصفحة أبداً */ }
     }, [map, points, fitSeq]);
 
     useEffect(() => {
         if (!focus) return;
         const p = points[focus.index];
-        if (p) map.flyTo(p, 16, { duration: 0.9 });
+        if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return;
+        // v13.70 — `setView` لا `flyTo`.
+        //
+        // `flyTo` يحسب مساراً مقوّساً بلوغاريتمات على المسافة بالبكسل بين
+        // المركز الحالي والهدف؛ وحين تقترب تلك المسافة من الصفر (أو يكون
+        // الإطار مضبوطاً على كامل المملكة بزوم كسري بعد fitBounds) تخرج
+        // القسمة **NaN**، فيرمي Leaflet «Invalid LatLng object: (NaN, NaN)»
+        // داخل إطار الأنيميشن — **خارج** شجرة React، فيلتقطه ErrorBoundary
+        // وتسقط الصفحة كلها. حدث فعلاً عند الضغط على أول اسم في القائمة.
+        // `setView` المتحرّك يعطي نفس النتيجة البصرية بحساب مباشر بلا لوغاريتمات.
+        try {
+            map.setView(p, 16, { animate: true, duration: 0.8 });
+        } catch {
+            try { map.setView(p, 16, { animate: false }); } catch { /* تجاهل */ }
+        }
     }, [map, focus, points]);
 
     return null;
@@ -82,13 +98,15 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
 
     const focusOn = useCallback((i: number) => {
         setFocus(prev => ({ index: i, seq: (prev?.seq ?? 0) + 1 }));
-        // البطاقة تُفتح بعد أن تستقرّ الحركة، وإلا فُتحت خارج الشاشة أثناء الطيران.
-        window.setTimeout(() => markerRefs.current[i]?.openPopup(), 950);
+        // البطاقة تُفتح بعد أن تستقرّ الحركة، وإلا فُتحت خارج الشاشة أثناءها.
+        window.setTimeout(() => {
+            try { markerRefs.current[i]?.openPopup(); } catch { /* غير قاتل */ }
+        }, 850);
     }, []);
 
     const showAll = useCallback(() => {
         setFocus(null);
-        markerRefs.current.forEach(m => m?.closePopup());
+        markerRefs.current.forEach(m => { try { m?.closePopup(); } catch { /* غير قاتل */ } });
         setFitSeq(s => s + 1);
     }, []);
 
