@@ -109,14 +109,34 @@ export const branchRepository = {
         return { ok: false, error: error.message };
     },
 
-    /** الفروع الظاهرة للزوار على صفحة المتجر. */
+    /**
+     * الفروع الظاهرة للزوار على صفحة المتجر — **مسقوفة بحدّ الباقة الحيّ**.
+     *
+     * v13.67 — طبقة ثانية بأمر ناصر («تأكد أنها مربوطة بالباقة»). الطبقة الأولى
+     * في القاعدة (مشغّلان: يمنع تجاوز الحدّ، ويُعيد المواءمة عند تغيّر الباقة).
+     * لكن العرض كان يثق بعمود `show_on_store_page` وحده، فأي انحراف في الصفوف
+     * — استعادة نسخة احتياطية، تعديل مباشر بـSQL، أو مسار اشتراك لا يُحدّث
+     * الحدّ — كان يعني صفحةً تعرض أكثر مما تسمح به الباقة.
+     *
+     * الآن العدد **مسقوف عند القراءة**: مهما قالت الصفوف، لا يُعرض للزائر أكثر
+     * من `store_profiles.max_branches`. الترتيب هو نفسه ترتيب دالة المواءمة في
+     * القاعدة (الفرع الرئيسي ثم الأقدم) فلا تختلف النتيجتان أبداً.
+     */
     async listDisplayed(merchantId: string): Promise<StoreBranch[]> {
-        const { data, error } = await supabase.from('store_branches')
-            .select('*').eq('merchant_id', merchantId)
-            .eq('show_on_store_page', true).eq('is_active', true)
-            .order('is_primary', { ascending: false }).order('created_at', { ascending: true });
-        if (error) return [];
-        return (data || []).map(fromRow);
+        const [rowsRes, capRes] = await Promise.all([
+            supabase.from('store_branches')
+                .select('*').eq('merchant_id', merchantId)
+                .eq('show_on_store_page', true).eq('is_active', true)
+                .order('is_primary', { ascending: false }).order('created_at', { ascending: true }),
+            supabase.from('store_profiles')
+                .select('max_branches').eq('store_id', merchantId).maybeSingle(),
+        ]);
+        if (rowsRes.error) return [];
+        const rows = (rowsRes.data || []).map(fromRow);
+        // بلا سقف معروف لا نخترع واحداً: الصفوف كما هي (القاعدة تحرسها أصلاً).
+        const cap = Number(capRes.data?.max_branches);
+        if (!Number.isFinite(cap) || cap <= 0) return rows;
+        return rows.slice(0, cap);
     },
 
     /**
