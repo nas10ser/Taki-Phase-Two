@@ -2,13 +2,18 @@
 // بطاقة، وبعشرين بطاقة على الشاشة تصير ثمانين طبقة ضباب يُعاد حسابها في كل
 // إطار أثناء التمرير — وهذا سبب «الوميض» الذي أبلغ عنه ناصر. كلها كانت فوق
 // خلفيات معتمة أصلاً فلا فرق بصري يُذكر (رُفعت العتامة قليلاً للتعويض).
-import React, { useEffect, useState } from 'react';
+//
+// v13.61 — بقيّة الوميض: العدّاد كان يعيد رسم البطاقة **كاملة** كل ثانية
+// (مؤقّت مستقلّ في كل بطاقة). انتقل إلى `DealCountdown` بنبضة مشتركة واحدة،
+// والبطاقة صارت `React.memo` فلا تُعاد إلا حين تتغيّر بياناتها فعلاً.
+import React from 'react';
 import { Deal, getLocation , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
-import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, sponsorLabelText, SponsorLabel, getAuthenticityBadge } from '../utils/helpers';
+import { isDealComingSoon, sponsorLabelText, SponsorLabel, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus } from '../utils/workingHours';
 import { thumbUrl, imgFallback } from '../utils/thumb';
+import DealCountdown from './DealCountdown';
 
 interface Props {
     deal: Deal;
@@ -23,26 +28,6 @@ const GENDER_EMOJI: { [key: string]: string } = {
     women: '👩',
     kids: '👶',
     other: '✨',
-};
-
-// Live countdown shown on each card so the buyer sees urgency.
-// Format: "2س 15د" / "5د 23ث" / "30ث" — switches granularity as time runs out.
-const formatRemaining = (createdAt: number, expiresInMinutes: number, isRTL: boolean): { text: string; urgent: boolean; expired: boolean } => {
-    const lifespan = (expiresInMinutes || 0) * 60 * 1000;
-    const expiry = (createdAt || 0) + lifespan;
-    const diff = expiry - Date.now();
-    if (diff <= 0) return { text: isRTL ? 'منتهي' : 'Expired', urgent: false, expired: true };
-
-    const days = Math.floor(diff / 86400000);
-    const hours = Math.floor((diff / 3600000) % 24);
-    const mins = Math.floor((diff / 60000) % 60);
-    const secs = Math.floor((diff / 1000) % 60);
-    const urgent = diff < 3600000; // less than 1 hour
-
-    if (days > 0) return { text: isRTL ? `${days}ي ${hours}س` : `${days}d ${hours}h`, urgent: false, expired: false };
-    if (hours > 0) return { text: isRTL ? `${hours}س ${mins}د` : `${hours}h ${mins}m`, urgent, expired: false };
-    if (mins > 0) return { text: isRTL ? `${mins}د ${secs.toString().padStart(2,'0')}ث` : `${mins}m ${secs}s`, urgent: true, expired: false };
-    return { text: isRTL ? `${secs}ث` : `${secs}s`, urgent: true, expired: false };
 };
 
 const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
@@ -66,28 +51,9 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     // lock + dim overlay so the buyer instantly understands they can't book.
     const comingSoon = isDealComingSoon(deal);
 
-    // Tick the countdown every second so the urgency indicator stays live.
-    // v11.20 — once a scheduled deal flips to live we anchor the lifespan
-    // countdown to startsAt (not createdAt) so the merchant's chosen
-    // "valid for 2h" actually means 2h starting from launch.
-    const [remaining, setRemaining] = useState(() =>
-        comingSoon
-            ? (() => { const r = formatComingSoonRemaining(deal.startsAt!, isRTL); return { text: r.text, urgent: r.urgent, expired: false }; })()
-            : formatRemaining(dealLifespanStart(deal), deal.expiresInMinutes || 0, isRTL)
-    );
-    useEffect(() => {
-        const tick = () => {
-            if (isDealComingSoon(deal)) {
-                const r = formatComingSoonRemaining(deal.startsAt!, isRTL);
-                setRemaining({ text: r.text, urgent: r.urgent, expired: false });
-            } else {
-                setRemaining(formatRemaining(dealLifespanStart(deal), deal.expiresInMinutes || 0, isRTL));
-            }
-        };
-        tick();
-        const id = setInterval(tick, 1000);
-        return () => clearInterval(id);
-    }, [deal.createdAt, deal.expiresInMinutes, deal.startsAt, isRTL]);
+    // v13.61 — العدّاد انتقل إلى `<DealCountdown/>`: ينبض من مؤقّت واحد مشترك
+    // ولا يعيد رسم إلا نفسه. (v11.20 — العرض المجدول يُرسي عدّه على startsAt
+    // لا createdAt، فـ«صالح ساعتين» تعني ساعتين من الإطلاق فعلاً.)
 
     const handleFollowClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -161,7 +127,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     {sponsorLabelText(sponsorLabel, isRTL)}
                 </div>
             )}
-            <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
+            {/* v13.61 — خلفية محايدة تحت الصورة: الصورة الكسولة (lazy) تصل بعد
+                لحظة عند أول ظهور للبطاقة، وبلا هذه الخلفية يظهر مكانها سوادُ
+                جسم البطاقة فيُقرأ كوميض. الآن المكان محجوز بلون هادئ والصورة
+                تحلّ محلّه بهدوء — كما تفعل التطبيقات الكبيرة. */}
+            <div className="deal-card-media" style={{ position: 'relative', overflow: 'hidden', background: 'var(--gray-100)', borderTopLeftRadius: isSponsored ? 22 : 24, borderTopRightRadius: isSponsored ? 22 : 24 }}>
                 <img
                     /* v13.32 — البطاقة تعرض النسخة المصغّرة (٦٠٠ بكسل ~٥٠ كيلوبايت
                        بدل ~٢٠٠): البطاقة تُرسم بعرض ~١٨٠ نقطة فأدق شاشة لا تُظهر
@@ -280,32 +250,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     at a glance. v11.20: for Coming Soon deals the countdown
                     counts DOWN to the launch (startsAt) and goes solid red
                     in the last 4 hours so the buyer knows it's about to open. */}
-                <div style={{
-                    position: 'absolute',
-                    bottom: 10,
-                    [isRTL ? 'left' : 'right']: 10,
-                    background: remaining.expired
-                        ? 'rgba(100,116,139,0.92)'
-                        : comingSoon && remaining.urgent
-                            ? 'linear-gradient(135deg, #dc2626, #b91c1c)'
-                            : comingSoon
-                                ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
-                                : remaining.urgent
-                                    ? 'linear-gradient(135deg, #f59e0b, #ef4444)'
-                                    : 'rgba(15,23,42,0.78)',
-                    color: 'white',
-                    padding: '4px 10px',
-                    borderRadius: 8,
-                    fontSize: '0.7rem',
-                    fontWeight: 900,
-                    boxShadow: (remaining.urgent || comingSoon) ? '0 2px 10px rgba(99,102,241,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
-                    animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    zIndex: 2
-                }}>
-                    <span style={{ fontSize: '0.75rem' }}>{remaining.expired ? '⏹' : comingSoon ? '⏳' : '⏱'}</span>
-                    <span>{remaining.text}</span>
-                </div>
+                <DealCountdown deal={deal} isRTL={isRTL} comingSoon={comingSoon} />
                 {loc && (
                     <div style={{
                         position: 'absolute',
@@ -416,4 +361,14 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     );
 };
 
-export default React.memo(DealCard);
+// v13.61 — المقارن يتجاهل `onClick` عمداً: كل الصفحات تمرّره كدالة سهمية
+// مكتوبة داخل JSX، فهويّتها تتغيّر في كل رسم للصفحة الأم وتُبطل `React.memo`
+// تماماً (أي: كل بطاقات الشبكة تُعاد كلما تحرّك أي شيء في الصفحة — نبضة
+// الانتهاء كل ١٥ ثانية، وصول البنرات، الموقع المباشر…). الدالة لا تفعل سوى
+// `history.push('/deal/'+id)` بمُعرّف يصلها كوسيط، فلا حالة تتقادم فيها.
+const sameCard = (a: Props, b: Props): boolean =>
+    a.deal === b.deal &&
+    a.isSponsored === b.isSponsored &&
+    a.sponsorLabel === b.sponsorLabel;
+
+export default React.memo(DealCard, sameCard);

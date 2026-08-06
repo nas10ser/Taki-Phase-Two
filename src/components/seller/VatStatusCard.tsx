@@ -17,18 +17,59 @@ import { useVatMode } from '../../hooks/useVatMode';
  *
  * وعندما تُفعّل تاكي الضريبة على الاشتراكات (useVatMode.enabled) تظهر إضافةً
  * فائدة **الاسترداد**: رقمه على فاتورة اشتراكه = يخصم ضريبة مدخلاته.
+ *
+ * ── v13.61 — لماذا لم تعد «تظهر بعد ثوانٍ»؟ (بلاغ ناصر) ───────────────────
+ * كانت البطاقة تُعيد `null` حتى تصل نتيجة الشبكة، فتفتح الصفحة بارتفاع ناقص
+ * ثم **تقفز** كل البطاقات تحتها للأسفل لحظة وصول الردّ. الآن نتبع نمط
+ * stale-while-revalidate الذي تستعمله التطبيقات الكبيرة:
+ *   ١. آخر حالة معروفة محفوظة (ذاكرة الوحدة + localStorage) فتُرسم **فوراً**
+ *      في أول إطار — بلا انتظار ولا قفزة، في كل زيارة بعد الأولى.
+ *   ٢. الطلب يمضي في الخلفية، ولا نُحدّث الشاشة إلا لو اختلفت النتيجة فعلاً.
+ *   ٣. في الزيارة الأولى فقط (لا كاش) نحجز مساحة البطاقة بهيكل شبحي بنفس
+ *      ارتفاعها تقريباً، فلا يتحرّك شيء تحتها حين تصل البيانات.
  */
 
 type Status = 'unknown' | 'registered' | 'not_registered';
 
+interface Snapshot { status: Status; vatNumber: string }
+
+// ذاكرة الوحدة: تنجو من إعادة تركيب البطاقة عند التنقّل بين تبويبات اللوحة.
+const memCache = new Map<string, Snapshot>();
+
+const lsKey = (userId: string) => `taki_vat_${userId}`;
+
+const readCache = (userId: string): Snapshot | null => {
+    const hit = memCache.get(userId);
+    if (hit) return hit;
+    try {
+        const raw = localStorage.getItem(lsKey(userId));
+        if (!raw) return null;
+        const p = JSON.parse(raw) as Snapshot;
+        if (p && (p.status === 'unknown' || p.status === 'registered' || p.status === 'not_registered')) {
+            const snap: Snapshot = { status: p.status, vatNumber: String(p.vatNumber || '') };
+            memCache.set(userId, snap);
+            return snap;
+        }
+    } catch { /* وضع خاص أو تخزين ممتلئ — نكمل بلا كاش */ }
+    return null;
+};
+
+const writeCache = (userId: string, snap: Snapshot) => {
+    memCache.set(userId, snap);
+    try { localStorage.setItem(lsKey(userId), JSON.stringify(snap)); } catch { /* تجاهل */ }
+};
+
 const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: string) => void }> = ({ userId, isRTL, onAlert }) => {
     const vat = useVatMode();
-    const [status, setStatus] = useState<Status>('unknown');
-    const [vatNumber, setVatNumber] = useState('');
+    const cached = readCache(userId);
+    const [status, setStatus] = useState<Status>(cached?.status ?? 'unknown');
+    const [vatNumber, setVatNumber] = useState(cached?.vatNumber ?? '');
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState('');
     const [saving, setSaving] = useState(false);
-    const [loaded, setLoaded] = useState(false);
+    // «محسوم» = عندنا ما نرسمه الآن: إمّا كاش سابق أو ردّ وصل. لا شاشة انتظار
+    // إلا في الزيارة الأولى على هذا الجهاز.
+    const [settled, setSettled] = useState(!!cached);
 
     useEffect(() => {
         let alive = true;
@@ -37,9 +78,16 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
                 if (!alive) return;
                 const num = String((data as any)?.vat_number || '');
                 const st = String((data as any)?.vat_status || '');
-                setVatNumber(num);
-                setStatus(num ? 'registered' : (st === 'not_registered' ? 'not_registered' : 'unknown'));
-                setLoaded(true);
+                const next: Snapshot = {
+                    status: num ? 'registered' : (st === 'not_registered' ? 'not_registered' : 'unknown'),
+                    vatNumber: num,
+                };
+                writeCache(userId, next);
+                // لا نلمس الحالة إن كانت مطابقة لما هو معروض — فلا رسم زائد
+                // ولا وميض على بطاقة صحيحة أصلاً.
+                setVatNumber(prev => (prev === next.vatNumber ? prev : next.vatNumber));
+                setStatus(prev => (prev === next.status ? prev : next.status));
+                setSettled(true);
             });
         return () => { alive = false; };
     }, [userId]);
@@ -60,6 +108,7 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
         setSaving(false);
         if (error) { onAlert(isRTL ? '❌ تعذّر الحفظ، حاول مجدداً.' : '❌ Could not save.'); return; }
         setVatNumber(n); setStatus('registered'); setEditing(false);
+        writeCache(userId, { status: 'registered', vatNumber: n });
         onAlert(isRTL
             ? '✅ تم الحفظ — فواتير طلباتك صارت «فاتورة ضريبية مبسطة» برمز QR.'
             : '✅ Saved — your order invoices are now simplified tax invoices with QR.');
@@ -72,9 +121,30 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
         setSaving(false);
         if (error) { onAlert(isRTL ? '❌ تعذّر الحفظ.' : '❌ Could not save.'); return; }
         setVatNumber(''); setStatus('not_registered');
+        writeCache(userId, { status: 'not_registered', vatNumber: '' });
     };
 
-    if (!loaded) return null;
+    // الزيارة الأولى على هذا الجهاز فقط: هيكل شبحي يحجز مساحة البطاقة تقريباً،
+    // فلا تقفز البطاقات تحته لحظة وصول البيانات (بلاغ ناصر — v13.61).
+    if (!settled) {
+        return (
+            <section aria-hidden style={{
+                background: 'var(--card-bg)', borderRadius: 18, padding: 18,
+                border: '1px solid var(--border-color)', marginBottom: 16,
+                minHeight: 250, display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+                <div className="taki-skeleton" style={{ height: 20, width: '62%', borderRadius: 8 }} />
+                <div className="taki-skeleton" style={{ height: 14, width: '100%', borderRadius: 8 }} />
+                <div className="taki-skeleton" style={{ height: 14, width: '92%', borderRadius: 8 }} />
+                <div className="taki-skeleton" style={{ height: 14, width: '78%', borderRadius: 8 }} />
+                <div className="taki-skeleton" style={{ height: 42, width: '100%', borderRadius: 12, marginTop: 4 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="taki-skeleton" style={{ height: 40, flex: 1, borderRadius: 12 }} />
+                    <div className="taki-skeleton" style={{ height: 40, flex: 1, borderRadius: 12 }} />
+                </div>
+            </section>
+        );
+    }
 
     const box: React.CSSProperties = {
         background: 'var(--card-bg)', borderRadius: 18, padding: 18,
