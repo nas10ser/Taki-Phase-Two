@@ -6,6 +6,7 @@ import { getStore } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { SellerTopBar } from '../components/SellerTopBar';
 import { userRepository } from '../repositories/userRepository';
+import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
@@ -36,6 +37,11 @@ const StoreDetails: React.FC = () => {
 
     const profile = storeProfiles[id] || {};
     const [isEditingStore, setIsEditingStore] = useState(false);
+    // v13.61 (طلب ناصر): مواقع المتجر على الصفحة العامة — التاجر يختار أيّها
+    // يظهر، والقاعدة تفرض حدّ باقته (لا الواجهة). الزائر يرى المعروض فقط.
+    const [branches, setBranches] = useState<StoreBranch[]>([]);
+    const [branchBusy, setBranchBusy] = useState<string | null>(null);
+    const [branchMsg, setBranchMsg] = useState<string>('');
     const [followerCount, setFollowerCount] = useState<number | null>(null);
     const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -203,6 +209,31 @@ const StoreDetails: React.FC = () => {
         })().catch(() => { /* الافتراضي يغطي */ });
         return () => { alive = false; };
     }, [user?.id, id]);
+
+    // v13.61 — تحميل الفروع: المالك يرى كل فروعه ليختار، والزائر المعروضة فقط.
+    useEffect(() => {
+        if (!id) return;
+        let alive = true;
+        (async () => {
+            const isOwner = !!user?.id && user.id === id;
+            const rows = isOwner
+                ? await branchRepository.listByMerchant(id)
+                : await branchRepository.listDisplayed(id);
+            if (alive) setBranches(rows.filter(b => b.isActive !== false));
+        })().catch(() => { if (alive) setBranches([]); });
+        return () => { alive = false; };
+    }, [id, user?.id]);
+
+    const toggleBranchDisplay = async (b: StoreBranch) => {
+        setBranchBusy(b.id); setBranchMsg('');
+        const res = await branchRepository.setDisplayed(b.id, !b.showOnStorePage);
+        if (res.ok) {
+            setBranches(prev => prev.map(x => x.id === b.id ? { ...x, showOnStorePage: !b.showOnStorePage } : x));
+        } else {
+            setBranchMsg(res.error || 'تعذّر الحفظ');
+        }
+        setBranchBusy(null);
+    };
 
     /** v13.17/19 — العرض المتجاوز يُنقل لصفحة التعديل ليقرر التاجر بنفسه.
      *  v13.19: السقف يُقرأ **من القاعدة لحظة الضغط** — الاعتماد على الحالة
@@ -755,6 +786,98 @@ const StoreDetails: React.FC = () => {
 
                 {/* v13.59 — انتقل هذا الشريط إلى أعلى الصفحة (تحت الصورة مباشرة). */}
             </div>
+
+            {/* v13.61 (طلب ناصر): مواقع المتجر على الصفحة. التاجر يختار أيّها يظهر —
+                حتى عدة مواقع — بشرط ألّا يتجاوز حدّ باقته. الحدّ تفرضه القاعدة
+                (tr_enforce_branch_display_cap) لا هذه الواجهة، فلا يُتجاوز بطلب مباشر. */}
+            {(() => {
+                const isOwner = !!user?.id && user.id === store.id;
+                if (branches.length === 0 && !isOwner) return null;
+                const shown = branches.filter(b => b.showOnStorePage);
+                const visible = isOwner ? branches : shown;
+                if (visible.length === 0 && !isOwner) return null;
+                const linkOf = (b: StoreBranch) =>
+                    (b.googleMapsLink && String(b.googleMapsLink).trim())
+                    || ((b.mapLat && b.mapLng) ? `https://www.google.com/maps?q=${b.mapLat},${b.mapLng}` : '');
+                const allLink = shown.length > 1
+                    ? `https://www.google.com/maps/search/${encodeURIComponent(store.name)}`
+                    : '';
+                return (
+                    <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, margin: '16px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
+                                📍 {isRTL ? 'مواقع المتجر' : 'Store locations'}
+                            </h3>
+                            {isOwner && (
+                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: shown.length >= ownerMaxLocations ? '#f59e0b' : 'var(--text-secondary)' }}>
+                                    {isRTL ? `المعروضة: ${shown.length} من ${ownerMaxLocations}` : `Shown: ${shown.length} of ${ownerMaxLocations}`}
+                                </span>
+                            )}
+                        </div>
+
+                        {isOwner && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.7 }}>
+                                {isRTL
+                                    ? 'اختر المواقع التي تريد أن يراها الزبائن على صفحتك. عددها محدود بباقتك.'
+                                    : 'Pick which locations customers see on your page. The number is limited by your package.'}
+                            </div>
+                        )}
+                        {branchMsg && (
+                            <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', color: '#b45309', borderRadius: 12, padding: '8px 12px', fontSize: '0.78rem', fontWeight: 800, marginBottom: 10 }}>
+                                ⚠️ {branchMsg}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {visible.map(b => {
+                                const href = linkOf(b);
+                                const on = !!b.showOnStorePage;
+                                return (
+                                    <div key={b.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                                        background: 'var(--body-bg)', borderRadius: 14, padding: '10px 12px',
+                                        opacity: isOwner && !on ? 0.55 : 1
+                                    }}>
+                                        <div style={{ flex: 1, minWidth: 140 }}>
+                                            <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                                {b.isPrimary ? '⭐ ' : ''}{(isRTL ? b.nameAr : (b.nameEn || b.nameAr)) || (isRTL ? 'فرع' : 'Branch')}
+                                            </div>
+                                            {b.address && (
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>{b.address}</div>
+                                            )}
+                                        </div>
+                                        {href && (
+                                            <a href={href} target="_blank" rel="noopener noreferrer"
+                                               style={{ background: 'var(--primary)', color: '#fff', borderRadius: 10, padding: '7px 12px', fontSize: '0.75rem', fontWeight: 800, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                                                🗺️ {isRTL ? 'الاتجاهات' : 'Directions'}
+                                            </a>
+                                        )}
+                                        {isOwner && (
+                                            <button onClick={() => toggleBranchDisplay(b)} disabled={branchBusy === b.id}
+                                                style={{
+                                                    background: on ? 'rgba(16,185,129,0.15)' : 'var(--card-bg)',
+                                                    border: `1px solid ${on ? 'rgba(16,185,129,0.6)' : 'var(--border-color)'}`,
+                                                    color: on ? '#059669' : 'var(--text-secondary)',
+                                                    borderRadius: 10, padding: '7px 12px', fontSize: '0.75rem', fontWeight: 900,
+                                                    cursor: branchBusy === b.id ? 'progress' : 'pointer', whiteSpace: 'nowrap'
+                                                }}>
+                                                {branchBusy === b.id ? '…' : on ? (isRTL ? '✅ ظاهر' : '✅ Shown') : (isRTL ? '🚫 مخفي' : '🚫 Hidden')}
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {allLink && (
+                            <a href={allLink} target="_blank" rel="noopener noreferrer"
+                               style={{ display: 'inline-block', marginTop: 10, fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>
+                                🗺️ {isRTL ? 'اعرض كل المواقع على الخريطة' : 'View all locations on the map'}
+                            </a>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* Working hours (ساعات عمل المحل) — visible to buyers on the store page */}
             {(() => {

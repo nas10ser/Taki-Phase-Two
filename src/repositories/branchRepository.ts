@@ -15,6 +15,9 @@ export interface StoreBranch {
     phone?: string | null;
     isPrimary?: boolean;
     isActive?: boolean;
+    /** v13.61 — يظهر هذا الفرع على صفحة المتجر العامة. محكوم بحدّ الباقة
+     *  عبر مشغّل في القاعدة (tr_enforce_branch_display_cap) لا بالواجهة. */
+    showOnStorePage?: boolean;
     createdAt?: string;
     updatedAt?: string;
 }
@@ -34,6 +37,7 @@ const fromRow = (r: any): StoreBranch => ({
     phone: r.phone,
     isPrimary: r.is_primary,
     isActive: r.is_active,
+    showOnStorePage: r.show_on_store_page ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
 });
@@ -53,6 +57,7 @@ const toRow = (b: Partial<StoreBranch> & { merchantId: string; nameAr: string })
     phone: b.phone ?? null,
     is_primary: b.isPrimary ?? false,
     is_active: b.isActive ?? true,
+    ...(b.showOnStorePage === undefined ? {} : { show_on_store_page: b.showOnStorePage }),
     updated_at: new Date().toISOString(),
 });
 
@@ -83,6 +88,27 @@ export const branchRepository = {
             throw error;
         }
         return data ? fromRow(data) : null;
+    },
+
+    /** v13.61 — إظهار/إخفاء فرع على صفحة المتجر. القاعدة هي التي تفرض حدّ
+     *  الباقة؛ نُرجع رسالة عربية واضحة عند الرفض بدل خطأ تقني. */
+    async setDisplayed(id: string, show: boolean): Promise<{ ok: boolean; error?: string; cap?: number }> {
+        const { error } = await supabase.from('store_branches')
+            .update({ show_on_store_page: show }).eq('id', id);
+        if (!error) return { ok: true };
+        const m = /BRANCH_DISPLAY_CAP:(\d+)/.exec(error.message || '');
+        if (m) return { ok: false, cap: Number(m[1]), error: `باقتك تسمح بعرض ${m[1]} موقع على صفحتك. أخفِ موقعاً آخر أولاً أو رقِّ باقتك.` };
+        return { ok: false, error: error.message };
+    },
+
+    /** الفروع الظاهرة للزوار على صفحة المتجر. */
+    async listDisplayed(merchantId: string): Promise<StoreBranch[]> {
+        const { data, error } = await supabase.from('store_branches')
+            .select('*').eq('merchant_id', merchantId)
+            .eq('show_on_store_page', true).eq('is_active', true)
+            .order('is_primary', { ascending: false }).order('created_at', { ascending: true });
+        if (error) return [];
+        return (data || []).map(fromRow);
     },
 
     async remove(id: string): Promise<void> {
