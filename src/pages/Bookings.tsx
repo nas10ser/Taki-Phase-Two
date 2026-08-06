@@ -520,16 +520,17 @@ const Bookings: React.FC = () => {
                                                     <BookingThread barcode={booking.barcode} myRole="buyer" />
                                                 )}
 
-                                                {/* v13.11 (طلب ناصر): طباعة الفاتورة بعد اكتمال الدفع —
-                                                    هنا (نشطة) تظهر فقط للمدفوع إلكترونياً؛ الدفع عند
-                                                    الاستلام تُطبع بعد اكتمال الطلب من «السابقة». */}
-                                                {booking.paidAt && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
-                                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginBottom: 20 }}>
-                                                        {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
-                                                    </button>
-                                                )}
+                                                {/* v13.59 (طلب ناصر): المشتري يحتاج سنداً مطبوعاً لكل حجز
+                                                    نشط ليحاجّ به عند الاستلام — لا للمدفوع إلكترونياً
+                                                    وحده. المدفوع تخرج له «فاتورة»، وغير المدفوع «سند
+                                                    حجز» (والقالب أصلاً يميّز الحالتين عبر paidOnline). */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); printOrderInvoice(buildBookingInvoice(booking, isRTL)); }}
+                                                    style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginBottom: 20 }}>
+                                                    {booking.paidAt
+                                                        ? (isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice')
+                                                        : (isRTL ? '🖨 طباعة سند الحجز' : '🖨 Print reservation receipt')}
+                                                </button>
                                                 {/* Code & QR */}
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

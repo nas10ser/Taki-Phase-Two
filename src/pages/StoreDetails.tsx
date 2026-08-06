@@ -505,6 +505,15 @@ const StoreDetails: React.FC = () => {
                         )}
                     </div>
                     
+                    {/* v13.59 (طلب ناصر): نفس شريط تبويبات «لوحتي» يظهر هنا في الأعلى
+                        ليتنقّل التاجر بين عروضه وطلباته وتقييماته والسكانر من صفحته
+                        مباشرة بدل النزول لأسفل الصفحة. يظهر لصاحب المتجر فقط. */}
+                    {user?.id === store.id && (
+                        <div style={{ margin: '4px -8px 12px' }}>
+                            <SellerTopBar storeId={store.id} />
+                        </div>
+                    )}
+
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: 4 }}>{store.name}</h1>
                     {/* v13.11 (طلب ناصر): يعرض موقع المتجر المحفوظ — عنوان نصّي إن وُجد،
                         وإلا رابط الخريطة/الإحداثيات كزر «عرض على الخريطة». لصاحب المتجر
@@ -744,9 +753,7 @@ const StoreDetails: React.FC = () => {
                     </div>
                 )}
 
-                <div style={{ marginTop: 24, paddingBottom: 8 }}>
-                    <SellerTopBar storeId={store.id} />
-                </div>
+                {/* v13.59 — انتقل هذا الشريط إلى أعلى الصفحة (تحت الصورة مباشرة). */}
             </div>
 
             {/* Working hours (ساعات عمل المحل) — visible to buyers on the store page */}
