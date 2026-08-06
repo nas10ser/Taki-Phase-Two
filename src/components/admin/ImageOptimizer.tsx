@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { compressImage, THUMB, BANNER } from '../../utils/imageCompression';
+import { markThumbed } from '../../utils/thumb';
 
 /**
  * ImageOptimizer — «ضغط الصور القديمة بضغطة واحدة» (v13.34)
@@ -16,6 +17,11 @@ import { compressImage, THUMB, BANNER } from '../../utils/imageCompression';
  * البقية — يُسجَّل ويُعرض في الملخص.
  */
 
+/**
+ * ملاحظة v13.71: الرابط المنتهي بعلامة `?t=1` (صورة رُفعت ومصغّرتها مؤكَّدة)
+ * **لا يطابق** هذا النمط عمداً — فلا يدخل قائمة العمل أصلاً. هكذا صار «تخطّي
+ * المكتمل» بلا أي طلب HEAD: العلامة نفسها هي الدليل.
+ */
 const SUPA_IMG = /\/storage\/v1\/object\/public\/deals\/([^/?#]+)\.(jpe?g|png|webp)$/i;
 
 type Progress = { done: number; total: number; saved: number; skipped: number; failed: number; current: string };
@@ -68,7 +74,14 @@ const ImageOptimizer: React.FC = () => {
                     if (job.kind === 'banner' && size > 0 && size <= 150 * 1024) { skipped++; done++; continue; }
                     if (job.kind === 'deal' && size > 0 && size <= 180 * 1024) {
                         const t = await fetch(job.url.replace(SUPA_IMG, `/storage/v1/object/public/deals/${stemOld}_t.jpg`), { method: 'HEAD' });
-                        if (t.ok) { skipped++; done++; continue; }
+                        if (t.ok) {
+                            // v13.71 — مضغوطة ولها مصغّرة فعلاً، لكن رابطها بلا
+                            // علامة (رُفعت قبل نظام العلامة). لا نعيد رفعها —
+                            // نكتفي بوسم الرابط ليستفيد التطبيق من مصغّرتها.
+                            const arr = dealNewImages.get(job.id);
+                            if (arr) arr[job.idx!] = markThumbed(job.url);
+                            skipped++; done++; continue;
+                        }
                     }
 
                     // ٢) نزّل واضغط بنفس محرك الرفع
@@ -82,11 +95,15 @@ const ImageOptimizer: React.FC = () => {
                     const up1 = await supabase.storage.from('deals')
                         .upload(`${stem}.jpg`, full, { cacheControl: '31536000', upsert: false });
                     if (up1.error) throw new Error(up1.error.message);
+                    let thumbOk = false;
                     if (thumb) {
-                        await supabase.storage.from('deals')
+                        const up2 = await supabase.storage.from('deals')
                             .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false });
+                        thumbOk = !up2.error;
                     }
-                    const newUrl = supabase.storage.from('deals').getPublicUrl(`${stem}.jpg`).data.publicUrl;
+                    // v13.71 — العلامة لا تُكتب إلا على مصغّرة وصلت فعلاً.
+                    const plainUrl = supabase.storage.from('deals').getPublicUrl(`${stem}.jpg`).data.publicUrl;
+                    const newUrl = thumbOk ? markThumbed(plainUrl) : plainUrl;
 
                     // ٤) حدّث الرابط
                     if (job.kind === 'deal') {

@@ -7,6 +7,21 @@ import { withTimeout } from '../utils/helpers';
  * v13.21 — الأعمدة التي تحتاجها واجهة «ملفات المتاجر» فعلاً.
  * كان الجلب `select('*')` فينزّل كل حقول كل تاجر لكل عميل عند كل تغيير.
  */
+/**
+ * v13.71 — أعمدة الدليل العام للمتاجر (`public.sellers_public`). أسماؤها هي
+ * أسماء أعمدة `users` نفسها، فيبقى `mapUserRowToProfile` مُحوِّلاً واحداً
+ * للمصدرين. ما ليس هنا (البريد، الجوال، معرّفات البوتات، ملاحظات الإدارة…)
+ * لا يخرج للمتصفح إطلاقاً — انظر supabase/migration_v13_71_*.sql.
+ */
+export const PUBLIC_SELLER_COLUMNS =
+    'id,name,shop,avatar_url,bio,contact_phone,user_type,lat,lng,google_maps_link,working_hours,preferred_lang';
+
+/**
+ * هل يوجد العرض العام على الخادم؟ (null = لم نجرّب بعد). نتذكّر النتيجة فلا
+ * نُطلق طلباً فاشلاً في كل تحديث قبل تطبيق ترحيل v13.71 على الخادم.
+ */
+let publicDirectoryAvailable: boolean | null = null;
+
 export const SELLER_PROFILE_COLUMNS =
     'id,name,phone,email,user_type,shop,contact_phone,avatar_url,bio,savings,bookings_count,' +
     'notif_keywords,smart_alerts,preferred_lang,followed_merchants,blocked_merchants,' +
@@ -336,36 +351,30 @@ export const userRepository = {
 
             if (!sanitized) return [];
 
-            // Fetch top 10 sellers that match the query
+            // v13.71 — نفس مبدأ getAllSellers: الدليل العام أولاً (حقول عامة
+            // فقط)، وارتداد للجدول قبل تطبيق الترحيل. و`neq('buyer')` بدل
+            // `eq('seller')` حتى يظهر متجر ناصر المملوك لحساب أدمن في البحث.
+            if (publicDirectoryAvailable !== false) {
+                const viaView = await supabase
+                    .from('sellers_public')
+                    .select(PUBLIC_SELLER_COLUMNS)
+                    .or(`shop.ilike.%${sanitized}%,name.ilike.%${sanitized}%`)
+                    .limit(10);
+                publicDirectoryAvailable = !viaView.error;
+                if (!viaView.error) return (viaView.data as any[] || []).map(mapUserRowToProfile);
+            }
+
             const { data, error } = await supabase
                 .from('users')
-                .select('*')
-                .eq('user_type', 'seller')
+                .select(SELLER_PROFILE_COLUMNS)
+                .neq('user_type', 'buyer')
                 .or(`shop.ilike.%${sanitized}%,name.ilike.%${sanitized}%`)
                 .limit(10);
             
             if (data && !error) {
-                return data.map(d => ({
-                    id: d.id,
-                    name: d.name,
-                    phone: d.phone,
-                    email: d.email,
-                    userType: d.user_type,
-                    shop: d.shop,
-                    contactPhone: d.contact_phone,
-                    avatar_url: d.avatar_url,
-                    bio: d.bio,
-                    savings: d.savings,
-                    bookingsCount: d.bookings_count,
-                    notifKeywords: d.notif_keywords,
-                    smartAlerts: Array.isArray(d.smart_alerts) ? d.smart_alerts : [],
-                    preferredLang: d.preferred_lang || 'ar',
-                    followedMerchants: Array.isArray(d.followed_merchants) ? d.followed_merchants : [],
-                    blockedMerchants: Array.isArray(d.blocked_merchants) ? d.blocked_merchants : [],
-                    lat: d.lat,
-                    lng: d.lng,
-                    googleMapsLink: d.google_maps_link
-                }));
+                // v13.71 — كان هنا نسخة ثانية يدوية من محوّل الصفوف تنحرف عن
+                // `mapUserRowToProfile` (كانت تُسقط `working_hours` مثلاً).
+                return (data as any[]).map(mapUserRowToProfile);
             }
         } catch (e) {
             console.error('Failed to search stores', e);
@@ -375,13 +384,23 @@ export const userRepository = {
 
     getAllSellers: async (): Promise<UserProfile[]> => {
         try {
-            // v13.21 — نطلب الأعمدة المستخدمة فقط (كان select('*') ينزّل كل
-            // صفوف التجار بكل حقولها لكل عميل عند كل تغيير — حمل هائل عند
-            // آلاف المتاجر، وبلا داعٍ فالواجهة تستخدم هذه الحقول وحدها).
+            // v13.71 — الدليل العام للمتاجر يُقرأ من `sellers_public` (حقول
+            // عامة فقط)، وإن لم يوجد العرض بعد — أي قبل تطبيق ترحيل v13.71 على
+            // الخادم — نرتدّ إلى الجدول كما كان. فالنشر آمن في الحالتين.
+            if (publicDirectoryAvailable !== false) {
+                const viaView = await supabase.from('sellers_public').select(PUBLIC_SELLER_COLUMNS);
+                publicDirectoryAvailable = !viaView.error;
+                if (!viaView.error) return (viaView.data as any[] || []).map(mapUserRowToProfile);
+            }
+
+            // v13.71 — `neq('user_type','buyer')` لا `eq('seller')`: متجر ناصر
+            // مملوك لحساب **أدمن**، وكل مرشِّح `user_type='seller'` في هذا
+            // المستودع أخفاه تاريخياً (نفس درس قناة realtime في realtimeService).
+            // النتيجة كانت: بطاقات متجره بلا شعار ولا ساعات عمل ولا رقم تواصل.
             const { data, error } = await supabase
                 .from('users')
                 .select(SELLER_PROFILE_COLUMNS)
-                .eq('user_type', 'seller');
+                .neq('user_type', 'buyer');
 
             if (data && !error) return (data as any[]).map(mapUserRowToProfile);
         } catch (e) {

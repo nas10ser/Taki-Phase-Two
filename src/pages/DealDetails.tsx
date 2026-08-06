@@ -8,9 +8,9 @@ import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
-import { thumbUrl, imgFallback } from '../utils/thumb';
+import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -1540,7 +1540,11 @@ const DealDetails: React.FC = () => {
                         style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, cursor: 'pointer', background: 'var(--body-bg)', padding: '12px', borderRadius: 16, border: '1px solid var(--gray-100)', WebkitTapHighlightColor: 'transparent' }}
                     >
                         <div style={{ width: 50, height: 50, borderRadius: 14, background: 'var(--primary-light)', border: '2px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', overflow: 'hidden' }}>
-                            {storeProfiles[deal.storeId]?.avatar ? <img src={storeProfiles[deal.storeId].avatar} alt="Merchant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🏪'}
+                            {/* v13.71 — كان يقرأ `.avatar` وهو حقل لا يُنتجه أي مستودع
+                                (العمود اسمه avatar_url) فكان شعار المتجر لا يظهر هنا أبداً. */}
+                            {storeAvatar(storeProfiles[deal.storeId])
+                                ? <img src={storeAvatar(storeProfiles[deal.storeId])} alt="" loading="lazy" decoding="async" onError={hideBrokenImg} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : '🏪'}
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontWeight: 900 }}>{deal.shopName}</div>
@@ -2221,7 +2225,9 @@ const DealDetails: React.FC = () => {
                             </div>
                             {/* Merchant Avatar for Trust */}
                             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--primary-light)', border: '1.5px solid white', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', overflow: 'hidden' }}>
-                                {storeProfiles[deal.storeId]?.avatar ? <img src={storeProfiles[deal.storeId].avatar} alt="Merchant" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🏪'}
+                                {storeAvatar(storeProfiles[deal.storeId])
+                                    ? <img src={storeAvatar(storeProfiles[deal.storeId])} alt="" loading="lazy" decoding="async" onError={hideBrokenImg} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    : '🏪'}
                             </div>
                         </div>
                         
