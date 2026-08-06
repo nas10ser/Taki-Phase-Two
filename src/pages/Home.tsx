@@ -315,12 +315,11 @@ const Home: React.FC = () => {
             )}
 
             {/* Sub-Nav Filters */}
-            {/* v13.61 — شريط الفلاتر اللاصق كان يحمل backdrop-filter وهو **فوق**
-                الشبكة المتحرّكة: يعني إعادة أخذ عيّنة من الخلفية وتمويهها في كل
-                إطار أثناء التمرير، على عرض الشاشة كاملاً. صار سطحاً معتماً
-                (نفس لون بطاقة الفلاتر أعلاه) — لا فرق بصري يُذكر، ولا عمل
-                إضافي على وحدة الرسم في أي إطار. */}
-            <div style={{ position: 'sticky', top: 110, zIndex: 90, background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', padding: '10px 0 12px', transition: 'background 0.3s ease' }}>
+            {/* v13.64 — أُعيد شكل هذا الشريط كما كان بأمر ناصر: بلاغه عن الوميض
+                لم يكن يقصده، وتغييري لمظهره (سطح معتم بحدّ سفلي) كان زيادة من
+                عندي لا طلباً منه. الوميض عولج من جذره في v13.62–63 بلا حاجة
+                للمساس بهوية الرئيسية. */}
+            <div style={{ position: 'sticky', top: 110, zIndex: 90, background: 'var(--nav-bg)', backdropFilter: 'blur(10px)', padding: '10px 0 12px', transition: 'background 0.3s ease' }}>
                 <div style={{ display: 'flex', gap: 8, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
                     {GENDERS.map(g => (
                         <button key={g.id} onClick={() => setActiveGender(g.id)}
