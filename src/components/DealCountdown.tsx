@@ -1,6 +1,6 @@
 import React from 'react';
 import { Deal } from '../data/mock';
-import { isDealComingSoon, formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
+import { formatComingSoonRemaining, dealLifespanStart } from '../utils/helpers';
 import { useCountdownTick } from '../utils/useCountdownTick';
 
 /**
