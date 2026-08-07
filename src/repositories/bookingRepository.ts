@@ -364,10 +364,16 @@ export const bookingRepository = {
     },
 
     remove: async (barcode: string): Promise<void> => {
-        try {
-            await supabase.from('bookings').delete().eq('barcode', barcode);
-        } catch (e) {
-            console.error('Remote delete failed:', e);
+        // v13.71 — كان يبتلع كل شيء: لا يقرأ `error` العائد أصلاً، ولا يميّز
+        // حذفاً رفضته RLS (يعود بصفر صفوف و`error=null`). أي نداء مستقبلي كان
+        // سيحصل على «نجاح» وهمي. الآن يرمي، فيقرّر المُستدعي ماذا يعرض.
+        const { data, error } = await supabase.from('bookings').delete().eq('barcode', barcode).select('barcode');
+        if (error) {
+            console.error('Remote delete failed:', error);
+            throw error;
+        }
+        if (!data || data.length === 0) {
+            throw new Error('BOOKING_DELETE_NOOP: لم يُحذف الحجز من القاعدة (لا صلاحية أو باركود غير موجود).');
         }
     },
 

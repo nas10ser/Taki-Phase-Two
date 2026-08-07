@@ -195,14 +195,19 @@ const AdminContests: React.FC = () => {
     };
 
     const changeStatus = async (c: Contest, status: ContestStatus) => {
-        await contestRepository.setStatus(c.id, status);
+        // v13.71 — كان يتجاهل `error` العائد: أي رفض من القاعدة (صلاحية أو
+        // اتصال) يمرّ صامتاً، ثم يعيد `load()` رسم الحالة القديمة فيظنّ المدير
+        // أن الزرّ «لا يعمل» بلا سبب. الآن يُقال السبب.
+        const { error } = await contestRepository.setStatus(c.id, status);
+        if (error) { await customAlert('❌ تعذّر تغيير حالة المسابقة: ' + (error.message || '')); return; }
         if (status === 'active') await maybeAnnounce({ ...c, status: 'active' });
         load();
     };
 
     const removeContest = async (c: Contest) => {
         if (!(await customConfirm(`حذف «${c.title}» وكل مشاركاتها؟`))) return;
-        await contestRepository.remove(c.id);
+        const { error } = await contestRepository.remove(c.id);
+        if (error) { await customAlert('❌ تعذّر حذف المسابقة: ' + (error.message || '')); return; }
         load();
     };
 

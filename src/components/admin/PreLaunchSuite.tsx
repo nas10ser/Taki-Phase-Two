@@ -311,7 +311,10 @@ const BUILD_CHECKS = (): CheckDef[] => [
         label: 'Storage: قائمة buckets',
         run: async () => {
             const start = performance.now();
-            const { error } = await supabase.storage.from('deal-images').list('', { limit: 1 });
+            // v13.71 — كان يفحص مستودعاً باسم `deal-images` وهو **غير موجود**
+            // (المستودع الوحيد اسمه `deals`)، فكان هذا الفحص يعطي «تحذير: Bucket
+            // not found» دائماً — إنذار كاذب دائم يُخفي عطلاً حقيقياً لو وقع.
+            const { error } = await supabase.storage.from('deals').list('', { limit: 1 });
             const dur = Math.round(performance.now() - start);
             return error
                 ? { status: 'warn' as const, detail: error.message }

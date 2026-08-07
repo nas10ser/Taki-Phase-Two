@@ -958,14 +958,21 @@ const SellerDashboard: React.FC = () => {
                 // forever" guarantee without firing spurious timeouts on slow
                 // connections that would have completed successfully.
                 await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 30000);
-                // Mirror the saved shop location into store_branches as a
-                // pinned/primary branch so it shows up in the picker too.
-                // The user pressed "💾 حفظ موقع المتجر" explicitly — they
-                // want it persisted in BOTH places. Marked is_primary=true so
-                // we can tell it apart from per-deal branches later. Failures
-                // here are swallowed because the profile write already
-                // succeeded and the toast above already fired — branching is
-                // a convenience side-effect.
+
+                // ── مرآة الموقع في «مواقعي المحفوظة» (store_branches) ──
+                //
+                // v13.71 (بلاغ ناصر: «أضغط حفظ الموقع فلا يحفظه ولا يضيفه
+                // بالأعلى والأسفل»). السبب أُثبت باختبار على القاعدة نفسها:
+                // المشغّل `tr_enforce_branch_cap` يرفض أي موقع جديد فوق حدّ
+                // الباقة بـ`LOCATION_LIMIT_EXCEEDED`، **وكان هذا الخطأ يُبتلع
+                // هنا بـconsole.warn** ثم تُعرض رسالة «✅ تم الحفظ بنجاح» —
+                // فيرى التاجر نجاحاً كاذباً ولا شريحة تظهر أعلى ولا أسفل.
+                //
+                // والآن ثلاث تصحيحات: (١) لا رسالة نجاح إلا على كتابة وقعت
+                // فعلاً، (٢) سبب الرفض يُقال صراحةً مع طريق الترقية، (٣) لو
+                // كان الموقع محفوظاً سلفاً بنفس المفتاح نُحدّث صفّه بدل إنشاء
+                // صفّ مكرر تبتلعه إزالة التكرار في الشرائح فلا يظهر شيء.
+                let branchOutcome: 'added' | 'updated' | 'cap' | 'failed' = 'added';
                 try {
                     if (user?.id) {
                         const primaryLabel = (shopName && shopName.trim().length > 0)
@@ -978,12 +985,22 @@ const SellerDashboard: React.FC = () => {
                             && locationId !== 'other'
                             && !locationId.startsWith('custom_')
                         ) ? locationId : null;
-                        // Replace an existing primary row instead of creating
-                        // a second one each time the seller re-saves their
-                        // shop location.
-                        const existingPrimary = branches.find(b => b.merchantId === user.id && b.isPrimary);
+                        const newKey = locKeyOf({ locationId: persistedLocationId, mapLocation: { lat, lng } });
+                        const mine = branches.filter(b => b.merchantId === user.id && b.isActive !== false);
+                        const sameKey = mine.find(b => locKeyOf({
+                            locationId: b.locationId || null,
+                            mapLocation: { lat: b.mapLat ?? 0, lng: b.mapLng ?? 0 },
+                        }) === newKey);
+                        const existingPrimary = mine.find(b => b.isPrimary);
+                        // الصفّ الهدف: الموقع نفسه إن كان محفوظاً، وإلا الفرع
+                        // الرئيسي (يُنقل)، وإلا صفّ جديد.
+                        const target = sameKey || existingPrimary;
+                        // لا يبقى رئيسيان: نُنزل القديم قبل ترقية الجديد.
+                        if (sameKey && existingPrimary && existingPrimary.id !== sameKey.id) {
+                            await saveBranch({ ...existingPrimary, isPrimary: false });
+                        }
                         await saveBranch({
-                            ...(existingPrimary ? { id: existingPrimary.id } : {}),
+                            ...(target ? { id: target.id } : {}),
                             nameAr: primaryLabel,
                             locationId: persistedLocationId,
                             regionId: selectedRegion || null,
@@ -993,11 +1010,36 @@ const SellerDashboard: React.FC = () => {
                             googleMapsLink: googleMapsLink || null,
                             isPrimary: true,
                         });
+                        branchOutcome = sameKey ? 'updated' : 'added';
                     }
-                } catch (branchErr) {
-                    console.warn('Primary branch upsert non-fatal error:', branchErr);
+                } catch (branchErr: any) {
+                    const msg = String(branchErr?.message || branchErr || '');
+                    console.warn('Primary branch upsert error:', msg);
+                    if (/LOCATION_LIMIT_EXCEEDED/i.test(msg)) {
+                        branchOutcome = 'cap';
+                    } else {
+                        branchOutcome = 'failed';
+                    }
                 }
-                customAlert(isRTL ? '✅ تم حفظ موقع المتجر الدائم بنجاح!' : '✅ Permanent shop location saved successfully!');
+
+                if (branchOutcome === 'cap') {
+                    const goUpgrade = await customConfirm(isRTL
+                        ? `📍 حُفظ موقع متجرك على الخريطة.\n\nلكنه **لم يُضف** إلى «مواقعي المحفوظة» لأن باقتك تسمح بـ${maxLocations === 1 ? 'موقع واحد' : `${maxLocations} مواقع`} وقد اكتملت.\n\n• «موافق» = ترقية الباقة الآن.\n• «إلغاء» = أحذف موقعاً من القائمة أعلاه ثم أعيد الحفظ.`
+                        : `📍 Your shop pin was saved.\n\nBut it was NOT added to your saved locations: your plan allows ${maxLocations} location(s) and they are all used.\n\n• OK = upgrade now.\n• Cancel = delete one of the saved locations above and save again.`);
+                    if (goUpgrade) history.push('/subscription');
+                } else if (branchOutcome === 'failed') {
+                    await customAlert(isRTL
+                        ? '📍 حُفظ موقع متجرك على الخريطة، لكن تعذّرت إضافته إلى «مواقعي المحفوظة». تحقّق من الإنترنت وأعد المحاولة.'
+                        : '📍 Shop pin saved, but adding it to your saved locations failed. Check your connection and try again.');
+                } else {
+                    await customAlert(isRTL
+                        ? (branchOutcome === 'updated'
+                            ? '✅ حُفظ الموقع وحُدِّث في «مواقعي المحفوظة» (كان محفوظاً لديك بنفس المكان).'
+                            : '✅ حُفظ الموقع وأُضيف إلى «مواقعي المحفوظة».')
+                        : (branchOutcome === 'updated'
+                            ? '✅ Location saved and updated in your saved locations.'
+                            : '✅ Location saved and added to your saved locations.'));
+                }
             } catch (e: any) {
                 console.error('Save shop location error:', e);
                 const isTimeout = e instanceof TimeoutError;
@@ -2921,6 +2963,24 @@ const SellerDashboard: React.FC = () => {
                                         gap: 6
                                     }}>
                                         📍 {isRTL ? 'مواقعك — اضغط لاستخدامه فوراً' : 'Your locations — tap to reuse'}
+                                        {/* v13.71 — العدّاد الحيّ مقابل حدّ الباقة. كان
+                                            التاجر لا يعرف أنه بلغ الحدّ إلا بعد ضغط «حفظ
+                                            الموقع» ورفض القاعدة الصامت (بلاغ ناصر). */}
+                                        {(() => {
+                                            const used = mergedLocationChips.length;
+                                            const full = used >= MAX_LOCATIONS;
+                                            return (
+                                                <span style={{
+                                                    marginInlineStart: 'auto',
+                                                    background: full ? 'rgba(245,158,11,0.15)' : 'var(--body-bg)',
+                                                    border: `1px solid ${full ? '#f59e0b' : 'var(--border-color)'}`,
+                                                    color: full ? '#b45309' : 'var(--text-secondary)',
+                                                    borderRadius: 999, padding: '3px 9px', fontSize: '0.68rem', fontWeight: 800
+                                                }}>
+                                                    {isRTL ? `${used} / ${MAX_LOCATIONS} من باقتك` : `${used} / ${MAX_LOCATIONS} of your plan`}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                     {/* v13.16 — تلميح التسمية (طلب ناصر) */}
                                     <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
@@ -2942,7 +3002,11 @@ const SellerDashboard: React.FC = () => {
                                         </span>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                             <span style={{ width: 11, height: 11, borderRadius: 3, background: 'rgba(245,158,11,0.9)', display: 'inline-block' }} />
-                                            {isRTL ? 'شاغر — لا يُحتسب، يمكنك حذفه ✕ لتفريغ خانة' : 'Vacant — not counted, delete ✕ to free a slot'}
+                                            {/* v13.71 — تصحيح نصّ مضلِّل: حارس القاعدة
+                                                (enforce_branch_location_cap) يحتسب **كل**
+                                                موقع محفوظ ولو بلا عروض. كان المكتوب «لا
+                                                يُحتسب» فيرفض الخادم الحفظ بلا سبب مفهوم. */}
+                                            {isRTL ? 'شاغر — محفوظ بلا عروض، ويظل محسوباً حتى تحذفه ✕' : 'Vacant — saved with no deals; still counted until you delete it ✕'}
                                         </span>
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

@@ -2,6 +2,7 @@ import { CONFIG } from '../config';
 import { supabase } from './supabaseClient';
 import { logger } from '../utils/logger';
 import { compressImage, THUMB } from '../utils/imageCompression';
+import { markThumbed } from '../utils/thumb';
 
 export const storageService = {
     /**
@@ -94,9 +95,13 @@ export const storageService = {
             logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB${thumb ? ` (مصغّرة ${Math.round(thumb.size/1024)}KB)` : ''}`);
 
             // Create a timeout promise
-            const timeoutPromise = new Promise<null>((_, reject) => 
+            const timeoutPromise = new Promise<null>((_, reject) =>
                 setTimeout(() => reject(new Error('Upload Timeout')), 12000)
             );
+
+            // v13.71 — نتيجة رفع المصغّرة (نجاح/فشل). الرابط لا يُوسَم بعلامة
+            // المصغّرة إلا إذا تأكّد وصولها فعلاً — انظر thumb.ts.
+            let thumbUploaded: Promise<boolean> | null = null;
 
             const uploadPromise = (async () => {
                 const { data: uploadData, error: uploadError } = await supabase.storage
@@ -111,13 +116,16 @@ export const storageService = {
 
                 if (uploadError) throw uploadError;
 
-                // المصغّرة: رفعها لا يُعطّل المنتج أبداً — لو فشلت تبقى الواجهة
-                // على الأصل عبر ارتداد thumbUrl.
+                // المصغّرة: رفعها لا يُعطّل المنتج أبداً — لو فشلت يبقى الرابط
+                // بلا علامة `?t=1` فتعرض الواجهةُ الأصلَ مباشرة (بلا طلب فاشل).
                 if (thumb) {
-                    supabase.storage.from('deals')
+                    thumbUploaded = supabase.storage.from('deals')
                         .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false })
-                        .then(({ error }) => { if (error) logger.warn('thumb upload failed:', error.message); })
-                        .catch(() => { /* صامت */ });
+                        .then(({ error }) => {
+                            if (error) logger.warn('thumb upload failed:', error.message);
+                            return !error;
+                        })
+                        .catch(() => false);
                 }
 
                 const { data } = supabase.storage.from('deals').getPublicUrl(fileName);
@@ -125,8 +133,20 @@ export const storageService = {
             })();
 
             // Race the upload against the timeout
-            const result = await Promise.race([uploadPromise, timeoutPromise]);
-            
+            let result = await Promise.race([uploadPromise, timeoutPromise]);
+
+            // v13.71 — الوسم يقع **بعد** تأكيد وصول المصغّرة، وخارج سباق المهلة
+            // أعلاه حتى لا يتحوّل تأخّر مصغّرة إلى فشل رفعٍ نجح فعلاً. مهلة ٥
+            // ثوانٍ للتأكيد: لو تأخّرت أو فشلت نُبقي الرابط بلا علامة فتُعرض
+            // الصورة الأصلية — لا صورة ناقصة ولا طلب فاشل في الحالتين.
+            if (result && thumbUploaded) {
+                const ok = await Promise.race([
+                    thumbUploaded,
+                    new Promise<boolean>(r => setTimeout(() => r(false), 5000)),
+                ]);
+                if (ok) result = markThumbed(result);
+            }
+
             if (result) {
                 logger.info('✅ Image uploaded successfully:', result);
             }

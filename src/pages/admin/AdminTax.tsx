@@ -313,7 +313,15 @@ const AdminTax: React.FC = () => {
     const removeExpense = async (id: string) => {
         const ok = await customConfirm('حذف فاتورة المشتريات هذه؟');
         if (!ok) return;
-        await supabase.from('expense_invoices').delete().eq('id', id);
+        // v13.71 — كان الحذف بلا أي فحص: لو رفضته السياسة أو انقطع الاتصال
+        // أعادت الصفحة التحميل والصفّ مكانه، بلا كلمة واحدة للمدير. و`select`
+        // إلزامي هنا لأن حذفاً ترفضه RLS يعود بـ`error=null` وصفر صفوف.
+        const { data, error } = await supabase.from('expense_invoices').delete().eq('id', id).select('id');
+        if (error) { await customAlert('❌ تعذّر الحذف: ' + error.message); return; }
+        if (!data || data.length === 0) {
+            await customAlert('❌ لم تُحذف الفاتورة (لا صلاحية على هذا الصف). حدّث الصفحة وحاول مجدداً.');
+            return;
+        }
         load();
     };
 
