@@ -8,32 +8,41 @@ const SellerTopBarImpl: React.FC<{ storeId?: string }> = ({ storeId }) => {
     const location = useLocation();
     const isRTL = language === 'ar';
 
-    if (user?.userType !== 'seller' || user?.id !== storeId) return null;
+    // v13.72 — كان الشرط `userType === 'seller'` أيضاً، فالمتجر المملوك لحساب
+    // **أدمن** (متجر ناصر) لا يرى الشريط إطلاقاً على صفحته. نفس فخّ v11.82 في
+    // البوت: مالك المتجر يُعرَف بأنه صاحب الصفحة، لا بنوع حسابه.
+    if (!user || user.id !== storeId) return null;
 
-    const unreadNotifsCount = notifications.filter(n => n.userId === user?.id && !n.isRead).length;
     const unreadOrdersCount = notifications.filter(n => n.userId === user?.id && !n.isRead && n.type === 'booking').length;
 
     return (
         <div style={{ display: 'flex', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(10px)', borderRadius: 16, padding: 6, overflowX: 'auto', gap: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', marginBottom: 10 }}>
-            {(['form', 'products', 'orders', 'notifications', 'scanner'] as const).map(tab => {
-                const badgeCount = tab === 'notifications' ? unreadNotifsCount : tab === 'orders' ? unreadOrdersCount : 0;
+            {/* v13.72 — تبويبان صُحِّحا هنا:
+                • `notifications` **لم تكن شاشة موجودة أصلاً** في لوحة التاجر، فكان
+                  الضغط على «تنبيهات» يسقط إلى الفرع الأخير ويفتح **الماسح الضوئي**.
+                  استُبدلت بـ`reviews` (التقييمات والردود) وهي ما يقصده الرمز 💬.
+                • أُضيف `insights` = **التحليلات** (طلب ناصر) — كان موجوداً في
+                  اللوحة ولا منفذ له من صفحة المتجر. */}
+            {(['form', 'products', 'orders', 'reviews', 'insights', 'scanner'] as const).map(tab => {
+                const badgeCount = tab === 'orders' ? unreadOrdersCount : 0;
                 
                 return (
                     <button key={tab} onClick={() => {
                         history.push(`/seller?tab=${tab}`);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                     }} style={{
-                        flex: 1, minWidth: 80, padding: '10px 4px', borderRadius: 12, border: 'none',
+                        flex: 1, minWidth: 76, padding: '10px 4px', borderRadius: 12, border: 'none',
                         background: 'transparent', color: 'white',
                         fontWeight: 900, fontSize: '0.8rem', transition: 'all 0.2s ease', cursor: 'pointer',
                         display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center', position: 'relative'
                     }}>
-                         {tab === 'products' ? '📦 ' : tab === 'orders' ? '🔔 ' : tab === 'notifications' ? '💬 ' : tab === 'scanner' ? '📷 ' : '➕ '}
+                         {tab === 'products' ? '📦 ' : tab === 'orders' ? '🔔 ' : tab === 'reviews' ? '💬 ' : tab === 'insights' ? '📊 ' : tab === 'scanner' ? '📷 ' : '➕ '}
                          <span>
-                            {tab === 'form' ? (isRTL ? 'إضافة' : 'Add') : 
+                            {tab === 'form' ? (isRTL ? 'إضافة' : 'Add') :
                              tab === 'products' ? (isRTL ? 'عروضي' : 'Deals') :
                              tab === 'orders' ? (isRTL ? 'طلبات' : 'Orders') :
-                             tab === 'notifications' ? (isRTL ? 'تنبيهات' : 'Alerts') :
+                             tab === 'reviews' ? (isRTL ? 'تقييمات' : 'Reviews') :
+                             tab === 'insights' ? (isRTL ? 'تحليلات' : 'Insights') :
                              (isRTL ? 'تحقق' : 'Scan')}
                          </span>
                          {badgeCount > 0 && (
