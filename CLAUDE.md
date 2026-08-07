@@ -26,12 +26,12 @@
 5. `git push origin HEAD:main`
 6. مزامنة المجلد المحلي: `git -C /Users/nasser/Desktop/TAKI pull origin main`
 7. حدّث `progress.md` (الأحدث في الأعلى)
-8. نشر إنتاج: `cd ~/Desktop/TAKI && npx vercel deploy --prod --archive=tgz`
+8. **النشر صار تلقائياً (v13.72):** مشروع Vercel مربوط بـGitHub، فأي دفع إلى `main` يبني وينشر وحده — لا حاجة لأمر يدوي ولا لجهاز ناصر. (الطريقة القديمة `npx vercel deploy --prod --archive=tgz` تبقى مخرجاً احتياطياً فقط.)
 9. تحقّق: `curl -s https://taki-test-eight.vercel.app/sw.js | grep -oE 'taki-cache-v[0-9.]+'`
 10. أخبرني بالعربي بما فعلت + كيف أتأكد
 
 ## 🪤 فخاخ يجب تجنّبها (Hard-won lessons)
-- **`--archive=tgz` إلزامي** في Vercel deploy — بدونه يفشل بـ`api-upload-free quota`.
+- **`--archive=tgz` إلزامي** في Vercel deploy اليدوي — بدونه يفشل بـ`api-upload-free quota`. (نادراً ما يُحتاج بعد ربط GitHub في v13.72.)
 - **iOS Safari يثبت على نسخة قديمة** إذا ما رفعت `CACHE_NAME` في sw.js. v10.25+ فيه UpdateBanner أخضر داخل التطبيق.
 - **DB trigger `tr_guard_deal_publish`** يرفض أي UPDATE OF status حتى بنفس القيمة — استخدم `dealRepository.updateQuantity` للتحديثات الجزئية.
 - **PL/pgSQL `text[] || 'literal'`** ambiguous → cast صريح `::TEXT` (v10.60 ضحّى بـsave-deal كاملاً قبل ما أصلحه).
