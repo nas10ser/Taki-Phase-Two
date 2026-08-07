@@ -565,6 +565,40 @@ const DealDetails: React.FC = () => {
             return a.distance - b.distance;
         });
     }, [dealLocations, liveLocation?.lat, liveLocation?.lng]);
+    /**
+     * v13.71 (بلاغ ناصر: «حدّ المسافة يجب أن يظهر عند نقر الحجز **الأول** لا
+     * عند التأكيد النهائي»).
+     *
+     * أقرب مسافة معروفة بين المشتري وهذا العرض بالكيلومترات — من أقرب فرع في
+     * العروض متعددة المواقع، أو من دبّوس العرض نفسه في العرض ذي الموقع الواحد
+     * (وهذا الأخير لم يكن عليه حدّ مسافة إطلاقاً قبل اليوم). `null` = موقع
+     * المشتري غير معروف فلا حكم.
+     */
+    const nearestDistanceKm = React.useMemo<number | null>(() => {
+        const uLat = liveLocation?.lat, uLng = liveLocation?.lng;
+        if (uLat == null || uLng == null) return null;
+        if (sortedLocations && sortedLocations.length > 0) {
+            const d = (sortedLocations[0] as any)?.distance;
+            return typeof d === 'number' ? d : null;
+        }
+        const lat = deal?.mapLocation?.lat, lng = deal?.mapLocation?.lng;
+        if (typeof lat === 'number' && typeof lng === 'number') return getDistance(uLat, uLng, lat, lng);
+        return null;
+    }, [liveLocation?.lat, liveLocation?.lng, sortedLocations, deal?.mapLocation?.lat, deal?.mapLocation?.lng]);
+
+    /**
+     * الحارس المبكر: يُنادى عند «احجز الآن» قبل فتح ورقة الحجز. لو كان **أقرب**
+     * فرع أبعد من ١٠٠ كم فلا خيار داخل الورقة يُصلح ذلك — نقولها فوراً بدل أن
+     * يملأ الكميات والملاحظات ثم يُصدم عند التأكيد النهائي.
+     */
+    const blockedByDistance = React.useCallback(async (): Promise<boolean> => {
+        if (nearestDistanceKm == null || nearestDistanceKm <= 100) return false;
+        await customAlert(isRTL
+            ? `⛔ أقرب فرع لهذا العرض يبعد عنك ${Math.round(nearestDistanceKm)} كم (أكثر من ١٠٠ كم).\n\nمهلة الاستلام ساعتان فقط، ولن تصل خلالها فيُلغى الحجز تلقائياً. ابحث عن عرض أقرب لك.`
+            : `⛔ The nearest branch for this deal is ${Math.round(nearestDistanceKm)} km away (over 100 km).\n\nThe pickup window is 2 hours and the booking would auto-cancel. Please pick a closer deal.`);
+        return true;
+    }, [nearestDistanceKm, isRTL, customAlert]);
+
     const activeLoc = dealLocations
         ? (dealLocations.find(l => l.id === selectedLocId) || dealLocations[0])
         : null;
@@ -2173,6 +2207,8 @@ const DealDetails: React.FC = () => {
                                             // v13.13 (طلب ناصر): تنبيه حدود الحجز يظهر هنا — عند
                                             // «احجز الآن» — لا عند «تأكيد الحجز النهائي» فقط.
                                             if (!(await checkBookingLimits())) return;
+                                            // v13.71 — حدّ المسافة قبل فتح الورقة، لا بعد تعبئتها.
+                                            if (await blockedByDistance()) return;
                                             setShowBookingModal(true);
                                         }}
                                         disabled={isSoldOut && !booked}

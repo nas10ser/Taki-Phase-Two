@@ -2517,8 +2517,24 @@ const SellerDashboard: React.FC = () => {
 
     const {
         bookings: pastOrders, total: pastOrdersTotal, hasMore: pastOrdersMore,
-        loadingMore: pastOrdersLoadingMore, loadMore: loadMorePastOrders,
+        loadingMore: pastOrdersLoadingMore, loadMore: loadMorePastOrders, reload: reloadPastOrders,
     } = useBookingBrowse({ scope: 'seller', state: 'past' });
+
+    /**
+     * v13.71 (بلاغ ناصر: «الإلغاء أو الإتمام لا يحدث في نفس اللحظة ولا ينتقل
+     * لسجل الطلبات السابقة — يعلّق»).
+     *
+     * السبب: القائمتان تأتيان من الخادم بترقيم keyset عبر `useBookingBrowse`
+     * (v13.28)، بينما `completeBooking`/`acknowledgeBooking` تُحدّثان **مصفوفة
+     * السياق** لا صفوف هاتين القائمتين. فالكتابة كانت تنجح في القاعدة والصفّ
+     * يبقى مكانه على الشاشة حتى تحديث الصفحة — فيبدو الزرّ معلّقاً.
+     *
+     * الحل: ننتظر تأكيد القاعدة ثم نُعيد تحميل القائمتين معاً، فينتقل الطلب
+     * أمام عينه من «النشطة» إلى «السابقة» فوراً.
+     */
+    const refreshOrderLists = useCallback(async () => {
+        await Promise.allSettled([reloadActiveOrders(), reloadPastOrders()]);
+    }, [reloadActiveOrders, reloadPastOrders]);
 
     // النافذة العامة تبقى لما يحتاج «آخر الطلبات» فقط (البانرات والتنبيهات).
     const myOrders = activeOrders.concat(pastOrders);
@@ -4853,7 +4869,8 @@ const SellerDashboard: React.FC = () => {
                                     {order.status === 'pending' && (
                                         <button onClick={async () => {
                                             const note = await customPrompt(isRTL ? 'اكتب ملاحظة للمشتري (اختياري):' : 'Write a note to the buyer (optional):');
-                                            acknowledgeBooking(order.barcode, note || undefined);
+                                            await acknowledgeBooking(order.barcode, note || undefined);
+                                            await refreshOrderLists();
                                         }}
                                             style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'linear-gradient(135deg, #059669, #047857)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', marginBottom: 8, boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)' }}>
                                             {isRTL ? 'تأكيد استلام الطلب 📦' : 'Confirm Receipt of Order 📦'}
@@ -4880,8 +4897,9 @@ const SellerDashboard: React.FC = () => {
                                                     const targetBackup = order.backupCode?.trim().toUpperCase();
                                                     if ((enteredCode === targetBarcode || enteredCode === targetBackup) && enteredCode) {
                                                         if (await customConfirm(isRTL ? 'هل تم استلام المنتج؟' : 'Product received?')) {
-                                                            completeBooking(order.barcode);
+                                                            await completeBooking(order.barcode);
                                                             setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
+                                                            await refreshOrderLists();
                                                         }
                                                     } else {
                                                         await customAlert(isRTL ? 'رمز غير صحيح!' : 'Invalid code!');
@@ -4896,8 +4914,9 @@ const SellerDashboard: React.FC = () => {
                                             const targetBackup = (order.backupCode || '').trim().toUpperCase();
                                             if ((enteredCode === targetBarcode || enteredCode === targetBackup) && enteredCode) {
                                                 if (await customConfirm(isRTL ? 'هل تم استلام المنتج؟' : 'Product received?')) {
-                                                    completeBooking(order.barcode);
+                                                    await completeBooking(order.barcode);
                                                     setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
+                                                    await refreshOrderLists();
                                                 }
                                             } else {
                                                 await customAlert(isRTL ? 'رمز غير صحيح!' : 'Invalid code!');

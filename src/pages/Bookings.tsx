@@ -547,7 +547,13 @@ const Bookings: React.FC = () => {
                                                             {isRTL ? 'الرمز الاحتياطي:' : 'Backup Code:'} <span style={{ color: 'var(--text-primary)' }}>{booking.backupCode}</span>
                                                         </div>
                                                         <button onClick={async () => {
-                                                            if (await customConfirm(isRTL ? 'إلغاء الحجز؟' : 'Cancel?')) cancelBooking(booking.barcode);
+                                                            if (await customConfirm(isRTL ? 'إلغاء الحجز؟' : 'Cancel?')) {
+                                                                // v13.71 — ننتظر القاعدة ثم نُعيد تحميل القائمتين:
+                                                                // الصفوف تأتي من الخادم (keyset) لا من مصفوفة السياق،
+                                                                // فبلا هذا يبقى الحجز الملغى مكانه ولا ينتقل لـ«السابقة».
+                                                                await cancelBooking(booking.barcode);
+                                                                await Promise.allSettled([reloadActive(), reloadPast()]);
+                                                            }
                                                         }} style={{ marginTop: 24, background: 'none', border: 'none', color: '#f43f5e', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
                                                             {isRTL ? 'إلغاء الحجز ❌' : 'Cancel Booking ❌'}
                                                         </button>

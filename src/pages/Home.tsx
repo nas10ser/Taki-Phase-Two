@@ -340,6 +340,37 @@ const Home: React.FC = () => {
 
             </div>
 
+            {/* v11.20 — Coming Soon carousel. Only renders when at least one
+                scheduled deal is inside its 7-day visibility window — empty
+                section would just be noise on Home.
+                v13.71 (أمر ناصر): صار **فوق شريط عروض الموسم** لا تحته —
+                «ما سيُفتح قريباً» هو ما يجهّز له المشتري نفسه، فيتصدّر. */}
+            {comingSoonDeals.length > 0 && (
+                <div style={{ padding: '20px 0 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
+                        <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                            {isRTL ? 'العروض القادمة ⏳' : 'Coming Soon ⏳'}
+                        </h2>
+                        <button
+                            onClick={() => history.push('/deals?type=coming_soon')}
+                            aria-label={isRTL ? 'عرض كل العروض القادمة' : 'View all coming soon'}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
+                        {comingSoonDeals.map(deal => {
+                            const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
+                            return (
+                                <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
+                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {/* v12.86 — شريط «عروض الموسم»: نفس نمط الأكثر تداولاً/أقوى الخصومات،
                 يتصدّر الأشرطة أثناء نافذة الحملة العامة فقط، ويحمل هوية الموسم
                 (إيموجي + اسم)، ورأسه يفتح صفحة الموسم الكاملة. */}
@@ -363,37 +394,6 @@ const Home: React.FC = () => {
                                 <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} />
                             </div>
                         ))}
-                    </div>
-                </div>
-            )}
-
-            {/* v11.20 — Coming Soon carousel. Only renders when at least one
-                scheduled deal is inside its 7-day visibility window — empty
-                section would just be noise on Home. Placed FIRST (above
-                trending) so buyers see what's about to open and can prep,
-                exactly the pattern Nasser asked for. */}
-            {comingSoonDeals.length > 0 && (
-                <div style={{ padding: '20px 0 10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px 12px' }}>
-                        <h2 style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                            {isRTL ? 'العروض القادمة ⏳' : 'Coming Soon ⏳'}
-                        </h2>
-                        <button
-                            onClick={() => history.push('/deals?type=coming_soon')}
-                            aria-label={isRTL ? 'عرض كل العروض القادمة' : 'View all coming soon'}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 800, padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {isRTL ? 'عرض المزيد' : 'View more'} <span style={{ fontSize: '0.95rem' }}>{isRTL ? '‹' : '›'}</span>
-                        </button>
-                    </div>
-                    <div style={{ display: 'flex', gap: 12, padding: '0 16px 10px', overflowX: 'auto' }} className="hide-scrollbar">
-                        {comingSoonDeals.map(deal => {
-                            const isSponsored = (storeProfiles[deal.storeId] as any)?.is_pinned;
-                            return (
-                                <div key={deal.id} style={{ width: 175, flexShrink: 0 }}>
-                                    <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={isSponsored} />
-                                </div>
-                            );
-                        })}
                     </div>
                 </div>
             )}

@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { StoreBranch } from '../repositories/branchRepository';
 import { coordsOf, directionsLink } from '../utils/mapLinks';
@@ -16,6 +16,15 @@ import { coordsOf, directionsLink } from '../utils/mapLinks';
  *    (للملاحة) أو **البقاء هنا** (تُغلق البطاقة ويكمل تصفّحه داخل التطبيق).
  *  • زرّ **«عرض كل المواقع»** يعيد الإطار ليضمّ كل الدبابيس — يظهر فقط بعد
  *    التركيز على واحد، فلا يزحم الشاشة قبل الحاجة إليه.
+ *
+ * v13.71 (بلاغ ناصر مع صورة: «البطاقة تأتي في طرف الخريطة، خصوصاً عند التنقل
+ * من مكان إلى آخر») — **أُلغيت بطاقة Leaflet المنبثقة تماماً**. سببها بنيوي لا
+ * يُعالَج بالضبط: البطاقة تُرسم فوق الدبّوس داخل إطار الخريطة (٤٢٠ بكسل)،
+ * وارتفاعها بثلاثة أزرار يقارب نصف الإطار، والدبّوس يُوضع في **مركز** الإطار
+ * بعد `setView` — فنصفها العلوي يخرج من الحافة حتماً، ويزاحمها زرّ «عرض كل
+ * المواقع» العائم فوق الخريطة. صارت الخيارات **بطاقة ثابتة أسفل الخريطة**
+ * داخل النافذة نفسها: لا تخرج من إطار أبداً، ولا تحتاج انتظار استقرار الحركة
+ * (٨٥٠ مللي حُذفت)، ولا تُخفي الدبّوس الذي يشير إليه المستخدم.
  *
  * الدبابيس `divIcon` (HTML) لا صور: لا ملف أيقونة يُحمَّل، والرقم يطابق ترتيب
  * الفرع في القائمة أسفل الخريطة فيربط المستخدم بينهما بنظرة.
@@ -94,19 +103,12 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
 
     const [focus, setFocus] = useState<Focus>(null);
     const [fitSeq, setFitSeq] = useState(0);
-    const markerRefs = useRef<Array<L.Marker | null>>([]);
-
     const focusOn = useCallback((i: number) => {
         setFocus(prev => ({ index: i, seq: (prev?.seq ?? 0) + 1 }));
-        // البطاقة تُفتح بعد أن تستقرّ الحركة، وإلا فُتحت خارج الشاشة أثناءها.
-        window.setTimeout(() => {
-            try { markerRefs.current[i]?.openPopup(); } catch { /* غير قاتل */ }
-        }, 850);
     }, []);
 
     const showAll = useCallback(() => {
         setFocus(null);
-        markerRefs.current.forEach(m => { try { m?.closePopup(); } catch { /* غير قاتل */ } });
         setFitSeq(s => s + 1);
     }, []);
 
@@ -165,74 +167,70 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
                                 key={p.b.id}
                                 position={[p.c.lat, p.c.lng]}
                                 icon={pinIcon(i + 1, focus?.index === i)}
-                                ref={(m) => { markerRefs.current[i] = m; }}
-                                eventHandlers={{ click: () => setFocus(prev => ({ index: i, seq: (prev?.seq ?? 0) + 1 })) }}
-                            >
-                                <Popup>
-                                    <div style={{ direction: isRTL ? 'rtl' : 'ltr', minWidth: 168 }}>
-                                        <div style={{ fontWeight: 900, fontSize: '0.88rem', marginBottom: 4 }}>
-                                            {i + 1}. {nameOf(p.b)}
-                                        </div>
-                                        {p.b.address && (
-                                            <div style={{ fontSize: '0.74rem', opacity: 0.8, marginBottom: 8 }}>{p.b.address}</div>
-                                        )}
-                                        {/* خياران صريحان (طلب ناصر): يخرج للملاحة، أو يبقى هنا. */}
-                                        <a
-                                            href={directionsLink({ lat: p.b.mapLat, lng: p.b.mapLng, googleMapsLink: p.b.googleMapsLink })}
-                                            target="_blank" rel="noopener noreferrer"
-                                            style={{
-                                                display: 'block', textAlign: 'center', background: '#0d9488', color: '#fff',
-                                                borderRadius: 10, padding: '8px 10px', fontWeight: 900, fontSize: '0.78rem',
-                                                textDecoration: 'none', marginBottom: 6,
-                                            }}
-                                        >
-                                            🗺️ {isRTL ? 'فتح في قوقل ماب' : 'Open in Google Maps'}
-                                        </a>
-                                        <button
-                                            onClick={() => markerRefs.current[i]?.closePopup()}
-                                            style={{
-                                                width: '100%', background: 'transparent', border: '1px solid rgba(120,120,120,0.4)',
-                                                borderRadius: 10, padding: '7px 10px', fontWeight: 800, fontSize: '0.76rem',
-                                                cursor: 'pointer', marginBottom: 6, color: 'inherit',
-                                            }}
-                                        >
-                                            {isRTL ? 'البقاء هنا' : 'Stay here'}
-                                        </button>
-                                        {pins.length > 1 && (
-                                            <button
-                                                onClick={showAll}
-                                                style={{
-                                                    width: '100%', background: 'transparent', border: 'none',
-                                                    padding: 2, fontWeight: 900, fontSize: '0.76rem',
-                                                    cursor: 'pointer', color: '#0d9488',
-                                                }}
-                                            >
-                                                ↩︎ {isRTL ? 'عرض كل المواقع' : 'Show all locations'}
-                                            </button>
-                                        )}
-                                    </div>
-                                </Popup>
-                            </Marker>
+                                eventHandlers={{ click: () => focusOn(i) }}
+                            />
                         ))}
                     </MapContainer>
-
-                    {/* زرّ الرجوع للإطار الشامل — فوق الخريطة، ولا يظهر إلا بعد التركيز
-                        على موقع واحد. z-index أعلى من طبقات Leaflet (1000). */}
-                    {focus && pins.length > 1 && (
-                        <button
-                            onClick={showAll}
-                            style={{
-                                position: 'absolute', bottom: 12, insetInlineStart: 12, zIndex: 1200,
-                                background: 'var(--card-bg)', color: 'var(--text-primary)',
-                                border: '1px solid var(--border-color)', borderRadius: 999,
-                                padding: '9px 14px', fontWeight: 900, fontSize: '0.78rem',
-                                cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
-                            }}
-                        >
-                            ↩︎ {isRTL ? 'عرض كل المواقع' : 'Show all locations'}
-                        </button>
-                    )}
                 </div>
+
+                {/* v13.71 — بطاقة خيارات الموقع المركَّز: ثابتة تحت الخريطة، فلا
+                    تخرج من حافة إطار أبداً مهما تنقّل المستخدم بين المواقع. */}
+                {focus && pins[focus.index] && (
+                    <div style={{
+                        padding: '11px 13px',
+                        borderTop: '1px solid var(--border-color)',
+                        background: 'var(--notif-unread-bg)',
+                        display: 'flex', flexDirection: 'column', gap: 8,
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <span style={{
+                                flexShrink: 0, width: 26, height: 26, borderRadius: '50%',
+                                background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff',
+                                fontWeight: 900, fontSize: '0.78rem',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>{focus.index + 1}</span>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {nameOf(pins[focus.index].b)}
+                                </div>
+                                {pins[focus.index].b.address && (
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {pins[focus.index].b.address}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <a
+                                href={directionsLink({
+                                    lat: pins[focus.index].b.mapLat,
+                                    lng: pins[focus.index].b.mapLng,
+                                    googleMapsLink: pins[focus.index].b.googleMapsLink,
+                                })}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{
+                                    flex: '1 1 150px', textAlign: 'center', background: '#0d9488', color: '#fff',
+                                    borderRadius: 12, padding: '10px 12px', fontWeight: 900, fontSize: '0.8rem',
+                                    textDecoration: 'none',
+                                }}
+                            >
+                                🗺️ {isRTL ? 'فتح في قوقل ماب' : 'Open in Google Maps'}
+                            </a>
+                            {pins.length > 1 && (
+                                <button
+                                    onClick={showAll}
+                                    style={{
+                                        flex: '1 1 130px', background: 'var(--card-bg)', color: 'var(--text-primary)',
+                                        border: '1px solid var(--border-color)', borderRadius: 12,
+                                        padding: '10px 12px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer',
+                                    }}
+                                >
+                                    ↩︎ {isRTL ? 'عرض كل المواقع' : 'Show all locations'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* القائمة — كل صف زرّ يطير بالخريطة إلى موقعه (طلب ناصر). */}
                 <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
