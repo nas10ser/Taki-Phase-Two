@@ -38,6 +38,8 @@ const StoreDetails: React.FC = () => {
     const isRTL = language === 'ar';
     const isFollowed = followedMerchants.includes(id);
     const isBlocked = blockedMerchants.includes(id);
+    // صاحب هذه الصفحة يشاهدها الآن (يفتحها من «صفحتي» في البار السفلي).
+    const isOwner = !!user?.id && user.id === id;
     const [showReport, setShowReport] = useState(false);
 
     const profile = storeProfiles[id] || {};
@@ -47,6 +49,9 @@ const StoreDetails: React.FC = () => {
     const [branches, setBranches] = useState<StoreBranch[]>([]);
     const [branchBusy, setBranchBusy] = useState<string | null>(null);
     const [branchMsg, setBranchMsg] = useState<string>('');
+    // v13.74 — وضع «تغيير المواقع الظاهرة» لصاحب المتجر: مطويّ افتراضياً فلا
+    // تظهر المواقع خارج الباقة على صفحته إلا حين يطلب تبديلها بنفسه.
+    const [managingBranches, setManagingBranches] = useState(false);
     // v13.66 — خريطة «اعرض كل المواقع» داخل التطبيق (بدل بحث قوقل بالاسم).
     const [showBranchMap, setShowBranchMap] = useState(false);
     const [followerCount, setFollowerCount] = useState<number | null>(null);
@@ -120,71 +125,76 @@ const StoreDetails: React.FC = () => {
         }
     };
 
-    const [store, setStore] = useState<any>(null);
-    const [loadingStore, setLoadingStore] = useState(true);
+    /* v13.74 (بلاغ ناصر: «أنا في حساب N15 ويظهر لي تمتومي») — لا تداخل بين
+     * حسابين إطلاقاً: الحساب واحد، اسم صاحبه «تمتومي» واسم متجره «N15».
+     * الرسم المبدئي كان يقرأ `user.name || user.shop` (اسم الشخص أولاً) بينما
+     * القراءة من القاعدة تقرأ `shop || name` (اسم المتجر أولاً) — فيظهر الاسمان
+     * بالتناوب. وكان الأثر يُعيد ضبط المتجر كلما تغيّرت `deals` (وهي تتغيّر مع
+     * كل ترقيم/realtime/ingest)، فيعود اسم الشخص إلى العنوان بعد كل تنقّل.
+     *
+     * الآن: الرسم المبدئي **يُحسب أثناء الرسم** لا في أثر جانبي، بنفس ترتيب
+     * القاعدة؛ وردّ الشبكة لا يُعرض إلا إذا كان لهذا المُعرّف بعينه — فلا يمكن
+     * لمتجر سابق أن يكتب فوق المتجر الحالي مهما تأخّر ردّه. */
+    const localStore = useMemo(() => {
+        if (!id) return null;
+        const mock = getStore(id);
+        if (mock) return mock as any;
+        if (user?.id === id) {
+            return {
+                id,
+                name: (user as any).shop || user.name || 'متجر جديد',
+                rating: 5,
+                lat: (user as any).lat ?? 0,
+                lng: (user as any).lng ?? 0,
+                googleMapsLink: (user as any).googleMapsLink || '',
+                // v13.11 — نتركه فارغاً ليتكفّل منطق العرض بإظهار الموقع المحفوظ.
+                address: (user as any).address || ''
+            } as any;
+        }
+        const inferDeal = deals.find(d => d.storeId === id);
+        if (inferDeal) {
+            return {
+                id,
+                name: inferDeal.shopName || 'متجر غير معروف',
+                rating: 5,
+                lat: 0,
+                lng: 0,
+                googleMapsLink: '',
+                address: ''
+            } as any;
+        }
+        return null;
+    }, [id, user, deals]);
 
-    // Initial store resolution (Sync/Mock fallback)
+    const [fetchedStore, setFetchedStore] = useState<any>(null);
+    const [storeFetchDone, setStoreFetchDone] = useState(false);
+
+    // v13.11 (طلب ناصر): نقرأ موقع المتجر المحفوظ فعلاً (إحداثيات + رابط خرائط
+    // + عنوان نصّي) — فالتاجر يحفظ موقعه من «لوحتي» ثم يظهر هنا في «صفحتي».
     useEffect(() => {
-        let s = getStore(id);
-        if (!s && id) {
-            if (user?.id === id && user.userType === 'seller') {
-                s = {
-                    id: user.id,
-                    name: user.name || (user as any).shop || 'متجر جديد',
+        if (!id) { setFetchedStore(null); setStoreFetchDone(true); return; }
+        let alive = true;
+        setStoreFetchDone(false);
+        userRepository.findById(id)
+            .then(u => {
+                if (!alive || !u) return;
+                setFetchedStore({
+                    id: u.id,
+                    name: u.shop || u.name || 'متجر',
                     rating: 5,
-                    lat: (user as any).lat ?? 0,
-                    lng: (user as any).lng ?? 0,
-                    googleMapsLink: (user as any).googleMapsLink || '',
-                    // v13.11 — نتركه فارغاً ليتكفّل منطق العرض بإظهار الموقع المحفوظ
-                    // أو زر «حدّد موقعك» بدل نص ثابت «غير متوفرة».
-                    address: (user as any).address || ''
-                } as any;
-            } else {
-                const inferDeal = deals.find(d => d.storeId === id);
-                if (inferDeal) {
-                    s = {
-                        id,
-                        name: inferDeal.shopName || 'متجر غير معروف',
-                        rating: 5,
-                        lat: 0,
-                        lng: 0,
-                        googleMapsLink: '',
-                        address: ''
-                    } as any;
-                }
-            }
-        }
-        
-        if (s) {
-            setStore(s);
-            setLoadingStore(false);
-        }
+                    lat: (u as any).lat ?? 0,
+                    lng: (u as any).lng ?? 0,
+                    googleMapsLink: (u as any).googleMapsLink || '',
+                    address: u.address || ''
+                });
+            })
+            .catch(() => { /* الرسم المحلي يغطّي */ })
+            .finally(() => { if (alive) setStoreFetchDone(true); });
+        return () => { alive = false; };
+    }, [id]);
 
-        // Fetch real profile if missing or to ensure freshness
-        if (id) {
-            userRepository.findById(id).then(u => {
-                if (u) {
-                    // v13.11 (طلب ناصر): نقرأ موقع المتجر المحفوظ فعلاً (إحداثيات +
-                    // رابط خرائط + عنوان نصّي) بدل تثبيت «غير متوفرة» — فالتاجر يحفظ
-                    // موقعه من «لوحتي» ثم يظهر هنا في «صفحتي».
-                    setStore({
-                        id: u.id,
-                        name: u.shop || u.name || 'متجر',
-                        rating: 5,
-                        lat: (u as any).lat ?? 0,
-                        lng: (u as any).lng ?? 0,
-                        googleMapsLink: (u as any).googleMapsLink || '',
-                        address: u.address || ''
-                    });
-                }
-                setLoadingStore(false);
-            }).catch(() => {
-                setLoadingStore(false);
-            });
-        } else {
-            setLoadingStore(false);
-        }
-    }, [id, deals, user, isRTL]);
+    const store = (fetchedStore && fetchedStore.id === id) ? fetchedStore : localStore;
+    const loadingStore = !store && !storeFetchDone;
 
     const handleSaveProfile = () => {
         updateStoreProfile(id, {
@@ -202,13 +212,6 @@ const StoreDetails: React.FC = () => {
     // v12.73 (تصويب طلب ناصر): نافذة التأكيد تبقى — وبعد «موافق» التنفيذ
     // فوري: بلا نافذة نجاح، الزر يعرض ⏳، والتبويب يتبدل تلقائياً.
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
-    // v13.66 — الفروع التي تدخل الخريطة = عين ما تعرضه بطاقة «مواقع المتجر»:
-    // صاحب المتجر يرى فروعه كلها، والزائر يرى ما اختار التاجر إظهاره فقط.
-    // (مصدر واحد للاثنين حتى لا تختلف الخريطة عن القائمة أبداً.)
-    const mapBranches = useMemo(
-        () => (user?.id === id ? branches : branches.filter(b => b.showOnStorePage)),
-        [branches, user?.id, id]);
-
     // v13.17 — «صفحتي» تُجدّد/تُفعّل العروض أيضاً، فتحتاج سقف الباقة نفسه الذي
     // تقرؤه لوحة التاجر (store_profiles.max_branches) لتوائم المواقع قبل الحفظ.
     const [ownerMaxLocations, setOwnerMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
@@ -224,19 +227,40 @@ const StoreDetails: React.FC = () => {
         return () => { alive = false; };
     }, [user?.id, id]);
 
-    // v13.61 — تحميل الفروع: المالك يرى كل فروعه ليختار، والزائر المعروضة فقط.
+    // v13.61 — تحميل الفروع: المالك يحمّل قائمته كاملة (يحتاجها ليبدّل المعروض
+    // منها عند الطلب)، والزائر يحمّل المعروضة فقط مسقوفةً بحدّ الباقة.
     useEffect(() => {
         if (!id) return;
         let alive = true;
         (async () => {
-            const isOwner = !!user?.id && user.id === id;
-            const rows = isOwner
+            const owner = !!user?.id && user.id === id;
+            const rows = owner
                 ? await branchRepository.listByMerchant(id)
                 : await branchRepository.listDisplayed(id);
             if (alive) setBranches(rows.filter(b => b.isActive !== false));
         })().catch(() => { if (alive) setBranches([]); });
         return () => { alive = false; };
     }, [id, user?.id]);
+
+    /* v13.74 (أمر ناصر: «أظهر فقط موقعي المستخدم ضمن الباقة ولا تضيف الخيارات
+     * الأخرى») — «صفحتي» صارت **مرآة لما يراه الزبون بالضبط**: المواقع المعروضة
+     * فقط، مسقوفة بحدّ الباقة عند القراءة. فلو قلّص التاجر باقته إلى موقع واحد
+     * لم يعد يرى بقية مواقعه المحفوظة مصفوفةً تحتها بعلامة «مخفي».
+     * التبديل بينها لم يُحذف — انتقل خلف زرّ «تغيير المواقع الظاهرة» الذي لا
+     * يظهر أصلاً إلا لصاحب المتجر وحين يكون لديه محفوظات خارج الباقة. */
+    const displayedBranches = useMemo(() => {
+        if (!isOwner) return branches;   // listDisplayed سقفَتها في المستودع
+        // نفس ترتيب دالة المواءمة في القاعدة: الفرع الرئيسي ثم الأقدم.
+        return branches
+            .filter(b => b.showOnStorePage)
+            .sort((a, b) => (Number(!!b.isPrimary) - Number(!!a.isPrimary))
+                || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+            .slice(0, ownerMaxLocations);
+    }, [branches, isOwner, ownerMaxLocations]);
+
+    // v13.66 — الفروع التي تدخل الخريطة = عين ما تعرضه بطاقة «مواقع المتجر»
+    // (مصدر واحد للاثنين حتى لا تختلف الخريطة عن القائمة أبداً).
+    const mapBranches = displayedBranches;
 
     const toggleBranchDisplay = async (b: StoreBranch) => {
         setBranchBusy(b.id); setBranchMsg('');
@@ -551,42 +575,30 @@ const StoreDetails: React.FC = () => {
                     </div>
                     
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: 4 }}>{store.name}</h1>
-                    {/* v13.11 (طلب ناصر): يعرض موقع المتجر المحفوظ — عنوان نصّي إن وُجد،
-                        وإلا رابط الخريطة/الإحداثيات كزر «عرض على الخريطة». لصاحب المتجر
-                        دون موقع محفوظ: زر «حدّد موقع متجرك» ينقله لمحرّر الخريطة في لوحته. */}
+                    {/* v13.11 (طلب ناصر): يعرض موقع المتجر المحفوظ — عنوان نصّي إن وُجد
+                        مع رابط الخريطة. */}
                     {(() => {
                         const addr = (profile.address || store.address || '').trim();
+                        if (!addr) {
+                            // v13.66 — لا سطر «معلومات الموقع غير متوفرة» للزائر.
+                            // v13.74 (أمر ناصر) — وحُذف كذلك زرّ «حدّد موقع متجرك على
+                            // الخريطة» الذي كان يظهر لصاحب المتجر هنا: بطاقة «مواقع
+                            // المتجر» أسفل الصفحة تعرض مواقعه فعلاً، وإضافة موقع
+                            // جديد مكانها «لوحتي» لا واجهة متجره العامة.
+                            return null;
+                        }
                         // v13.66 — قاعدة الروابط موحّدة في `utils/mapLinks`.
                         const mapHref = placeLink({ lat: store.lat, lng: store.lng, googleMapsLink: store.googleMapsLink });
-                        const isOwner = user?.id === store.id;
-                        if (addr) {
-                            return (
-                                <div style={{ fontSize: '1rem', opacity: 0.9, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                    <span>📍 {addr}</span>
-                                    {mapHref && (
-                                        <a href={mapHref} target="_blank" rel="noopener noreferrer" style={{ color: '#fff', background: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 800, textDecoration: 'none' }}>
-                                            🗺 {isRTL ? 'الخريطة' : 'Map'}
-                                        </a>
-                                    )}
-                                </div>
-                            );
-                        }
-                        // v13.68 (أمر ناصر): حُذف زرّ «عرض موقع المتجر على الخريطة».
-                        // كان يفتح دبّوساً واحداً للمتجر، وقد صارت بطاقة «مواقع
-                        // المتجر» أسفل الصفحة تعرض **كل** مواقعه مع اتجاهات لكلٍّ
-                        // منها وخريطة تجمعها — فلم يبقَ للزرّ ما يضيفه.
-                        if (isOwner) {
-                            return (
-                                <button onClick={() => history.push('/seller?loc=1')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#fff', background: 'rgba(255,255,255,0.22)', border: '1px dashed rgba(255,255,255,0.5)', borderRadius: 12, padding: '8px 16px', fontSize: '0.88rem', fontWeight: 900, cursor: 'pointer', marginBottom: 4 }}>
-                                    📍 {isRTL ? 'حدّد موقع متجرك على الخريطة' : 'Set your store location'}
-                                </button>
-                            );
-                        }
-                        // v13.66 (أمر ناصر): لا سطر «معلومات الموقع غير متوفرة».
-                        // إخبار الزبون بما **لا** نملكه ليس معلومة — هو ضجيج تحت
-                        // اسم المتجر مباشرة، ويوحي بنقصٍ في متجرٍ قد تكون مواقعه
-                        // معروضة كاملة في بطاقة «مواقع المتجر» أسفل الصفحة.
-                        return null;
+                        return (
+                            <div style={{ fontSize: '1rem', opacity: 0.9, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span>📍 {addr}</span>
+                                {mapHref && (
+                                    <a href={mapHref} target="_blank" rel="noopener noreferrer" style={{ color: '#fff', background: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 800, textDecoration: 'none' }}>
+                                        🗺 {isRTL ? 'الخريطة' : 'Map'}
+                                    </a>
+                                )}
+                            </div>
+                        );
                     })()}
                     <div style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600, marginBottom: 16 }}>📅 {isRTL ? 'تاريخ الانضمام: ' : 'Joined: '} {new Date().getFullYear()}/01</div>
                     
@@ -807,11 +819,13 @@ const StoreDetails: React.FC = () => {
                 حتى عدة مواقع — بشرط ألّا يتجاوز حدّ باقته. الحدّ تفرضه القاعدة
                 (tr_enforce_branch_display_cap) لا هذه الواجهة، فلا يُتجاوز بطلب مباشر. */}
             {(() => {
-                const isOwner = !!user?.id && user.id === store.id;
-                if (branches.length === 0 && !isOwner) return null;
-                const shown = branches.filter(b => b.showOnStorePage);
-                const visible = isOwner ? branches : shown;
+                // v13.74 (أمر ناصر) — القائمة المعروضة هي **مواقع الباقة** فقط،
+                // لصاحب المتجر كما للزائر. المواقع المحفوظة خارج الباقة لا تُصفّ
+                // تحتها بعلامة «مخفي»؛ تظهر فقط داخل وضع «تغيير المواقع الظاهرة».
+                const extras = isOwner ? branches.length - displayedBranches.length : 0;
+                const visible = (isOwner && managingBranches) ? branches : displayedBranches;
                 if (visible.length === 0 && !isOwner) return null;
+                if (branches.length === 0 && isOwner) return null;
                 // v13.66 — الاتجاهات تمرّ بقاعدة `mapLinks` الموحّدة: الإحداثي
                 // يفوز على أي رابط «بحث بالاسم» محفوظ (صفوف v12.04 القديمة).
                 const linkOf = (b: StoreBranch) =>
@@ -820,7 +834,7 @@ const StoreDetails: React.FC = () => {
                 // باسم المتجر**، فلا يعرض فروع المتجر إطلاقاً (بلاغ ناصر: «لا
                 // يعرضلي الثلاث الظاهرة بالأعلى»). صار يفتح خريطة داخل التطبيق
                 // تُظهر الفروع نفسها المعروضة أعلاه بدبابيسها الحقيقية.
-                const mapPins = visible
+                const mapPins = displayedBranches
                     .map(b => ({ b, c: coordsOf({ lat: b.mapLat, lng: b.mapLng }) }))
                     .filter((x): x is { b: StoreBranch; c: { lat: number; lng: number } } => x.c !== null);
                 return (
@@ -830,13 +844,13 @@ const StoreDetails: React.FC = () => {
                                 📍 {isRTL ? 'مواقع المتجر' : 'Store locations'}
                             </h3>
                             {isOwner && (
-                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: shown.length >= ownerMaxLocations ? '#f59e0b' : 'var(--text-secondary)' }}>
-                                    {isRTL ? `المعروضة: ${shown.length} من ${ownerMaxLocations}` : `Shown: ${shown.length} of ${ownerMaxLocations}`}
+                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: displayedBranches.length >= ownerMaxLocations ? '#f59e0b' : 'var(--text-secondary)' }}>
+                                    {isRTL ? `المعروضة: ${displayedBranches.length} من ${ownerMaxLocations}` : `Shown: ${displayedBranches.length} of ${ownerMaxLocations}`}
                                 </span>
                             )}
                         </div>
 
-                        {isOwner && (
+                        {isOwner && managingBranches && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.7 }}>
                                 {isRTL
                                     ? 'اختر المواقع التي تريد أن يراها الزبائن على صفحتك. عددها محدود بباقتك.'
@@ -849,15 +863,24 @@ const StoreDetails: React.FC = () => {
                             </div>
                         )}
 
+                        {visible.length === 0 && isOwner && !managingBranches && (
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                {isRTL
+                                    ? 'لا يظهر أي موقع على صفحتك حالياً — اختر موقعاً من مواقعك المحفوظة.'
+                                    : 'No location is shown on your page yet — pick one from your saved locations.'}
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {visible.map(b => {
                                 const href = linkOf(b);
                                 const on = !!b.showOnStorePage;
+                                const manage = isOwner && managingBranches;
                                 return (
                                     <div key={b.id} style={{
                                         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                                         background: 'var(--body-bg)', borderRadius: 14, padding: '10px 12px',
-                                        opacity: isOwner && !on ? 0.55 : 1
+                                        opacity: manage && !on ? 0.55 : 1
                                     }}>
                                         <div style={{ flex: 1, minWidth: 140 }}>
                                             <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
@@ -873,7 +896,7 @@ const StoreDetails: React.FC = () => {
                                                 🗺️ {isRTL ? 'الاتجاهات' : 'Directions'}
                                             </a>
                                         )}
-                                        {isOwner && (
+                                        {manage && (
                                             <button onClick={() => toggleBranchDisplay(b)} disabled={branchBusy === b.id}
                                                 style={{
                                                     background: on ? 'rgba(16,185,129,0.15)' : 'var(--card-bg)',
@@ -890,12 +913,24 @@ const StoreDetails: React.FC = () => {
                             })}
                         </div>
 
-                        {mapPins.length > 1 && (
-                            <button onClick={() => setShowBranchMap(true)}
-                               style={{ display: 'inline-block', marginTop: 10, fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
-                                🗺️ {isRTL ? `اعرض كل المواقع على الخريطة (${mapPins.length})` : `View all ${mapPins.length} locations on the map`}
-                            </button>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 10 }}>
+                            {mapPins.length > 1 && !managingBranches && (
+                                <button onClick={() => setShowBranchMap(true)}
+                                   style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
+                                    🗺️ {isRTL ? `اعرض كل المواقع على الخريطة (${mapPins.length})` : `View all ${mapPins.length} locations on the map`}
+                                </button>
+                            )}
+                            {/* v13.74 — لا يظهر إلا لصاحب المتجر، وفقط حين يملك
+                                مواقع محفوظة خارج المعروض حالياً. */}
+                            {isOwner && (extras > 0 || managingBranches) && (
+                                <button onClick={() => { setManagingBranches(v => !v); setBranchMsg(''); }}
+                                   style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
+                                    {managingBranches
+                                        ? (isRTL ? '✔️ تم — أخفِ الخيارات' : '✔️ Done — hide options')
+                                        : (isRTL ? `⚙️ تغيير المواقع الظاهرة (${extras} محفوظ إضافي)` : `⚙️ Change shown locations (${extras} more saved)`)}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 );
             })()}
