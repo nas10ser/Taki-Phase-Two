@@ -26,7 +26,22 @@ const urlsToCache = [
 
 const isAsset = url => /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|gif|ico)(?:\?.*)?$/i.test(url.pathname);
 const isNavigation = req => req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
-const isApi = url => url.hostname.endsWith('supabase.co') || url.pathname.startsWith('/api/');
+// v13.72 — 🔴 كان: `url.hostname.endsWith('supabase.co')` فقط.
+//
+// بعد نقل الخادم إلى جدة (v13.55) صار عنوان القاعدة `141-147-142-147.sslip.io`
+// **ولا ينتهي بـsupabase.co** — فسقط كل نداء بيانات من هذا الشرط، ونزل إلى
+// الفرع الأخير «stale-while-revalidate»: أي أن استعلامات GET (العروض،
+// الحجوزات، الملفات) صارت تُقدَّم **من ذاكرة المتصفح أولاً** ثم تُحدَّث بعدها.
+// وهذا يفسّر «التحديث لا يحدث في نفس اللحظة» في أكثر من شاشة.
+//
+// المعالجة الآن **بالمسار لا بالمضيف**: مسارات سوبابيس ثابتة مهما تغيّر
+// الخادم أو النطاق (`/rest/v1`, `/auth/v1` …)، فلن يتكرّر هذا الفخ عند أي نقل
+// قادم. ويُستثنى `/storage/v1/object/public` عمداً: الصور غير قابلة للتغيير
+// (اسم فريد لكل ملف) وتخزينها هو المطلوب.
+const API_PATHS = ['/rest/v1', '/auth/v1', '/realtime/v1', '/functions/v1', '/graphql/v1', '/api/'];
+const isApi = url =>
+  API_PATHS.some(p => url.pathname.startsWith(p)) ||
+  (url.hostname.endsWith('supabase.co') && !url.pathname.startsWith('/storage/v1/object/public'));
 
 self.addEventListener('install', event => {
   self.skipWaiting();
