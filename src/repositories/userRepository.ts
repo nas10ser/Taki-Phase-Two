@@ -13,6 +13,12 @@ import { withTimeout } from '../utils/helpers';
  * للمصدرين. ما ليس هنا (البريد، الجوال، معرّفات البوتات، ملاحظات الإدارة…)
  * لا يخرج للمتصفح إطلاقاً — انظر supabase/migration_v13_71_*.sql.
  */
+/**
+ * سقف الصفحة الأولى من دليل المتاجر (v13.80). ما فوقه يُجلب بالمعرّف عند
+ * ظهور عرضه أو فتح صفحته — انظر `getSellersByIds` و`ensureStoreProfiles`.
+ */
+export const SELLER_DIRECTORY_CAP = 1000;
+
 export const PUBLIC_SELLER_COLUMNS =
     'id,name,shop,avatar_url,bio,contact_phone,user_type,lat,lng,google_maps_link,working_hours,preferred_lang';
 
@@ -382,13 +388,24 @@ export const userRepository = {
         return [];
     },
 
-    getAllSellers: async (): Promise<UserProfile[]> => {
+    /**
+     * v13.80 — دليل المتاجر صار **مسقوفاً**، والباقي يُجلب عند الحاجة.
+     *
+     * كان يُنزّل صفوف **كل تاجر في المنصّة** عند كل فتح للتطبيق وعند كل تحديث
+     * كامل. بعشرات التجار هذا لا يُلاحَظ؛ بمئة ألف تاجر يصير كل فتح تنزيلاً
+     * بعشرات الميغابايتات على كل جهاز — وهو أعنف سقف في المشروع قبل الملايين.
+     *
+     * الآن: صفحة أولى مسقوفة تكفي التصفّح العام، وأي متجر خارجها يُجلب
+     * بمعرّفه لحظة ظهور عرضه أو فتح صفحته (`getSellersByIds`). النتيجة على
+     * الشاشة واحدة، والحِمل صار بحجم ما يراه المستخدم لا بحجم المنصّة.
+     */
+    getAllSellers: async (limit: number = SELLER_DIRECTORY_CAP): Promise<UserProfile[]> => {
         try {
             // v13.71 — الدليل العام للمتاجر يُقرأ من `sellers_public` (حقول
             // عامة فقط)، وإن لم يوجد العرض بعد — أي قبل تطبيق ترحيل v13.71 على
             // الخادم — نرتدّ إلى الجدول كما كان. فالنشر آمن في الحالتين.
             if (publicDirectoryAvailable !== false) {
-                const viaView = await supabase.from('sellers_public').select(PUBLIC_SELLER_COLUMNS);
+                const viaView = await supabase.from('sellers_public').select(PUBLIC_SELLER_COLUMNS).limit(limit);
                 publicDirectoryAvailable = !viaView.error;
                 if (!viaView.error) return (viaView.data as any[] || []).map(mapUserRowToProfile);
             }
@@ -400,12 +417,43 @@ export const userRepository = {
             const { data, error } = await supabase
                 .from('users')
                 .select(SELLER_PROFILE_COLUMNS)
-                .neq('user_type', 'buyer');
+                .neq('user_type', 'buyer')
+                .limit(limit);
 
             if (data && !error) return (data as any[]).map(mapUserRowToProfile);
         } catch (e) {
             console.error('Failed to fetch all sellers', e);
         }
         return [];
+    },
+
+    /**
+     * v13.80 — ملفات متاجر بعينها (ما نقص عن الصفحة المسقوفة أعلاه).
+     * تُجزَّأ الطلبات فلا يطول رابط الاستعلام مهما كثرت المعرّفات.
+     */
+    getSellersByIds: async (ids: string[]): Promise<UserProfile[]> => {
+        const unique = Array.from(new Set((ids || []).filter(Boolean)));
+        if (unique.length === 0) return [];
+        const out: UserProfile[] = [];
+        const CHUNK = 100;
+        for (let i = 0; i < unique.length; i += CHUNK) {
+            const slice = unique.slice(i, i + CHUNK);
+            try {
+                if (publicDirectoryAvailable !== false) {
+                    const viaView = await supabase.from('sellers_public').select(PUBLIC_SELLER_COLUMNS).in('id', slice);
+                    publicDirectoryAvailable = !viaView.error;
+                    if (!viaView.error) { out.push(...((viaView.data as any[]) || []).map(mapUserRowToProfile)); continue; }
+                }
+                const { data, error } = await supabase
+                    .from('users')
+                    .select(SELLER_PROFILE_COLUMNS)
+                    .in('id', slice)
+                    .neq('user_type', 'buyer');
+                if (!error && data) out.push(...(data as any[]).map(mapUserRowToProfile));
+            } catch (e) {
+                console.warn('getSellersByIds chunk failed:', e);
+            }
+        }
+        return out;
     }
 };

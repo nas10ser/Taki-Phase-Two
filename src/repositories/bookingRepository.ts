@@ -108,7 +108,14 @@ const moreAdvanced = (a: Booking['status'], b: Booking['status']) =>
     STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
 
 /** صفّ طلب من القاعدة → كائن الطلب في الواجهة. مصدر تحويل واحد لكل المسارات. */
-const mapBookingRow = (b: any, deal?: any): Booking => ({
+/**
+ * صفّ `bookings` الخام → كائن الطلب في الواجهة.
+ *
+ * v13.80 — صار مُصدَّراً ليستعمله `useBookingBrowse` في ترقيع صفّ واحد عند
+ * وصول حدث ريل‑تايم، بدل إعادة تحميل القائمة كلها: نفس المُحوِّل = صفر خطر
+ * انحراف بين ما يصل من القاعدة أول مرة وما يصل لحظياً بعدها.
+ */
+export const mapBookingRow = (b: any, deal?: any): Booking => ({
     barcode: b.barcode,
     backupCode: b.backup_code,
     deal: deal || { id: b.deal_id, storeId: b.store_id, itemName: 'تخفيض' },

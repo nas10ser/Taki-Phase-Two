@@ -23,7 +23,7 @@ const StoreBranchesMap = React.lazy(() => import('../components/StoreBranchesMap
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const history = useHistory();
-    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, customAlert, customConfirm, addReply, ingestDeals } = useApp();
+    const { deals, language, user, effectiveUserType, followedMerchants, toggleFollowMerchant, blockedMerchants, toggleBlockMerchant, deleteDeal, updateDeal, storeProfiles, updateStoreProfile, ensureStoreProfiles, customAlert, customConfirm, addReply, ingestDeals } = useApp();
 
     // v13.22 — عروض هذا المتجر باستعلام موجّه (النافذة المُرقّمة قد لا تحويها كلها)
     useEffect(() => {
@@ -41,6 +41,10 @@ const StoreDetails: React.FC = () => {
     // صاحب هذه الصفحة يشاهدها الآن (يفتحها من «صفحتي» في البار السفلي).
     const isOwner = !!user?.id && user.id === id;
     const [showReport, setShowReport] = useState(false);
+
+    // v13.80 — دليل المتاجر مسقوف عند الفتح، فمتجر خارج الصفحة الأولى يُفتح
+    // برابط مباشر كان سيظهر بلا اسم ولا شعار. نطلب ملفه بمعرّفه فور الدخول.
+    useEffect(() => { if (id) ensureStoreProfiles([id]); }, [id, ensureStoreProfiles]);
 
     const profile = storeProfiles[id] || {};
     const [isEditingStore, setIsEditingStore] = useState(false);

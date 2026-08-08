@@ -221,9 +221,19 @@ export const contestRepository = {
         return supabase.from('contests').delete().eq('id', id);
     },
 
-    /** Admin only (RLS). Full PII rows for management + the draw. */
+    /**
+     * Admin only (RLS). Full PII rows for management.
+     *
+     * v13.80 — مسقوفة بألف مشاركة (الأحدث أولاً). مسابقة تنتشر بمئة ألف
+     * مشاركة كانت ستُنزَّل كاملة إلى متصفّح الأدمن فتُجمّده. السحب **لا يتأثر**
+     * إطلاقاً: الفائزون يُختارون داخل القاعدة عبر `draw_contest_winners` على
+     * كل المشاركات لا على هذه القائمة — فهذه للعرض والإدارة فقط.
+     */
     async entries(contestId: string): Promise<ContestEntry[]> {
-        const { data } = await supabase.from('contest_entries').select('*').eq('contest_id', contestId).order('created_at', { ascending: false });
+        const { data } = await supabase.from('contest_entries').select('*')
+            .eq('contest_id', contestId)
+            .order('created_at', { ascending: false })
+            .limit(1000);
         return (data || []) as ContestEntry[];
     },
 

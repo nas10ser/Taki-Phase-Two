@@ -48,20 +48,22 @@ export const ratingRepository = {
         return (data || []).map(fromRow);
     },
 
-    listForStore: async (storeId: string): Promise<Rating[]> => {
-        // Join to deals via FK so we can filter by storeId in one round trip.
-        const { data: dealRows } = await supabase
-            .from('deals')
-            .select('id')
-            .eq('store_id', storeId);
-        const ids = (dealRows || []).map(d => d.id);
-        if (ids.length === 0) return [];
+    /**
+     * تقييمات متجر — استعلام واحد على `store_id` (فهرس `ratings_store_user_active_uq`).
+     *
+     * v13.80: كانت تجلب **كل** معرّفات عروض المتجر ثم تمرّرها في `IN(...)`.
+     * متجر بألف عرض = رابط استعلام بطول عشرات الكيلوبايتات يرفضه الخادم قبل
+     * أن يصل — أي أن الدالة كانت ستنكسر بمجرد نجاح التاجر. والعمود `store_id`
+     * موجود على `ratings` أصلاً ومفهرس، فالجولتان صارتا واحدة.
+     */
+    listForStore: async (storeId: string, limit: number = 200): Promise<Rating[]> => {
         const { data, error } = await supabase
             .from('ratings')
             .select('*')
-            .in('deal_id', ids)
+            .eq('store_id', storeId)
             .is('deleted_at', null)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(limit);
         if (error) {
             console.warn('listForStore failed:', error.message);
             return [];

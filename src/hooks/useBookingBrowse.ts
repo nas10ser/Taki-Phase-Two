@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     bookingRepository,
+    mapBookingRow,
     BOOKINGS_PAGE_SIZE,
     type Booking,
     type BookingBrowseParams,
     type BookingCursor,
 } from '../repositories/bookingRepository';
+import { useApp } from '../context/AppContext';
 
 /**
  * v13.28 — قائمة طلبات مدفوعة من الخادم بترقيم keyset.
@@ -105,6 +107,79 @@ export const useBookingBrowse = (
     }, [pageSize]);
 
     const reload = useCallback(() => setReloadKey(k => k + 1), []);
+
+    // ─────────────────────────────────────────────────────────────
+    // v13.80 — القائمة صارت حيّة (بلاغ ناصر: «الطلب اكتمل ووصلني الإشعار
+    // والبطاقة ما زالت في الجارية ولم تنتقل للسجل»).
+    //
+    // القائمة مُرقَّمة من الخادم (v13.28)، فكانت جامدة بين النداءات: الريل‑تايم
+    // يحدّث مصفوفة السياق وحدها. الآن نستهلك الحدث الخام من السياق ونتصرّف
+    // بأقلّ تدخّل ممكن:
+    //   • صفّ معروض تغيّرت حالته وما زال ينتمي لهذه القائمة → **ترقيع في مكانه**
+    //     (بلا نداء شبكة، وبلا فقدان الصفحات المُحمَّلة ولا موضع التمرير).
+    //   • صفّ معروض لم يعد ينتمي (اكتمل/أُلغي في قائمة «الجارية») → يُنزع فوراً
+    //     ويُنقص العدّاد.
+    //   • صفّ **دخل** هذه القائمة للتوّ (طلب جديد، أو انتقل إلى «السابقة») →
+    //     إعادة تحميل مُجمَّعة، لأن الصفّ يحتاج بيانات العرض المرفقة من الخادم.
+    //
+    // تعريف «الجارية/السابقة» هنا يطابق `browse_bookings` حرفياً:
+    // مكتمل أو ملغى = سابق، وما عداه = جارٍ.
+    // ─────────────────────────────────────────────────────────────
+    const { lastBookingEvent, user } = useApp();
+    const listRef = useRef<Booking[]>(bookings);
+    listRef.current = bookings;
+    const seenSeqRef = useRef(0);
+    const rtReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => () => { if (rtReloadTimer.current) clearTimeout(rtReloadTimer.current); }, []);
+
+    useEffect(() => {
+        if (!enabled || !lastBookingEvent) return;
+        if (lastBookingEvent.seq === seenSeqRef.current) return;
+        seenSeqRef.current = lastBookingEvent.seq;
+
+        const { type, row } = lastBookingEvent;
+        const barcode = row?.barcode;
+        if (!barcode) return;
+
+        const known = listRef.current.some(b => b.barcode === barcode);
+
+        if (type === 'DELETE') {
+            if (known) {
+                setBookings(prev => prev.filter(b => b.barcode !== barcode));
+                setTotal(t => Math.max(0, t - 1));
+            }
+            return;
+        }
+
+        // هل يخصّ هذا الصفّ دور هذه القائمة أصلاً؟ (لوحة التاجر تعرض قوائم
+        // التاجر، وصفحة الحجوزات قوائم المشتري — ونفس الحساب قد يكون الطرفين.)
+        const scope = paramsRef.current.scope || 'buyer';
+        const mineHere = scope === 'seller' ? row.store_id === user?.id : row.user_id === user?.id;
+        if (!mineHere && !known) return;
+
+        const state = paramsRef.current.state || 'all';
+        const isPast = row.status === 'completed' || row.status === 'cancelled';
+        const belongs = state === 'all' ? true : (state === 'active' ? !isPast : isPast);
+
+        if (known) {
+            if (belongs) {
+                setBookings(prev => prev.map(b => b.barcode === barcode ? mapBookingRow(row, b.deal) : b));
+            } else {
+                setBookings(prev => prev.filter(b => b.barcode !== barcode));
+                setTotal(t => Math.max(0, t - 1));
+            }
+            return;
+        }
+
+        if (belongs) {
+            // دخل القائمة للتوّ — نحتاج صفّاً كاملاً من الخادم (مع العرض المرفق).
+            // تجميع نصف ثانية يمنع عاصفة نداءات حين تتغيّر عدة طلبات معاً.
+            if (rtReloadTimer.current) clearTimeout(rtReloadTimer.current);
+            rtReloadTimer.current = setTimeout(() => { rtReloadTimer.current = null; reload(); }, 500);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lastBookingEvent?.seq, enabled, user?.id]);
 
     return { bookings, total, totalCapped, hasMore, loading, loadingMore, loadMore, reload };
 };

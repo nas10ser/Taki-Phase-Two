@@ -287,16 +287,47 @@ function setupChannels(config: RealtimeConfig) {
         config.onNotificationUpdate(payload);
     });
 
-    // Bookings: all events (INSERT, UPDATE, DELETE)
-    userChannel.on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'bookings'
-    }, (payload) => {
+    // ─────────────────────────────────────────────────────────────
+    // Bookings — v13.80: مُرشَّحة على الخادم بدل استقبال كل حجوزات المنصّة.
+    //
+    // كان الاشتراك بلا `filter`، أي أن خادم الريل‑تايم يُقيّم صلاحية **كل**
+    // تغيير على `bookings` أمام **كل** متصل ثم يرمي ما لا يخصّه. هذا حسابياً
+    // (عدد التغييرات × عدد المتصلين): مقبول بآلاف المستخدمين، ومستحيل
+    // بملايينهم — كل حجز في المملكة كان يُقيَّم أمام كل جهاز مفتوح.
+    //
+    // الآن اشتراكان مُرشَّحان على القاعدة: صفوفي كمشترٍ، وصفوفي كتاجر. الحساب
+    // صار بعدد التغييرات وحدها، وما يصل الجهاز يخصّه أصلاً.
+    //
+    // الحذف يبقى باشتراك ثالث بلا ترشيح **عمداً**: صفّ الحذف في WAL لا يحمل
+    // إلا المفتاح الأساسي (`barcode`)، فأي ترشيح على `user_id`/`store_id` لن
+    // يطابقه أبداً وتضيع أحداث الحذف. والحذف نادر (الإلغاء تغيير حالة لا حذف)
+    // فحِمله لا يُذكر.
+    // ─────────────────────────────────────────────────────────────
+    const onBooking = (payload: any) => {
         lastActivityAt = Date.now();
         lastSyncAt.bookings = Date.now();
         config.onBookingChange(payload);
-    });
+    };
+
+    userChannel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'bookings',
+        filter: `user_id=eq.${userId}`
+    }, onBooking);
+
+    userChannel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'bookings',
+        filter: `store_id=eq.${userId}`
+    }, onBooking);
+
+    userChannel.on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'bookings'
+    }, onBooking);
 
     // Booking messages: live thread updates (INSERT for new, UPDATE for read-receipts).
     // RLS already restricts visibility to either party of the booking, so the

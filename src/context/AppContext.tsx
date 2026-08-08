@@ -127,6 +127,13 @@ interface AppContextType {
     markBookingMessagesRead: (barcode: string) => Promise<void>;
     customPrompt: (message: string) => Promise<string | null>;
     refreshBookings: () => Promise<void>;
+    /**
+     * v13.80 — آخر تغيير لحظي على طلبات هذا المستخدم (صفّ `bookings` الخام).
+     * تستهلكه القوائم المُرقَّمة من الخادم (`useBookingBrowse`) لتنقل الصفّ من
+     * «الجارية» إلى «السابقة» لحظة اكتماله — أياً كان مصدر التغيير: جهاز آخر،
+     * أو البوت، أو الطرف الثاني في الطلب.
+     */
+    lastBookingEvent: { type: 'INSERT' | 'UPDATE' | 'DELETE'; row: any; seq: number } | null;
     refreshDeals: () => Promise<void>;
     /** v13.22 — التمرير اللانهائي: تحميل الصفحة التالية من الواجهة. */
     loadMoreDeals: () => Promise<void>;
@@ -139,6 +146,8 @@ interface AppContextType {
     storeProfiles: Record<string, StoreProfile>;
     sponsors: Record<string, Sponsor>;
     updateStoreProfile: (storeId: string, profile: StoreProfile) => void;
+    /** v13.80 — اجلب ملفات المتاجر الناقصة بمعرّفاتها (دفعة واحدة، بلا تكرار). */
+    ensureStoreProfiles: (ids: (string | undefined | null)[]) => void;
     updateProfile: (data: Partial<UserProfile>) => Promise<void>;
     checkMarketingAlerts: (lat?: number, lng?: number) => void;
     liveLocation: { lat: number; lng: number } | null;
@@ -321,6 +330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [blockedMerchants, setBlockedMerchants] = useState<string[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [bookings, setBookings] = useState<any[]>([]);
+    const [lastBookingEvent, setLastBookingEvent] = useState<{ type: 'INSERT' | 'UPDATE' | 'DELETE'; row: any; seq: number } | null>(null);
     const [branches, setBranches] = useState<StoreBranch[]>([]);
 
     // Status progression rank for reconciliation — higher = more advanced.
@@ -421,6 +431,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [storeProfiles, setStoreProfiles] = useState<Record<string, StoreProfile>>(
         () => readSnapshot<Record<string, StoreProfile>>('sellers') || {}
     );
+
+    /**
+     * v13.80 — جلب ملفات المتاجر **عند الحاجة** بدل تنزيل الدليل كله.
+     *
+     * دليل المتاجر صار مسقوفاً بألف متجر عند الفتح (`SELLER_DIRECTORY_CAP`).
+     * هذه الدالة تسدّ الفارق: أي متجر يظهر عرضه على الشاشة أو تُفتح صفحته ولا
+     * نملك ملفه — يُطلب بمعرّفه وحده. الطلبات تُجمَّع في دفعة واحدة كل ٢٥٠
+     * مللي، ولا يُطلب معرّف مرتين (`inFlight`)، فلا عاصفة طلبات مهما تعدّدت
+     * البطاقات الظاهرة.
+     */
+    const storeProfilesRef = useRef(storeProfiles);
+    useEffect(() => { storeProfilesRef.current = storeProfiles; }, [storeProfiles]);
+    const pendingStoreIdsRef = useRef<Set<string>>(new Set());
+    const inFlightStoreIdsRef = useRef<Set<string>>(new Set());
+    const storeFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const flushStoreProfileFetch = useCallback(async () => {
+        storeFetchTimerRef.current = null;
+        const ids = Array.from(pendingStoreIdsRef.current);
+        pendingStoreIdsRef.current.clear();
+        if (ids.length === 0) return;
+        ids.forEach(id => inFlightStoreIdsRef.current.add(id));
+        try {
+            const rows = await userRepository.getSellersByIds(ids);
+            if (rows.length > 0) {
+                setStoreProfiles(prev => {
+                    const merged: Record<string, any> = { ...prev };
+                    rows.forEach(r => { merged[r.id] = r; });
+                    return merged;
+                });
+            }
+        } catch (e) {
+            logger.warn('ensureStoreProfiles failed:', e);
+        } finally {
+            // نُبقي المعرّف في «قيد الطلب» حتى لو عاد فارغاً (متجر محذوف أو
+            // محجوب) فلا ندخل في حلقة طلبٍ أبدية على معرّف لا صفّ له.
+            ids.forEach(id => inFlightStoreIdsRef.current.add(id));
+        }
+    }, []);
+
+    const ensureStoreProfiles = useCallback((ids: (string | undefined | null)[]) => {
+        let added = false;
+        for (const raw of ids) {
+            const id = (raw || '').trim();
+            if (!id) continue;
+            if (storeProfilesRef.current[id]) continue;
+            if (inFlightStoreIdsRef.current.has(id)) continue;
+            if (pendingStoreIdsRef.current.has(id)) continue;
+            pendingStoreIdsRef.current.add(id);
+            added = true;
+        }
+        if (!added || storeFetchTimerRef.current) return;
+        storeFetchTimerRef.current = setTimeout(() => { flushStoreProfileFetch(); }, 250);
+    }, [flushStoreProfileFetch]);
+
+    // كل عرض في النافذة يحتاج اسم متجره وشعاره — فمتى تغيّرت النافذة (فتح،
+    // صفحة تالية، عروض متجر مُدخَلة) نسدّ الناقص فوراً. v13.80
+    useEffect(() => {
+        if (deals.length === 0) return;
+        ensureStoreProfiles(deals.map(d => (d as any).storeId));
+    }, [deals, ensureStoreProfiles]);
+
+    useEffect(() => () => { if (storeFetchTimerRef.current) clearTimeout(storeFetchTimerRef.current); }, []);
 
     // v11.23 — active sponsors (راعٍ رسمي), keyed by storeId. Loaded once on
     // mount and refreshed via realtime so an admin grant/revoke reflects live.
@@ -2633,6 +2706,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const showRealTimeAlertRef = useRef(showRealTimeAlert);
     const addNotificationRef = useRef(addNotification);
     const reconcileStatusRef = useRef(reconcileStatus);
+    const refreshDealsRef = useRef(refreshDeals);
+    useEffect(() => { refreshDealsRef.current = refreshDeals; }, [refreshDeals]);
+    // v13.80 — آخر حدث ريل‑تايم على `bookings` يخصّ هذا المستخدم، بعدّاد
+    // تسلسلي حتى يميّز المستهلك حدثين متطابقين متتاليين (نفس الصفّ، نفس الحالة).
+    const bookingEventSeqRef = useRef(0);
     useEffect(() => { showRealTimeAlertRef.current = showRealTimeAlert; }, [showRealTimeAlert]);
     useEffect(() => { addNotificationRef.current = addNotification; }, [addNotification]);
     useEffect(() => { reconcileStatusRef.current = reconcileStatus; }, [reconcileStatus]);
@@ -2708,6 +2786,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 }
             },
             onBookingChange: (payload) => {
+                // v13.80 — بثّ الحدث الخام للقوائم المُرقَّمة (`useBookingBrowse`).
+                //
+                // بلاغ ناصر: «الطلب اكتمل ووصلني الإشعار، والبطاقة ما زالت كما
+                // هي ولم تنتقل للسجل». السبب: قائمتا «الجارية» و«السابقة» في
+                // لوحة التاجر وصفحة الحجوزات تأتيان من الخادم صفحةً صفحة
+                // (v13.28)، بينما الريل‑تايم كان يحدّث **مصفوفة السياق** وحدها.
+                // فأي إتمام/إلغاء يقع من جهاز آخر أو من البوت أو من الطرف
+                // الثاني كان لا يحرّك الصفّ حتى تحديث الصفحة يدوياً. (v13.71
+                // عالجت الأفعال المحلية فقط بإعادة تحميل بعد الفعل نفسه.)
+                const evRow = (payload.new || payload.old) as any;
+                if (evRow?.barcode) {
+                    const touchesMe = payload.eventType === 'DELETE'
+                        || evRow.user_id === user?.id || evRow.store_id === user?.id;
+                    if (touchesMe) {
+                        bookingEventSeqRef.current += 1;
+                        setLastBookingEvent({
+                            type: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+                            row: evRow,
+                            seq: bookingEventSeqRef.current,
+                        });
+                    }
+                }
                 if (payload.eventType === 'INSERT') {
                     const n = payload.new as any;
                     const isMine = n.user_id === user?.id || n.store_id === user?.id;
@@ -2942,7 +3042,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 logger.info('🔄 Full Refresh Triggered');
                 const ruid = user?.id;
                 await Promise.allSettled([
-                    import('../repositories/dealRepository').then(({ dealRepository: dr }) => dr.getAll().then(fresh => { if (fresh) { setDeals(fresh); writeSnapshot('deals', fresh); } })),
+                    // v13.80 — الصفحة الأولى لا الكتالوج كله. كان التحديث الكامل
+                    // (عودة من الخلفية، اتصال يعود، سحب للتحديث) ينزّل **كل**
+                    // عروض المنصّة رغم أن الفتح نفسه صار مُرقّماً منذ v13.22 —
+                    // تناقض كان سيصير قاتلاً مع مليون عرض. `refreshDeals` تجلب
+                    // الصفحة الأولى وتدمجها مع المُحمَّل فلا يضيع تمرير المستخدم.
+                    refreshDealsRef.current(),
                     // Preserve previously-fetched per-booking chat messages — the
                     // bookings select doesn't include them, so a naive setBookings(fresh)
                     // would wipe `messages` on every focus/visibility refresh and force
@@ -2957,11 +3062,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     })) : Promise.resolve(),
                     ruid ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(ruid).then(n => { setNotifications(n); writeSnapshot('notif_' + ruid, n); })) : Promise.resolve(),
                     ruid ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + ruid, f); })) : Promise.resolve(),
+                    // v13.80 — دمج لا استبدال: الاستبدال كان يمسح ملفات المتاجر
+                    // التي جُلبت بالمعرّف (متجر خارج الصفحة المسقوفة) فتفقد
+                    // بطاقاته اسمه وشعاره حتى تُجلب من جديد.
                     import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getAllSellers().then(sellers => {
-                        const profiles: Record<string, any> = {};
-                        sellers.forEach(s => { profiles[s.id] = s; });
-                        setStoreProfiles(profiles);
-                        writeSnapshot('sellers', profiles);
+                        setStoreProfiles(prev => {
+                            const merged: Record<string, any> = { ...prev };
+                            sellers.forEach(s => { merged[s.id] = s; });
+                            writeSnapshot('sellers', merged);
+                            return merged;
+                        });
                     }))
                 ]);
             }
@@ -3086,13 +3196,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
-        refreshBookings, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
+        refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
         addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
-        storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        storeProfiles, sponsors, updateStoreProfile, ensureStoreProfiles, updateProfile, checkMarketingAlerts,
         liveLocation, locationPermission, locationIsFresh, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
@@ -3115,13 +3225,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
-        refreshBookings, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
+        refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
         addRating, updateRating, addReply, toggleRatingLike, removeRating,
         topLocation, setTopLocation,
         homeCity, setHomeCity,
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
-        storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
+        storeProfiles, sponsors, updateStoreProfile, ensureStoreProfiles, updateProfile, checkMarketingAlerts,
         liveLocation, locationPermission, locationIsFresh, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
