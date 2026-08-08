@@ -155,7 +155,7 @@ const SellerDashboard: React.FC = () => {
         } finally { setHoursSaving(false); }
     }, [user, updateStoreProfile, customAlert, isRTL]);
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
-    // Reviews tab — Facebook-style inline reply state. activeReplyId picks
+    // Reviews tab — inline reply state. activeReplyId picks
     // which rating is currently in "compose" mode; replyDrafts holds the
     // half-typed text per-rating so switching focus doesn't lose it.
     const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
@@ -4970,8 +4970,8 @@ const SellerDashboard: React.FC = () => {
                     <SellerAnalytics myDeals={myDeals} myOrders={myOrders} isRTL={isRTL} />
                 ) : view === 'reviews' ? (
                     // Reviews tab — aggregates every rating across this
-                    // seller's deals into one feed with a Facebook-style
-                    // inline reply box per row. Uses `addReply` from
+                    // seller's deals into one feed with an inline
+                    // reply box per row. Uses `addReply` from
                     // AppContext, which already routes to the
                     // `set_rating_reply` RPC (SECURITY DEFINER, only the
                     // store owner can write the reply column).

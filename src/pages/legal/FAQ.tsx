@@ -415,7 +415,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني الردّ على تقييمات المشترين؟',
-        a: <p>نعم. من «لوحة التاجر» ← <strong>تَبويب «⭐ التقييمات»</strong> تَجد كلّ التَقييمات على عُروضك في مكان واحد، وتحت كلّ تَقييم زرّ <strong>«💬 الردّ على هذا التعليق»</strong> (مثل فيسبوك تماماً) — اكتب ردّك واضغط «إرسال» فيَظهر تحت التَعليق مباشرةً. الردّ الهادئ والمهنيّ على التقييمات السلبية يَبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>,
+        a: <p>نعم. من «لوحة التاجر» ← <strong>تَبويب «⭐ التقييمات»</strong> تَجد كلّ التَقييمات على عُروضك في مكان واحد، وتحت كلّ تَقييم زرّ <strong>«💬 الردّ على هذا التعليق»</strong> — اكتب ردّك واضغط «إرسال» فيَظهر تحت التَعليق مباشرةً. الردّ الهادئ والمهنيّ على التقييمات السلبية يَبني الثقة. لا تُجادل ولا تُهدِّد — أيّ ردّ غير لائق قد يُحذَف.</p>,
     },
     {
         q: 'هل يمكنني نَشر منتجات محظورة؟',
@@ -512,7 +512,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Can I reply to buyers\' ratings?',
-        a: <p>Yes. From the «Merchant Dashboard» → the <strong>«⭐ Reviews» tab</strong>, you can see every rating on your deals in one place, with a <strong>«💬 Reply to this review»</strong> button under each one (just like Facebook). Type your reply and tap «Send» — it appears directly under the review. A calm, professional reply to negative ratings builds trust. Do not argue or threaten — any inappropriate reply may be removed.</p>,
+        a: <p>Yes. From the «Merchant Dashboard» → the <strong>«⭐ Reviews» tab</strong>, you can see every rating on your deals in one place, with a <strong>«💬 Reply to this review»</strong> button under each one. Type your reply and tap «Send» — it appears directly under the review. A calm, professional reply to negative ratings builds trust. Do not argue or threaten — any inappropriate reply may be removed.</p>,
     },
     {
         q: 'Can I publish prohibited products?',

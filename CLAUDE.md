@@ -13,7 +13,8 @@
 - React 18 + Parcel 2 + TypeScript + Supabase + Vercel
 - المسار المحلي: `/Users/nasser/Desktop/TAKI`
 - Repo: `https://github.com/nas10ser/Taki-Phase-Two` (فرع `main`)
-- Supabase MCP متصل — Project: `kbmqzxcjdankdgiovctm`
+- 🔴 **قاعدة البيانات المعتمدة = خادم جدة المستضاف ذاتياً** (`141-147-142-147.sslip.io`) — **قرار ناصر (٨ أغسطس ٢٠٢٦): أي تعديل على القاعدة يُعتمد على جدة، لا على طوكيو.** مشروع طوكيو `kbmqzxcjdankdgiovctm` (Supabase MCP) **نسخة احتياطية ومختبر تجارب فقط** — لا يُعتمد إصلاح لأنه نجح عليه. أي هجرة تُسلَّم لناصر كملف يلصقه في SQL Editor على جدة، ويُتحقَّق منها بجدول ✅/❌.
+- ⚠️ **سياسة شبكة الجلسات تحجب** `141-147-142-147.sslip.io` و`taki-test-eight.vercel.app` و`sentry.io` (403 من بوابة المؤسسة). فالتحقّق من النشر يتم عبر **Vercel MCP** لا `curl`، والتحقّق من القاعدة عبر ملف فحص يلصقه ناصر. لفتحها: أضف النطاقات لسياسة شبكة البيئة (بعد شراء نطاق ثابت — لا تُضِف عنوان `sslip.io` المبني على رقم آي بي).
 - الإنتاج: `https://taki-test-eight.vercel.app`
 - Vercel: `nasser-projects1/taki-test` (مفوّض كـ `nalaumari-8916`، Env vars مشفّرة)
 - **الإصدار الحالي: v12.50** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
