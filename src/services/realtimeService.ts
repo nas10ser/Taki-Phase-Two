@@ -38,6 +38,11 @@ let currentConfig: RealtimeConfig | null = null;
 let userChannel: ReturnType<typeof supabase.channel> | null = null;
 let globalChannel: ReturnType<typeof supabase.channel> | null = null;
 let favoritesChannel: ReturnType<typeof supabase.channel> | null = null;
+// v13.82 — قناة رسائل المحادثة. `messagesFilterSupported` تصير false إذا
+// رفض الخادم الترشيح (خادم لم تُطبَّق عليه هجرة v13.82 بعد)، فنبني القناة
+// بلا ترشيح **مباشرة** في كل اشتراك لاحق — لا نعيد المحاولة الفاشلة كل مرة.
+let messagesChannel: ReturnType<typeof supabase.channel> | null = null;
+let messagesFilterSupported = true;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastActivityAt = Date.now();
@@ -238,12 +243,14 @@ function teardownChannels() {
             return topic.includes('rt-user-') ||
                    topic.includes('rt-global') ||
                    topic.includes('rt-deal-') ||
+                   topic.includes('rt-msgs') ||
                    topic.includes('rt-favorites-');
         })
         .forEach((c: any) => supabase.removeChannel(c));
 
     userChannel = null;
     globalChannel = null;
+    messagesChannel = null;
     favoritesChannel = null;
     isConnected = false;
 }
@@ -330,17 +337,56 @@ function setupChannels(config: RealtimeConfig) {
         table: 'bookings'
     }, onBooking);
 
-    // Booking messages: live thread updates (INSERT for new, UPDATE for read-receipts).
-    // RLS already restricts visibility to either party of the booking, so the
-    // client receives only messages for bookings it actually has access to.
-    userChannel.on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'booking_messages'
-    }, (payload) => {
+    // ─────────────────────────────────────────────────────────────
+    // Booking messages — v13.82: قناة مستقلة مُرشَّحة، مع ارتداد آمن.
+    //
+    // كانت آخر اشتراك بلا ترشيح: كل رسالة في المنصّة تُقيَّم أمام كل جهاز.
+    // الترشيح صار ممكناً بعد عمود `recipient_id` (يُملأ بمشغّل في القاعدة،
+    // فلا يُزوَّر من العميل):
+    //     recipient_id = أنا  → الوارد
+    //     sender_id    = أنا  → إيصالات القراءة على رسائلي أنا
+    //
+    // ولماذا قناة مستقلة؟ لأن الترشيح على عمود غير موجود يُسقط **القناة
+    // كلها**. لو كان معها الحجوزات والإشعارات لسقطت هي الأخرى على خادم لم
+    // تُطبَّق عليه الهجرة بعد. هنا تسقط وحدها، ويلتقطها الارتداد أدناه:
+    // نعيد الاشتراك بلا ترشيح (سلوك ما قبل v13.82 بالضبط) فلا تتعطّل
+    // المحادثة لحظة واحدة — مرة واحدة فقط، بلا حلقة إعادة محاولة.
+    // ─────────────────────────────────────────────────────────────
+    const onMessage = (payload: any) => {
         lastActivityAt = Date.now();
         config.onBookingMessage?.(payload);
-    });
+    };
+
+    const subscribeMessagesUnfiltered = () => {
+        messagesChannel = supabase.channel(`rt-msgs-fb-${userId}`);
+        messagesChannel.on('postgres_changes', {
+            event: '*', schema: 'public', table: 'booking_messages',
+        }, onMessage);
+        messagesChannel.subscribe();
+    };
+
+    if (!messagesFilterSupported) {
+        subscribeMessagesUnfiltered();
+    } else {
+        messagesChannel = supabase.channel(`rt-msgs-${userId}`);
+        messagesChannel.on('postgres_changes', {
+            event: '*', schema: 'public', table: 'booking_messages',
+            filter: `recipient_id=eq.${userId}`,
+        }, onMessage);
+        messagesChannel.on('postgres_changes', {
+            event: '*', schema: 'public', table: 'booking_messages',
+            filter: `sender_id=eq.${userId}`,
+        }, onMessage);
+        messagesChannel.subscribe((status) => {
+            if (status !== 'CHANNEL_ERROR' || !messagesFilterSupported) return;
+            // الترشيح مرفوض على هذا الخادم — نسجّلها مرة واحدة ونرتدّ إلى سلوك
+            // ما قبل v13.82 فلا تتعطّل المحادثة، وكل اشتراك لاحق يبدأ مرتدّاً.
+            messagesFilterSupported = false;
+            logger.warn('↩️ booking_messages filter rejected — falling back to unfiltered');
+            try { if (messagesChannel) supabase.removeChannel(messagesChannel); } catch { /* ignore */ }
+            subscribeMessagesUnfiltered();
+        });
+    }
 
     // User profile changes (for this user — settings, keywords, etc.)
     userChannel.on('postgres_changes', {
