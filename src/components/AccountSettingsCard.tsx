@@ -1,18 +1,38 @@
 /**
- * AccountSettingsCard v11.19 — self-service edit for name / phone / email /
- * password. Drops into the Profile "Settings" tab and works for every role
- * (buyer, seller, admin) since every account has these four attributes.
+ * AccountSettingsCard — تعديل الاسم / الجوال / الإيميل / كلمة السر.
  *
- * Where each write goes:
- *  - name, phone, shop  → updateProfile (partial-aware saveProfile)
- *  - email              → supabase.auth.updateUser({email}) — Supabase
- *    sends a double-confirmation (old + new) before the change settles
- *  - password           → supabase.auth.updateUser({password}) — the user
- *    must re-enter the current password; we sign in once with the current
- *    password to revalidate before applying the new one
+ * v13.77 — أُعيدت كتابة طبقة الأمان بعد جرد كشف أربع ثغرات حقيقية في نسخة
+ * v11.19. القاعدة المتّبعة في المنصّات الجادّة: **أي تغيير يمسّ هوية الدخول
+ * (جوال · إيميل · كلمة سر) يتطلّب إعادة مصادقة بكلمة السر الحالية**، ولا يُكتب
+ * أي مُعرِّف في قاعدتنا قبل أن يؤكّده صاحبه.
  *
- * The card is intentionally collapsible per-section so the buyer who just
- * wants to change their phone doesn't see four open forms at once.
+ * الثغرات التي سُدّت:
+ *
+ *  ١) 🔴 تغيير كلمة السر بلا تحقّق لحسابات الجوال. كان الشرط:
+ *        if (user.email) { …signInWithPassword… }
+ *     وتاكي منصّة **جوال أولاً**؛ كثير من الحسابات لا يحمل ملفها إيميلاً، فكان
+ *     الشرط يسقط و**تُغيَّر كلمة السر بلا أي تحقّق**. أي جلسة مسروقة (جهاز
+ *     مفتوح، توكن مسرّب) تتحوّل إلى استيلاء دائم على الحساب — وهو عين ما كتب
+ *     التعليق أنه يمنعه. الآن نقرأ بريد المصادقة من **الجلسة الحيّة** لا من
+ *     الملف الشخصي (كل حساب في GoTrue له بريد ولو لم يظهر في ملفه)، وإن تعذّر
+ *     نرفض التغيير — **الفشل مُغلق لا مفتوح**.
+ *
+ *  ٢) 🔴 الإيميل غير المؤكَّد كان يُكتب في جدول `users` فوراً. نتيجتان: من لم
+ *     يضغط رابط التأكيد يصير جدولنا يقول بريداً وGoTrue يقول آخر فينكسر الدخول
+ *     بالإيميل؛ ومن سرق جلسةً يكتب بريده هو في ملف الضحية بلا تأكيد. الآن
+ *     المصدر الوحيد للحقيقة هو `auth.users` بعد التأكيد، ومشغّل
+ *     `on_auth_user_updated` (v13.76) يُنزل القيمة المؤكَّدة إلى جدولنا وحده.
+ *
+ *  ٣) الجوال والإيميل كانا يُغيَّران بلا إعادة مصادقة — والجوال هو **مُعرِّف
+ *     الدخول** في تاكي (`find_email_by_phone`)، فتغييره من جلسة مسروقة يحوّل
+ *     الدخول للمهاجم. صارا يتطلّبان كلمة السر الحالية.
+ *
+ *  ٤) بعد تغيير كلمة السر لم تكن الجلسات الأخرى تُنهى — فمن سرق الجلسة يبقى
+ *     داخلاً رغم تغيير الضحية لكلمتها. الآن تُنهى كل الجلسات الأخرى فوراً.
+ *
+ * وأُضيف: حدّ لمحاولات كلمة السر الخاطئة (تهدئة محلية فوق حدّ GoTrue)، وقياس
+ * قوة كلمة السر، ورسالة عربية واضحة حين يكون الجوال مسجّلاً لحساب آخر (قيد
+ * `users_phone_key` كان يعيد خطأ بوستجرس خاماً).
  */
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
@@ -20,6 +40,10 @@ import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 
 type Section = 'name' | 'phone' | 'email' | 'password' | null;
+
+/** أقصى محاولات خاطئة لكلمة السر الحالية قبل تهدئة إجبارية. */
+const MAX_REAUTH_TRIES = 5;
+const COOLDOWN_MS = 60_000;
 
 const AccountSettingsCard: React.FC = () => {
     const { user, language, updateProfile, customAlert } = useApp();
@@ -35,6 +59,10 @@ const AccountSettingsCard: React.FC = () => {
     const [newPw, setNewPw] = useState('');
     const [confirmPw, setConfirmPw] = useState('');
 
+    // تهدئة محلية: تمنع تجربة كلمات سر بالتسلسل من داخل الصفحة.
+    const [failedTries, setFailedTries] = useState(0);
+    const [cooldownUntil, setCooldownUntil] = useState(0);
+
     if (!user) return null;
 
     const close = () => {
@@ -42,10 +70,72 @@ const AccountSettingsCard: React.FC = () => {
         setCurrentPw(''); setNewPw(''); setConfirmPw('');
     };
 
+    /**
+     * إعادة المصادقة — البوابة الوحيدة لكل تغيير يمسّ هوية الدخول.
+     *
+     * تقرأ بريد المصادقة من **الجلسة الحيّة** لا من الملف الشخصي: حسابات
+     * الجوال في تاكي تدخل عبر `find_email_by_phone` فلها بريد في GoTrue ولو
+     * كان حقل `email` في ملفها فارغاً. الاعتماد على الملف هو ما فتح الثغرة (١).
+     *
+     * ترمي عند الفشل — فلا يمكن لمسار استدعاء أن «ينسى» فحص النتيجة.
+     */
+    const reauthenticate = async (password: string): Promise<void> => {
+        if (Date.now() < cooldownUntil) {
+            const secs = Math.ceil((cooldownUntil - Date.now()) / 1000);
+            throw new Error(isRTL
+                ? `محاولات كثيرة خاطئة — انتظر ${secs} ثانية ثم أعد المحاولة.`
+                : `Too many failed attempts — wait ${secs}s and try again.`);
+        }
+        if (!password) {
+            throw new Error(isRTL ? 'أدخل كلمة السر الحالية للتحقق.' : 'Enter your current password.');
+        }
+
+        const { data, error: sessErr } = await supabase.auth.getUser();
+        const authEmail = data?.user?.email;
+        if (sessErr || !authEmail) {
+            // فشل مُغلق: لا نُكمل بلا تحقّق مهما كان السبب.
+            throw new Error(isRTL
+                ? 'تعذّر التحقّق من جلستك. سجّل خروجاً ثم دخولاً وأعد المحاولة.'
+                : 'Could not verify your session. Sign out, sign in again, and retry.');
+        }
+
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
+        if (error) {
+            const tries = failedTries + 1;
+            setFailedTries(tries);
+            if (tries >= MAX_REAUTH_TRIES) {
+                setCooldownUntil(Date.now() + COOLDOWN_MS);
+                setFailedTries(0);
+            }
+            throw new Error(isRTL ? 'كلمة السر الحالية غير صحيحة.' : 'Current password is incorrect.');
+        }
+        setFailedTries(0);
+    };
+
+    /** رسالة عربية مفهومة بدل خطأ بوستجرس الخام. */
+    const humanError = (e: any): string => {
+        const raw = String(e?.message || e || '');
+        if (/users_phone_key|duplicate key|unique constraint/i.test(raw)) {
+            return isRTL ? 'رقم الجوال مسجَّل لحساب آخر.' : 'This phone number belongs to another account.';
+        }
+        if (/already registered|already been registered|email_exists/i.test(raw)) {
+            return isRTL ? 'هذا البريد مسجَّل لحساب آخر.' : 'This email belongs to another account.';
+        }
+        if (/rate limit|too many/i.test(raw)) {
+            return isRTL ? 'محاولات كثيرة — أعد المحاولة بعد قليل.' : 'Too many attempts — try again shortly.';
+        }
+        return raw;
+    };
+
     const saveName = async () => {
         if (busy) return;
-        const trimmed = name.trim();
-        if (!trimmed) { await customAlert(isRTL ? 'الاسم لا يمكن أن يكون فارغاً' : 'Name cannot be empty'); return; }
+        // A: control chars are stripped via escape sequences, never raw bytes.
+        // A raw byte turns the file binary in git and breaks grep and review.
+        const trimmed = name.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+        if (trimmed.length < 2 || trimmed.length > 60) {
+            await customAlert(isRTL ? 'الاسم يجب أن يكون بين حرفين و٦٠ حرفاً.' : 'Name must be 2–60 characters.');
+            return;
+        }
         setBusy(true);
         try {
             const patch: any = { name: trimmed };
@@ -54,7 +144,7 @@ const AccountSettingsCard: React.FC = () => {
             await customAlert(isRTL ? '✅ تم حفظ الاسم' : '✅ Name saved');
             close();
         } catch (e: any) {
-            await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + (e?.message || ''));
+            await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
 
@@ -65,13 +155,19 @@ const AccountSettingsCard: React.FC = () => {
             await customAlert(isRTL ? 'رقم الجوال يجب أن يبدأ بـ 05 ويتكون من 10 أرقام' : 'Phone must start with 05 and be 10 digits');
             return;
         }
+        if (cleaned === (user.phone || '')) {
+            await customAlert(isRTL ? 'هذا هو رقمك الحالي.' : 'This is already your number.');
+            return;
+        }
         setBusy(true);
         try {
+            // الجوال مُعرِّف الدخول في تاكي — تغييره يحتاج إثبات ملكية الحساب.
+            await reauthenticate(currentPw);
             await updateProfile({ phone: cleaned, contactPhone: cleaned });
             await customAlert(isRTL ? '✅ تم حفظ رقم الجوال' : '✅ Phone saved');
             close();
         } catch (e: any) {
-            await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + (e?.message || ''));
+            await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
 
@@ -88,67 +184,84 @@ const AccountSettingsCard: React.FC = () => {
         }
         setBusy(true);
         try {
-            // Supabase sends two confirmation emails — one to the old
-            // address and one to the new. The change only settles after
-            // both are clicked. We surface that explicitly.
+            await reauthenticate(currentPw);
             const { error } = await supabase.auth.updateUser({ email: cleaned });
             if (error) throw error;
-            // Mirror in our `users` table immediately so the seller page,
-            // admin search etc. read the new email without waiting for the
-            // auth-triggered DB sync.
-            await updateProfile({ email: cleaned });
+            // ⚠️ لا نكتب البريد في جدول `users` هنا عمداً — لم يُؤكَّد بعد.
+            // مشغّل `on_auth_user_updated` (v13.76) ينزله بعد التأكيد وحده.
             await customAlert(
                 isRTL
-                    ? `📧 أُرسلت رسالة تأكيد إلى:\n- إيميلك القديم (${user.email})\n- إيميلك الجديد (${cleaned})\n\nاضغط الرابط في الاثنين لإتمام التغيير.`
-                    : `📧 Confirmation emails were sent to:\n- your old address (${user.email})\n- your new address (${cleaned})\n\nClick the link in both to finalize the change.`
+                    ? `📧 أُرسل رابط تأكيد إلى ${cleaned}.\n\nلن يتغيّر بريدك في تاكي إلا بعد ضغط الرابط — وحتى ذلك الحين ادخل ببريدك القديم.`
+                    : `📧 A confirmation link was sent to ${cleaned}.\n\nYour TAKI email changes only after you click it — until then, sign in with your old address.`
             );
             close();
         } catch (e: any) {
-            await customAlert((isRTL ? 'فشل تحديث الإيميل: ' : 'Email update failed: ') + (e?.message || ''));
+            await customAlert((isRTL ? 'فشل تحديث الإيميل: ' : 'Email update failed: ') + humanError(e));
         } finally { setBusy(false); }
+    };
+
+    /** قوة كلمة السر — يعيد رسالة الخطأ أو null إن كانت مقبولة. */
+    const passwordProblem = (pw: string): string | null => {
+        if (pw.length < 8) return isRTL ? 'كلمة السر يجب أن تكون ٨ أحرف على الأقل.' : 'Password must be at least 8 characters.';
+        if (!/[A-Za-z؀-ۿ]/.test(pw) || !/\d/.test(pw)) {
+            return isRTL ? 'اجعلها تحتوي حروفاً وأرقاماً معاً.' : 'Include both letters and digits.';
+        }
+        if (/^(.)\1+$/.test(pw)) return isRTL ? 'كلمة السر ضعيفة جداً.' : 'Password is too weak.';
+        // لا تكن جوالك أو بريدك — أول ما يجرّبه المهاجم.
+        const localPart = (user.email || '').split('@')[0];
+        if (user.phone && pw.includes(user.phone)) {
+            return isRTL ? 'لا تجعل كلمة السر رقم جوالك.' : 'Do not use your phone number as the password.';
+        }
+        if (localPart && localPart.length >= 4 && pw.toLowerCase().includes(localPart.toLowerCase())) {
+            return isRTL ? 'لا تجعل كلمة السر جزءاً من بريدك.' : 'Do not use part of your email as the password.';
+        }
+        return null;
     };
 
     const savePassword = async () => {
         if (busy) return;
-        if (newPw.length < 8) {
-            await customAlert(isRTL ? 'كلمة السر يجب أن تكون 8 أحرف على الأقل' : 'Password must be at least 8 characters');
-            return;
-        }
+        const problem = passwordProblem(newPw);
+        if (problem) { await customAlert(problem); return; }
         if (newPw !== confirmPw) {
             await customAlert(isRTL ? 'كلمتا السر غير متطابقتين' : 'Passwords do not match');
             return;
         }
-        if (!currentPw) {
-            await customAlert(isRTL ? 'أدخل كلمة السر الحالية للتحقق' : 'Enter current password to verify');
+        if (newPw === currentPw) {
+            await customAlert(isRTL ? 'كلمة السر الجديدة مطابقة للحالية.' : 'New password matches the current one.');
             return;
         }
         setBusy(true);
         try {
-            // Revalidate the current password by signing in again. Without
-            // this, anyone with a stolen unlocked session could rotate the
-            // password — the equivalent of a session hijack becoming
-            // permanent account takeover.
-            if (user.email) {
-                const { error: reauthErr } = await supabase.auth.signInWithPassword({
-                    email: user.email,
-                    password: currentPw,
-                });
-                if (reauthErr) {
-                    throw new Error(isRTL ? 'كلمة السر الحالية غير صحيحة' : 'Current password is incorrect');
-                }
-            }
+            // إلزامية لكل الحسابات بلا استثناء — هذه كانت الثغرة (١).
+            await reauthenticate(currentPw);
+
             const { error } = await supabase.auth.updateUser({ password: newPw });
             if (error) throw error;
-            await customAlert(isRTL ? '✅ تم تغيير كلمة السر' : '✅ Password changed');
+
+            // إنهاء كل الجلسات الأخرى: من كان داخلاً بجلسة مسروقة يخرج فوراً،
+            // وجلستك أنت على هذا الجهاز تبقى.
+            let othersRevoked = true;
+            try {
+                const { error: soErr } = await supabase.auth.signOut({ scope: 'others' });
+                if (soErr) othersRevoked = false;
+            } catch { othersRevoked = false; }
+
+            await customAlert(
+                othersRevoked
+                    ? (isRTL ? '✅ تم تغيير كلمة السر، وأُنهيت جلساتك على الأجهزة الأخرى.'
+                             : '✅ Password changed, and your sessions on other devices were signed out.')
+                    : (isRTL ? '✅ تم تغيير كلمة السر. (تعذّر إنهاء الجلسات الأخرى — سجّل خروجاً من الأجهزة الأخرى يدوياً.)'
+                             : '✅ Password changed. (Could not sign out other devices — do it manually.)')
+            );
             close();
         } catch (e: any) {
-            await customAlert((isRTL ? 'فشل التغيير: ' : 'Change failed: ') + (e?.message || ''));
+            await customAlert((isRTL ? 'فشل التغيير: ' : 'Change failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
 
     const Row = ({ id, icon, label, value, action }: { id: Section; icon: string; label: string; value: string; action: string; }) => (
         <button
-            onClick={() => setOpen(open === id ? null : id)}
+            onClick={() => { setOpen(open === id ? null : id); setCurrentPw(''); }}
             style={{
                 width: '100%',
                 padding: 14,
@@ -184,6 +297,36 @@ const AccountSettingsCard: React.FC = () => {
         padding: '12px 18px', borderRadius: 12, background: 'var(--gray-100)', color: 'var(--text-secondary)',
         fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer'
     };
+    const noteStyle: React.CSSProperties = {
+        fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6
+    };
+
+    /**
+     * حقل «كلمة السر الحالية» — يظهر في كل قسم حسّاس بنصّ واحد موحّد.
+     *
+     * يُستدعى **كدالة** `{currentPasswordField()}` لا كمكوّن `<X />` عمداً:
+     * المكوّن المُعرَّف داخل جسم مكوّن آخر يحمل هوية جديدة في كل رسم، فيرى React
+     * نوعاً مختلفاً ويفكّ الشجرة ويعيد تركيبها — أي أن الحقل **يفقد التركيز بعد
+     * كل حرف يُكتب فيه**. الاستدعاء كدالة يُدرج العناصر بلا حدّ مكوّن فلا يحدث
+     * ذلك. (نفس درس TDZ في v10.61: ترتيب التعريف وشكله ليسا تفصيلاً تجميلياً.)
+     */
+    const currentPasswordField = () => (
+        <>
+            <div style={{ ...noteStyle, color: '#b45309' }}>
+                🔒 {isRTL
+                    ? 'هذا تغيير يمسّ دخولك للحساب، فنطلب كلمة السر الحالية للتأكد أنك أنت.'
+                    : 'This changes how you sign in, so we ask for your current password.'}
+            </div>
+            <input
+                type="password"
+                value={currentPw}
+                onChange={e => setCurrentPw(e.target.value)}
+                placeholder={isRTL ? 'كلمة السر الحالية' : 'Current password'}
+                autoComplete="current-password"
+                style={inputStyle}
+            />
+        </>
+    );
 
     return (
         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
@@ -200,9 +343,9 @@ const AccountSettingsCard: React.FC = () => {
                 />
                 {open === 'name' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--body-bg)', borderRadius: 12 }}>
-                        <input value={name} onChange={e => setName(e.target.value)} placeholder={isRTL ? 'الاسم الجديد' : 'New name'} style={inputStyle} />
+                        <input value={name} onChange={e => setName(e.target.value)} placeholder={isRTL ? 'الاسم الجديد' : 'New name'} maxLength={60} style={inputStyle} />
                         {user.userType === 'seller' && (
-                            <input value={shop} onChange={e => setShop(e.target.value)} placeholder={isRTL ? 'اسم المتجر' : 'Shop name'} style={inputStyle} />
+                            <input value={shop} onChange={e => setShop(e.target.value)} placeholder={isRTL ? 'اسم المتجر' : 'Shop name'} maxLength={60} style={inputStyle} />
                         )}
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={saveName} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}>
@@ -228,11 +371,13 @@ const AccountSettingsCard: React.FC = () => {
                             onChange={e => setPhone(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))}
                             placeholder="05xxxxxxxx"
                             maxLength={10}
+                            autoComplete="tel"
                             style={inputStyle}
                         />
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
-                            {isRTL ? 'يبدأ بـ 05 ويتكون من 10 أرقام' : 'Starts with 05, 10 digits total'}
+                        <div style={noteStyle}>
+                            {isRTL ? 'يبدأ بـ 05 ويتكون من 10 أرقام — وبه تسجّل دخولك.' : 'Starts with 05, 10 digits — you sign in with it.'}
                         </div>
+                        {currentPasswordField()}
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={savePhone} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}>
                                 {busy ? (isRTL ? '⏳ جاري الحفظ...' : '⏳ Saving...') : (isRTL ? '💾 حفظ الجوال' : '💾 Save')}
@@ -251,12 +396,13 @@ const AccountSettingsCard: React.FC = () => {
                 />
                 {open === 'email' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--body-bg)', borderRadius: 12 }}>
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" style={inputStyle} />
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" style={inputStyle} />
+                        <div style={noteStyle}>
                             {isRTL
-                                ? '⚠️ سيرسل Supabase رابط تأكيد إلى إيميلك القديم وإيميلك الجديد. التغيير لا يفعل إلا بعد ضغط الرابطين.'
-                                : '⚠️ Supabase sends a confirmation link to both your old and new email. The change settles only after both links are clicked.'}
+                                ? '⚠️ سيصلك رابط تأكيد على البريد الجديد. لن يتغيّر بريدك في تاكي إلا بعد ضغطه — وحتى ذلك الحين ادخل ببريدك القديم.'
+                                : '⚠️ A confirmation link goes to the new address. Your TAKI email changes only after you click it — until then, sign in with the old one.'}
                         </div>
+                        {currentPasswordField()}
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={saveEmail} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}>
                                 {busy ? (isRTL ? '⏳ جاري الإرسال...' : '⏳ Sending...') : (isRTL ? '📧 إرسال رابط التأكيد' : '📧 Send confirmation')}
@@ -275,22 +421,20 @@ const AccountSettingsCard: React.FC = () => {
                 />
                 {open === 'password' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--body-bg)', borderRadius: 12 }}>
-                        <input
-                            type="password"
-                            value={currentPw}
-                            onChange={e => setCurrentPw(e.target.value)}
-                            placeholder={isRTL ? 'كلمة السر الحالية' : 'Current password'}
-                            autoComplete="current-password"
-                            style={inputStyle}
-                        />
+                        {currentPasswordField()}
                         <input
                             type="password"
                             value={newPw}
                             onChange={e => setNewPw(e.target.value)}
-                            placeholder={isRTL ? 'كلمة السر الجديدة (8 أحرف على الأقل)' : 'New password (8+ chars)'}
+                            placeholder={isRTL ? 'كلمة السر الجديدة (٨ أحرف فأكثر، حروف وأرقام)' : 'New password (8+ chars, letters + digits)'}
                             autoComplete="new-password"
                             style={inputStyle}
                         />
+                        {newPw.length > 0 && (
+                            <div style={{ ...noteStyle, color: passwordProblem(newPw) ? '#dc2626' : '#059669' }}>
+                                {passwordProblem(newPw) || (isRTL ? '✅ كلمة سر مقبولة' : '✅ Password looks good')}
+                            </div>
+                        )}
                         <input
                             type="password"
                             value={confirmPw}
@@ -299,6 +443,11 @@ const AccountSettingsCard: React.FC = () => {
                             autoComplete="new-password"
                             style={inputStyle}
                         />
+                        <div style={noteStyle}>
+                            {isRTL
+                                ? 'بعد التغيير ستُنهى جلساتك على الأجهزة الأخرى تلقائياً.'
+                                : 'Your sessions on other devices will be signed out automatically.'}
+                        </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={savePassword} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}>
                                 {busy ? (isRTL ? '⏳ جاري التغيير...' : '⏳ Changing...') : (isRTL ? '🔒 تغيير كلمة السر' : '🔒 Change password')}
