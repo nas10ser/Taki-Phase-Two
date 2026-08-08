@@ -458,6 +458,61 @@ textarea:focus {
   z-index: 0;
 }
 
+/* دبّوس «موقعي» الذهبي على خريطة «حولي» (v13.79 — طلب ناصر).
+ * ذهبي صريح + إطار أبيض + هالة نابضة، فيُقرأ من نظرة وسط دبابيس العروض
+ * الزرقاء. HTML خالص (divIcon) بلا أي صورة تُحمَّل. */
+.taki-me-pin-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.taki-me-pin {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+
+.taki-me-pin__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.5), rgba(245, 158, 11, 0));
+  animation: taki-me-pulse 2.2s ease-out infinite;
+}
+
+.taki-me-pin__dot {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fcd34d, #d97706);
+  border: 3px solid #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes taki-me-pulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.85;
+  }
+
+  70% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taki-me-pin__halo {
+    animation: none;
+  }
+}
+
 .nav-item {
   display: flex;
   flex-direction: column;

@@ -4,6 +4,7 @@
  */
 
 import { Deal, LOCATIONS, CITIES, findNearestCity } from '../data/mock';
+import { getTelegramLocation } from './tgLocation';
 
 /**
  * Returns { region, city } for a deal. Priority:
@@ -626,18 +627,33 @@ const geoPositionOnce = (enableHighAccuracy: boolean, timeoutMs: number): Promis
  * Cross-browser "where am I" that never hangs. Tries a high-accuracy fix first
  * (great on phones), then falls back to a fast low-accuracy fix (desktop Safari,
  * which has no GPS). A hard denial is not retried. Always settles.
+ *
+ * v13.79 — داخل مصغّر تيليجرام يفشل `navigator.geolocation` غالباً (تيليجرام
+ * هو من يملك إذن الموقع من النظام، لا صفحتنا)، فنجرّب `LocationManager` الخاص
+ * بتيليجرام قبل أن نستسلم. خارج تيليجرام هذا السطر بلا أثر إطلاقاً.
  */
-export const getCurrentPositionSafe = (opts?: { highMs?: number; lowMs?: number }): Promise<GeoPos> => {
+export const getCurrentPositionSafe = async (opts?: { highMs?: number; lowMs?: number }): Promise<GeoPos> => {
     const highMs = opts?.highMs ?? 8000;
     const lowMs = opts?.lowMs ?? 8000;
+    const viaTelegram = async (fallbackErr: unknown): Promise<GeoPos> => {
+        const tg = await getTelegramLocation(Math.max(highMs, 8000));
+        if (tg) return tg;
+        throw fallbackErr;
+    };
     if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.geolocation.getCurrentPosition) {
-        return Promise.reject(new GeoError('unsupported'));
+        return viaTelegram(new GeoError('unsupported'));
     }
-    return geoPositionOnce(true, highMs).catch((e: unknown) => {
+    try {
+        return await geoPositionOnce(true, highMs);
+    } catch (e: unknown) {
         const kind = e instanceof GeoError ? e.kind : 'unavailable';
-        if (kind === 'denied' || kind === 'unsupported') throw e;
-        return geoPositionOnce(false, lowMs);
-    });
+        if (kind === 'denied' || kind === 'unsupported') return viaTelegram(e);
+        try {
+            return await geoPositionOnce(false, lowMs);
+        } catch (e2: unknown) {
+            return viaTelegram(e2);
+        }
+    }
 };
 
 /** Friendly bilingual message for a GeoError (or any thrown value). */

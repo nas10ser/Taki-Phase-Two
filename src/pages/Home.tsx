@@ -30,7 +30,7 @@ let _homeBannersCache: Banner[] = [];
 
 const Home: React.FC = () => {
     const history = useHistory();
-    const { language, topLocation, setTopLocation, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, requestLiveLocation, platformSettings } = useApp();
+    const { language, topLocation, setTopLocation, followedMerchants, toggleFollowMerchant, blockedMerchants, storeProfiles, sponsors, refreshDeals, homeCity, user, locationPermission, liveLocation, requestLiveLocation, platformSettings } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [gateClosed, setGateClosed] = useState(false);
     // Persist the «فعّل موقعك» dismissal so it doesn't nag on every app launch.
@@ -243,7 +243,9 @@ const Home: React.FC = () => {
             {/* Live-location prompt — shoppers only, on entry, while undecided.
                 Once granted, the app-wide tracker follows them and pushes the
                 nearest deals as they move; we never nag a second time. */}
-            {user && user.userType !== 'seller' && locationPermission === 'prompt' && !liveBannerDismissed && (
+            {/* v13.79 — ولا يظهر أصلاً لمن نعرف موقعه (تثبيت حيّ أو محفوظ):
+                البانر دعوة لمن لا نعرف مكانه، لا تذكير دوري لمن فعّلها سابقاً. */}
+            {user && user.userType !== 'seller' && locationPermission === 'prompt' && !liveLocation && !liveBannerDismissed && (
                 <div className="animate-fade-in" style={{
                     margin: '10px 16px 0', padding: '12px 14px', borderRadius: 16,
                     background: 'linear-gradient(135deg, #0ea5e9, #2563eb)', color: '#fff',

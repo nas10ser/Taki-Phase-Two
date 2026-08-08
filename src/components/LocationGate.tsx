@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, findNearestCity , geoName } from '../data/mock';
-import { getCurrentPositionSafe } from '../utils/helpers';
 
 /**
  * First-open location prompt. Asked ONCE (the choice is persisted as
  * `homeCity`), so it never nags. Flow per the owner's spec: ask for GPS;
  * if the customer declines / it fails, ask them to pick their city. The
  * chosen city drives Home's "your city first, then outward" ordering.
+ *
+ * v13.79 — التفعيل صار عبر `requestLiveLocation` (متتبّع التطبيق الواحد) بدل
+ * نداء GPS منفصل: نداء واحد يمنح الإذن، ويبدأ التتبّع، ويحفظ الموقع في ذاكرة
+ * الجهاز وفي حساب المشتري — فلا يعود أي جزء من التطبيق يسأل مرة أخرى.
  */
 const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { language, setHomeCity, updateProfile } = useApp();
+    const { language, setHomeCity, requestLiveLocation } = useApp();
     const isRTL = language === 'ar';
     const [mode, setMode] = useState<'choose' | 'manual'>('choose');
     const [gpsBusy, setGpsBusy] = useState(false);
@@ -24,22 +27,18 @@ const LocationGate: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         setGpsBusy(true);
         setErr('');
         try {
-            const { lat, lng } = await getCurrentPositionSafe();
-            // Persist the precise GPS fix onto the account (no-op if signed out)
-            // so the platform can push "deals near you" by proximity later.
-            updateProfile({ lat, lng }).catch(() => {});
-            const near = findNearestCity(lat, lng);
+            // نداء واحد يفعّل الإذن + التتبّع + الحفظ (الجهاز والحساب معاً).
+            const fix = await requestLiveLocation();
+            const near = fix ? findNearestCity(fix.lat, fix.lng) : null;
             if (near) {
                 setHomeCity({ regionId: near.regionId, cityId: near.id });
                 onClose();
             } else {
                 setMode('manual');
+                if (!fix) setErr(isRTL
+                    ? 'تعذّر تحديد موقعك تلقائياً — اختر مدينتك من القائمة.'
+                    : "Couldn't detect your location — pick your city below.");
             }
-        } catch {
-            setMode('manual');
-            setErr(isRTL
-                ? 'تعذّر تحديد موقعك تلقائياً — اختر مدينتك من القائمة.'
-                : "Couldn't detect your location — pick your city below.");
         } finally {
             setGpsBusy(false);
         }

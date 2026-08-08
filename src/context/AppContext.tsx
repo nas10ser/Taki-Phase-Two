@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
-import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation } from '../data/mock';
+import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation, findNearestCity } from '../data/mock';
+import { readRememberedFix, rememberFix, forgetFix, isFreshFix } from '../utils/geoMemory';
 import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
 import { storageService } from '../services/storageService';
@@ -142,7 +143,10 @@ interface AppContextType {
     checkMarketingAlerts: (lat?: number, lng?: number) => void;
     liveLocation: { lat: number; lng: number } | null;
     locationPermission: 'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported';
-    requestLiveLocation: () => Promise<boolean>;
+    /** true = تثبيت حيّ وصل في هذه الجلسة. false = آخر موقع معروف من ذاكرة الجهاز. */
+    locationIsFresh: boolean;
+    /** يُرجع الإحداثيات عند النجاح (وهي «صادقة» أيضاً ككائن) أو null عند الرفض. */
+    requestLiveLocation: () => Promise<{ lat: number; lng: number } | null>;
     darkMode: boolean;
     toggleDarkMode: () => void;
     customAlert: (message: string) => Promise<void>;
@@ -1341,7 +1345,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const lastLiveRef = useRef<{ lat: number; lng: number } | null>(null);
     const lastSaveRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
     const liveAlertedRef = useRef(false);
-    const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
+    // v13.79 — نبدأ **عارفين**: آخر موقع معروف يُستعاد من ذاكرة الجهاز فوراً،
+    // فلا تظهر دعوة «فعّل موقعك» في كل فتح، ولا تُحسب المسافات من الصفر بينما
+    // ننتظر تثبيت GPS جديداً (قد لا يصل داخل المباني). المتتبّع الحيّ يصحّحه
+    // خلال ثوانٍ. هذا هو سلوك تطبيقات التوصيل الذي طلبه ناصر.
+    const rememberedFix = useMemo(() => readRememberedFix(), []);
+    const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number } | null>(
+        rememberedFix ? { lat: rememberedFix.lat, lng: rememberedFix.lng } : null
+    );
+    const [locationIsFresh, setLocationIsFresh] = useState<boolean>(
+        rememberedFix ? isFreshFix(rememberedFix.at) : false
+    );
     const [locationPermission, setLocationPermission] = useState<'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported'>('unknown');
     // Once a shopper turns live location ON we remember it here. iOS Safari has
     // NO usable Permissions API for geolocation, so on every relaunch the state
@@ -1381,6 +1395,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const moved = prev ? getDistance(prev.lat, prev.lng, lat, lng) * 1000 : Infinity;
                 if (!prev || moved >= 8) { lastLiveRef.current = { lat, lng }; setLiveLocation({ lat, lng }); }
                 setLocationPermission('granted');
+                setLocationIsFresh(true);
+                // ذاكرة الجهاز: يكفي هذا ليفتح التطبيق في المرة القادمة عارفاً
+                // أين المستخدم بلا سؤال ولا انتظار. v13.79
+                rememberFix(lat, lng);
                 persistLiveLocation(lat, lng);
                 if (!liveAlertedRef.current) { liveAlertedRef.current = true; checkAlertsRef.current?.(lat, lng); }
             },
@@ -1391,6 +1409,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // the last known fix and keep tracking. v12.08
                 if (err && err.code === 1) {
                     setLocationPermission('denied');
+                    setLocationIsFresh(false);
+                    // سحب الإذن قرار صريح من المستخدم — ننسى الموقع المحفوظ
+                    // احتراماً له، لا نكتفي بإيقاف التتبّع. v13.79
+                    setLiveLocation(null);
+                    lastLiveRef.current = null;
+                    forgetFix();
                     try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ }
                     stopLiveWatch();
                 }
@@ -1405,21 +1429,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Explicit "enable my location" — fires the browser prompt on a user gesture
     // (Safari-safe), then starts continuous tracking. Returns whether it worked.
-    const requestLiveLocation = useCallback(async (): Promise<boolean> => {
-        if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return false; }
+    const requestLiveLocation = useCallback(async (): Promise<{ lat: number; lng: number } | null> => {
         try {
+            // getCurrentPositionSafe يتكفّل بمصغّر تيليجرام أيضاً (v13.79)، فلا
+            // نرفض مبكراً لمجرد غياب navigator.geolocation داخل تيليجرام.
             const { lat, lng } = await getCurrentPositionSafe();
             lastLiveRef.current = { lat, lng };
             setLiveLocation({ lat, lng });
             setLocationPermission('granted');
+            setLocationIsFresh(true);
+            rememberFix(lat, lng);
             try { localStorage.setItem(LIVE_LOC_KEY, '1'); } catch { /* ignore */ }
             await persistLiveLocation(lat, lng);
             startLiveWatch();
-            return true;
+            return { lat, lng };
         } catch {
             setLocationPermission('denied');
+            setLocationIsFresh(false);
             try { localStorage.removeItem(LIVE_LOC_KEY); } catch { /* ignore */ }
-            return false;
+            return null;
         }
     }, [persistLiveLocation, startLiveWatch]);
 
@@ -1428,7 +1456,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     useEffect(() => {
         // v13.11 — التتبّع التلقائي والبانر للمشتري فقط. التاجر/المالك لا يُلاحَق
         // بطلب التفعيل، ولا يُكتب فوق موقع متجره الثابت (طلب ناصر).
-        const isShopper = !!user && user.userType === 'buyer';
+        // v13.79 — والزائر بلا حساب مشترٍ أيضاً: هو يتصفّح العروض ويحتاج
+        // المسافات مثله مثل المسجّل، وكان استثناؤه يعني إعادة السؤال في كل
+        // صفحة. الكتابة إلى `users.lat/lng` تبقى للمشتري وحده (persistLiveLocation).
+        const isShopper = !user || user.userType === 'buyer';
         if (!isShopper) { stopLiveWatch(); liveAlertedRef.current = false; lastSaveRef.current = null; return; }
         if (!('geolocation' in navigator)) { setLocationPermission('unsupported'); return; }
         let cancelled = false;
@@ -1471,6 +1502,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return () => { cancelled = true; if (perm) perm.onchange = null; };
     }, [user?.id, user?.userType, startLiveWatch, stopLiveWatch]);
 
+    // v13.79 — من نعرف موقعه لا نسأله عن مدينته. متى ما توفّر تثبيت (حيّ أو
+    // مستعاد من ذاكرة الجهاز) ولم تُحدَّد مدينة بعد، نستنتج أقرب مدينة ونحفظها
+    // — فتختفي بوابة «وين مدينتك؟» بعد أول مرة وإلى الأبد، ويبقى للمستخدم
+    // تغييرها يدوياً من الفلاتر متى شاء.
+    useEffect(() => {
+        if (homeCity?.cityId || !liveLocation) return;
+        const near = findNearestCity(liveLocation.lat, liveLocation.lng);
+        if (near) setHomeCity({ regionId: near.regionId, cityId: near.id });
+    }, [liveLocation?.lat, liveLocation?.lng, homeCity?.cityId, setHomeCity]);
+
     // v12.50 — «جمهور المدن»: سجّل «فتح تطبيق» (جلسة) مرة كل ٣٠ دقيقة كحد
     // أقصى، بآخر إحداثيات معروفة إن وُجدت. القاعدة تكبح المكرر أيضاً
     // (track_app_open)، وهذا يغذي لوحة الأدمن: كم شخصاً دخل يومياً ومن أين
@@ -1483,7 +1524,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 let last: { at: number; uid: string } | null = null;
                 try { last = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null'); } catch { /* ignore */ }
                 if (last && last.uid === uid && Date.now() - last.at < 30 * 60 * 1000) return;
-                const coords = lastLiveRef.current;
+                // آخر موقع معروف يكفي لإحصاء «من أي مدينة فُتح التطبيق» حتى قبل
+                // وصول أول تثبيت حيّ في هذه الجلسة. v13.79
+                const coords = lastLiveRef.current || rememberedFix;
                 import('../services/telegramMiniApp').then(({ isTelegramMiniApp }) => {
                     const src = isTelegramMiniApp() ? 'telegram' : 'web';
                     supabase.rpc('track_app_open', {
@@ -3050,7 +3093,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
-        liveLocation, locationPermission, requestLiveLocation,
+        liveLocation, locationPermission, locationIsFresh, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,
@@ -3079,7 +3122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifKeywords, addNotifKeyword, removeNotifKeyword,
         smartAlerts, addSmartAlert, removeSmartAlert,
         storeProfiles, sponsors, updateStoreProfile, updateProfile, checkMarketingAlerts,
-        liveLocation, locationPermission, requestLiveLocation,
+        liveLocation, locationPermission, locationIsFresh, requestLiveLocation,
         darkMode, toggleDarkMode,
         customAlert, customConfirm, customPrompt,
         inAppBanner, dismissInAppBanner,

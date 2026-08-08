@@ -6,6 +6,8 @@ import { LOCATIONS, getLocation, USER_LOCATION , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
 import { useNearbyDeals } from '../hooks/useNearbyDeals';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polygon } from 'react-leaflet';
+import L from 'leaflet';
+import { getDistance } from '../utils/helpers';
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
@@ -80,6 +82,22 @@ const FlyController = ({ target }: { target: { lat: number; lng: number; zoom: n
     return null;
 };
 
+/**
+ * دبّوس «موقعي» الذهبي (v13.79 — طلب ناصر: «أريده بلون ذهب عشان أميّز بينه
+ * وبين المواقع»). دبابيس العروض تبقى دبابيس Leaflet الزرقاء المعتادة، فيصير
+ * الفرق لوناً وشكلاً معاً: قرص ذهبي بإطار أبيض وهالة نابضة، لا دبّوس مدبّب.
+ *
+ * `divIcon` (HTML خالص) لا صورة: لا ملف يُحمَّل من الشبكة، ويرث حدّة الشاشة
+ * أياً كانت كثافتها — ونفس أسلوب دبابيس فروع المتجر في StoreBranchesMap.
+ */
+const MY_LOCATION_ICON = L.divIcon({
+    className: 'taki-me-pin-wrap',
+    html: '<span class="taki-me-pin"><span class="taki-me-pin__halo"></span><span class="taki-me-pin__dot"></span></span>',
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -18],
+});
+
 const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoints: number = 64) => {
     const points: [number, number][] = [];
     const kmPerLat = 111.32;
@@ -96,7 +114,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, requestLiveLocation } = useApp();
+    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, locationIsFresh, requestLiveLocation } = useApp();
 
     // Deep-link filters (Telegram bot opens /nearby?lat&lng&radius&region&city&mall&cat).
     // The bot's Nearby page + smart-alert radius preview reuse THIS exact map so the
@@ -124,8 +142,11 @@ const Nearby: React.FC = () => {
         return { centerLat, centerLng, initRadius, region, city, mall, cat: p.get('cat') || '', hasFilter };
     }, []);
 
-    const [userLat, setUserLat] = useState(urlParams.centerLat ?? USER_LOCATION.lat);
-    const [userLng, setUserLng] = useState(urlParams.centerLng ?? USER_LOCATION.lng);
+    // v13.79 — نبدأ من موقع المستخدم المعروف (حيّ أو مستعاد من ذاكرة الجهاز)
+    // لا من الرياض الافتراضية: يختفي وميض «خريطة الرياض» عند الفتح، ولا يُهدر
+    // استعلام جوار على مركز خاطئ قبل أن يصحّحه أول تثبيت.
+    const [userLat, setUserLat] = useState(urlParams.centerLat ?? liveLocation?.lat ?? USER_LOCATION.lat);
+    const [userLng, setUserLng] = useState(urlParams.centerLng ?? liveLocation?.lng ?? USER_LOCATION.lng);
     const [userLocationType, setUserLocationType] = useState<'home' | 'work' | 'other' | null>(null);
     // Live-follow: ON by default so the map tracks the user as they move.
     // Dragging the map turns it off (explore freely); the 📍 button re-arms it.
@@ -204,6 +225,14 @@ const Nearby: React.FC = () => {
         () => (searchQuery.trim() ? dealService.matchStores(searchQuery.trim(), storeProfiles, 12) : []),
         [searchQuery, storeProfiles]
     );
+
+    // موقع المستخدم الحقيقي (حيّ أو آخر معروف) — مستقل عن مركز البحث الذي قد
+    // ينتقل إلى مدينة أخرى بالفلاتر. v13.79
+    const myFix = liveLocation;
+    const showSearchCenter = useMemo(() => {
+        if (!myFix) return true; // لا نعرف موقعه بعد — نُبقي دبّوس المركز مرجعاً
+        return getDistance(myFix.lat, myFix.lng, userLat, userLng) > 0.15; // >١٥٠ م
+    }, [myFix?.lat, myFix?.lng, userLat, userLng]);
 
     const [viewMode, setViewMode] = useState<'both' | 'map' | 'list'>('both');
     
@@ -465,9 +494,25 @@ const Nearby: React.FC = () => {
                         </>
                     )}
 
-                    <Marker position={[userLat, userLng]}>
-                        <Popup>{isRTL ? '📍 موقعك الحالي' : '📍 Your Location'}</Popup>
-                    </Marker>
+                    {/* دبّوسان لا واحد (v13.79): الذهبي = أنت، والأزرق = مركز
+                        البحث. قبلها كان دبّوس واحد على مركز البحث مكتوباً عليه
+                        «موقعك الحالي» — فيكذب حين تتصفّح مدينة أخرى، ويختفي
+                        تمييزك عن دبابيس العروض. مركز البحث لا يُرسم إلا إذا
+                        ابتعد عنك فعلاً (أكثر من ١٥٠ م) وإلا تراكب الدبّوسان. */}
+                    {myFix && (
+                        <Marker position={[myFix.lat, myFix.lng]} icon={MY_LOCATION_ICON} zIndexOffset={1000}>
+                            <Popup>
+                                {isRTL
+                                    ? (locationIsFresh ? '📍 موقعي الآن' : '📍 آخر موقع معروف لي')
+                                    : (locationIsFresh ? '📍 My location' : '📍 My last known location')}
+                            </Popup>
+                        </Marker>
+                    )}
+                    {showSearchCenter && (
+                        <Marker position={[userLat, userLng]}>
+                            <Popup>{isRTL ? '🎯 مركز البحث' : '🎯 Search centre'}</Popup>
+                        </Marker>
+                    )}
                     {nearbyDeals.map(deal => {
                         const d = Number.isFinite(deal.distance) ? deal.distance : 0;
                         const distStr = d < 1 ? `${Math.round(d * 1000)} ${isRTL ? 'م' : 'm'}` : `${d.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;

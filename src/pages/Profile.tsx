@@ -18,7 +18,7 @@ const Profile: React.FC = () => {
         smartAlerts, addSmartAlert, removeSmartAlert,
         notifications, markNotifRead, bookings,
         storeProfiles, updateStoreProfile, updateProfile, customAlert, customConfirm,
-        isAuthReady, effectiveUserType, platformSettings
+        isAuthReady, effectiveUserType, platformSettings, liveLocation
     } = useApp();
 
     // Honour admin "view-as" impersonation. When an admin previews as
@@ -117,8 +117,17 @@ const Profile: React.FC = () => {
     const [filterMall, setFilterMall] = useState('');
     const [filterCategories, setFilterCategories] = useState<string[]>([]);
     const [filterKm, setFilterKm] = useState('');
-    const [preciseCoords, setPreciseCoords] = useState<{lat: number, lng: number} | null>(null);
+    // v13.79 — يُبذَر من الموقع المعروف (حيّ أو مستعاد): من فعّل موقعه مرة لا
+    // يُطلب منه الضغط على «موقعي» في كل تنبيه ذكي ينشئه. يبقى الزرّ متاحاً
+    // لتحديث الإحداثيات يدوياً.
+    const [preciseCoords, setPreciseCoords] = useState<{lat: number, lng: number} | null>(
+        liveLocation ? { lat: liveLocation.lat, lng: liveLocation.lng } : null
+    );
     const [gettingLocation, setGettingLocation] = useState(false);
+    // أول تثبيت يصل بعد فتح الصفحة يملأ الحقل إن كان فارغاً (لا يدهس اختياراً يدوياً).
+    useEffect(() => {
+        if (liveLocation) setPreciseCoords(prev => prev || { lat: liveLocation.lat, lng: liveLocation.lng });
+    }, [liveLocation?.lat, liveLocation?.lng]);
     const [contactPhone, setContactPhone] = useState(user?.contactPhone || user?.phone || '');
     const [contactEmail, setContactEmail] = useState(user?.email || '');
     const isRTL = language === 'ar';
