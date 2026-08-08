@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { realtimeService } from '../services/realtimeService';
+import { dealRepository } from '../repositories/dealRepository';
 import { useBooking } from '../hooks/useBooking';
 import { dealService } from '../services/dealService';
 import { getLocation, REGIONS, CITIES } from '../data/mock';
@@ -495,6 +497,21 @@ const DealDetails: React.FC = () => {
     // prepTimeOptions removed, dynamically typed now
 
     const isRTL = language === 'ar';
+    // v13.81 — اشتراك موجّه على هذا العرض وحده.
+    //
+    // البثّ العام لكل العروض أُلغي (كان يُقيّم كل تغيّر في المنصّة أمام كل
+    // جهاز)، وهذه الصفحة هي الموضع الذي تهمّ فيه اللحظية للمشتري فعلاً:
+    // «٣ متبقية» يجب أن تتناقص أمام عينه وهو ينظر إليها. القناة تُفتح بدخوله
+    // وتُغلق بخروجه، فالتكلفة بعدد من يشاهدون هذا العرض الآن لا بعدد المستخدمين.
+    useEffect(() => {
+        if (!id) return;
+        return realtimeService.watchDeal(id, (payload: any) => {
+            const row = payload?.new;
+            if (!row || (payload.eventType !== 'INSERT' && payload.eventType !== 'UPDATE')) return;
+            try { ingestDeals([dealRepository.mapRowToDeal(row) as any]); } catch { /* تجاهل */ }
+        });
+    }, [id, ingestDeals]);
+
     const deal = deals.find(d => d.id === id);
 
     // v13.22 — بعد ترقيم الواجهة قد لا يكون العرض ضمن النافذة المُحمّلة (رابط

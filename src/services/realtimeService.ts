@@ -237,6 +237,7 @@ function teardownChannels() {
             const topic = typeof c?.topic === 'string' ? c.topic : '';
             return topic.includes('rt-user-') ||
                    topic.includes('rt-global') ||
+                   topic.includes('rt-deal-') ||
                    topic.includes('rt-favorites-');
         })
         .forEach((c: any) => supabase.removeChannel(c));
@@ -371,29 +372,41 @@ function setupChannels(config: RealtimeConfig) {
     // ─── 2. Global channel (deals + store profiles) ────────────
     globalChannel = supabase.channel('rt-global');
 
-    // Deals: all events
-    globalChannel.on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'deals'
-    }, (payload) => {
-        lastActivityAt = Date.now();
-        lastSyncAt.deals = Date.now();
-        config.onDealChange(payload);
-    });
+    // ─────────────────────────────────────────────────────────────
+    // Deals + Ratings — v13.81: من بثّ عام إلى ما يخصّ المستخدم فعلاً.
+    //
+    // كانا مشتركين على **كل** صفوف الجدولين بلا ترشيح. معناه أن كل نقص كمية
+    // في أي عرض بأي مدينة (وهو يحدث مع كل حجز في المنصّة) كان يُقيَّم ويُبَثّ
+    // إلى **كل جهاز مفتوح**. بعشرات العروض لا يُلاحَظ؛ بمليون عرض ومليون
+    // متصل يصير أضخم بند في فاتورة الخادم — وأول ما ينهار.
+    //
+    // القاعدة الصحيحة: لا أحد يحتاج بثّاً حيّاً لمليون عرض، إنما لما يخصّه:
+    //   • التاجر  → عروضه هو وتقييمات متجره (ترشيح على store_id).
+    //   • المشتري → العرض المفتوح أمامه الآن (اشتراك موجّه — `watchDeal`).
+    //   • البقية  → تحديث عند العودة للتطبيق/السحب للتحديث (قائم منذ v10.22).
+    // ─────────────────────────────────────────────────────────────
+    if (userId) {
+        globalChannel.on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'deals',
+            filter: `store_id=eq.${userId}`
+        }, (payload) => {
+            lastActivityAt = Date.now();
+            lastSyncAt.deals = Date.now();
+            config.onDealChange(payload);
+        });
 
-    // Ratings: a review written anywhere (bot / app / another device) lands in the
-    // shared `ratings` table. Surface it live so the store average + comments
-    // update within seconds instead of waiting for a manual reload (the previous
-    // gap that made bot ratings look like they "took minutes" on the website).
-    globalChannel.on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'ratings'
-    }, (payload) => {
-        lastActivityAt = Date.now();
-        config.onRatingChange?.(payload);
-    });
+        globalChannel.on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'ratings',
+            filter: `store_id=eq.${userId}`
+        }, (payload) => {
+            lastActivityAt = Date.now();
+            config.onRatingChange?.(payload);
+        });
+    }
 
     // Store profiles (sellers)
     //
@@ -581,5 +594,29 @@ export const realtimeService = {
      */
     markActivity() {
         lastActivityAt = Date.now();
+    },
+
+    /**
+     * v13.81 — اشتراك موجّه على **عرض واحد**: يستعمله من يفتح صفحة العرض.
+     *
+     * بعد إلغاء البثّ العام للعروض، هذا هو ما يُبقي «٣ متبقية» تتناقص أمام
+     * عين المشتري وهو ينظر إلى الصفحة — وهو الموضع الوحيد الذي تهمّ فيه
+     * اللحظية للمشتري. قناة مستقلة لكل عرض مفتوح، تُغلق بمغادرته، فالتكلفة
+     * على الخادم بعدد من يشاهدون هذا العرض الآن لا بعدد مستخدمي المنصّة.
+     *
+     * يُرجع دالة إلغاء الاشتراك (استعملها في `useEffect` cleanup).
+     */
+    watchDeal(dealId: string, onChange: EventCallback): CleanupFn {
+        if (!dealId) return () => {};
+        const ch = supabase.channel(`rt-deal-${dealId}`);
+        ch.on('postgres_changes', {
+            event: '*', schema: 'public', table: 'deals', filter: `id=eq.${dealId}`,
+        }, (payload) => {
+            lastActivityAt = Date.now();
+            lastSyncAt.deals = Date.now();
+            onChange(payload);
+        });
+        ch.subscribe();
+        return () => { try { supabase.removeChannel(ch); } catch { /* ignore */ } };
     }
 };

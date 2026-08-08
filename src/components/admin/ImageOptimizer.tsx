@@ -40,9 +40,15 @@ const ImageOptimizer: React.FC = () => {
 
         try {
             // ١) اجمع كل الصور: العروض + البنرات
+            // v13.81 — دفعة مسقوفة لا «كل شيء». هذه أداة صيانة يدوية تمشي على
+            // صور المنصّة كلها؛ بمليون عرض كانت ستُجمّد متصفّح المدير قبل أن
+            // تبدأ. الآن تعالج الأحدث ٥٠٠٠ في كل تشغيلة — تُشغَّل مرات متتالية
+            // حتى ينتهي المتراكم، ونصّ الزرّ يقول ذلك.
+            const IMG_BATCH = 5000;
             const { data: deals } = await supabase.from('deals')
-                .select('id, images').neq('status', 'deleted').not('images', 'is', null);
-            const { data: banners } = await supabase.from('banners').select('id, image_url');
+                .select('id, images').neq('status', 'deleted').not('images', 'is', null)
+                .order('created_at', { ascending: false }).limit(IMG_BATCH);
+            const { data: banners } = await supabase.from('banners').select('id, image_url').limit(IMG_BATCH);
 
             type Job = { kind: 'deal' | 'banner'; id: string; url: string; idx?: number };
             const jobs: Job[] = [];
