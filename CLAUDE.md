@@ -23,7 +23,7 @@
 2. ارفع `CACHE_NAME` في `sw.js` (مثل `taki-cache-vXX.YY`) — إلزامي لكل deploy
 3. `npm run typecheck` — لازم ينجح
 4. commit برسالة `vX.YY: <الوصف>`
-5. `git push origin HEAD:main`
+5. `git push origin HEAD:main` — **إذن دائم من ناصر (٨ أغسطس ٢٠٢٦): ادفع إلى `main` مباشرة بلا سؤال في كل مرة.** لا تترك العمل على فرع منتظراً موافقة.
 6. مزامنة المجلد المحلي: `git -C /Users/nasser/Desktop/TAKI pull origin main`
 7. حدّث `progress.md` (الأحدث في الأعلى)
 8. **النشر صار تلقائياً (v13.72):** مشروع Vercel مربوط بـGitHub، فأي دفع إلى `main` يبني وينشر وحده — لا حاجة لأمر يدوي ولا لجهاز ناصر. (الطريقة القديمة `npx vercel deploy --prod --archive=tgz` تبقى مخرجاً احتياطياً فقط.)
