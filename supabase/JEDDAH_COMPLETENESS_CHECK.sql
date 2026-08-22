@@ -1,16 +1,18 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- TAKI — فحص اكتمال جدة: هل كل ما يناديه التطبيق موجود على الخادم؟
+-- TAKI — فحص اكتمال جدة (نسخة ٢ — شاملة)
 --
--- يقرأ فقط. لا يكتب ولا يغيّر شيئاً إطلاقاً.
+-- يقرأ فقط. لا يكتب ولا يغيّر شيئاً.
 --
--- القوائم مستخرجة آلياً من كود التطبيق (`.rpc('…')` و`.from('…')`) في
--- الإصدار v13.83: 136 دالة و28 جدولاً/عرضاً.
--- أي سطر يظهر في القسمين ١ أو ٢ = خاصيّة مكسورة عند المستخدم.
+-- النسخة الأولى فحصت 136 دالة فقط لأنها التقطت نمط `.rpc('اسم')` وحده،
+-- ففاتها: (أ) كل دوال البوت — يناديها عبر غلاف `rpc(fn, args)` بلا نقطة،
+-- (ب) الأسماء المُسندة لمتغيّر ثم تُمرَّر (acknowledge/cancel/complete_booking).
+-- هذه النسخة تلتقط الأنماط الثلاثة: **216 دالة** و28 جدولاً.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-\echo '════ ١ · دوال يناديها التطبيق وغير موجودة على هذا الخادم ════'
+\echo '════ ١ · دوال يناديها التطبيق أو البوت وغير موجودة على الخادم ════'
 WITH called(name) AS (VALUES
         ('account_exists'),
+        ('acknowledge_booking'),
         ('admin_activity_heatmap'),
         ('admin_ai_analyst'),
         ('admin_ai_custom'),
@@ -95,14 +97,92 @@ WITH called(name) AS (VALUES
         ('admin_vat_status_summary'),
         ('admin_warn_user'),
         ('authenticity_counts'),
+        ('bot_acknowledge_booking'),
+        ('bot_active_banners'),
+        ('bot_active_season'),
+        ('bot_add_deal'),
+        ('bot_add_notif_keyword'),
+        ('bot_add_smart_alert'),
+        ('bot_book_deal'),
+        ('bot_booking_chat'),
+        ('bot_booking_contact'),
+        ('bot_booking_countdown'),
+        ('bot_browse_deals'),
+        ('bot_cancel_booking'),
+        ('bot_cast_authenticity_vote'),
+        ('bot_complete_booking'),
+        ('bot_consume_link_token'),
         ('bot_create_link_token'),
+        ('bot_delete_deal'),
+        ('bot_geo_cities'),
+        ('bot_geo_locations'),
+        ('bot_geo_regions'),
+        ('bot_get_admin_stats'),
+        ('bot_get_alerts'),
+        ('bot_get_categories'),
+        ('bot_get_contest'),
+        ('bot_get_deal'),
+        ('bot_get_my_bookings'),
+        ('bot_get_pay_info'),
+        ('bot_get_seller_bookings'),
+        ('bot_get_seller_deal'),
+        ('bot_get_seller_deals'),
+        ('bot_get_seller_stats'),
+        ('bot_get_smart_alerts'),
+        ('bot_get_store'),
+        ('bot_get_store_hours'),
+        ('bot_get_store_reviews'),
+        ('bot_get_subscription'),
+        ('bot_get_user'),
+        ('bot_is_enabled'),
+        ('bot_list_branches'),
+        ('bot_list_contests'),
+        ('bot_list_followed'),
+        ('bot_list_packages'),
         ('bot_login_by_phone'),
+        ('bot_mark_email'),
+        ('bot_payments_enabled'),
+        ('bot_pull_email_outbox'),
+        ('bot_pull_outbox'),
+        ('bot_rate_store'),
+        ('bot_rating_status'),
+        ('bot_remove_branch'),
+        ('bot_remove_notif_keyword'),
+        ('bot_remove_smart_alert'),
+        ('bot_report'),
+        ('bot_report_email_status'),
+        ('bot_save_branch'),
+        ('bot_search'),
+        ('bot_season_campaign'),
+        ('bot_send_booking_message'),
+        ('bot_set_deal_location'),
+        ('bot_set_deal_season'),
+        ('bot_set_lang'),
+        ('bot_set_location'),
+        ('bot_set_store_hours'),
+        ('bot_set_telegram_notif'),
+        ('bot_store_contact'),
+        ('bot_submit_contest_entry'),
+        ('bot_subscribe_plan'),
+        ('bot_toggle_block'),
+        ('bot_toggle_deal'),
+        ('bot_toggle_follow'),
+        ('bot_touch_chat'),
+        ('bot_track_open'),
+        ('bot_unlink'),
+        ('bot_update_booking'),
+        ('bot_update_deal'),
+        ('bot_update_store_bio'),
+        ('bot_vat_mode'),
+        ('bot_verify_booking'),
         ('broadcast_campaign'),
         ('browse_bookings'),
         ('browse_deals'),
         ('browse_nearby'),
+        ('cancel_booking'),
         ('cancel_unverified_signup'),
         ('cast_authenticity_vote'),
+        ('complete_booking'),
         ('contest_counts'),
         ('contest_public_results'),
         ('deal_payment_mode'),
@@ -145,16 +225,16 @@ WITH called(name) AS (VALUES
         ('track_app_open'),
         ('track_search'),
         ('track_store_view'),
-        ('update_rating')
+        ('update_rating'),
+        ('wa_bot_is_enabled')
 )
 SELECT c.name AS "❌ دالة مفقودة"
   FROM called c
- WHERE NOT EXISTS (
-        SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-         WHERE n.nspname = 'public' AND p.proname = c.name)
+ WHERE NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                    WHERE n.nspname='public' AND p.proname=c.name)
  ORDER BY 1;
 
-\echo '════ ٢ · جداول/عروض يقرأ منها التطبيق وغير موجودة ════'
+\echo '════ ٢ · جداول/عروض غير موجودة ════'
 WITH used(name) AS (VALUES
         ('admin_draws'),
         ('admin_impersonation_log'),
@@ -187,15 +267,14 @@ WITH used(name) AS (VALUES
 )
 SELECT u.name AS "❌ جدول مفقود"
   FROM used u
- WHERE NOT EXISTS (
-        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'public' AND c.relname = u.name
-           AND c.relkind IN ('r','v','m','p','f'))
+ WHERE NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                    WHERE n.nspname='public' AND c.relname=u.name AND c.relkind IN ('r','v','m','p','f'))
  ORDER BY 1;
 
 \echo '════ ٣ · الحصيلة ════'
 WITH called(name) AS (VALUES
         ('account_exists'),
+        ('acknowledge_booking'),
         ('admin_activity_heatmap'),
         ('admin_ai_analyst'),
         ('admin_ai_custom'),
@@ -280,14 +359,92 @@ WITH called(name) AS (VALUES
         ('admin_vat_status_summary'),
         ('admin_warn_user'),
         ('authenticity_counts'),
+        ('bot_acknowledge_booking'),
+        ('bot_active_banners'),
+        ('bot_active_season'),
+        ('bot_add_deal'),
+        ('bot_add_notif_keyword'),
+        ('bot_add_smart_alert'),
+        ('bot_book_deal'),
+        ('bot_booking_chat'),
+        ('bot_booking_contact'),
+        ('bot_booking_countdown'),
+        ('bot_browse_deals'),
+        ('bot_cancel_booking'),
+        ('bot_cast_authenticity_vote'),
+        ('bot_complete_booking'),
+        ('bot_consume_link_token'),
         ('bot_create_link_token'),
+        ('bot_delete_deal'),
+        ('bot_geo_cities'),
+        ('bot_geo_locations'),
+        ('bot_geo_regions'),
+        ('bot_get_admin_stats'),
+        ('bot_get_alerts'),
+        ('bot_get_categories'),
+        ('bot_get_contest'),
+        ('bot_get_deal'),
+        ('bot_get_my_bookings'),
+        ('bot_get_pay_info'),
+        ('bot_get_seller_bookings'),
+        ('bot_get_seller_deal'),
+        ('bot_get_seller_deals'),
+        ('bot_get_seller_stats'),
+        ('bot_get_smart_alerts'),
+        ('bot_get_store'),
+        ('bot_get_store_hours'),
+        ('bot_get_store_reviews'),
+        ('bot_get_subscription'),
+        ('bot_get_user'),
+        ('bot_is_enabled'),
+        ('bot_list_branches'),
+        ('bot_list_contests'),
+        ('bot_list_followed'),
+        ('bot_list_packages'),
         ('bot_login_by_phone'),
+        ('bot_mark_email'),
+        ('bot_payments_enabled'),
+        ('bot_pull_email_outbox'),
+        ('bot_pull_outbox'),
+        ('bot_rate_store'),
+        ('bot_rating_status'),
+        ('bot_remove_branch'),
+        ('bot_remove_notif_keyword'),
+        ('bot_remove_smart_alert'),
+        ('bot_report'),
+        ('bot_report_email_status'),
+        ('bot_save_branch'),
+        ('bot_search'),
+        ('bot_season_campaign'),
+        ('bot_send_booking_message'),
+        ('bot_set_deal_location'),
+        ('bot_set_deal_season'),
+        ('bot_set_lang'),
+        ('bot_set_location'),
+        ('bot_set_store_hours'),
+        ('bot_set_telegram_notif'),
+        ('bot_store_contact'),
+        ('bot_submit_contest_entry'),
+        ('bot_subscribe_plan'),
+        ('bot_toggle_block'),
+        ('bot_toggle_deal'),
+        ('bot_toggle_follow'),
+        ('bot_touch_chat'),
+        ('bot_track_open'),
+        ('bot_unlink'),
+        ('bot_update_booking'),
+        ('bot_update_deal'),
+        ('bot_update_store_bio'),
+        ('bot_vat_mode'),
+        ('bot_verify_booking'),
         ('broadcast_campaign'),
         ('browse_bookings'),
         ('browse_deals'),
         ('browse_nearby'),
+        ('cancel_booking'),
         ('cancel_unverified_signup'),
         ('cast_authenticity_vote'),
+        ('complete_booking'),
         ('contest_counts'),
         ('contest_public_results'),
         ('deal_payment_mode'),
@@ -330,7 +487,8 @@ WITH called(name) AS (VALUES
         ('track_app_open'),
         ('track_search'),
         ('track_store_view'),
-        ('update_rating')
+        ('update_rating'),
+        ('wa_bot_is_enabled')
 ), used(name) AS (VALUES
         ('admin_draws'),
         ('admin_impersonation_log'),
@@ -362,26 +520,15 @@ WITH called(name) AS (VALUES
         ('users')
 )
 SELECT
-  (SELECT count(*) FROM called)                                            AS "دوال يناديها التطبيق",
+  (SELECT count(*) FROM called) AS "دوال يناديها التطبيق والبوت",
   (SELECT count(*) FROM called c WHERE EXISTS (SELECT 1 FROM pg_proc p
-      JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='public' AND p.proname=c.name))                      AS "منها موجودة ✅",
-  (SELECT count(*) FROM used)                                              AS "جداول يستعملها",
+      JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=c.name)) AS "موجودة ✅",
+  (SELECT count(*) FROM used) AS "جداول",
   (SELECT count(*) FROM used u WHERE EXISTS (SELECT 1 FROM pg_class c
-      JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='public' AND c.relname=u.name
-        AND c.relkind IN ('r','v','m','p','f')))                           AS "منها موجودة ✅",
-  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-    WHERE n.nspname='public')                                              AS "إجمالي دوال الخادم";
+      JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=u.name
+        AND c.relkind IN ('r','v','m','p','f'))) AS "موجودة ✅";
 
-\echo '════ ٤ · عدّ صفوف الجداول الأساسية (تحقّق من البيانات) ════'
-SELECT 'users' AS "الجدول", count(*) AS "الصفوف" FROM public.users
-UNION ALL SELECT 'deals',            count(*) FROM public.deals
-UNION ALL SELECT 'bookings',         count(*) FROM public.bookings
-UNION ALL SELECT 'booking_messages', count(*) FROM public.booking_messages
-UNION ALL SELECT 'notifications',    count(*) FROM public.notifications
-UNION ALL SELECT 'store_profiles',   count(*) FROM public.store_profiles
-UNION ALL SELECT 'store_branches',   count(*) FROM public.store_branches
-UNION ALL SELECT 'ratings',          count(*) FROM public.ratings
-UNION ALL SELECT 'favorites',        count(*) FROM public.favorites
-UNION ALL SELECT 'صور في المستودع',  count(*) FROM storage.objects WHERE bucket_id='deals';
+\echo '════ ٤ · بوّابة البوت السرّية تعمل؟ ════'
+SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                          WHERE n.nspname='public' AND p.proname='_bot_gate_ok')
+            THEN '✅ موجودة' ELSE '❌ مفقودة — البوت كله معطّل' END AS "حارس البوت";
