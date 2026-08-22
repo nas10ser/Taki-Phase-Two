@@ -60,6 +60,13 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 30_000; // 30s max backoff
 const HEARTBEAT_INTERVAL = 15_000; // Check every 15s
 const STALE_THRESHOLD = 60_000; // Consider stale after 60s of no activity
+// v13.83 — مهلة استقرار بعد بناء القنوات قبل الحكم عليها بالعطل (القناة تمرّ
+// بحالة `joining` قبل `joined`، والحكم عليها قبل ذلك يُنتج حلقة هدم/بناء)،
+// وحدّ أدنى بين عمليات إعادة البناء القسرية حتى لا نُرهق شبكة متعثّرة.
+const SETUP_GRACE = 12_000;
+const RECONNECT_MIN_INTERVAL = 20_000;
+let lastSetupAt = 0;
+let lastForcedReconnectAt = 0;
 
 // Track last sync timestamps per data type
 const lastSyncAt: Record<string, number> = {
@@ -132,7 +139,7 @@ function handleVisibilityChange() {
             requestRefresh('visibility');
         }
 
-        verifyAndReconnect();
+        verifyAndReconnect('visibility');
         lastActivityAt = now;
     }
 }
@@ -186,7 +193,7 @@ function handleFocus() {
     if (currentConfig && cameBackFromHidden() && elapsed > 1_000) {
         logger.info(`🔄 Window focused after ${Math.round(elapsed / 1000)}s — quick sync`);
         requestRefresh('focus');
-        verifyAndReconnect();
+        verifyAndReconnect('focus');
     }
     lastActivityAt = now;
 }
@@ -196,14 +203,20 @@ function handleFocus() {
 function startHeartbeat() {
     stopHeartbeat();
     heartbeatTimer = setInterval(() => {
-        const now = Date.now();
-        const sinceLastActivity = now - lastActivityAt;
+        if (document.visibilityState !== 'visible') return;
 
-        // If the tab is visible but we haven't gotten any realtime
-        // activity in a while, the connection might be dead
-        if (document.visibilityState === 'visible' && sinceLastActivity > STALE_THRESHOLD) {
-            logger.warn('💓 Heartbeat: connection may be stale, verifying...');
-            verifyAndReconnect();
+        // v13.83 — الفحص يجري في **كل** نبضة، لا بعد ٦٠ ثانية صمت فقط.
+        // الفحص محلّي بالكامل (حالة الـsocket + حالة القنوات) بلا أي طلب
+        // شبكة، فتكلفته صفر عملياً. وهذا ما يمسك الحالة التي أبلغ عنها ناصر:
+        // المستخدم **داخل** التطبيق يتابع محادثة، فلا يقع أي حدث visibility
+        // أو focus يوقظ المزامنة، والـsocket ميت بصمت منذ دقائق.
+        verifyAndReconnect('heartbeat');
+
+        // فحص ثانٍ ألطف: القنوات تبدو سليمة لكن لا يصل شيء منذ مدة طويلة —
+        // نطلب إعادة جلب تحوّطية (مكبوحة بـrequestRefresh) لا إعادة بناء.
+        if (Date.now() - lastActivityAt > STALE_THRESHOLD) {
+            requestRefresh('heartbeat-stale');
+            lastActivityAt = Date.now();
         }
     }, HEARTBEAT_INTERVAL);
 }
@@ -217,21 +230,92 @@ function stopHeartbeat() {
 
 // ─── Channel Management ─────────────────────────────────────────
 
-function verifyAndReconnect() {
-    // Check if channels are still in a good state
-    const channels = supabase.getChannels();
-    const hasUserChannel = !currentConfig?.userId || channels.some((c: any) =>
-        typeof c?.topic === 'string' && c.topic.includes('rt-user-')
+/** حالة قناة بالاسم، أو null إن لم تعد موجودة أصلاً. */
+function channelState(topicPart: string): string | null {
+    const ch = supabase.getChannels().find((c: any) =>
+        typeof c?.topic === 'string' && c.topic.includes(topicPart)
     );
-    const hasGlobalChannel = channels.some((c: any) =>
-        typeof c?.topic === 'string' && c.topic.includes('rt-global')
-    );
+    return ch ? String((ch as any).state || '') : null;
+}
 
-    if (currentConfig && (!hasUserChannel || !hasGlobalChannel)) {
-        logger.warn('🔄 Channels missing — reconnecting...');
-        teardownChannels();
-        setupChannels(currentConfig);
+/**
+ * v13.83 — ما الذي يجعل الريل‑تايم «ميتاً وهو يبدو حيّاً»؟
+ *
+ * النسخة السابقة كانت تسأل سؤالاً واحداً: «هل كائن القناة موجود في القائمة؟»
+ * وهذا السؤال **يُجاب بنعم دائماً**: في `realtime-js` تُنادى `_remove` من مكان
+ * واحد فقط (إغلاق القناة بنفسها)، فالقناة التي ماتت بـ`CHANNEL_ERROR` أو
+ * `TIMED_OUT` — حين يقتل iOS الـwebsocket، أو ينتقل الجهاز بين Wi‑Fi والبيانات،
+ * أو تنتهي مهلة وسيط — **تبقى في `getChannels()` بحالة `errored`**. فكان الفحص
+ * يمرّ كل ١٥ ثانية ولا يُعيد الاتصال أبداً، وتتوقّف الرسائل بلا أي إشارة.
+ *
+ * أُثبت بالتجربة على عميل realtime حقيقي موجَّه لمنفذ غير قابل للوصول:
+ *     getChannels() → "realtime:rt-user-TEST=errored"
+ *     الفحص القديم → «سليم ✅»   ·   الفحص الجديد → «معطّل ❌»
+ *
+ * الآن نسأل عن **الصحة لا الوجود**: الـsocket متصل فعلاً، وكل قناة متوقَّعة في
+ * حالة `joined` (و`joining` مقبولة لأنها انضمام قيد التنفيذ).
+ *
+ * قنوات `rt-deal-*` مستثناة عمداً: مؤقّتة تُفتح وتُغلق مع صفحة العرض، فغيابها
+ * ليس عطلاً.
+ */
+function findUnhealthyChannel(): string | null {
+    if (!currentConfig) return null;
+
+    // مستوى الـsocket نفسه — أرخص وأصدق فحص، وبلا أي طلب شبكة.
+    try {
+        if (!supabase.realtime.isConnected()) return 'socket:disconnected';
+    } catch {
+        /* واجهة غير متاحة — نكمل بفحص القنوات وحدها */
     }
+
+    const hasUser = !!currentConfig.userId;
+    const expected: Array<[string, boolean]> = [
+        ['rt-global', true],
+        ['rt-user-', hasUser],
+        // قناة المحادثة المستقلة (v13.82). `rt-msgs` تطابق النسختين:
+        // المُرشَّحة `rt-msgs-<id>` والمرتدّة `rt-msgs-fb-<id>`.
+        ['rt-msgs', hasUser],
+        ['rt-favorites-', hasUser],
+    ];
+
+    for (const [topic, required] of expected) {
+        if (!required) continue;
+        const st = channelState(topic);
+        if (st === null) return `${topic}:missing`;
+        if (st !== 'joined' && st !== 'joining') return `${topic}:${st}`;
+    }
+    return null;
+}
+
+function verifyAndReconnect(reason: string = 'verify') {
+    if (!currentConfig) return;
+
+    // مهلة استقرار بعد كل بناء: القنوات تحتاج لحظات للانضمام، وفحصها قبل ذلك
+    // يُنتج حلقة هدم/بناء لا تنتهي. وتغطّي كذلك ارتداد قناة المحادثة في v13.82
+    // (تسقط بـCHANNEL_ERROR ثم يُعاد اشتراكها بلا ترشيح مباشرة بعد البناء).
+    if (Date.now() - lastSetupAt < SETUP_GRACE) return;
+
+    const problem = findUnhealthyChannel();
+    if (!problem) {
+        // سليمة — نصفّر عدّاد المحاولات فلا يرث اتصالٌ ناجح تأخيرَ ما قبله.
+        isConnected = true;
+        reconnectAttempts = 0;
+        return;
+    }
+
+    if (Date.now() - lastForcedReconnectAt < RECONNECT_MIN_INTERVAL) return;
+    lastForcedReconnectAt = Date.now();
+
+    logger.warn(`🔄 Realtime unhealthy (${problem}) via ${reason} — rebuilding channels`);
+    isConnected = false;
+    teardownChannels();
+    setupChannels(currentConfig);
+
+    // ⚠️ جوهري: إعادة الاشتراك **لا تُعيد بثّ** الصفوف التي فاتت أثناء
+    // الانقطاع — Supabase لا يحتفظ بها. فبلا إعادة جلب صريحة هنا تبقى رسالة
+    // المحادثة مفقودة إلى الأبد رغم نجاح إعادة الاتصال. هذا السطر هو الفرق
+    // بين «عاد الاتصال» و«عادت الرسالة».
+    requestRefresh(`reconnect:${reason}`);
 }
 
 function teardownChannels() {
@@ -257,6 +341,9 @@ function teardownChannels() {
 
 function setupChannels(config: RealtimeConfig) {
     const { userId } = config;
+    // v13.83 — ختم وقت البناء: فحص الصحة يمتنع عن الحكم قبل انقضاء مهلة
+    // الاستقرار، وإلا هدم القنوات وهي لا تزال في حالة `joining`.
+    lastSetupAt = Date.now();
 
     if (userId) {
         // ─── 1. User-specific channel (notifications + bookings) ────
@@ -509,6 +596,11 @@ function setupChannels(config: RealtimeConfig) {
         favoritesChannel.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 logger.info('✅ Realtime favorites channel connected');
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                // v13.83 — كانت هذه القناة وحدها بلا أي معالجة خطأ: تسقط
+                // فتبقى ساقطة إلى الأبد (المفضّلة تتوقف عن التحديث بصمت).
+                logger.warn('❌ Realtime favorites channel error:', status);
+                scheduleReconnect();
             }
         });
     }
@@ -528,6 +620,9 @@ function scheduleReconnect() {
         if (currentConfig && document.visibilityState === 'visible') {
             teardownChannels();
             setupChannels(currentConfig);
+            // v13.83 — نفس درس verifyAndReconnect: إعادة الاشتراك لا تُعيد
+            // الصفوف الفائتة، فبلا إعادة الجلب هنا يبقى ما فات مفقوداً.
+            requestRefresh('reconnect-backoff');
         }
     }, delay);
 }
