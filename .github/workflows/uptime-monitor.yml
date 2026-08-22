@@ -1,0 +1,67 @@
+# مراقبة توقّف تاكي — تعمل على خوادم GitHub، مستقلّة تماماً عن خادم جدة
+# وعن Vercel، فلو سقط أيّهما بقيت المراقبة تعمل وتُنبّه.
+#
+# التنبيه: فشل هذه المهمّة يرسل بريداً تلقائياً لمالك المستودع من GitHub.
+# (طبقة ثانية مجانية بجانب UptimeRobot — لا بديلاً عنها.)
+#
+# ⚠️ الجدولة تعمل من الفرع الافتراضي (main) فقط — هذا شرط GitHub Actions.
+name: مراقبة توقّف تاكي
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # كل ١٠ دقائق
+  workflow_dispatch:          # وزر تشغيل يدوي
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: الموقع (Vercel)
+        run: |
+          # ملاحظة: `code=$(curl …) || code=000` وليس `|| echo 000` —
+          # الثانية تُلحق الرمزين معاً (200 + 000 = "200000") فتُنتج إنذاراً
+          # كاذباً عند مهلة متأخّرة. اختُبر الفرق فعلياً.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
+                 https://taki-test-eight.vercel.app) || code=000
+          [ -n "$code" ] || code=000
+          echo "الرمز: $code"
+          [ "$code" = "200" ] || { echo "::error::الموقع لا يستجيب ($code)"; exit 1; }
+
+      - name: قاعدة جدة — PostgREST
+        run: |
+          # 401 استجابة صحيحة: الخدمة حيّة وترفض الطلب بلا مفتاح.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
+                 https://141-147-142-147.sslip.io/rest/v1/) || code=000
+          [ -n "$code" ] || code=000
+          echo "الرمز: $code"
+          case "$code" in
+            200|401|404) echo "✅ القاعدة ترد" ;;
+            *) echo "::error::قاعدة جدة لا تستجيب ($code)"; exit 1 ;;
+          esac
+
+      - name: قاعدة جدة — خدمة الحسابات (GoTrue)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
+                 https://141-147-142-147.sslip.io/auth/v1/health) || code=000
+          [ -n "$code" ] || code=000
+          echo "الرمز: $code"
+          case "$code" in
+            200|401) echo "✅ خدمة الحسابات ترد" ;;
+            *) echo "::error::خدمة الحسابات لا تستجيب ($code)"; exit 1 ;;
+          esac
+
+      - name: شهادة HTTPS — تنبيه قبل انتهائها
+        run: |
+          end=$(echo | openssl s_client -servername 141-147-142-147.sslip.io \
+                -connect 141-147-142-147.sslip.io:443 2>/dev/null \
+                | openssl x509 -noout -enddate | cut -d= -f2) || end=""
+          if [ -z "$end" ]; then
+            echo "::error::تعذّر قراءة الشهادة — الخادم قد يكون ساقطاً"; exit 1
+          fi
+          echo "تنتهي: $end"
+          left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+          echo "المتبقّي: $left يوماً"
+          [ "$left" -gt 10 ] || { echo "::error::الشهادة تنتهي خلال $left يوماً"; exit 1; }
