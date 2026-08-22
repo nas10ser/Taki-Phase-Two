@@ -58,6 +58,7 @@ GRANT SELECT ON public.sellers_public TO anon, authenticated;
 
 -- الجدول نفسه: صفّك أنت أو الأدمن فقط.
 DROP POLICY IF EXISTS users_select_all ON public.users;
+DROP POLICY IF EXISTS users_select_own_or_admin ON public.users;
 CREATE POLICY users_select_own_or_admin ON public.users
     FOR SELECT
     USING (
@@ -94,6 +95,7 @@ DROP POLICY IF EXISTS platform_settings_insert_admin ON public.platform_settings
 DROP POLICY IF EXISTS platform_settings_update_admin ON public.platform_settings;
 DROP POLICY IF EXISTS platform_settings_delete_admin ON public.platform_settings;
 
+DROP POLICY IF EXISTS platform_settings_write_scoped ON public.platform_settings;
 CREATE POLICY platform_settings_write_scoped ON public.platform_settings
     FOR ALL
     USING (
@@ -113,6 +115,7 @@ CREATE POLICY platform_settings_write_scoped ON public.platform_settings
 DROP POLICY IF EXISTS banners_insert_admin ON public.banners;
 DROP POLICY IF EXISTS banners_update_admin ON public.banners;
 DROP POLICY IF EXISTS banners_delete_admin ON public.banners;
+DROP POLICY IF EXISTS banners_write_tools ON public.banners;
 CREATE POLICY banners_write_tools ON public.banners
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_tools'))
@@ -121,6 +124,7 @@ CREATE POLICY banners_write_tools ON public.banners
 DROP POLICY IF EXISTS promo_insert_admin ON public.promotional_campaigns;
 DROP POLICY IF EXISTS promo_update_admin ON public.promotional_campaigns;
 DROP POLICY IF EXISTS promo_delete_admin ON public.promotional_campaigns;
+DROP POLICY IF EXISTS promo_write_tools ON public.promotional_campaigns;
 CREATE POLICY promo_write_tools ON public.promotional_campaigns
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_tools'))
@@ -128,6 +132,7 @@ CREATE POLICY promo_write_tools ON public.promotional_campaigns
 
 -- moderation_terms: تبويب «البلاغات/الإنذارات».
 DROP POLICY IF EXISTS moderation_terms_admin_all ON public.moderation_terms;
+DROP POLICY IF EXISTS moderation_terms_write_reports ON public.moderation_terms;
 CREATE POLICY moderation_terms_write_reports ON public.moderation_terms
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_reports'))
@@ -135,6 +140,7 @@ CREATE POLICY moderation_terms_write_reports ON public.moderation_terms
 
 -- expense_invoices: تبويب «الإطلاق/الضريبة» (فواتير مشتريات المنصة).
 DROP POLICY IF EXISTS exp_admin_all ON public.expense_invoices;
+DROP POLICY IF EXISTS exp_write_launch ON public.expense_invoices;
 CREATE POLICY exp_write_launch ON public.expense_invoices
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_launch'))

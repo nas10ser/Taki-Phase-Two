@@ -4,96 +4,176 @@
 أنا **ناصر**، مالك TAKI (منصة حجز التخفيضات في السعودية). **لست مبرمجاً** — لا أفهم الكود ولا الأوامر.
 
 ## ⚠️ أوامري الثابتة (لا تتغير)
-- نفّذ كل شيء بنفسك. **لا تطلب مني تشغيل أوامر تقنية**.
+- نفّذ كل شيء بنفسك. **لا تطلب مني أوامر تقنية إلا للضرورة القصوى** — وحين تضطر، أعطني أمراً واحداً جاهزاً للّصق، وقل ماذا أتوقّع أن أرى، وماذا يعني كل احتمال.
 - ردّ بالعربي دائماً. وقل لي ماذا أفعل بالضبط (افتح هذا الرابط، اضغط هذا الزر).
 - دقة عالية + احترافية + أحدث التقنيات + شكل عصري.
 - **بدون دين برمجي** (no tech debt) + أحدث معايير الأمان ضد الاختراقات.
+- **لا تقل «تمّ» إلا بعد قياس.** الفرق بين «الكود يبدو صحيحاً» و«جرّبته فنجح» هو ما كلّفنا إصدارات كاملة.
+
+---
 
 ## 🏗 البنية التقنية
 - React 18 + Parcel 2 + TypeScript + Supabase + Vercel
-- المسار المحلي: `/Users/nasser/Desktop/TAKI`
-- Repo: `https://github.com/nas10ser/Taki-Phase-Two` (فرع `main`)
-- 🔴 **قاعدة البيانات المعتمدة = خادم جدة المستضاف ذاتياً** (`141-147-142-147.sslip.io`) — **قرار ناصر (٨ أغسطس ٢٠٢٦): أي تعديل على القاعدة يُعتمد على جدة، لا على طوكيو.** مشروع طوكيو `kbmqzxcjdankdgiovctm` (Supabase MCP) **نسخة احتياطية ومختبر تجارب فقط** — لا يُعتمد إصلاح لأنه نجح عليه. أي هجرة تُسلَّم لناصر كملف يلصقه في SQL Editor على جدة، ويُتحقَّق منها بجدول ✅/❌.
-- ⚠️ **سياسة شبكة الجلسات تحجب** `141-147-142-147.sslip.io` و`taki-test-eight.vercel.app` و`sentry.io` (403 من بوابة المؤسسة). فالتحقّق من النشر يتم عبر **Vercel MCP** لا `curl`، والتحقّق من القاعدة عبر ملف فحص يلصقه ناصر. لفتحها: أضف النطاقات لسياسة شبكة البيئة (بعد شراء نطاق ثابت — لا تُضِف عنوان `sslip.io` المبني على رقم آي بي).
+- المسار المحلي على ماك ناصر: `/Users/nasser/Desktop/TAKI`
+- Repo: `https://github.com/nas10ser/Taki-Phase-Two` (فرع `main`) — ⚠️ **عام** فلا يُرفع إليه أي سرّ ولا بيانات عملاء
 - الإنتاج: `https://taki-test-eight.vercel.app`
 - Vercel: `nasser-projects1/taki-test` (مفوّض كـ `nalaumari-8916`، Env vars مشفّرة)
-- **الإصدار الحالي: v13.82** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
+- **الإصدار الحالي: v13.83** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
 
-## 🔄 آلية التنفيذ الكاملة (كل تعديل)
+### 🔴 قاعدتان: أيّهما الحقيقية؟
+- **جدة = الإنتاج المعتمد** (`141-147-142-147.sslip.io`، مستضاف ذاتياً على أوراكل). **قرار ناصر (٨ أغسطس ٢٠٢٦): أي تعديل على القاعدة يُعتمد على جدة.**
+- **طوكيو `kbmqzxcjdankdgiovctm`** (Supabase MCP) = **مختبر ونسخة احتياطية فقط**. لا يُعتمد إصلاح لأنه نجح عليه.
+- **كيف تعرف أيّهما أمامك بيقين** — علامة داخل المخطط:
+  ```sql
+  SELECT obj_description('public'::regnamespace, 'pg_namespace');
+  -- 'TAKI_LAB_TOKYO_MARKER_v1382' = المختبر
+  ```
+  🪤 **درس مكلف (٢٢ أغسطس):** هجرات أسابيع ذهبت للمختبر لا لجدة، لأن لوحة supabase.com سهلة الفتح وجدة تحتاج طريقاً خاصاً. **كل ملف هجرة يجب أن يبدأ بحارس يرفض التنفيذ على المختبر، وينتهي بجدول ✅/❌ أوّل سطر فيه اسم الخادم.**
+
+### 🔑 الدخول لخادم جدة (من جهاز ناصر فقط)
+```bash
+ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147
+```
+- المفتاح `~/.ssh/taki_oracle` على ماك ناصر وحده و**لا يُرفع للمستودع أبداً**.
+- جهاز أوراكل: `taki-supabase-jeddah` في `me-jeddah-1` · حاوية القاعدة **`supabase-db`**
+- الدور المالك **`supabase_admin`** — **لا `postgres`**، فهو لا يملك الدوال ويفشل بـ`must be owner of function`.
+- ⚠️ **«Run Command» في أوراكل غير متاح على هذا الجهاز** (ليست ضمن إضافات الوكيل الإحدى عشرة) — لا تُضِع وقتاً فيها، SSH هو الطريق.
+- ⚠️ لوحة Studio محمية بـBasic Auth و**كلمة سرّها مفقودة** (لم تعد لازمة بعد SSH؛ تُقرأ من `.env` على الخادم عند الحاجة).
+
+**تشغيل ملف هجرة على جدة (الطريقة المُختبَرة):**
+```bash
+ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 \
+  'curl -fsSL -o /tmp/m.sql <رابط raw ببصمة الكوميت> && sudo docker exec -i supabase-db \
+   psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f - < /tmp/m.sql' \
+  2>&1 | tee ~/Desktop/result.txt
+```
+
+### 💾 النسخة الاحتياطية اليومية (ضُبطت ٢٢ أغسطس ٢٠٢٦)
+- `/usr/local/bin/taki-backup.sh` عبر `/etc/cron.d/taki-backup` — **٣:٣٠ فجراً بتوقيت الرياض**، تسبق تحديثات الأمان التلقائية (٤:٣٠).
+- تحتفظ بآخر **١٤** نسخة في `/home/ubuntu/backups` + سجل `backup.log`، **وترفض أي نسخة أصغر من ٥٠٠ كيلوبايت** فلا تُستبدل نسخة سليمة بفاسدة.
+- **اختبار الاستعادة أُجري فعلاً ونجح:** ٣٨٤ دالة · ٥٠ جدولاً · ٢١ عرضاً · ٨٩ حجزاً · ١١٢ رسالة — مطابقة للحيّ.
+  ```bash
+  ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 'sudo bash -s' <<'EOF'
+  LATEST=$(ls -1t /home/ubuntu/backups/taki-*.dump | head -1)
+  docker exec supabase-db psql -U supabase_admin -d postgres -c 'CREATE DATABASE taki_restore_test;'
+  docker exec -i supabase-db pg_restore -U supabase_admin -d taki_restore_test --no-owner --no-privileges < "$LATEST"
+  docker exec supabase-db psql -U supabase_admin -d taki_restore_test -c "SELECT count(*) FROM public.bookings;"
+  docker exec supabase-db psql -U supabase_admin -d postgres -c 'DROP DATABASE taki_restore_test;'
+  EOF
+  ```
+  (تحذيرات `pg_restore` عن `cron.*` طبيعية — عدّادات pg_cron لا بيانات تطبيق.)
+- 🔴 **ناقص:** النسخ على **نفس الخادم**. لو فُقد الجهاز فُقدت معه. يلزم نسخ خارج الخادم.
+
+### 🔍 فحص اكتمال الخادم
+`supabase/JEDDAH_COMPLETENESS_CHECK.sql` — يستخرج آلياً كل ما يناديه الكود ويقارنه بالخادم. **يقرأ فقط.**
+آخر تشغيل (٢٢ أغسطس): **٢١٦/٢١٦ دالة · ٢٨/٢٨ جدولاً · حارس البوت ✅**.
+⚠️ لالتقاط دوال البوت لا تكتفِ بنمط `.rpc('اسم')` — `server/bot.js` يناديها عبر غلاف `rpc(fn, args)` بلا نقطة، وثلاث دوال تُسنَد لمتغيّر (`acknowledge/cancel/complete_booking`).
+
+### ⚠️ حجب الشبكة في الجلسات
+سياسة شبكة الجلسات **تحجب** `141-147-142-147.sslip.io` و`taki-test-eight.vercel.app` و`sentry.io` (403 من البوابة). فالتحقّق من النشر عبر **Vercel MCP**، ومن القاعدة عبر أمر يلصقه ناصر في Terminal. **يُفتح بعد شراء نطاق ثابت** (لا تُضِف عنوان `sslip.io` المبني على رقم آي بي).
+
+---
+
+## 🔄 آلية التنفيذ (كل تعديل)
 1. عدّل الكود في الـworktree الحالي
-2. ارفع `CACHE_NAME` في `sw.js` (مثل `taki-cache-vXX.YY`) — إلزامي لكل deploy
-3. `npm run typecheck` — لازم ينجح
+2. ارفع `CACHE_NAME` في `sw.js` (`taki-cache-vXX.YY`) — **إلزامي لكل نشر**
+3. `npm run typecheck` ثم `npm run build` — لازم ينجحا
 4. commit برسالة `vX.YY: <الوصف>`
-5. `git push origin HEAD:main` — **إذن دائم من ناصر (٨ أغسطس ٢٠٢٦): ادفع إلى `main` مباشرة بلا سؤال في كل مرة.** لا تترك العمل على فرع منتظراً موافقة.
-6. مزامنة المجلد المحلي: `git -C /Users/nasser/Desktop/TAKI pull origin main`
-7. حدّث `progress.md` (الأحدث في الأعلى)
-8. **النشر صار تلقائياً (v13.72):** مشروع Vercel مربوط بـGitHub، فأي دفع إلى `main` يبني وينشر وحده — لا حاجة لأمر يدوي ولا لجهاز ناصر. (الطريقة القديمة `npx vercel deploy --prod --archive=tgz` تبقى مخرجاً احتياطياً فقط.)
-9. تحقّق: `curl -s https://taki-test-eight.vercel.app/sw.js | grep -oE 'taki-cache-v[0-9.]+'`
-10. أخبرني بالعربي بما فعلت + كيف أتأكد
+5. `git push origin HEAD:main` — **إذن دائم من ناصر: ادفع إلى `main` مباشرة بلا سؤال.**
+6. حدّث `progress.md` (الأحدث في الأعلى)
+7. **النشر تلقائي:** Vercel مربوط بـGitHub، فأي دفع إلى `main` يبني وينشر وحده.
+8. تحقّق عبر **Vercel MCP** (`list_deployments` → `READY`) لا بـ`curl` (محجوب).
+9. أخبر ناصر بالعربي بما فعلت + كيف يتأكّد على جواله
 
-## 🪤 فخاخ يجب تجنّبها (Hard-won lessons)
-- **`--archive=tgz` إلزامي** في Vercel deploy اليدوي — بدونه يفشل بـ`api-upload-free quota`. (نادراً ما يُحتاج بعد ربط GitHub في v13.72.)
-- **iOS Safari يثبت على نسخة قديمة** إذا ما رفعت `CACHE_NAME` في sw.js. v10.25+ فيه UpdateBanner أخضر داخل التطبيق.
-- **DB trigger `tr_guard_deal_publish`** يرفض أي UPDATE OF status حتى بنفس القيمة — استخدم `dealRepository.updateQuantity` للتحديثات الجزئية.
-- **PL/pgSQL `text[] || 'literal'`** ambiguous → cast صريح `::TEXT` (v10.60 ضحّى بـsave-deal كاملاً قبل ما أصلحه).
-- **RLS policies** ممنوع `EXISTS (SELECT FROM T)` داخل policy على نفس الجدول — استخدم `is_admin()` SECURITY DEFINER.
-- **admin RPCs مع `RETURNS TABLE`**: qualify الأعمدة (مثل `u.user_type`) وإلا "column reference is ambiguous".
-- **`useMemo` يستدعي `const`-arrow معرّف بعده** = TDZ على أول render → ErrorBoundary (v10.61 hotfix). تحقّق ترتيب التعريفات لما تضيف useMemo.
-- **Notifications routing**: اقرأ `meta_data.audience` (DB trigger يكتبه)، **لا** `user.userType`.
-- **`saveProfile`**: استخدم النسخة partial-aware (v10.25) — تكتب فقط الحقول المُمرّرة.
-- **Booking complete**: استخدم RPC `complete_booking` (v10.20) atomic، لا fire-and-forget.
-- **Realtime على iOS Safari**: v10.22 خفّض threshold الـresync لـ1s + pageshow handler.
-- **`.book-cta` على DealDetails**: لا تُعد `bottom: 0` في `@supports (height: 100dvh)` — BottomNav يغطّي زر الحجز (v10.58 fix).
-- **Parcel preview**: لا يشتغل في sandbox (EPERM) — اعتمد على typecheck + Vercel preview.
-- **Worktree ≠ المجلد المحلي ≠ الإنتاج**: لازم commit → push → pull → deploy.
+---
+
+## 🪤 فخاخ يجب تجنّبها (دروس مدفوعة الثمن)
+
+### قاعدة البيانات وجدة
+- **خادم جدة على توقيت `+03:00` لا UTC** — تحقّق بـ`date` قبل ضبط أي جدولة. (ضُبطت النسخة أولاً على `23:30` ظناً أنها ٢:٣٠ فجراً فكانت ١١:٣٠ ليلاً، وقت ذروة.)
+- **`raw.githubusercontent` يخزّن مؤقتاً باسم الفرع** فيعيد نسخة قديمة **بلا إنذار** — استعمل **بصمة الكوميت** في الرابط.
+- **«آمن للتكرار» ليس صحيحاً تلقائياً:** كل `CREATE POLICY` يحتاج `DROP POLICY IF EXISTS` **لاسمه هو** لا لاسمه القديم فقط.
+- **`CREATE OR REPLACE FUNCTION` لا يغيّر نوع الإرجاع** → `DROP FUNCTION IF EXISTS` أولاً (بلا `CASCADE`).
+- **DB trigger `tr_guard_deal_publish`** يرفض أي `UPDATE OF status` حتى بنفس القيمة — استخدم `dealRepository.updateQuantity`.
+- **PL/pgSQL `text[] || 'literal'`** ambiguous → cast صريح `::TEXT`.
+- **RLS policies:** ممنوع `EXISTS (SELECT FROM T)` داخل policy على نفس الجدول — استخدم `is_admin()` SECURITY DEFINER.
+- **admin RPCs مع `RETURNS TABLE`:** qualify الأعمدة (`u.user_type`) وإلا "column reference is ambiguous".
+- **`is_admin()` تُرجع TRUE لأي أدمن حين تُنادى من سياسة RLS** — لتقييد أدمن فرعي استعمل `has_admin_permission('tab_*')` صراحةً في السياسة.
+
+### الواجهة
+- **iOS Safari يثبت على نسخة قديمة** إذا لم تُرفع `CACHE_NAME`. v10.25+ فيه UpdateBanner أخضر.
+- **`useMemo` يستدعي `const`-arrow معرّف بعده** = TDZ على أول render → ErrorBoundary.
+- **Notifications routing:** اقرأ `meta_data.audience` (يكتبه DB trigger)، **لا** `user.userType`.
+- **`saveProfile`:** النسخة partial-aware — تكتب الحقول المُمرَّرة فقط.
+- **Booking complete:** RPC `complete_booking` الذرّي، لا fire-and-forget.
+- **`.book-cta` على DealDetails:** لا `bottom: 0` في `@supports (height: 100dvh)` — BottomNav يغطّي زر الحجز.
+- **كل مرشِّح `user_type='seller'` يُخفي متجر ناصر** المملوك لحساب أدمن → استعمل `neq('buyer')`.
+- **الأزرار الصامتة:** كل كتابة تُرجع `error` يجب فحصه؛ وحذفٌ ترفضه RLS يعود بـ`error=null` وصفر صفوف → أضف `.select()` وتحقّق من العدد.
+- **Parcel preview لا يعمل في الجلسات** (EPERM) — اعتمد typecheck + build + Vercel.
+
+### الريل‑تايم
+- **افحص صحة القناة لا وجودها:** قناة ماتت بـ`CHANNEL_ERROR` تبقى في `getChannels()` بحالة `errored` — اشترط `state === 'joined'` مع `supabase.realtime.isConnected()`.
+- **إعادة الاشتراك لا تُعيد بثّ ما فات** — كل إعادة بناء تحتاج إعادة جلب صريحة، وإلا بقيت الرسالة مفقودة رغم نجاح الاتصال.
+- **iOS يقتل الـwebsocket عند التصغير** — لكن المستخدم قد يبقى داخل التطبيق فلا يقع أي حدث visibility؛ لذلك النبض الدوري ضروري.
+
+---
 
 ## 📁 ملفات أساسية
 ```
 src/App.tsx                          — Routes
 src/pages/Home.tsx                   — الرئيسية
 src/pages/DealsList.tsx              — قائمة العروض
-src/pages/DealDetails.tsx            — تفاصيل + ImageZoomViewer (swipe v10.60)
-src/pages/SellerDashboard.tsx        — لوحة التاجر + chip-picker لـbranches
+src/pages/DealDetails.tsx            — تفاصيل + ImageZoomViewer
+src/pages/SellerDashboard.tsx        — لوحة التاجر + chip-picker للمواقع
 src/pages/AdminDashboard.tsx         — لوحة المدير
-src/pages/Notifications.tsx          — التنقل عبر meta_data.audience
-src/pages/Bookings.tsx               — حجوزات + chat
+src/pages/Bookings.tsx               — حجوزات + محادثة
 src/pages/Nearby.tsx                 — خريطة + GPS
-src/pages/Profile.tsx                — حسابي + تنبيهات ذكية
-src/pages/StoreDetails.tsx           — صفحة المتجر
-src/components/DealCard.tsx          — كرت 1:1
-src/components/Navbar.tsx
-src/components/BottomNav.tsx         — البار السفلي (v10.32)
-src/components/BookingThread.tsx     — chat المشتري ↔ التاجر (3+3)
-src/components/UpdateBanner.tsx      — banner تحديث داخل التطبيق
-src/components/PullToRefresh.tsx     — Home + Bookings فقط
-src/components/ImageCropEditor.tsx   — Crop حرّ بزوايا قابلة للسحب (v10.62)
-src/context/AppContext.tsx           — state + branches + saveBranch/removeBranch
-src/repositories/dealRepository.ts
-src/repositories/bookingRepository.ts
-src/repositories/userRepository.ts   — partial-aware saveProfile
-src/repositories/branchRepository.ts — store_branches (list/upsert/remove) v10.59
-src/services/realtimeService.ts      — 3 channels + heartbeat + bfcache
-src/sw-cleanup.ts                    — applySwUpdate
-src/utils/helpers.ts                 — resolveDealLocation + dealMatchesLocation
-src/data/mock.ts                     — REGIONS/CITIES/LOCATIONS
+src/pages/Profile.tsx · StoreDetails.tsx · Notifications.tsx
+src/components/DealCard.tsx · BottomNav.tsx · BookingThread.tsx · UpdateBanner.tsx
+src/context/AppContext.tsx           — الحالة + الفروع
+src/repositories/                    — deal · booking · user · branch · contest · rating
+src/services/realtimeService.ts      — القنوات + النبض + فحص الصحة (v13.83)
+src/services/storageService.ts       — رفع الصور + المصغّرات
+src/utils/helpers.ts · thumb.ts      — أدوات مشتركة
 sw.js                                — Service Worker (CACHE_NAME)
-server/bot.js                        — Telegram + WhatsApp bot
-vercel.json                          — headers + CSP + Permissions-Policy
-.vercelignore                        — يستثني node_modules/cache
+server/bot.js                        — بوت تيليجرام + واتساب
+vercel.json                          — headers + CSP
 progress.md                          — سجل الإصدارات (الأحدث في الأعلى)
+
+supabase/JEDDAH_CATCHUP_v13_67_to_82.sql          — هجرات مجمّعة (مطبَّقة ٢٢ أغسطس)
+supabase/JEDDAH_COMPLETENESS_CHECK.sql            — فحص ٢١٦ دالة و٢٨ جدولاً
+supabase/JEDDAH_EXPORT_db_logic.sql               — تصدير عقل القاعدة
+supabase/audit_v13_75_jeddah_security_parity.sql  — فحص أمني شامل
 ```
 
-## 🗄 جداول مستخدمة في Supabase (الأهم)
-- `users` — حقول array: `notif_keywords` / `followed_merchants`، حقل jsonb: `smart_alerts`
-- `deals` — `images text[]`, denormalized `region` + `city`
-- `bookings` + `booking_messages` — للحجز و chat
-- `store_branches` — لوكيشنات التاجر المحفوظة (v10.59 — RLS: own merchant_id)
-- `notifications` — `meta_data.audience` يحدّد الـrouting
-- `store_profiles` — `subscription_plan` + `max_branches`
-- `regions` / `cities` / `locations` / `sa_cities_geo` — جغرافيا السعودية
+## 🗄 جداول Supabase (الأهم)
+- `users` — arrays: `notif_keywords` / `followed_merchants` · jsonb: `smart_alerts` · **RLS: صفّك أو أدمن فقط**
+- `sellers_public` — **عرض** الدليل العام (حقول عامة فقط، للقراءة فقط بمشغّل `INSTEAD OF`)
+- `deals` — `images text[]` · `region` + `city` مُسطَّحان
+- `bookings` + `booking_messages` — `recipient_id` يملؤه مشغّل (v13.82)
+- `store_branches` · `store_profiles` (`subscription_plan` + `max_branches`)
+- `notifications` — `meta_data.audience` يحدّد الوجهة
+- `regions` / `cities` / `locations` / `sa_cities_geo`
+
+---
+
+## 📊 الحالة (٢٢ أغسطس ٢٠٢٦)
+- الهجرات على جدة: **١٦/١٦ ✅** (v13.67 · 71 · 75 · 76 · 80 · 81 · 82)
+- اكتمال الخصائص: **٢١٦/٢١٦ دالة · ٢٨/٢٨ جدولاً · حارس البوت ✅**
+- البيانات: ٤ حسابات · ٢ متجر · ٢١ عرضاً · ٨٩ حجزاً · ١١٢ رسالة · ١١٧٧ إشعاراً · ١٩٠ صورة
+- الأمان: RLS على ٥٠/٥٠ جدولاً · مسار كل دالة مثبَّت · لا كتابة للزائر · بيانات التجار محميّة
+
+## 🎯 الناقص (بالأولوية)
+1. 🔴 **النطاق الثابت** — يحلّ ثلاثة معاً: بريد التأكيد للأعضاء الجدد، وثبات العنوان بدل `sslip.io`، وفتح حجب الشبكة عن الجلسات. **يحتاج شراءً من ناصر.**
+2. 🔴 **البريد** — المُرسِل عنوان Resend المشترك ولا يصل إلا لناصر ⇒ **لا يستطيع أحد التسجيل**. يُحلّ فور توثيق النطاق (SPF + DKIM).
+3. 🔴 **نسخة احتياطية خارج الخادم** — النسخ اليومية على نفس الجهاز؛ فقدُه يفقدها.
+4. 🟠 **مراقبة توقّف** — لا إنذار إن سقط الخادم.
+5. 🟠 **١٨٩ دالة موجودة على الخادم فقط** — النسخة اليومية تغطّيها، لكن المستودع وحده لا يُعيد البناء (والمستودع عام فلا يصلح لحمل المخطط بلا فحص أسرار).
+
+---
 
 ## 💬 نمط العمل المتوقع
 1. أصف المشكلة بلهجتي (قد تكون فيها أخطاء إملائية).
-2. أنت تفهم القصد، تستكشف الكود، تعدّل، تحفظ، ترفع، تنشر.
+2. أنت تفهم القصد، تستكشف الكود، **تقيس قبل أن تحكم**، تعدّل، ترفع، تنشر.
 3. تخبرني بالعربي ماذا فعلت وكيف أتأكد.
-4. لا تطلب مني أوامر تقنية إلا للضرورة القصوى.
+4. **إن أخطأت، قل ذلك صراحةً وصحّح** — لا تُجمّل. خطآن من ٢٢ أغسطس وفّرا وقتاً لأنهما قيلا: «الهجرة مطبَّقة» (كانت على المختبر)، و«١٣٦/١٣٦» (كان الفحص ناقصاً ٨٠ دالة).

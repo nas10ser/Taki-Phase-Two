@@ -74,6 +74,7 @@ ALTER VIEW public.sellers_public SET (security_barrier = true);
 GRANT SELECT ON public.sellers_public TO anon, authenticated;
 
 DROP POLICY IF EXISTS users_select_all ON public.users;
+DROP POLICY IF EXISTS users_select_own_or_admin ON public.users;
 CREATE POLICY users_select_own_or_admin ON public.users
     FOR SELECT
     USING (
@@ -85,6 +86,7 @@ DROP POLICY IF EXISTS platform_settings_insert_admin ON public.platform_settings
 DROP POLICY IF EXISTS platform_settings_update_admin ON public.platform_settings;
 DROP POLICY IF EXISTS platform_settings_delete_admin ON public.platform_settings;
 
+DROP POLICY IF EXISTS platform_settings_write_scoped ON public.platform_settings;
 CREATE POLICY platform_settings_write_scoped ON public.platform_settings
     FOR ALL
     USING (
@@ -103,6 +105,7 @@ CREATE POLICY platform_settings_write_scoped ON public.platform_settings
 DROP POLICY IF EXISTS banners_insert_admin ON public.banners;
 DROP POLICY IF EXISTS banners_update_admin ON public.banners;
 DROP POLICY IF EXISTS banners_delete_admin ON public.banners;
+DROP POLICY IF EXISTS banners_write_tools ON public.banners;
 CREATE POLICY banners_write_tools ON public.banners
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_tools'))
@@ -111,18 +114,21 @@ CREATE POLICY banners_write_tools ON public.banners
 DROP POLICY IF EXISTS promo_insert_admin ON public.promotional_campaigns;
 DROP POLICY IF EXISTS promo_update_admin ON public.promotional_campaigns;
 DROP POLICY IF EXISTS promo_delete_admin ON public.promotional_campaigns;
+DROP POLICY IF EXISTS promo_write_tools ON public.promotional_campaigns;
 CREATE POLICY promo_write_tools ON public.promotional_campaigns
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_tools'))
     WITH CHECK ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_tools'));
 
 DROP POLICY IF EXISTS moderation_terms_admin_all ON public.moderation_terms;
+DROP POLICY IF EXISTS moderation_terms_write_reports ON public.moderation_terms;
 CREATE POLICY moderation_terms_write_reports ON public.moderation_terms
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_reports'))
     WITH CHECK ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_reports'));
 
 DROP POLICY IF EXISTS exp_admin_all ON public.expense_invoices;
+DROP POLICY IF EXISTS exp_write_launch ON public.expense_invoices;
 CREATE POLICY exp_write_launch ON public.expense_invoices
     FOR ALL
     USING ((SELECT public.is_super_admin()) OR public.has_admin_permission('tab_launch'))
@@ -203,6 +209,7 @@ BEGIN;
 ALTER TABLE public.store_branches
     ADD COLUMN IF NOT EXISTS show_on_store_page boolean NOT NULL DEFAULT false;
 
+DROP FUNCTION IF EXISTS public.taki_reconcile_branch_display(text);
 CREATE OR REPLACE FUNCTION public.taki_reconcile_branch_display(p_store_id text)
 RETURNS void
 LANGUAGE plpgsql
