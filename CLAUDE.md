@@ -15,9 +15,22 @@
 - Repo: `https://github.com/nas10ser/Taki-Phase-Two` (فرع `main`)
 - 🔴 **قاعدة البيانات المعتمدة = خادم جدة المستضاف ذاتياً** (`141-147-142-147.sslip.io`) — **قرار ناصر (٨ أغسطس ٢٠٢٦): أي تعديل على القاعدة يُعتمد على جدة، لا على طوكيو.** مشروع طوكيو `kbmqzxcjdankdgiovctm` (Supabase MCP) **نسخة احتياطية ومختبر تجارب فقط** — لا يُعتمد إصلاح لأنه نجح عليه. أي هجرة تُسلَّم لناصر كملف يلصقه في SQL Editor على جدة، ويُتحقَّق منها بجدول ✅/❌.
 - ⚠️ **سياسة شبكة الجلسات تحجب** `141-147-142-147.sslip.io` و`taki-test-eight.vercel.app` و`sentry.io` (403 من بوابة المؤسسة). فالتحقّق من النشر يتم عبر **Vercel MCP** لا `curl`، والتحقّق من القاعدة عبر ملف فحص يلصقه ناصر. لفتحها: أضف النطاقات لسياسة شبكة البيئة (بعد شراء نطاق ثابت — لا تُضِف عنوان `sslip.io` المبني على رقم آي بي).
+- 🔑 **الدخول لخادم جدة (من جهاز ناصر فقط — الجلسات محجوبة عنه):**
+  ```bash
+  ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147
+  ```
+  المفتاح الخاص `~/.ssh/taki_oracle` على ماك ناصر وحده و**لا يُرفع للمستودع أبداً**. جهاز أوراكل اسمه `taki-supabase-jeddah` في `me-jeddah-1`، وحاوية القاعدة **`supabase-db`**، والدور المالك **`supabase_admin`** — لا `postgres`، فهو لا يملك الدوال ويفشل بـ`must be owner of function`.
+  **تشغيل ملف هجرة على جدة** (الطريقة المُختبَرة ٢٢ أغسطس ٢٠٢٦):
+  ```bash
+  ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 \
+    'curl -fsSL -o /tmp/m.sql <رابط raw> && sudo docker exec -i supabase-db \
+     psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f - < /tmp/m.sql' \
+    2>&1 | tee ~/Desktop/result.txt
+  ```
+  ⚠️ **«Run Command» في أوراكل غير متاح على هذا الجهاز** (إضافة `Compute Instance Run Command` ليست ضمن الإضافات الإحدى عشرة) — لا تُضِع وقتاً فيها. ولوحة Studio محمية بـBasic Auth وكلمة سرّها **مفقودة** (لم تعد لازمة بعد SSH؛ تُقرأ من `.env` على الخادم عند الحاجة).
 - الإنتاج: `https://taki-test-eight.vercel.app`
 - Vercel: `nasser-projects1/taki-test` (مفوّض كـ `nalaumari-8916`، Env vars مشفّرة)
-- **الإصدار الحالي: v13.82** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
+- **الإصدار الحالي: v13.83** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
 
 ## 🔄 آلية التنفيذ الكاملة (كل تعديل)
 1. عدّل الكود في الـworktree الحالي
