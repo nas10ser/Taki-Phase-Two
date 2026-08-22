@@ -28,6 +28,20 @@
     2>&1 | tee ~/Desktop/result.txt
   ```
   ⚠️ **«Run Command» في أوراكل غير متاح على هذا الجهاز** (إضافة `Compute Instance Run Command` ليست ضمن الإضافات الإحدى عشرة) — لا تُضِع وقتاً فيها. ولوحة Studio محمية بـBasic Auth وكلمة سرّها **مفقودة** (لم تعد لازمة بعد SSH؛ تُقرأ من `.env` على الخادم عند الحاجة).
+- 💾 **نسخة احتياطية يومية آلية على جدة (ضُبطت ٢٢ أغسطس ٢٠٢٦):**
+  `/usr/local/bin/taki-backup.sh` عبر `/etc/cron.d/taki-backup` — **٣:٣٠ فجراً بتوقيت الرياض** (⚠️ **الخادم نفسه على `+03:00` لا UTC** — تحقّق بـ`date` قبل ضبط أي جدولة)، تسبق تحديثات الأمان التلقائية (٤:٣٠). تحتفظ بآخر **١٤** نسخة في `/home/ubuntu/backups`، والسجل `backup.log`، **وترفض أي نسخة أصغر من ٥٠٠ كيلوبايت** فلا تُستبدل نسخة سليمة بفاسدة.
+  **اختبار الاستعادة** (أُجري فعلاً ونجح — ٣٨٤ دالة · ٥٠ جدولاً · ٢١ عرضاً · ٨٩ حجزاً · ١١٢ رسالة، مطابقة للحيّ):
+  ```bash
+  ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 'sudo bash -s' <<'EOF'
+  LATEST=$(ls -1t /home/ubuntu/backups/taki-*.dump | head -1)
+  docker exec supabase-db psql -U supabase_admin -d postgres -c 'CREATE DATABASE taki_restore_test;'
+  docker exec -i supabase-db pg_restore -U supabase_admin -d taki_restore_test --no-owner --no-privileges < "$LATEST"
+  docker exec supabase-db psql -U supabase_admin -d taki_restore_test -c "SELECT count(*) FROM public.bookings;"
+  docker exec supabase-db psql -U supabase_admin -d postgres -c 'DROP DATABASE taki_restore_test;'
+  EOF
+  ```
+  (تحذيرات `pg_restore` عن `cron.*` طبيعية — عدّادات إضافة pg_cron لا بيانات تطبيق.)
+- 🔍 **فحص اكتمال الخادم:** `supabase/JEDDAH_COMPLETENESS_CHECK.sql` يقارن **٢١٦ دالة و٢٨ جدولاً** يستخرجها من الكود بما هو موجود فعلاً. آخر تشغيل (٢٢ أغسطس): **٢١٦/٢١٦ و٢٨/٢٨ وحارس البوت ✅**. ⚠️ استخدم رابط raw **ببصمة الكوميت** لا باسم الفرع — GitHub يخزّن raw مؤقتاً فيعيد نسخة قديمة بلا إنذار (وقع فعلاً).
 - الإنتاج: `https://taki-test-eight.vercel.app`
 - Vercel: `nasser-projects1/taki-test` (مفوّض كـ `nalaumari-8916`، Env vars مشفّرة)
 - **الإصدار الحالي: v13.83** (آخر إصدار في `progress.md` — الأحدث في الأعلى)
