@@ -164,7 +164,7 @@ probe_bot_fn bot_get_seller_stats '{"p_telegram_id":"999999999999"}'
 probe_bot_fn bot_get_alerts       '{"p_telegram_id":"999999999999"}'
 probe_bot_fn bot_booking_contact  '{"p_telegram_id":"999999999999","p_barcode":"__taki_probe__"}'
 probe_bot_fn bot_unlink           '{"p_telegram_id":"999999999999"}'
-inf "إنفاذ سرّ البوّابة لا يُحسم من خارج القاعدة — شغّل JEDDAH_DIAGNOSE_bot_gate.sql للحسم"
+inf "إنفاذ سرّ البوّابة لا يُحسم من الخارج بطبيعته — حُسم داخل جدة ٢٧ أغسطس ٢٠٢٦: مفعّل والسرّ مضبوط و_bot_uid يستدعيه، وسطح الانتحال صفر بعد v13.84. أعِد الحسم بـJEDDAH_VERIFY_bot_surface.sql عند الشك."
 
 req POST "/rest/v1/rpc/bot_get_admin_stats" '{"p_telegram_id":"__taki_probe__"}'
 if [ "$CODE" = "200" ] && [ -n "$BODY" ] && [ "$BODY" != "null" ]; then
