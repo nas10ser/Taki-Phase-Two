@@ -56,14 +56,53 @@ SELECT p.proname AS "دالة مكشوفة", pg_get_function_identity_arguments(
    AND pg_get_functiondef(p.oid) NOT ILIKE '%\_bot\_gate\_ok%'
  ORDER BY 1;
 
--- ── ٤) هل السرّ مضبوط على هذا الخادم؟ (لا يطبع السرّ — فقط هل هو موجود) ─
-SELECT
-    CASE WHEN COALESCE(NULLIF(current_setting('app.bot_gateway_secret', true), ''), '') <> ''
-         THEN '✅ مضبوط كإعداد قاعدة' ELSE '— غير مضبوط كإعداد قاعدة —' END AS "app.bot_gateway_secret",
-    CASE WHEN EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                       WHERE n.nspname='public' AND c.relname='platform_settings')
-         THEN (SELECT CASE WHEN count(*) > 0 THEN '✅ يوجد صفّ للسرّ في platform_settings'
-                           ELSE '— لا صفّ للسرّ في platform_settings —' END
-                 FROM public.platform_settings
-                WHERE key ILIKE '%bot%secret%' OR key ILIKE '%gateway%')
-         ELSE '— لا جدول platform_settings —' END AS "مصدر بديل للسرّ";
+-- ── ٤) مصدر السرّ ومفتاح الإيقاف — الاشتباه الأول ───────────────────────
+--     الحارس يقارن ترويسة `x-bot-secret` بصفّ `app_secrets.bot_gateway_secret`،
+--     ويُرجع «مسموح» دائماً حين يكون `app_secrets.bot_gate_enforced` = '0'.
+--     فلو ضاع أيّ من الصفّين في الهجرة إلى جدة، سقطت البوّابة **بصمت**.
+--     نستعلم بـSQL ديناميكي داخل دالّة مؤقّتة، فغياب الجدول يُبلَّغ عنه ولا
+--     يُسقط الفحص بخطأ. ولا يُطبع السرّ نفسه أبداً — فقط هل هو موجود وغير فارغ.
+CREATE OR REPLACE FUNCTION pg_temp._taki_gate_src()
+RETURNS TABLE ("جدول app_secrets" text, "صفّ السرّ" text, "مفتاح الإنفاذ" text)
+LANGUAGE plpgsql AS $fn$
+DECLARE v_sec text; v_enf text;
+BEGIN
+    IF to_regclass('public.app_secrets') IS NULL THEN
+        RETURN QUERY SELECT '❌ غير موجود'::text,
+                            '— لا يمكن الفحص —'::text,
+                            '— لا يمكن الفحص —'::text;
+        RETURN;
+    END IF;
+    BEGIN
+        EXECUTE 'SELECT value FROM public.app_secrets WHERE key = $1'
+           INTO v_sec USING 'bot_gateway_secret';
+        EXECUTE 'SELECT value FROM public.app_secrets WHERE key = $1'
+           INTO v_enf USING 'bot_gate_enforced';
+    EXCEPTION WHEN undefined_column THEN
+        RETURN QUERY SELECT '⚠️ موجود بأعمدة مختلفة'::text,
+                            '— راجع بنيته —'::text, '— راجع بنيته —'::text;
+        RETURN;
+    END;
+    RETURN QUERY SELECT
+        '✅ موجود'::text,
+        CASE WHEN COALESCE(v_sec,'') <> '' THEN '✅ مضبوط'
+             ELSE '❌ مفقود أو فارغ ⇒ البوّابة بلا سرّ تقارن به' END,
+        CASE WHEN v_enf IS NULL THEN '⚠️ الصفّ مفقود — راجع سلوك الحارس عند NULL'
+             WHEN v_enf = '1'   THEN '✅ مفعّل (1)'
+             ELSE '🚨 معطّل (' || v_enf || ') ⇒ الحارس يُمرّر الجميع' END;
+END $fn$;
+
+SELECT * FROM pg_temp._taki_gate_src();
+
+-- ── ٥) هل تُنادى البوّابة من قلب الهوية `_bot_uid`؟ ─────────────────────
+--     هو الذي يغطّي ~٥٠ دالّة؛ لو لم يستدعِ الحارس سقط سطح البوت كلّه.
+SELECT CASE
+    WHEN NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                      WHERE n.nspname='public' AND p.proname='_bot_uid')
+        THEN '❌ _bot_uid غير موجود'
+    WHEN EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                  WHERE n.nspname='public' AND p.proname='_bot_uid'
+                    AND pg_get_functiondef(p.oid) ILIKE '%\_bot\_gate\_ok%')
+        THEN '✅ _bot_uid يستدعي الحارس'
+    ELSE '🚨 _bot_uid لا يستدعي الحارس ⇒ سطح البوت كله بلا حماية'
+END AS "٥· الحارس داخل _bot_uid";
