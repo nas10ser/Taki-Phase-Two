@@ -137,16 +137,34 @@ write_blocked "استدعاء دالة إرسال رسالة" POST "/rest/v1/rpc
 
 # ── ٥) الدوال: بوابة البوت والدوال الإدارية ─────────────────────────────
 hdr "الدوال المحميّة"
-# الحاسم: نرسل سرّ بوّابة **خاطئاً**. لو ردّت الدالة ببيانات فالبوّابة لا
-# تفحص شيئاً، وأي شخص يعرف رقم تيليجرام مستخدمٍ يستطيع انتحال شخصيته.
-CODE=$(curl -s -o "$TMP/out" -w '%{http_code}' --max-time 30 -X POST \
-       -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
-       -H 'Content-Type: application/json' -H 'x-bot-secret: deliberately-wrong' \
-       --data '{}' "$DB/rest/v1/rpc/bot_geo_regions") || CODE=000
-BODY=$(head -c 200 "$TMP/out" 2>/dev/null || printf '')
-if [ "$CODE" = "200" ] && [ "${BODY#\[}" != "$BODY" ]; then
-    bad "🚨 بوّابة البوت لا تفحص السرّ — سرّ خاطئ مرّ وأعاد بيانات ⇒ انتحال شخصية بمعرفة رقم تيليجرام"
-else ok "بوّابة البوت ترفض السرّ الخاطئ ($CODE)"; fi
+# ── بوّابة البوت: ما الذي يمكن حسمه من الخارج وما الذي لا يمكن ──────────
+# الدوال العامة (تصفّح/جغرافيا/بحث/باقات/is_enabled) **مفتوحة بالتصميم** —
+# استجابتها بلا سرّ ليست ثغرة، وقد أوقعني هذا في إنذار كاذب أول مرّة.
+# والدوال الخاصة بالمستخدم تمرّ عبر `_bot_uid` الذي يستدعي `_bot_gate_ok()`:
+# إن ردّت البوّابة بالمنع أعاد NULL ⇒ «not_linked»؛ وإن كانت البوّابة مفتوحة
+# لكن الرقم غير مرتبط أعاد NULL أيضاً ⇒ «not_linked» — **ردّان متطابقان
+# حرفياً**. فلا يمكن الحسم من الخارج إلا برقم تيليجرام مرتبط فعلاً، ولن
+# نستخدم رقم أحد. الحسم مكانه SQL: supabase/JEDDAH_DIAGNOSE_bot_gate.sql
+#
+# ما نحسمه هنا: أن الدوال الخاصة **لا تُسرّب بيانات** لرقم عشوائي.
+# ملاحظة: PostgREST يطابق الدالة بـ**مجموعة أسماء المعاملات** بالضبط — تمرير
+# معامل زائد يعطي PGRST202 «الدالة غير موجودة»، وهو خطأ في الفحص لا ثغرة.
+probe_bot_fn() { # الدالة  حمولة‑JSON
+    req POST "/rest/v1/rpc/$1" "$2"
+    case "$BODY" in
+        *PGRST202*) inf "$1 — معاملات خاطئة في الفحص نفسه (PGRST202) — ليست نتيجة أمنية" ;;
+        null|''|*not_linked*|*'"success": false'*|*'"success":false'*)
+            ok "$1 — لا يُعيد بيانات لرقم غير مرتبط" ;;
+        *)  bad "🚨 $1 — أعاد بيانات لرقم عشوائي: $(printf '%.90s' "$BODY")" ;;
+    esac
+}
+probe_bot_fn bot_get_user         '{"p_telegram_id":"999999999999"}'
+probe_bot_fn bot_get_my_bookings  '{"p_telegram_id":"999999999999"}'
+probe_bot_fn bot_get_seller_stats '{"p_telegram_id":"999999999999"}'
+probe_bot_fn bot_get_alerts       '{"p_telegram_id":"999999999999"}'
+probe_bot_fn bot_booking_contact  '{"p_telegram_id":"999999999999","p_barcode":"__taki_probe__"}'
+probe_bot_fn bot_unlink           '{"p_telegram_id":"999999999999"}'
+inf "إنفاذ سرّ البوّابة لا يُحسم من خارج القاعدة — شغّل JEDDAH_DIAGNOSE_bot_gate.sql للحسم"
 
 req POST "/rest/v1/rpc/bot_get_admin_stats" '{"p_telegram_id":"__taki_probe__"}'
 if [ "$CODE" = "200" ] && [ -n "$BODY" ] && [ "$BODY" != "null" ]; then
