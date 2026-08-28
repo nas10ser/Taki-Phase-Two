@@ -19,6 +19,9 @@ SITE="${SITE:-https://taki-test-eight.vercel.app}"
 DB="${DB:-https://141-147-142-147.sslip.io}"
 DBHOST="${DBHOST:-141-147-142-147.sslip.io}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# جذر المستودع يُشتقّ من موقع السكربت نفسه، فيعمل من أي مجلد
+# (كان يقرأ sw.js من مجلد العمل، فيفشل حين يُشغَّل من ~).
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 fail=0; warned=0; passed=0
 ok()   { printf '  ✅ %s\n' "$1"; passed=$((passed+1)); }
@@ -204,10 +207,11 @@ done
 
 # ── ٨) هل الإنتاج يخدم آخر إصدار؟ ───────────────────────────────────────
 hdr "مطابقة الإصدار المنشور للمستودع"
-want=$(grep -oE "taki-cache-v[0-9.]+" sw.js 2>/dev/null | head -1)
+want=$(grep -oE "taki-cache-v[0-9.]+" "$REPO/sw.js" 2>/dev/null | head -1)
 got=$(curl -fsS --max-time 30 "$SITE/sw.js" 2>/dev/null | grep -oE "taki-cache-v[0-9.]+" | head -1)
 if [ -n "$want" ] && [ "$want" = "$got" ]; then ok "الإنتاج على $got — مطابق للمستودع"
 elif [ -z "$got" ]; then bad "تعذّر قراءة sw.js من الإنتاج"
+elif [ -z "$want" ]; then inf "تعذّر قراءة sw.js من المستودع ($REPO) — تُخطّي مطابقة الإصدار"
 else bad "الإنتاج على «$got» بينما المستودع على «$want» ⇒ نشرٌ ناقص"; fi
 
 # ── الخلاصة ─────────────────────────────────────────────────────────────
