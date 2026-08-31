@@ -37,6 +37,22 @@ const inTabLock = async <T,>(_name: string, _acquireTimeout: number, fn: () => P
 // نتحقّق هنا من أن مُصدِر التوكن (iss) هو هذا الخادم، وإلا نمسح الجلسة فوراً
 // ليُطلب تسجيل الدخول بوضوح بدل صفحات فارغة.
 const AUTH_STORAGE_KEY = 'sb-taki-auth';
+
+// v13.87 — الفحص كان يقارن مُصدِر التوكن بعنوان الخادم **نصّاً**، فأي تغيير
+// في الاسم — لا في الخادم — يُسقط كل الجلسات. ولمّا صار للخادم نفسه اسمان
+// (`api.takisa.net` الجديد و`…sslip.io` القديم) ظهر الخطر بوضوح:
+//   • التطبيق على الاسم الجديد + توكن مُصدَره الاسم القديم ⇒ يُمسح
+//   • يسجّل المستخدم دخولاً، فيُصدِر الخادم توكناً بالاسم القديم مجدداً ⇒ يُمسح
+//   ⇒ **حلقة تسجيل دخول لا تنتهي** لكل المستخدمين.
+// والتوكن في هذه الحالة **صحيح تماماً**: نفس الخادم ونفس مفتاح التوقيع، ولا
+// يرفضه إلا فحصنا نحن. فالسؤال الصحيح ليس «هل النصّ متطابق؟» بل «هل هذا
+// المُصدِر خادمٌ نثق به؟».
+const TRUSTED_ISSUER_HOSTS = [
+    (() => { try { return new URL(supabaseUrl).host; } catch { return ''; } })(),
+    'api.takisa.net',
+    '141-147-142-147.sslip.io',
+].filter(Boolean);
+
 const dropForeignSession = () => {
     try {
         if (typeof window === 'undefined' || !window.localStorage) return;
@@ -46,9 +62,16 @@ const dropForeignSession = () => {
         if (typeof token !== 'string' || token.split('.').length !== 3) return;
         const claims = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
         const issuer = String(claims?.iss || '');
-        if (issuer && !issuer.startsWith(supabaseUrl)) {
+        if (!issuer) return;
+
+        // مُصدِر غير قابل للتحليل كعنوان (مثل 'supabase') يبقى مقبولاً كما كان
+        // قبل هذا التغيير — لا نوسّع الرفض إلى حالات لم تكن مرفوضة.
+        let host = '';
+        try { host = new URL(issuer).host; } catch { return; }
+
+        if (!TRUSTED_ISSUER_HOSTS.includes(host)) {
             window.localStorage.removeItem(AUTH_STORAGE_KEY);
-            logger.log('🔄 جلسة قديمة من خادم سابق — أُزيلت، يلزم تسجيل الدخول من جديد');
+            logger.log('🔄 جلسة من خادم غير موثوق — أُزيلت، يلزم تسجيل الدخول من جديد');
         }
     } catch { /* أي فشل هنا لا يجوز أن يمنع إقلاع التطبيق */ }
 };
