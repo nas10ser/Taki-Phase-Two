@@ -15,9 +15,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-SITE="${SITE:-https://taki-test-eight.vercel.app}"
-DB="${DB:-https://141-147-142-147.sslip.io}"
-DBHOST="${DBHOST:-141-147-142-147.sslip.io}"
+SITE="${SITE:-https://www.takisa.net}"
+DB="${DB:-https://api.takisa.net}"
+DBHOST="${DBHOST:-api.takisa.net}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # جذر المستودع يُشتقّ من موقع السكربت نفسه، فيعمل من أي مجلد
 # (كان يقرأ sw.js من مجلد العمل، فيفشل حين يُشغَّل من ~).
