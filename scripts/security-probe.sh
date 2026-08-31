@@ -51,12 +51,17 @@ if ! curl -fsS --max-time 30 "$SITE/" -o "$TMP/index.html"; then
     fi
     bad "الموقع لا يستجيب — أُوقف الفحص"; exit 1
 fi
-ANON=""; FOUND_URL=""; SR_LEAK=""
+ANON=""; FOUND_URL=""; SR_LEAK=""; OTHER_URLS=""
 while read -r s; do
     [ -n "$s" ] || continue
     case "$s" in http*) u="$s";; /*) u="$SITE$s";; *) u="$SITE/$s";; esac
     curl -fsS --max-time 60 "$u" -o "$TMP/chunk.js" || continue
-    [ -n "$FOUND_URL" ] || FOUND_URL=$(grep -oE 'https://[A-Za-z0-9.-]+\.(sslip\.io|supabase\.co)' "$TMP/chunk.js" | head -1)
+    # نتحقّق من **التوقّع المضبوط** ($DB) لا من نمط أسماء مكتوب في الفحص:
+    # النمط القديم كان يعرف sslip.io و supabase.co فقط، فلمّا انتقل الموقع إلى
+    # takisa.net لم يجد شيئاً وأعلن «الموقع لا يشير إلى جدة» — إنذار كاذب على
+    # نشرٍ سليم. أي فحص يقارن بقائمة أسماء مكتوبة فيه سيتعفّن مع أول تغيير.
+    if [ -z "$FOUND_URL" ] && grep -qF "$DB" "$TMP/chunk.js"; then FOUND_URL="$DB"; fi
+    [ -n "$OTHER_URLS" ] || OTHER_URLS=$(grep -oE 'https://[A-Za-z0-9.-]+\.(sslip\.io|supabase\.co|takisa\.net)' "$TMP/chunk.js" | sort -u | tr '\n' ' ')
     # كل توكن JWT في الحزمة: نفكّ حمولته ونتأكد أنه ليس مفتاح الخدمة
     while read -r j; do
         [ -n "$j" ] || continue
@@ -78,8 +83,8 @@ done < <(grep -oE "src=[\"']?[^\"' >]+\.js" "$TMP/index.html" \
          | sed -E "s/^src=[\"']?//" | grep -v '^https\?://' )
 
 if [ -z "$ANON" ]; then bad "تعذّر استخراج مفتاح المتصفح من النسخة المنشورة — أُوقف الفحص"; exit 1; fi
-if [ "$FOUND_URL" = "$DB" ]; then ok "الموقع المنشور يشير إلى خادم جدة ($FOUND_URL)"
-else bad "الموقع المنشور يشير إلى «$FOUND_URL» لا إلى جدة!"; fi
+if [ "$FOUND_URL" = "$DB" ]; then ok "الموقع المنشور يشير إلى الخادم المتوقّع ($DB)"
+else bad "الموقع المنشور لا يحوي «$DB» — العناوين الموجودة فيه: ${OTHER_URLS:-لا شيء}"; fi
 if [ -n "$SR_LEAK" ]; then bad "🚨 مفتاح الخدمة (service_role) مسرَّب داخل حزمة المتصفح — كارثي"
 else ok "لا أثر لمفتاح الخدمة داخل حزمة المتصفح"; fi
 
