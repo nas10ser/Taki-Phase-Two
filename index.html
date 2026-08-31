@@ -17,15 +17,15 @@
   <meta name="description" content="TAKI - منصة حجوزات التخفيضات الذكية في المملكة العربية السعودية. احجز أفضل العروض في المولات والأسواق قبل الجميع.">
   <meta name="keywords" content="تخفيضات، عروض، حجز، السعودية، تخفيضات الموسم، عروض اليوم، خصومات، taki، تطبيق تخفيضات">
   <meta name="author" content="TAKI">
-  <link rel="canonical" href="https://taki-test-eight.vercel.app/">
+  <link rel="canonical" href="https://www.takisa.net/">
 
   <!-- Open Graph — makes link previews on WhatsApp / Twitter / Facebook show a rich card instead of a bare URL. Critical before launch. -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="TAKI">
   <meta property="og:title" content="TAKI — حجز التخفيضات الذكية في السعودية">
   <meta property="og:description" content="احجز أفضل عروض المولات والأسواق قبل الجميع. تطبيق سعودي مجاني للمشترين.">
-  <meta property="og:url" content="https://taki-test-eight.vercel.app/">
-  <meta property="og:image" content="https://taki-test-eight.vercel.app/og-image.png">
+  <meta property="og:url" content="https://www.takisa.net/">
+  <meta property="og:image" content="https://www.takisa.net/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:locale" content="ar_SA">
@@ -35,7 +35,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="TAKI — حجز التخفيضات الذكية في السعودية">
   <meta name="twitter:description" content="احجز أفضل عروض المولات والأسواق قبل الجميع.">
-  <meta name="twitter:image" content="https://taki-test-eight.vercel.app/og-image.png">
+  <meta name="twitter:image" content="https://www.takisa.net/og-image.png">
 
   <!-- Light/dark theme-color so the iOS / Android status bar matches the app chrome in either mode -->
   <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
@@ -48,17 +48,19 @@
   <meta name="apple-mobile-web-app-title" content="TAKI">
   <meta name="application-name" content="TAKI">
   <meta name="msapplication-TileColor" content="#0f172a">
-  <!-- Open the TLS connection to Supabase (Tokyo region) DURING html parse
-       so the first REST/auth call doesn't pay the ~1 RTT DNS+TCP+TLS setup
-       — a meaningful saving from Saudi Arabia where each round-trip is
-       ~300-500 ms. Same for the Google Fonts origins. -->
-  <link rel="preconnect" href="https://kbmqzxcjdankdgiovctm.supabase.co" crossorigin>
-  <link rel="dns-prefetch" href="https://kbmqzxcjdankdgiovctm.supabase.co">
+  <!-- Open the TLS connection to the API host DURING html parse so the first
+       REST/auth call doesn't pay the ~1 RTT DNS+TCP+TLS setup — a meaningful
+       saving inside Saudi Arabia. Same for the Google Fonts origins.
+       ⚠️ كان يشير إلى خادم طوكيو حتى ٣١ أغسطس ٢٠٢٦ — أي أن كل تحميل صفحة كان
+       يفتح اتصالاً مشفّراً بخادم لم يعد التطبيق يستعمله أصلاً: كلفةٌ بلا فائدة
+       بدل التوفير المقصود. يجب أن يظلّ مطابقاً لـSUPABASE_URL. -->
+  <link rel="preconnect" href="https://api.takisa.net" crossorigin>
+  <link rel="dns-prefetch" href="https://api.takisa.net">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="apple-touch-icon" href="https://taki-test-eight.vercel.app/logo192.png">
+  <link rel="apple-touch-icon" href="/logo192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/png" href="https://taki-test-eight.vercel.app/logo192.png">
+  <link rel="icon" type="image/png" href="/logo192.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
     body {

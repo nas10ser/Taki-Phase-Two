@@ -29,7 +29,7 @@ import { amountsMatch, CORS_HEADERS, hmacSha256Hex, htmlResponse, json, round2, 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const FN_BASE = `${SUPABASE_URL}/functions/v1/merchant-pay`;
-const SITE_ORIGIN = 'https://taki-test-eight.vercel.app';
+const SITE_ORIGIN = Deno.env.get('SITE_ORIGIN') ?? 'https://www.takisa.net';
 
 const service = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
