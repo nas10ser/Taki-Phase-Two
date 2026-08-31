@@ -170,7 +170,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--gray-500, #64748b)', fontWeight: 700, marginTop: 2 }}>
                             {user
-                                ? (user.userType === 'seller' ? (isRTL ? 'بائع ⭐' : 'Seller ⭐') : user.userType === 'admin' ? (isRTL ? 'مدير 👑' : 'Admin 👑') : (isRTL ? 'مشتري' : 'Buyer'))
+                                // v13.90 — لا تلميح لدور الأدمن في نصّ ظاهر: الأدمن
+                                // يُعرض كبائع إن ملك متجراً، وإلا كمشترٍ. (عرضٌ فقط،
+                                // والصلاحيات تُتحقَّق في القاعدة لا هنا.)
+                                ? ((user.userType === 'seller' || (user.userType === 'admin' && user.shop))
+                                    ? (isRTL ? 'بائع ⭐' : 'Seller ⭐')
+                                    : (isRTL ? 'مشتري' : 'Buyer'))
                                 : (isRTL ? 'لم يتم تسجيل الدخول' : 'Not signed in')}
                         </div>
                     </div>

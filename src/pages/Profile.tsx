@@ -26,7 +26,14 @@ const Profile: React.FC = () => {
     // page renders the buyer's UI (no shop banner, "Buyer" badge, buyer
     // stats, no seller-only contact section). The real user.userType
     // stays 'admin' — only the rendered surface flips.
-    const displayUserType = effectiveUserType;
+    // v13.90 — لا تلميح لدور الأدمن في أي نصّ يراه المستخدمون. حساب ناصر
+    // أدمن ويملك متجراً، وكان يظهر له «مدير النظام 👑» على صفحته الشخصية —
+    // وهو كشفٌ لسطح إداري بلا فائدة لأحد. الأدمن يُعرض الآن كبائع إن كان
+    // يملك متجراً، وكمشترٍ إن لم يكن — تماماً كأي حساب.
+    // (الصلاحيات لا تتأثر إطلاقاً: هذا عرضٌ فقط، والتحقّق يتم في القاعدة.)
+    const displayUserType = effectiveUserType === 'admin'
+        ? (user?.shop ? 'seller' : 'buyer')
+        : effectiveUserType;
 
     // Auto-link Telegram when opened inside the Mini App via the bot's
     // "ربط حسابي" button (which targets /profile?tglink=1). If the user is
@@ -213,9 +220,8 @@ const Profile: React.FC = () => {
                     <div style={{ color: 'rgba(150, 150, 150, 0.8)', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>{user.name}</div>
                 )}
                 <div style={{ color: 'rgba(200, 200, 200, 0.9)', fontSize: '0.85rem', fontWeight: 700, marginBottom: 20 }}>
-                    {displayUserType === 'seller' ? (isRTL ? 'بائع مميز ⭐' : 'Premium Seller ⭐') :
-                     displayUserType === 'admin' ? (isRTL ? 'مدير النظام 👑' : 'Admin 👑') :
-                     (isRTL ? 'مشتري ⭐' : 'Buyer ⭐')}
+                    {displayUserType === 'seller' ? (isRTL ? 'بائع مميز ⭐' : 'Premium Seller ⭐')
+                                                   : (isRTL ? 'مشتري ⭐' : 'Buyer ⭐')}
                 </div>
 
                 <div style={{ display: 'flex', gap: 15, justifyContent: 'center' }}>
