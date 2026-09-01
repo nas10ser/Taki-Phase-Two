@@ -1,0 +1,29 @@
+# فحص أمني حيّ على الإنتاج — ينتحل دور زائر مجهول ويحاول القراءة والكتابة فعلاً.
+#
+# لماذا من خوادم GitHub؟ لأنها تصل خادم جدة مباشرة، فالنتيجة تُثبت الأمان
+# على الخادم الحقيقي لا على الورق.
+#
+# لا يحتاج أي سرّ: المفتاح العلني يُستخرج لحظة التشغيل من النسخة المنشورة.
+# لا يكتب أي بيانات على الإنتاج — كل محاولة كتابة مصمَّمة لتفشل عند القيود
+# حتى لو نجحت في الصلاحيات.
+name: فحص أمني حيّ
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # يومياً ٣:١٧ فجراً بتوقيت غرينتش (٦:١٧ بتوقيت السعودية)
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/security-probe.sh'
+      - '.github/workflows/security-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: تشغيل الفحص
+        run: bash scripts/security-probe.sh
