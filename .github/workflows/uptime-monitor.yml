@@ -25,16 +25,16 @@ jobs:
           # الثانية تُلحق الرمزين معاً (200 + 000 = "200000") فتُنتج إنذاراً
           # كاذباً عند مهلة متأخّرة. اختُبر الفرق فعلياً.
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-                 https://taki-test-eight.vercel.app) || code=000
+                 https://www.takisa.net) || code=000
           [ -n "$code" ] || code=000
           echo "الرمز: $code"
           [ "$code" = "200" ] || { echo "::error::الموقع لا يستجيب ($code)"; exit 1; }
 
-      - name: قاعدة جدة — PostgREST
+      - name: قاعدة جدة (api.takisa.net) — PostgREST
         run: |
           # 401 استجابة صحيحة: الخدمة حيّة وترفض الطلب بلا مفتاح.
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-                 https://141-147-142-147.sslip.io/rest/v1/) || code=000
+                 https://api.takisa.net/rest/v1/) || code=000
           [ -n "$code" ] || code=000
           echo "الرمز: $code"
           case "$code" in
@@ -45,7 +45,7 @@ jobs:
       - name: قاعدة جدة — خدمة الحسابات (GoTrue)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-                 https://141-147-142-147.sslip.io/auth/v1/health) || code=000
+                 https://api.takisa.net/auth/v1/health) || code=000
           [ -n "$code" ] || code=000
           echo "الرمز: $code"
           case "$code" in
@@ -55,8 +55,8 @@ jobs:
 
       - name: شهادة HTTPS — تنبيه قبل انتهائها
         run: |
-          end=$(echo | openssl s_client -servername 141-147-142-147.sslip.io \
-                -connect 141-147-142-147.sslip.io:443 2>/dev/null \
+          end=$(echo | openssl s_client -servername api.takisa.net \
+                -connect api.takisa.net:443 2>/dev/null \
                 | openssl x509 -noout -enddate | cut -d= -f2) || end=""
           if [ -z "$end" ]; then
             echo "::error::تعذّر قراءة الشهادة — الخادم قد يكون ساقطاً"; exit 1
