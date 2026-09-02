@@ -422,6 +422,21 @@ const Register: React.FC = () => {
                     } else {
                         setEmailError(t('الايميل مسجل مسبقا', 'Email is already registered'));
                     }
+                } else if (errorStr.includes('captcha')) {
+                    // v13.93 — حماية «لست روبوتاً» مفعّلة على الخادم. الرمز
+                    // ينتهي بعد دقائق، فالسبب الغالب صفحة بقيت مفتوحة طويلاً.
+                    await customAlert(t(
+                        '🤖 تعذّر التحقق من أنك لست روبوتاً. حدّث الصفحة وأعد المحاولة.',
+                        '🤖 Could not verify you are human. Refresh the page and try again.'));
+                } else if (errorStr.includes('weak') || errorStr.includes('pwned') || errorStr.includes('compromised') || errorStr.includes('easy to guess')) {
+                    // v13.93 — كلمة المرور موجودة في تسريبات معروفة (HIBP).
+                    await customAlert(t(
+                        '🔓 كلمة المرور هذه ظهرت في تسريبات معروفة على الإنترنت. اختر كلمة مرور أخرى.',
+                        '🔓 This password has appeared in known data breaches. Please choose a different one.'));
+                } else if (errorStr.includes('rate limit') || errorStr.includes('only request this after') || errorStr.includes('too many')) {
+                    await customAlert(t(
+                        '⏳ الضغط على التسجيل مرتفع الآن. انتظر دقيقة ثم أعد المحاولة.',
+                        '⏳ Sign-ups are busy right now. Wait a minute and try again.'));
                 } else {
                     await customAlert(t(`خطأ في إنشاء الحساب: ${response.error.message || response.error}`, `Sign up Error: ${response.error.message || response.error}`));
                 }
