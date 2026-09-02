@@ -1,0 +1,80 @@
+# نشر بوت تيليجرام/واتساب على Render عند كل دفع يمسّ كود البوت.
+#
+# لماذا هذا الملف أصلاً؟
+# ربط Render بـGitHub سقط حين حُذف المفتاح المكشوف، فـRender ما عاد يستقبل
+# إشعار الدفع (webhook) من GitHub. النشر **اليدوي** بقي يعمل لأن المستودع عام
+# فالاستنساخ المجهول ينجح — لكن كل تعديل صار يحتاج ضغطة يد في لوحة Render.
+#
+# قِيس لا افتُرض (٢ سبتمبر ٢٠٢٦): بعد دفع v13.95 ظلّ عدّاد تشغيل البوت
+# يتصاعد ٧.٥ دقائق بلا إعادة تشغيل ⇒ لا نشر تلقائي.
+#
+# الحل هنا يقلب الاتجاه: بدل أن ينادي GitHub خدمةَ Render (وهو ما سقط)،
+# ينادي هذا السير عملُ **رابط النشر** الذي يوفّره Render — فلا يحتاج أي إذن
+# على GitHub، ولا يتأثّر بسقوط الربط مرة أخرى.
+#
+# ── إعداد لمرة واحدة ────────────────────────────────────────────────────────
+#  1. لوحة Render ← الخدمة taki-bot ← Settings ← Deploy ← Deploy Hook ← Copy
+#  2. GitHub ← المستودع ← Settings ← Secrets and variables ← Actions
+#     ← New repository secret ← الاسم: RENDER_DEPLOY_HOOK ← الصق الرابط ← Save
+#
+# 🔒 الرابط سرّ (يحوي مفتاحاً). لا يُكتب في هذا الملف ولا يظهر في السجل —
+#    GitHub يحجب قيم الأسرار تلقائياً في المخرجات.
+
+name: نشر البوت على Render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/deploy-bot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # دفعتان متتاليتان لا تُطلقان نشرين متسابقين — يكفي أحدثهما.
+  group: render-bot-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: استدعاء رابط النشر
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::السرّ RENDER_DEPLOY_HOOK غير مضبوط."
+            echo "أضفه من: Settings ← Secrets and variables ← Actions ← New repository secret"
+            echo "قيمته من: Render ← taki-bot ← Settings ← Deploy ← Deploy Hook"
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/out.txt -w '%{http_code}' --max-time 30 -X POST "$HOOK")
+          echo "رمز الاستجابة: $code"
+          # لا نطبع الجسم إن كان يحمل معرّفات — يكفي أول ٢٠٠ حرف بلا الرابط.
+          head -c 200 /tmp/out.txt || true
+          echo
+          case "$code" in
+            2*) echo "✅ طُلب النشر من Render." ;;
+            *)  echo "::error::فشل طلب النشر (HTTP $code). تأكّد أن الرابط ما زال صالحاً في لوحة Render."
+                exit 1 ;;
+          esac
+
+      - name: التأكّد أن البوت عاد فعلاً بنسخة جديدة
+        run: |
+          # النشر يستغرق دقيقة–ثلاثاً. نتأكّد أن الخدمة رجعت وعدّاد تشغيلها
+          # صغير — أي أنها أُعيد تشغيلها فعلاً ولم يبقَ القديم يعمل.
+          URL=https://taki-bot-l0ll.onrender.com/health
+          for i in $(seq 1 40); do
+            sleep 15
+            up=$(curl -s --max-time 15 "$URL" | sed -n 's/.*"uptime":\([0-9]*\).*/\1/p')
+            echo "  [$((i*15))ث] uptime=${up:-؟}"
+            if [ -n "$up" ] && [ "$up" -lt 180 ]; then
+              echo "✅ البوت يعمل بنسخة جديدة (عدّاد التشغيل ${up} ثانية)."
+              exit 0
+            fi
+          done
+          echo "::warning::لم يُرصد إعادة تشغيل خلال ١٠ دقائق. قد يكون النشر بطيئاً أو فشل — راجع سجل Render."
