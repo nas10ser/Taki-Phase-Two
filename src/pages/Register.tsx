@@ -90,6 +90,13 @@ const Register: React.FC = () => {
     // v13.52 — Turnstile proof-of-human, handed to signUp. Empty until the
     // visitor clears the check (or after it expires and needs redoing).
     const [captchaToken, setCaptchaToken] = useState('');
+    // v13.96 — رمز Turnstile يُستهلك مرة واحدة. بعد أي محاولة فاشلة نطلب
+    // تحدّياً جديداً، وإلا فشلت المحاولة التالية بخطأ «كابتشا» مضلّل.
+    const [captchaNonce, setCaptchaNonce] = useState(0);
+    const renewCaptcha = React.useCallback(() => {
+        setCaptchaToken('');
+        setCaptchaNonce(n => n + 1);
+    }, []);
     const [password, setPassword] = useState('');
     const [shopName, setShopName] = useState('');
     const [code, setCode] = useState('');
@@ -231,11 +238,12 @@ const Register: React.FC = () => {
         // v12.76 — أي استثناء (انقطاع شبكة) كان يترك الزر يدور للأبد
         let error: any = null;
         try {
-            ({ error } = await authService.resetPassword(trimmedEmail));
+            ({ error } = await authService.resetPassword(trimmedEmail, captchaToken));
         } catch (e: any) {
             error = e;
         } finally {
             setLoading(false);
+            renewCaptcha();   // أُنفق الرمز سواء نجح الطلب أو فشل
         }
 
         if (error) {
@@ -285,7 +293,7 @@ const Register: React.FC = () => {
         }, 10000);
 
         try {
-            const result = await authService.signInWithPassword(normalizedIdentifier, password, type);
+            const result = await authService.signInWithPassword(normalizedIdentifier, password, type, captchaToken);
             if (timedOut) return;
             const error = result?.error;
 
@@ -296,7 +304,14 @@ const Register: React.FC = () => {
             setLoading(false);
 
             if (error) {
+                renewCaptcha();   // الرمز أُنفق — المحاولة التالية تحتاج تحدّياً جديداً
                 let msg = typeof error === 'string' ? error : (error.message || 'بيانات الدخول غير صحيحة');
+                if (msg.toLowerCase().includes('captcha')) {
+                    await customAlert(t(
+                        '🤖 انتهت صلاحية التحقّق من أنك لست روبوتاً. انتظر ظهور علامة الصح ثم أعد المحاولة.',
+                        '🤖 The human check expired. Wait for the green tick, then try again.'));
+                    return;
+                }
                 if (msg.toLowerCase().includes('invalid login credentials')) {
                     msg = 'كلمة المرور أو البريد/الجوال غير صحيح، يرجى المحاولة مرة أخرى.';
                 }
@@ -412,6 +427,7 @@ const Register: React.FC = () => {
             }
 
             if (response.error) {
+                renewCaptcha();   // الرمز أُنفق — المحاولة التالية تحتاج تحدّياً جديداً
                 const errorStr = String(response.error.message || response.error).toLowerCase();
 
                 if (errorStr.includes('already registered') || errorStr.includes('user already exists') || errorStr.includes('already been registered')) {
@@ -1208,7 +1224,10 @@ const Register: React.FC = () => {
                         {/* v13.52 — bot check, sign-up only. Login is already
                             rate-limited per account; registration was the one
                             door a script could walk through unlimited times. */}
-                        {!isLogin && <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} />}
+                        {/* v13.96 — الكابتشا تحرس الدخول والاستعادة على الخادم كما تحرس التسجيل،
+                            فلا بدّ من الودجت في الوضعين. عرضُه في التسجيل وحده كان يترك
+                            الدخول بلا رمز فيُرفض بـ«no captcha_token found». */}
+                        <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
 
                         <button className="auth-submit" onClick={isLogin ? handleLoginSubmit : handleProceedToVerify} disabled={isSubmitDisabled} style={{ ...primaryButtonStyle, background: isSubmitDisabled ? 'rgba(15,23,42,0.2)' : activeBtnColor, opacity: buttonOpacity, marginTop: 16, cursor: isSubmitDisabled ? 'not-allowed' : 'pointer', boxShadow: isSubmitDisabled ? 'none' : activeBtnGlow, transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                             {loading ? t('جاري المعالجة...', 'Processing...') : isLogin ? t('تسجيل الدخول', 'Sign In') : t('إرسال كود التحقق', 'Send Verification Code')}

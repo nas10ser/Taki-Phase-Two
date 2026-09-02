@@ -49,9 +49,17 @@ interface Props {
     /** Fires with a fresh token, or with '' when it expires and must be redone. */
     onToken: (token: string) => void;
     isRTL?: boolean;
+    /**
+     * v13.96 — عدّاد يزيده الأب بعد كل محاولة فاشلة فيُطلب رمز جديد.
+     *
+     * 🔴 رمز Turnstile **يُستهلك مرة واحدة**: بعد أول إرسال ترفضه Cloudflare
+     * بـ`timeout-or-duplicate`. فبدون هذا، محاولة دخول ثانية بعد كلمة مرور
+     * خاطئة تفشل بخطأ «كابتشا» مضلّل — والمستخدم يظنّ الموقع معطّلاً.
+     */
+    resetSignal?: number;
 }
 
-const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true }) => {
+const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal = 0 }) => {
     const holder = useRef<HTMLDivElement | null>(null);
     const widgetId = useRef<string | null>(null);
     // Keep the latest callback without re-rendering the widget on every parent
@@ -89,6 +97,16 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true }) => {
         // Mount once. isRTL only picks the widget's language at creation time.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // إعادة التحدّي بعد محاولة فاشلة — نتخطّى أول تشغيل حتى لا نمسح رمزاً
+    // حلّه المستخدم للتوّ قبل أن يُرسله.
+    const firstRun = useRef(true);
+    useEffect(() => {
+        if (firstRun.current) { firstRun.current = false; return; }
+        if (!widgetId.current || !window.turnstile) return;
+        cb.current('');
+        try { window.turnstile.reset(widgetId.current); } catch { /* الودجت اختفى */ }
+    }, [resetSignal]);
 
     return <div ref={holder} className="flex justify-center my-3" />;
 };

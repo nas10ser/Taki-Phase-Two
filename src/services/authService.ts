@@ -241,7 +241,8 @@ export const authService = {
         return await supabase.auth.resend({ type: 'signup', email });
     },
 
-    signInWithPassword: async (identifier: string, password: string, type: 'phone' | 'email') => {
+    signInWithPassword: async (identifier: string, password: string, type: 'phone' | 'email', captchaToken?: string) => {
+        const opts = captchaToken ? { captchaToken } : undefined;
         if (type === 'phone') {
             // Normalize phone: digits only, strip 966/00966 country code
             let normalizedPhone = identifier.replace(/\D/g, '');
@@ -251,55 +252,39 @@ export const authService = {
                 normalizedPhone = '0' + normalizedPhone.slice(3);
             }
 
-            // Race the two paths in parallel so a slow RPC never gates login:
-            //  - Path A: lookup the real email via RPC, then signIn
-            //  - Path B: the legacy dummy-email pattern, signIn directly
-            // Whichever returns a real auth user first wins. If both reject,
-            // we surface the more informative error.
+            // النمط القديم: الحسابات المسجّلة بالجوال وحده بريدها <الجوال>@taki.app
             const dummyEmail = `${normalizedPhone}@taki.app`;
 
-            const lookupAttempt = (async () => {
-                try {
-                    const { data: rpcEmail } = await supabase.rpc('find_email_by_phone', { input_phone: normalizedPhone });
-                    if (!rpcEmail) return { error: { message: 'no-rpc-match' } };
-                    return await supabase.auth.signInWithPassword({ email: rpcEmail as string, password });
-                } catch (err: any) {
-                    return { error: { message: err?.message || 'rpc-failed' } };
-                }
-            })();
+            // 🔴 v13.96 — كان هنا **سباق**: نداءا دخول متوازيان (البريد من الـRPC،
+            // والبريد الوهمي القديم) وأوّلهما ينجح يفوز. صار السباق مستحيلاً بعد
+            // تفعيل Turnstile: **الرمز يُستهلك مرة واحدة**، فالنداء الثاني يصل
+            // بنفس الرمز فترفضه Cloudflare بـ`timeout-or-duplicate` — أي أن نصف
+            // محاولات الدخول كانت ستفشل بخطأ «كابتشا» عشوائياً.
+            //
+            // البديل تسلسلي: نحسم البريد أولاً (الـRPC يغطّي كل صيغ الجوال
+            // وبيانات الحساب)، ثم ننفق الرمز في نداء واحد فقط. تكلفتُه دورةُ
+            // شبكة إضافية، وثمنُ السباق كان دخولاً متقطّعاً بلا سبب ظاهر.
+            let targetEmail: string | null = null;
+            try {
+                const { data: rpcEmail } = await supabase.rpc('find_email_by_phone', { input_phone: normalizedPhone });
+                if (rpcEmail) targetEmail = String(rpcEmail);
+            } catch { /* نسقط للنمط القديم أدناه */ }
 
-            const dummyAttempt = supabase.auth.signInWithPassword({ email: dummyEmail, password })
-                .catch((err: any) => ({ error: { message: err?.message || 'dummy-failed' } } as any));
+            const result = await supabase.auth
+                .signInWithPassword({ email: targetEmail || dummyEmail, password, options: opts } as any)
+                .catch((err: any) => ({ error: { message: err?.message || 'sign-in-failed' } } as any));
 
-            // Fire both, return as soon as ONE produces a real authenticated user.
-            const winner = await new Promise<any>((resolve) => {
-                let settled = 0;
-                let firstError: any = null;
-                const tryResolve = (r: any) => {
-                    settled++;
-                    if (r?.data?.user) {
-                        resolve(r);
-                        return;
-                    }
-                    if (!firstError) firstError = r?.error || { message: 'unknown' };
-                    if (settled === 2) {
-                        const msg = String(firstError?.message || '').toLowerCase();
-                        if (msg.includes('invalid login credentials')) {
-                            resolve({ error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } });
-                        } else if (msg.includes('no-rpc-match')) {
-                            resolve({ error: { message: 'لم يتم العثور على حساب بهذا الرقم. تأكد من الرقم أو سجّل حساباً جديداً' } });
-                        } else {
-                            resolve({ error: firstError });
-                        }
-                    }
-                };
-                lookupAttempt.then(tryResolve).catch(e => tryResolve({ error: { message: e?.message || 'rpc-failed' } }));
-                dummyAttempt.then(tryResolve).catch(e => tryResolve({ error: { message: e?.message || 'dummy-failed' } }));
-            });
+            if (result?.data?.user) return result;
 
-            return winner;
+            const msg = String(result?.error?.message || '').toLowerCase();
+            if (msg.includes('invalid login credentials')) {
+                return { error: { message: !targetEmail
+                    ? 'لم يتم العثور على حساب بهذا الرقم. تأكد من الرقم أو سجّل حساباً جديداً'
+                    : 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } };
+            }
+            return result;
         } else {
-            return await supabase.auth.signInWithPassword({ email: identifier, password });
+            return await supabase.auth.signInWithPassword({ email: identifier, password, options: opts } as any);
         }
     },
 
@@ -339,10 +324,12 @@ export const authService = {
         return result;
     },
 
-    resetPassword: async (email: string) => {
+    resetPassword: async (email: string, captchaToken?: string) => {
+        // v13.96 — الكابتشا على الخادم تحرس /recover كما تحرس /signup و/token.
         return await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/register`
-        });
+            redirectTo: `${window.location.origin}/register`,
+            ...(captchaToken ? { captchaToken } : {}),
+        } as any);
     },
 
     // Cancel an unverified signup. Calls the SQL function which removes the
