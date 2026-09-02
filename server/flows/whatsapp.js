@@ -663,6 +663,57 @@ function create(deps) {
         row2.push({ id: `wa:call:${bc}`, title: tr('wa_bk_call') });
         row2.push({ id: 'wa:bookings', title: tr('menu_bookings_buyer') });
         await sendButtons(from, { body: '—', buttons: row2.slice(0, 3) });
+        // v13.95 — «الفاتورة» في صفّ ثالث لا رابع زرّ: واتساب يسمح بثلاثة
+        // أزرار للصف **ويبتر الزائد بصمت**، وصفّ row2 ممتلئ أصلاً.
+        await sendButtons(from, { body: '—', buttons: [
+            { id: `wa:inv:${bc}`, title: trunc(tr('inv_btn'), LIM.btnTitle) },
+            { id: `wa:bk1:${bc}`, title: tr('wa_back') },
+        ] });
+    }
+
+    // ── v13.95: فاتورة الحجز — نصّ عادي (واتساب لا يستعمل MarkdownV2) ────────
+    // نفس بيانات بوت تيليجرام من نفس الدالة على جدة، والتحقّق من الملكية داخلها.
+    function invoiceTextWA(v) {
+        const cur = tr('inv_sar');
+        const L = [];
+        L.push(`🧾 *${tr(v.paid ? 'inv_title_paid' : 'inv_title_hold')}* ${v.barcode}`);
+        L.push(DIV);
+        L.push(`🏪 ${tr('inv_store')}: ${v.shop_name || ''}`);
+        if (v.buyer_name) L.push(`👤 ${tr('inv_buyer')}: ${v.buyer_name}${v.buyer_phone ? `  •  ${v.buyer_phone}` : ''}`);
+        L.push(`📅 ${tr('inv_date')}: ${fmtDate(v.booked_at)}`);
+        L.push(statusLabel(v.status));
+        L.push(DIV);
+        L.push(`🛍 ${tr('inv_item')}: ${v.item_name || ''}`);
+        L.push(`📦 ${tr('inv_qty')}: ${v.quantity}`);
+        if (v.unit_price != null) L.push(`💵 ${tr('inv_unit')}: ${v.unit_price} ${cur}`);
+        if (Array.isArray(v.items) && v.items.length) {
+            L.push(`\n🔖 ${tr('inv_options')}:`);
+            for (const it of v.items) L.push(`  ↳ ${it.label}${it.qty > 1 ? ` ×${it.qty}` : ''}`);
+        }
+        L.push(DIV);
+        if (v.total != null) {
+            if (v.vat_amount != null) {
+                L.push(`${tr('inv_vat_base')}: ${v.vat_base} ${cur}`);
+                L.push(`${tr('inv_vat')} (${v.vat_rate}%): ${v.vat_amount} ${cur}`);
+            }
+            L.push(`💰 *${tr('inv_total')}: ${v.total} ${cur}*`);
+            if (v.total_source === 'estimate') L.push(tr('inv_estimate'));
+        }
+        L.push(`💳 ${tr('inv_payment')}: ${tr(v.paid ? 'inv_pay_online' : 'inv_pay_cod')}`);
+        if (v.vat_number) L.push(`🧾 ${tr('inv_vat_no')}: ${v.vat_number}`);
+        if (v.cr_number)  L.push(`📇 ${tr('inv_cr')}: ${v.cr_number}`);
+        if (v.merchant_note) L.push(`\n📌 ${tr('inv_merchant_note')}: ${v.merchant_note}`);
+        L.push(DIV);
+        L.push(tr('inv_legal'));
+        return L.join('\n');
+    }
+
+    async function sendInvoice(from, s, bc) {
+        if (!s.userId) return linkInstructions(from);
+        let v = null;
+        try { v = await rpc('bot_get_booking_invoice', { p_uid: s.userId, p_barcode: bc }); } catch { /* تُعالَج أدناه */ }
+        await sendText(from, (v && v.ok === true) ? invoiceTextWA(v) : tr('inv_fail'));
+        return sendButtons(from, { body: '—', buttons: [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn()] });
     }
     async function askCancel(from, s, bc) {
         await sendButtons(from, { body: tr('wa_cancel_confirm', bc), buttons: [
@@ -1817,6 +1868,7 @@ function create(deps) {
         if (id === 'wa:bk:prev') return showBuyerBookings(from, s, 'previous');
         if (id.startsWith('wa:bk1:')) return bookingDetail(from, s, id.slice(7));
         if (id.startsWith('wa:pay:')) return sendPayLink(from, s, id.slice(7));
+        if (id.startsWith('wa:inv:')) return sendInvoice(from, s, id.slice(7));
         if (id.startsWith('wa:cancel:')) return askCancel(from, s, id.slice(10));
         if (id.startsWith('wa:dcancel:')) return doCancel(from, s, id.slice(11));
         if (id.startsWith('wa:chat:')) return showChat(from, s, id.slice(8));

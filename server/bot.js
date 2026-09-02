@@ -1806,9 +1806,77 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         const r2=[]; if (b.status==='pending') r2.push(Markup.button.callback(tr('b1260_edit'),`edit:${b.barcode}`)); if (b.status==='completed') r2.push(Markup.button.callback(tr('b1260_rate'),`rate:${b.barcode}`)); if (active && b.expiry_time) r2.push(Markup.button.callback(tr('b1260_counter'),`cd:${b.barcode}`)); if (r2.length) rows.push(r2);
         const r3=[]; if (active) r3.push(Markup.button.callback(tr('b1261_cancel'),`cancel:${b.barcode}`)); if (b.store_id){ r3.push(Markup.button.callback(tr('b1261_store'),`store:${b.store_id}`)); r3.push(Markup.button.callback(tr('b1261_report'),`rep:${b.store_id}`)); } if (r3.length) rows.push(r3);
     }
+    // v13.95 (طلب ناصر): «الفاتورة» في البوت — كانت في الموقع وحده. تظهر
+    // للطرفين ولكل حالة: المكتمل فاتورة، والنشط سند حجز يحاجّ به عند الاستلام.
+    rows.push([Markup.button.callback(tr('inv_btn'), `inv:${b.barcode}`)]);
     rows.push([Markup.button.callback(tr('b1263_back_to_bookings'), listCb)]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+
+// ── v13.95: «🧾 الفاتورة» — مستند الحجز داخل المحادثة ────────────────────────
+// البوت لا يطبع HTML، فالفاتورة رسالة منسّقة. البيانات من دالة واحدة على جدة
+// (bot_get_booking_invoice) تتحقّق من الملكية بنفسها — فلا يرى أحدٌ فاتورة
+// غيره ولو خمّن الباركود، والاسم والجوال لا يخرجان إلا للتاجر.
+// ⚠️ money() تُهرّب MarkdownV2 داخلياً — تغليفها بـ md() تهريبٌ مزدوج يُظهر
+// شرطات مائلة في أي سعر عشري (1,234\\.5 ← 1,234\\\\\\.5). تُستعمل عارية.
+const invoiceText = (v) => {
+    const L = [];
+    const paid = !!v.paid;
+    L.push(`🧾 *${tr(paid ? 'inv_title_paid' : 'inv_title_hold')}* \`${md(String(v.barcode || ''))}\``);
+    L.push(DIV);
+    L.push(`🏪 ${tr('inv_store')}: *${md(String(v.shop_name || ''))}*`);
+    if (v.buyer_name) L.push(`👤 ${tr('inv_buyer')}: ${md(String(v.buyer_name))}${v.buyer_phone ? `  •  📞 ${md(String(v.buyer_phone))}` : ''}`);
+    L.push(`📅 ${tr('inv_date')}: ${md(fmtDate(v.booked_at))}`);
+    L.push(`${statusLabel(v.status)}`);
+    L.push(DIV);
+    L.push(`🛍 ${tr('inv_item')}: *${md(String(v.item_name || ''))}*`);
+    L.push(`📦 ${tr('inv_qty')}: *${numEsc(v.quantity)}*`);
+    if (v.unit_price != null) {
+        let line = `💵 ${tr('inv_unit')}: ${money(v.unit_price)} ${md(tr('inv_sar'))}`;
+        if (v.original_price != null && Number(v.original_price) > Number(v.unit_price)) {
+            line += `  \\(${tr('inv_was')} ~${money(v.original_price)} ${md(tr('inv_sar'))}~\\)`;
+        }
+        L.push(line);
+    }
+    if (Array.isArray(v.items) && v.items.length) {
+        L.push(`\n🔖 *${tr('inv_options')}:*`);
+        for (const it of v.items) {
+            L.push(`  ↳ ${md(String(it.label || ''))}${it.qty > 1 ? ` ×${numEsc(it.qty)}` : ''}`);
+        }
+    }
+    L.push(DIV);
+    if (v.total != null) {
+        // تفصيل الضريبة يظهر فقط حين يكون التاجر مسجّلاً ضريبياً — الدالة
+        // تُرجع vat_amount فارغاً وإلا، فلا نخترع سطراً ضريبياً لمن لا يستحقه.
+        if (v.vat_amount != null) {
+            L.push(`${tr('inv_vat_base')}: ${money(v.vat_base)} ${md(tr('inv_sar'))}`);
+            L.push(`${tr('inv_vat')} \\(${numEsc(v.vat_rate)}%\\): ${money(v.vat_amount)} ${md(tr('inv_sar'))}`);
+        }
+        L.push(`💰 *${tr('inv_total')}: ${money(v.total)} ${md(tr('inv_sar'))}*`);
+        if (v.total_source === 'estimate') L.push(`_${md(tr('inv_estimate'))}_`);
+    }
+    L.push(`💳 ${tr('inv_payment')}: ${md(tr(paid ? 'inv_pay_online' : 'inv_pay_cod'))}`);
+    if (v.vat_number) L.push(`🧾 ${tr('inv_vat_no')}: \`${md(String(v.vat_number))}\``);
+    if (v.cr_number)  L.push(`📇 ${tr('inv_cr')}: \`${md(String(v.cr_number))}\``);
+    if (v.merchant_note) L.push(`\n📌 ${tr('inv_merchant_note')}: _${md(String(v.merchant_note))}_`);
+    L.push(DIV);
+    L.push(`_${md(tr('inv_legal'))}_`);
+    return L.join('\n');
+};
+
+bot.action(/^inv:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
+    const bc = ctx.match[1];
+    const backRow = [Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${bc}`)];
+    let v = null;
+    try { v = await rpc('bot_get_booking_invoice', { p_uid: s.userId, p_barcode: bc }); } catch { /* تُعالَج أدناه */ }
+    if (!v || v.ok !== true) {
+        return safeReplyMd(ctx, tr('inv_fail'), { reply_markup: Markup.inlineKeyboard([backRow]).reply_markup });
+    }
+    return safeReplyMd(ctx, invoiceText(v), { reply_markup: Markup.inlineKeyboard([backRow]).reply_markup });
+});
 
 // ── v12.81: زر «ادفع الآن» — رابط الدفع المستضاف على بوابة تاجر الحجز ─────────
 bot.action(/^payb:(.+)$/, async ctx => {
