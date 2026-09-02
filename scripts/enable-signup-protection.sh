@@ -2,7 +2,6 @@
 # ============================================================================
 # تفعيل حمايات التسجيل على خادم جدة + رفع سقف الرسائل استعداداً للإطلاق.
 # ----------------------------------------------------------------------------
-# يفعّل ثلاثة أشياء دفعة واحدة:
 #   1) Turnstile على الخادم  — الموقع يرسل الرمز منذ v13.52، والخادم يتجاهله
 #      حتى الآن. هذا ما يجعل الحماية حقيقية بدل كونها شكلاً في الصفحة.
 #   2) منع كلمات المرور المسرَّبة (HIBP).
@@ -11,8 +10,7 @@
 # ⚠️ الترتيب مقصود: رفع السقف قبل تفعيل Turnstile يفتح باباً لإغراق بريدك
 #    آلياً. لذلك يجريان معاً في أمر واحد لا ينفصلان.
 #
-# 🔒 المفتاح السري لا يظهر على الشاشة ولا في سجلّ الأوامر ولا في قائمة
-#    العمليات على الخادم — يُقرأ مخفيّاً ويُمرَّر عبر stdin.
+# 🔒 المفتاح لا يظهر على الشاشة ولا في سجلّ الأوامر ولا في قائمة العمليات.
 #
 #   bash scripts/enable-signup-protection.sh
 # ============================================================================
@@ -22,7 +20,6 @@ HOST="ubuntu@141.147.142.147"
 KEY="$HOME/.ssh/taki_oracle"
 COMPOSE_DIR="/opt/taki/supabase"
 OVERRIDE="$COMPOSE_DIR/docker-compose.taki.yml"
-# سقف الرسائل في الساعة. الحدّ الحقيقي بعده هو باقة Resend لا هذا الرقم.
 RATE="${TAKI_EMAIL_RATE:-1000}"
 
 say()  { printf '\n\033[1m> %s\033[0m\n' "$1"; }
@@ -31,32 +28,66 @@ ssh_() { ssh -i "$KEY" -o ConnectTimeout=20 "$HOST" "$@"; }
 # ── 1. المفتاح السري ────────────────────────────────────────────────────────
 say "1/6 المفتاح السري لـ Turnstile"
 cat <<'HOWTO'
-من لوحة Cloudflare:  Turnstile ← الودجت «Taki» ← Settings
-انسخ  Secret Key  (وليس Site Key — السرّي هو الطويل الذي يبدأ بـ 0x4AAA…)
-الحقل التالي لن يُظهر ما تلصقه. الصق ثم اضغط Enter.
+افتح  https://dash.cloudflare.com  ثم اتبع هذه الأسماء الإنجليزية بالضبط:
+
+  1. من القائمة اليمنى/اليسرى اضغط:            Turnstile
+  2. في جدول الودجت اضغط على اسم:              Taki
+  3. من الأعلى اضغط تبويب:                     Settings
+  4. انزل حتى تجد قسماً عنوانه:                Secret Key
+     (تحته زر  Copy  أو  Rotate Secret Key)
+  5. اضغط  Copy  ← نُسخ المفتاح.
+
+الفرق المهم:
+  Site Key    = يظهر دائماً في الصفحة، ويوضع في الموقع  ← ليس هذا المطلوب
+  Secret Key  = مخفيّ خلف زر Copy/Show                  ← هذا المطلوب
+
+الحقل التالي لن يُظهر ما تلصقه (هذا طبيعي). الصق (Cmd+V) ثم اضغط Enter.
 HOWTO
 printf 'Secret Key: '
 read -rs TURNSTILE_SECRET
 echo
-[ -n "${TURNSTILE_SECRET:-}" ] || { echo "لم تلصق شيئاً — أُلغي."; exit 1; }
+TURNSTILE_SECRET="$(printf '%s' "${TURNSTILE_SECRET:-}" | tr -d '[:space:]')"
+if [ -z "$TURNSTILE_SECRET" ]; then
+  echo "❌ لم يصل أي نصّ. اللصق أحياناً لا يعمل في الحقول المخفيّة ببعض الطرفيات."
+  echo "   جرّب: انسخ المفتاح، ثم شغّل الأمر مرة أخرى والصق بـ Cmd+V (لن ترى شيئاً)."
+  exit 1
+fi
+echo "طول المفتاح المُستلَم: ${#TURNSTILE_SECRET} حرفاً (لا يُطبع محتواه)."
 
 # ── 2. اختبار المفتاح قبل تفعيل أي شيء ──────────────────────────────────────
 # Cloudflare تفرّق بين «المفتاح خاطئ» و«الرمز خاطئ». نرسل رمزاً وهميّاً:
 #   invalid-input-secret   ⇒ المفتاح غلط     → نتوقّف قبل أن نُقفل التسجيل
+#   missing-input-secret   ⇒ لم يصل شيء
 #   invalid-input-response ⇒ المفتاح سليم    → نكمل
+# ⚠️ يُنفَّذ من خادم جدة لا من الماك: Cloudflare يخنق الطلبات المتكرّرة من نفس
+#    العنوان فيُرجع رداً فارغاً، وهذا ما أفشل المحاولة السابقة — لا المفتاح.
 say "2/6 التحقّق من المفتاح لدى Cloudflare (قبل تفعيل أي شيء)"
-VERIFY=$(curl -s --max-time 20 \
-  -d "secret=$TURNSTILE_SECRET" -d "response=taki-preflight-dummy" \
-  https://challenges.cloudflare.com/turnstile/v0/siteverify || true)
+VERIFY=""
+for attempt in 1 2 3; do
+  VERIFY=$(printf '%s' "$TURNSTILE_SECRET" | ssh_ 'read -r S; curl -s --max-time 20 \
+      --data-urlencode "secret=$S" --data-urlencode "response=taki-preflight-dummy" \
+      https://challenges.cloudflare.com/turnstile/v0/siteverify' 2>/dev/null || true)
+  [ -n "$VERIFY" ] && break
+  echo "  محاولة $attempt: ردّ فارغ (خنق من Cloudflare) — أعيد بعد 5 ثوانٍ…"
+  sleep 5
+done
+
 case "$VERIFY" in
-  *invalid-input-secret*)
-    echo "❌ المفتاح غير صحيح. لم يُغيَّر شيء على الخادم."
-    echo "   تأكّد أنك نسخت Secret Key لا Site Key."
-    exit 1 ;;
   *invalid-input-response*)
     echo "✅ المفتاح صحيح (Cloudflare رفضت الرمز الوهمي لا المفتاح)." ;;
+  *invalid-input-secret*)
+    echo "❌ هذا ليس Secret Key صحيحاً. لم يُغيَّر شيء على الخادم."
+    echo "   الأرجح أنك نسخت Site Key. ارجع للخطوة 4 أعلاه: القسم المعنون Secret Key."
+    exit 1 ;;
+  *missing-input-secret*)
+    echo "❌ لم يصل المفتاح للخادم. لم يُغيَّر شيء."
+    exit 1 ;;
+  "")
+    echo "❌ Cloudflare لم تردّ بعد ٣ محاولات — مشكلة شبكة لا مشكلة مفتاح."
+    echo "   انتظر دقيقتين وأعد تشغيل الأمر. لم يُغيَّر شيء."
+    exit 1 ;;
   *)
-    echo "❌ ردّ غير متوقّع من Cloudflare — لم يُغيَّر شيء:"
+    echo "❌ ردّ غير متوقّع — لم يُغيَّر شيء:"
     echo "   $VERIFY"
     exit 1 ;;
 esac
@@ -87,7 +118,6 @@ block = '''      # v13.93 — حمايات الإطلاق. الترتيب مقص
       GOTRUE_RATE_LIMIT_EMAIL_SENT: \"__RATE__\"
 '''.replace('__SECRET__', secret).replace('__RATE__', rate)
 
-# آمن للتكرار: أزل أي كتلة سابقة ثم أضف الحالية.
 s = re.sub(r'\n *# v13\.93 —.*?(?=\n  [a-z]|\Z)', '\n', s, flags=re.S)
 for k in ('GOTRUE_SECURITY_CAPTCHA_ENABLED','GOTRUE_SECURITY_CAPTCHA_PROVIDER',
           'GOTRUE_SECURITY_CAPTCHA_SECRET','GOTRUE_PASSWORD_HIBP_ENABLED',
@@ -130,11 +160,8 @@ cat <<'DONE'
 
 ──────────────────────────────────────────────────────────────
 افتح الآن https://www.takisa.net/register وجرّب تسجيلاً حقيقياً.
-لو ظهرت رسالة «تعذّر التحقق من أنك لست روبوتاً» فالمفتاحان غير
-متطابقين — تراجَع فوراً بهذا الأمر:
+لو ظهرت رسالة «تعذّر التحقق من أنك لست روبوتاً» فتراجَع فوراً:
 
-  ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 \
-    'cd /opt/taki/supabase && sudo cp $(ls -1t docker-compose.taki.yml.bak.* | head -1) docker-compose.taki.yml && \
-     sudo docker compose -f docker-compose.yml -f docker-compose.caddy.yml -f docker-compose.taki.yml up -d auth'
+  bash scripts/rollback-signup-protection.sh
 ──────────────────────────────────────────────────────────────
 DONE

@@ -13,6 +13,7 @@ import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
+import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -513,6 +514,43 @@ const DealDetails: React.FC = () => {
     }, [id, ingestDeals]);
 
     const deal = deals.find(d => d.id === id);
+
+    // v13.94 — SEO: عنوان ووصف وبيانات مهيكلة خاصة بهذا العرض. بدونها تظهر كل
+    // صفحات العروض في جوجل بعنوان الموقع العام نفسه — أي أنها تتنافس على نفس
+    // النتيجة بدل أن تحتلّ كلٌّ نتيجتها. Product+Offer يُظهر السعر والتوفّر
+    // داخل النتيجة مباشرة.
+    useEffect(() => {
+        if (!deal) return;
+        const price = `${deal.discountedPrice} ريال`;
+        const off = deal.discountPercentage ? ` — خصم ${deal.discountPercentage}%` : '';
+        const where = deal.city ? ` في ${deal.city}` : '';
+        const cleanupSeo = applyPageSeo({
+            title: `${deal.itemName} بـ${price}${off} | ${deal.shopName} — TAKI`,
+            description: (deal.description || `احجز ${deal.itemName} من ${deal.shopName}${where} بسعر ${price}${off} عبر تاكي. احجز الآن واستلم من المتجر وادفع عند الاستلام.`).slice(0, 300),
+            path: `/deal/${deal.id}`,
+            image: deal.images?.[0],
+        });
+        const cleanupProduct = applyJsonLd('deal', dealJsonLd({
+            id: deal.id,
+            itemName: deal.itemName,
+            description: deal.description,
+            images: deal.images,
+            discountedPrice: deal.discountedPrice,
+            originalPrice: deal.originalPrice,
+            shopName: deal.shopName,
+            storeId: deal.storeId,
+            city: deal.city,
+            category: deal.category as unknown as string,
+            quantity: deal.quantity,
+            expiryDate: deal.expiryDate,
+        }));
+        const cleanupCrumbs = applyJsonLd('deal-crumbs', breadcrumbJsonLd([
+            { name: 'الرئيسية', path: '/' },
+            { name: 'العروض', path: '/deals' },
+            { name: deal.itemName, path: `/deal/${deal.id}` },
+        ]));
+        return () => { cleanupSeo(); cleanupProduct(); cleanupCrumbs(); };
+    }, [deal]);
 
     // v13.22 — بعد ترقيم الواجهة قد لا يكون العرض ضمن النافذة المُحمّلة (رابط
     // مباشر من بوت/إشعار/مشاركة، أو عرض قديم لم يصل إليه التمرير). نجلبه

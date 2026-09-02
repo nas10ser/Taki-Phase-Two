@@ -1,19 +1,44 @@
 User-agent: *
 Allow: /
 
-# Block private routes — these don't make sense for search engines
+# مسارات خاصة لا معنى لأرشفتها
 Disallow: /admin
 Disallow: /admin/
 Disallow: /seller
 Disallow: /seller/
+Disallow: /dashboard
 Disallow: /complete-profile
 Disallow: /subscription
 Disallow: /profile
 Disallow: /notifications
 Disallow: /bookings
+Disallow: /booking/
 
-# Allow service-worker + manifest to be crawled (Google ranks PWAs better when they're discoverable)
+# الـPWA يُفهرس أفضل حين تكون هذه مقروءة
 Allow: /sw.js
 Allow: /manifest.webmanifest
 
-Sitemap: https://taki-test-eight.vercel.app/sitemap.xml
+# محرّكات الإجابات بالذكاء الاصطناعي — مسموح لها صراحةً. الظهور في
+# إجابات ChatGPT وPerplexity وGoogle AI يتطلّب ألّا تُحجَب زواحفها.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://www.takisa.net/sitemap.xml

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
     "dev": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
-    "build": "parcel build index.html --public-url / && cp -f robots.txt sitemap.xml og-image.png logo192.png logo512.png dist/ 2>/dev/null; cp -R models dist/models 2>/dev/null || true",
+    "build": "parcel build index.html --public-url / && cp -f robots.txt og-image.png logo192.png logo512.png dist/ 2>/dev/null; cp -R models dist/models 2>/dev/null || true",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist",
     "postinstall": "node scripts/strip-tfjs-maps.js"
@@ -16,6 +16,7 @@
   "license": "ISC",
   "devDependencies": {
     "@parcel/packager-raw-url": "^2.16.4",
+    "@parcel/transformer-jsonld": "^2.16.4",
     "@parcel/transformer-webmanifest": "^2.16.4",
     "@types/leaflet": "^1.9.21",
     "@types/qrcode": "^1.5.6",

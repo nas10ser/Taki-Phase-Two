@@ -15,6 +15,7 @@ import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStor
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 import { AVATAR } from '../utils/imageCompression';
 import { placeLink, directionsLink, coordsOf } from '../utils/mapLinks';
+import { applyPageSeo, applyJsonLd, storeJsonLd, breadcrumbJsonLd } from '../utils/seo';
 
 // v13.66 — خريطة فروع المتجر تُحمَّل عند الطلب فقط: مكتبة الخرائط ثقيلة ولا
 // داعي لتحميلها مع كل فتح لصفحة متجر، فأغلب الزوار لا يضغطون الزرّ.
@@ -47,6 +48,35 @@ const StoreDetails: React.FC = () => {
     useEffect(() => { if (id) ensureStoreProfiles([id]); }, [id, ensureStoreProfiles]);
 
     const profile = storeProfiles[id] || {};
+
+    // v13.94 — SEO لصفحة المتجر: LocalBusiness يخدم البحث المحلّي («أفضل عروض
+    // <المتجر> في <المدينة>») وهو أقرب ما يقتبسه جوجل في نتائج الخرائط.
+    useEffect(() => {
+        const name = (profile as any)?.shop || (profile as any)?.name;
+        if (!id || !name) return;
+        const city = (profile as any)?.city;
+        const cleanupSeo = applyPageSeo({
+            title: `${name} — العروض والتخفيضات | TAKI`,
+            description: ((profile as any)?.bio
+                || `تصفّح عروض وتخفيضات ${name}${city ? ` في ${city}` : ''} واحجزها عبر تاكي. احجز الآن واستلم من المتجر وادفع عند الاستلام.`).slice(0, 300),
+            path: `/store/${id}`,
+            image: (profile as any)?.avatarUrl,
+        });
+        const cleanupBiz = applyJsonLd('store', storeJsonLd({
+            id,
+            shop: name,
+            bio: (profile as any)?.bio,
+            avatarUrl: (profile as any)?.avatarUrl,
+            city,
+            lat: (profile as any)?.lat,
+            lng: (profile as any)?.lng,
+        }));
+        const cleanupCrumbs = applyJsonLd('store-crumbs', breadcrumbJsonLd([
+            { name: 'الرئيسية', path: '/' },
+            { name, path: `/store/${id}` },
+        ]));
+        return () => { cleanupSeo(); cleanupBiz(); cleanupCrumbs(); };
+    }, [id, profile]);
     const [isEditingStore, setIsEditingStore] = useState(false);
     // v13.61 (طلب ناصر): مواقع المتجر على الصفحة العامة — التاجر يختار أيّها
     // يظهر، والقاعدة تفرض حدّ باقته (لا الواجهة). الزائر يرى المعروض فقط.

@@ -15,7 +15,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <title>TAKI — حجز التخفيضات</title>
   <meta name="description" content="TAKI - منصة حجوزات التخفيضات الذكية في المملكة العربية السعودية. احجز أفضل العروض في المولات والأسواق قبل الجميع.">
-  <meta name="keywords" content="تخفيضات، عروض، حجز، السعودية، تخفيضات الموسم، عروض اليوم، خصومات، taki، تطبيق تخفيضات">
+  <meta name="keywords" content="تخفيضات السعودية، عروض اليوم، حجز عروض، خصومات المولات، تخفيضات الرياض، تخفيضات جدة، تخفيضات الدمام، عروض المطاعم، عروض المقاهي، تنزيلات، اوفرات، صفقات اليوم، كوبونات خصم، تخفيضات نهاية الموسم، عروض الجمعة البيضاء، تطبيق تخفيضات، منصة عروض سعودية، حجز خصم، تاكي، Saudi deals, discounts Saudi Arabia, book deals, Riyadh offers, Jeddah discounts, daily deals KSA, mall offers, restaurant deals, coupon app Saudi, TAKI app">
   <meta name="author" content="TAKI">
   <link rel="canonical" href="https://www.takisa.net/">
 
@@ -74,10 +74,215 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
     crossorigin="" />
+  <link rel="alternate" hreflang="ar-SA" href="https://www.takisa.net/">
+  <link rel="alternate" hreflang="en" href="https://www.takisa.net/">
+  <link rel="alternate" hreflang="x-default" href="https://www.takisa.net/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.takisa.net/#organization",
+        "name": "TAKI",
+        "alternateName": ["تاكي", "منصة تاكي", "TAKI Saudi"],
+        "url": "https://www.takisa.net/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://www.takisa.net/logo512.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://www.takisa.net/og-image.png",
+        "description": "منصة سعودية لحجز التخفيضات والعروض من التجار المحليين. المشتري يحجز العرض ثم يستلمه من التاجر مباشرة — بلا شحن وبلا رسوم على المشتري.",
+        "foundingDate": "2026",
+        "areaServed": {
+          "@type": "Country",
+          "name": "Saudi Arabia",
+          "alternateName": "المملكة العربية السعودية"
+        },
+        "knowsLanguage": ["ar", "en"],
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "customer support",
+          "url": "https://www.takisa.net/contact",
+          "availableLanguage": ["Arabic", "English"]
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.takisa.net/#website",
+        "url": "https://www.takisa.net/",
+        "name": "TAKI — تاكي",
+        "description": "احجز أفضل عروض المولات والأسواق والمطاعم في السعودية قبل الجميع.",
+        "publisher": { "@id": "https://www.takisa.net/#organization" },
+        "inLanguage": ["ar-SA", "en"],
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://www.takisa.net/deals?search={search_term_string}"
+          },
+          "query-input": "required name=search_term_string"
+        }
+      },
+      {
+        "@type": "WebApplication",
+        "@id": "https://www.takisa.net/#app",
+        "name": "TAKI",
+        "url": "https://www.takisa.net/",
+        "applicationCategory": "ShoppingApplication",
+        "operatingSystem": "Any (PWA)",
+        "browserRequirements": "Requires JavaScript",
+        "inLanguage": ["ar-SA", "en"],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "SAR",
+          "description": "مجاني تماماً للمشتري — بلا رسوم ولا اشتراك."
+        },
+        "publisher": { "@id": "https://www.takisa.net/#organization" }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://www.takisa.net/faq#faq",
+        "inLanguage": "ar-SA",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "ما هي منصة تاكي (TAKI)؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "تاكي منصة سعودية رقمية لحجز التخفيضات والعروض من التجار المحليين، تعمل عبر الموقع وتطبيق الهاتف. تربط المشتري الباحث عن صفقة بالتاجر الذي يريد تصريف مخزون أو زيادة الإقبال — بضغطة واحدة وبدون رسوم على المشتري."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "هل تاكي تبيع المنتجات بنفسها؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "لا. تاكي منصة وسيطة فقط: لا تشتري ولا تبيع ولا تخزّن ولا تشحن. التجار ينشرون عروضهم بأنفسهم، والمشترون يحجزون ثم يستلمون البضاعة أو الخدمة من التاجر مباشرة."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "ما الفرق بين تاكي والمتاجر الإلكترونية؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "في المتجر الإلكتروني تشتري المنتج ويُحجز ثمنه ويُشحن إليك. في تاكي تحجز عرضاً، ثم تذهب لموقع التاجر في المدة المحددة، تتفقد البضاعة بنفسك وتدفع مباشرة للتاجر. لا شحن ولا انتظار ولا حجز مال على بطاقتك."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "كم تكلفة استخدام تاكي على المشتري؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "مجانية تماماً للمشتري. لا رسوم خفية إطلاقاً. مصدر دخل المنصة هو اشتراكات التجار مقابل خدمات النشر والظهور."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "هل تاكي متوفرة في كل مدن السعودية؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "نعم، المنصة تغطي كل مناطق المملكة العربية السعودية. نشاط التجار يتركز حالياً في المدن الكبرى مثل الرياض وجدة والدمام، ويتوسع تدريجياً مع انضمام التجار في كل منطقة."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "كيف أحجز عرضاً في تاكي؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "اختر العرض من قائمة العروض أو من الخريطة القريبة منك، اضغط زر الحجز، فيصلك باركود الحجز. اذهب لموقع التاجر خلال مدة الحجز، اعرض الباركود، وادفع للتاجر مباشرة عند الاستلام."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "هل بياناتي محمية في تاكي؟",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "نعم. تلتزم المنصة بنظام حماية البيانات الشخصية السعودي ولوائحه التنفيذية، وتطبق إجراءات وقائية فنية وإدارية لحماية بياناتك."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 
 <body>
   <div id="root"></div>
+  <noscript>
+    <main lang="ar" dir="rtl" style="max-width:60ch;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif;line-height:1.9;">
+      <h1>TAKI (تاكي) — منصة حجز التخفيضات في السعودية</h1>
+      <p><strong>تاكي منصة سعودية لحجز التخفيضات والعروض من التجار المحليين.</strong>
+         تحجز العرض من التطبيق، ثم تستلمه من التاجر مباشرة وتدفع عنده — بلا شحن،
+         وبلا أي رسوم على المشتري.</p>
+
+      <h2>كيف تعمل تاكي في ثلاث خطوات</h2>
+      <ol>
+        <li><strong>اختر عرضاً</strong> من قائمة العروض أو من خريطة العروض القريبة منك.</li>
+        <li><strong>احجز</strong> بضغطة واحدة، فيصلك باركود الحجز فوراً.</li>
+        <li><strong>استلم وادفع</strong> عند التاجر خلال مدة الحجز.</li>
+      </ol>
+
+      <h2>ما الذي يميز تاكي عن المتاجر الإلكترونية</h2>
+      <ul>
+        <li>مجانية تماماً للمشتري — لا رسوم ولا اشتراك ولا عمولة.</li>
+        <li>لا حجز لمالك على البطاقة: تدفع للتاجر عند الاستلام.</li>
+        <li>تتفقد البضاعة بنفسك قبل الدفع.</li>
+        <li>لا انتظار شحن — العروض من تجار في مدينتك.</li>
+        <li>تغطي كل مناطق المملكة، والنشاط الأكبر في الرياض وجدة والدمام.</li>
+      </ul>
+
+      <h2>أنواع العروض المتاحة</h2>
+      <p>عروض المولات والأسواق · عروض المطاعم والمقاهي · تخفيضات نهاية الموسم ·
+         عروض الجمعة البيضاء · خصومات المتاجر المحلية · عروض الخدمات.</p>
+
+      <h2>للتجار</h2>
+      <p>ينشر التاجر عروضه بنفسه ويحدد الكميات والمواقع ومدة الحجز، ويستقبل الحجوزات
+         عبر لوحة تحكم أو عبر بوت تيليجرام. تاكي وسيط تقني للعرض والربط فقط، وليست
+         طرفاً في أي عقد بيع.</p>
+
+      <h2>صفحات مهمة</h2>
+      <ul>
+        <li><a href="/deals">كل العروض</a></li>
+        <li><a href="/nearby">العروض القريبة مني</a></li>
+        <li><a href="/seasonal">عروض الموسم</a></li>
+        <li><a href="/faq">الأسئلة الشائعة</a></li>
+        <li><a href="/about">عن تاكي</a></li>
+        <li><a href="/register">إنشاء حساب</a></li>
+      </ul>
+    </main>
+
+    <main lang="en" dir="ltr" style="max-width:60ch;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif;line-height:1.8;">
+      <h2>TAKI — Deal booking platform in Saudi Arabia</h2>
+      <p><strong>TAKI is a Saudi platform for booking discounts and offers from local
+         merchants.</strong> You book a deal in the app, then collect it from the
+         merchant and pay on the spot — no shipping, and no fees for the buyer.</p>
+
+      <h3>How it works</h3>
+      <ol>
+        <li>Pick a deal from the list or from the nearby-offers map.</li>
+        <li>Book it in one tap and get a booking barcode.</li>
+        <li>Collect and pay at the merchant within the booking window.</li>
+      </ol>
+
+      <h3>Why TAKI is different from online stores</h3>
+      <ul>
+        <li>Completely free for buyers — no fees, no subscription, no commission.</li>
+        <li>No money held on your card: you pay the merchant on collection.</li>
+        <li>You inspect the goods before paying.</li>
+        <li>No shipping wait — offers come from merchants in your city.</li>
+        <li>Covers every region of Saudi Arabia, most active in Riyadh, Jeddah and Dammam.</li>
+      </ul>
+
+      <p>Categories: mall and market offers, restaurant and cafe deals, end-of-season
+         sales, White Friday offers, local store discounts, service deals.</p>
+    </main>
+  </noscript>
+
   <script type="module" src="./src/sw-cleanup.ts"></script>
   <script type="module" src="./src/index.tsx"></script>
 </body>
