@@ -1,0 +1,65 @@
+{{- $en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $en = true }}{{ end }}{{ end }}{{ end -}}
+<!DOCTYPE html>
+<html lang="{{ if $en }}en{{ else }}ar{{ end }}" dir="{{ if $en }}ltr{{ else }}rtl{{ end }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="supported-color-schemes" content="dark light">
+<title>TAKI</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0f172a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0f172a" style="background-color:#0f172a;margin:0;padding:0;">
+<tr><td align="center" style="padding:32px 16px;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;">
+
+<tr><td align="center" style="padding:0 0 24px 0;">
+<span style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:30px;font-weight:800;letter-spacing:4px;color:#10b981;">TAKI</span><br>
+<span style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:13px;color:#64748b;">{{ if $en }}Deals worth booking{{ else }}تخفيضات تستحق الحجز{{ end }}</span>
+</td></tr>
+
+<tr><td bgcolor="#1e293b" style="background-color:#1e293b;border-radius:16px;padding:36px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+
+<tr><td align="center" style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:22px;font-weight:700;color:#f1f5f9;padding-bottom:14px;line-height:1.5;">
+{{ if $en }}Reset your password{{ else }}إعادة تعيين كلمة المرور{{ end }}
+</td></tr>
+
+<tr><td align="center" style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:15px;color:#cbd5e1;line-height:1.9;padding-bottom:28px;">
+{{ if $en }}We received a request to reset the password for your TAKI account. Tap the button below to choose a new one.{{ else }}وصلنا طلب لإعادة تعيين كلمة مرور حسابك في تاكي. اضغط الزر بالأسفل لاختيار كلمة مرور جديدة.{{ end }}
+</td></tr>
+
+<tr><td align="center" style="padding-bottom:28px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td bgcolor="#10b981" style="background-color:#10b981;border-radius:10px;">
+<a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 40px;font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:16px;font-weight:700;color:#052e21;text-decoration:none;border-radius:10px;">{{ if $en }}Set a new password{{ else }}تعيين كلمة مرور جديدة{{ end }}</a>
+</td></tr></table>
+</td></tr>
+
+<tr><td align="center" style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:13px;color:#94a3b8;padding-bottom:10px;">
+{{ if $en }}Or enter this code in the app:{{ else }}أو أدخل هذا الرمز في التطبيق:{{ end }}
+</td></tr>
+
+<tr><td align="center" style="padding-bottom:24px;">
+<span dir="ltr" style="display:inline-block;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:8px;color:#10b981;background-color:#0f172a;border-radius:10px;padding:12px 22px;">{{ .Token }}</span>
+</td></tr>
+
+<tr><td align="center" style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:12px;color:#64748b;line-height:1.8;border-top:1px solid #334155;padding-top:20px;">
+{{ if $en }}This link expires shortly. If you did not request a password reset, ignore this email — your password stays unchanged.{{ else }}الرابط صالح لفترة قصيرة. إن لم تطلب إعادة التعيين فتجاهل الرسالة — كلمة مرورك تبقى كما هي.{{ end }}
+</td></tr>
+
+</table>
+</td></tr>
+
+<tr><td align="center" style="font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;font-size:12px;color:#475569;padding-top:22px;line-height:1.8;">
+<a href="https://www.takisa.net" style="color:#10b981;text-decoration:none;">www.takisa.net</a><br>
+{{ if $en }}Automated message — please do not reply.{{ else }}رسالة آلية — الرجاء عدم الرد عليها.{{ end }}
+</td></tr>
+
+</table>
+
+</td></tr>
+</table>
+</body>
+</html>

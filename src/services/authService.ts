@@ -147,7 +147,7 @@ export const authService = {
         });
     },
 
-    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string, referral_source?: string | null, referral_source_detail?: string | null, referred_by_code?: string | null }, captchaToken?: string) => {
+    signUpWithEmail: async (email: string, password: string, userData: { name: string, phone: string, user_type: string, shop?: string | null, contact_phone?: string, address?: string, referral_source?: string | null, referral_source_detail?: string | null, referred_by_code?: string | null, lang?: 'ar' | 'en' }, captchaToken?: string) => {
         return await supabase.auth.signUp({
             email,
             password,
@@ -159,8 +159,8 @@ export const authService = {
                 // server switch flips, every page is already sending a token.
                 ...(captchaToken ? { captchaToken } : {}),
                 // Pin the confirmation link's redirect target to the current
-                // origin (https://taki-test-eight.vercel.app in production,
-                // or whatever the user's browser shows). Without this, Supabase
+                // origin (https://www.takisa.net in production, or whatever
+                // the user's browser shows). Without this, Supabase
                 // falls back to its configured Site URL — which defaults to
                 // localhost:3000 — and the email link sends the user to a
                 // dead "ERR_CONNECTION_REFUSED" page on their phone. The
@@ -179,6 +179,11 @@ export const authService = {
                     referral_source: userData.referral_source || null,
                     referral_source_detail: userData.referral_source_detail || null,
                     referred_by_code: userData.referred_by_code || null,
+                    // v13.92 — لغة الواجهة وقت التسجيل. GoTrue يمرّر
+                    // raw_user_meta_data للقالب باسم `.Data`، فهذا الحقل هو
+                    // ما يجعل بريد التأكيد يصل عربياً لمن يسجّل بالعربية
+                    // وإنجليزياً لمن يسجّل بالإنجليزية. غيابه = عربي.
+                    lang: userData.lang === 'en' ? 'en' : 'ar',
                 }
             }
         });

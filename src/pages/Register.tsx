@@ -397,6 +397,9 @@ const Register: React.FC = () => {
                 referral_source: refCode ? 'store' : (heardFrom || null),
                 referral_source_detail: heardFrom === 'store' ? validationService.sanitizeText(heardStoreName, 80) : null,
                 referred_by_code: refCode || null,
+                // v13.92 — اللغة المختارة في الواجهة تُحفظ في بيانات الحساب،
+                // فيصل بريد التأكيد بلغة المستخدم لا بالإنجليزية دائماً.
+                lang: language,
             };
 
             const response = await authService.signUpWithEmail(trimmedEmail, password, userData, captchaToken);

@@ -1,0 +1,32 @@
+# ============================================================================
+# نسخة من ملف التجاوز الحيّ على خادم جدة: /opt/taki/supabase/docker-compose.taki.yml
+# ----------------------------------------------------------------------------
+# محفوظ هنا لأن المستودع وحده لا يُعيد بناء الخادم. أي تعديل يُطبَّق في
+# الموضعين معاً. لا يحوي أي سرّ — عناوين ونصوص فقط.
+#
+# ⚠️ فخّ compose: `$` تعني متغيّر بيئة، فتُكتب `$$` لتصل `$` واحدة إلى GoTrue.
+#    بدونها يصبح `{{ $en := false }}` هو `{{  := false }}` ويفشل القالب بصمت.
+# ============================================================================
+
+# TAKI hardening override.
+# The pooler must never listen on a public interface. Reach it through an
+# SSH tunnel:  ssh -L 6543:127.0.0.1:6543 ubuntu@<server>
+services:
+  supavisor:
+    ports: !override
+      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:6543:6543"
+
+  # v13.92 — بريد التأكيد/الاستعادة/تغيير البريد بلغة المستخدم.
+  # GoTrue لا يدعم قالباً لكل لغة، لكنه يمرّر `raw_user_meta_data` للقالب
+  # باسم `.Data` — فقالب واحد يفرّع على `.Data.lang` يؤدي الغرض تماماً.
+  # الملفات في supabase/email-templates/ ويخدمها Caddy من نفس الخادم.
+  # الافتراضي عربي: أي حساب بلا `lang` يصل بريده بالعربية.
+  auth:
+    environment:
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "https://api.takisa.net/email-templates/confirmation.html"
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: "https://api.takisa.net/email-templates/recovery.html"
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: "https://api.takisa.net/email-templates/email_change.html"
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Confirm your email address{{ else }}أكِّد بريدك الإلكتروني{{ end }}'
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Reset your password{{ else }}إعادة تعيين كلمة المرور{{ end }}'
+      GOTRUE_MAILER_SUBJECTS_EMAIL_CHANGE: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Confirm your new email address{{ else }}أكِّد بريدك الإلكتروني الجديد{{ end }}'
