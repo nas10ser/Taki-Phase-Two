@@ -89,8 +89,18 @@ const Register: React.FC = () => {
     const [newPw, setNewPw] = useState('');
     const [newPw2, setNewPw2] = useState('');
     const [resetCode, setResetCode] = useState('');
-    /** true = وصل عبر الرابط (جلسة استعادة جاهزة) · false = سيُدخل الرمز يدوياً */
-    const [resetViaLink, setResetViaLink] = useState(() => isPasswordRecovery());
+    /**
+     * v14.04 — 🔴 السؤال الوحيد الذي يحدّد ظهور حقل الرمز هو **«هل الهوية
+     * مُثبَتة الآن؟»** لا «هل جاء من رابط؟».
+     *
+     * كان الاسم `resetViaLink` ويُهيّأ من العَلَم المخزَّن، فمن زار الرابط مرّة
+     * ثم عاد لاحقاً ليطلب رمزاً من الموقع وجد الشاشة **بلا حقل رمز** ولا يفهم
+     * لماذا («أشعر أن الصفحتين مختلفتان» — بلاغ ناصر). والصحيح أن الجواب
+     * **واقعةٌ تُقاس**: هل توجد جلسة استعادة الآن؟ إن وُجدت فالهوية مُثبَتة
+     * ولا رمز مطلوباً مهما كان طريق الوصول، وإلا فالرمز مطلوب.
+     * `null` = لم نفحص بعد، فنعرض انتظاراً بدل حقلٍ قد يكون خاطئاً.
+     */
+    const [identityProven, setIdentityProven] = useState<boolean | null>(null);
     /** البريد الذي أُرسل إليه الرمز فعلاً — قد يكون محلولاً من رقم الجوال. */
     const [resetEmail, setResetEmail] = useState('');
     const [userType, setUserType] = useState<'buyer' | 'seller' | ''>('');
@@ -235,7 +245,15 @@ const Register: React.FC = () => {
     // دخول وضع التعيين من داخل التطبيق (طلب الرمز) يرفع العَلَم أيضاً، فيتوقّف
     // المُحوِّل عن سحب المستخدم بمجرد أن يُنشئ التحقّقُ جلسةً قبل حفظ الكلمة.
     useEffect(() => {
-        if (mode === 'reset') markPasswordRecovery();
+        if (mode !== 'reset') return;
+        markPasswordRecovery();
+        let alive = true;
+        // نقيس الواقع: جلسةٌ حيّة = هوية مُثبَتة (جاءت من الرابط أو من رمز
+        // تحقّقنا منه للتوّ). فالشاشة واحدة والقاعدة واحدة لكل الطرق.
+        supabase.auth.getSession()
+            .then(({ data }) => { if (alive) setIdentityProven(!!data?.session); })
+            .catch(() => { if (alive) setIdentityProven(false); });
+        return () => { alive = false; };
     }, [mode]);
 
     useEffect(() => {
@@ -244,7 +262,7 @@ const Register: React.FC = () => {
             // فالوحدة اليقينية أعلاه قد فتحت الشاشة أصلاً.
             if (event === 'PASSWORD_RECOVERY') {
                 markPasswordRecovery();
-                setResetViaLink(true);
+                setIdentityProven(true);
                 setNewPw(''); setNewPw2('');
                 setMode('reset');
             }
@@ -286,63 +304,102 @@ const Register: React.FC = () => {
                             '📧 A new code was sent. Use the newest one — earlier codes are now void.'));
     };
 
+    /**
+     * v14.04 — رسائل الخادم مترجمة كلها. قِيست على جدة بالتجربة:
+     *   same_password · weak_password(مسرَّبة) · weak_password(ناقصة شرطاً)
+     *   · weak_password(أقصر من ٨).
+     * بلاغ ناصر: «ظهر أنه مسرَّب والأصحّ أنه مستخدم سابقاً» — والسببان
+     * مختلفان فعلاً، وGoTrue يفحص القوة قبل المقارنة بالقديمة، فكلمةٌ قديمة
+     * **ومسرَّبة** تُردّ برسالة التسريب. الآن لكلٍّ رسالته الصحيحة.
+     */
+    const explainPwError = (raw: string): string => {
+        const low = raw.toLowerCase();
+        if (low.includes('different from the old password') || low.includes('same_password')) {
+            return t('🔁 هذه كلمة مرورك الحالية. اختر كلمة مرور جديدة مختلفة عنها.',
+                     '🔁 That is your current password. Choose a different one.');
+        }
+        if (low.includes('known to be weak') || low.includes('pwned') || low.includes('easy to guess')) {
+            return t('🔓 كلمة المرور هذه ظهرت في تسريبات معروفة على الإنترنت. اختر كلمة مرور أخرى.',
+                     '🔓 This password appeared in known data breaches. Choose a different one.');
+        }
+        if (low.includes('at least one character of each') || low.includes('at least 8 characters')) {
+            return t('كلمة المرور لا تستوفي الشروط الخمسة — راجع القائمة أسفل الحقل.',
+                     'The password misses one of the five requirements — see the checklist below.');
+        }
+        if (low.includes('captcha')) {
+            return t('🤖 انتهت صلاحية التحقّق من أنك لست روبوتاً. أعد المحاولة.',
+                     '🤖 The human check expired. Try again.');
+        }
+        if (low.includes('rate limit') || low.includes('too many')) {
+            return t('⏳ محاولات كثيرة — انتظر دقيقة ثم أعد المحاولة.',
+                     '⏳ Too many attempts — wait a minute and try again.');
+        }
+        return t(`تعذّر تغيير كلمة المرور: ${raw}`, `Could not change password: ${raw}`);
+    };
+
+    /** يمنع أي نداء من تعليق الشاشة للأبد (بلاغ ناصر: «علّق الصفحة»). */
+    const withTimeout = <T,>(pr: PromiseLike<T>, ms = 20000): Promise<T> =>
+        Promise.race([
+            Promise.resolve(pr),
+            new Promise<T>((_, rej) => setTimeout(() => rej(new Error('TAKI_TIMEOUT')), ms)),
+        ]);
+
     const handleSetNewPassword = async () => {
-        // v14.01 — نفس شروط التسجيل ونفس ما يفرضه الخادم: لا باب أضعف.
+        if (loading) return;   // نقرتان سريعتان كانتا تُطلقان نداءين متسابقين
         if (!pwIsStrong(newPw)) {
-            await customAlert(t(
-                'كلمة المرور يجب أن تستوفي الشروط الخمسة كاملة.',
-                'The password must meet all five requirements.'));
+            await customAlert(t('كلمة المرور يجب أن تستوفي الشروط الخمسة كاملة.',
+                                'The password must meet all five requirements.'));
             return;
         }
         if (newPw !== newPw2) {
             await customAlert(t('كلمتا المرور غير متطابقتين.', 'The two passwords do not match.'));
             return;
         }
+
         setLoading(true);
         try {
-            // مسار الرمز: نبدّل الرمز بجلسة استعادة أولاً، ثم نغيّر الكلمة.
-            if (!resetViaLink) {
+            // مسار الرمز — يُسلك فقط حين لا تكون الهوية مُثبَتة بعد.
+            if (identityProven !== true) {
                 const code = normalizeArabicNumerals(resetCode).replace(/\D/g, '');
                 if (code.length !== 6) {
-                    setLoading(false);
-                    await customAlert(t('أدخل الرمز المكوّن من ٦ أرقام من رسالة البريد.', 'Enter the 6-digit code from the email.'));
+                    await customAlert(t('أدخل الرمز المكوّن من ٦ أرقام من رسالة البريد.',
+                                        'Enter the 6-digit code from the email.'));
                     return;
                 }
-                const { error: vErr } = await supabase.auth.verifyOtp({
+                const { error: vErr } = await withTimeout(supabase.auth.verifyOtp({
                     email: (resetEmail || email).trim(), token: code, type: 'recovery',
-                });
+                }));
                 if (vErr) {
-                    setLoading(false);
                     await customAlert(t('⚠️ الرمز غير صحيح أو انتهت صلاحيته. اضغط «إرسال رمز جديد» بالأسفل.',
                                         '⚠️ The code is wrong or expired. Tap "Send a new code" below.'));
                     return;
                 }
-                // الرمز يُستهلك بنجاح التحقّق. لو رفض الخادمُ كلمةَ المرور بعده
-                // فالمستخدم لا يملك رمزاً صالحاً لإعادة الكرّة — فنعلّم أن
-                // التحقّق تمّ، وتصير إعادة المحاولة حفظاً مباشراً بلا رمز.
-                setResetViaLink(true);
+                // الرمز يُستهلك بنجاح التحقّق ⇒ الهوية صارت مُثبَتة. فلو رفض
+                // الخادمُ كلمةَ المرور بعدها لا نطالبه برمزٍ لم يعد يملكه.
+                setIdentityProven(true);
             }
-            const { error } = await supabase.auth.updateUser({ password: newPw });
-            setLoading(false);
+
+            const { error } = await withTimeout(supabase.auth.updateUser({ password: newPw }));
             if (error) {
-                const low = String(error.message || '').toLowerCase();
-                // v13.93 — منع كلمات المرور المسرَّبة مفعّل على الخادم.
-                if (low.includes('weak') || low.includes('pwned') || low.includes('easy to guess')) {
-                    await customAlert(t('🔓 كلمة المرور هذه ظهرت في تسريبات معروفة. اختر كلمة مرور أخرى.',
-                                        '🔓 This password appeared in known breaches. Choose a different one.'));
-                } else {
-                    await customAlert(t(`تعذّر تغيير كلمة المرور: ${error.message}`, `Could not change password: ${error.message}`));
-                }
+                await customAlert(explainPwError(String(error.message || '')));
                 return;
             }
+
             setNewPw(''); setNewPw2(''); setResetCode('');
+            clearPasswordRecovery();
             await customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
                                 '✅ Password changed. You can use it now.'));
-            clearPasswordRecovery();
             history.replace('/');
         } catch (e: any) {
+            const msg = String(e?.message || '');
+            await customAlert(msg === 'TAKI_TIMEOUT'
+                ? t('⌛️ تأخّر الخادم في الرد. تحقّق من اتصالك ثم أعد المحاولة — لم يتغيّر شيء.',
+                    '⌛️ The server took too long. Check your connection and try again — nothing changed.')
+                : explainPwError(msg));
+        } finally {
+            // 🔴 في finally لا في كل مسار على حدة: نسيان واحدٍ منها هو ما ترك
+            // الزرّ يدور بلا نهاية في بلاغ ناصر.
             setLoading(false);
-            await customAlert(t('حدث خطأ غير متوقع، حاول مرة أخرى.', 'Something went wrong, please try again.'));
         }
     };
 
@@ -417,7 +474,6 @@ const Register: React.FC = () => {
         ));
         // v13.99 — الرسالة تعرض رمزاً من ٦ أرقام، ولم يكن له مكان يُدخل فيه
         // إطلاقاً. الآن ننقل المستخدم لشاشة تُدخله وتضبط كلمة المرور الجديدة.
-        setResetViaLink(false);
         setResetCode(''); setNewPw(''); setNewPw2('');
         setResetEmail(trimmedEmail);   // قد يكون محلولاً من الجوال
         setMode('reset');
@@ -1416,7 +1472,7 @@ const Register: React.FC = () => {
     if (mode === 'reset') {
         const pwOk = pwIsStrong(newPw);
         const matchOk = pwOk && newPw === newPw2;
-        const codeOk = resetViaLink || normalizeArabicNumerals(resetCode).replace(/\D/g, '').length === 6;
+        const codeOk = identityProven === true || normalizeArabicNumerals(resetCode).replace(/\D/g, '').length === 6;
         return (
             <div style={commonContainerStyle}>
                 {/* ⚠️ لا نستعمل cardStyle هنا: هو مصمَّم للبطاقات الأفقية
@@ -1434,21 +1490,23 @@ const Register: React.FC = () => {
                         {t('تعيين كلمة مرور جديدة', 'Set a new password')}
                     </h1>
                     <p style={{ textAlign: 'center', opacity: 0.7, fontSize: '0.9rem', marginBottom: 6 }}>
-                        {resetViaLink
-                            ? t('تحقّقنا من الرابط. اختر كلمة مرور جديدة لحسابك.',
-                                'Your link is verified. Choose a new password.')
+                        {identityProven === null
+                            ? t('لحظة… نتحقّق من حالتك.', 'One moment… checking your status.')
+                            : identityProven
+                            ? t('تحقّقنا من هويتك. اختر كلمة مرور جديدة لحسابك.',
+                                'Your identity is verified. Choose a new password.')
                             : t('أدخل الرمز الذي وصلك في البريد، ثم كلمة المرور الجديدة.',
                                 'Enter the code from your email, then your new password.')}
                     </p>
                     {/* v14.01 — إظهار وجهة الرمز: يقطع الشكّ «هل وصل للبريد الصحيح؟»
                         ويكشف فوراً لو أُرسل لحساب غير المقصود. مُقنَّع لحماية الهوية. */}
-                    {!resetViaLink && resetEmail && (
+                    {identityProven === false && resetEmail && (
                         <p style={{ textAlign: 'center', fontSize: '0.8rem', marginBottom: 20, color: '#38bdf8' }}>
                             📧 {maskEmail(resetEmail)}
                         </p>
                     )}
 
-                    {!resetViaLink && (
+                    {identityProven === false && (
                         <>
                             <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
                                 {t('الرمز من البريد', 'Code from the email')}
@@ -1488,10 +1546,10 @@ const Register: React.FC = () => {
                         الرمز السابق، وكان الرجوع للخلف وإعادة الطلب يترك المستخدم
                         بورقتين ولا يعرف أيّهما الحيّ — وهو سبب «الرمز غير صحيح». */}
                     {/* الكابتشا لازمة هنا: إعادة الإرسال تنادي /recover المحروس. */}
-                    {!resetViaLink && (
+                    {identityProven === false && (
                         <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
                     )}
-                    {!resetViaLink && (
+                    {identityProven === false && (
                         <button onClick={handleResendResetCode} disabled={loading}
                                 style={{ width: '100%', marginTop: 14, padding: 12, borderRadius: 14,
                                          background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.25)',
