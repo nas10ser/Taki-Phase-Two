@@ -227,6 +227,13 @@ const Register: React.FC = () => {
     // v13.99 — Supabase يُطلق PASSWORD_RECOVERY حين يفتح المستخدم رابط
     // الاستعادة (يُنشئ جلسة استعادة). قبل هذا لم يكن أحد يستمع، فكان المستخدم
     // يجد نفسه داخل الموقع بلا أن يُطلب منه شيء — والغرض من الرابط لم يتحقّق.
+    // v14.02 — يرفع العَلَم ما دمنا في شاشة تعيين كلمة المرور، فلا يسحبنا
+    // AuthRedirector بمجرد أن يُنشئ التحقّقُ جلسةً قبل حفظ الكلمة.
+    useEffect(() => {
+        (window as any).__takiPasswordReset = (mode === 'reset');
+        return () => { (window as any).__takiPasswordReset = false; };
+    }, [mode]);
+
     useEffect(() => {
         const { data: sub } = supabase.auth.onAuthStateChange((event) => {
             if (event === 'PASSWORD_RECOVERY') {
@@ -299,10 +306,14 @@ const Register: React.FC = () => {
                 });
                 if (vErr) {
                     setLoading(false);
-                    await customAlert(t('⚠️ الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.',
-                                        '⚠️ The code is wrong or expired. Request a new one.'));
+                    await customAlert(t('⚠️ الرمز غير صحيح أو انتهت صلاحيته. اضغط «إرسال رمز جديد» بالأسفل.',
+                                        '⚠️ The code is wrong or expired. Tap "Send a new code" below.'));
                     return;
                 }
+                // الرمز يُستهلك بنجاح التحقّق. لو رفض الخادمُ كلمةَ المرور بعده
+                // فالمستخدم لا يملك رمزاً صالحاً لإعادة الكرّة — فنعلّم أن
+                // التحقّق تمّ، وتصير إعادة المحاولة حفظاً مباشراً بلا رمز.
+                setResetViaLink(true);
             }
             const { error } = await supabase.auth.updateUser({ password: newPw });
             setLoading(false);
@@ -320,6 +331,7 @@ const Register: React.FC = () => {
             setNewPw(''); setNewPw2(''); setResetCode('');
             await customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
                                 '✅ Password changed. You can use it now.'));
+            (window as any).__takiPasswordReset = false;
             history.replace('/');
         } catch (e: any) {
             setLoading(false);
@@ -389,9 +401,12 @@ const Register: React.FC = () => {
             return;
         }
 
+        // 🔴 v14.02 (بلاغ ناصر): كان يعرض البريد **كاملاً**. من يعرف رقم جوال
+        // فقط كان يستطيع كشف بريد صاحبه — تعدادُ حسابات صريح. يُقنَّع دائماً،
+        // ولو كتب المستخدم البريد بنفسه: الشاشة قد يراها غيره.
         await customAlert(t(
-            `📧 أرسلنا رسالة إلى ${trimmedEmail} فيها رابط ورمز من ٦ أرقام. افتح الرابط، أو أدخل الرمز في الشاشة التالية.`,
-            `📧 We sent an email to ${trimmedEmail} with a link and a 6-digit code. Open the link, or enter the code on the next screen.`
+            `📧 أرسلنا رسالة إلى ${maskEmail(trimmedEmail)} فيها رابط ورمز من ٦ أرقام. افتح الرابط، أو أدخل الرمز في الشاشة التالية.`,
+            `📧 We sent an email to ${maskEmail(trimmedEmail)} with a link and a 6-digit code. Open the link, or enter the code on the next screen.`
         ));
         // v13.99 — الرسالة تعرض رمزاً من ٦ أرقام، ولم يكن له مكان يُدخل فيه
         // إطلاقاً. الآن ننقل المستخدم لشاشة تُدخله وتضبط كلمة المرور الجديدة.

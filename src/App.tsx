@@ -179,6 +179,13 @@ const AuthRedirector = () => {
                 return;
             }
 
+            // v14.02 — 🔴 التحقّق من رمز الاستعادة يُنشئ **جلسة**، فكان المُحوِّل
+            // يسحب المستخدم من شاشة تعيين كلمة المرور فور نجاح الرمز — قبل أن
+            // يحفظ الكلمة الجديدة. فإن رفض الخادم الكلمة (تسريب/شروط) وجد
+            // نفسه داخل الموقع بكلمته القديمة وبلا طريق لإكمال ما بدأه.
+            // العَلَم يُرفع في Register أثناء وضع 'reset' ويُنزَل بعد الحفظ.
+            if ((window as any).__takiPasswordReset === true) return;
+
             if (location.pathname === '/register' || (!profileIncomplete && location.pathname === '/complete-profile')) {
                 const dest = user.userType === 'admin' ? '/admin'
                            : user.userType === 'seller' ? '/seller'
