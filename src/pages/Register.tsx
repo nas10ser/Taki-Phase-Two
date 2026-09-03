@@ -250,9 +250,11 @@ const Register: React.FC = () => {
         let alive = true;
         // نقيس الواقع: جلسةٌ حيّة = هوية مُثبَتة (جاءت من الرابط أو من رمز
         // تحقّقنا منه للتوّ). فالشاشة واحدة والقاعدة واحدة لكل الطرق.
+        // يقيس مرّة واحدة عند الدخول، ولا يدهس قراراً صريحاً اتُّخذ قبله
+        // (طلبُ رمز = false مقصودة، ونجاحُ تحقّق = true مقصودة).
         supabase.auth.getSession()
-            .then(({ data }) => { if (alive) setIdentityProven(!!data?.session); })
-            .catch(() => { if (alive) setIdentityProven(false); });
+            .then(({ data }) => { if (alive) setIdentityProven(prev => prev === null ? !!data?.session : prev); })
+            .catch(() => { if (alive) setIdentityProven(prev => prev === null ? false : prev); });
         return () => { alive = false; };
     }, [mode]);
 
@@ -300,6 +302,7 @@ const Register: React.FC = () => {
             return;
         }
         setResetCode('');
+        setIdentityProven(false);   // طلبَ رمزاً ⇒ يُعرض حقله
         await customAlert(t('📧 أرسلنا رمزاً جديداً. استعمل الأحدث — الرموز السابقة أُلغيت.',
                             '📧 A new code was sent. Use the newest one — earlier codes are now void.'));
     };
@@ -387,9 +390,13 @@ const Register: React.FC = () => {
 
             setNewPw(''); setNewPw2(''); setResetCode('');
             clearPasswordRecovery();
-            await customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
-                                '✅ Password changed. You can use it now.'));
+            // v14.05 (بلاغ ناصر: «المفروض يتحدّث مباشرة في الموقع»):
+            // ننتقل **أولاً** ثم نُظهر التنبيه. كان الانتقال ينتظر إغلاق
+            // التنبيه، فمن تركه مفتوحاً بقي على شاشة التعيين وظنّ أن شيئاً
+            // لم يحدث — ولو حدّث الصفحة عادت تطلب رمزاً.
             history.replace('/');
+            customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
+                          '✅ Password changed. You can use it now.'));
         } catch (e: any) {
             const msg = String(e?.message || '');
             await customAlert(msg === 'TAKI_TIMEOUT'
@@ -476,6 +483,11 @@ const Register: React.FC = () => {
         // إطلاقاً. الآن ننقل المستخدم لشاشة تُدخله وتضبط كلمة المرور الجديدة.
         setResetCode(''); setNewPw(''); setNewPw2('');
         setResetEmail(trimmedEmail);   // قد يكون محلولاً من الجوال
+        // v14.05 — من طلب رمزاً **يريد مسار الرمز**. كان الفحص التلقائي يجد
+        // جلسةً باقية من زيارة رابطٍ سابقة فيُخفي حقل الرمز، فيجد المستخدم
+        // رمزاً في بريده بلا مكان يُدخله فيه (بلاغ ناصر). نيّتُه الصريحة
+        // تسبق ما نقيسه: نُصفّر الإثبات فيظهر الحقل الذي طلبه.
+        setIdentityProven(false);
         setMode('reset');
     };
 

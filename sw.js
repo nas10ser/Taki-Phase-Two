@@ -17,11 +17,15 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v14.04';
+const CACHE_NAME = 'taki-cache-v14.05';
+// 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
+// manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
+// واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
+// ما يفتح الموقع بلا شبكة: «الموقع عندي لا يفتح» (بلاغ ناصر).
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.webmanifest'
 ];
 
 const isAsset = url => /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|gif|ico)(?:\?.*)?$/i.test(url.pathname);
@@ -45,9 +49,16 @@ const isApi = url =>
 
 self.addEventListener('install', event => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // كل عنصر على حدة: عنصرٌ يفشل (٤٠٤ أو انقطاع شبكة لحظي) لا يُسقط التثبيت
+    // كلّه. الأهمّ أن يصل '/index.html' — وهو ما يُفحص عند التفعيل.
+    await Promise.all(urlsToCache.map(u =>
+      fetch(u, { cache: 'no-store' })
+        .then(res => (res && res.ok) ? cache.put(u, res.clone()) : null)
+        .catch(() => null)
+    ));
+  })());
 });
 
 self.addEventListener('activate', event => {
@@ -58,8 +69,34 @@ self.addEventListener('activate', event => {
     // 2) Purge every cache that doesn't match the current name. This is what
     //    actually frees the user from the v9.x cache that was sticking the page
     //    on the old build.
+    // 🔴 v14.05 — المسح **مشروط**: لا نهدم القديم قبل أن نتيقّن أن الجديد
+    // يحمل صفحةً صالحة. كان المسح غير مشروط، فإن فشل التثبيت (شبكة ضعيفة
+    // أو عنصر ٤٠٤) بقي المستخدم بلا أي نسخة ⇒ الموقع لا يفتح إطلاقاً.
     const names = await caches.keys();
-    await Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+    const cache = await caches.open(CACHE_NAME);
+    let shell = await cache.match('/index.html');
+
+    // الجديد فارغ؟ ننقذ الصفحة من أي مخزون قديم قبل حذفه.
+    if (!shell) {
+      for (const n of names) {
+        if (n === CACHE_NAME) continue;
+        const old = await caches.open(n);
+        const hit = (await old.match('/index.html')) || (await old.match('/'));
+        if (hit) { await cache.put('/index.html', hit.clone()); shell = hit; break; }
+      }
+    }
+    // وإن تعذّر ذلك أيضاً، نجلبها من الشبكة قبل الحذف.
+    if (!shell) {
+      try {
+        const res = await fetch('/index.html', { cache: 'no-store' });
+        if (res && res.ok) { await cache.put('/index.html', res.clone()); shell = res; }
+      } catch (_) { /* بلا شبكة */ }
+    }
+
+    if (shell) {
+      await Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+    }
+    // لا صفحة أصلاً ⇒ نُبقي القديم: نسخة قديمة خير من شاشة «غير متصل».
 
     // 3) Tell every open tab to reload itself once. The first time a phone
     //    upgrades from v9.x → v10.x this is the kick that finally shows the
@@ -97,7 +134,16 @@ self.addEventListener('fetch', event => {
         }
         return fresh;
       } catch {
-        const cached = (await cache.match('/index.html')) || (await cache.match(req));
+        let cached = (await cache.match('/index.html')) || (await cache.match(req));
+        // v14.05 — البحث في **كل** المخزونات لا في الحالي وحده: بعد ترقية
+        // فشل تثبيتها يكون الحالي فارغاً بينما القديم ما زال يحمل صفحة صالحة.
+        if (!cached) {
+          for (const n of await caches.keys()) {
+            const c = await caches.open(n);
+            cached = (await c.match('/index.html')) || (await c.match('/'));
+            if (cached) break;
+          }
+        }
         return cached || new Response('Offline', { status: 503 });
       }
     })());
