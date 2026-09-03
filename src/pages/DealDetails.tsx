@@ -771,12 +771,87 @@ const DealDetails: React.FC = () => {
         ? Math.round((baseTotal + optAddOnTotal) * 100) / 100
         : 0;
 
+
     // v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): وضع طرق دفع تاجر هذا
     // العرض ('cod' افتراضاً — «ادفع الآن» يظهر فقط لتاجر فعّل بوابته واختبرها).
     // القاعدة تتكفل بالسقوط التلقائي لعند الاستلام إذا تعطلت بوابة تاجرٍ
     // وضعُه «إلكتروني فقط».
     const [payMode, setPayMode] = useState<'cod' | 'online' | 'both'>('cod');
     const [payChoice, setPayChoice] = useState<'cod' | 'online'>('cod');
+
+    /**
+     * v14.06 (طلب ناصر) — «يظهر توصيل فقط للمناطق التي يحددها التاجر، وإذا كان
+     * بعيداً أو في نطاق غير محدد لا يستطيع اختيار توصيل».
+     *
+     * القرار يُقاس على **العنوان المحفوظ** للمشتري لا على موقع المتصفح: الطلب
+     * يُسلَّم إلى عنوان ثابت، ومن يتصفّح من عمله ويسكن في مدينة أخرى لا يجوز أن
+     * يُقاس نطاقه بمكان تصفّحه. والدالة `delivery_quote` هي نفسها التي يستعملها
+     * حارس الحجز على القاعدة — فما تُظهره الواجهة هو ما سيقبله الخادم بالضبط.
+     */
+    type DeliveryQuote = {
+        enabled: boolean; available: boolean; reason?: string;
+        zone_name?: string | null; fee?: number | null; min_order?: number | null;
+        payment?: 'cod' | 'card' | 'both'; eta_min?: number | null; note?: string | null;
+    };
+    const [dlvQuote, setDlvQuote] = useState<DeliveryQuote | null>(null);
+    const [fulfillment, setFulfillment] = useState<'pickup' | 'delivery'>('pickup');
+    const buyerAddress = (user as any)?.deliveryAddress as
+        { label?: string; details?: string; city?: string; phone?: string; lat: number; lng: number } | null | undefined;
+
+    useEffect(() => {
+        if (!showBookingModal || !deal?.storeId) return;
+        let alive = true;
+        setFulfillment('pickup');          // الافتراضي الآمن دائماً: استلام من المتجر
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data } = await supabase.rpc('delivery_quote', {
+                    p_store_id: deal.storeId,
+                    p_lat: buyerAddress?.lat ?? null,
+                    p_lng: buyerAddress?.lng ?? null,
+                });
+                if (!alive) return;
+                setDlvQuote((data as DeliveryQuote) || null);
+            } catch { /* أي فشل ⇒ لا بطاقة توصيل ولا تغيير في السلوك القائم */ }
+        })();
+        return () => { alive = false; };
+    }, [showBookingModal, deal?.storeId, buyerAddress?.lat, buyerAddress?.lng]);
+    // v14.06 — التوصيل: متاح فقط بعنوانٍ محفوظ داخل نطاق فعّال للتاجر.
+    // ⚠️ اقتران الدفع: «بطاقة فقط» يستلزم بوابة تاجر مفعّلة فعلاً (payMode)، وإلا
+    // فالتوصيل غير قابل للتنفيذ — نعرضه معطَّلاً بسبب مفهوم بدل حجزٍ يرفضه الخادم.
+    const dlvGateReady = dlvQuote?.payment !== 'card' || payMode === 'online' || payMode === 'both';
+    const dlvFee = Number(dlvQuote?.fee) > 0 ? Number(dlvQuote?.fee) : 0;
+    const dlvMinOrder = Number(dlvQuote?.min_order) > 0 ? Number(dlvQuote?.min_order) : 0;
+    const dlvBelowMin = dlvMinOrder > 0 && bookingTotal < dlvMinOrder;
+    const dlvOn = !!dlvQuote?.enabled;
+    const dlvCanChoose = dlvOn && !!dlvQuote?.available && !!buyerAddress && dlvGateReady && !dlvBelowMin;
+    const dlvBlockReason: string | null = !dlvOn ? null
+        : !buyerAddress
+            ? (isRTL ? '📍 أضِف عنوان التوصيل في «حسابي ← الإعدادات» ليظهر لك خيار التوصيل.'
+                     : '📍 Add your delivery address in “My account → Settings” to unlock delivery.')
+            : !dlvQuote?.available
+                ? (isRTL ? '🚫 عنوانك خارج نطاق التوصيل الذي حدّده هذا المتجر — الاستلام من المتجر متاح.'
+                         : '🚫 Your address is outside this store’s delivery area — pickup is available.')
+                : !dlvGateReady
+                    ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
+                             : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
+                    : dlvBelowMin
+                        ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
+                                 : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
+                        : null;
+    // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى مثلاً) يعود للاستلام
+    // من نفسه — فلا يُرسَل حجز توصيل يرفضه الخادم.
+    useEffect(() => {
+        if (fulfillment === 'delivery' && !dlvCanChoose) setFulfillment('pickup');
+    }, [fulfillment, dlvCanChoose]);
+    // «بطاقة فقط» للتوصيل ⇒ الدفع الإلكتروني إلزامي؛ و«عند الاستلام فقط» ⇒ نقداً.
+    useEffect(() => {
+        if (fulfillment !== 'delivery' || !dlvQuote) return;
+        if (dlvQuote.payment === 'card') setPayChoice('online');
+        else if (dlvQuote.payment === 'cod') setPayChoice('cod');
+    }, [fulfillment, dlvQuote?.payment]);
+    const isDelivery = fulfillment === 'delivery' && dlvCanChoose;
+    const grandTotal = Math.round((bookingTotal + (isDelivery ? dlvFee : 0)) * 100) / 100;
     useEffect(() => {
         if (!showBookingModal || !deal?.storeId) return;
         let alive = true;
@@ -1182,11 +1257,17 @@ const DealDetails: React.FC = () => {
             const detailText = `📦 ${isRTL ? 'تفاصيل الطلب' : 'Order details'}:\n${detailLines.join('\n')}`;
             notesWithOptions = bookingNotes.trim() ? `${detailText}\n\n📝 ${bookingNotes}` : detailText;
         }
-        if ((variants.length && variantPiecesTotal > 0) || optAddOnTotal > 0) {
-            const detail = optAddOnTotal > 0
-                ? (isRTL ? ` (${baseTotal} + ${optAddOnTotal} إضافات)` : ` (${baseTotal} + ${optAddOnTotal} extras)`)
-                : '';
-            const tLine = `💰 ${isRTL ? `الإجمالي: ${bookingTotal} ر.س` : `Total: ${bookingTotal} SAR`}${detail}`;
+        // v14.06 — سطر «الإجمالي» يُكتب **شاملاً رسوم التوصيل**، لأن هذا ما يدفعه
+        // المشتري فعلاً، **ولأن حارس القاعدة يحسب قيمة البضاعة بطرح الرسوم منه**
+        // (`v_est := v_est - fee`) عند فحص الحدّ الأدنى. لو كتبناه بلا الرسوم لطرح
+        // الحارس رسوماً غير موجودة فرفض طلبات مستحقّة. ولذلك يُكتب أيضاً حين لا
+        // اختيارات ولا نسخ — ما دامت هناك رسوم توصيل.
+        if ((variants.length && variantPiecesTotal > 0) || optAddOnTotal > 0 || (isDelivery && dlvFee > 0)) {
+            const parts: string[] = [];
+            if (optAddOnTotal > 0) parts.push(isRTL ? `${baseTotal} + ${optAddOnTotal} إضافات` : `${baseTotal} + ${optAddOnTotal} extras`);
+            if (isDelivery && dlvFee > 0) parts.push(isRTL ? `${dlvFee} توصيل` : `${dlvFee} delivery`);
+            const detail = parts.length ? ` (${parts.join(' + ')})` : '';
+            const tLine = `💰 ${isRTL ? `الإجمالي: ${grandTotal} ر.س` : `Total: ${grandTotal} SAR`}${detail}`;
             notesWithOptions = notesWithOptions.trim() ? `${notesWithOptions}\n${tLine}` : tLine;
         }
 
@@ -1227,8 +1308,17 @@ const DealDetails: React.FC = () => {
         // bookDeal in AppContext: persists to Supabase and notifies both parties.
         // v13.11 — نمرّر نية الدفع: إن كان وضع التاجر «عند الاستلام» فالنية cod دائماً،
         // وإلا اختيار المشتري (payChoice). يُخفي زر «ادفع الآن» عن حجوزات COD.
-        const paymentIntent: 'cod' | 'online' = payMode === 'cod' ? 'cod' : payChoice;
-        const newBooking = bookDeal(deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions, dealLocations ? (activeLoc?.id || null) : null, paymentIntent);
+        // v14.06 — التوصيل يفرض نيّة الدفع حين يحدّدها التاجر («بطاقة فقط» ⇒
+        // إلكتروني إلزاماً، و«عند الاستلام فقط» ⇒ نقداً) — نفس ما يفرضه حارس القاعدة،
+        // فلا تختلف الواجهة عن الخادم.
+        let paymentIntent: 'cod' | 'online' = payMode === 'cod' ? 'cod' : payChoice;
+        if (isDelivery && dlvQuote?.payment === 'card') paymentIntent = 'online';
+        if (isDelivery && dlvQuote?.payment === 'cod') paymentIntent = 'cod';
+        const newBooking = bookDeal(
+            deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions,
+            dealLocations ? (activeLoc?.id || null) : null, paymentIntent,
+            isDelivery ? 'delivery' : 'pickup',
+            isDelivery ? buyerAddress : null);
 
         // v13.14 — خصم المخزون صار ذرّياً بالكامل في القاعدة (تريغر يقفل صف
         // العرض ويرفض عند النفاد) + خصم محلي تفاؤلي داخل bookDeal نفسه.
@@ -1245,7 +1335,11 @@ const DealDetails: React.FC = () => {
             return;
         }
 
-        customAlert(isRTL ? "✅ تم تأكيد الحجز بنجاح وسيتم تحويلك لصفحة حجوزاتي" : "✅ Booking confirmed. Redirecting to My Bookings");
+        customAlert(isDelivery
+            ? (isRTL ? '✅ تم تأكيد طلب التوصيل — سيجهّزه المتجر ويرسله إلى عنوانك. تابعه من «حجوزاتي».'
+                     : '✅ Delivery order confirmed — the store will prepare and send it to your address. Track it in “My bookings”.')
+            : (isRTL ? '✅ تم تأكيد الحجز بنجاح وسيتم تحويلك لصفحة حجوزاتي'
+                     : '✅ Booking confirmed. Redirecting to My Bookings'));
         history.push('/bookings');
     };
 
@@ -2532,6 +2626,94 @@ const DealDetails: React.FC = () => {
                             />
                         </div>
 
+                        {/* v14.06 (طلب ناصر) — «طريقة الاستلام». لا تظهر إطلاقاً
+                            لمتجرٍ لا يوصّل (السلوك القائم يبقى كما هو حرفياً)، وحين
+                            يوصّل: خيار التوصيل **معطَّل بسبب مكتوب** إن كان العنوان
+                            مفقوداً أو خارج النطاق أو تحت الحد الأدنى — فلا يستطيع
+                            المشتري اختيار توصيلٍ يرفضه الخادم. */}
+                        {dlvOn && (
+                            <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                <h3 style={{ fontWeight: 800, marginBottom: 12, fontSize: '0.95rem' }}>🚚 {isRTL ? 'طريقة الاستلام' : 'Fulfillment'}</h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {([
+                                        {
+                                            id: 'pickup' as const, icon: '🏪',
+                                            title: isRTL ? 'استلام من المتجر' : 'Pickup at store',
+                                            sub: isRTL ? 'تحضر بنفسك خلال مهلة الاستلام' : 'Collect it yourself within the pickup window',
+                                            disabled: false,
+                                        },
+                                        {
+                                            id: 'delivery' as const, icon: '🚚',
+                                            title: isRTL ? 'توصيل إلى عنواني' : 'Deliver to my address',
+                                            sub: dlvCanChoose
+                                                ? [
+                                                    buyerAddress?.label || (isRTL ? 'عنواني المحفوظ' : 'my saved address'),
+                                                    dlvFee > 0
+                                                        ? (isRTL ? `الرسوم ${dlvFee} ر.س` : `fee ${dlvFee} SAR`)
+                                                        : (isRTL ? 'مجاناً' : 'free'),
+                                                    dlvQuote?.eta_min ? (isRTL ? `≈ ${dlvQuote.eta_min} دقيقة` : `≈ ${dlvQuote.eta_min} min`) : '',
+                                                ].filter(Boolean).join(' · ')
+                                                : (dlvBlockReason || ''),
+                                            disabled: !dlvCanChoose,
+                                        },
+                                    ]).map(opt => {
+                                        const picked = fulfillment === opt.id && (opt.id === 'pickup' || dlvCanChoose);
+                                        return (
+                                            <div key={opt.id}
+                                                role="radio" aria-checked={picked} aria-disabled={opt.disabled} tabIndex={opt.disabled ? -1 : 0}
+                                                onClick={() => { if (!opt.disabled) setFulfillment(opt.id); }}
+                                                onKeyDown={(e) => { if (!opt.disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setFulfillment(opt.id); } }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 14,
+                                                    cursor: opt.disabled ? 'not-allowed' : 'pointer',
+                                                    border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                    background: picked ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
+                                                    opacity: opt.disabled ? 0.6 : 1,
+                                                    transition: 'all 0.15s ease', WebkitTapHighlightColor: 'transparent',
+                                                }}>
+                                                <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{opt.icon} {opt.title}</div>
+                                                    <div style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>{opt.sub}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {isDelivery && buyerAddress && (
+                                    <div style={{ marginTop: 10, background: 'var(--body-bg)', border: '1.5px solid var(--primary)', borderRadius: 14, padding: '11px 13px' }}>
+                                        <div style={{ fontWeight: 900, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                                            📍 {isRTL ? 'يُسلَّم إلى' : 'Delivering to'}: {buyerAddress.label || (isRTL ? 'عنواني' : 'my address')}
+                                        </div>
+                                        {buyerAddress.details && (
+                                            <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
+                                                {buyerAddress.details}{buyerAddress.city ? ` — ${buyerAddress.city}` : ''}
+                                            </div>
+                                        )}
+                                        <button type="button" onClick={() => history.push('/profile?tab=settings')}
+                                            style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                            {isRTL ? 'تغيير العنوان' : 'Change address'}
+                                        </button>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
+                                            {isRTL ? '🔒 يُشارَك عنوانك مع تاجر هذا الطلب وحده لتنفيذ التوصيل.'
+                                                   : '🔒 Your address is shared only with this order’s merchant to deliver it.'}
+                                        </div>
+                                    </div>
+                                )}
+                                {!dlvCanChoose && !buyerAddress && (
+                                    <button type="button" onClick={() => history.push('/profile?tab=settings')}
+                                        style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: '1.5px solid var(--primary)', background: 'var(--body-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
+                                        📍 {isRTL ? 'أضف عنوان التوصيل' : 'Add delivery address'}
+                                    </button>
+                                )}
+                                {dlvQuote?.note && dlvCanChoose && (
+                                    <div style={{ marginTop: 10, fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                        ℹ️ {dlvQuote.note}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* v12.81 — اختيار طريقة الدفع حسب وضع تاجر العرض:
                             'cod' (الافتراضي) = لا يظهر شيء (كما كان دائماً)،
                             'both' = المشتري يختار، 'online' = إلكتروني فقط. */}
@@ -2586,11 +2768,17 @@ const DealDetails: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 16, border: '2px solid var(--gray-200)' }}>
                                 <span style={{ fontWeight: 800 }}>{isRTL ? 'الإجمالي:' : 'Total:'}</span>
                                 <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>
-                                    {bookingTotal} ر.س
+                                    {grandTotal} ر.س
                                     {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}
                                     {optAddOnTotal > 0 && (
                                         <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
                                             {isRTL ? `منها إضافات: +${optAddOnTotal} ر.س` : `incl. add-ons: +${optAddOnTotal} SAR`}
+                                        </span>
+                                    )}
+                                    {/* v14.06 — رسوم التوصيل تُعلَن في الإجمالي لا تُفاجئ المشتري عند الباب */}
+                                    {isDelivery && dlvFee > 0 && (
+                                        <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
+                                            {isRTL ? `منها توصيل: +${dlvFee} ر.س` : `incl. delivery: +${dlvFee} SAR`}
                                         </span>
                                     )}
                                 </span>
@@ -2604,7 +2792,21 @@ const DealDetails: React.FC = () => {
                         }}>
                             <span style={{ fontSize: '1.2rem', lineHeight: 1.2 }}>⏳</span>
                             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.7 }}>
-                                {isRTL ? (
+                                {isDelivery ? (
+                                    isRTL ? (
+                                        <>
+                                            <span style={{ fontWeight: 900 }}>طلب توصيل.</span>{' '}
+                                            يجهّز المتجر طلبك ويرسله إلى عنوانك المحفوظ. تابع حالته من «حجوزاتي»،
+                                            وتأكّد أن جوالك متاح ليصل إليك المندوب.
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span style={{ fontWeight: 900 }}>Delivery order.</span>{' '}
+                                            The store prepares it and sends it to your saved address. Track it in “My bookings”,
+                                            and keep your phone reachable for the courier.
+                                        </>
+                                    )
+                                ) : isRTL ? (
                                     <>
                                         <span style={{ fontWeight: 900 }}>مدة الحجز ساعتان فقط.</span>{' '}
                                         يُرجى استلام طلبك من المتجر خلال <span style={{ fontWeight: 900 }}>ساعتين</span> من تأكيد الحجز.
@@ -2623,8 +2825,12 @@ const DealDetails: React.FC = () => {
 
                         <button onClick={() => { setShowBookingModal(false); handleBooking(); }} style={{ width: '100%', padding: '16px', borderRadius: 16, background: 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: 'pointer', boxShadow: '0 8px 20px var(--primary-glow)' }}>
                             {payChoice === 'online' && payMode !== 'cod'
-                                ? (isRTL ? 'تأكيد الحجز والانتقال للدفع 💳' : 'Confirm & Pay Online 💳')
-                                : (isRTL ? 'تأكيد الحجز النهائي ✅' : 'Confirm Final Booking ✅')}
+                                ? (isDelivery
+                                    ? (isRTL ? 'تأكيد طلب التوصيل والانتقال للدفع 💳' : 'Confirm delivery & pay 💳')
+                                    : (isRTL ? 'تأكيد الحجز والانتقال للدفع 💳' : 'Confirm & Pay Online 💳'))
+                                : (isDelivery
+                                    ? (isRTL ? 'تأكيد طلب التوصيل 🚚' : 'Confirm delivery order 🚚')
+                                    : (isRTL ? 'تأكيد الحجز النهائي ✅' : 'Confirm Final Booking ✅'))}
                         </button>
                     </div>
                 </div>

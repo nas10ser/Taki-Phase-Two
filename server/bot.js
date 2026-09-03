@@ -135,6 +135,13 @@ const numOf = t => +normalizeDigits(t);
 const { CAT, catLabel, catKeyboard } = C;
 const { haversineKm, fmtKm, placeLink, dirLink, remainingText, durationEndsAt } = G;
 const HRS = require('./lib/hours');   // ساعات عمل المحل — تنسيق + أيام الأسبوع
+// v14.06 — قرار عرض التوصيل: مصدر واحد يشترك فيه البوتان (لا فروع مكرّرة تنحرف)
+const DLV = require('./lib/delivery');
+// v14.06 — فاتورة PDF: نسخة مستند الموقع نفسه (باركود الطلب + رموز الكاشير).
+const INV = require('./lib/invoicePdf');
+if (!INV.fontsAvailable()) {
+    console.error('⚠️ خطوط Tajawal غير موجودة في server/assets/fonts — ستُرسل الفاتورة نصاً بدل PDF.');
+}
 
 const W = path => APP_URL + path;   // web deep-link (BrowserRouter, no #)
 
@@ -1095,6 +1102,11 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
     s.temp.dealId = dealId; s.temp.dealName = d.item_name; s.temp.dealQty = 1;
     s.temp.locId = null;                                  // v13.14 — عرض جديد = بلا فرع محفوظ
     s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
+    // v14.06 — معرّف المتجر وسعره: تحتاجهما خطوة «طريقة الاستلام» لتسأل القاعدة
+    // عن نطاق التوصيل ولتحسب الحدّ الأدنى قبل أن يصل الحجز إلى الحارس.
+    s.temp.dealStoreId = d.store_id || null;
+    s.temp.dealPrice = Number(d.discounted_price) || 0;
+    s.temp.fulfillment = null; s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
     const tag  = sponsorTag(d);
     const cat  = d.category ? tr('b806_category_line', md(catLabel(d.category))) : '';
     const rating = d.rating_count>0 ? tr('b807_rating_line', md(String(d.rating_avg)), d.rating_count) : '';
@@ -1543,7 +1555,66 @@ async function askNote(ctx, s) {
         ]).reply_markup });
 }
 bot.action('note:add', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_note'); await ctx.reply(tr('b1092_write_note'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1092_back'),'book:back:note')]]).reply_markup }); });
-bot.action('note:skip', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.notes=null; await bookConfirm(ctx,s); });
+bot.action('note:skip', async ctx => { await ctx.answerCbQuery(); const s=getSession(tgId(ctx)); s.temp.notes=null; await askFulfillment(ctx,s); });
+
+// ── v14.06: خطوة «طريقة الاستلام» (طلب ناصر) ────────────────────────────────
+// تُدرَج بين الملاحظة والتأكيد، ولا تُسأل إلا لمتجرٍ يوصّل فعلاً — من لا يوصّل
+// يمرّ كما كان تماماً بلا سؤال زائد. والقرار يُقاس بـ`bot_delivery_quote` التي
+// تقرأ عنوان المستخدم المحفوظ من القاعدة وتقيسه على نطاقات التاجر — نفس الدالة
+// التي يستعملها حارس الحجز، فما نعرضه هو ما سيقبله الخادم بالضبط.
+async function askFulfillment(ctx, s) {
+    setStep(tgId(ctx), 'idle');
+    s.temp.fulfillment = 'pickup';
+    s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
+    let q = null;
+    if (s.temp.dealStoreId) {
+        try { q = await rpc('bot_delivery_quote', { p_telegram_id: tgId(ctx), p_whatsapp_id: null, p_store_id: s.temp.dealStoreId }); }
+        catch { q = null; }
+    }
+    // لا توصيل (أو تعذّر السؤال) ⇒ لا سؤال: استلام من المتجر كالمعتاد.
+    const goods = (Number(s.temp.dealPrice) || 0) * (s.temp.dealQty || 1);
+    const off = DLV.deliveryOffer(q, goods);
+    if (!off.ask) return bookConfirm(ctx, s);
+
+    const rows = [];
+    let body = tr('dlv_ask_title') + '\n' + DIV + '\n' + tr('dlv_ask_body', md(String(s.temp.dealName || '')));
+
+    if (off.reason === 'no_address') {
+        body += '\n\n' + md(tr('dlv_no_address'));
+        rows.push([Markup.button.webApp(tr('dlv_add_address_btn'), W('/profile?tab=settings'))]);
+    } else if (off.reason === 'out_of_zone') {
+        body += '\n\n' + md(tr('dlv_out_of_zone'));
+    } else if (off.reason === 'min_order') {
+        // الحدّ الأدنى غير مستوفى ⇒ لا نعرض زرّ توصيل يرفضه الخادم، ونقول السبب.
+        body += '\n\n' + md(tr('dlv_min_order', money(off.minOrder), tr('inv_sar')));
+    } else {
+        s.temp.dlvFee = off.fee;
+        s.temp.dlvLabel = off.label;
+        s.temp.dlvPay = off.payment;
+        s.temp.dlvEta = off.eta;
+        body += '\n\n' + (off.fee > 0
+            ? md(tr('dlv_available', off.zoneName, money(off.fee), tr('inv_sar')))
+            : md(tr('dlv_free', off.zoneName)));
+        if (off.eta != null) body += '\n' + md(tr('dlv_eta', String(off.eta)));
+        body += '\n' + md(tr(off.payment === 'card' ? 'dlv_card_only' : 'dlv_cod'));
+        rows.push([Markup.button.callback(tr('dlv_delivery_btn'), 'ful:delivery')]);
+    }
+    rows.push([Markup.button.callback(tr('dlv_pickup_btn'), 'ful:pickup')]);
+    rows.push([Markup.button.callback(tr('b1089_back'), 'book:back:note'), Markup.button.callback(tr('b1089_cancel'), 'menu:back')]);
+    return safeReplyMd(ctx, body, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+bot.action('ful:pickup', async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.temp.fulfillment = 'pickup'; s.temp.dlvFee = 0;
+    return bookConfirm(ctx, s);
+});
+bot.action('ful:delivery', async ctx => {
+    await ctx.answerCbQuery();
+    const s = getSession(tgId(ctx));
+    s.temp.fulfillment = 'delivery';
+    return bookConfirm(ctx, s);
+});
 
 // Step 4 — confirm (shows quantity + prep + note + total)
 async function bookConfirm(ctx, s) {
@@ -1559,9 +1630,20 @@ async function bookConfirm(ctx, s) {
     if (os && os.configured && !os.open) {
         return safeReplyMd(ctx, tr('b1107_store_closed_now', DIV, os.opens_in_min!=null?tr('b1107_opens_in', md(HRS.fmtMins(os.opens_in_min))):''), { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1107_browse_offers'),'browse:menu')],[Markup.button.callback(tr('b1107_menu'),'menu:back')]]).reply_markup });
     }
-    const total = d.discounted_price * s.temp.dealQty;
+    // v14.06 — الإجمالي المعروض يشمل رسوم التوصيل: هي مبلغٌ يدفعه المشتري فعلاً،
+    // وإخفاؤها حتى بانر الاستلام مفاجأةٌ عند الباب.
+    const isDlv = s.temp.fulfillment === 'delivery';
+    const dlvFee = isDlv ? (Number(s.temp.dlvFee) || 0) : 0;
+    const total = d.discounted_price * s.temp.dealQty + dlvFee;
     let m = tr('q1110_confirm_booking_head', DIV, md(d.item_name), md(d.shop_name), s.temp.dealQty, md(prepLabel(s.temp.prepTime)));
     if (s.temp.notes) m += tr('b1111_your_note', md(s.temp.notes));
+    if (isDlv) {
+        m += tr('dlv_confirm_line', md(String(s.temp.dlvLabel || tr('inv_delivery'))));
+        if (dlvFee > 0) m += tr('dlv_fee_confirm', money(dlvFee), md(tr('inv_sar')));
+        if (s.temp.dlvPay === 'card') m += '\n' + md(tr('dlv_card_only'));
+    } else {
+        m += '\n' + md(tr('dlv_pickup_line'));
+    }
     m += tr('q1112_total_line', money(total), DIV);
     // قرب الإغلاق (<ساعتين) → تحذير واضح قبل الإتمام.
     if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN) {
@@ -1590,7 +1672,7 @@ bot.action(/^bkloc:([\s\S]+)$/, async ctx => {
 async function execBooking(ctx) {
     const s = getSession(tgId(ctx));
     if (!s.temp.dealId) return ctx.reply(tr('b1127_session_ended'), { parse_mode:'MarkdownV2' });
-    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival', p_location_id: s.temp.locId||null });
+    const result = await rpc('bot_book_deal', { p_telegram_id: tgId(ctx), p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty||1, p_notes: s.temp.notes||null, p_prep_time: s.temp.prepTime||'arrival', p_location_id: s.temp.locId||null, p_fulfillment: s.temp.fulfillment || 'pickup' });
     const bc = result?.barcode;
     const bookedDealId = s.temp.dealId; // v12.53 — يلزمنا لرابط «أكمل من الموقع» عند needs_options
     // v13.14 — يحتاج اختيار فرع: لا نمسح الجلسة — نعرض أزرار الفروع (بكمية كل فرع
@@ -1604,6 +1686,11 @@ async function execBooking(ctx) {
         return safeReplyMd(ctx, tr('bk_needs_location'), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
     }
     s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null; s.temp.locId = null;
+    // v14.06 — حالة التوصيل تُمسح مع بقية الجلسة، وإلا ورث الحجزُ التالي عنوان السابق.
+    const bookedFulfil = s.temp.fulfillment;
+    s.temp.fulfillment = null; s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
+    s.temp.dealStoreId = null; s.temp.dealPrice = 0;
+    void bookedFulfil;
     if (!result?.success) {
         const e = result?.error;
         // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل من الموقع
@@ -1621,6 +1708,9 @@ async function execBooking(ctx) {
                 : e==='max_qty'         ? tr('bk_err_max_qty', result.limit??1)
                 : e==='rebook_limit'    ? tr('bk_err_rebook_limit', result.limit??1)
                 : e==='rebook_wait'     ? tr('bk_err_rebook_wait', md(HRS.fmtMins(result.wait_minutes??1)))
+                : e==='delivery_no_address'  ? tr('dlv_no_address')
+                : e==='delivery_min_order'   ? tr('dlv_min_order', money(result.min_order || 0), tr('inv_sar'))
+                : e==='delivery_unavailable' ? (result.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
                 : e==='not_linked'      ? tr('b1137_login_first')
                 : e==='suspended'       ? tr('b1138_account_suspended')
                 : tr('b1139_booking_failed');
@@ -1638,6 +1728,8 @@ async function execBooking(ctx) {
     // v13.14 — سطر الفرع المختار في رسالة النجاح (عرض متعدد المواقع)
     let okMsg = tr('q1147_booking_success', DIV, md(result.deal_name), md(result.shop_name), result.quantity, md(prepLabel(result.prep_time)), md(bc), md(expiry), countdownBlock(expiryMs));
     if (result.location_name) okMsg += tr('bk_loc_line', md(String(result.location_name)));
+    // v14.06 — يعرف المشتري فوراً: هل ينتظر المندوب أم يذهب للمتجر؟
+    if (result.fulfillment === 'delivery') okMsg += tr('dlv_booked_line', md(String(result.delivery_label || tr('inv_delivery'))));
     await ctx.reply(
         okMsg,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
@@ -1784,6 +1876,17 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         `📦 ${tr('w1250_quantity')}: *${b.quantity}*  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDate(b.booked_at))}`;
     if (active && b.expiry_time) m += `\n⏰ *${tr('w1251_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
     if (b.notes) m += `\n📝 _${md(b.notes)}_`;
+    // v14.06 — طريقة الاستلام: التاجر يرى العنوان والجوال (هو من يوصّل)، والمشتري
+    // يرى وسم عنوانه فقط. البيانات من نفس صفّ الحجز (لقطةٌ ثبّتها حارس القاعدة
+    // وقت الحجز) لا من ملف المشتري الحالي — فتغييره لعنوانه لاحقاً لا يحرّك طلباً قائماً.
+    if (b.fulfillment === 'delivery') {
+        const dparts = [b.delivery_label, b.delivery_details].filter(x => x && String(x).trim()).map(x => md(String(x)));
+        m += `\n${tr(seller ? 'dlv_seller_line' : 'dlv_booked_line', dparts.join(' — ') || md(tr('inv_delivery')))}`;
+        if (Number(b.delivery_fee) > 0) m += `\n🚚 ${tr('inv_delivery_fee')}: ${money(b.delivery_fee)} ${md(tr('inv_sar'))}`;
+        if (seller && b.delivery_phone) m += `\n📞 ${md(String(b.delivery_phone))}`;
+    } else if (b.fulfillment === 'pickup') {
+        m += `\n${md(tr('dlv_pickup_line'))}`;
+    }
     // v12.81 — الدفع المباشر: فحص خفيف خلف بوابة السر — «ادفع الآن» يظهر فقط
     // إن كان تاجر الحجز يستقبل الدفع الإلكتروني والحجز نشطاً غير مدفوع.
     let payInfo = null;
@@ -1793,6 +1896,14 @@ async function renderOneBooking(ctx, barcode, roleCtx){
     if (payInfo?.paid) m += `\n${md(tr('pay_paid_line'))}`;
     const rows = [[Markup.button.callback(b.unread>0?tr('cm_chat_n', b.unread):tr('cm_chat'), `chat:${b.barcode}`), Markup.button.callback(tr('cm_call'), `call:b:${b.barcode}`)]];
     if (payInfo?.payable) rows.push([Markup.button.callback(tr('pay_btn'), `payb:${b.barcode}`)]);
+    // v14.06 — ملاحة فعلية إلى عنوان التوصيل (للتاجر ومندوبه).
+    if (b.fulfillment === 'delivery') {
+        const dlat = Number(b.delivery_lat), dlng = Number(b.delivery_lng);
+        if (Number.isFinite(dlat) && Number.isFinite(dlng)) {
+            const url = dirLink({ map_lat: dlat, map_lng: dlng });
+            if (url) rows.push([Markup.button.url(tr('dlv_seller_map'), url)]);
+        }
+    }
     if (seller){
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1257_confirm_start_prep'),`ack:${b.barcode}`)]);
         if (active) rows.push([Markup.button.callback(tr('b1258_complete_booking'),`complete:${b.barcode}`)]);
@@ -1831,6 +1942,15 @@ const invoiceText = (v) => {
     L.push(DIV);
     L.push(`🛍 ${tr('inv_item')}: *${md(String(v.item_name || ''))}*`);
     L.push(`📦 ${tr('inv_qty')}: *${numEsc(v.quantity)}*`);
+    if (v.location_name) L.push(`📍 ${tr('inv_branch')}: ${md(String(v.location_name))}`);
+    // v14.06 — طريقة الاستلام والعنوان: التاجر يحتاجهما قبل أي شيء آخر.
+    L.push(`${v.fulfillment === 'delivery' ? '🚚' : '🏪'} ${tr('inv_fulfillment')}: *${md(tr(v.fulfillment === 'delivery' ? 'inv_delivery' : 'inv_pickup'))}*`);
+    if (v.fulfillment === 'delivery' && v.delivery) {
+        const a = v.delivery;
+        const parts = [a.label, a.details, a.city].filter(x => x && String(x).trim());
+        L.push(`📍 ${tr('inv_delivery_to')}: ${md(parts.join(' — ') || '—')}`);
+        if (a.phone) L.push(`📞 ${md(String(a.phone))}`);
+    }
     if (v.unit_price != null) {
         let line = `💵 ${tr('inv_unit')}: ${money(v.unit_price)} ${md(tr('inv_sar'))}`;
         if (v.original_price != null && Number(v.original_price) > Number(v.unit_price)) {
@@ -1844,6 +1964,7 @@ const invoiceText = (v) => {
             L.push(`  ↳ ${md(String(it.label || ''))}${it.qty > 1 ? ` ×${numEsc(it.qty)}` : ''}`);
         }
     }
+    if (Number(v.delivery_fee) > 0) L.push(`🚚 ${tr('inv_delivery_fee')}: ${money(v.delivery_fee)} ${md(tr('inv_sar'))}`);
     L.push(DIV);
     if (v.total != null) {
         // تفصيل الضريبة يظهر فقط حين يكون التاجر مسجّلاً ضريبياً — الدالة
@@ -1870,12 +1991,28 @@ bot.action(/^inv:(.+)$/, async ctx => {
     if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
     const bc = ctx.match[1];
     const backRow = [Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${bc}`)];
+    const kb = Markup.inlineKeyboard([backRow]).reply_markup;
     let v = null;
     try { v = await rpc('bot_get_booking_invoice', { p_uid: s.userId, p_barcode: bc }); } catch { /* تُعالَج أدناه */ }
     if (!v || v.ok !== true) {
-        return safeReplyMd(ctx, tr('inv_fail'), { reply_markup: Markup.inlineKeyboard([backRow]).reply_markup });
+        return safeReplyMd(ctx, tr('inv_fail'), { reply_markup: kb });
     }
-    return safeReplyMd(ctx, invoiceText(v), { reply_markup: Markup.inlineKeyboard([backRow]).reply_markup });
+    // v14.06 (طلب ناصر): ملف PDF لا نصّ — النصّ لا يحمل باركوداً، فلا يستطيع
+    // التاجر مسح رقم الطلب ولا رموز الكاشير (SKU) عند التسليم. المستند نسخة
+    // من فاتورة الموقع حرفياً. أي فشل (خطّ ناقص/رفع فاشل) يسقط للنصّ ولا يترك
+    // المستخدم بلا فاتورة.
+    if (INV.fontsAvailable()) {
+        try {
+            const buf = await INV.buildInvoicePdf(v, I18N.lang());
+            return await ctx.replyWithDocument(
+                { source: buf, filename: INV.invoiceFileName(v) },
+                { caption: tr('inv_pdf_caption', v.barcode || bc), reply_markup: kb });
+        } catch (e) {
+            console.warn('invoice pdf failed:', e && e.message);
+            await safeReplyMd(ctx, tr('inv_pdf_fallback'));
+        }
+    }
+    return safeReplyMd(ctx, invoiceText(v), { reply_markup: kb });
 });
 
 // ── v12.81: زر «ادفع الآن» — رابط الدفع المستضاف على بوابة تاجر الحجز ─────────
@@ -2999,7 +3136,9 @@ bot.on('text', async ctx => {
         s.temp.prepTime = `${mins}min`; setStep(tgId(ctx),'idle'); return askNote(ctx, s);
     }
     if (s.step === 'await_note') {
-        s.temp.notes = text.slice(0,300); setStep(tgId(ctx),'idle'); return bookConfirm(ctx, s);
+        // v14.06 — من كتب ملاحظة يمرّ بخطوة «طريقة الاستلام» كمن تخطّاها،
+        // وإلا حُرم كاتبُ الملاحظة من خيار التوصيل بلا سبب.
+        s.temp.notes = text.slice(0,300); setStep(tgId(ctx),'idle'); return askFulfillment(ctx, s);
     }
     if (s.step === 'await_chat_msg') {
         const bc = s.temp.chatBarcode; setStep(tgId(ctx),'idle');

@@ -118,7 +118,7 @@ interface AppContextType {
     addSmartAlert: (rule: SmartAlertRule) => Promise<boolean>;
     removeSmartAlert: (idx: number) => Promise<boolean>;
     bookings: any[];
-    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online') => any;
+    bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null) => any;
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
     acknowledgeBooking: (barcode: string, note?: string) => void;
@@ -381,6 +381,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [prevReview, setPrevReview] = useState<{ id?: string; dealId?: string; score: number; comment: string } | null>(null);
     const [authVoting, setAuthVoting] = useState(false);
     const promptedRatingRef = useRef<Set<string>>(new Set());
+    /**
+     * v14.06 — الحجوزات التي رفض المشتري تقييمها («لاحقاً»). تُحفَظ في الجهاز لا
+     * في الذاكرة وحدها: من ضغط «لاحقاً» لا يجوز أن تُلاحقه النافذة عند كل فتح
+     * للتطبيق. ومدة الحفظ ١٤ يوماً — أطول من نافذة الدالة (٧ أيام) فالرفض نهائيّ
+     * عملياً، ويبقى بابُ التقييم مفتوحاً من صفحة العرض متى شاء.
+     */
+    const RATE_DISMISS_KEY = 'taki_rate_dismissed_v1';
+    const rateDismissedRef = useRef<Record<string, number>>({});
+    const rateCheckingRef = useRef(false);
+    // مراجع (لا حالة) حتى لا يُعاد بناء دالة القياس مع كل تغيّر — فتُستدعى من
+    // اشتراكات تُسجّل مرة واحدة، ولو أُعيد بناؤها لاحتجنا إعادة الاشتراك كلّه.
+    const userIdRef = useRef<string | undefined>(undefined);
+    const languageRef = useRef<'ar' | 'en'>('ar');
+    const ratingPromptRef = useRef<{ barcode: string; dealId: string; storeId: string; storeName: string } | null>(null);
+    const ingestDealsRef = useRef<(incoming: Deal[]) => void>(() => {});
+    const checkRatingRef = useRef<() => void>(() => {});
     const [ratingStars, setRatingStars] = useState(5);
     const [ratingComment, setRatingComment] = useState('');
     const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -404,6 +420,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Refs that always point at the latest dialog callbacks. Used by code paths
     // (e.g. the auth listener) that capture stale closures otherwise.
+    useEffect(() => { ratingPromptRef.current = ratingPrompt; }, [ratingPrompt]);
+    useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
+    useEffect(() => { languageRef.current = language; }, [language]);
     const customAlertRef = useRef(customAlert);
     const customConfirmRef = useRef(customConfirm);
     useEffect(() => { customAlertRef.current = customAlert; }, [customAlert]);
@@ -857,6 +876,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                     ? branchRepository.listByMerchant(uid).then(setBranches)
                                     : Promise.resolve(),
                             ]).catch(() => {});
+                            // v14.06 — تقييم فات صاحبه (بلاغ ناصر): نقيس المعلّق من
+                            // القاعدة بعد جهوز الجلسة. التأخير الصغير ليقرأ التقييم
+                            // السابق من العروض المحمَّلة فيعرض «تعديل» لا «جديد».
+                            setTimeout(() => checkRatingRef.current(), 2500);
                         }
                     })
                     .catch((err) => console.warn('Auth check failed:', err))
@@ -2150,6 +2173,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
     }, [user]);
 
+    /**
+     * v14.06 — 🔴 إصلاح «التقييم لم يظهر عند اكتمال الشراء» (بلاغ ناصر).
+     *
+     * كان الظهور معلَّقاً على حدث ريل‑تايم واحد لحظة إتمام التاجر للطلب، وفيه
+     * عطلان مستقلان قُيسا في الكود:
+     *  ١) الحجز يُعلَّم «معالَجاً» **قبل** التحقّق من تحميل العرض، فإن لم يكن
+     *     العرض داخل نافذة العروض المحمَّلة (وهو الشائع لحساب جديد) لم تُفتح
+     *     النافذة أبداً ولم يُعَد النظر فيها.
+     *  ٢) الحدث نفسه قد لا يصل إطلاقاً: الجوال في الجيب لحظة الاستلام، أو
+     *     التطبيق مغلق — وإعادة الاشتراك لا تُعيد بثّ ما فات.
+     *
+     * الحلّ: **الحالة تُقاس لا تُنتظر.** الدالة `pending_rating_prompts` على جدة
+     * تُرجع كل حجز مكتمل خلال ٧ أيام لم يُقيَّم متجره أو لم يُصوَّت على مصداقية
+     * عرضه، فنفتح أوّلها عند كل جهوز جلسة وكل تحديث كامل. ولا نعتمد على تحميل
+     * العرض: اسم المتجر ومعرّفاته تأتي من الدالة، والعرض يُجلَب عند الحاجة.
+     */
+    const checkPendingRatingPrompts = useCallback(async () => {
+        if (rateCheckingRef.current) return;
+        const uid = userIdRef.current;
+        if (!uid) return;
+        // نافذة مفتوحة أصلاً؟ لا نُكدّس نافذتين فوق بعضهما.
+        if (ratingPromptRef.current) return;
+        rateCheckingRef.current = true;
+        try {
+            if (!Object.keys(rateDismissedRef.current).length) {
+                try {
+                    const raw = localStorage.getItem(RATE_DISMISS_KEY);
+                    const parsed = raw ? JSON.parse(raw) : {};
+                    const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
+                    rateDismissedRef.current = Object.fromEntries(
+                        Object.entries(parsed as Record<string, number>).filter(([, ts]) => Number(ts) > cutoff)
+                    );
+                } catch { rateDismissedRef.current = {}; }
+            }
+            const { data, error } = await supabase.rpc('pending_rating_prompts');
+            if (error) { logger.warn('pending_rating_prompts:', error.message); return; }
+            const rows: any[] = Array.isArray(data) ? data : [];
+            const next = rows.find(r => r && r.barcode
+                && !rateDismissedRef.current[r.barcode]
+                && !promptedRatingRef.current.has(r.barcode));
+            if (!next) return;
+
+            // العرض غير محمَّل؟ اجلبه وأدخِله في النافذة — خطوة التصويت
+            // («حقيقي/شكلي») تحتاج صفّ العرض لتعرض التصويت السابق وتحدّثه.
+            let deal = dealsRef.current.find(x => x.id === next.deal_id);
+            if (!deal) {
+                try {
+                    const fetched = await dealRepository.getById(next.deal_id);
+                    if (fetched) { ingestDealsRef.current([fetched]); deal = fetched; }
+                } catch { /* النافذة تُفتح بلا العرض — النجوم لا تحتاجه */ }
+            }
+
+            // تقييم سابق لهذا المتجر (لتعديله لا تكراره) — من العرض المحمَّل إن وُجد.
+            let myStoreReview: any = null;
+            let myReviewDealId = '';
+            for (const x of dealsRef.current) {
+                if (x.storeId !== next.store_id) continue;
+                const r = (x.ratings || []).find((rr: any) => rr.userId === uid);
+                if (r) { myStoreReview = r; myReviewDealId = x.id; break; }
+            }
+            setRatingStars(myStoreReview ? myStoreReview.score : 5);
+            setRatingComment('');
+            setPrevReview(myStoreReview ? {
+                id: myStoreReview.id,
+                dealId: myReviewDealId,
+                score: myStoreReview.score,
+                comment: myStoreReview.comment || '',
+            } : null);
+            // الخطوة الأولى = ما ينقص فعلاً: لم يصوّت ⇒ «حقيقي/شكلي»، صوّت ولم
+            // يقيّم ⇒ النجوم مباشرة. (الدالة لا تُرجع من أتمّ الاثنين.)
+            setRatingStep(next.has_vote ? 'rate' : 'auth');
+            setRatingPrompt({
+                barcode: next.barcode,
+                dealId: next.deal_id,
+                storeId: next.store_id,
+                storeName: next.shop_name || deal?.shopName || (languageRef.current === 'ar' ? 'المتجر' : 'the store'),
+            });
+        } catch (e) {
+            logger.warn('checkPendingRatingPrompts failed:', e);
+        } finally {
+            rateCheckingRef.current = false;
+        }
+    }, []);
+
+    /** «لاحقاً»/إغلاق: يُسجَّل الرفض في الجهاز فلا تُلاحقه النافذة كل فتح. */
+    const dismissRatingPrompt = useCallback(() => {
+        const bc = ratingPromptRef.current?.barcode;
+        if (bc) {
+            promptedRatingRef.current.add(bc);
+            rateDismissedRef.current[bc] = Date.now();
+            try { localStorage.setItem(RATE_DISMISS_KEY, JSON.stringify(rateDismissedRef.current)); } catch { /* وضع التصفّح الخاص */ }
+        }
+        setRatingPrompt(null);
+    }, []);
+
     const addReply = useCallback(async (dealId: string, ratingId: string, reply: string) => {
         const { ratingRepository } = await import('../repositories/ratingRepository');
         // Optimistic — the reply lands in the UI before the server round-trip.
@@ -2307,7 +2425,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [smartAlerts, user]);
 
     // Booking logic - uses generateBarcode from helpers
-    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online') => {
+    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null) => {
         const barcode = generateBarcode(8);
 
         // Bookings get a full 2-hour pickup hold from the moment they're made.
@@ -2339,6 +2457,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             locationId: locationId || null,
             // v13.11 — نية الدفع وقت الحجز (طلب ناصر): يخفي زر «ادفع الآن» عن COD
             paymentMethod: paymentMethod || undefined,
+            // v14.06 — طريقة الاستلام وعنوانه. الرسوم **لا تُرسل**: حارس القاعدة
+            // يحسبها من نطاق التاجر ويكتبها، ثم يعود الصفّ بها في أول مزامنة.
+            fulfillment: fulfillment === 'delivery' ? ('delivery' as const) : ('pickup' as const),
+            deliveryAddress: fulfillment === 'delivery' ? (deliveryAddress || null) : null,
             status: 'pending' as const
         };
 
@@ -2431,6 +2553,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         ? `⛔ You reached the limit (${n}) of bookings on this deal.`
                         : `⏳ You can rebook this deal in ${n} minute(s).`;
                 customAlertRef.current(language === 'ar' ? ar : en);
+                return;
+            }
+            // v14.06 — رفض حارس التوصيل (SQLSTATE P0013). الرموز آلية، والمشتري
+            // يجب أن يقرأ السبب لا الرمز — وإلا ظنّ أن الشبكة هي العلّة.
+            const dlvMin = msg.match(/TAKI_DELIVERY_MIN_ORDER:([0-9.]+)/);
+            if (dlvMin) {
+                customAlertRef.current(language === 'ar'
+                    ? `⛔ الحد الأدنى لطلب التوصيل من هذا المتجر ${dlvMin[1]} ر.س — أضِف المزيد أو اختر الاستلام من المتجر.`
+                    : `⛔ This store's delivery minimum is ${dlvMin[1]} SAR — add more or choose pickup.`);
+                return;
+            }
+            if (/TAKI_DELIVERY_OUT_OF_ZONE/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '⛔ عنوانك خارج نطاق التوصيل الذي حدّده هذا المتجر — اختر الاستلام من المتجر أو حدّث عنوانك.'
+                    : '⛔ Your address is outside this store\'s delivery area — choose pickup or update your address.');
+                return;
+            }
+            if (/TAKI_DELIVERY_NO_ADDRESS/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '📍 لا يوجد عنوان توصيل محفوظ — أضِفه من «حسابي ← الإعدادات ← عنوان التوصيل» ثم أعد المحاولة.'
+                    : '📍 No saved delivery address — add it in “My account → Settings → Delivery address”, then retry.');
+                return;
+            }
+            if (/TAKI_DELIVERY_CARD_ONLY/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '💳 التوصيل لدى هذا المتجر بالبطاقة فقط — اختر الدفع الإلكتروني ثم أعد المحاولة.'
+                    : '💳 Delivery at this store is card-only — choose online payment and retry.');
+                return;
+            }
+            if (/TAKI_DELIVERY_OFF/.test(msg)) {
+                customAlertRef.current(language === 'ar'
+                    ? '🚫 أوقف هذا المتجر خدمة التوصيل — الاستلام من المتجر متاح.'
+                    : '🚫 This store turned delivery off — pickup is available.');
                 return;
             }
             if (/DEAL_NOT_ACTIVE/.test(msg)) {
@@ -2680,6 +2835,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
+    // v14.06 — دالة قياس التقييمات المعلّقة تحتاج إدخال عرضٍ غير محمَّل. تُربَط
+    // هنا **بعد** تعريف `ingestDeals`: ربطها قبله يرمي TDZ في أول رسم (وهو الفخّ
+    // الموثَّق في هذا الملف: `useCallback` يستدعي `const` سهمياً معرّفاً بعده).
+    useEffect(() => { ingestDealsRef.current = ingestDeals; }, [ingestDeals]);
+    useEffect(() => { checkRatingRef.current = () => { void checkPendingRatingPrompts(); }; }, [checkPendingRatingPrompts]);
+
     const setLanguage = useCallback((lang: 'ar' | 'en') => {
         setLanguageState(lang);
         document.dir = lang === 'ar' ? 'rtl' : 'ltr';
@@ -2842,52 +3003,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         }
                         return prev;
                     });
-                    // Purchase just completed for THIS buyer → first ask whether
-                    // the OFFER was real/fake, then rate the store ONCE (re-rating
-                    // is blocked — a previous rating is shown instead). v11.97
+                    // اكتمل شراءُ هذا المشتري ⇒ نافذة «حقيقي/شكلي» ثم تقييم المتجر.
+                    //
+                    // v14.06 — كان هنا منطقٌ كامل يبني النافذة من العروض المحمَّلة،
+                    // ويُعلِّم الحجز «معالَجاً» **قبل** التحقّق من وجود العرض — فمن
+                    // كان عرضه خارج النافذة المحمَّلة (الحساب الجديد غالباً) لم تظهر
+                    // له النافذة أبداً. صار المسار واحداً: نُنادي دالة القياس التي
+                    // تسأل القاعدة «ما الذي ينقص فعلاً؟» — فتعمل هنا وعند كل فتح
+                    // للتطبيق سواءً وصل الحدث أم فات.
                     if (updated.status === 'completed'
                         && updated.user_id && updated.user_id === user?.id
                         && !promptedRatingRef.current.has(updated.barcode)) {
-                        // Mark handled exactly ONCE up-front — even if the deal
-                        // isn't loaded (deleted / not yet hydrated) we must not
-                        // re-evaluate this booking on every realtime tick. v11.97b
-                        promptedRatingRef.current.add(updated.barcode);
-                        const d = dealsRef.current.find(x => x.id === updated.deal_id);
-                        if (d) {
-                            const storeId = d.storeId;
-                            // Has the buyer rated ANY deal of this store before?
-                            // Keep the rating's OWN deal id — edit/delete must
-                            // route to the deal the rating actually lives on.
-                            let myStoreReview: any = null;
-                            let myReviewDealId = '';
-                            for (const x of dealsRef.current) {
-                                if (x.storeId !== storeId) continue;
-                                const r = (x.ratings || []).find((rr: any) => rr.userId === user?.id);
-                                if (r) { myStoreReview = r; myReviewDealId = x.id; break; }
-                            }
-                            // v12.30 — ALWAYS open the modal: even a buyer who
-                            // voted and rated before must SEE their previous
-                            // vote/rating and be able to edit or delete it
-                            // (anti merchant product-swap manipulation).
-                            setRatingStars(myStoreReview ? myStoreReview.score : 5);
-                            setRatingComment('');
-                            setPrevReview(myStoreReview ? {
-                                id: myStoreReview.id,
-                                dealId: myReviewDealId,
-                                score: myStoreReview.score,
-                                comment: myStoreReview.comment || '',
-                            } : null);
-                            // Start at the authenticity step; if they voted
-                            // before, that step shows the current vote and
-                            // offers to keep or change it.
-                            setRatingStep('auth');
-                            setRatingPrompt({
-                                barcode: updated.barcode,
-                                dealId: updated.deal_id,
-                                storeId,
-                                storeName: d.shopName || (language === 'ar' ? 'المتجر' : 'the store'),
-                            });
-                        }
+                        checkRatingRef.current();
                     }
                 } else if (payload.eventType === 'DELETE') {
                     setBookings(prev => prev.filter(b => b.barcode !== payload.old.barcode));
@@ -3028,6 +3155,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                          contactPhone: newUser.contact_phone,
                          followedMerchants: newFollowed || prev.followedMerchants,
                          blockedMerchants: newBlocked || prev.blockedMerchants,
+                         // v14.06 — عنوان التوصيل يُحدَّث من أي جهاز آخر أيضاً
+                         // (غيّره على الجوال فيسري على المتصفح بلا إعادة تحميل).
+                         deliveryAddress: (newUser.delivery_address && typeof newUser.delivery_address === 'object')
+                             ? newUser.delivery_address
+                             : (newUser.delivery_address === null ? null : prev.deliveryAddress),
                      }));
                 }
             },
@@ -3040,6 +3172,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             },
             onRefreshAll: async () => {
                 logger.info('🔄 Full Refresh Triggered');
+                // v14.06 — تقييمٌ فات صاحبه: كل عودة للواجهة تُعيد القياس، فلا
+                // يضيع تقييمٌ لأن الجوال كان في الجيب لحظة الاستلام.
+                checkRatingRef.current();
                 const ruid = user?.id;
                 await Promise.allSettled([
                     // v13.80 — الصفحة الأولى لا الكتالوج كله. كان التحديث الكامل
@@ -3469,7 +3604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => setRatingPrompt(null)}
+                                        onClick={dismissRatingPrompt}
                                         style={{
                                             width: '100%', padding: 10, marginTop: 2, background: 'none',
                                             border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
@@ -3547,7 +3682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                                 : (language === 'ar' ? 'إرسال التقييم ✅' : 'Submit rating ✅')}
                                     </button>
                                     <button
-                                        onClick={() => setRatingPrompt(null)}
+                                        onClick={dismissRatingPrompt}
                                         style={{
                                             width: '100%', padding: 10, marginTop: 10, background: 'none',
                                             border: 'none', color: 'var(--text-secondary)', fontWeight: 700,
@@ -3633,7 +3768,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                             : (language === 'ar' ? '➕ متابعة المتجر' : '➕ Follow store')}
                                     </button>
                                     <button
-                                        onClick={() => setRatingPrompt(null)}
+                                        onClick={dismissRatingPrompt}
                                         style={{
                                             width: '100%', padding: 10, marginTop: 10, background: 'none',
                                             border: 'none', color: 'var(--text-secondary)', fontWeight: 700,

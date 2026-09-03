@@ -23,13 +23,35 @@ export interface InvoiceLineItem {
     kind: 'main' | 'variant' | 'addon';
 }
 
+/** v14.06 — لقطة عنوان التوصيل المحفوظة على الحجز (يكتبها حارس القاعدة). */
+export interface InvoiceDeliveryAddress {
+    label?: string;
+    details?: string;
+    city?: string;
+    phone?: string;
+    lat?: number | string;
+    lng?: number | string;
+}
+
 export interface InvoiceData {
     shopName: string;
     itemName: string;
     barcode: string;
+    /** v14.06 — الكود الاحتياطي (يُدخله التاجر يدوياً إن تعذّر المسح) */
+    backupCode?: string;
     createdAt?: number;
     quantity: number | string;
     buyerName?: string;
+    /** v14.06 — جوال المشتري (يظهر لصاحب الحجز وتاجره — كلاهما يعرفه أصلاً) */
+    buyerPhone?: string;
+    /** v14.06 — سعر القطعة (سطر نظامي معتاد على الفواتير) */
+    unitPrice?: number;
+    /** v14.06 — اسم الفرع المختار في العرض متعدد المواقع */
+    branchName?: string;
+    /** v14.06 — طريقة الاستلام: استلام من المتجر أو توصيل إلى عنوان المشتري */
+    fulfillment?: 'pickup' | 'delivery';
+    deliveryFee?: number;
+    deliveryAddress?: InvoiceDeliveryAddress | null;
     prepTime?: string | number;
     /** عناصر مهيكلة (لكل عنصر باركود إن كان له SKU) */
     items?: InvoiceLineItem[];
@@ -39,9 +61,15 @@ export interface InvoiceData {
     totalAmount?: number;
     /** ملاحظة المشتري الحرّة */
     buyerNote?: string;
+    /** v14.06 — ملاحظة التاجر للمشتري (كانت تُطبع في البوت ولا تظهر على الورقة) */
+    merchantNote?: string;
     /** v12.93 — حالة الدفع: true = مدفوع إلكترونياً (وصل حساب التاجر)، false/undefined = عند الاستلام */
     paidOnline?: boolean;
     paidAmount?: number;
+    /** v14.06 — نيّة الدفع وقت الحجز: 'online' غير مسدَّد ⇒ لا يُقال للتاجر «استلم نقداً». */
+    paymentMethod?: 'cod' | 'online';
+    /** v14.06 — الإجمالي مُقدَّر من سعر العرض (لا من طلب الموقع ولا من دفعة فعلية). */
+    totalIsEstimate?: boolean;
     /** v13.13 — حالة الطلب على الفاتورة: 'completed' (مكتمل) | 'cancelled' (ملغي)
      *  | غيرها/undefined (نشط). للطلبات المنتهية يُطبع بانر واضح. */
     status?: string;
@@ -94,21 +122,44 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
     const totalAmount = tm ? parseFloat(tm[1]) : (Number(order?.paidAmount) > 0 ? Number(order?.paidAmount) : undefined);
     const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
     const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
+    // v14.06 — التوصيل: الرسوم تدخل الإجمالي (كما يدفعها المشتري فعلاً). سطر
+    // «الإجمالي» في الملاحظات يكتبه الموقع شاملاً الرسوم، فلا تُضاف مرتين.
+    const fulfillment: 'pickup' | 'delivery' = order?.fulfillment === 'delivery' ? 'delivery' : 'pickup';
+    const deliveryFee = Number(order?.deliveryFee) > 0 ? Number(order.deliveryFee) : undefined;
+    const qty = Number(order?.bookedQuantity) || 1;
+    const unitPrice = Number(deal?.discountedPrice) > 0 ? Number(deal.discountedPrice) : undefined;
+    // احتياطي للطلبات القادمة من البوتات (لا تكتب سطر الإجمالي): سعر العرض ×
+    // الكمية + رسوم التوصيل. لا يُطبَّق مع النسخ (variants) لأن لكل نسخة سعرها.
+    const fallbackTotal = (!pickedVariants.length && unitPrice)
+        ? Math.round((unitPrice * qty + (deliveryFee || 0)) * 100) / 100
+        : undefined;
     return {
         shopName: deal.shopName || deal.itemName,
         itemName: deal.itemName,
         barcode: order?.barcode,
+        backupCode: order?.backupCode,
         createdAt: order?.bookedAt,
         quantity: order?.bookedQuantity,
         buyerName: order?.userName,
+        buyerPhone: order?.userPhone,
+        unitPrice,
+        branchName: (Array.isArray(deal.locations) && order?.locationId)
+            ? (deal.locations.find((l: any) => l?.id === order.locationId)?.name || undefined)
+            : undefined,
+        fulfillment,
+        deliveryFee,
+        deliveryAddress: order?.deliveryAddress || null,
         prepTime: order?.prepTime,
         items,
         totalText,
-        totalAmount,
+        totalAmount: totalAmount ?? fallbackTotal,
+        totalIsEstimate: totalAmount == null && fallbackTotal != null,
         buyerNote,
+        merchantNote: order?.merchantNote || undefined,
         // v12.93 — حالة الدفع: مدفوع إلكترونياً (paidAt) وإلا الدفع عند الاستلام
         paidOnline: !!order?.paidAt,
         paidAmount: order?.paidAmount,
+        paymentMethod: order?.paymentMethod,
         // v13.35 — لجلب الرقم الضريبي للتاجر لحظة الطباعة (توافق الهيئة)
         storeId: deal.storeId || deal.store_id || order?.storeId,
         // v13.13 — حالة الطلب ومن ألغاه (للطلبات المنتهية على الفاتورة)
@@ -122,14 +173,22 @@ const buildHtml = (d: InvoiceData): string => {
     const rtl = d.isRTL;
     const dir = rtl ? 'rtl' : 'ltr';
     const L = (ar: string, en: string) => (rtl ? ar : en);
+    // v14.06 — أرقام لاتينية في التاريخ: بقية الفاتورة (الأسعار، الكمية،
+    // الباركود) لاتينية، وكان التاريخ وحده بأرقام هندية فيبدو مستنداً آخر —
+    // ونسخة البوت PDF تستعمل نفس التنسيق حرفياً فلا يختلف المستندان.
     const dateStr = d.createdAt
-        ? new Date(d.createdAt).toLocaleString(rtl ? 'ar-SA-u-ca-gregory' : 'en-US', {
+        ? new Date(d.createdAt).toLocaleString(rtl ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-US', {
             year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
         })
         : '';
+    // v14.06 — كان `${d.prepTime} دقيقة` يطبع «30min دقيقة» لأن القيمة المخزّنة
+    // تحمل اللاحقة أصلاً (`20min`). نُجرّد الرقم ثم نضيف الوحدة مرة واحدة.
+    const prepMinutes = String(d.prepTime ?? '').replace(/[^\d]/g, '');
     const prep = d.prepTime === 'arrival'
         ? (rtl ? 'عند الوصول' : 'On arrival')
-        : (d.prepTime ? `${d.prepTime} ${rtl ? 'دقيقة' : 'min'}` : '');
+        : (prepMinutes ? `${prepMinutes} ${rtl ? 'دقيقة' : 'min'}` : '');
+    const delivery = d.fulfillment === 'delivery';
+    const addr = d.deliveryAddress || null;
 
     const items = (d.items || []).filter(it => it.label);
     const itemHtml = items.map((it) => {
@@ -171,6 +230,10 @@ const buildHtml = (d: InvoiceData): string => {
   .row .k { color: #64748b; font-weight: 700; }
   .row .v { font-weight: 800; }
   .ordercode { text-align: center; padding: 8px 0 12px; border-bottom: 2px dashed #cbd5e1; margin-bottom: 8px; }
+  .delivery { margin-top: 8px; padding: 9px 11px; border-radius: 8px; background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+  .delivery .d-main { font-size: 12px; font-weight: 900; line-height: 1.6; }
+  .delivery .d-sub { font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .delivery .d-geo { font-size: 10px; font-weight: 700; color: #64748b; margin-top: 2px; }
   .items { border-top: 1px dashed #cbd5e1; margin-top: 10px; padding-top: 6px; }
   .li { padding: 10px 0; border-bottom: 1px dashed #e2e8f0; text-align: center; }
   .li.addon { padding: 6px 0; }
@@ -213,13 +276,23 @@ const buildHtml = (d: InvoiceData): string => {
     </div>
     ${orderBarcodeHtml}
     <div class="row"><span class="k">${L('رقم الطلب', 'Order #')}</span><span class="v">${esc(d.barcode)}</span></div>
+    ${d.backupCode && d.backupCode !== d.barcode ? `<div class="row"><span class="k">${L('كود احتياطي', 'Backup code')}</span><span class="v">${esc(d.backupCode)}</span></div>` : ''}
     ${dateStr ? `<div class="row"><span class="k">${L('التاريخ', 'Date')}</span><span class="v">${esc(dateStr)}</span></div>` : ''}
-    ${d.buyerName ? `<div class="row"><span class="k">${L('المشتري', 'Buyer')}</span><span class="v">${esc(d.buyerName)}</span></div>` : ''}
+    ${d.buyerName ? `<div class="row"><span class="k">${L('المشتري', 'Buyer')}</span><span class="v">${esc(d.buyerName)}${d.buyerPhone ? ` — ${esc(d.buyerPhone)}` : ''}</span></div>` : ''}
     <div class="row"><span class="k">${L('الكمية', 'Qty')}</span><span class="v">${esc(String(d.quantity))}</span></div>
+    ${Number(d.unitPrice) > 0 ? `<div class="row"><span class="k">${L('سعر القطعة', 'Unit price')}</span><span class="v">${fmtSAR(Number(d.unitPrice))} ${L('ر.س', 'SAR')}</span></div>` : ''}
     ${prep ? `<div class="row"><span class="k">${L('وقت التجهيز', 'Prep')}</span><span class="v">${esc(prep)}</span></div>` : ''}
+    ${d.branchName ? `<div class="row"><span class="k">${L('الفرع', 'Branch')}</span><span class="v">${esc(d.branchName)}</span></div>` : ''}
+    <div class="row"><span class="k">${L('طريقة الاستلام', 'Fulfillment')}</span><span class="v"${delivery ? ' style="color:#1e40af"' : ''}>${delivery ? L('توصيل إلى العنوان', 'Home delivery') : L('استلام من المتجر', 'Pickup at store')}</span></div>
+    ${(delivery && addr) ? `<div class="delivery">
+      <div class="d-main">${L('التوصيل إلى', 'Deliver to')}: ${esc([addr.label, addr.details, addr.city].filter(Boolean).join(' — ') || L('عنوان المشتري', 'Buyer address'))}</div>
+      ${addr.phone ? `<div class="d-sub">${L('جوال التوصيل', 'Delivery phone')}: ${esc(String(addr.phone))}</div>` : ''}
+      ${(addr.lat && addr.lng) ? `<div class="d-geo">${L('الإحداثيات', 'Coordinates')}: ${esc(Number(addr.lat).toFixed(5))}, ${esc(Number(addr.lng).toFixed(5))}</div>` : ''}
+    </div>` : ''}
     <div class="items">
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
+    ${Number(d.deliveryFee) > 0 ? `<div class="row" style="margin-top:10px"><span class="k">${L('رسوم التوصيل', 'Delivery fee')}</span><span class="v">${fmtSAR(Number(d.deliveryFee))} ${L('ر.س', 'SAR')}</span></div>` : ''}
     ${(() => {
         // v13.30 — تفصيل ضريبة القيمة المضافة. v13.35 (توافق الهيئة): سطر الضريبة
         // يُطبع فقط للتاجر المسجّل ضريبياً — غير المسجّل لا يجوز له تحصيل الضريبة
@@ -241,6 +314,7 @@ const buildHtml = (d: InvoiceData): string => {
     <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(s.total)} ${cur}</span></div>
     ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${d.qrDataUrl}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
     })()}
+    ${d.totalIsEstimate && Number(d.totalAmount) > 0 ? `<div class="foot" style="margin-top:8px">${L('الإجمالي محسوب من سعر العرض وقد لا يشمل إضافات اتُّفق عليها مع التاجر.', 'Total is derived from the deal price and may exclude extras agreed with the merchant.')}</div>` : ''}
     ${(() => {
         // v13.13 — بانر حالة الطلب على الفاتورة (طلب ناصر): الملغي لا تُطبع له
         // «طريقة الدفع» (لم تتم محاسبة)، بل «الطلب ملغي» مع ذكر من ألغاه؛ والمكتمل
@@ -255,22 +329,29 @@ const buildHtml = (d: InvoiceData): string => {
                         : L('أُلغِي', 'Cancelled');
             return `<div class="status void">${L('❌ الطلب ملغي', '❌ Order cancelled')}<span class="status-sub">${who} — ${L('لم تتم أي محاسبة على العميل', 'No charge was made')}</span></div>`;
         }
+        // v14.06 — ثلاث حالات لا اثنتان: مدفوع · إلكتروني بانتظار السداد ·
+        // عند الاستلام/التوصيل. كان غير المسدَّد إلكترونياً يُطبع «استلم نقداً»
+        // فيطالب التاجرُ عميلاً سيدفع ببطاقته — لبس محاسبي حقيقي.
+        const pendingOnline = !d.paidOnline && d.paymentMethod === 'online';
         const payHtml = `<div class="pay ${d.paidOnline ? 'paid' : 'cod'}">${d.paidOnline
-            ? `${L('✅ مدفوع إلكترونياً', '✅ Paid online')}<span class="pay-sub">${L('وصل حساب التاجر — لا تطلب مبلغاً من العميل', 'Sent to merchant — do not collect cash')}${d.paidAmount != null ? ` (${esc(String(d.paidAmount))} ${L('ر.س','SAR')})` : ''}</span>`
-            : `${L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}</div>`;
+            ? `${L('✅ مدفوع إلكترونياً', '✅ Paid online')}<span class="pay-sub">${L('وصل حساب التاجر — لا تطلب مبلغاً من العميل', 'Sent to merchant — do not collect cash')}${d.paidAmount != null ? ` (${fmtSAR(Number(d.paidAmount))} ${L('ر.س','SAR')})` : ''}</span>`
+            : pendingOnline
+                ? `${L('💳 الدفع إلكتروني — بانتظار السداد', '💳 Online payment — pending')}<span class="pay-sub">${L('يُسدَّد عبر بوابة التاجر قبل التسليم', 'Paid via the merchant’s gateway before handover')}</span>`
+                : `${delivery ? L('💵 الدفع عند التوصيل', '💵 Pay on delivery') : L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}</div>`;
         const doneHtml = d.status === 'completed'
             ? `<div class="status done">${L('✅ الطلب مكتمل', '✅ Order completed')}<span class="status-sub">${d.paidOnline ? L('حوسب العميل إلكترونياً — وصل حساب التاجر', 'Charged online — sent to merchant') : L('حوسب العميل عند الاستلام (نقداً/شبكة)', 'Charged at pickup (cash/card)')}</span></div>`
             : '';
         return payHtml + doneHtml;
     })()}
     ${d.buyerNote ? `<div class="note">📝 ${L('ملاحظة المشتري', 'Buyer note')}: ${esc(d.buyerNote)}</div>` : ''}
+    ${d.merchantNote ? `<div class="note">💬 ${L('ملاحظة التاجر', 'Merchant note')}: ${esc(d.merchantNote)}</div>` : ''}
     <div class="stamp">
       <div class="box">${L('توقيع/ختم التاجر', 'Merchant stamp')}</div>
       <div class="box">${L('استلمت الطلب', 'Received')}</div>
     </div>
     <div class="foot">${isValidSaudiVat(d.sellerVatNumber)
         ? L('فاتورة ضريبية مبسطة صادرة إلكترونياً عبر منصة تاكي نيابةً عن المتجر (المرحلة الأولى من الفوترة الإلكترونية).', 'Simplified tax invoice issued electronically via TAKI on behalf of the store.')
-        : L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}</div>
+        : L('صادرة عبر منصة تاكي — سند تشغيلي وليس فاتورة ضريبية. الفاتورة الضريبية (زاتكا) تصدر من نظام التاجر.', 'Issued via TAKI — operational receipt, not a tax invoice.')}<br>www.takisa.net</div>
   </div>
 </body>
 </html>`;

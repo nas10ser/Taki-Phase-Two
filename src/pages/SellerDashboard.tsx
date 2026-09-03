@@ -11,6 +11,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import GatewayCard from '../components/seller/GatewayCard';
+import DeliveryCard from '../components/seller/DeliveryCard';
 import VatStatusCard from '../components/seller/VatStatusCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
@@ -27,6 +28,8 @@ import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDe
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
+// v14.06 — رابط الملاحة إلى عنوان التوصيل (قاعدة روابط الخرائط الموحّدة)
+import { directionsLink } from '../utils/mapLinks';
 import { KSA_VAT_RATE, splitInclusive, fmtSAR } from '../utils/vat';
 import { thumbUrl, imgFallback } from '../utils/thumb';
 
@@ -113,6 +116,68 @@ const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: 
 };
 
 // SmartHijriDatePicker is now a separate component
+
+/**
+ * v14.06 — شريط التوصيل في بطاقة طلب التاجر.
+ *
+ * التاجر يحتاج ثلاثة أشياء قبل أي شيء آخر: **هل هو توصيل؟** وإلى **أي عنوان**؟
+ * و**كيف يصل إليه**؟ — فزرّ الخريطة يفتح ملاحة فعلية بالإحداثيات المحفوظة على
+ * الطلب لحظة الحجز (لا بعنوان المشتري الحالي، فقد يغيّره بعد الحجز).
+ * الإحداثيات تُفحص بـ`Number.isFinite` قبل بناء الرابط — رابطٌ يقود إلى NaN
+ * أسوأ من غياب الزرّ.
+ */
+const SellerFulfillmentStrip: React.FC<{ order: any; isRTL: boolean }> = ({ order, isRTL }) => {
+    const delivery = order?.fulfillment === 'delivery';
+    const addr = order?.deliveryAddress || null;
+    const fee = Number(order?.deliveryFee) > 0 ? Number(order.deliveryFee) : 0;
+    const lat = Number(addr?.lat), lng = Number(addr?.lng);
+    const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
+    if (!delivery) {
+        return (
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+                padding: '9px 13px', borderRadius: 12, background: 'var(--gray-100)',
+                border: '1px solid var(--border-color)',
+            }}>
+                <span style={{ fontSize: '1.05rem' }}>🏪</span>
+                <span style={{ fontWeight: 900, fontSize: '0.84rem', color: 'var(--text-primary)' }}>
+                    {isRTL ? 'استلام من المتجر' : 'Pickup at store'}
+                </span>
+            </div>
+        );
+    }
+    return (
+        <div style={{
+            marginBottom: 12, padding: '11px 14px', borderRadius: 14,
+            background: 'rgba(59,130,246,0.12)', border: '1.5px solid rgba(59,130,246,0.5)',
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>🚚</span>
+                <div style={{ fontWeight: 900, fontSize: '0.92rem', color: '#1e40af' }}>
+                    {isRTL ? 'توصيل إلى العميل' : 'Deliver to the customer'}
+                    {fee > 0 ? (isRTL ? ` — رسوم ${fee} ر.س` : ` — fee ${fee} SAR`) : ''}
+                </div>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-primary)', marginTop: 6, lineHeight: 1.7 }}>
+                📍 {[addr?.label, addr?.details, addr?.city].filter(Boolean).join(' — ') || (isRTL ? 'عنوان المشتري' : 'Buyer address')}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 9 }}>
+                {hasGeo && (
+                    <a href={directionsLink({ lat, lng })} target="_blank" rel="noopener noreferrer"
+                        style={{ background: '#1d4ed8', color: '#fff', borderRadius: 12, padding: '9px 13px', fontWeight: 900, fontSize: '0.8rem', textDecoration: 'none' }}>
+                        🗺️ {isRTL ? 'موقع التوصيل' : 'Delivery location'}
+                    </a>
+                )}
+                {addr?.phone && (
+                    <a href={`tel:${addr.phone}`}
+                        style={{ background: 'var(--card-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '9px 13px', fontWeight: 900, fontSize: '0.8rem', textDecoration: 'none' }}>
+                        📞 {isRTL ? 'جوال التوصيل' : 'Delivery phone'}
+                    </a>
+                )}
+            </div>
+        </div>
+    );
+};
 
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
@@ -2773,6 +2838,11 @@ const SellerDashboard: React.FC = () => {
                         <VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
                         <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
+                        {/* v14.06 (طلب ناصر) — خدمة التوصيل: تشغيلها، وطريقة الدفع
+                            (عند الاستلام / بطاقة فقط / الاثنان)، ونطاقاتها المرسومة
+                            باليد على الخريطة. القاعدة تحرس ما بعدها: من خارج النطاق
+                            لا يستطيع اختيار التوصيل من أي واجهة. */}
+                        <DeliveryCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
                         <ReferralCard isRTL={isRTL} onAlert={customAlert} />
                     </div>
@@ -4712,6 +4782,11 @@ const SellerDashboard: React.FC = () => {
                                                     💬 {order.merchantNote}
                                                 </div>
                                             )}
+                                            {/* v14.06 — السجلّ يوضّح كيف سُلِّم الطلب (توصيل/استلام) */}
+                                            <div style={{ marginTop: 12 }}>
+                                                <SellerFulfillmentStrip order={order} isRTL={isRTL} />
+                                            </div>
+
                                             {/* v13.18 (طلب ناصر المتكرر): فاتورة لكل طلب منتهٍ في «السجل» —
                                                 المكتمل يُطبع ببانر «الطلب مكتمل» وطريقة المحاسبة (نقداً/إلكترونياً)،
                                                 والملغي ببانر «الطلب ملغي» ومن ألغاه. كان الزر موجوداً في
@@ -4737,6 +4812,9 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{order.deal.itemName}</div>
                                     <div style={{ color: 'var(--primary)', fontWeight: 900, background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>{order.bookedQuantity} {isRTL ? 'قطع' : 'pcs'}</div>
                                 </div>
+                                {/* v14.06 — أول ما يحتاجه التاجر: توصيل أم استلام؟ وإلى أين؟ */}
+                                <SellerFulfillmentStrip order={order} isRTL={isRTL} />
+
                                 {/* v12.92 — حالة الدفع واضحة تماماً للتاجر: مدفوع إلكترونياً (وصل حسابه)
                                     أم الدفع عند الاستلام (يستلم المبلغ من العميل) — بخط واضح بلا لبس. */}
                                 {(() => {

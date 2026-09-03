@@ -29,8 +29,11 @@ const STOP = 106;
 /** يحوّل النص إلى سلسلة عروض العناصر (قضبان/فراغات) لباركود Code 128B. */
 const encode128B = (text: string): string | null => {
   // Code 128B يقبل ASCII المطبوع 32..126 فقط — ننظّف ما عداه.
+  // ونرفض ما ليس فيه محرف مقروء واحد: رمز كاشير من مسافات فقط (أو عربي كامل
+  // يُنظَّف إلى مسافة) كان يُنتج باركوداً «صالحاً» يُمسح إلى فراغ — ورقٌ يُطبع
+  // ويوهم التاجر أنه يعمل. لا باركود خير من باركود يمسح لا شيء.
   const clean = String(text).replace(/[^\x20-\x7E]/g, '');
-  if (!clean) return null;
+  if (!clean.trim()) return null;
 
   const values: number[] = [START_B];
   for (let i = 0; i < clean.length; i++) {

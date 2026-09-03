@@ -21,6 +21,20 @@ export interface UserProfile {
     preferredLang?: 'ar' | 'en';
     lat?: number;
     lng?: number;
+    /**
+     * v14.06 — عنوان التوصيل الدائم للمشتري (`users.delivery_address`).
+     * الإحداثيات إلزامية في القاعدة لأن نطاق التاجر يُقاس عليها؛ الوسم والتفاصيل
+     * والجوال للتاجر ليصل. `null` = محو مقصود، `undefined` = لا تلمس العمود.
+     * ⚠️ بيانات شخصية: لا تُدرج في أي قائمة أعمدة عامة (`PUBLIC_SELLER_COLUMNS`).
+     */
+    deliveryAddress?: {
+        label?: string;
+        details?: string;
+        city?: string;
+        phone?: string;
+        lat: number;
+        lng: number;
+    } | null;
     googleMapsLink?: string;
     workingHours?: any;   // ساعات عمل المحل (للتاجر) — see utils/workingHours
     // v11.19 — granular admin permissions. Super admin (Nasser) bypasses

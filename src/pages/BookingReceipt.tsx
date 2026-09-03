@@ -48,6 +48,13 @@ interface ReceiptData {
     buyer_phone?: string | null;
     store_id?: string | null;
     user_id?: string | null;
+    /** v14.06 — طريقة الاستلام ولقطة العنوان والرسوم (يُرجعها get_booking_card) */
+    fulfillment?: 'pickup' | 'delivery';
+    delivery_address?: { label?: string; details?: string; city?: string; phone?: string; lat?: number | string; lng?: number | string } | null;
+    delivery_fee?: number | null;
+    payment_method?: 'cod' | 'online' | null;
+    paid_at?: string | null;
+    paid_amount?: number | null;
     viewer_is_buyer?: boolean;
     viewer_is_seller?: boolean;
     viewer_is_admin?: boolean;
@@ -258,6 +265,17 @@ const BookingReceipt: React.FC = () => {
 
             {/* Details card */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, boxShadow: 'var(--shadow-sm)', padding: 18, marginBottom: 16 }}>
+                {/* v14.06 — طريقة الاستلام أولاً: هي ما يحدّد سلوك الطرفين. */}
+                {row(t('طريقة الاستلام', 'Fulfillment'),
+                    data.fulfillment === 'delivery'
+                        ? <span style={{ color: BLUE }}>🚚 {t('توصيل إلى العنوان', 'Home delivery')}</span>
+                        : <span>🏪 {t('استلام من المتجر', 'Pickup at store')}</span>)}
+                {data.fulfillment === 'delivery' && data.delivery_address && row(
+                    t('عنوان التوصيل', 'Delivery address'),
+                    [data.delivery_address.label, data.delivery_address.details, data.delivery_address.city].filter(Boolean).join(' — ') || '—')}
+                {data.fulfillment === 'delivery' && Number(data.delivery_fee) > 0 && row(
+                    t('رسوم التوصيل', 'Delivery fee'),
+                    <span>{Number(data.delivery_fee)} {t('ر.س', 'SAR')}</span>)}
                 {booked && row(t('وقت الحجز', 'Booked at'), <span>{booked.greg}{booked.hijri ? ` — ${booked.hijri}` : ''}</span>)}
                 {done && completed && row(t('وقت الاستلام', 'Completed at'), <span>{completed.greg}{completed.hijri ? ` — ${completed.hijri}` : ''}</span>)}
                 {(data.viewer_is_seller || data.viewer_is_admin) && data.buyer_name && row(t('العميل', 'Customer'), data.buyer_name)}

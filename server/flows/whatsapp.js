@@ -23,6 +23,10 @@ const HRS    = require('../lib/hours');
 const I18N   = require('../lib/i18n');
 const GEO_EN = require('../lib/geoNames.json');
 const { getSession } = require('../lib/session');
+// v14.06 — قرار عرض التوصيل: نفس ملف تيليجرام حرفاً بحرف (البوتان توأمان)
+const DLV    = require('../lib/delivery');
+// v14.06 — فاتورة PDF: نفس مستند الموقع (باركود الطلب + رموز الكاشير).
+const INV = require('../lib/invoicePdf');
 
 const { catLabel, CAT, genderLabel, GENDER } = C;
 const { dirLink, remainingText, resolveGoogleLocation } = G;
@@ -127,6 +131,28 @@ function create(deps) {
     }
 
     const sendImage = (to, link, caption) => sendWA(to, { type: 'image', image: { link, caption: trunc(caption, LIM.caption) } });
+
+    /**
+     * v14.06 — إرسال ملف PDF. واتساب لا يقبل الملف داخل رسالة: يُرفع أولاً إلى
+     * وسائط الرقم (`/media`) فيعيد معرّفاً، ثم تُرسل الرسالة بذلك المعرّف.
+     * يُرجع null عند أي فشل ليسقط المُستدعي للنصّ بدل أن يبقى المستخدم بلا فاتورة.
+     */
+    async function sendDocument(to, buffer, filename, caption) {
+        if (!enabled() || !buffer) return null;
+        try {
+            const fd = new FormData();
+            fd.append('messaging_product', 'whatsapp');
+            fd.append('type', 'application/pdf');
+            fd.append('file', new Blob([buffer], { type: 'application/pdf' }), filename);
+            const up = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${PHONE_ID}/media`, {
+                method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: fd,
+            });
+            if (!up.ok) { console.warn('WA media upload:', up.status, (await up.text().catch(() => '')).slice(0, 200)); return null; }
+            const mj = await up.json().catch(() => ({}));
+            if (!mj || !mj.id) return null;
+            return await sendWA(to, { type: 'document', document: { id: mj.id, filename, caption: trunc(caption || '', LIM.caption) } });
+        } catch (e) { console.warn('WA sendDocument:', e.message); return null; }
+    }
     const askLocation = to => sendWA(to, {
         type: 'interactive',
         interactive: { type: 'location_request_message', body: { text: trunc(tr('wa_ask_location'), LIM.body) }, action: { name: 'send_location' } },
@@ -413,6 +439,10 @@ function create(deps) {
         if (!d) return sendButtons(from, { body: tr('wa_deal_gone'), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
         s.temp.dealMaxPer = Number(d.max_per_booking) || 0;   // v12.28 — سقف التاجر للحجز الواحد
         s.temp.dealId = d.id; s.temp.dealName = d.item_name;
+        // v14.06 — يلزمان خطوة «طريقة الاستلام»: معرّف المتجر لسؤال نطاقه، وسعره
+        // لحساب الحدّ الأدنى قبل أن يرفض الحارس الحجز.
+        s.temp.dealStoreId = d.store_id || null; s.temp.dealPrice = Number(d.discounted_price) || 0;
+        s.temp.fulfillment = null; s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
         s.temp.locId = null;                                  // v13.14 — عرض جديد = بلا فرع محفوظ
         const geo = s.geo;
         const img = (Array.isArray(d.images) && d.images.filter(Boolean)[0]) || d.image;
@@ -471,7 +501,16 @@ function create(deps) {
     // ════════════════════════════════════════════════════════════════════════
     async function startBook(from, s, id) {
         if (!s.userId) return sendButtons(from, { body: tr('wa_login_first'), buttons: [{ id: 'wa:link', title: tr('menu_login_link') }, menuBtn()] });
-        if (id) { s.temp.dealId = id; s.temp.locId = null; const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null }); s.temp.dealName = d ? d.item_name : ''; s.temp.dealMaxPer = Number(d && d.max_per_booking) || 0; }
+        if (id) {
+            s.temp.dealId = id; s.temp.locId = null;
+            const d = await rpc('bot_get_deal', { p_deal_id: id, p_telegram_id: null });
+            s.temp.dealName = d ? d.item_name : '';
+            s.temp.dealMaxPer = Number(d && d.max_per_booking) || 0;
+            // v14.06 — نفس بيانات التوصيل (البوتان توأمان — قاعدة المشروع)
+            s.temp.dealStoreId = (d && d.store_id) || null;
+            s.temp.dealPrice = Number(d && d.discounted_price) || 0;
+            s.temp.fulfillment = null; s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
+        }
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
         s.step = 'idle';
         // v12.28 — سقف التاجر للحجز الواحد: نخفي الكميات الأعلى منه ونظهر السقف
@@ -507,6 +546,47 @@ function create(deps) {
             { id: 'wa:bback:prep', title: tr('wa_back') },
         ] });
     }
+    /**
+     * v14.06 — «طريقة الاستلام» في واتساب. توأم `askFulfillment` في تيليجرام حرفاً
+     * بحرف في المنطق، ويختلف في الغلاف وحده: واتساب يسمح **بثلاثة أزرار** في
+     * الصف **ويبتر الزائد بصمت**، فالأزرار محسوبة بدقّة (توصيل · استلام · رجوع).
+     */
+    async function askFulfillment(from, s) {
+        s.step = 'idle';
+        s.temp.fulfillment = 'pickup';
+        s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
+        let q = null;
+        if (s.temp.dealStoreId) {
+            try { q = await rpc('bot_delivery_quote', aid(from, { p_store_id: s.temp.dealStoreId })); } catch { q = null; }
+        }
+        const goods = (Number(s.temp.dealPrice) || 0) * (s.temp.dealQty || 1);
+        const off = DLV.deliveryOffer(q, goods);
+        if (!off.ask) return bookConfirm(from, s);
+
+        let body = `${tr('dlv_ask_title')}\n${DIV}\n${tr('dlv_ask_body', s.temp.dealName || '')}`;
+        const btns = [];
+
+        if (off.reason === 'no_address') {
+            body += `\n\n${tr('dlv_no_address')}`;
+        } else if (off.reason === 'out_of_zone') {
+            body += `\n\n${tr('dlv_out_of_zone')}`;
+        } else if (off.reason === 'min_order') {
+            body += `\n\n${tr('dlv_min_order', money(off.minOrder), cur())}`;
+        } else {
+            s.temp.dlvFee = off.fee;
+            s.temp.dlvLabel = off.label;
+            s.temp.dlvPay = off.payment;
+            s.temp.dlvEta = off.eta;
+            body += `\n\n${off.fee > 0 ? tr('dlv_available', off.zoneName, money(off.fee), cur()) : tr('dlv_free', off.zoneName)}`;
+            if (off.eta != null) body += `\n${tr('dlv_eta', String(off.eta))}`;
+            body += `\n${tr(off.payment === 'card' ? 'dlv_card_only' : 'dlv_cod')}`;
+            btns.push({ id: 'wa:ful:delivery', title: tr('dlv_delivery_btn') });
+        }
+        btns.push({ id: 'wa:ful:pickup', title: tr('dlv_pickup_btn') });
+        btns.push({ id: 'wa:bback:note', title: tr('wa_back') });
+        return sendButtons(from, { body, buttons: btns.slice(0, 3) });
+    }
+
     async function bookConfirm(from, s) {
         s.step = 'idle';
         const d = await rpc('bot_get_deal', { p_deal_id: s.temp.dealId, p_telegram_id: null });
@@ -516,9 +596,19 @@ function create(deps) {
             const opens = os.opens_in_min != null ? tr('wa_book_err_opensin', HRS.fmtMins(os.opens_in_min)) : '';
             return sendButtons(from, { body: tr('wa_book_err_closed', opens), buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
         }
-        const total = d.discounted_price * (s.temp.dealQty || 1);
+        // v14.06 — الإجمالي شامل رسوم التوصيل (ما يدفعه المشتري فعلاً)
+        const isDlv = s.temp.fulfillment === 'delivery';
+        const dlvFee = isDlv ? (Number(s.temp.dlvFee) || 0) : 0;
+        const total = d.discounted_price * (s.temp.dealQty || 1) + dlvFee;
         let m = tr('wa_confirm_head', DIV, d.item_name, d.shop_name, s.temp.dealQty || 1, prepLabel(s.temp.prepTime));
         if (s.temp.notes) m += tr('wa_confirm_note', s.temp.notes);
+        if (isDlv) {
+            m += tr('dlv_confirm_line', s.temp.dlvLabel || tr('inv_delivery'));
+            if (dlvFee > 0) m += tr('dlv_fee_confirm', money(dlvFee), cur());
+            if (s.temp.dlvPay === 'card') m += `\n${tr('dlv_card_only')}`;
+        } else {
+            m += `\n${tr('dlv_pickup_line')}`;
+        }
         m += tr('wa_confirm_total', money(total), cur(), DIV);
         if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN) m += tr('wa_confirm_closing', HRS.fmtMins(os.closes_in_min));
         m += tr('wa_confirm_disclaimer');
@@ -530,7 +620,7 @@ function create(deps) {
     }
     async function doBook(from, s) {
         if (!s.temp.dealId) return sendText(from, tr('wa_session_ended'));
-        const r = await rpc('bot_book_deal', aid(from, { p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty || 1, p_notes: s.temp.notes || null, p_prep_time: s.temp.prepTime || 'arrival', p_location_id: s.temp.locId || null }));
+        const r = await rpc('bot_book_deal', aid(from, { p_deal_id: s.temp.dealId, p_quantity: s.temp.dealQty || 1, p_notes: s.temp.notes || null, p_prep_time: s.temp.prepTime || 'arrival', p_location_id: s.temp.locId || null, p_fulfillment: s.temp.fulfillment || 'pickup' }));
         const bc = r && r.barcode; const dealName = s.temp.dealName;
         const bookedDealId = s.temp.dealId; // v12.53 — لرابط «أكمل من الموقع» عند needs_options
         // v13.14 — يحتاج اختيار فرع: لا نمسح الجلسة — قائمة فروع (سقف واتساب ١٠ صفوف)
@@ -543,6 +633,9 @@ function create(deps) {
             ] }] });
         }
         s.temp.dealId = null; s.temp.dealQty = 1; s.temp.prepTime = null; s.temp.notes = null; s.temp.locId = null;
+        // v14.06 — حالة التوصيل تُمسح كي لا يورث الحجز التالي عنوان السابق
+        s.temp.fulfillment = null; s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
+        s.temp.dealStoreId = null; s.temp.dealPrice = 0;
         if (!r || !r.success) {
             const e = r && r.error;
             // v12.53 — عرض له اختيارات مطلوبة (مقاسات/تفضيلات): أكمل الحجز من الموقع
@@ -559,6 +652,9 @@ function create(deps) {
                 : e === 'rebook_limit' ? tr('bk_err_rebook_limit', r.limit ?? 1)
                 : e === 'rebook_wait' ? tr('bk_err_rebook_wait', HRS.fmtMins(r.wait_minutes ?? 1))
                 : e === 'not_linked' ? tr('wa_login_first')
+                : e === 'delivery_no_address' ? tr('dlv_no_address')
+                : e === 'delivery_min_order' ? tr('dlv_min_order', money(r.min_order || 0), cur())
+                : e === 'delivery_unavailable' ? (r.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
                 : e === 'suspended' ? tr('wa_book_err_suspended')
                 : tr('wa_book_err_fail');
             return sendButtons(from, { body: m, buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });
@@ -571,7 +667,9 @@ function create(deps) {
         const expiry = r.expiry_at ? fmtDate(new Date(r.expiry_at)) : '—';
         // v13.14 — سطر الفرع المختار (عرض متعدد المواقع)
         await sendText(from, tr('wa_book_ok', DIV, r.deal_name || dealName, r.shop_name, r.quantity, prepLabel(r.prep_time), bc, expiry)
-            + (r.location_name ? tr('wa_book_ok_loc', r.location_name) : ''));
+            + (r.location_name ? tr('wa_book_ok_loc', r.location_name) : '')
+            // v14.06 — التوصيل: يعرف المشتري فوراً أنه ينتظر المندوب لا يذهب للمتجر
+            + (r.fulfillment === 'delivery' ? tr('dlv_booked_line', r.delivery_label || tr('inv_delivery')) : ''));
         await sendButtons(from, { body: tr('wa_pick'), buttons: [
             { id: `wa:chat:${bc}`, title: tr('wa_chat_btn') },
             { id: 'wa:bookings', title: tr('menu_bookings_buyer') },
@@ -648,6 +746,13 @@ function create(deps) {
         }
         let extra = '';
         if (b.notes) extra += tr('wa_bk_note', b.notes);
+        // v14.06 — توصيل أم استلام؟ توأم سطر تيليجرام (بلا MarkdownV2 هنا).
+        if (b.fulfillment === 'delivery') {
+            extra += `\n${tr('dlv_booked_line', [b.delivery_label, b.delivery_details].filter(x => x && String(x).trim()).join(' — ') || tr('inv_delivery'))}`;
+            if (Number(b.delivery_fee) > 0) extra += `\n🚚 ${tr('inv_delivery_fee')}: ${money(b.delivery_fee)} ${cur()}`;
+        } else if (b.fulfillment === 'pickup') {
+            extra += `\n${tr('dlv_pickup_line')}`;
+        }
         extra += bkStatusLines(b);
         if (payInfo && payInfo.paid) extra += `\n${tr('pay_paid_line')}`;
         const body = tr('wa_bk_detail', bc, DIV, b.deal_name, b.shop_name, b.quantity, prepLabel(b.prep_time), statusLabel(b.status), extra);
@@ -685,11 +790,20 @@ function create(deps) {
         L.push(DIV);
         L.push(`🛍 ${tr('inv_item')}: ${v.item_name || ''}`);
         L.push(`📦 ${tr('inv_qty')}: ${v.quantity}`);
+        if (v.location_name) L.push(`📍 ${tr('inv_branch')}: ${v.location_name}`);
+        L.push(`${v.fulfillment === 'delivery' ? '🚚' : '🏪'} ${tr('inv_fulfillment')}: ${tr(v.fulfillment === 'delivery' ? 'inv_delivery' : 'inv_pickup')}`);
+        if (v.fulfillment === 'delivery' && v.delivery) {
+            const a = v.delivery;
+            const parts = [a.label, a.details, a.city].filter(x => x && String(x).trim());
+            L.push(`📍 ${tr('inv_delivery_to')}: ${parts.join(' — ') || '—'}`);
+            if (a.phone) L.push(`📞 ${a.phone}`);
+        }
         if (v.unit_price != null) L.push(`💵 ${tr('inv_unit')}: ${v.unit_price} ${cur}`);
         if (Array.isArray(v.items) && v.items.length) {
             L.push(`\n🔖 ${tr('inv_options')}:`);
             for (const it of v.items) L.push(`  ↳ ${it.label}${it.qty > 1 ? ` ×${it.qty}` : ''}`);
         }
+        if (Number(v.delivery_fee) > 0) L.push(`🚚 ${tr('inv_delivery_fee')}: ${v.delivery_fee} ${cur}`);
         L.push(DIV);
         if (v.total != null) {
             if (v.vat_amount != null) {
@@ -712,8 +826,23 @@ function create(deps) {
         if (!s.userId) return linkInstructions(from);
         let v = null;
         try { v = await rpc('bot_get_booking_invoice', { p_uid: s.userId, p_barcode: bc }); } catch { /* تُعالَج أدناه */ }
-        await sendText(from, (v && v.ok === true) ? invoiceTextWA(v) : tr('inv_fail'));
-        return sendButtons(from, { body: '—', buttons: [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn()] });
+        const backRow = () => sendButtons(from, { body: '—', buttons: [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn()] });
+        if (!v || v.ok !== true) { await sendText(from, tr('inv_fail')); return backRow(); }
+        // v14.06 (طلب ناصر): ملف PDF لا نصّ — النصّ بلا باركود فلا يُمسح رقم
+        // الطلب ولا رموز الكاشير. المستند نسخة من فاتورة الموقع حرفياً.
+        if (INV.fontsAvailable()) {
+            try {
+                const buf = await INV.buildInvoicePdf(v, I18N.lang());
+                const sent = await sendDocument(from, buf, INV.invoiceFileName(v), tr('inv_pdf_caption', v.barcode || bc));
+                if (sent) return backRow();
+                await sendText(from, tr('inv_pdf_fallback'));
+            } catch (e) {
+                console.warn('WA invoice pdf failed:', e && e.message);
+                await sendText(from, tr('inv_pdf_fallback'));
+            }
+        }
+        await sendText(from, invoiceTextWA(v));
+        return backRow();
     }
     async function askCancel(from, s, bc) {
         await sendButtons(from, { body: tr('wa_cancel_confirm', bc), buttons: [
@@ -1059,7 +1188,22 @@ function create(deps) {
         all.forEach(x => { s.temp.soCache[x.barcode] = x; });
         const b = soVal(s, bc);
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:orders', title: tr('menu_seller_bookings') }] });
-        const extra = (b.notes ? tr('wa_bk_note', b.notes) : '') + bkStatusLines(b);
+        let dlv = '';
+        if (b.fulfillment === 'delivery') {
+            dlv += `\n${tr('dlv_seller_line', [b.delivery_label, b.delivery_details].filter(x => x && String(x).trim()).join(' — ') || tr('inv_delivery'))}`;
+            if (Number(b.delivery_fee) > 0) dlv += `\n🚚 ${tr('inv_delivery_fee')}: ${money(b.delivery_fee)} ${cur()}`;
+            if (b.delivery_phone) dlv += `\n📞 ${b.delivery_phone}`;
+            // رابط الملاحة نصّاً: واتساب يجعله قابلاً للنقر، وزرّ URL غير متاح
+            // في الردود السريعة. الإحداثي يُفحص أولاً — رابطٌ إلى NaN أسوأ من لا رابط.
+            const dlat = Number(b.delivery_lat), dlng = Number(b.delivery_lng);
+            if (Number.isFinite(dlat) && Number.isFinite(dlng)) {
+                const url = dirLink({ map_lat: dlat, map_lng: dlng });
+                if (url) dlv += `\n${tr('dlv_seller_map')}: ${url}`;
+            }
+        } else if (b.fulfillment === 'pickup') {
+            dlv += `\n${tr('dlv_pickup_line')}`;
+        }
+        const extra = (b.notes ? tr('wa_bk_note', b.notes) : '') + dlv + bkStatusLines(b);
         const body = tr('wa_so_detail', bc, b.deal_name, b.user_name || '—', b.user_phone || '—', b.quantity, prepLabel(b.prep_time), statusLabel(b.status), extra);
         const btns = [];
         if (b.status === 'pending') btns.push({ id: `wa:ack:${bc}`, title: tr('wa_ack') });
@@ -1765,7 +1909,7 @@ function create(deps) {
             // مشتري
             case 'await_book_qty': { if (!isQty(text) || numOf(text) < 1) { await sendText(from, tr('wa_qty_bad')); return; } return setQty(from, s, numOf(text)); }
             case 'await_prep': { if (!isQty(text) || numOf(text) < 0) { await sendText(from, tr('wa_prep_bad')); return; } return setPrep(from, s, `${numOf(text)}min`); }
-            case 'await_note': { s.temp.notes = text.slice(0, 300); return bookConfirm(from, s); }
+            case 'await_note': { s.temp.notes = text.slice(0, 300); return askFulfillment(from, s); }
             case 'await_search': return runSearch(from, s, text.slice(0, 60));
             case 'await_chat_msg': return sendChat(from, s, text.slice(0, 500));
             case 'await_edit_qty': { if (!isQty(text)) { await sendText(from, tr('wa_qty_bad')); return; } const r = await rpc('bot_update_booking', aid(from, { p_barcode: s.temp.editBarcode, p_quantity: numOf(text) })); return afterEdit(from, s, r); }
@@ -1862,7 +2006,10 @@ function create(deps) {
         if (id === 'wa:prepc') { s.step = 'await_prep'; return sendText(from, tr('wa_ask_prep_custom')); }
         if (k === 'prep') return setPrep(from, s, p[2] === 'arrival' ? 'arrival' : `${p[2]}min`);
         if (id === 'wa:note:add') { s.step = 'await_note'; return sendText(from, tr('wa_ask_note_text')); }
-        if (id === 'wa:note:skip') { s.temp.notes = null; return bookConfirm(from, s); }
+        if (id === 'wa:note:skip') { s.temp.notes = null; return askFulfillment(from, s); }
+        // v14.06 — طريقة الاستلام (توأم ful:* في تيليجرام)
+        if (id === 'wa:ful:pickup') { s.temp.fulfillment = 'pickup'; s.temp.dlvFee = 0; return bookConfirm(from, s); }
+        if (id === 'wa:ful:delivery') { s.temp.fulfillment = 'delivery'; return bookConfirm(from, s); }
         // حجوزاتي
         if (id === 'wa:bk:cur') return showBuyerBookings(from, s, 'current');
         if (id === 'wa:bk:prev') return showBuyerBookings(from, s, 'previous');

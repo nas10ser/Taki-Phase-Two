@@ -37,6 +37,43 @@ const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expi
     );
 };
 
+/**
+ * v14.06 — شريط طريقة الاستلام في بطاقة الطلب.
+ * المشتري يحتاج أن يعرف بنظرة: هل يذهب للمتجر أم ينتظر المندوب؟ — ولذلك
+ * يظهر في الطلبات الجارية **والسابقة** (السابقة سجلٌّ يُراجعه عند أي خلاف).
+ */
+const FulfillmentStrip: React.FC<{ booking: any; isRTL: boolean }> = ({ booking, isRTL }) => {
+    const delivery = booking?.fulfillment === 'delivery';
+    const addr = booking?.deliveryAddress || null;
+    const fee = Number(booking?.deliveryFee) > 0 ? Number(booking.deliveryFee) : 0;
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+            padding: '10px 13px', borderRadius: 14,
+            background: delivery ? 'rgba(59,130,246,0.12)' : 'var(--gray-100)',
+            border: `1.5px solid ${delivery ? 'rgba(59,130,246,0.45)' : 'var(--border-color)'}`,
+        }}>
+            <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>{delivery ? '🚚' : '🏪'}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 900, fontSize: '0.88rem', color: delivery ? '#1e40af' : 'var(--text-primary)' }}>
+                    {delivery ? (isRTL ? 'توصيل إلى عنوانك' : 'Delivery to your address')
+                              : (isRTL ? 'استلام من المتجر' : 'Pickup at store')}
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
+                    {delivery
+                        ? [
+                            addr?.label,
+                            addr?.details,
+                            addr?.city,
+                            fee > 0 ? (isRTL ? `رسوم التوصيل ${fee} ر.س` : `delivery fee ${fee} SAR`) : (isRTL ? 'توصيل مجاني' : 'free delivery'),
+                          ].filter(Boolean).join(' · ')
+                        : (isRTL ? 'أظهر رمز الطلب للبائع عند الاستلام' : 'Show the order code to the seller on pickup')}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const Bookings: React.FC = () => {
     const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings } = useApp();
     const history = useHistory();
@@ -446,6 +483,9 @@ const Bookings: React.FC = () => {
                                                             : (isRTL ? '💳 ادفع الآن إلكترونياً — مدى / فيزا / ماستركارد' : '💳 Pay now — mada / Visa / Mastercard')}
                                                     </button>
                                                 )}
+                                                {/* v14.06 — توصيل أم استلام؟ أول ما يبحث عنه المشتري */}
+                                                <FulfillmentStrip booking={booking} isRTL={isRTL} />
+
                                                 {/* Timer */}
                                                 {booking.expiryTime > Date.now() && (
                                                     <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -688,6 +728,11 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
+                                                {/* v14.06 — سجلّ الطلب يوضّح أيضاً كيف سُلِّم */}
+                                                <div style={{ marginTop: 16 }}>
+                                                    <FulfillmentStrip booking={booking} isRTL={isRTL} />
+                                                </div>
+
                                                 {/* v13.11/13 (طلب ناصر): فاتورة لكل طلب منتهٍ للمراجعة —
                                                     المكتمل (كيف حوسب العميل + «الطلب مكتمل»)، والملغي
                                                     («الطلب ملغي» + من ألغاه: العميل/التاجر). */}

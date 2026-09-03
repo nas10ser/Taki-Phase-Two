@@ -146,6 +146,9 @@ export const userRepository = {
             if (p.preferredLang !== undefined) dbData.preferred_lang = p.preferredLang;
             if (p.lat !== undefined) dbData.lat = p.lat;
             if (p.lng !== undefined) dbData.lng = p.lng;
+            // v14.06 — عنوان التوصيل: يمرّ بنفس قاعدة الجزئية (undefined = لا تلمس،
+            // null = محو مقصود). قيد القاعدة يرفض العنوان بلا إحداثيات رقمية.
+            if (p.deliveryAddress !== undefined) dbData.delivery_address = p.deliveryAddress;
             if (p.googleMapsLink !== undefined) dbData.google_maps_link = p.googleMapsLink;
             if (p.workingHours !== undefined) dbData.working_hours = p.workingHours;
 
@@ -328,6 +331,10 @@ export const userRepository = {
                     blockedMerchants: Array.isArray(data.blocked_merchants) ? data.blocked_merchants : [],
                     lat: data.lat,
                     lng: data.lng,
+                    // v14.06 — عنوان التوصيل الدائم. `select('*')` يُرجعه أصلاً،
+                    // وكان يسقط في التحويل فيصل التطبيق «بلا عنوان» فيُخفي التوصيل.
+                    deliveryAddress: (data.delivery_address && typeof data.delivery_address === 'object')
+                        ? data.delivery_address : null,
                     googleMapsLink: data.google_maps_link,
                     workingHours: data.working_hours,
                     isSuperAdmin: data.is_super_admin === true,

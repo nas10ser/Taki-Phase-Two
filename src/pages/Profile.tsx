@@ -6,6 +6,7 @@ import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../d
 import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
 import AccountSettingsCard from '../components/AccountSettingsCard';
+import BuyerAddressCard from '../components/BuyerAddressCard';
 import TelegramLinkButton from '../components/TelegramLinkButton';
 import WhatsAppLinkButton from '../components/WhatsAppLinkButton';
 import { isTelegramMiniApp, linkTelegramToCurrentUser } from '../services/telegramMiniApp';
@@ -338,6 +339,11 @@ const Profile: React.FC = () => {
                             through Supabase auth (email-confirmation hop for
                             new email; in-session reset for password). */}
                         <AccountSettingsCard />
+
+                        {/* v14.06 (طلب ناصر) — عنوان التوصيل الدائم: يُضاف مرة
+                            ويُغيَّر في أي وقت، فيظهر «التوصيل» في المتاجر التي
+                            تغطّي هذه النقطة. يراه كل حساب — فالتاجر مشترٍ أيضاً. */}
+                        <BuyerAddressCard />
 
                         {/* Secure Telegram linking — the bot binds to THIS
                             account via a one-time token minted for the signed-in

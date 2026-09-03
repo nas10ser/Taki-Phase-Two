@@ -77,6 +77,12 @@ export interface Booking {
     paymentMethod?: 'cod' | 'online';
     /** v13.13 — من ألغى الطلب (يظهر على الفاتورة): 'buyer'|'seller'|'system'|'expired' */
     cancelledBy?: string;
+    /** v14.06 — طريقة الاستلام: 'pickup' من المتجر أو 'delivery' إلى عنوان المشتري. */
+    fulfillment?: 'pickup' | 'delivery';
+    /** v14.06 — لقطة عنوان التوصيل وقت الحجز (يكتبها حارس القاعدة، لا العميل). */
+    deliveryAddress?: { label?: string; details?: string; city?: string; phone?: string; lat?: number; lng?: number; zone_id?: string } | null;
+    /** v14.06 — رسوم التوصيل التي ثبّتها الخادم من نطاق التاجر. */
+    deliveryFee?: number;
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -134,6 +140,9 @@ export const mapBookingRow = (b: any, deal?: any): Booking => ({
     paidAmount: b.paid_amount != null ? Number(b.paid_amount) : undefined,
     paymentMethod: (b.payment_method === 'cod' || b.payment_method === 'online') ? b.payment_method : undefined,
     cancelledBy: b.cancelled_by || undefined,
+    fulfillment: b.fulfillment === 'delivery' ? 'delivery' : 'pickup',
+    deliveryAddress: (b.delivery_address && typeof b.delivery_address === 'object') ? b.delivery_address : null,
+    deliveryFee: b.delivery_fee != null ? Number(b.delivery_fee) : undefined,
     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
     locationId: b.location_id || undefined,
     expiryTime: b.expiry_time,
@@ -241,6 +250,10 @@ export const bookingRepository = {
                     paymentMethod: (b.payment_method === 'cod' || b.payment_method === 'online') ? b.payment_method : undefined,
                     // v13.13 — من ألغى الطلب (للفاتورة)
                     cancelledBy: b.cancelled_by || undefined,
+                    // v14.06 — التوصيل: الطريقة والعنوان والرسوم (كلها من الخادم)
+                    fulfillment: b.fulfillment === 'delivery' ? 'delivery' : 'pickup',
+                    deliveryAddress: (b.delivery_address && typeof b.delivery_address === 'object') ? b.delivery_address : null,
+                    deliveryFee: b.delivery_fee != null ? Number(b.delivery_fee) : undefined,
                     // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
                     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
                     // v12.91 — الفرع المختار
@@ -285,6 +298,9 @@ export const bookingRepository = {
                     paidAmount: data.paid_amount != null ? Number(data.paid_amount) : undefined,
                     paymentMethod: (data.payment_method === 'cod' || data.payment_method === 'online') ? data.payment_method : undefined,
                     cancelledBy: data.cancelled_by || undefined,
+                    fulfillment: data.fulfillment === 'delivery' ? 'delivery' : 'pickup',
+                    deliveryAddress: (data.delivery_address && typeof data.delivery_address === 'object') ? data.delivery_address : null,
+                    deliveryFee: data.delivery_fee != null ? Number(data.delivery_fee) : undefined,
                     expiryTime: data.expiry_time
                 };
             }
@@ -319,6 +335,11 @@ export const bookingRepository = {
                 location_id: booking.locationId || null,
                 // v13.11 — نية الدفع وقت الحجز (cod/online) لإخفاء «ادفع الآن» عن COD
                 payment_method: booking.paymentMethod || null,
+                // v14.06 — التوصيل: نرسل الطريقة والعنوان فقط. الرسوم يحسبها
+                // حارس القاعدة من نطاق التاجر ويكتبها بنفسه — أي رقم من العميل
+                // يُتجاهل، فلا يستطيع مشترٍ تخفيض رسوم توصيله.
+                fulfillment: booking.fulfillment === 'delivery' ? 'delivery' : 'pickup',
+                delivery_address: booking.fulfillment === 'delivery' ? (booking.deliveryAddress || null) : null,
                 status: booking.status,
                 booked_at: booking.bookedAt,
                 expiry_time: booking.expiryTime
