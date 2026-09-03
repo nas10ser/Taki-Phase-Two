@@ -9,6 +9,7 @@ import { Booking } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
 import ReportDialog from '../components/ReportDialog';
+import DeliveryTrackMap from '../components/DeliveryTrackMap';
 import { supabase } from '../services/supabaseClient';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { thumbUrl, imgFallback } from '../utils/thumb';
@@ -87,6 +88,8 @@ const Bookings: React.FC = () => {
     // cards). ReportDialog + reportRepository persist it to the DB; the
     // v10.79 trigger stamps it as a complaint against this store.
     const [reportStore, setReportStore] = useState<{ id: string; name?: string } | null>(null);
+    // v14.07 — «أين طلبي؟»: باركود الطلب المفتوحة خريطته الحيّة (null = مغلقة).
+    const [trackBarcode, setTrackBarcode] = useState<string | null>(null);
     // Default to newest-first so the most recently booked order is visible
     // without scrolling — matches what users expect from inbox-style screens.
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -486,6 +489,26 @@ const Bookings: React.FC = () => {
                                                 {/* v14.06 — توصيل أم استلام؟ أول ما يبحث عنه المشتري */}
                                                 <FulfillmentStrip booking={booking} isRTL={isRTL} />
 
+                                                {/* v14.07 — «أين طلبي؟» للطلبات الجارية بالتوصيل وحدها.
+                                                    لا يظهر للاستلام (لا شيء يُتتبَّع) ولا للطلبات المنتهية
+                                                    (الموقع يُمحى عند التسليم). الخريطة نفسها تشرح حالة
+                                                    «قيد التجهيز» فلا نُخفي الزرّ قبل الانطلاق. */}
+                                                {booking.fulfillment === 'delivery' &&
+                                                 (booking.status === 'pending' || booking.status === 'acknowledged') && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setTrackBarcode(booking.barcode); }}
+                                                        style={{
+                                                            width: '100%', marginBottom: 20, padding: '13px',
+                                                            borderRadius: 14, border: 'none',
+                                                            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                                                            color: '#fff', fontWeight: 900, fontSize: '0.9rem',
+                                                            cursor: 'pointer', boxShadow: '0 6px 18px rgba(59, 130, 246, 0.32)',
+                                                        }}
+                                                    >
+                                                        🚚 {isRTL ? 'تتبّع الطلب على الخريطة' : 'Track order on the map'}
+                                                    </button>
+                                                )}
+
                                                 {/* Timer */}
                                                 {booking.expiryTime > Date.now() && (
                                                     <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -781,6 +804,13 @@ const Bookings: React.FC = () => {
         />
 
         <BottomNav />
+        {trackBarcode && (
+            <DeliveryTrackMap
+                barcode={trackBarcode}
+                isRTL={isRTL}
+                onClose={() => setTrackBarcode(null)}
+            />
+        )}
         {reportStore && (
             <ReportDialog
                 reportedId={reportStore.id}

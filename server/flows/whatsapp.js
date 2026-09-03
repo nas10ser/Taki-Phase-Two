@@ -29,7 +29,7 @@ const DLV    = require('../lib/delivery');
 const INV = require('../lib/invoicePdf');
 
 const { catLabel, CAT, genderLabel, GENDER } = C;
-const { dirLink, remainingText, resolveGoogleLocation } = G;
+const { dirLink, fmtKm, remainingText, resolveGoogleLocation } = G;
 const { sanitize, money, prepLabel, statusLabel, fmtDate, fmtDay, DIV,
         normalizeDigits, isPrice, isQty, parseFlexibleDate, priceBlock, authText } = F;
 const tr = I18N.tr;
@@ -770,10 +770,13 @@ function create(deps) {
         await sendButtons(from, { body: '—', buttons: row2.slice(0, 3) });
         // v13.95 — «الفاتورة» في صفّ ثالث لا رابع زرّ: واتساب يسمح بثلاثة
         // أزرار للصف **ويبتر الزائد بصمت**، وصفّ row2 ممتلئ أصلاً.
-        await sendButtons(from, { body: '—', buttons: [
-            { id: `wa:inv:${bc}`, title: trunc(tr('inv_btn'), LIM.btnTitle) },
-            { id: `wa:bk1:${bc}`, title: tr('wa_back') },
-        ] });
+        // v14.07 — «أين طلبي؟» ثالثاً في هذا الصفّ (٢ + ١ = ٣ تماماً)، ولطلب
+        // توصيل نشط فقط: لا تتبّع لطلبٍ يُستلم من المتجر ولا لطلب انتهى.
+        const row3 = [{ id: `wa:inv:${bc}`, title: trunc(tr('inv_btn'), LIM.btnTitle) }];
+        if (b.fulfillment === 'delivery' && (b.status === 'pending' || b.status === 'acknowledged'))
+            row3.push({ id: `wa:dwhr:${bc}`, title: trunc(tr('dlv_where_btn'), LIM.btnTitle) });
+        row3.push({ id: `wa:bk1:${bc}`, title: tr('wa_back') });
+        await sendButtons(from, { body: '—', buttons: row3.slice(0, 3) });
     }
 
     // ── v13.95: فاتورة الحجز — نصّ عادي (واتساب لا يستعمل MarkdownV2) ────────
@@ -1215,7 +1218,96 @@ function create(deps) {
         if (b.status === 'pending' || b.status === 'acknowledged') row2.push({ id: `wa:scancel:${bc}`, title: tr('wa_bk_cancel') });
         row2.push({ id: 'wa:s:orders', title: tr('menu_seller_bookings') });
         await sendButtons(from, { body: '—', buttons: row2.slice(0, 3) });
+        // v14.07 — التتبّع في صفّ ثالث: واتساب يبتر ما زاد على ٣ أزرار **بصمت**،
+        // وصفّا البطاقة أعلاه ممتلئان أصلاً. يظهر لطلب توصيل نشط وحده، وزرّ
+        // الإيقاف يحلّ محلّ زرّ البدء ما دام البثّ مُفعَّلاً فلا يبحث عنه أحد.
+        if (b.fulfillment === 'delivery' && (b.status === 'pending' || b.status === 'acknowledged')) {
+            const on = s.temp.trackBarcode === bc;
+            await sendButtons(from, { body: on ? tr('dlv_trk_on_line') : '—', buttons: [
+                on ? { id: `wa:dtrkoff:${bc}`, title: trunc(tr('dlv_trk_wa_stop'), LIM.btnTitle) }
+                   : { id: `wa:dtrk:${bc}`,    title: trunc(tr('dlv_trk_wa_btn'),  LIM.btnTitle) },
+                { id: `wa:so1:${bc}`, title: tr('wa_back') },
+            ] });
+        }
     }
+
+    // ══ v14.07: تتبّع التوصيل ═════════════════════════════════════════════════
+    // واتساب Cloud API **لا يوصّل «الموقع الحيّ»** إطلاقاً (لا نوع رسالة له ولا
+    // تحديثات)، فالبديل الصادق: التاجر يرسل موقعه رسالةً كلما تحرّك — ونقول له
+    // ذلك صراحةً بدل إيهامه ببثّ تلقائي لا وجود له.
+    // الخصوصية كما في تيليجرام: لا تسجيل بلا ضغطة بدء، ولا يرى الموقعَ إلا مشتري
+    // ذلك الطلب، والإيقاف بضغطة واحدة حاضرة في كل رسالة.
+    const TRK_STATUSES = ['preparing', 'on_the_way', 'arrived', 'delivered', 'cancelled'];
+    const trkStatusLabel = st => tr(TRK_STATUSES.includes(st) ? `dlv_st_${st}` : 'dlv_st_preparing');
+    const trkAgeText = sec => { const m = Math.max(1, Math.round(Number(sec || 0) / 60)); return m < 60 ? tr('dur_min', m) : tr('dur_hour', Math.round(m / 60)); };
+    const trkNums = r => [
+        r.remaining_km == null ? '—' : fmtKm(Number(r.remaining_km)),
+        r.eta_min == null ? '—' : Math.max(1, Math.round(Number(r.eta_min))),
+    ];
+    const trkStopBtns = bc => [
+        { id: `wa:dtrkoff:${bc}`, title: trunc(tr('dlv_trk_wa_stop'), LIM.btnTitle) },
+        { id: `wa:so1:${bc}`, title: tr('wa_back') },
+    ];
+
+    async function startTrack(from, s, bc) {
+        if (!sellerGate(from, s)) return;
+        s.temp.trackBarcode = bc; s.temp.trackOn = false;
+        await sendButtons(from, { body: trunc(tr('dlv_trk_wa_how', bc), LIM.body), buttons: trkStopBtns(bc) });
+    }
+    async function stopTrack(from, s, bc) {
+        s.temp.trackBarcode = null; s.temp.trackOn = false;
+        await sendButtons(from, { body: tr('dlv_trk_wa_stopped'), buttons: [{ id: `wa:so1:${bc}`, title: tr('wa_back') }] });
+    }
+    // نبضة واحدة → القاعدة. true = الموقع استُهلك للتتبّع (فيتوقّف onLocation عندها).
+    async function trackPing(from, s, loc) {
+        const bc = s.temp.trackBarcode; if (!bc) return false;
+        // واتساب لا يرسل اتجاهاً ولا سرعة مع رسالة الموقع — نمرّرهما null بدل تخمين.
+        const r = await rpc('bot_delivery_track_ping', aid(from, {
+            p_barcode: bc, p_lat: loc.latitude, p_lng: loc.longitude, p_heading: null, p_speed_kmh: null }));
+        if (!r) return true;                      // عطل شبكة عابر — لا نُنهي بثّاً قائماً
+        if (r.ok === false) {
+            if (r.error === 'bad_point') { if (!s.temp.trackOn) await sendText(from, tr('dlv_trk_err_point')); return true; }
+            s.temp.trackBarcode = null; s.temp.trackOn = false;
+            await sendText(from,
+                r.error === 'closed'       ? tr('dlv_trk_err_closed')
+              : r.error === 'forbidden'    ? tr('dlv_trk_err_forbidden')
+              : r.error === 'not_delivery' ? tr('dlv_trk_err_notdlv')
+              : r.error === 'not_linked'   ? tr('dlv_trk_err_link')
+              :                              tr('dlv_where_err'));
+            return true;
+        }
+        if (r.throttled) return true;             // حدّ الأربع ثوانٍ في القاعدة — يُتجاهل بصمت
+        s.temp.trackOn = true;
+        const [km, min] = trkNums(r);
+        await sendButtons(from, { body: tr('dlv_trk_wa_ok', km, min), buttons: trkStopBtns(bc) });
+        return true;
+    }
+    // المشتري: لقطة واحدة عند الطلب — لا بثّ مستمرّ إليه.
+    async function whereIsOrder(from, s, bc) {
+        if (!s.userId) return sendButtons(from, { body: tr('wa_login_first'), buttons: [{ id: 'wa:link', title: tr('menu_login_link') }, menuBtn()] });
+        const r = await rpc('bot_delivery_track_get', aid(from, { p_barcode: bc }));
+        const back = [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, { id: 'wa:bookings', title: tr('menu_bookings_buyer') }];
+        if (!r || r.ok === false)
+            return sendButtons(from, { body: r && r.error === 'not_delivery' ? tr('dlv_where_not_dlv') : tr('dlv_where_err'), buttons: back });
+        const L = [`${tr('dlv_where_title')} ${bc}`, DIV, trkStatusLabel(r.status)];
+        if (r.label) L.push(tr('dlv_booked_line', r.label).replace(/^\n/, ''));
+        if (r.remaining_km != null || r.eta_min != null) { const [km, min] = trkNums(r); L.push(tr('dlv_where_dist', km, min)); }
+        // ⚠️ العقد: live=false ⇒ lat/lng تعودان null — فلا ندّعي «مباشر» بلا إحداثي.
+        const lat = Number(r.lat), lng = Number(r.lng);
+        const livePoint = !!r.live && Number.isFinite(lat) && Number.isFinite(lng);
+        if (livePoint) {
+            L.push(tr('dlv_where_live_note'));
+            // ⚠️ dirLink يقرأ map_lat/map_lng لا lat/lng — تمرير الاسمين الخطأ
+            // يُعيد null فيغيب الرابط **بصمت** بلا أي خطأ ظاهر.
+            const url = dirLink({ map_lat: lat, map_lng: lng });
+            if (url) L.push(`${tr('dlv_where_map')}: ${url}`);
+        }
+        else if (r.status === 'delivered' || r.status === 'cancelled') L.push(tr('dlv_where_done'));
+        else if (r.age_sec != null)                                    L.push(tr('dlv_where_stale', trkAgeText(r.age_sec)));
+        else                                                           L.push(tr('dlv_where_no_loc'));
+        await sendButtons(from, { body: trunc(L.join('\n'), LIM.body), buttons: back });
+    }
+
     async function askSellerCancel(from, s, bc) {
         await sendButtons(from, { body: tr('wa_cancel_confirm', bc), buttons: [
             { id: `wa:sdcancel:${bc}`, title: tr('wa_cancel_yes') }, { id: `wa:so1:${bc}`, title: tr('wa_back') },
@@ -2060,6 +2152,10 @@ function create(deps) {
         if (id.startsWith('wa:scancel:')) return askSellerCancel(from, s, id.slice(11));
         if (id.startsWith('wa:sdcancel:')) return doSellerCancel(from, s, id.slice(12));
         if (id.startsWith('wa:ack:')) return ackOrder(from, s, id.slice(7));
+        // v14.07 — تتبّع التوصيل (الإيقاف أولاً كي لا يلتبس البادئتان مستقبلاً)
+        if (id.startsWith('wa:dtrkoff:')) return stopTrack(from, s, id.slice(11));
+        if (id.startsWith('wa:dtrk:')) return startTrack(from, s, id.slice(8));
+        if (id.startsWith('wa:dwhr:')) return whereIsOrder(from, s, id.slice(8));
         if (id.startsWith('wa:done:')) { const bc = id.slice(8); return completeOrder(from, s, bc, null); }
         if (id === 'wa:s:verify') return startVerify(from, s);
         if (id === 'wa:s:deals') return sellerDealsMenu(from, s);
@@ -2125,6 +2221,12 @@ function create(deps) {
     }
 
     async function onLocation(from, s, loc) {
+        // v14.07 — نبضة تتبّع التوصيل تُفحص **أولاً**: التاجر الذي ضغط «بثّ موقعي»
+        // يرسل موقعه كلما تحرّك، ولولا هذا الفحص لعوملت مواقعه كـ«موقع متسوّق»
+        // فيُقذف إلى تصفّح «القريب مني» بدل تسجيل نبضة — والمشتري ينتظر تتبّعاً
+        // لا يصل. تُستهلك النبضة وينتهي المسار (`return`) فلا يكمل إلى ما بعده.
+        // (لا يُفحص إلا حين يكون هناك بثّ مُفعَّل، فالسلوك القديم يبقى كما هو حرفياً.)
+        if (s.temp.trackBarcode && await trackPing(from, s, loc)) return;
         // مشاركة موقع لتعيين موقع العرض/الفرع — فقط حين طُلبت صراحةً عبر «مشاركة موقعي».
         if (s.temp.locShareCtx) {
             s.temp.locShareCtx = false;

@@ -72,7 +72,7 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.06.0';
+const BOT_VERSION              = '14.07.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1049,9 +1049,26 @@ function askLocation(ctx){
 bot.on('location', async ctx => {
     const loc=ctx.message && ctx.message.location; if(!loc) return;
     const s=getSession(tgId(ctx));
+    // v14.07 — نبضة تتبّع التوصيل تُفحص أولاً: أول رسالة «موقع حيّ» تصل هنا رسالةً
+    // عادية (تحديثاتها التالية تصل كـedited_message). نستثني الخطوات التي طلبت
+    // موقعاً صراحةً للتوّ — تلك نيّة معلنة لا يخطفها التتبّع — إلا إن كان الموقع
+    // حيّاً (live_period) فهو للتوصيل قطعاً، إذ لا خطوة أخرى تطلب موقعاً حيّاً.
+    const isLive = Number(loc.live_period) > 0;
+    const awaiting = s.step === 'loc_share' || s.temp.alertLocWait || s.temp.nearbyLocWait;
+    if (s.temp.trackBarcode && (isLive || !awaiting)) { if (await deliveryPing(ctx, s, loc)) return; }
     // تدفّق التاجر يلتقط موقعاً (إضافة/تعديل/فرع عبر «مشاركة موقعي»)؟
     try { if (await sellerH.handleLocation(ctx, s, loc.latitude, loc.longitude)) return; } catch (e) { console.warn('loc:', e.message); }
     return handleSharedLocation(ctx, s, loc.latitude, loc.longitude);
+});
+// v14.07 — تحديثات «الموقع الحيّ» تصل **تعديلاً** على رسالة الموقع لا رسالةً جديدة،
+// ولا يلتقطها bot.on('location') إطلاقاً (فلتر تلغراف يفحص update.message وحدها،
+// فلا تمرّ منه أي edited_message). بلا هذا المعالج تُسجَّل النبضة الأولى فقط.
+bot.on('edited_message', async ctx => {
+    const loc = ctx.editedMessage && ctx.editedMessage.location;
+    if (!loc) return;                                   // تعديل نصّ عادي — لا شأن لنا به
+    const s = getSession(tgId(ctx));
+    if (!s.temp.trackBarcode) return;                   // لا بثّ مُفعَّل ⇒ لا نلمس شيئاً
+    try { await deliveryPing(ctx, s, loc); } catch (e) { console.warn('trk edit:', e.message); }
 });
 // A location obtained via Telegram share OR a pasted Google-Maps link / "lat,lng"
 // (request 5): save it once (session + the linked account so we never ask again),
@@ -1884,6 +1901,9 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         m += `\n${tr(seller ? 'dlv_seller_line' : 'dlv_booked_line', dparts.join(' — ') || md(tr('inv_delivery')))}`;
         if (Number(b.delivery_fee) > 0) m += `\n🚚 ${tr('inv_delivery_fee')}: ${money(b.delivery_fee)} ${md(tr('inv_sar'))}`;
         if (seller && b.delivery_phone) m += `\n📞 ${md(String(b.delivery_phone))}`;
+        // v14.07 — التاجر يجب أن يعرف من نصّ البطاقة نفسها أن موقعه يُبثّ الآن،
+        // لا من ذاكرته: البثّ موقع إنسان، فإخفاء حالته ولو لحظةً غير مقبول.
+        if (seller && s.temp.trackBarcode === b.barcode) m += `\n${tr('dlv_trk_on_line')}`;
     } else if (b.fulfillment === 'pickup') {
         m += `\n${md(tr('dlv_pickup_line'))}`;
     }
@@ -1903,6 +1923,14 @@ async function renderOneBooking(ctx, barcode, roleCtx){
             const url = dirLink({ map_lat: dlat, map_lng: dlng });
             if (url) rows.push([Markup.button.url(tr('dlv_seller_map'), url)]);
         }
+        // v14.07 — التتبّع الحيّ. للتاجر: بدء البثّ أو إيقافه — وزرّ الإيقاف حاضرٌ
+        // ما دام البثّ مُفعَّلاً فلا يبحث عنه أحد. للمشتري: «أين طلبي؟».
+        // مقصورٌ على طلب نشط: لا معنى لبثّ موقع على طلب مكتمل أو ملغى.
+        if (active) rows.push([ seller
+            ? (s.temp.trackBarcode === b.barcode
+                ? Markup.button.callback(tr('dlv_trk_stop_btn'), `dtrkoff:${b.barcode}`)
+                : Markup.button.callback(tr('dlv_trk_btn'), `dtrk:${b.barcode}`))
+            : Markup.button.callback(tr('dlv_where_btn'), `dwhr:${b.barcode}`) ]);
     }
     if (seller){
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1257_confirm_start_prep'),`ack:${b.barcode}`)]);
@@ -1923,6 +1951,121 @@ async function renderOneBooking(ctx, barcode, roleCtx){
     rows.push([Markup.button.callback(tr('b1263_back_to_bookings'), listCb)]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(rows).reply_markup });
 }
+
+// ══ v14.07: تتبّع التوصيل الحيّ ═══════════════════════════════════════════════
+// موقع المندوب **موقع إنسان**: لا يُبثّ إلا بفعل صريح منه (مشاركة موقع حيّ في
+// تيليجرام)، ولا يراه إلا مشتري ذلك الطلب، ويتوقّف فور التسليم. ولذلك:
+//   • لا نشغّل أي تتبّع تلقائياً — البدء ضغطةٌ ثم مشاركةٌ يدوية من قائمة تيليجرام.
+//   • زرّ «إيقاف البثّ» ظاهر في البطاقة وفي كل رسالة تحديث.
+//   • المسافة والوقت المتوقّع يحسبهما **الخادم** — العميل لا يحسب ولا يرسل حساباً.
+const TRK_NOTE_MS = 120_000;   // تحديث للتاجر كل دقيقتين على الأكثر
+// حالات القاعدة الخمس. القائمة صريحة كي لا تتسرّب حالةٌ غير معروفة إلى tr() فتظهر
+// للمستخدم كاسم مفتاح (tr تُعيد المفتاح نفسه حين يغيب).
+const TRK_STATUSES = ['preparing', 'on_the_way', 'arrived', 'delivered', 'cancelled'];
+const trkStatusLabel = st => tr(TRK_STATUSES.includes(st) ? `dlv_st_${st}` : 'dlv_st_preparing');
+// «قبل كذا» من age_sec — دقيقة واحدة كحدّ أدنى فلا نقول «قبل ٠ دقيقة».
+const trkAgeText = sec => {
+    const m = Math.max(1, Math.round(Number(sec || 0) / 60));
+    return m < 60 ? tr('dur_min', m) : tr('dur_hour', Math.round(m / 60));
+};
+// صفّ إيقاف موحّد — يرافق كل رسالة بثّ، فلا يضطرّ التاجر للعودة إلى البطاقة.
+const trkStopKb = bc => Markup.inlineKeyboard([
+    [Markup.button.callback(tr('dlv_trk_stop_btn'), `dtrkoff:${bc}`)],
+    [Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)],
+]).reply_markup;
+// رقمان جاهزان للعرض داخل MarkdownV2 (النقطة العشرية محجوزة ⇒ numEsc إلزامي).
+const trkNums = r => [
+    numEsc(r.remaining_km == null ? '—' : fmtKm(Number(r.remaining_km))),
+    numEsc(r.eta_min == null ? '—' : Math.max(1, Math.round(Number(r.eta_min)))),
+];
+
+// التاجر يبدأ البثّ: نحفظ الباركود في الجلسة فتُنسب إليه كل نبضة موقع تالية.
+bot.action(/^dtrk:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = String(ctx.match[1]).toUpperCase();
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return safeReplyMd(ctx, tr('b1231_login_first'), { reply_markup: kbGuest().reply_markup });
+    s.temp.trackBarcode = bc; s.temp.trackOn = false; s.temp.trackNoteAt = 0;
+    await safeReplyMd(ctx, tr('dlv_trk_how', md(bc), DIV), { reply_markup: trkStopKb(bc) });
+});
+// الإيقاف: نمسح الوجهة فوراً (فلا تُسجَّل نبضة بعدها)، ونذكّره بإيقاف المشاركة من
+// تيليجرام نفسه — إيقافنا يمنع التسجيل، لكن تيليجرام يظلّ يبثّ حتى يوقفه هو.
+bot.action(/^dtrkoff:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = String(ctx.match[1]).toUpperCase();
+    const s = getSession(tgId(ctx));
+    s.temp.trackBarcode = null; s.temp.trackOn = false; s.temp.trackNoteAt = 0;
+    await safeReplyMd(ctx, tr('dlv_trk_stopped'), {
+        reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)]]).reply_markup });
+});
+
+// نبضة موقع واحدة → القاعدة. تُرجع true إن كانت النبضة تخصّ تتبّعاً مُفعَّلاً
+// (فيتوقّف معالج الموقع عندها) وfalse إن لم يكن هناك بثّ أصلاً.
+async function deliveryPing(ctx, s, loc) {
+    const bc = s.temp.trackBarcode;
+    if (!bc) return false;
+    const r = await rpc('bot_delivery_track_ping', {
+        p_telegram_id: tgId(ctx), p_whatsapp_id: null, p_barcode: bc,
+        p_lat: loc.latitude, p_lng: loc.longitude,
+        // تيليجرام يعطي الاتجاه أحياناً ولا يعطي السرعة إطلاقاً — نمرّر ما نملكه فقط.
+        p_heading: Number.isFinite(Number(loc.heading)) ? Number(loc.heading) : null,
+        p_speed_kmh: null,
+    });
+    // rpc تُرجع null عند عطل شبكة عابر — لا نوقف بثّاً قائماً لأجل نبضة ضائعة.
+    if (!r) return true;
+    if (r.ok === false) {
+        // إحداثي فاسد: نبضة واحدة سيّئة لا تُنهي البثّ، ونحذّر مرة واحدة فقط
+        // (تحديث كل بضع ثوانٍ ⇒ رسالة لكل نبضة تُغرق المحادثة).
+        if (r.error === 'bad_point') { if (!s.temp.trackOn) await safeReplyMd(ctx, tr('dlv_trk_err_point')); return true; }
+        s.temp.trackBarcode = null; s.temp.trackOn = false; s.temp.trackNoteAt = 0;
+        await safeReplyMd(ctx,
+            r.error === 'closed'       ? tr('dlv_trk_err_closed')
+          : r.error === 'forbidden'    ? tr('dlv_trk_err_forbidden')
+          : r.error === 'not_delivery' ? tr('dlv_trk_err_notdlv')
+          : r.error === 'not_linked'   ? tr('dlv_trk_err_link')
+          :                              tr('dlv_where_err'));
+        return true;
+    }
+    if (r.throttled) return true;      // حدّ الأربع ثوانٍ في القاعدة — سلوك طبيعي يُتجاهل بصمت
+    const [km, min] = trkNums(r);
+    const now = Date.now();
+    if (!s.temp.trackOn) {             // أول نبضة ناجحة ⇒ تأكيد واحد، ثم صمت
+        s.temp.trackOn = true; s.temp.trackNoteAt = now;
+        await safeReplyMd(ctx, tr('dlv_trk_started', km, min), { reply_markup: trkStopKb(bc) });
+        return true;
+    }
+    if (now - (s.temp.trackNoteAt || 0) >= TRK_NOTE_MS) {
+        s.temp.trackNoteAt = now;
+        await safeReplyMd(ctx, tr('dlv_trk_progress', km, min), { reply_markup: trkStopKb(bc) });
+    }
+    return true;
+}
+
+// المشتري: «أين طلبي؟» — لقطة واحدة عند الطلب (لا بثّ مستمرّ للمشتري).
+bot.action(/^dwhr:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = String(ctx.match[1]).toUpperCase();
+    const s = getSession(tgId(ctx));
+    if (!s.userId) return safeReplyMd(ctx, tr('b1231_login_first'), { reply_markup: kbGuest().reply_markup });
+    const r = await rpc('bot_delivery_track_get', { p_telegram_id: tgId(ctx), p_whatsapp_id: null, p_barcode: bc });
+    const back = Markup.inlineKeyboard([[Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)]]).reply_markup;
+    if (!r || r.ok === false)
+        return safeReplyMd(ctx, r && r.error === 'not_delivery' ? tr('dlv_where_not_dlv') : tr('dlv_where_err'), { reply_markup: back });
+    const L = [`${tr('dlv_where_title')} \`${md(bc)}\``, DIV, trkStatusLabel(r.status)];
+    if (r.label) L.push(tr('dlv_booked_line', md(String(r.label))).replace(/^\n/, ''));
+    if (r.remaining_km != null || r.eta_min != null) { const [km, min] = trkNums(r); L.push(tr('dlv_where_dist', km, min)); }
+    // ⚠️ العقد: live=false ⇒ lat/lng تعودان null. لا ندّعي «مباشر» أبداً بلا إحداثي —
+    // نقول «آخر تحديث قبل كذا» بدلها، فالمشتري لا يُضلَّل بموقع قديم.
+    const lat = Number(r.lat), lng = Number(r.lng);
+    const livePoint = !!r.live && Number.isFinite(lat) && Number.isFinite(lng);
+    if (livePoint)                                                L.push(tr('dlv_where_live_note'));
+    else if (r.status === 'delivered' || r.status === 'cancelled') L.push(tr('dlv_where_done'));
+    else if (r.age_sec != null)                                    L.push(tr('dlv_where_stale', md(trkAgeText(r.age_sec))));
+    else                                                           L.push(tr('dlv_where_no_loc'));
+    await safeReplyMd(ctx, L.join('\n'), { reply_markup: back });
+    // موقع حقيقي على خريطة تيليجرام — أوضح من أي رقم. فشلُه لا يُسقط الرسالة أعلاه.
+    if (livePoint) { try { await ctx.replyWithLocation(lat, lng); } catch (e) { console.warn('trk map:', e.message); } }
+});
 
 // ── v13.95: «🧾 الفاتورة» — مستند الحجز داخل المحادثة ────────────────────────
 // البوت لا يطبع HTML، فالفاتورة رسالة منسّقة. البيانات من دالة واحدة على جدة

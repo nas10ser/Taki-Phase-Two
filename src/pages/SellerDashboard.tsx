@@ -12,6 +12,8 @@ import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import GatewayCard from '../components/seller/GatewayCard';
 import DeliveryCard from '../components/seller/DeliveryCard';
+// v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
+import DeliveryTrackerCard from '../components/seller/DeliveryTrackerCard';
 import VatStatusCard from '../components/seller/VatStatusCard';
 import SellerAnalytics from '../components/seller/SellerAnalytics';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
@@ -4814,6 +4816,19 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                                 {/* v14.06 — أول ما يحتاجه التاجر: توصيل أم استلام؟ وإلى أين؟ */}
                                 <SellerFulfillmentStrip order={order} isRTL={isRTL} />
+
+                                {/* v14.07 — تتبّع التوصيل الحيّ: في «الطلبات النشطة» وحدها ولطلبات
+                                    التوصيل وحدها. لا مكان له في «السجل» — طلبٌ منتهٍ لا يُبثّ فيه
+                                    موقع أحد، وعرض أزرار البثّ عليه دعوةٌ لخطأ لا أكثر. */}
+                                {order.fulfillment === 'delivery' && (
+                                    <DeliveryTrackerCard
+                                        barcode={order.barcode}
+                                        fulfillment={order.fulfillment}
+                                        bookingStatus={order.status}
+                                        isRTL={isRTL}
+                                        onAlert={customAlert}
+                                    />
+                                )}
 
                                 {/* v12.92 — حالة الدفع واضحة تماماً للتاجر: مدفوع إلكترونياً (وصل حسابه)
                                     أم الدفع عند الاستلام (يستلم المبلغ من العميل) — بخط واضح بلا لبس. */}
