@@ -1,3 +1,6 @@
+// ⚠️ أول استيراد عمداً: وحدةُ كشف مسار الاستعادة تقرأ تجزئة العنوان لحظة
+// تحميلها، ويجب أن يسبق ذلك تهيئةَ عميل supabase الذي يمسح التجزئة.
+import { isPasswordRecovery } from './utils/passwordRecovery';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Switch, Route, Redirect, useHistory, useLocation } from 'react-router-dom';
 import { useApp } from './context/AppContext';
@@ -111,7 +114,12 @@ const AuthRedirector = () => {
         let timer: ReturnType<typeof setTimeout>;
         if (location.hash) {
             logger.info('🔗 AuthRedirector: Hash detected:', location.hash.substring(0, 50) + '...');
-            if (location.hash.indexOf('access_token') !== -1 || location.hash.indexOf('type=signup') !== -1 || location.hash.indexOf('type=magiclink') !== -1) {
+            // 🔴 v14.03 — رابط الاستعادة تجزئته تحوي `access_token` أيضاً، فكان
+            // هذا الشرط يبتلعه ويحوّل المستخدم للرئيسية بعد ثانية — قبل أن
+            // يُطلب منه تعيين كلمة مرور. هذا هو سبب «الرابط دخّلني مباشرة».
+            if (isPasswordRecovery()) {
+                logger.info('🔑 مسار إعادة تعيين كلمة المرور — لا تحويل.');
+            } else if (location.hash.indexOf('access_token') !== -1 || location.hash.indexOf('type=signup') !== -1 || location.hash.indexOf('type=magiclink') !== -1) {
                 timer = setTimeout(async () => {
                     const uType = await getUserType();
                     const dest = await getPostAuthDestination(uType);
@@ -134,7 +142,7 @@ const AuthRedirector = () => {
         }
 
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('access_token')) {
+        if (urlParams.get('access_token') && !isPasswordRecovery()) {
             logger.info('🔗 AuthRedirector: Query access_token detected');
             timer = setTimeout(async () => {
                 const uType = await getUserType();
@@ -148,6 +156,16 @@ const AuthRedirector = () => {
 
     useEffect(() => {
         if (user) {
+            // 🔴 v14.03 — **أول حارس على الإطلاق**: التحقّق من رمز الاستعادة
+            // يُنشئ جلسةً، وكل تحويل بعده كان يسحب المستخدم من شاشة تعيين
+            // كلمة المرور قبل أن يحفظها. وُضع في v14.02 بعد فحص «الملف ناقص»
+            // فكان مستخدمٌ بلا جوال (حساب OAuth مثلاً) يُسحب إلى
+            // /complete-profile رغم أنه في منتصف استعادة كلمته.
+            //
+            // القاعدة: ما دام المستخدم في مسار الاستعادة فلا يحرّكه أحد حتى
+            // يحفظ كلمته أو يغادر الشاشة بنفسه.
+            if (isPasswordRecovery()) return;
+
             // While an admin is "browsing as" a target user, skip the
             // profile-completion + register/complete-profile redirects —
             // admin is just observing and must NOT be funneled into editing
@@ -178,13 +196,6 @@ const AuthRedirector = () => {
                 history.replace('/complete-profile');
                 return;
             }
-
-            // v14.02 — 🔴 التحقّق من رمز الاستعادة يُنشئ **جلسة**، فكان المُحوِّل
-            // يسحب المستخدم من شاشة تعيين كلمة المرور فور نجاح الرمز — قبل أن
-            // يحفظ الكلمة الجديدة. فإن رفض الخادم الكلمة (تسريب/شروط) وجد
-            // نفسه داخل الموقع بكلمته القديمة وبلا طريق لإكمال ما بدأه.
-            // العَلَم يُرفع في Register أثناء وضع 'reset' ويُنزَل بعد الحفظ.
-            if ((window as any).__takiPasswordReset === true) return;
 
             if (location.pathname === '/register' || (!profileIncomplete && location.pathname === '/complete-profile')) {
                 const dest = user.userType === 'admin' ? '/admin'

@@ -8,6 +8,7 @@ import { normalizeArabicNumerals } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
 import TurnstileWidget from '../components/TurnstileWidget';
 import PasswordField, { pwIsStrong, pwChecks } from '../components/PasswordField';
+import { isPasswordRecovery, markPasswordRecovery, clearPasswordRecovery } from '../utils/passwordRecovery';
 
 const Register: React.FC = () => {
     const history = useHistory();
@@ -80,12 +81,16 @@ const Register: React.FC = () => {
     // v13.99 — 'reset' = شاشة تعيين كلمة مرور جديدة. كانت ناقصة تماماً: رابط
     // الاستعادة يُدخل المستخدم للموقع بجلسة استعادة **ولا يطلب منه كلمة مرور
     // جديدة إطلاقاً**، والرمز ذو الستّ خانات في البريد لم يكن له مكان يُدخل فيه.
-    const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify' | 'reset'>('landing');
+    // v14.03 — الوضع الابتدائي يُحسم **عند أول تركيب** من الحالة المخزَّنة، لا
+    // من حدث قد يكون وقع قبل أن نُركَّب. هذا ما يجعل رابط البريد يفتح شاشة
+    // التعيين يقيناً بدل أن يمرّ المستخدم إلى الرئيسية.
+    const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify' | 'reset'>(
+        () => (isPasswordRecovery() ? 'reset' : 'landing'));
     const [newPw, setNewPw] = useState('');
     const [newPw2, setNewPw2] = useState('');
     const [resetCode, setResetCode] = useState('');
     /** true = وصل عبر الرابط (جلسة استعادة جاهزة) · false = سيُدخل الرمز يدوياً */
-    const [resetViaLink, setResetViaLink] = useState(false);
+    const [resetViaLink, setResetViaLink] = useState(() => isPasswordRecovery());
     /** البريد الذي أُرسل إليه الرمز فعلاً — قد يكون محلولاً من رقم الجوال. */
     const [resetEmail, setResetEmail] = useState('');
     const [userType, setUserType] = useState<'buyer' | 'seller' | ''>('');
@@ -227,16 +232,18 @@ const Register: React.FC = () => {
     // v13.99 — Supabase يُطلق PASSWORD_RECOVERY حين يفتح المستخدم رابط
     // الاستعادة (يُنشئ جلسة استعادة). قبل هذا لم يكن أحد يستمع، فكان المستخدم
     // يجد نفسه داخل الموقع بلا أن يُطلب منه شيء — والغرض من الرابط لم يتحقّق.
-    // v14.02 — يرفع العَلَم ما دمنا في شاشة تعيين كلمة المرور، فلا يسحبنا
-    // AuthRedirector بمجرد أن يُنشئ التحقّقُ جلسةً قبل حفظ الكلمة.
+    // دخول وضع التعيين من داخل التطبيق (طلب الرمز) يرفع العَلَم أيضاً، فيتوقّف
+    // المُحوِّل عن سحب المستخدم بمجرد أن يُنشئ التحقّقُ جلسةً قبل حفظ الكلمة.
     useEffect(() => {
-        (window as any).__takiPasswordReset = (mode === 'reset');
-        return () => { (window as any).__takiPasswordReset = false; };
+        if (mode === 'reset') markPasswordRecovery();
     }, [mode]);
 
     useEffect(() => {
         const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+            // خطّ ثانٍ لا أساسي: لو وصل الحدث في الوقت المناسب فبها، ولو فات
+            // فالوحدة اليقينية أعلاه قد فتحت الشاشة أصلاً.
             if (event === 'PASSWORD_RECOVERY') {
+                markPasswordRecovery();
                 setResetViaLink(true);
                 setNewPw(''); setNewPw2('');
                 setMode('reset');
@@ -331,7 +338,7 @@ const Register: React.FC = () => {
             setNewPw(''); setNewPw2(''); setResetCode('');
             await customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
                                 '✅ Password changed. You can use it now.'));
-            (window as any).__takiPasswordReset = false;
+            clearPasswordRecovery();
             history.replace('/');
         } catch (e: any) {
             setLoading(false);
@@ -1493,7 +1500,7 @@ const Register: React.FC = () => {
                         </button>
                     )}
 
-                    <button onClick={() => setMode('login')}
+                    <button onClick={() => { clearPasswordRecovery(); setMode('login'); }}
                             style={{ width: '100%', marginTop: 10, background: 'none', border: 'none',
                                      color: '#38bdf8', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
                         {t('◀ رجوع لتسجيل الدخول', '◀ Back to sign in')}
