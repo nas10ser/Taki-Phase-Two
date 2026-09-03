@@ -39,6 +39,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 import TurnstileWidget from './TurnstileWidget';
+import PasswordField, { pwIsStrong, pwChecks } from './PasswordField';
 
 type Section = 'name' | 'phone' | 'email' | 'password' | null;
 
@@ -132,6 +133,25 @@ const AccountSettingsCard: React.FC = () => {
         if (/rate limit|too many/i.test(raw)) {
             return isRTL ? 'محاولات كثيرة — أعد المحاولة بعد قليل.' : 'Too many attempts — try again shortly.';
         }
+        // v14.01 — الخادم يرفض بـweak_password لسببين مختلفين تماماً، ولا يُفرّق
+        // بينهما في رمز الخطأ: (أ) الشروط الخمسة، (ب) ورودها في تسريبات معروفة.
+        // نميّزهما من نصّ الرسالة لأن العلاج مختلف: الأولى تُصلَح بالتعديل،
+        // والثانية تحتاج كلمة أخرى تماماً مهما بلغت قوّتها الظاهرة.
+        if (/known to be weak|pwned|breach|easy to guess/i.test(raw)) {
+            return isRTL
+                ? '🔓 كلمة السر هذه ظهرت في تسريبات معروفة على الإنترنت. اختر واحدة أخرى.'
+                : '🔓 This password appeared in known data breaches. Choose a different one.';
+        }
+        if (/at least one character of each|should be at least/i.test(raw)) {
+            return isRTL
+                ? 'كلمة السر لا تستوفي الشروط الخمسة — راجع القائمة أسفل الحقل.'
+                : 'The password misses one of the five requirements — see the checklist below the field.';
+        }
+        if (/captcha/i.test(raw)) {
+            return isRTL
+                ? '🤖 انتهت صلاحية التحقّق من أنك لست روبوتاً. انتظر علامة الصح ثم أعد المحاولة.'
+                : '🤖 The human check expired. Wait for the green tick, then try again.';
+        }
         return raw;
     };
 
@@ -213,9 +233,19 @@ const AccountSettingsCard: React.FC = () => {
 
     /** قوة كلمة السر — يعيد رسالة الخطأ أو null إن كانت مقبولة. */
     const passwordProblem = (pw: string): string | null => {
-        if (pw.length < 8) return isRTL ? 'كلمة السر يجب أن تكون ٨ أحرف على الأقل.' : 'Password must be at least 8 characters.';
-        if (!/[A-Za-z؀-ۿ]/.test(pw) || !/\d/.test(pw)) {
-            return isRTL ? 'اجعلها تحتوي حروفاً وأرقاماً معاً.' : 'Include both letters and digits.';
+        // v14.01 — الشروط الخمسة نفسها المفروضة عند التسجيل **وعلى خادم جدة**.
+        // كانت هنا قاعدة أضعف (حروف + أرقام فقط)، فكان تغيير كلمة السر من
+        // الإعدادات باباً خلفياً لكلمة أضعف مما يقبله التسجيل.
+        if (!pwIsStrong(pw)) {
+            const c = pwChecks(pw);
+            const missing = [
+                !c.length && (isRTL ? '٨ أحرف' : '8 characters'),
+                !c.uppercase && (isRTL ? 'حرف كبير' : 'an uppercase letter'),
+                !c.lowercase && (isRTL ? 'حرف صغير' : 'a lowercase letter'),
+                !c.number && (isRTL ? 'رقم' : 'a number'),
+                !c.special && (isRTL ? 'رمز خاص' : 'a symbol'),
+            ].filter(Boolean).join(isRTL ? ' · ' : ', ');
+            return (isRTL ? 'ينقصها: ' : 'Missing: ') + missing;
         }
         if (/^(.)\1+$/.test(pw)) return isRTL ? 'كلمة السر ضعيفة جداً.' : 'Password is too weak.';
         // لا تكن جوالك أو بريدك — أول ما يجرّبه المهاجم.
@@ -329,13 +359,14 @@ const AccountSettingsCard: React.FC = () => {
                     ? 'هذا تغيير يمسّ دخولك للحساب، فنطلب كلمة السر الحالية للتأكد أنك أنت.'
                     : 'This changes how you sign in, so we ask for your current password.'}
             </div>
-            <input
-                type="password"
+            <PasswordField
                 value={currentPw}
-                onChange={e => setCurrentPw(e.target.value)}
-                placeholder={isRTL ? 'كلمة السر الحالية' : 'Current password'}
+                onChange={setCurrentPw}
+                isRTL={isRTL}
+                hideChecklist
                 autoComplete="current-password"
-                style={inputStyle}
+                placeholder={isRTL ? 'كلمة السر الحالية' : 'Current password'}
+                inputStyle={inputStyle}
             />
             <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
         </>
@@ -435,26 +466,25 @@ const AccountSettingsCard: React.FC = () => {
                 {open === 'password' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--body-bg)', borderRadius: 12 }}>
                         {currentPasswordField()}
-                        <input
-                            type="password"
+                        <PasswordField
                             value={newPw}
-                            onChange={e => setNewPw(e.target.value)}
-                            placeholder={isRTL ? 'كلمة السر الجديدة (٨ أحرف فأكثر، حروف وأرقام)' : 'New password (8+ chars, letters + digits)'}
-                            autoComplete="new-password"
-                            style={inputStyle}
+                            onChange={setNewPw}
+                            isRTL={isRTL}
+                            placeholder={isRTL ? 'كلمة السر الجديدة' : 'New password'}
+                            inputStyle={inputStyle}
                         />
                         {newPw.length > 0 && (
                             <div style={{ ...noteStyle, color: passwordProblem(newPw) ? '#dc2626' : '#059669' }}>
                                 {passwordProblem(newPw) || (isRTL ? '✅ كلمة سر مقبولة' : '✅ Password looks good')}
                             </div>
                         )}
-                        <input
-                            type="password"
+                        <PasswordField
                             value={confirmPw}
-                            onChange={e => setConfirmPw(e.target.value)}
+                            onChange={setConfirmPw}
+                            isRTL={isRTL}
+                            hideChecklist
                             placeholder={isRTL ? 'تأكيد كلمة السر الجديدة' : 'Confirm new password'}
-                            autoComplete="new-password"
-                            style={inputStyle}
+                            inputStyle={inputStyle}
                         />
                         <div style={noteStyle}>
                             {isRTL

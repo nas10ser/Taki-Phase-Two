@@ -7,6 +7,7 @@ import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
 import TurnstileWidget from '../components/TurnstileWidget';
+import PasswordField, { pwIsStrong, pwChecks } from '../components/PasswordField';
 
 const Register: React.FC = () => {
     const history = useHistory();
@@ -190,13 +191,9 @@ const Register: React.FC = () => {
     }, [mode, email, password]);
 
     // Password Validation Standards
-    const pwCriteria = {
-        length: password.length >= 8,
-        uppercase: /[A-Z]/.test(password),
-        lowercase: /[a-z]/.test(password),
-        number: /[0-9]/.test(password),
-        special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]+/.test(password)
-    };
+    // v14.01 — مصدر واحد للشروط: نفس دالة PasswordField المطابقة للخادم.
+    // كانت هنا نسخة ثانية من التعبير النمطي، ونسختان تتباعدان مع أول تعديل.
+    const pwCriteria = pwChecks(password);
     const strengthScore = Object.values(pwCriteria).filter(Boolean).length;
     const isPasswordValid = strengthScore === 5;
 
@@ -241,9 +238,46 @@ const Register: React.FC = () => {
         return () => { sub?.subscription?.unsubscribe?.(); };
     }, []);
 
+    /** يُخفي أغلب البريد: كشفه لمن يعرف رقم جوال فقط تسريبُ هوية. */
+    const maskEmail = (e: string) => {
+        const [u, d] = String(e || '').split('@');
+        if (!d) return e;
+        return `${u.slice(0, 2)}${'•'.repeat(Math.max(2, u.length - 2))}@${d}`;
+    };
+
+    /** إعادة إرسال رمز الاستعادة من داخل شاشة التعيين — بلا رجوع ولا لبس. */
+    const handleResendResetCode = async () => {
+        const target = (resetEmail || email).trim();
+        if (!target.includes('@')) {
+            await customAlert(t('ارجع لتسجيل الدخول واطلب الاستعادة من جديد.',
+                                'Go back to sign in and request the reset again.'));
+            return;
+        }
+        setLoading(true);
+        let err: any = null;
+        try {
+            ({ error: err } = await authService.resetPassword(target, captchaToken));
+        } catch (e: any) { err = e; }
+        finally { setLoading(false); renewCaptcha(); }
+        if (err) {
+            const low = String(err.message || '').toLowerCase();
+            await customAlert(low.includes('captcha')
+                ? t('🤖 انتهت صلاحية التحقّق من أنك لست روبوتاً. انتظر علامة الصح ثم أعد المحاولة.',
+                    '🤖 The human check expired. Wait for the green tick, then try again.')
+                : t(`تعذّر إرسال رمز جديد: ${err.message}`, `Could not send a new code: ${err.message}`));
+            return;
+        }
+        setResetCode('');
+        await customAlert(t('📧 أرسلنا رمزاً جديداً. استعمل الأحدث — الرموز السابقة أُلغيت.',
+                            '📧 A new code was sent. Use the newest one — earlier codes are now void.'));
+    };
+
     const handleSetNewPassword = async () => {
-        if (newPw.length < 8) {
-            await customAlert(t('كلمة المرور يجب ألا تقل عن ٨ أحرف.', 'Password must be at least 8 characters.'));
+        // v14.01 — نفس شروط التسجيل ونفس ما يفرضه الخادم: لا باب أضعف.
+        if (!pwIsStrong(newPw)) {
+            await customAlert(t(
+                'كلمة المرور يجب أن تستوفي الشروط الخمسة كاملة.',
+                'The password must meet all five requirements.'));
             return;
         }
         if (newPw !== newPw2) {
@@ -315,12 +349,9 @@ const Register: React.FC = () => {
                 return;
             }
             trimmedEmail = resolved;
-            // نُخفي أغلب البريد: كشفه كاملاً لمن يعرف رقماً فقط تسريب هوية.
-            const [u, d] = resolved.split('@');
-            const masked = `${u.slice(0, 2)}${'•'.repeat(Math.max(2, u.length - 2))}@${d}`;
             await customAlert(t(
-                `سنرسل رمز الاستعادة إلى بريدك: ${masked}`,
-                `We'll send the reset code to your email: ${masked}`));
+                `سنرسل رمز الاستعادة إلى بريدك: ${maskEmail(resolved)}`,
+                `We'll send the reset code to your email: ${maskEmail(resolved)}`));
         }
 
         if (!trimmedEmail) {
@@ -1361,7 +1392,7 @@ const Register: React.FC = () => {
     }
 
     if (mode === 'reset') {
-        const pwOk = newPw.length >= 8;
+        const pwOk = pwIsStrong(newPw);
         const matchOk = pwOk && newPw === newPw2;
         const codeOk = resetViaLink || normalizeArabicNumerals(resetCode).replace(/\D/g, '').length === 6;
         return (
@@ -1380,13 +1411,20 @@ const Register: React.FC = () => {
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, textAlign: 'center', marginBottom: 8 }}>
                         {t('تعيين كلمة مرور جديدة', 'Set a new password')}
                     </h1>
-                    <p style={{ textAlign: 'center', opacity: 0.7, fontSize: '0.9rem', marginBottom: 22 }}>
+                    <p style={{ textAlign: 'center', opacity: 0.7, fontSize: '0.9rem', marginBottom: 6 }}>
                         {resetViaLink
                             ? t('تحقّقنا من الرابط. اختر كلمة مرور جديدة لحسابك.',
                                 'Your link is verified. Choose a new password.')
                             : t('أدخل الرمز الذي وصلك في البريد، ثم كلمة المرور الجديدة.',
                                 'Enter the code from your email, then your new password.')}
                     </p>
+                    {/* v14.01 — إظهار وجهة الرمز: يقطع الشكّ «هل وصل للبريد الصحيح؟»
+                        ويكشف فوراً لو أُرسل لحساب غير المقصود. مُقنَّع لحماية الهوية. */}
+                    {!resetViaLink && resetEmail && (
+                        <p style={{ textAlign: 'center', fontSize: '0.8rem', marginBottom: 20, color: '#38bdf8' }}>
+                            📧 {maskEmail(resetEmail)}
+                        </p>
+                    )}
 
                     {!resetViaLink && (
                         <>
@@ -1407,20 +1445,15 @@ const Register: React.FC = () => {
                     <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
                         {t('كلمة المرور الجديدة', 'New password')}
                     </label>
-                    <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
-                           style={{ ...inputStyle, marginBottom: 6 }} />
-                    <div style={{ fontSize: '0.75rem', marginBottom: 14, color: pwOk ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
-                        {pwOk ? '✅ ' : ''}{t('٨ أحرف فأكثر', 'At least 8 characters')}
-                    </div>
+                    <PasswordField value={newPw} onChange={setNewPw} isRTL={isRTL} />
 
-                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', margin: '16px 0 6px' }}>
                         {t('تأكيد كلمة المرور', 'Confirm password')}
                     </label>
-                    <input type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)}
-                           onKeyDown={e => { if (e.key === 'Enter' && matchOk && codeOk) handleSetNewPassword(); }}
-                           style={{ ...inputStyle, marginBottom: 6 }} />
-                    <div style={{ fontSize: '0.75rem', marginBottom: 20, color: matchOk ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
-                        {matchOk ? '✅ ' : ''}{t('الكلمتان متطابقتان', 'Passwords match')}
+                    <PasswordField value={newPw2} onChange={setNewPw2} isRTL={isRTL} hideChecklist
+                                   onEnter={() => { if (matchOk && codeOk) handleSetNewPassword(); }} />
+                    <div style={{ fontSize: '0.75rem', margin: '6px 0 20px', color: matchOk ? '#10b981' : '#94a3b8' }}>
+                        {matchOk ? '✅ ' : '⚪️ '}{t('الكلمتان متطابقتان', 'Passwords match')}
                     </div>
 
                     <button onClick={handleSetNewPassword} disabled={loading || !matchOk || !codeOk}
@@ -1429,8 +1462,24 @@ const Register: React.FC = () => {
                         {loading ? t('جارٍ الحفظ…', 'Saving…') : t('حفظ كلمة المرور', 'Save password')}
                     </button>
 
+                    {/* v14.01 — إعادة الإرسال **من داخل الشاشة**: كل طلب جديد يُبطل
+                        الرمز السابق، وكان الرجوع للخلف وإعادة الطلب يترك المستخدم
+                        بورقتين ولا يعرف أيّهما الحيّ — وهو سبب «الرمز غير صحيح». */}
+                    {/* الكابتشا لازمة هنا: إعادة الإرسال تنادي /recover المحروس. */}
+                    {!resetViaLink && (
+                        <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
+                    )}
+                    {!resetViaLink && (
+                        <button onClick={handleResendResetCode} disabled={loading}
+                                style={{ width: '100%', marginTop: 14, padding: 12, borderRadius: 14,
+                                         background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.25)',
+                                         color: '#38bdf8', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                            {t('🔄 إرسال رمز جديد (يُلغي السابق)', '🔄 Send a new code (cancels the previous)')}
+                        </button>
+                    )}
+
                     <button onClick={() => setMode('login')}
-                            style={{ width: '100%', marginTop: 14, background: 'none', border: 'none',
+                            style={{ width: '100%', marginTop: 10, background: 'none', border: 'none',
                                      color: '#38bdf8', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
                         {t('◀ رجوع لتسجيل الدخول', '◀ Back to sign in')}
                     </button>
