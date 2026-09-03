@@ -237,8 +237,14 @@ export const authService = {
         }
     },
 
-    resendVerification: async (email: string) => {
-        return await supabase.auth.resend({ type: 'signup', email });
+    resendVerification: async (email: string, captchaToken?: string) => {
+        // v13.98 — /resend من المسارات التي تحرسها كابتشا GoTrue (مع /signup
+        // و/token و/recover). شاشة التحقّق تعرض ودجتها الخاص لهذا السبب.
+        return await supabase.auth.resend({
+            type: 'signup',
+            email,
+            ...(captchaToken ? { options: { captchaToken } } : {}),
+        } as any);
     },
 
     signInWithPassword: async (identifier: string, password: string, type: 'phone' | 'email', captchaToken?: string) => {

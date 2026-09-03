@@ -730,8 +730,9 @@ const Register: React.FC = () => {
     const handleResendVerification = async () => {
         if (!email) return;
         setResending(true);
-        const { error } = await authService.resendVerification(email);
+        const { error } = await authService.resendVerification(email, captchaToken);
         setResending(false);
+        renewCaptcha();   // الرمز أُنفق سواء نجح الطلب أو فشل
         if (error) {
             await customAlert(t(`خطأ في إعادة الإرسال: ${error.message}`, `Resend Error: ${error.message}`));
         } else {
@@ -1292,6 +1293,11 @@ const Register: React.FC = () => {
                             maxLength={6}
                             onKeyDown={e => { if (e.key === 'Enter') handleVerifySubmit(); }}
                         />
+
+                        {/* v13.98 — ودجت خاص بشاشة التحقّق: زر «إعادة إرسال الكود»
+                            ينادي /resend وهو من المسارات التي تحرسها الكابتشا. بدونه
+                            يفشل الزر بـ«no captcha_token found» — نفس فخّ v13.96. */}
+                        <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
 
                         <button className="verify-btn" onClick={handleVerifySubmit} disabled={loading} style={{ ...primaryButtonStyle, opacity: loading ? 0.6 : 1, boxShadow: '0 4px 20px var(--primary-glow)', transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)' }}>
                             {loading ? t('جاري التحقق...', 'Verifying...') : t('تأكيد الكود الرقمي', 'Confirm Code')}
