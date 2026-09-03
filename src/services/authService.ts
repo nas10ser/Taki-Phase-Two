@@ -190,28 +190,30 @@ export const authService = {
     },
 
     checkPhoneExists: async (phone: string): Promise<boolean> => {
-        // Use the RPC so we hit every phone format and also auth.users
-        // metadata. The plain users.phone eq() lookup missed numbers stored
-        // as +966… or 966… and incorrectly told users their account did
-        // not exist.
-        try {
-            const { data: email } = await supabase.rpc('find_email_by_phone', { input_phone: phone });
-            return !!email;
-        } catch (err) {
-            console.error('Check phone error:', err);
-            throw err;
-        }
+        // 🔴 v13.99 — كان يستعمل `find_email_by_phone`، وهي دالة **تسجيل دخول**
+        // تستثني حسابات الإدارة عمداً منذ v12.39 (تدخل بالبريد لا بالجوال).
+        // فكانت تُرجع فارغاً لرقم مسجَّل فعلاً ⇒ الموقع يقول «✅ الرقم متاح»
+        // لرقم مأخوذ، ثم يفشل التسجيل عند القاعدة بخطأ غامض.
+        //
+        // السؤال هنا «هل الرقم مأخوذ؟» لا «بأي بريد يدخل صاحبه؟» — و
+        // `account_exists` هي دالة هذا السؤال بالضبط، بلا أي استثناء.
+        const { data, error } = await supabase.rpc('account_exists', { p_email: null, p_phone: phone });
+        // نرمي الخطأ عمداً: «تعذّر الفحص» ليست «متاح». الواجهة تُظهر تحذيراً
+        // بدل علامة خضراء كاذبة.
+        if (error) throw error;
+        return !!(data && (data as any).phone_taken);
     },
 
     checkEmailExists: async (email: string): Promise<boolean> => {
         // v11.43: route through the SECURITY DEFINER `account_exists` RPC instead
         // of reading public.users directly. The users RLS policy no longer exposes
         // buyer rows to anon, so a direct table read would always miss buyers.
-        try {
-            const { data } = await supabase.rpc('account_exists', { p_email: email });
-            return !!(data && (data as any).email_taken);
-        } catch {}
-        return false;
+        // 🔴 v13.99 — كان `catch {} return false`: أي خطأ (حدّ محاولات، شبكة)
+        // يُترجَم «البريد متاح» ويُظهر علامة خضراء كاذبة على بريد مأخوذ.
+        // الفشل الآن يُرمى فتعرضه الواجهة تحذيراً — «لا أعرف» ليست «متاح».
+        const { data, error } = await supabase.rpc('account_exists', { p_email: email, p_phone: null });
+        if (error) throw error;
+        return !!(data && (data as any).email_taken);
     },
 
     /**
@@ -220,13 +222,13 @@ export const authService = {
      * v11.43: backed by the `account_exists` definer RPC (see checkEmailExists).
      */
     checkFieldsAvailability: async (email?: string, phone?: string): Promise<{ emailTaken: boolean; phoneTaken: boolean }> => {
-        try {
-            const { data } = await supabase.rpc('account_exists', { p_email: email ?? null, p_phone: phone ?? null });
-            if (data) return { emailTaken: !!(data as any).email_taken, phoneTaken: !!(data as any).phone_taken };
-        } catch {
-            // Silently fail - don't block UX
-        }
-        return { emailTaken: false, phoneTaken: false };
+        // v13.99 — لا ابتلاع صامت: «تعذّر الفحص» تُرمى ولا تُقدَّم كـ«متاح».
+        const { data, error } = await supabase.rpc('account_exists', { p_email: email ?? null, p_phone: phone ?? null });
+        if (error) throw error;
+        return {
+            emailTaken: !!(data && (data as any).email_taken),
+            phoneTaken: !!(data && (data as any).phone_taken),
+        };
     },
 
     verifyOtp: async (phoneOrEmail: string, token: string, type: 'sms' | 'email') => {

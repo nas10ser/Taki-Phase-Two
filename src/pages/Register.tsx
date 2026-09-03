@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { validationService } from '../services/validationService';
@@ -76,7 +76,15 @@ const Register: React.FC = () => {
     }, [customAlert, language]);
 
     // UI Flow States
-    const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify'>('landing');
+    // v13.99 — 'reset' = شاشة تعيين كلمة مرور جديدة. كانت ناقصة تماماً: رابط
+    // الاستعادة يُدخل المستخدم للموقع بجلسة استعادة **ولا يطلب منه كلمة مرور
+    // جديدة إطلاقاً**، والرمز ذو الستّ خانات في البريد لم يكن له مكان يُدخل فيه.
+    const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify' | 'reset'>('landing');
+    const [newPw, setNewPw] = useState('');
+    const [newPw2, setNewPw2] = useState('');
+    const [resetCode, setResetCode] = useState('');
+    /** true = وصل عبر الرابط (جلسة استعادة جاهزة) · false = سيُدخل الرمز يدوياً */
+    const [resetViaLink, setResetViaLink] = useState(false);
     const [userType, setUserType] = useState<'buyer' | 'seller' | ''>('');
     // Form States
     const [name, setName] = useState('');
@@ -217,6 +225,72 @@ const Register: React.FC = () => {
         return () => clearTimeout(timeoutId);
     }, [mode, email, pendingUserId, customAlert, t]);
 
+    // v13.99 — Supabase يُطلق PASSWORD_RECOVERY حين يفتح المستخدم رابط
+    // الاستعادة (يُنشئ جلسة استعادة). قبل هذا لم يكن أحد يستمع، فكان المستخدم
+    // يجد نفسه داخل الموقع بلا أن يُطلب منه شيء — والغرض من الرابط لم يتحقّق.
+    useEffect(() => {
+        const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setResetViaLink(true);
+                setNewPw(''); setNewPw2('');
+                setMode('reset');
+            }
+        });
+        return () => { sub?.subscription?.unsubscribe?.(); };
+    }, []);
+
+    const handleSetNewPassword = async () => {
+        if (newPw.length < 8) {
+            await customAlert(t('كلمة المرور يجب ألا تقل عن ٨ أحرف.', 'Password must be at least 8 characters.'));
+            return;
+        }
+        if (newPw !== newPw2) {
+            await customAlert(t('كلمتا المرور غير متطابقتين.', 'The two passwords do not match.'));
+            return;
+        }
+        setLoading(true);
+        try {
+            // مسار الرمز: نبدّل الرمز بجلسة استعادة أولاً، ثم نغيّر الكلمة.
+            if (!resetViaLink) {
+                const code = normalizeArabicNumerals(resetCode).replace(/\D/g, '');
+                if (code.length !== 6) {
+                    setLoading(false);
+                    await customAlert(t('أدخل الرمز المكوّن من ٦ أرقام من رسالة البريد.', 'Enter the 6-digit code from the email.'));
+                    return;
+                }
+                const { error: vErr } = await supabase.auth.verifyOtp({
+                    email: email.trim(), token: code, type: 'recovery',
+                });
+                if (vErr) {
+                    setLoading(false);
+                    await customAlert(t('⚠️ الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزاً جديداً.',
+                                        '⚠️ The code is wrong or expired. Request a new one.'));
+                    return;
+                }
+            }
+            const { error } = await supabase.auth.updateUser({ password: newPw });
+            setLoading(false);
+            if (error) {
+                const low = String(error.message || '').toLowerCase();
+                // v13.93 — منع كلمات المرور المسرَّبة مفعّل على الخادم.
+                if (low.includes('weak') || low.includes('pwned') || low.includes('easy to guess')) {
+                    await customAlert(t('🔓 كلمة المرور هذه ظهرت في تسريبات معروفة. اختر كلمة مرور أخرى.',
+                                        '🔓 This password appeared in known breaches. Choose a different one.'));
+                } else {
+                    await customAlert(t(`تعذّر تغيير كلمة المرور: ${error.message}`, `Could not change password: ${error.message}`));
+                }
+                return;
+            }
+            setNewPw(''); setNewPw2(''); setResetCode('');
+            await customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
+                                '✅ Password changed. You can use it now.'));
+            history.replace('/');
+        } catch (e: any) {
+            setLoading(false);
+            await customAlert(t('حدث خطأ غير متوقع، حاول مرة أخرى.', 'Something went wrong, please try again.'));
+        }
+    };
+
     const handleForgotPassword = async () => {
         const trimmedEmail = email.trim();
         if (!trimmedEmail) {
@@ -255,9 +329,14 @@ const Register: React.FC = () => {
         }
 
         await customAlert(t(
-            `📧 تم إرسال رابط استعادة كلمة المرور إلى ${trimmedEmail}. تحقق من بريدك (وأيضاً مجلد الرسائل غير المرغوبة).`,
-            `📧 Password reset link sent to ${trimmedEmail}. Check your inbox (and spam folder).`
+            `📧 أرسلنا رسالة إلى ${trimmedEmail} فيها رابط ورمز من ٦ أرقام. افتح الرابط، أو أدخل الرمز في الشاشة التالية.`,
+            `📧 We sent an email to ${trimmedEmail} with a link and a 6-digit code. Open the link, or enter the code on the next screen.`
         ));
+        // v13.99 — الرسالة تعرض رمزاً من ٦ أرقام، ولم يكن له مكان يُدخل فيه
+        // إطلاقاً. الآن ننقل المستخدم لشاشة تُدخله وتضبط كلمة المرور الجديدة.
+        setResetViaLink(false);
+        setResetCode(''); setNewPw(''); setNewPw2('');
+        setMode('reset');
     };
 
     const handleLoginSubmit = async () => {
@@ -1245,6 +1324,75 @@ const Register: React.FC = () => {
                             </div>
                         )}
                     </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (mode === 'reset') {
+        const pwOk = newPw.length >= 8;
+        const matchOk = pwOk && newPw === newPw2;
+        const codeOk = resetViaLink || normalizeArabicNumerals(resetCode).replace(/\D/g, '').length === 6;
+        return (
+            <div style={commonContainerStyle}>
+                <div style={{ ...cardStyle, maxWidth: 440, width: '100%', padding: 28 }}>
+                    <h1 style={{ fontSize: '1.6rem', fontWeight: 900, textAlign: 'center', marginBottom: 8 }}>
+                        {t('تعيين كلمة مرور جديدة', 'Set a new password')}
+                    </h1>
+                    <p style={{ textAlign: 'center', opacity: 0.7, fontSize: '0.9rem', marginBottom: 22 }}>
+                        {resetViaLink
+                            ? t('تحقّقنا من الرابط. اختر كلمة مرور جديدة لحسابك.',
+                                'Your link is verified. Choose a new password.')
+                            : t('أدخل الرمز الذي وصلك في البريد، ثم كلمة المرور الجديدة.',
+                                'Enter the code from your email, then your new password.')}
+                    </p>
+
+                    {!resetViaLink && (
+                        <>
+                            <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                                {t('الرمز من البريد', 'Code from the email')}
+                            </label>
+                            <input
+                                value={resetCode}
+                                onChange={e => setResetCode(e.target.value)}
+                                inputMode="numeric"
+                                maxLength={7}
+                                placeholder="— — — — — —"
+                                style={{ ...inputStyle, textAlign: 'center', fontSize: '1.5rem', letterSpacing: 8, fontWeight: 900, marginBottom: 18 }}
+                            />
+                        </>
+                    )}
+
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                        {t('كلمة المرور الجديدة', 'New password')}
+                    </label>
+                    <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
+                           style={{ ...inputStyle, marginBottom: 6 }} />
+                    <div style={{ fontSize: '0.75rem', marginBottom: 14, color: pwOk ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
+                        {pwOk ? '✅ ' : ''}{t('٨ أحرف فأكثر', 'At least 8 characters')}
+                    </div>
+
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                        {t('تأكيد كلمة المرور', 'Confirm password')}
+                    </label>
+                    <input type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)}
+                           onKeyDown={e => { if (e.key === 'Enter' && matchOk && codeOk) handleSetNewPassword(); }}
+                           style={{ ...inputStyle, marginBottom: 6 }} />
+                    <div style={{ fontSize: '0.75rem', marginBottom: 20, color: matchOk ? '#10b981' : 'var(--text-muted, #94a3b8)' }}>
+                        {matchOk ? '✅ ' : ''}{t('الكلمتان متطابقتان', 'Passwords match')}
+                    </div>
+
+                    <button onClick={handleSetNewPassword} disabled={loading || !matchOk || !codeOk}
+                            style={{ ...primaryButtonStyle, opacity: (loading || !matchOk || !codeOk) ? 0.5 : 1,
+                                     cursor: (loading || !matchOk || !codeOk) ? 'not-allowed' : 'pointer' }}>
+                        {loading ? t('جارٍ الحفظ…', 'Saving…') : t('حفظ كلمة المرور', 'Save password')}
+                    </button>
+
+                    <button onClick={() => setMode('login')}
+                            style={{ width: '100%', marginTop: 14, background: 'none', border: 'none',
+                                     color: '#38bdf8', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                        {t('◀ رجوع لتسجيل الدخول', '◀ Back to sign in')}
+                    </button>
                 </div>
             </div>
         );

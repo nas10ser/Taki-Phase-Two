@@ -38,6 +38,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
+import TurnstileWidget from './TurnstileWidget';
 
 type Section = 'name' | 'phone' | 'email' | 'password' | null;
 
@@ -56,6 +57,13 @@ const AccountSettingsCard: React.FC = () => {
     const [phone, setPhone] = useState(user?.phone || '');
     const [email, setEmail] = useState(user?.email || '');
     const [currentPw, setCurrentPw] = useState('');
+    // v13.99 — إعادة المصادقة تنادي signInWithPassword أي المسار /token، وهو
+    // **محروس بالكابتشا** منذ v13.98. بدون رمز يفشل تغيير الجوال والإيميل
+    // وكلمة السر جميعاً بخطأ «no captcha_token found». الرمز يُستهلك مرة
+    // واحدة، فنجدّد التحدّي بعد كل محاولة.
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [captchaNonce, setCaptchaNonce] = useState(0);
+    const renewCaptcha = () => { setCaptchaToken(''); setCaptchaNonce(n => n + 1); };
     const [newPw, setNewPw] = useState('');
     const [confirmPw, setConfirmPw] = useState('');
 
@@ -67,7 +75,7 @@ const AccountSettingsCard: React.FC = () => {
 
     const close = () => {
         setOpen(null);
-        setCurrentPw(''); setNewPw(''); setConfirmPw('');
+        setCurrentPw(''); setNewPw(''); setConfirmPw(''); renewCaptcha();
     };
 
     /**
@@ -99,7 +107,7 @@ const AccountSettingsCard: React.FC = () => {
                 : 'Could not verify your session. Sign out, sign in again, and retry.');
         }
 
-        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password, options: captchaToken ? { captchaToken } : undefined } as any);
         if (error) {
             const tries = failedTries + 1;
             setFailedTries(tries);
@@ -144,6 +152,7 @@ const AccountSettingsCard: React.FC = () => {
             await customAlert(isRTL ? '✅ تم حفظ الاسم' : '✅ Name saved');
             close();
         } catch (e: any) {
+            renewCaptcha();
             await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
@@ -167,6 +176,7 @@ const AccountSettingsCard: React.FC = () => {
             await customAlert(isRTL ? '✅ تم حفظ رقم الجوال' : '✅ Phone saved');
             close();
         } catch (e: any) {
+            renewCaptcha();
             await customAlert((isRTL ? 'فشل الحفظ: ' : 'Save failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
@@ -196,6 +206,7 @@ const AccountSettingsCard: React.FC = () => {
             );
             close();
         } catch (e: any) {
+            renewCaptcha();
             await customAlert((isRTL ? 'فشل تحديث الإيميل: ' : 'Email update failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
@@ -255,13 +266,14 @@ const AccountSettingsCard: React.FC = () => {
             );
             close();
         } catch (e: any) {
+            renewCaptcha();
             await customAlert((isRTL ? 'فشل التغيير: ' : 'Change failed: ') + humanError(e));
         } finally { setBusy(false); }
     };
 
     const Row = ({ id, icon, label, value, action }: { id: Section; icon: string; label: string; value: string; action: string; }) => (
         <button
-            onClick={() => { setOpen(open === id ? null : id); setCurrentPw(''); }}
+            onClick={() => { setOpen(open === id ? null : id); setCurrentPw(''); renewCaptcha(); }}
             style={{
                 width: '100%',
                 padding: 14,
@@ -325,6 +337,7 @@ const AccountSettingsCard: React.FC = () => {
                 autoComplete="current-password"
                 style={inputStyle}
             />
+            <TurnstileWidget onToken={setCaptchaToken} isRTL={isRTL} resetSignal={captchaNonce} />
         </>
     );
 
