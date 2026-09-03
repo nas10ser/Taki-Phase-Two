@@ -85,6 +85,8 @@ const Register: React.FC = () => {
     const [resetCode, setResetCode] = useState('');
     /** true = وصل عبر الرابط (جلسة استعادة جاهزة) · false = سيُدخل الرمز يدوياً */
     const [resetViaLink, setResetViaLink] = useState(false);
+    /** البريد الذي أُرسل إليه الرمز فعلاً — قد يكون محلولاً من رقم الجوال. */
+    const [resetEmail, setResetEmail] = useState('');
     const [userType, setUserType] = useState<'buyer' | 'seller' | ''>('');
     // Form States
     const [name, setName] = useState('');
@@ -259,7 +261,7 @@ const Register: React.FC = () => {
                     return;
                 }
                 const { error: vErr } = await supabase.auth.verifyOtp({
-                    email: email.trim(), token: code, type: 'recovery',
+                    email: (resetEmail || email).trim(), token: code, type: 'recovery',
                 });
                 if (vErr) {
                     setLoading(false);
@@ -292,7 +294,35 @@ const Register: React.FC = () => {
     };
 
     const handleForgotPassword = async () => {
-        const trimmedEmail = email.trim();
+        let trimmedEmail = email.trim();
+
+        // v14.00 — تاكي منصّة **جوال أولاً**، فأغلب من يضغط «نسيت كلمة المرور»
+        // يكون قد كتب جواله في الخانة. كان يُقابَل بـ«أدخل بريداً صحيحاً» بلا
+        // بديل — طريقٌ مسدود لمن لا يذكر بريده أصلاً. نحلّ الرقم إلى بريده أولاً.
+        const digits = normalizeArabicNumerals(trimmedEmail).replace(/\D/g, '');
+        if (!trimmedEmail.includes('@') && digits.length >= 9) {
+            setLoading(true);
+            let resolved: string | null = null;
+            try {
+                const { data } = await supabase.rpc('find_email_by_phone', { input_phone: digits });
+                if (data) resolved = String(data);
+            } catch { /* نُعالج أدناه */ }
+            setLoading(false);
+            if (!resolved) {
+                await customAlert(t(
+                    'لم نجد حساباً بهذا الرقم يمكن استعادته. اكتب بريدك الإلكتروني في الخانة أعلاه.',
+                    'No recoverable account for this number. Enter your email address in the field above.'));
+                return;
+            }
+            trimmedEmail = resolved;
+            // نُخفي أغلب البريد: كشفه كاملاً لمن يعرف رقماً فقط تسريب هوية.
+            const [u, d] = resolved.split('@');
+            const masked = `${u.slice(0, 2)}${'•'.repeat(Math.max(2, u.length - 2))}@${d}`;
+            await customAlert(t(
+                `سنرسل رمز الاستعادة إلى بريدك: ${masked}`,
+                `We'll send the reset code to your email: ${masked}`));
+        }
+
         if (!trimmedEmail) {
             await customAlert(t(
                 'يرجى كتابة بريدك الإلكتروني في خانة الإيميل أعلاه أولاً',
@@ -336,6 +366,7 @@ const Register: React.FC = () => {
         // إطلاقاً. الآن ننقل المستخدم لشاشة تُدخله وتضبط كلمة المرور الجديدة.
         setResetViaLink(false);
         setResetCode(''); setNewPw(''); setNewPw2('');
+        setResetEmail(trimmedEmail);   // قد يكون محلولاً من الجوال
         setMode('reset');
     };
 
@@ -1335,7 +1366,17 @@ const Register: React.FC = () => {
         const codeOk = resetViaLink || normalizeArabicNumerals(resetCode).replace(/\D/g, '').length === 6;
         return (
             <div style={commonContainerStyle}>
-                <div style={{ ...cardStyle, maxWidth: 440, width: '100%', padding: 28 }}>
+                {/* ⚠️ لا نستعمل cardStyle هنا: هو مصمَّم للبطاقات الأفقية
+                    (display:flex + alignItems:center بلا flexDirection) فيصفّ
+                    الحقول في سطر واحد بدل عمود — وهذا ما كسر الشاشة أول مرة. */}
+                <div style={{
+                    maxWidth: 440, width: '100%', padding: 28, marginTop: 40,
+                    display: 'flex', flexDirection: 'column',
+                    border: '1px solid rgba(80, 80, 90, 0.2)', borderRadius: 28,
+                    background: 'rgba(80, 80, 90, 0.15)',
+                    backdropFilter: 'blur(24px) saturate(180%)',
+                    WebkitBackdropFilter: 'blur(24px) saturate(180%)', color: 'white',
+                }}>
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, textAlign: 'center', marginBottom: 8 }}>
                         {t('تعيين كلمة مرور جديدة', 'Set a new password')}
                     </h1>
