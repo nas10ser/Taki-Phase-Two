@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../data/mock';
@@ -12,8 +12,39 @@ import WhatsAppLinkButton from '../components/WhatsAppLinkButton';
 import { isTelegramMiniApp, linkTelegramToCurrentUser } from '../services/telegramMiniApp';
 import { supabase } from '../services/supabaseClient';
 
+type ProfileTab = 'notifications' | 'followed' | 'settings';
+
+/**
+ * v14.08 (بلاغ ناصر ٣) — «عند النقر على تغيير العنوان في خدمة التوصيل يوديني
+ * إلى تنبيهات ذكية وليس إلى الإعدادات».
+ *
+ * السبب أن التبويب كان يُقرأ من `sessionStorage` وحده، فأي رابط عميق
+ * (`/profile?tab=settings`) يُفتح على آخر تبويب زاره المستخدم لا على المطلوب.
+ * هذه الدالة تقرأ الوسم من العنوان، و`null` تعني «لا وسم» فيبقى المحفوظ.
+ * ⚠️ ترتيبها خارج المكوّن مقصود: استدعاؤها من مُهيّئ `useState` لمتغيّر معرّف
+ * بعده داخل المكوّن يقع في TDZ ويُسقط أول رسم.
+ */
+const readTabFromSearch = (search: string): ProfileTab | null => {
+    try {
+        const v = new URLSearchParams(search || '').get('tab');
+        return v === 'settings' || v === 'followed' || v === 'notifications' ? v : null;
+    } catch { return null; }
+};
+
+/** الوصول المباشر لبطاقة العنوان: `?focus=address` أو `#delivery-address`. */
+const wantsAddressFocus = (search: string, hash: string): boolean => {
+    try {
+        return new URLSearchParams(search || '').get('focus') === 'address'
+            || (hash || '').replace(/^#/, '') === 'delivery-address';
+    } catch { return false; }
+};
+
 const Profile: React.FC = () => {
     const history = useHistory();
+    // ⚠️ من `useLocation` لا من `window.location`: التنقّل داخل التطبيق
+    // (`history.push`) لا يُعيد تحميل الصفحة، فقراءة `window.location` في تأثير
+    // لا تُعيد التشغيل ويبقى المستخدم على التبويب الخاطئ.
+    const location = useLocation();
     const {
         user, followedMerchants, deals, language, setLanguage, logout, deleteAccount,
         smartAlerts, addSmartAlert, removeSmartAlert,
@@ -110,7 +141,15 @@ const Profile: React.FC = () => {
     // Persist the active tab in sessionStorage so that navigating away
     // (e.g. opening a legal page from "Settings") and coming back via the
     // browser/native back button returns to the same tab the user left.
-    const [activeTab, setActiveTab] = useState<'notifications' | 'followed' | 'settings'>(() => {
+    // v14.08 — أولوية العنوان على المحفوظ: رابط عميق يعني نيّة صريحة الآن،
+    // والمحفوظ مجرّد ذاكرة لما كان. وبطاقة العنوان تعيش في «الإعدادات»،
+    // فطلب التركيز عليها يفتح ذلك التبويب ولو لم يُذكر `tab`.
+    const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
+        // التركيز على العنوان يسبق `tab`: البطاقة لا تعيش إلا في «الإعدادات»،
+        // فرابطٌ يطلبها مع تبويب آخر لا يُفتح على تبويب لا تظهر فيه.
+        if (wantsAddressFocus(location.search, location.hash)) return 'settings';
+        const fromUrl = readTabFromSearch(location.search);
+        if (fromUrl) return fromUrl;
         try {
             const saved = sessionStorage.getItem('taki:profile:activeTab');
             return saved === 'followed' || saved === 'settings' ? saved : 'notifications';
@@ -119,6 +158,23 @@ const Profile: React.FC = () => {
     useEffect(() => {
         try { sessionStorage.setItem('taki:profile:activeTab', activeTab); } catch { /* ignore */ }
     }, [activeTab]);
+
+    /**
+     * عدّاد التركيز على بطاقة العنوان — لا قيمة منطقية، لأن الوصول من شاشة
+     * الحجز مرتين متتاليتين يجب أن يُمرّر الصفحة في المرتين. يُصفَّر بعد ثوانٍ
+     * حتى لا تُبرَز البطاقة من جديد كلما عاد المستخدم إلى تبويب الإعدادات.
+     */
+    const [addressFocusSignal, setAddressFocusSignal] = useState(0);
+    useEffect(() => {
+        const fromUrl = readTabFromSearch(location.search);
+        const focusAddr = wantsAddressFocus(location.search, location.hash);
+        if (focusAddr) setActiveTab('settings');
+        else if (fromUrl) setActiveTab(fromUrl);
+        if (!focusAddr) return;
+        setAddressFocusSignal(n => n + 1);
+        const t = setTimeout(() => setAddressFocusSignal(0), 4000);
+        return () => clearTimeout(t);
+    }, [location.search, location.hash, location.key]);
     const [newKeyword, setNewKeyword] = useState('');
     const [filterRegion, setFilterRegion] = useState('');
     const [filterCity, setFilterCity] = useState('');
@@ -340,10 +396,12 @@ const Profile: React.FC = () => {
                             new email; in-session reset for password). */}
                         <AccountSettingsCard />
 
-                        {/* v14.06 (طلب ناصر) — عنوان التوصيل الدائم: يُضاف مرة
-                            ويُغيَّر في أي وقت، فيظهر «التوصيل» في المتاجر التي
-                            تغطّي هذه النقطة. يراه كل حساب — فالتاجر مشترٍ أيضاً. */}
-                        <BuyerAddressCard />
+                        {/* v14.06 → v14.08 (طلبا ناصر) — دفتر عناوين التوصيل:
+                            حتى ١٠ عناوين وواحدٌ افتراضي يُقاس عليه نطاق التاجر.
+                            يراه كل حساب — فالتاجر مشترٍ أيضاً.
+                            `focusSignal` يأتي من `?focus=address` القادم من شاشة
+                            الحجز، فتُمرَّر الصفحة إلى البطاقة بلا بحث. */}
+                        <BuyerAddressCard focusSignal={addressFocusSignal} />
 
                         {/* Secure Telegram linking — the bot binds to THIS
                             account via a one-time token minted for the signed-in

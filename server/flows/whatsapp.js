@@ -655,6 +655,7 @@ function create(deps) {
                 : e === 'delivery_no_address' ? tr('dlv_no_address')
                 : e === 'delivery_min_order' ? tr('dlv_min_order', money(r.min_order || 0), cur())
                 : e === 'delivery_unavailable' ? (r.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
+                : e === 'store_no_payment' ? tr('bk_err_store_no_payment')
                 : e === 'suspended' ? tr('wa_book_err_suspended')
                 : tr('wa_book_err_fail');
             return sendButtons(from, { body: m, buttons: [{ id: 'wa:browse', title: tr('menu_browse') }, menuBtn()] });

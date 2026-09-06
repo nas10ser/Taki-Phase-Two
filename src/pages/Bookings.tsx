@@ -75,6 +75,63 @@ const FulfillmentStrip: React.FC<{ booking: any; isRTL: boolean }> = ({ booking,
     );
 };
 
+/** حالات التتبّع التي تعني أن الطلب غادر المتجر فعلاً. */
+const DELIVERY_STARTED = ['on_the_way', 'arrived', 'delivered'];
+
+/**
+ * v14.08 (بلاغ ناصر ٧) — شريط مراحل الطلب.
+ *
+ * طلب الاستلام ثلاث مراحل كما كان، وطلب التوصيل **أربع**: بينهما مرحلة «بدأ
+ * التوصيل» — وهي اللحظة التي يسأل عنها المشتري أكثر من غيرها. مصدرها
+ * `delivery_track_get`، فإن لم يصل ردّها (لا تتبّع بعد، أو مُحي بعد التسليم)
+ * يعود الشريط ثلاث مراحل بهدوء بلا رسالة خطأ.
+ *
+ * والإلغاء نهائي: الشريط كله أحمر بعلامات ✕ بدل ✓ خضراء عالقة عند «مؤكد».
+ */
+const OrderStages: React.FC<{ booking: any; isRTL: boolean; deliveryStage?: string | null }> = ({ booking, isRTL, deliveryStage }) => {
+    const cancelled = booking.status === 'cancelled';
+    const ack = booking.status === 'acknowledged' || booking.status === 'completed';
+    const done = booking.status === 'completed';
+    const showDelivery = booking.fulfillment === 'delivery' && !!deliveryStage;
+    const started = done || DELIVERY_STARTED.includes(String(deliveryStage || ''));
+    const steps: Array<{ label: string; filled: boolean }> = [
+        { label: isRTL ? 'مؤكد' : 'Confirmed', filled: true },
+        { label: isRTL ? 'استلمه التاجر' : 'S. Received', filled: ack },
+        ...(showDelivery ? [{ label: isRTL ? 'بدأ التوصيل' : 'On the way', filled: started }] : []),
+        { label: isRTL ? 'تم الاستلام' : 'Received', filled: done },
+    ];
+    const RED = '#ef4444';
+    const fill = cancelled ? RED : 'var(--primary)';
+    const node = (on: boolean): React.CSSProperties => ({
+        width: 28, height: 28, borderRadius: 14,
+        background: on ? fill : 'var(--gray-200)',
+        color: 'white', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', fontSize: '0.8rem',
+    });
+    const bar = (on: boolean): React.CSSProperties => ({
+        flex: 1, height: 3, background: on ? fill : 'var(--gray-200)', borderRadius: 2,
+    });
+    const col: React.CSSProperties = {
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        // أربع مراحل على شاشة جوال ضيّقة: عمود أنحف حتى لا يخرج الشريط عن العرض
+        minWidth: steps.length > 3 ? 52 : 60,
+    };
+    const lbl: React.CSSProperties = { fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' };
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {steps.map((s, i) => (
+                <React.Fragment key={s.label}>
+                    {i > 0 && <div style={bar(cancelled || s.filled)} />}
+                    <div style={col}>
+                        <div style={node(cancelled || s.filled)}>{cancelled ? '✕' : (s.filled ? '✓' : '')}</div>
+                        <div style={lbl}>{s.label}</div>
+                    </div>
+                </React.Fragment>
+            ))}
+        </div>
+    );
+};
+
 const Bookings: React.FC = () => {
     const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings } = useApp();
     const history = useHistory();
@@ -211,6 +268,56 @@ const Bookings: React.FC = () => {
     const filteredPast = useMemo(() => sortBookings(pastRows),
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [pastRows, sortOrder]);
+
+    /**
+     * v14.08 (بلاغ ناصر ٧) — مرحلة «بدأ التوصيل» في شريط المراحل.
+     *
+     * تُجلب **مرة واحدة عند فتح البطاقة** لا في حلقة: هذا شريط حالة لا متتبّع،
+     * والخريطة الحيّة (زرّ «تتبّع الطلب») هي التي تُحدّث نفسها كل عشر ثوانٍ.
+     * و`ok:false` (لم يبدأ التتبّع، أو مُحي بعد التسليم) يُخزَّن كـ`null` فيعود
+     * الشريط ثلاث مراحل بلا أي رسالة خطأ في وجه المشتري.
+     */
+    const [dlvStage, setDlvStage] = useState<Record<string, string | null>>({});
+    /**
+     * ما سبق جلبه، مفتاحه «الباركود|حالة الحجز». ربطُه بالحالة مقصود: انتقال
+     * الحجز من `pending` إلى `acknowledged` هو بالضبط اللحظة التي يبدأ فيها
+     * البثّ (القاعدة ترفضه قبلها بـNOT_ACKNOWLEDGED)، فلو حفظنا اللقطة بالباركود
+     * وحده لبقي الشريط عالقاً على ما كان قبل التأكيد ما بقيت الصفحة مفتوحة.
+     * وهو ref لا state لأنه سجلٌّ لا يُرسم — وضعُه في الاعتمادات يجعل الـeffect
+     * يستدعي نفسه.
+     */
+    const dlvFetched = React.useRef<Set<string>>(new Set());
+    /** حالةُ الحجز المفتوح ونوعه — قيمتان بسيطتان تُبقيان الاعتمادات ثابتة بالقيمة. */
+    const expandedDelivery = useMemo(() => {
+        if (!expandedId) return null;
+        // نبحث في الصفوف المعروضة أيضاً: `bookings` قد لا يحمل الصفحات الأقدم
+        // التي جلبها التمرير اللانهائي، فحجزٌ قديم مفتوح كان سيبقى بلا مرحلة رابعة.
+        const b: any = bookings.find(x => x.barcode === expandedId)
+            || [...activeRows, ...pastRows].find((x: any) => x.barcode === expandedId);
+        if (!b || b.fulfillment !== 'delivery') return null;
+        return { barcode: expandedId, status: String(b.status || '') };
+    }, [expandedId, bookings, activeRows, pastRows]);
+    useEffect(() => {
+        if (!expandedDelivery) return;
+        const { barcode, status } = expandedDelivery;
+        const key = `${barcode}|${status}`;
+        if (dlvFetched.current.has(key)) return;
+        dlvFetched.current.add(key);
+        let alive = true;
+        (async () => {
+            try {
+                const { data, error } = await supabase.rpc('delivery_track_get', { p_barcode: barcode });
+                if (!alive) return;
+                const d: any = error ? null : data;
+                setDlvStage(prev => ({ ...prev, [barcode]: d?.ok ? String(d.status || '') : null }));
+            } catch {
+                // شبكة متعثّرة ⇒ لا مرحلة رابعة ولا إزعاج للمشتري، لكن نُلغي الختم
+                // حتى تُعاد المحاولة عند إعادة الفتح بدل تجميد الشريط إلى الأبد.
+                if (alive) dlvFetched.current.delete(key);
+            }
+        })();
+        return () => { alive = false; };
+    }, [expandedDelivery]);
 
     // Auto-expand if only one active booking — ONCE per visit (v12.69).
     // كان يعيد فتح الحجز النشط الوحيد بعد كل محاولة إغلاق أو نقر على حجز
@@ -486,29 +593,6 @@ const Bookings: React.FC = () => {
                                                             : (isRTL ? '💳 ادفع الآن إلكترونياً — مدى / فيزا / ماستركارد' : '💳 Pay now — mada / Visa / Mastercard')}
                                                     </button>
                                                 )}
-                                                {/* v14.06 — توصيل أم استلام؟ أول ما يبحث عنه المشتري */}
-                                                <FulfillmentStrip booking={booking} isRTL={isRTL} />
-
-                                                {/* v14.07 — «أين طلبي؟» للطلبات الجارية بالتوصيل وحدها.
-                                                    لا يظهر للاستلام (لا شيء يُتتبَّع) ولا للطلبات المنتهية
-                                                    (الموقع يُمحى عند التسليم). الخريطة نفسها تشرح حالة
-                                                    «قيد التجهيز» فلا نُخفي الزرّ قبل الانطلاق. */}
-                                                {booking.fulfillment === 'delivery' &&
-                                                 (booking.status === 'pending' || booking.status === 'acknowledged') && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setTrackBarcode(booking.barcode); }}
-                                                        style={{
-                                                            width: '100%', marginBottom: 20, padding: '13px',
-                                                            borderRadius: 14, border: 'none',
-                                                            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                                                            color: '#fff', fontWeight: 900, fontSize: '0.9rem',
-                                                            cursor: 'pointer', boxShadow: '0 6px 18px rgba(59, 130, 246, 0.32)',
-                                                        }}
-                                                    >
-                                                        🚚 {isRTL ? 'تتبّع الطلب على الخريطة' : 'Track order on the map'}
-                                                    </button>
-                                                )}
-
                                                 {/* Timer */}
                                                 {booking.expiryTime > Date.now() && (
                                                     <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -523,22 +607,7 @@ const Bookings: React.FC = () => {
 
                                                 {/* Tracker */}
                                                 <div style={{ background: 'var(--body-bg)', padding: 20, borderRadius: 20, marginBottom: 24, border: '1px solid var(--border-color)' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>✓</div>
-                                                            <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'مؤكد' : 'Confirmed'}</div>
-                                                        </div>
-                                                        <div style={{ flex: 1, height: 3, background: (booking.status === 'acknowledged' || booking.status === 'completed') ? 'var(--primary)' : 'var(--gray-200)', borderRadius: 2 }} />
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: (booking.status === 'acknowledged' || booking.status === 'completed') ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{(booking.status === 'acknowledged' || booking.status === 'completed') ? '✓' : ''}</div>
-                                                            <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'استلمه التاجر' : 'S. Received'}</div>
-                                                        </div>
-                                                        <div style={{ flex: 1, height: 3, background: booking.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', borderRadius: 2 }} />
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 }}>
-                                                            <div style={{ width: 28, height: 28, borderRadius: 14, background: booking.status === 'completed' ? 'var(--primary)' : 'var(--gray-200)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{booking.status === 'completed' ? '✓' : ''}</div>
-                                                            <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' }}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
-                                                        </div>
-                                                    </div>
+                                                    <OrderStages booking={booking} isRTL={isRTL} deliveryStage={dlvStage[booking.barcode]} />
                                                     {/* Seller message — always present so the buyer never wonders
                                                         whether the seller saw the order. If the seller wrote a real
                                                         note we show it; otherwise we narrate the order status.
@@ -550,7 +619,14 @@ const Bookings: React.FC = () => {
                                                             if (booking.status === 'completed') {
                                                                 fallback = isRTL ? '✅ تم تسليم طلبك — شكراً لاستخدامك تاكي 💚' : '✅ Order delivered — thanks for using TAKI 💚';
                                                             } else if (booking.status === 'acknowledged') {
-                                                                fallback = isRTL ? '📦 التاجر استلم طلبك وهو قيد التجهيز الآن.' : '📦 The seller received your order and is preparing it now.';
+                                                                // v14.08 — طلب توصيل غادر المتجر فعلاً لا يُقال عنه «قيد التجهيز»:
+                                                                // نفس اللقطة التي بنى عليها شريط المراحل، فلا يتناقض السطران.
+                                                                const st = booking.fulfillment === 'delivery' ? dlvStage[booking.barcode] : null;
+                                                                fallback = st === 'arrived'
+                                                                    ? (isRTL ? '📍 وصل المندوب إلى عنوانك.' : '📍 The courier has arrived at your address.')
+                                                                    : st === 'on_the_way'
+                                                                        ? (isRTL ? '🚚 طلبك في الطريق إليك الآن.' : '🚚 Your order is on the way.')
+                                                                        : (isRTL ? '📦 التاجر استلم طلبك وهو قيد التجهيز الآن.' : '📦 The seller received your order and is preparing it now.');
                                                             } else {
                                                                 fallback = isRTL ? '⏳ بانتظار التاجر يؤكد استلام طلبك…' : '⏳ Waiting for the seller to acknowledge your order…';
                                                             }
@@ -575,6 +651,46 @@ const Bookings: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
+
+                                                {/* v14.06 — توصيل أم استلام؟
+                                                    v14.08 (بلاغ ناصر ٧): موضعهما **تحت** شريط المراحل —
+                                                    «وكذلك عند المشتري ضع التوصيل والتتبّع تحت الاستلام».
+                                                    فالمشتري يقرأ أولاً أين وصل طلبه، ثم كيف سيصله. */}
+                                                <FulfillmentStrip booking={booking} isRTL={isRTL} />
+
+                                                {/* v14.07 — «أين طلبي؟» للطلبات الجارية بالتوصيل وحدها.
+                                                    لا يظهر للاستلام (لا شيء يُتتبَّع) ولا للطلبات المنتهية
+                                                    (الموقع يُمحى عند التسليم).
+                                                    v14.08 — قبل أن يؤكّد التاجر استلام الطلب لا يوجد ما
+                                                    يُتتبَّع أصلاً (القاعدة ترفض بثّ الموقع بـNOT_ACKNOWLEDGED)،
+                                                    فنقول ذلك بسطر هادئ بدل زرٍّ يفتح خريطة فارغة. */}
+                                                {booking.fulfillment === 'delivery' && booking.status === 'pending' && (
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: 10,
+                                                        marginBottom: 20, padding: '12px 14px', borderRadius: 14,
+                                                        background: 'var(--gray-100)', border: '1px solid var(--border-color)',
+                                                    }}>
+                                                        <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>⏳</span>
+                                                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                            {isRTL ? 'يبدأ التتبّع بعد أن يؤكّد التاجر استلام طلبك.'
+                                                                   : 'Tracking starts once the store acknowledges your order.'}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {booking.fulfillment === 'delivery' && booking.status === 'acknowledged' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setTrackBarcode(booking.barcode); }}
+                                                        style={{
+                                                            width: '100%', marginBottom: 20, padding: '13px',
+                                                            borderRadius: 14, border: 'none',
+                                                            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                                                            color: '#fff', fontWeight: 900, fontSize: '0.9rem',
+                                                            cursor: 'pointer', boxShadow: '0 6px 18px rgba(59, 130, 246, 0.32)',
+                                                        }}
+                                                    >
+                                                        🚚 {isRTL ? 'تتبّع الطلب على الخريطة' : 'Track order on the map'}
+                                                    </button>
+                                                )}
 
                                                 {/* Buyer↔Seller chat thread (3+3 cap). Hidden once the
                                                     booking is closed-out so old completed orders don't
@@ -703,46 +819,7 @@ const Bookings: React.FC = () => {
                                                     <h4 style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--primary)', marginBottom: 16, marginTop: 0, textAlign: isRTL ? 'right' : 'left' }}>
                                                         {booking.status === 'completed' ? (isRTL ? '🎊 تم الاستلام بنجاح!' : '🎊 Delivery Successful!') : (isRTL ? 'تفاصيل حالة الحجز:' : 'Booking Status Details:')}
                                                     </h4>
-                                                    {(() => {
-                                                        // Cancelled is terminal: paint the whole rail RED with ✕
-                                                        // marks instead of a green ✓ stuck on "Confirmed"
-                                                        // (Nasser: red + X looks more professional).
-                                                        const cancelled = booking.status === 'cancelled';
-                                                        const ack = booking.status === 'acknowledged' || booking.status === 'completed';
-                                                        const done = booking.status === 'completed';
-                                                        const RED = '#ef4444';
-                                                        const node = (filled: boolean, fill: string) => ({
-                                                            width: 28, height: 28, borderRadius: 14,
-                                                            background: filled ? fill : 'var(--gray-200)',
-                                                            color: 'white', display: 'flex', alignItems: 'center',
-                                                            justifyContent: 'center', fontSize: '0.8rem',
-                                                        } as React.CSSProperties);
-                                                        const bar = (filled: boolean, fill: string) => ({
-                                                            flex: 1, height: 3,
-                                                            background: filled ? fill : 'var(--gray-200)',
-                                                            borderRadius: 2,
-                                                        } as React.CSSProperties);
-                                                        const lbl = { fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' } as React.CSSProperties;
-                                                        const col = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 60 } as React.CSSProperties;
-                                                        return (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                        <div style={col}>
-                                                            <div style={node(true, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : '✓'}</div>
-                                                            <div style={lbl}>{isRTL ? 'مؤكد' : 'Confirmed'}</div>
-                                                        </div>
-                                                        <div style={bar(cancelled || ack, cancelled ? RED : 'var(--primary)')} />
-                                                        <div style={col}>
-                                                            <div style={node(cancelled || ack, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : (ack ? '✓' : '')}</div>
-                                                            <div style={lbl}>{isRTL ? 'استلمه التاجر' : 'S. Received'}</div>
-                                                        </div>
-                                                        <div style={bar(cancelled || done, cancelled ? RED : 'var(--primary)')} />
-                                                        <div style={col}>
-                                                            <div style={node(cancelled || done, cancelled ? RED : 'var(--primary)')}>{cancelled ? '✕' : (done ? '✓' : '')}</div>
-                                                            <div style={lbl}>{isRTL ? 'تم الاستلام' : 'Received'}</div>
-                                                        </div>
-                                                    </div>
-                                                        );
-                                                    })()}
+                                                    <OrderStages booking={booking} isRTL={isRTL} deliveryStage={dlvStage[booking.barcode]} />
                                                     {booking.status === 'completed' && (
                                                         <div style={{ marginTop: 16, textAlign: 'center', padding: '10px', background: 'var(--gray-100)', borderRadius: 12 }}>
                                                             <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--primary)' }}>
@@ -808,7 +885,21 @@ const Bookings: React.FC = () => {
             <DeliveryTrackMap
                 barcode={trackBarcode}
                 isRTL={isRTL}
-                onClose={() => setTrackBarcode(null)}
+                onClose={() => {
+                    // الخريطة الحيّة رأت أحدث حالة؛ فعند إغلاقها نُحدّث لقطة الشريط
+                    // مباشرةً (لا نكتفي بإبطالها — إبطالٌ بلا إعادة جلب يُنقص الشريط
+                    // مرحلةً بدل أن يُصلحه) وإلا بقي يقول «قيد التجهيز» لطلبٍ رآه
+                    // المشتري بعينه في الطريق قبل ثانية.
+                    const bc = trackBarcode;
+                    setTrackBarcode(null);
+                    (async () => {
+                        try {
+                            const { data, error } = await supabase.rpc('delivery_track_get', { p_barcode: bc });
+                            const d: any = error ? null : data;
+                            setDlvStage(prev => ({ ...prev, [bc]: d?.ok ? String(d.status || '') : null }));
+                        } catch { /* تعذّر التحديث ⇒ يبقى الشريط على آخر لقطة معروفة */ }
+                    })();
+                }}
             />
         )}
         {reportStore && (

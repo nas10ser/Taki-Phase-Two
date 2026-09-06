@@ -31,7 +31,7 @@ services:
       - key: BOT_MODE
         value: webhook
       - key: APP_URL
-        value: https://taki-test-eight.vercel.app
+        value: https://www.takisa.net
       - key: NODE_VERSION
         value: "20"
       # ── Secrets — paste the values from server/.env in the Render dashboard ──

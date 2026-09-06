@@ -69,10 +69,20 @@ const WHATSAPP_VERIFY_TOKEN    = process.env.WHATSAPP_VERIFY_TOKEN || '';
 const WHATSAPP_APP_SECRET      = process.env.WHATSAPP_APP_SECRET || '';
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
-const APP_URL                  = (process.env.APP_URL || 'https://taki-test-eight.vercel.app').replace(/\/$/, '');
+// v14.08 (بلاغ ناصر ٩): البوت كان يفتح `taki-test-eight.vercel.app` — العنوان
+// القديم. النطاق يحوّله بـ308 لكن أزرار WebApp في تيليجرام تفتح **العنوان
+// المكتوب** لا وجهته، فيرى المستخدم اسم vercel ويخرج من التطبيق إلى المتصفّح.
+// الإصلاح في الكود لا في لوحة Render: أي عنوان قديم معروف يُترجم إلى النطاق
+// الرسمي، فلا تبقى الميزة رهينة متغيّر بيئة يُنسى تحديثه.
+const LEGACY_HOSTS = ['taki-test-eight.vercel.app', 'takisa.net'];
+const APP_URL                  = (() => {
+    const raw = (process.env.APP_URL || 'https://www.takisa.net').replace(/\/$/, '');
+    return LEGACY_HOSTS.some(h => raw.includes(h)) && !raw.includes('www.takisa.net')
+        ? 'https://www.takisa.net' : raw;
+})();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.07.0';
+const BOT_VERSION              = '14.08.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1728,6 +1738,9 @@ async function execBooking(ctx) {
                 : e==='delivery_no_address'  ? tr('dlv_no_address')
                 : e==='delivery_min_order'   ? tr('dlv_min_order', money(result.min_order || 0), tr('inv_sar'))
                 : e==='delivery_unavailable' ? (result.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
+                // v14.08 — متجر لم يُقرّ طريقة حسابه: القاعدة ترفض الحجز، والمشتري
+                // يستحقّ سبباً مفهوماً لا «فشل الحجز» الغامض (بلاغ ناصر ٨).
+                : e==='store_no_payment' ? tr('bk_err_store_no_payment')
                 : e==='not_linked'      ? tr('b1137_login_first')
                 : e==='suspended'       ? tr('b1138_account_suspended')
                 : tr('b1139_booking_failed');

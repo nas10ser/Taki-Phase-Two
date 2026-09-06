@@ -12,6 +12,8 @@ import WorkingHoursEditor from '../components/WorkingHoursEditor';
 import ReferralCard from '../components/seller/ReferralCard';
 import GatewayCard from '../components/seller/GatewayCard';
 import DeliveryCard from '../components/seller/DeliveryCard';
+// v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
+import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 import DeliveryTrackerCard from '../components/seller/DeliveryTrackerCard';
 import VatStatusCard from '../components/seller/VatStatusCard';
@@ -181,10 +183,189 @@ const SellerFulfillmentStrip: React.FC<{ order: any; isRTL: boolean }> = ({ orde
     );
 };
 
+/**
+ * v14.08 — بانر حالة الدفع في بطاقة طلب التاجر: **ثلاث** حالات لا اثنتان.
+ *
+ * ── العطل الذي يصلحه (بلاغ ناصر) ─────────────────────────────────────────
+ * «وضعت الحساب بالبطاقة فقط، ولكنه قبِل الدفع عند التسليم». القاعدة كانت
+ * صحيحة تماماً (الحجز مسجَّل `payment_method='online'`)، والعطل هنا في العرض:
+ * كان البانر يقيس `paidAt` وحده، فطلبٌ إلكتروني **لم يُسدَّد بعد** يقع في فرع
+ * «💵 الدفع عند الاستلام — استلم المبلغ نقداً». فيُطالب التاجرُ العميلَ نقداً
+ * بطلبٍ سيُدفع بالبطاقة، ثم يُدفع مرة ثانية. هذا عطل **مال** لا عطل شكل.
+ *
+ * فالحالات ثلاث:
+ *   ١) `paidAt`                       ⇒ وصل حسابه ✅ فلا يطلب شيئاً.
+ *   ٢) `paymentMethod==='online'` بلا `paidAt` ⇒ ⏳ بانتظار الدفع — **لا يسلّم**.
+ *   ٣) غير ذلك                        ⇒ 💵 الدفع عند الاستلام.
+ * والحالة (٢) بلون خطر لا تحذير هادئ: التسليم قبل تأكيد الدفع خسارةٌ نقدية
+ * لا يمكن التراجع عنها.
+ */
+const SellerPaymentBanner: React.FC<{ order: any; isRTL: boolean; darkMode: boolean }> = ({ order, isRTL, darkMode }) => {
+    const paid = !!order?.paidAt;
+    // طلبٌ ملغى لن يُسدَّد ولن يُسلَّم — فتحذير «لا تسلّم قبل الدفع» عليه ضجيج
+    // أحمر يُفقد اللونَ الأحمر معناه في الطلبات التي تحتاجه فعلاً.
+    const cancelled = order?.status === 'cancelled';
+    const awaitingOnline = !paid && !cancelled && order?.paymentMethod === 'online';
+    const amt = order?.paidAmount;
+
+    // درجتان لكل لون دلالي — الثابت منها يختفي على خلفية الوضع الليلي.
+    const tone = paid
+        ? (cancelled
+            ? { fg: darkMode ? '#fbbf24' : '#b45309', bg: 'rgba(245,158,11,0.14)', bd: 'rgba(245,158,11,0.6)', icon: '↩️' }
+            : { fg: darkMode ? '#34d399' : '#059669', bg: 'rgba(16,185,129,0.14)', bd: 'rgba(16,185,129,0.55)', icon: '✅' })
+        : cancelled
+            ? { fg: 'var(--text-secondary)', bg: 'var(--gray-100)', bd: 'var(--border-color)', icon: '🚫' }
+            : awaitingOnline
+                ? { fg: darkMode ? '#fca5a5' : '#dc2626', bg: 'rgba(239,68,68,0.14)', bd: 'rgba(239,68,68,0.55)', icon: '⏳' }
+                : { fg: darkMode ? '#fbbf24' : '#b45309', bg: 'rgba(245,158,11,0.14)', bd: 'rgba(245,158,11,0.6)', icon: '💵' };
+
+    const title = paid
+        ? (cancelled
+            ? (isRTL ? 'مدفوع ثم أُلغي — يستوجب استرداداً' : 'Paid then cancelled — refund due')
+            : (isRTL ? 'مدفوع إلكترونياً' : 'Paid online'))
+        : cancelled
+            ? (isRTL ? 'لا مبلغ مستحق' : 'Nothing due')
+            : awaitingOnline
+                ? (isRTL ? 'بانتظار الدفع الإلكتروني' : 'Awaiting online payment')
+                : (isRTL ? 'الدفع عند الاستلام' : 'Pay at pickup');
+
+    const detail = paid
+        ? (cancelled
+            // مدفوعٌ ثم أُلغي = مبلغ في حساب التاجر لطلب لن يُسلَّم. إخفاء ذلك
+            // خلف «وصل حسابك» يترك استرداداً مستحقاً لا يعلم به أحد.
+            ? (isRTL
+                ? `أُلغي الطلب بعد الدفع${amt != null ? ` — ${amt} ر.س` : ''} — المبلغ يستوجب استرداداً للمشتري`
+                : `Cancelled after payment${amt != null ? ` — ${amt} SAR` : ''} — this amount must be refunded to the buyer`)
+            : (isRTL
+                ? `وصل حسابك مباشرة${amt != null ? ` — ${amt} ر.س` : ''} — لا تطلب مبلغاً من العميل`
+                : `Sent to your account${amt != null ? ` — ${amt} SAR` : ''} — do not collect cash`))
+        : cancelled
+            ? (isRTL ? 'الطلب ملغى ولم يُسدَّد — لا تحصيل ولا تسليم' : 'Order cancelled and unpaid — nothing to collect or hand over')
+            : awaitingOnline
+                ? (isRTL
+                    ? 'هذا طلب إلكتروني لم يُسدَّد بعد — لا تسلّم الطلب قبل تأكيد الدفع، ولا تطلب المبلغ نقداً'
+                    : 'This is an online order that is not paid yet — do not hand it over before payment is confirmed, and do not collect cash')
+                : (isRTL ? 'استلم المبلغ نقداً/شبكة من العميل عند التسليم' : 'Collect payment from the buyer on handover');
+
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+            padding: '11px 14px', borderRadius: 14,
+            background: tone.bg, border: `1.5px solid ${tone.bd}`,
+        }}>
+            <span style={{ fontSize: '1.35rem', lineHeight: 1 }}>{tone.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 900, fontSize: '0.95rem', color: tone.fg }}>{title}</div>
+                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>{detail}</div>
+            </div>
+        </div>
+    );
+};
+
+/**
+ * v14.08 — مسار الطلب في لوحة التاجر (بلاغ ناصر: «أضف خانة: مؤكد — استلمه
+ * التاجر — بدأ التوصيل — تم الاستلام»).
+ *
+ * نفس شريط `StatusTracker` الذي يراه المشتري في صفحة العرض حرفاً بحرف — نفس
+ * العُقد والمرحلة الحمراء بعلامات ✕ عند الإلغاء — حتى لا يقرأ الطرفان حالتين
+ * مختلفتين لطلب واحد. الفرق الوحيد: **مرحلة «بدأ التوصيل» لطلبات التوصيل
+ * وحدها**؛ طلب الاستلام من المتجر يبقى بثلاث مراحل كما هو اليوم، فمرحلةٌ لا
+ * تتحقق أبداً تجعل الشريط يبدو عالقاً إلى الأبد.
+ *
+ * مصدر المرحلة الثالثة `deliveryStatus` من `delivery_tracks` (يجلبها الأب
+ * باستعلام واحد لكل الطلبات لا استعلاماً لكل صفّ).
+ */
+const SellerOrderProgress: React.FC<{
+    status: string;
+    fulfillment?: 'pickup' | 'delivery';
+    deliveryStatus?: string | null;
+    isRTL: boolean;
+}> = ({ status, fulfillment, deliveryStatus, isRTL }) => {
+    const isDelivery = fulfillment === 'delivery';
+    const steps = isDelivery
+        ? [
+            { key: 'pending', labelAr: 'مؤكد 🎟️', labelEn: 'Confirmed 🎟️' },
+            { key: 'acknowledged', labelAr: 'استلمه التاجر 📦', labelEn: 'Seller received 📦' },
+            { key: 'on_the_way', labelAr: 'بدأ التوصيل 🚚', labelEn: 'Out for delivery 🚚' },
+            { key: 'completed', labelAr: 'تم الاستلام ✅', labelEn: 'Received ✅' },
+        ]
+        : [
+            { key: 'pending', labelAr: 'مؤكد 🎟️', labelEn: 'Confirmed 🎟️' },
+            { key: 'acknowledged', labelAr: 'استلمه التاجر 📦', labelEn: 'Seller received 📦' },
+            { key: 'completed', labelAr: 'تم الاستلام ✅', labelEn: 'Received ✅' },
+        ];
+
+    const isCancelled = status === 'cancelled';
+    const enRoute = isDelivery && (deliveryStatus === 'on_the_way' || deliveryStatus === 'arrived' || deliveryStatus === 'delivered');
+    const currentIndex = isCancelled
+        ? steps.length - 1
+        : status === 'completed'
+            ? steps.length - 1
+            : status === 'acknowledged'
+                ? (enRoute ? 2 : 1)
+                : 0;
+
+    const lineColor = isCancelled ? '#ef4444' : 'var(--primary)';
+    const glow = isCancelled ? '0 0 10px rgba(239,68,68,0.45)' : '0 0 10px var(--primary-glow)';
+    const mark = isCancelled ? '✕' : '✓';
+
+    // مركز كل عقدة عند (2i+1)/(2N) من الصفّ؛ نُزيح القضيب إلى أول/آخر مركز
+    // فينتهي الملء **على** العقدة النشطة بالضبط لا بعدها.
+    const edgePct = 100 / (2 * steps.length);
+    const spanPct = 100 - 2 * edgePct;
+    const fillPct = (currentIndex / (steps.length - 1)) * spanPct;
+
+    return (
+        <div style={{ padding: '18px 12px 14px', background: 'var(--body-bg)', borderRadius: 18, border: '1px solid var(--border-color)', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 12, left: `${edgePct}%`, right: `${edgePct}%`, height: 4, background: 'var(--gray-100)', borderRadius: 2, zIndex: 0 }} />
+                <div style={{
+                    position: 'absolute', top: 12,
+                    left: isRTL ? 'auto' : `${edgePct}%`,
+                    right: isRTL ? `${edgePct}%` : 'auto',
+                    width: `${fillPct}%`, height: 4, background: lineColor, borderRadius: 2, zIndex: 1,
+                    transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: glow,
+                }} />
+                {steps.map((step, index) => {
+                    const isActive = index <= currentIndex;
+                    const isCurrent = index === currentIndex;
+                    return (
+                        <div key={step.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2, position: 'relative' }}>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: '50%',
+                                background: isActive ? lineColor : 'var(--card-bg)',
+                                border: isActive ? 'none' : '4px solid var(--gray-100)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'white', fontSize: '0.8rem', transition: 'all 0.3s ease',
+                                transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                                boxShadow: isCurrent ? glow : 'none',
+                            }}>
+                                {isActive && mark}
+                            </div>
+                            <div style={{
+                                marginTop: 10, fontSize: '0.66rem', fontWeight: 900, textAlign: 'center',
+                                color: isActive ? 'var(--text-primary)' : 'var(--gray-400)',
+                                transition: 'color 0.4s ease',
+                            }}>
+                                {isRTL ? step.labelAr : step.labelEn}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            {isCancelled && (
+                <div style={{ marginTop: 10, textAlign: 'center', fontSize: '0.74rem', fontWeight: 900, color: '#ef4444' }}>
+                    {isRTL ? 'تم الإلغاء' : 'Cancelled'}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings, ingestDeals } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings, ingestDeals, darkMode } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
 
@@ -2603,6 +2784,60 @@ const SellerDashboard: React.FC = () => {
         await Promise.allSettled([reloadActiveOrders(), reloadPastOrders()]);
     }, [reloadActiveOrders, reloadPastOrders]);
 
+    /**
+     * v14.08 — مرحلة «بدأ التوصيل» في شريط مسار الطلب.
+     *
+     * مصدرها `delivery_tracks`، و**استعلام واحد لكل الصفحة** لا استعلام لكل
+     * صفّ: قائمة الباركودات تُمرَّر بـ`.in()` مرة واحدة. (نفس درس البوت: استعلام
+     * لكل صفّ يقتل الصفحة عند التاجر الناجح.) RLS تكفل ألا يعود إلا ما يملكه
+     * هذا التاجر، فلا حاجة لمرشِّح متجر يدوي.
+     *
+     * ولماذا استطلاع دوري؟ لأن التاجر يبدّل الحالة من بطاقة التتبّع في نفس
+     * الشاشة (أو من جواله الآخر وهو في الطريق)، فشريطٌ لا يتحدّث إلا بإعادة
+     * التحميل يكذب عليه. الاستطلاع يعمل **فقط** حين يكون تبويب الطلبات النشطة
+     * مفتوحاً وهناك طلب توصيل فعلاً والصفحة ظاهرة — فلا نبضة واحدة في الخلفية.
+     */
+    const [deliveryStages, setDeliveryStages] = useState<Record<string, string>>({});
+    const deliveryBarcodesKey = React.useMemo(
+        // باركود فارغ/مفقود يصنع مدخلاً '' في `.in()` — نُسقطه قبل أن يصل الاستعلام.
+        () => activeOrders
+            .filter(o => o.fulfillment === 'delivery' && !!o.barcode)
+            .map(o => o.barcode)
+            .sort()
+            .join(','),
+        [activeOrders]
+    );
+    useEffect(() => {
+        if (view !== 'orders' || ordersFilter !== 'active' || !deliveryBarcodesKey) return;
+        const codes = deliveryBarcodesKey.split(',');
+        let alive = true;
+        const pull = async () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+            const { supabase } = await import('../services/supabaseClient');
+            const { data, error } = await supabase
+                .from('delivery_tracks')
+                .select('barcode, status')
+                .in('barcode', codes);
+            if (!alive || error || !Array.isArray(data)) return;
+            const next: Record<string, string> = {};
+            for (const row of data as Array<{ barcode: string; status: string }>) next[row.barcode] = row.status;
+            setDeliveryStages(prev => {
+                // لا نعيد الرسم ما لم تتغيّر حالة فعلية — الاستطلاع صامت بصرياً.
+                const same = Object.keys(next).length === Object.keys(prev).length
+                    && Object.keys(next).every(k => prev[k] === next[k]);
+                return same ? prev : next;
+            });
+        };
+        void pull();
+        const t = setInterval(pull, 15000);
+        // التاجر يبدأ التوصيل ثم يُصغّر التطبيق وهو في الطريق؛ العودة إلى الشاشة
+        // يجب أن تُظهر المرحلة فوراً لا بعد دورة استطلاع كاملة (والاستطلاع نفسه
+        // لا ينبض وهي مخفيّة، فبلا هذا المستمع تعود الشاشة كاذبة حتى ١٥ ثانية).
+        const onVisible = () => { if (document.visibilityState === 'visible') void pull(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => { alive = false; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+    }, [view, ordersFilter, deliveryBarcodesKey]);
+
     // النافذة العامة تبقى لما يحتاج «آخر الطلبات» فقط (البانرات والتنبيهات).
     const myOrders = activeOrders.concat(pastOrders);
     // v10.73 — the blocking center "موافق" box that fired for EVERY unread
@@ -2834,17 +3069,20 @@ const SellerDashboard: React.FC = () => {
                 {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
                 {view === 'form' && user && (
                     <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* v14.08 (بلاغ ناصر: «متجر لم يضع طريقة الحساب وأستطيع الحجز») —
+                            الإقرار أولاً وفوق كل شيء: بلا جوابٍ عليه ترفض القاعدة كل حجز
+                            على هذا المتجر، فلا معنى لأن يملأ التاجر نموذج منتج قبله. */}
+                        <PaymentDeclarationCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
                         {/* v13.38 — الوضع الضريبي للتاجر: يحدّد شكل فواتير طلباته،
                             ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
                         <VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
                         <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
-                        {/* v14.06 (طلب ناصر) — خدمة التوصيل: تشغيلها، وطريقة الدفع
-                            (عند الاستلام / بطاقة فقط / الاثنان)، ونطاقاتها المرسومة
-                            باليد على الخريطة. القاعدة تحرس ما بعدها: من خارج النطاق
-                            لا يستطيع اختيار التوصيل من أي واجهة. */}
-                        <DeliveryCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
+                        {/* v14.08 — بطاقة التوصيل نزلت إلى **آخر الصفحة** (بلاغ ناصر:
+                            «المفروض يحط موقع المحل أولاً ثم يحدد أماكن التوصيل وليس
+                            العكس»): نطاق التوصيل يُرسم حول موقع المحل، فرسمه قبل أن
+                            يوجد موقعٌ أصلاً ترتيبٌ مقلوب. */}
                         {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
                         <ReferralCard isRTL={isRTL} onAlert={customAlert} />
                     </div>
@@ -4787,6 +5025,16 @@ const SellerDashboard: React.FC = () => {
                                             {/* v14.06 — السجلّ يوضّح كيف سُلِّم الطلب (توصيل/استلام) */}
                                             <div style={{ marginTop: 12 }}>
                                                 <SellerFulfillmentStrip order={order} isRTL={isRTL} />
+                                                {/* v14.08 — نفس بانر الدفع الثلاثي في السجلّ: طلبٌ إلكتروني
+                                                    اكتمل بلا `paidAt` سؤالٌ محاسبي يجب أن يُرى، لا أن يُخفى. */}
+                                                <SellerPaymentBanner order={order} isRTL={isRTL} darkMode={darkMode} />
+                                                {/* v14.08 — مسار الطلب مكتملاً أو مصبوغاً بالأحمر عند الإلغاء */}
+                                                <SellerOrderProgress
+                                                    status={order.status}
+                                                    fulfillment={order.fulfillment}
+                                                    deliveryStatus={order.status === 'completed' ? 'delivered' : null}
+                                                    isRTL={isRTL}
+                                                />
                                             </div>
 
                                             {/* v13.18 (طلب ناصر المتكرر): فاتورة لكل طلب منتهٍ في «السجل» —
@@ -4817,47 +5065,16 @@ const SellerDashboard: React.FC = () => {
                                 {/* v14.06 — أول ما يحتاجه التاجر: توصيل أم استلام؟ وإلى أين؟ */}
                                 <SellerFulfillmentStrip order={order} isRTL={isRTL} />
 
-                                {/* v14.07 — تتبّع التوصيل الحيّ: في «الطلبات النشطة» وحدها ولطلبات
-                                    التوصيل وحدها. لا مكان له في «السجل» — طلبٌ منتهٍ لا يُبثّ فيه
-                                    موقع أحد، وعرض أزرار البثّ عليه دعوةٌ لخطأ لا أكثر. */}
-                                {order.fulfillment === 'delivery' && (
-                                    <DeliveryTrackerCard
-                                        barcode={order.barcode}
-                                        fulfillment={order.fulfillment}
-                                        bookingStatus={order.status}
-                                        isRTL={isRTL}
-                                        onAlert={customAlert}
-                                    />
-                                )}
+                                {/* v14.08 — بانر الدفع بثلاث حالات (بلاغ ناصر) — انظر SellerPaymentBanner */}
+                                <SellerPaymentBanner order={order} isRTL={isRTL} darkMode={darkMode} />
 
-                                {/* v12.92 — حالة الدفع واضحة تماماً للتاجر: مدفوع إلكترونياً (وصل حسابه)
-                                    أم الدفع عند الاستلام (يستلم المبلغ من العميل) — بخط واضح بلا لبس. */}
-                                {(() => {
-                                    const paid = !!(order as any).paidAt;
-                                    const amt = (order as any).paidAmount;
-                                    return (
-                                        <div style={{
-                                            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
-                                            padding: '11px 14px', borderRadius: 14,
-                                            background: paid ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
-                                            border: `1.5px solid ${paid ? 'rgba(16,185,129,0.55)' : 'rgba(245,158,11,0.6)'}`,
-                                        }}>
-                                            <span style={{ fontSize: '1.35rem', lineHeight: 1 }}>{paid ? '✅' : '💵'}</span>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontWeight: 900, fontSize: '0.95rem', color: paid ? '#059669' : '#b45309' }}>
-                                                    {paid
-                                                        ? (isRTL ? 'مدفوع إلكترونياً' : 'Paid online')
-                                                        : (isRTL ? 'الدفع عند الاستلام' : 'Pay at pickup')}
-                                                </div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                                    {paid
-                                                        ? (isRTL ? `وصل حسابك مباشرة${amt != null ? ` — ${amt} ر.س` : ''} — لا تطلب مبلغاً من العميل` : `Sent to your account${amt != null ? ` — ${amt} SAR` : ''} — do not collect cash`)
-                                                        : (isRTL ? 'استلم المبلغ نقداً/شبكة من العميل عند التسليم' : 'Collect payment from the buyer on handover')}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
+                                {/* v14.08 — مسار الطلب: مؤكد ← استلمه التاجر ← (بدأ التوصيل) ← تم الاستلام */}
+                                <SellerOrderProgress
+                                    status={order.status}
+                                    fulfillment={order.fulfillment}
+                                    deliveryStatus={deliveryStages[order.barcode]}
+                                    isRTL={isRTL}
+                                />
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600 }}>
                                     {isRTL ? '👤 المشتري:' : '👤 Buyer:'}{' '}
                                     <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>
@@ -4974,6 +5191,38 @@ const SellerDashboard: React.FC = () => {
                                             ✅ {isRTL ? 'تم تأكيد الاستلام - بانتظار الكود' : 'Receipt Confirmed - Awaiting Code'}
                                         </div>
                                     )}
+
+                                    {/* v14.07 — تتبّع التوصيل الحيّ: في «الطلبات النشطة» وحدها ولطلبات
+                                        التوصيل وحدها. لا مكان له في «السجل» — طلبٌ منتهٍ لا يُبثّ فيه
+                                        موقع أحد، وعرض أزرار البثّ عليه دعوةٌ لخطأ لا أكثر.
+                                        v14.08 (بلاغ ناصر) — موضعه الآن **بعد زرّ «تأكيد استلام الطلب»**،
+                                        ولا يظهر إطلاقاً ما دام الطلب `pending`: القاعدة ترفض بدء البثّ
+                                        قبل التأكيد بـ`NOT_ACKNOWLEDGED`، وواجهةٌ تعرض زرّاً يرفضه
+                                        الخادم تصنع فشلاً بلا سبب مفهوم. فبدله سطر هادئ يقول الشرط. */}
+                                    {order.fulfillment === 'delivery' && (
+                                        <div style={{ width: '100%', marginBottom: 8 }}>
+                                            {order.status === 'pending' ? (
+                                                <div style={{
+                                                    padding: '11px 14px', borderRadius: 14, background: 'var(--body-bg)',
+                                                    border: '1px dashed var(--border-color)', color: 'var(--text-secondary)',
+                                                    fontWeight: 800, fontSize: '0.8rem', textAlign: 'center',
+                                                }}>
+                                                    🚚 {isRTL
+                                                        ? 'يبدأ التتبّع بعد تأكيد استلام الطلب'
+                                                        : 'Tracking starts after you confirm receipt of the order'}
+                                                </div>
+                                            ) : (
+                                                <DeliveryTrackerCard
+                                                    barcode={order.barcode}
+                                                    fulfillment={order.fulfillment}
+                                                    bookingStatus={order.status}
+                                                    isRTL={isRTL}
+                                                    onAlert={customAlert}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+
                                     <button onClick={() => setScannerOpen(true)} style={{ flex: 1, padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px solid var(--border-color)', fontWeight: 800, color: 'var(--text-primary)', transition: 'all 0.2s', cursor: 'pointer' }}>
                                         {isRTL ? '📷 مسح الكود' : '📷 Scan'}
                                     </button>
@@ -5259,6 +5508,18 @@ const SellerDashboard: React.FC = () => {
                                 <span>📷</span> {isRTL ? 'فتح السكانر' : 'Open Scanner'}
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* v14.06 (طلب ناصر) — خدمة التوصيل: تشغيلها، وطريقة الدفع (عند
+                    الاستلام / بطاقة فقط / الاثنان)، ونطاقاتها المرسومة باليد على
+                    الخريطة. القاعدة تحرس ما بعدها: من خارج النطاق لا يستطيع اختيار
+                    التوصيل من أي واجهة.
+                    v14.08 — موضعها الآن **آخر تبويب الإضافة، بعد نموذج المنتج**: التاجر
+                    يثبّت موقع محلّه أولاً ثم يرسم حوله نطاق توصيله. */}
+                {view === 'form' && user && (
+                    <div style={{ marginTop: 16 }}>
+                        <DeliveryCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                     </div>
                 )}
             </div>

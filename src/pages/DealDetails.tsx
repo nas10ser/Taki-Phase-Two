@@ -463,7 +463,7 @@ const DealDetails: React.FC = () => {
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles, liveLocation, requestLiveLocation, ingestDeals
+        storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
@@ -787,71 +787,254 @@ const DealDetails: React.FC = () => {
      * يُسلَّم إلى عنوان ثابت، ومن يتصفّح من عمله ويسكن في مدينة أخرى لا يجوز أن
      * يُقاس نطاقه بمكان تصفّحه. والدالة `delivery_quote` هي نفسها التي يستعملها
      * حارس الحجز على القاعدة — فما تُظهره الواجهة هو ما سيقبله الخادم بالضبط.
+     *
+     * v14.08 (بلاغا ناصر ١ و٤) — النطاق صار يُقاس **بالفرع المختار** لا بالمتجر
+     * كلّه: فرعٌ في مدينة لا يجوز أن يَعِد بتوصيلٍ إلى مدينة أخرى، فنمرّر
+     * `p_location_id` ونُعيد التسعير كلما بدّل المشتري الفرع. وللمشتري الآن
+     * عناوين متعددة في `user_addresses`، فنسعّرها **كلها دفعةً واحدة** (سقفها
+     * عشرة) ليظهر كل عنوان خارج النطاق **معطَّلاً بسببٍ مكتوب** لا مخفيّاً —
+     * فيفهم لماذا لا يصلح، بدل أن تَعِده الواجهة ثم يرفضه الخادم عند التأكيد.
      */
     type DeliveryQuote = {
         enabled: boolean; available: boolean; reason?: string;
-        zone_name?: string | null; fee?: number | null; min_order?: number | null;
+        zone_name?: string | null; branch_id?: string | null; fee?: number | null; min_order?: number | null;
         payment?: 'cod' | 'card' | 'both'; eta_min?: number | null; note?: string | null;
     };
-    const [dlvQuote, setDlvQuote] = useState<DeliveryQuote | null>(null);
-    const [fulfillment, setFulfillment] = useState<'pickup' | 'delivery'>('pickup');
-    const buyerAddress = (user as any)?.deliveryAddress as
-        { label?: string; details?: string; city?: string; phone?: string; lat: number; lng: number } | null | undefined;
+    /** صفّ عنوان محفوظ كما يعيده `user_addresses` (وRLS تحصره بصاحبه وحده). */
+    type BuyerAddr = {
+        id: string; label?: string | null; details?: string | null; city?: string | null;
+        phone?: string | null; lat: number; lng: number; is_default?: boolean | null;
+    };
+    /**
+     * رقمٌ حقيقي أو null. `Number(null) === 0` و`Number('') === 0` و`Number(' ') === 0`
+     * و`Number(false) === 0` — فتمرير أيٍّ منها كإحداثي يضع العنوان عند خطّ
+     * الاستواء ويجعله «خارج النطاق» بلا سبب مفهوم، أو الأسوأ: داخل نطاق لا يخصّه.
+     * لذلك نرفض هذه القيم صراحةً بدل أن نمرّرها صفراً.
+     */
+    const finiteOrNull = (v: any): number | null => {
+        if (v === null || v === undefined || typeof v === 'boolean') return null;
+        if (typeof v === 'string' && v.trim() === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
 
+    const [addresses, setAddresses] = useState<BuyerAddr[]>([]);
+    const [addrId, setAddrId] = useState<string | null>(null);
+    /** عروض التوصيل مفهرسة بمعرّف العنوان؛ المفتاح '' = مرآة العنوان القديم أو «بلا عنوان». */
+    const [dlvQuotes, setDlvQuotes] = useState<Record<string, DeliveryQuote>>({});
+    /**
+     * بصمة آخر تسعيرٍ اكتمل (متجر|فرع|إحداثيات العناوين). «قيد التسعير» تُقاس
+     * بمقارنة البصمة لا بعَلَمٍ يُرفع داخل الـeffect: العَلَم يُرفع **بعد** أول
+     * رسمة، فتُعرض رسوم الفرع السابق إطاراً كاملاً على أنها رسوم الفرع الجديد.
+     * والمقارنة تصدق في نفس الرسمة التي تغيّر فيها الفرع.
+     */
+    const [dlvQuotedKey, setDlvQuotedKey] = useState<string | null>(null);
+    /** إقرار المتجر لطريقة الحساب — بلا إقرار يرفض حارس القاعدة الحجز من جذره. */
+    const [storeSell, setStoreSell] = useState<{ ok: boolean; reason?: string; accepts_cod?: boolean; online?: boolean } | null>(null);
+    const [fulfillment, setFulfillment] = useState<'pickup' | 'delivery'>('pickup');
+    /**
+     * مرآة العنوان المفرد القديم (`users.delivery_address`). مصدر الحقيقة صار
+     * جدول `user_addresses`، فلا نستعملها إلا لحسابٍ لم يُنشئ صفوفاً بعد — حتى
+     * لا ينكسر التوصيل على من حفظ عنوانه قبل هذه النسخة.
+     */
+    const legacyAddress = (user as any)?.deliveryAddress as
+        { label?: string; details?: string; city?: string; phone?: string; lat?: any; lng?: any } | null | undefined;
+
+    // متجر مختلف = عروض توصيل مختلفة: نمسح المحفوظ حتى لا تُعرض بطاقة توصيل
+    // متجرٍ سابق للحظةٍ على عرضِ متجرٍ آخر. (تبديل الفرع لا يمسح — إعادة التسعير
+    // وحدها تكفي، والمسح هناك يُومض البطاقة بلا داعٍ.)
     useEffect(() => {
-        if (!showBookingModal || !deal?.storeId) return;
+        setDlvQuotes({});
+        setDlvQuotedKey(null);
+        setStoreSell(null);
+    }, [deal?.storeId]);
+
+    // الافتراضي الآمن دائماً: استلام من المتجر — ويُعاد ضبطه عند فتح الورقة وحدها،
+    // لا عند كل إعادة تسعير، وإلا ضاع اختيار المشتري كلما بدّل الفرع أو العنوان.
+    useEffect(() => {
+        if (showBookingModal) setFulfillment('pickup');
+    }, [showBookingModal]);
+
+    // عناوين المشتري: تُقرأ عند فتح ورقة الحجز. الترتيب يضع الافتراضي أولاً،
+    // فيُختار من نفسه ما لم يكن المشتري قد اختار غيره في هذه الجلسة.
+    useEffect(() => {
+        if (!showBookingModal || !user?.id) return;
         let alive = true;
-        setFulfillment('pickup');          // الافتراضي الآمن دائماً: استلام من المتجر
         (async () => {
             try {
                 const { supabase } = await import('../services/supabaseClient');
-                const { data } = await supabase.rpc('delivery_quote', {
-                    p_store_id: deal.storeId,
-                    p_lat: buyerAddress?.lat ?? null,
-                    p_lng: buyerAddress?.lng ?? null,
-                });
+                const { data, error } = await supabase
+                    .from('user_addresses')
+                    .select('id,label,details,city,phone,lat,lng,is_default')
+                    .eq('user_id', user.id)
+                    .order('is_default', { ascending: false })
+                    .order('created_at', { ascending: true });
                 if (!alive) return;
-                setDlvQuote((data as DeliveryQuote) || null);
-            } catch { /* أي فشل ⇒ لا بطاقة توصيل ولا تغيير في السلوك القائم */ }
+                // فشل القراءة ⇒ لا قائمة **ولا اختيار معلّق** على صفٍّ لم يعد
+                // موجوداً، وإلا بقي `addrId` يشير إلى عنوانٍ مفقود فلا تُطابقه أي
+                // خريطة عروض ويظهر التوصيل معطَّلاً بلا سبب.
+                if (error) { setAddresses([]); setAddrId(null); return; }
+                // عنوان بلا إحداثيات لا يصلح للتوصيل — نستبعده بدل أن نسعّره صفراً.
+                const rows = ((data || []) as any[]).filter(
+                    r => finiteOrNull(r?.lat) !== null && finiteOrNull(r?.lng) !== null) as BuyerAddr[];
+                setAddresses(rows);
+                setAddrId(prev => (prev && rows.some(r => r.id === prev)) ? prev : (rows[0]?.id ?? null));
+            } catch { if (alive) { setAddresses([]); setAddrId(null); } }
         })();
         return () => { alive = false; };
-    }, [showBookingModal, deal?.storeId, buyerAddress?.lat, buyerAddress?.lng]);
-    // v14.06 — التوصيل: متاح فقط بعنوانٍ محفوظ داخل نطاق فعّال للتاجر.
+    }, [showBookingModal, user?.id]);
+
+    const selectedAddr = useMemo(
+        () => addresses.find(a => a.id === addrId) || null,
+        [addresses, addrId]);
+
+    /** اللقطة التي تُرسل مع الحجز — حقول العنوان وحدها بلا معرّف ولا أعمدة داخلية. */
+    const buyerAddress = useMemo(() => {
+        const src: any = selectedAddr || (addresses.length === 0 ? legacyAddress : null);
+        if (!src) return null;
+        const lat = finiteOrNull(src.lat), lng = finiteOrNull(src.lng);
+        if (lat === null || lng === null) return null;
+        return {
+            label: src.label || '', details: src.details || '',
+            city: src.city || '', phone: src.phone || '', lat, lng,
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAddr, addresses.length, legacyAddress?.lat, legacyAddress?.lng, legacyAddress?.details]);
+
+    /** الفرع المختار — نفس القيمة التي تُمرَّر إلى `bookDeal`، فيُقاس النطاق بما سيُحجز فعلاً. */
+    const branchId = dealLocations ? (activeLoc?.id || null) : null;
+
+    /** أهداف التسعير: كل عنوان محفوظ، أو هدفٌ واحد حين لا عناوين (لنعرف هل المتجر يوصّل أصلاً). */
+    const quoteTargets = useMemo(() => (
+        addresses.length
+            ? addresses.map(a => ({ key: a.id, lat: finiteOrNull(a.lat), lng: finiteOrNull(a.lng) }))
+            : [{ key: '', lat: finiteOrNull(legacyAddress?.lat), lng: finiteOrNull(legacyAddress?.lng) }]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [addresses, legacyAddress?.lat, legacyAddress?.lng]);
+
+    /**
+     * بصمة مدخلات التسعير. تُستعمل دَعامةً للاعتماد (قيمة نصّية لا هوية كائن)
+     * فلا يُعاد النداء لمجرد أن `quoteTargets` بُنيت من جديد بنفس البيانات.
+     */
+    const dlvQuoteKey = `${deal?.storeId || ''}|${branchId || ''}|` +
+        quoteTargets.map(t => `${t.key}:${t.lat},${t.lng}`).join('~');
+    /** قيد التسعير = ما سعّرناه أخيراً ليس ما نعرضه الآن. */
+    const dlvLoading = !!showBookingModal && !!deal?.storeId && dlvQuotedKey !== dlvQuoteKey;
+
+    // إعادة التسعير: عند فتح الورقة، وعند تبديل **الفرع**، وعند تغيّر قائمة
+    // العناوين. (تبديل العنوان المختار لا يستدعي نداءً جديداً لأن كل العناوين
+    // مسعَّرة سلفاً — نقرأ عرض العنوان المختار من الخريطة.)
+    useEffect(() => {
+        if (!showBookingModal || !deal?.storeId) return;
+        let alive = true;
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const results = await Promise.all(quoteTargets.map(async t => {
+                    const { data } = await supabase.rpc('delivery_quote', {
+                        p_store_id: deal.storeId,
+                        p_lat: t.lat,
+                        p_lng: t.lng,
+                        p_location_id: branchId,
+                    });
+                    return [t.key, (data as DeliveryQuote) || null] as const;
+                }));
+                if (!alive) return;
+                const map: Record<string, DeliveryQuote> = {};
+                results.forEach(([k, q]) => { if (q) map[k] = q; });
+                setDlvQuotes(map);
+            } catch { if (alive) setDlvQuotes({}); /* أي فشل ⇒ لا بطاقة توصيل ولا تغيير في السلوك القائم */ }
+            // نُثبّت البصمة نجاحاً أو فشلاً: نداءٌ فاشل لا يُبقي الواجهة «تتحقّق» إلى الأبد.
+            finally { if (alive) setDlvQuotedKey(dlvQuoteKey); }
+        })();
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showBookingModal, deal?.storeId, dlvQuoteKey]);
+
+    /** مفتاح العنوان المختار داخل خريطة العروض. */
+    const activeQuoteKey = addresses.length ? (addrId || '') : '';
+    const dlvQuote = dlvQuotes[activeQuoteKey] || null;
+    /**
+     * حقول على مستوى المتجر (التفعيل · الحد الأدنى · طريقة الدفع · الملاحظة) لا
+     * تختلف باختلاف العنوان — نقرؤها من أي عرضٍ حاضر حتى لا تختفي البطاقة كلها
+     * لحظة اختيار عنوانٍ لم يصل عرضه بعد.
+     */
+    const dlvStore = dlvQuote || Object.values(dlvQuotes)[0] || null;
+    // v14.06 — التوصيل: متاح فقط بعنوانٍ محفوظ داخل نطاق فعّال للفرع المختار.
     // ⚠️ اقتران الدفع: «بطاقة فقط» يستلزم بوابة تاجر مفعّلة فعلاً (payMode)، وإلا
     // فالتوصيل غير قابل للتنفيذ — نعرضه معطَّلاً بسبب مفهوم بدل حجزٍ يرفضه الخادم.
-    const dlvGateReady = dlvQuote?.payment !== 'card' || payMode === 'online' || payMode === 'both';
+    const dlvGateReady = dlvStore?.payment !== 'card' || payMode === 'online' || payMode === 'both';
     const dlvFee = Number(dlvQuote?.fee) > 0 ? Number(dlvQuote?.fee) : 0;
-    const dlvMinOrder = Number(dlvQuote?.min_order) > 0 ? Number(dlvQuote?.min_order) : 0;
+    const dlvMinOrder = Number(dlvStore?.min_order) > 0 ? Number(dlvStore?.min_order) : 0;
     const dlvBelowMin = dlvMinOrder > 0 && bookingTotal < dlvMinOrder;
-    const dlvOn = !!dlvQuote?.enabled;
+    const dlvOn = !!dlvStore?.enabled;
     const dlvCanChoose = dlvOn && !!dlvQuote?.available && !!buyerAddress && dlvGateReady && !dlvBelowMin;
     const dlvBlockReason: string | null = !dlvOn ? null
         : !buyerAddress
             ? (isRTL ? '📍 أضِف عنوان التوصيل في «حسابي ← الإعدادات» ليظهر لك خيار التوصيل.'
                      : '📍 Add your delivery address in “My account → Settings” to unlock delivery.')
-            : !dlvQuote?.available
-                ? (isRTL ? '🚫 عنوانك خارج نطاق التوصيل الذي حدّده هذا المتجر — الاستلام من المتجر متاح.'
-                         : '🚫 Your address is outside this store’s delivery area — pickup is available.')
-                : !dlvGateReady
-                    ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
-                             : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
-                    : dlvBelowMin
-                        ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
-                                 : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
-                        : null;
-    // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى مثلاً) يعود للاستلام
-    // من نفسه — فلا يُرسَل حجز توصيل يرفضه الخادم.
+            : dlvLoading
+                ? (isRTL ? '⏳ جاري التحقق من نطاق التوصيل لهذا الفرع…' : '⏳ Checking this branch’s delivery area…')
+                : !dlvQuote?.available
+                    // `no_zones` ≠ `out_of_zone`: الأول يعني أن هذا الفرع لم يرسم
+                    // نطاقاً أصلاً، فنصيحة «اختر عنواناً آخر» فيه عبثٌ يُتعب المشتري.
+                    ? (dlvQuote?.reason === 'no_zones'
+                        ? (isRTL ? '🚫 هذا الفرع لم يحدّد نطاق توصيل بعد — جرّب فرعاً آخر، والاستلام من المتجر متاح.'
+                                 : '🚫 This branch has no delivery area yet — try another branch; pickup is available.')
+                        : (isRTL ? '🚫 هذا العنوان خارج نطاق توصيل الفرع المختار — اختر عنواناً آخر أو فرعاً أقرب، والاستلام من المتجر متاح.'
+                                 : '🚫 This address is outside the selected branch’s delivery area — pick another address or branch; pickup is available.'))
+                    : !dlvGateReady
+                        ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
+                                 : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
+                        : dlvBelowMin
+                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
+                                     : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
+                            : null;
+    // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى، أو فرعٌ جديد لا
+    // يخدم العنوان) يعود للاستلام من نفسه — فلا يُرسَل حجز توصيل يرفضه الخادم.
+    // ولا نُعيده أثناء التسعير، وإلا ضاع اختيارُه بمجرد تبديل الفرع.
     useEffect(() => {
-        if (fulfillment === 'delivery' && !dlvCanChoose) setFulfillment('pickup');
-    }, [fulfillment, dlvCanChoose]);
+        if (!dlvLoading && fulfillment === 'delivery' && !dlvCanChoose) setFulfillment('pickup');
+    }, [dlvLoading, fulfillment, dlvCanChoose]);
     // «بطاقة فقط» للتوصيل ⇒ الدفع الإلكتروني إلزامي؛ و«عند الاستلام فقط» ⇒ نقداً.
     useEffect(() => {
-        if (fulfillment !== 'delivery' || !dlvQuote) return;
-        if (dlvQuote.payment === 'card') setPayChoice('online');
-        else if (dlvQuote.payment === 'cod') setPayChoice('cod');
-    }, [fulfillment, dlvQuote?.payment]);
+        if (fulfillment !== 'delivery' || !dlvStore) return;
+        if (dlvStore.payment === 'card') setPayChoice('online');
+        else if (dlvStore.payment === 'cod') setPayChoice('cod');
+    }, [fulfillment, dlvStore?.payment]);
     const isDelivery = fulfillment === 'delivery' && dlvCanChoose;
     const grandTotal = Math.round((bookingTotal + (isDelivery ? dlvFee : 0)) * 100) / 100;
+    /**
+     * v14.08 — زرٌّ يرفضه الخادم لا يُعرض قابلاً للضغط. حالتان يقيناً:
+     * متجرٌ لم يُقرّ طريقة حسابه (حارس القاعدة يرفض كل حجوزاته)، وطلب توصيل
+     * ما زال نطاقه قيد القياس. ما عدا ذلك يبقى الحارس على القاعدة هو الفيصل.
+     */
+    const bookBlockedReason: string | null =
+        storeSell?.ok === false
+            ? (isRTL ? '⛔ هذا المتجر لم يحدّد طريقة الحساب بعد — لا يمكن استقبال الطلبات حالياً.'
+                     : '⛔ This store has not set its payment method yet — it cannot take orders right now.')
+            : (fulfillment === 'delivery' && dlvLoading)
+                ? (isRTL ? '⏳ جاري التحقق من نطاق التوصيل لهذا الفرع…' : '⏳ Checking this branch’s delivery area…')
+                : null;
+
+    /**
+     * v14.08 — إقرار طريقة الحساب: متجرٌ لم يُقرّ (أو أقرّ ثم فقد وسيلته) يرفض
+     * حارس القاعدة الحجز منه برمز آلي. نقرؤه عند فتح الورقة لنقولها بلغة المشتري
+     * **قبل** أن يضغط التأكيد، بدل رسالة «تحقق من اتصالك» المضلِّلة.
+     */
+    useEffect(() => {
+        if (!showBookingModal || !deal?.storeId) return;
+        let alive = true;
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data } = await supabase.rpc('store_can_sell', { p_store_id: deal.storeId });
+                if (!alive) return;
+                setStoreSell((data as any) || null);
+            } catch { /* أي فشل ⇒ نترك حارس القاعدة يحكم، ولا نمنع حجزاً سليماً */ }
+        })();
+        return () => { alive = false; };
+    }, [showBookingModal, deal?.storeId]);
     useEffect(() => {
         if (!showBookingModal || !deal?.storeId) return;
         let alive = true;
@@ -1311,9 +1494,34 @@ const DealDetails: React.FC = () => {
         // v14.06 — التوصيل يفرض نيّة الدفع حين يحدّدها التاجر («بطاقة فقط» ⇒
         // إلكتروني إلزاماً، و«عند الاستلام فقط» ⇒ نقداً) — نفس ما يفرضه حارس القاعدة،
         // فلا تختلف الواجهة عن الخادم.
+        // v14.08 — لا نُرسل طلب توصيل وعرض السعر لهذا الفرع/العنوان ما زال في
+        // الطريق: النتيجة قد تقلبه إلى «خارج النطاق» فيرفضه الخادم بعد الإرسال.
+        if (fulfillment === 'delivery' && dlvLoading) {
+            customAlert(isRTL
+                ? '⏳ جاري التحقق من نطاق التوصيل لهذا الفرع — أعد المحاولة بعد لحظة.'
+                : '⏳ Checking this branch’s delivery area — please try again in a moment.');
+            return;
+        }
+        // v14.08 — إقرار طريقة الحساب: نترجم رفض الحارس قبل وقوعه.
+        // (`TAKI_STORE_NO_PAYMENT:not_declared` و`:no_method` معاً — المعنى واحد
+        // عند المشتري: هذا المتجر لا يستطيع استقبال طلبٍ الآن.)
+        if (storeSell && storeSell.ok === false) {
+            customAlert(isRTL
+                ? '⛔ هذا المتجر لم يحدّد طريقة الحساب بعد — تعذّر الحجز. جرّب لاحقاً أو تواصل مع المتجر.'
+                : '⛔ This store has not set its payment method yet — booking is unavailable. Try later or contact the store.');
+            return;
+        }
+
         let paymentIntent: 'cod' | 'online' = payMode === 'cod' ? 'cod' : payChoice;
-        if (isDelivery && dlvQuote?.payment === 'card') paymentIntent = 'online';
-        if (isDelivery && dlvQuote?.payment === 'cod') paymentIntent = 'cod';
+        if (isDelivery && dlvStore?.payment === 'card') paymentIntent = 'online';
+        if (isDelivery && dlvStore?.payment === 'cod') paymentIntent = 'cod';
+        // `TAKI_STORE_CARD_ONLY` — متجر لا يقبل النقد ووصله حجزٌ نقدي.
+        if (paymentIntent === 'cod' && storeSell && storeSell.accepts_cod === false) {
+            customAlert(isRTL
+                ? '💳 هذا المتجر يستقبل الدفع بالبطاقة فقط — اختر الدفع الإلكتروني ثم أعد المحاولة.'
+                : '💳 This store accepts card payment only — choose online payment and try again.');
+            return;
+        }
         const newBooking = bookDeal(
             deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions,
             dealLocations ? (activeLoc?.id || null) : null, paymentIntent,
@@ -2645,7 +2853,9 @@ const DealDetails: React.FC = () => {
                                         {
                                             id: 'delivery' as const, icon: '🚚',
                                             title: isRTL ? 'توصيل إلى عنواني' : 'Deliver to my address',
-                                            sub: dlvCanChoose
+                                            // أثناء إعادة التسعير الرقم المعروض ما زال للفرع
+                                            // السابق — نُظهر «جاري التحقق» بدل رسمٍ قد يتغيّر.
+                                            sub: (dlvCanChoose && !dlvLoading)
                                                 ? [
                                                     buyerAddress?.label || (isRTL ? 'عنواني المحفوظ' : 'my saved address'),
                                                     dlvFee > 0
@@ -2654,7 +2864,9 @@ const DealDetails: React.FC = () => {
                                                     dlvQuote?.eta_min ? (isRTL ? `≈ ${dlvQuote.eta_min} دقيقة` : `≈ ${dlvQuote.eta_min} min`) : '',
                                                 ].filter(Boolean).join(' · ')
                                                 : (dlvBlockReason || ''),
-                                            disabled: !dlvCanChoose,
+                                            // أثناء إعادة التسعير (تبديل فرع) نُقفل الخيار لا نُلغي الاختيار:
+                                            // الرقم المعروض ما زال للفرع السابق فلا يُبنى عليه قرار.
+                                            disabled: !dlvCanChoose || dlvLoading,
                                         },
                                     ]).map(opt => {
                                         const picked = fulfillment === opt.id && (opt.id === 'pickup' || dlvCanChoose);
@@ -2680,8 +2892,108 @@ const DealDetails: React.FC = () => {
                                         );
                                     })}
                                 </div>
-                                {isDelivery && buyerAddress && (
-                                    <div style={{ marginTop: 10, background: 'var(--body-bg)', border: '1.5px solid var(--primary)', borderRadius: 14, padding: '11px 13px' }}>
+                                {/* v14.08 (بلاغ ناصر ٤) — عناوين متعددة، ولا بدّ أن يكون
+                                    عنوان التوصيل ضمن حدود الفرع المختار. القائمة تظهر ما دام
+                                    المتجر يوصّل — لا فقط حين يُختار التوصيل — لأن العنوان
+                                    الافتراضي قد يكون هو نفسه خارج النطاق، فلولا ظهورها لعجز
+                                    المشتري عن الوصول للعنوان الآخر الذي يخدمه هذا الفرع. */}
+                                {addresses.length > 0 && (
+                                    <div style={{ marginTop: 12, background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 14, padding: '12px 13px' }}>
+                                        <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)', marginBottom: 8 }}>
+                                            📍 {isRTL ? 'عنوان التوصيل' : 'Delivery address'}
+                                            {dlvLoading && (
+                                                <span style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
+                                                    {isRTL ? '— جاري التحقق…' : '— checking…'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div role="radiogroup"
+                                            aria-label={isRTL ? 'عنوان التوصيل' : 'Delivery address'}
+                                            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            {addresses.map(a => {
+                                                const q = dlvQuotes[a.id] || null;
+                                                const serviceable = !!q?.available;
+                                                const picked = addrId === a.id;
+                                                const rowFee = Number(q?.fee) > 0 ? Number(q?.fee) : 0;
+                                                // ⚠️ الترتيب مقصود: «جاري التحقق» **أولاً**، وإلا
+                                                // عُرضت رسوم الفرع السابق لعنوانٍ لم يُسعَّر بعد
+                                                // على الفرع الجديد — رقمٌ صحيح المظهر خاطئ المعنى.
+                                                const meta = dlvLoading
+                                                    ? (isRTL ? '⏳ جاري التحقق…' : '⏳ checking…')
+                                                    : serviceable
+                                                        ? [
+                                                            rowFee > 0
+                                                                ? (isRTL ? `الرسوم ${rowFee} ر.س` : `fee ${rowFee} SAR`)
+                                                                : (isRTL ? 'توصيل مجاني' : 'free delivery'),
+                                                            q?.eta_min ? (isRTL ? `≈ ${q.eta_min} دقيقة` : `≈ ${q.eta_min} min`) : '',
+                                                        ].filter(Boolean).join(' · ')
+                                                        : q?.reason === 'no_zones'
+                                                            ? (isRTL ? '🚫 هذا الفرع لا يوصّل حالياً' : '🚫 this branch does not deliver yet')
+                                                            : (isRTL ? '🚫 خارج نطاق توصيل الفرع المختار' : '🚫 outside the selected branch’s delivery area');
+                                                // عنوان لا يخدمه هذا الفرع يبقى ظاهراً **معطَّلاً بسببه**
+                                                // لا مخفيّاً — فيعرف المشتري لماذا لا يصلح.
+                                                const rowDisabled = !serviceable || dlvLoading;
+                                                return (
+                                                    <div key={a.id}
+                                                        role="radio" aria-checked={picked} aria-disabled={rowDisabled} tabIndex={rowDisabled ? -1 : 0}
+                                                        onClick={() => { if (!rowDisabled) setAddrId(a.id); }}
+                                                        onKeyDown={(e) => { if (!rowDisabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setAddrId(a.id); } }}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 12,
+                                                            cursor: rowDisabled ? 'not-allowed' : 'pointer',
+                                                            border: picked ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
+                                                            background: picked ? 'var(--notif-unread-bg)' : 'var(--card-bg)',
+                                                            opacity: rowDisabled ? 0.6 : 1,
+                                                            transition: 'all 0.15s ease', WebkitTapHighlightColor: 'transparent',
+                                                        }}>
+                                                        <div style={{ width: 18, height: 18, flexShrink: 0, borderRadius: '50%', border: picked ? '5px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                                                {a.label || (isRTL ? 'عنواني' : 'My address')}
+                                                                {a.is_default && (
+                                                                    <span style={{ fontWeight: 800, fontSize: '0.62rem', color: 'var(--primary)', marginInlineStart: 6 }}>
+                                                                        {isRTL ? '(الافتراضي)' : '(default)'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {(a.details || a.city) && (
+                                                                <div style={{ fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
+                                                                    {[a.details, a.city].filter(Boolean).join(' — ')}
+                                                                </div>
+                                                            )}
+                                                            {/* الأخضر يَعِد بتوصيلٍ مؤكَّد — فلا يُلوَّن به سطرٌ ما زال «قيد التحقق». */}
+                                                            <div style={{ fontWeight: 800, fontSize: '0.68rem', marginTop: 3, color: (!dlvLoading && serviceable) ? (darkMode ? '#4ade80' : '#15803d') : 'var(--text-secondary)' }}>
+                                                                {meta}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* رابط واحد: الزرّان السابقان كانا يقودان إلى نفس المكان،
+                                            وخيارٌ مكرَّر بصيغتين يُوهم المشتري أن بينهما فرقاً. */}
+                                        <div style={{ marginTop: 10 }}>
+                                            <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
+                                                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                ➕ {isRTL ? 'إضافة عنوان أو تعديل عناويني' : 'Add or edit my addresses'}
+                                            </button>
+                                        </div>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
+                                            {isRTL ? '🔒 يُشارَك عنوانك مع تاجر هذا الطلب وحده لتنفيذ التوصيل.'
+                                                   : '🔒 Your address is shared only with this order’s merchant to deliver it.'}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* حسابٌ لم يُسجَّل له عنوان بعد (ولا مرآة قديمة صالحة) */}
+                                {addresses.length === 0 && !buyerAddress && (
+                                    <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
+                                        style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: '1.5px solid var(--primary)', background: 'var(--body-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
+                                        📍 {isRTL ? 'أضف عنوان التوصيل' : 'Add delivery address'}
+                                    </button>
+                                )}
+                                {/* المرآة القديمة (عنوان مفرد محفوظ قبل جدول العناوين) */}
+                                {addresses.length === 0 && buyerAddress && (
+                                    <div style={{ marginTop: 10, background: 'var(--body-bg)', border: '1.5px solid var(--border-color)', borderRadius: 14, padding: '11px 13px' }}>
                                         <div style={{ fontWeight: 900, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
                                             📍 {isRTL ? 'يُسلَّم إلى' : 'Delivering to'}: {buyerAddress.label || (isRTL ? 'عنواني' : 'my address')}
                                         </div>
@@ -2690,7 +3002,7 @@ const DealDetails: React.FC = () => {
                                                 {buyerAddress.details}{buyerAddress.city ? ` — ${buyerAddress.city}` : ''}
                                             </div>
                                         )}
-                                        <button type="button" onClick={() => history.push('/profile?tab=settings')}
+                                        <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
                                             style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                             {isRTL ? 'تغيير العنوان' : 'Change address'}
                                         </button>
@@ -2700,15 +3012,9 @@ const DealDetails: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                                {!dlvCanChoose && !buyerAddress && (
-                                    <button type="button" onClick={() => history.push('/profile?tab=settings')}
-                                        style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: '1.5px solid var(--primary)', background: 'var(--body-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
-                                        📍 {isRTL ? 'أضف عنوان التوصيل' : 'Add delivery address'}
-                                    </button>
-                                )}
-                                {dlvQuote?.note && dlvCanChoose && (
+                                {dlvStore?.note && dlvCanChoose && (
                                     <div style={{ marginTop: 10, fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                        ℹ️ {dlvQuote.note}
+                                        ℹ️ {dlvStore.note}
                                     </div>
                                 )}
                             </div>
@@ -2823,7 +3129,15 @@ const DealDetails: React.FC = () => {
                             </div>
                         </div>
 
-                        <button onClick={() => { setShowBookingModal(false); handleBooking(); }} style={{ width: '100%', padding: '16px', borderRadius: 16, background: 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: 'pointer', boxShadow: '0 8px 20px var(--primary-glow)' }}>
+                        {bookBlockedReason && (
+                            <div style={{ marginBottom: 10, padding: '11px 13px', borderRadius: 14, background: 'var(--gray-100)', border: '1px solid var(--border-color)', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                {bookBlockedReason}
+                            </div>
+                        )}
+                        <button
+                            disabled={!!bookBlockedReason}
+                            onClick={() => { if (bookBlockedReason) return; setShowBookingModal(false); handleBooking(); }}
+                            style={{ width: '100%', padding: '16px', borderRadius: 16, background: bookBlockedReason ? 'var(--gray-200)' : 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: bookBlockedReason ? 'not-allowed' : 'pointer', opacity: bookBlockedReason ? 0.75 : 1, boxShadow: bookBlockedReason ? 'none' : '0 8px 20px var(--primary-glow)' }}>
                             {payChoice === 'online' && payMode !== 'cod'
                                 ? (isDelivery
                                     ? (isRTL ? 'تأكيد طلب التوصيل والانتقال للدفع 💳' : 'Confirm delivery & pay 💳')
