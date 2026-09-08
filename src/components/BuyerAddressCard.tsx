@@ -17,6 +17,21 @@
  * هنا هو حذف **آخر** عنوان: لا صفّ يُرقّى فلا مشغّل يعمل، فنمسح المرآة صراحةً
  * وإلا بقي خيار «التوصيل» ظاهراً بعنوانٍ لا وجود له.
  *
+ * ── لماذا تُملأ التفاصيل من الخريطة تلقائياً؟ ─────────────────────────────
+ * قِيس على الإنتاج: عنوان مالك المنصة المحفوظ فعلاً هو نقطةٌ ووسمٌ فقط —
+ * بلا `details` وبلا `city`. حقلٌ نصّي اختياري يكتبه المستخدم بيده نادراً ما
+ * يُملأ، والتاجر هو من يدفع الثمن حين يصل إلى دبّوس بلا وصف. لذلك نقرأ العنوان
+ * من الخريطة (ترميز عكسي عبر Nominatim) ونملأه عنه.
+ * قواعد هذا الملء الأربع — كلٌّ منها يمنع ضرراً حقيقياً:
+ *  • **مؤجَّل ١.٢ ثانية** وبعد فعلٍ صريح فقط (تثبيت دبّوس / «موقعي الحالي») —
+ *    سياسة Nominatim طلبٌ واحد في الثانية، وسحبُ الإصبع على الخريطة يولّد عشرات.
+ *  • **لا يدهس ما كُتب بيد المستخدم**: نكتب فقط في حقلٍ فارغ أو في نصٍّ نحن
+ *    ملأناه ولم يُعدَّل (نتتبّعه بـ`autoDetailsRef`/`autoCityRef`).
+ *  • **كل فشل يُبتلع** ولا يمنع الحفظ أبداً — الإحداثيّ هو ما يُقاس عليه
+ *    التوصيل، والنصّ تحسينٌ للسائق لا شرطٌ للحجز.
+ *  • **الطلب السابق يُلغى** بـ`AbortController` عند تحريك الدبّوس أو التفكيك،
+ *    وإلا وصل ردٌّ متأخّر لنقطةٍ قديمة فكتب حيّاً لا يخصّ الدبّوس الحالي.
+ *
  * ── ثلاثة فخاخ يجب تجنّبها (دروس مدفوعة الثمن في هذا المستودع) ────────────
  *  • `map.flyTo` يرمي «Invalid LatLng object: (NaN, NaN)» **خارج شجرة React**
  *    حين لا يكون للحاوية مقاس، فيلتقطه ErrorBoundary وتسقط الصفحة كلها.
@@ -62,6 +77,65 @@ const MAX_ADDRESSES = 10;
 const GPS_ZOOM = 17;
 /** أسوأ من هذا (بالأمتار) يعني تثبيتاً تقريبياً — ننبّه المستخدم ليضبط الدبّوس. */
 const ACCURACY_WARN_M = 50;
+
+/**
+ * تأجيل الترميز العكسي. سياسة Nominatim **طلبٌ واحد في الثانية**، ونقرات ضبط
+ * الدبّوس تتوالى أسرع من ذلك بكثير — فننتظر حتى يهدأ الإصبع ثم نسأل مرة واحدة.
+ */
+const REV_DEBOUNCE_MS = 1200;
+/** مهلة قصوى: خدمة مجانية قد تتباطأ، ولا يجوز أن يبقى «جارٍ القراءة…» أبداً. */
+const REV_TIMEOUT_MS = 9000;
+
+/**
+ * نتيجة محاولة القراءة — يحتاجها الزرّ اليدوي ليقول شيئاً بدل أن يكون صامتاً.
+ * `abort` منفصلة عن `fail` عمداً: من ألغى الطلب هو المستخدم نفسه (حرّك الدبّوس
+ * أو أغلق المحرّر)، فإظهار «تعذّرت القراءة» له إنذارٌ كاذب عن فعلٍ قصده.
+ */
+type RevOutcome = 'ok' | 'empty' | 'fail' | 'abort';
+
+/**
+ * اشتقاق سطر التفاصيل من ردّ Nominatim.
+ * الترتيب مقصود: **الحيّ أولاً ثم الشارع** لأن هذا ترتيب السؤال في السعودية
+ * («وين؟ حي الندى، شارع…») — والعكس يربك السائق.
+ * ونستبعد الدولة والمنطقة والرمز البريدي: لا تُضيف شيئاً لمن يقف أمام الباب.
+ */
+const deriveAddress = (json: any, isRTL: boolean): { details: string; city: string } => {
+    const a = (json && json.address) || {};
+    const first = (...keys: string[]): string => {
+        for (const k of keys) {
+            const v = String(a[k] ?? '').trim();
+            if (v) return v;
+        }
+        return '';
+    };
+
+    const district = first('neighbourhood', 'suburb', 'quarter', 'city_district', 'residential', 'hamlet');
+    const road = first('road', 'pedestrian', 'footway', 'street');
+    const house = first('house_number');
+    const city = first('city', 'town', 'village', 'municipality', 'county');
+
+    const parts: string[] = [];
+    if (district) parts.push(district);
+    if (road && road !== district) parts.push(road);
+    if (house) parts.push(isRTL ? `مبنى ${house}` : `Bldg ${house}`);
+
+    // احتياطي: نقطة في البرّ قد تعود بلا حيّ ولا شارع، لكنّ `display_name` يحمل
+    // اسم المَعلم أو الطريق السريع — أنفع للسائق من حقلٍ فارغ.
+    if (parts.length === 0) {
+        const drop = new Set(
+            [city, a.state, a.province, a.region, a.country, a.postcode, a.country_code]
+                .map(v => String(v ?? '').trim()).filter(Boolean)
+        );
+        String(json?.display_name || '')
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter((s: string) => s && !drop.has(s) && !/^\d{4,6}$/.test(s))
+            .slice(0, 2)
+            .forEach((s: string) => parts.push(s));
+    }
+
+    return { details: parts.join(isRTL ? '، ' : ', ').slice(0, 300), city: city.slice(0, 60) };
+};
 
 const pinIcon = L.divIcon({
     className: '',
@@ -251,7 +325,186 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
         return la !== null && ln !== null ? { lat: la, lng: ln } : null;
     }, [liveLocation]);
 
+    // ── الترميز العكسي: قراءة «الحي، الشارع» من الخريطة ───────────────────
+    /**
+     * آخر نصٍّ ملأناه **نحن**. مقارنة الحقل به هي كيف نعرف أن المستخدم لم
+     * يعدّله بيده: قيمةٌ مطابقة = ملءٌ تلقائي يجوز استبداله، وأي اختلاف = كتابةُ
+     * صاحب العنوان ولا تُدهس.
+     */
+    const autoDetailsRef = useRef('');
+    const autoCityRef = useRef('');
+    const revAbortRef = useRef<AbortController | null>(null);
+    const revTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [revLoading, setRevLoading] = useState(false);
+    /** هل النصّ المعروض الآن ناتجُ ملءٍ تلقائي؟ — لإظهار وسم «📍 من الخريطة». */
+    const [revFromMap, setRevFromMap] = useState(false);
+
+    /** يوقف أي قراءة معلّقة أو مجدولة — عند التفكيك وعند تحريك الدبّوس مجدداً. */
+    const cancelLookup = useCallback(() => {
+        if (revTimerRef.current) { clearTimeout(revTimerRef.current); revTimerRef.current = null; }
+        try { revAbortRef.current?.abort(); } catch { /* إلغاءٌ لا يُسقط صفحة */ }
+        revAbortRef.current = null;
+        setRevLoading(false);
+    }, []);
+
+    /**
+     * مرجعٌ إلى أحدث نسخة من `reverseLookup`. سببه أن الدالة تقرأ `details`
+     * و`city` الحاليَّين فتتغيّر هويّتها مع كل حرف يُكتب — ولو ربطناها بمؤقّت
+     * التأجيل مباشرةً لأُعيد جدولةُ الطلب مع كل ضغطة مفتاح.
+     */
+    const lookupRef = useRef<(lat: number, lng: number, manual: boolean) => Promise<RevOutcome>>(
+        async () => 'fail'
+    );
+
+    /**
+     * يجدول قراءةً مؤجَّلة. يُنادى من كل فعلٍ صريح يحرّك الدبّوس فقط — لا من
+     * فتح محرّر عنوانٍ قديم، فذاك لا يغيّر النقطة ولا يستحق طلباً على خدمة
+     * مجانية محدودة.
+     */
+    const scheduleLookup = useCallback((lat: number, lng: number) => {
+        cancelLookup();
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        // نرفع «⏳ جارٍ القراءة» من لحظة الجدولة لا من لحظة الإرسال: وإلا ومض
+        // تحذير «بلا تفاصيل» الأحمر ثانيةً وربعاً في حقلٍ نحن على وشك ملئه.
+        setRevLoading(true);
+        revTimerRef.current = setTimeout(() => {
+            revTimerRef.current = null;
+            void lookupRef.current(lat, lng, false);
+        }, REV_DEBOUNCE_MS);
+    }, [cancelLookup]);
+
+    const reverseLookup = useCallback(async (lat: number, lng: number, manual: boolean): Promise<RevOutcome> => {
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            // لا نُطفئ مؤشّراً يملكه طلبٌ آخر — نُطفئه فقط إن كان معلّقاً بلا صاحب.
+            if (!revAbortRef.current) setRevLoading(false);
+            return 'fail';
+        }
+
+        try { revAbortRef.current?.abort(); } catch { /* لا شيء */ }
+        const ctrl = new AbortController();
+        revAbortRef.current = ctrl;
+        // مهلة صريحة: `fetch` وحده قد يعلّق دقائق على شبكة جوال رديئة.
+        const bail = setTimeout(() => { try { ctrl.abort(); } catch { /* لا شيء */ } }, REV_TIMEOUT_MS);
+        setRevLoading(true);
+
+        try {
+            const url = 'https://nominatim.openstreetmap.org/reverse'
+                + `?format=jsonv2&lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}`
+                + `&zoom=18&addressdetails=1&accept-language=${isRTL ? 'ar' : 'en'}`;
+            const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+            if (ctrl.signal.aborted || revAbortRef.current !== ctrl) return 'abort';
+            if (!res.ok) return 'fail';
+            const json = await res.json();
+            // حارس الردّ المتأخّر: بين الإرسال والوصول قد يكون الدبّوس تحرّك أو
+            // أُغلق المحرّر — فردٌّ لنقطةٍ لم تعد معروضة يجب ألّا يكتب حرفاً.
+            if (ctrl.signal.aborted || revAbortRef.current !== ctrl) return 'abort';
+
+            const got = deriveAddress(json, isRTL);
+            if (!got.details && !got.city) return 'empty';
+
+            // القاعدة: نكتب في حقلٍ فارغ، أو في نصٍّ نحن ملأناه ولم يُعدَّل.
+            // والضغط اليدوي على «تحديث العنوان من الخريطة» نيّةٌ صريحة تعلو
+            // على هذه القاعدة — لذلك وحده يستبدل نصّاً مكتوباً بيد صاحبه.
+            const curDetails = details.trim();
+            const curCity = city.trim();
+
+            let wroteDetails = false;
+            if (got.details && (manual || curDetails === '' || curDetails === autoDetailsRef.current.trim())) {
+                autoDetailsRef.current = got.details;
+                setDetails(got.details);
+                wroteDetails = true;
+            }
+            if (got.city && (manual || curCity === '' || curCity === autoCityRef.current.trim())) {
+                autoCityRef.current = got.city;
+                setCity(got.city);
+            }
+            if (wroteDetails) setRevFromMap(true);
+
+            return got.details ? 'ok' : 'empty';
+        } catch {
+            // شبكة أو تجاوز حدّ الطلبات أو إلغاء: يُبتلع بصمت ويُترك الحقل
+            // للمستخدم. الحفظ لا يتوقّف على هذا إطلاقاً.
+            return ctrl.signal.aborted ? 'abort' : 'fail';
+        } finally {
+            clearTimeout(bail);
+            // من ألغى هذا الطلب صار صاحب المؤشّر — فلا نُطفئه من تحته.
+            if (revAbortRef.current === ctrl) {
+                revAbortRef.current = null;
+                setRevLoading(false);
+            }
+        }
+    }, [isRTL, details, city]);
+
+    useEffect(() => { lookupRef.current = reverseLookup; }, [reverseLookup]);
+
+    // تفكيك البطاقة (تبديل تبويب/خروج) يجب ألّا يترك طلباً معلّقاً ولا مؤقّتاً.
+    useEffect(() => cancelLookup, [cancelLookup]);
+
+    /**
+     * حارس إعادة الدخول للزرّ اليدوي. `revLoading` وحده لا يكفي لأن بينه وبين
+     * انطلاق الطلب `await` على نافذة تأكيد — والنقرة الثانية خلالها تعني طلبين
+     * على خدمةٍ حدّها طلبٌ واحد في الثانية.
+     */
+    const manualBusyRef = useRef(false);
+
+    /**
+     * أحدث نقطة. يقرؤها الزرّ اليدوي **بعد** `await` نافذة التأكيد: لو حرّك
+     * المستخدم الدبّوس أثناء الحوار لبقي المتغيّر المُلتقط في الإغلاق على
+     * الإحداثيّ القديم، فقرأنا عنوان مكانٍ غادره.
+     */
+    const pointRef = useRef(point);
+    useEffect(() => { pointRef.current = point; }, [point]);
+
+    /** الجزء الذي يُطلق القراءة فعلاً ويترجم نتيجتها إلى رسالة — لا زرّ صامت. */
+    const runManualLookup = async () => {
+        const p = pointRef.current;
+        if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return;
+        if (revTimerRef.current) { clearTimeout(revTimerRef.current); revTimerRef.current = null; }
+        const outcome = await lookupRef.current(p.lat, p.lng, true);
+        // `abort` = المستخدم نفسه حرّك الدبّوس أو أغلق المحرّر أثناء القراءة،
+        // فالصمت هنا هو الصواب لا رسالة فشل عن فعلٍ قصده.
+        if (outcome === 'abort') return;
+        if (outcome === 'empty') {
+            customAlert(t('ℹ️ لا يوجد اسم مسجَّل لهذه النقطة على الخريطة — اكتب الحي والشارع بنفسك ليصل التاجر.',
+                          'ℹ️ The map has no name for this spot — type the district and street yourself so the merchant can reach you.'));
+        } else if (outcome === 'fail') {
+            customAlert(t('⚠️ تعذّرت قراءة العنوان من الخريطة الآن — لا يمنع هذا الحفظ، أعد المحاولة أو اكتب التفاصيل بنفسك.',
+                          '⚠️ Could not read the address from the map right now — this does not block saving; retry or type the details yourself.'));
+        }
+    };
+
+    /** الزرّ اليدوي: يعيد القراءة فوراً ولا يبقى صامتاً مهما كانت النتيجة. */
+    const refreshFromMap = async () => {
+        if (revLoading || manualBusyRef.current) return;
+        if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+            customAlert(t('📍 حدّد الدبّوس على الخريطة أولاً، ثم اقرأ العنوان منه.',
+                          '📍 Drop the pin on the map first, then read the address from it.'));
+            return;
+        }
+        manualBusyRef.current = true;
+        try {
+            // نصٌّ كتبه صاحب العنوان بيده لا يُدهس بضغطة واحدة بلا رجعة: نسأل
+            // أولاً. (النصّ الذي ملأناه نحن يُستبدل بلا سؤال — لا شيء يُفقد.)
+            const typedDetails = details.trim() !== '' && details.trim() !== autoDetailsRef.current.trim();
+            const typedCity = city.trim() !== '' && city.trim() !== autoCityRef.current.trim();
+            if (typedDetails || typedCity) {
+                const goOn = await customConfirm(
+                    t('🔄 سيُستبدل ما كتبته في «تفاصيل العنوان» و«المدينة» بما تقرأه الخريطة عند الدبّوس.\n\nهل تكمل؟',
+                      '🔄 What you typed in “Address details” and “City” will be replaced by what the map reads at the pin.\n\nContinue?')
+                );
+                if (!goOn) return;
+            }
+            await runManualLookup();
+        } finally {
+            manualBusyRef.current = false;
+        }
+    };
+
     const openEditor = (addr: Addr | null) => {
+        cancelLookup();
+        autoDetailsRef.current = '';
+        autoCityRef.current = '';
+        setRevFromMap(false);
         if (addr) {
             setEditing(addr.id);
             // عنوانٌ بلا إحداثيّ سليم يُفتح **بلا دبّوس**: نطلب من صاحبه تحديد
@@ -270,12 +523,15 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
             setCity('');
             setPhone(user?.phone || '');
             setFocusZoom(liveFix ? GPS_ZOOM : 14);
+            // عنوانٌ جديد على موقعٍ حيّ معروف: اقرأ وصفه فوراً بدل أن نطلب من
+            // المستخدم كتابته — الحقلان فارغان فلا شيء يُدهس.
+            if (liveFix) scheduleLookup(liveFix.lat, liveFix.lng);
         }
         setAccuracy(null);
         setFocusSeq(s => s + 1);
     };
 
-    const closeEditor = () => { setEditing(null); setAccuracy(null); };
+    const closeEditor = () => { cancelLookup(); setEditing(null); setAccuracy(null); };
 
     const center = useMemo<[number, number]>(() => {
         if (point && Number.isFinite(point.lat) && Number.isFinite(point.lng)) return [point.lat, point.lng];
@@ -287,7 +543,8 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
     const pick = useCallback((lat: number, lng: number) => {
         setPoint({ lat, lng });
         setAccuracy(null);
-    }, []);
+        scheduleLookup(lat, lng);
+    }, [scheduleLookup]);
 
     const useMyLocation = async () => {
         if (locating) return;
@@ -299,6 +556,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
             setAccuracy(Number.isFinite(pos.accuracy) ? pos.accuracy : null);
             setFocusZoom(GPS_ZOOM);
             setFocusSeq(s => s + 1);
+            scheduleLookup(pos.lat, pos.lng);
         } catch (e) {
             customAlert(geoErrorMessage(e, isRTL));
         } finally {
@@ -324,19 +582,33 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
             return;
         }
 
-        const cleanPhone = normalizeArabicNumerals(phone).replace(/[^\d+]/g, '').slice(0, 20);
-        const row = {
-            label: label.trim().slice(0, 60) || null,
-            details: details.trim().slice(0, 300) || null,
-            city: city.trim().slice(0, 60) || null,
-            phone: cleanPhone || null,
-            // خمس منازل عشرية ≈ متر واحد — دقّة تكفي التوصيل ولا تضخّم الصفّ.
-            lat: Math.round(point.lat * 1e5) / 1e5,
-            lng: Math.round(point.lng * 1e5) / 1e5,
-        };
-
+        // ⚠️ يُرفع **قبل** سؤال التأكيد لا بعده: `await` على نافذة حوار يفتح نافذةً
+        // زمنية مفتوحة، ونقرةٌ ثانية على «حفظ» خلالها كانت ستُنشئ صفّين لعنوانٍ
+        // واحد ويأكلان من سقف العشرة.
         setSaving(true);
         try {
+            // التفاصيل ليست شرطاً صلباً — قد يكون الدبّوس في مكانٍ لا اسم له، والقاعدة
+            // تقيس التوصيل على الإحداثيّ لا على النصّ. لكنّ الصمت هنا مكلف: عنوانٌ بلا
+            // وصف يعني سائقاً يقف في الشارع يتّصل. فنشرح الأثر ونترك القرار لصاحبه.
+            if (!details.trim()) {
+                const goOn = await customConfirm(
+                    t('⚠️ بلا تفاصيل قد لا يجدك التاجر — أضِف الحي والشارع ورقم المبنى.\n\nهل تحفظ العنوان بدون تفاصيل؟',
+                      '⚠️ Without details the merchant may not find you — add the district, street and building number.\n\nSave the address without details?')
+                );
+                if (!goOn) return;
+            }
+
+            const cleanPhone = normalizeArabicNumerals(phone).replace(/[^\d+]/g, '').slice(0, 20);
+            const row = {
+                label: label.trim().slice(0, 60) || null,
+                details: details.trim().slice(0, 300) || null,
+                city: city.trim().slice(0, 60) || null,
+                phone: cleanPhone || null,
+                // خمس منازل عشرية ≈ متر واحد — دقّة تكفي التوصيل ولا تضخّم الصفّ.
+                lat: Math.round(point.lat * 1e5) / 1e5,
+                lng: Math.round(point.lng * 1e5) / 1e5,
+            };
+
             if (editing) {
                 const { data, error } = await supabase
                     .from('user_addresses').update(row).eq('id', editing).select('id');
@@ -563,6 +835,20 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                                         {a.details || ''}{a.details && a.city ? ' — ' : ''}{a.city || ''}
                                     </div>
                                 )}
+                                {/* عنوانٌ بوسمٍ ونقطة فقط: التاجر يصل إلى الشارع ثم يتّصل.
+                                    نقولها في البطاقة نفسها مع طريقٍ مباشر للإصلاح — لا
+                                    في مكانٍ آخر يُقرأ بعد فوات الطلب. */}
+                                {!a.details && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                                        <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontWeight: 800, lineHeight: 1.6 }}>
+                                            {t('⚠️ بلا تفاصيل — أضِفها ليصل التاجر', '⚠️ No details — add them so the merchant arrives')}
+                                        </span>
+                                        <button type="button" onClick={() => openEditor(a)} disabled={!!busyId}
+                                            style={{ ...smallBtn, padding: '5px 10px', fontSize: '0.72rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}>
+                                            ✏️ {t('أضِف التفاصيل', 'Add details')}
+                                        </button>
+                                    </div>
+                                )}
                                 {a.phone && (
                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 4, direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
                                         📞 {a.phone}
@@ -690,16 +976,61 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                         placeholder={t('وسم العنوان (مثال: بيت أمي)', 'Address label (e.g. Mum’s place)')}
                         style={inputStyle}
                     />
-                    <textarea
-                        value={details}
-                        onChange={e => setDetails(e.target.value.slice(0, 300))}
-                        placeholder={t('تفاصيل العنوان: الحي، الشارع، رقم المبنى، الدور، علامة مميزة…', 'Address details: district, street, building, floor, landmark…')}
-                        style={{ ...inputStyle, minHeight: 78, resize: 'none' }}
-                    />
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                {t('تفاصيل العنوان', 'Address details')}
+                            </span>
+                            {revLoading ? (
+                                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                    {t('⏳ جارٍ قراءة العنوان…', '⏳ Reading the address…')}
+                                </span>
+                            ) : revFromMap && details.trim() ? (
+                                // نُخبر صاحب العنوان صراحةً أن هذا ليس ما كتبه، ليراجعه
+                                // ويصحّحه — لا ليظنّه نصّاً مقفلاً لا يُعدَّل.
+                                <span style={{
+                                    fontSize: '0.72rem', fontWeight: 900, borderRadius: 999, padding: '3px 9px',
+                                    background: 'var(--notif-unread-bg)', color: 'var(--primary)',
+                                    border: '1px solid var(--primary)',
+                                }}>
+                                    📍 {t('من الخريطة — عدّله بحرية', 'From the map — edit freely')}
+                                </span>
+                            ) : null}
+                            <button
+                                type="button"
+                                onClick={refreshFromMap}
+                                disabled={revLoading}
+                                title={t('يقرأ الحي والشارع من موضع الدبّوس ويستبدل ما في الحقل.',
+                                         'Reads the district and street from the pin and replaces the field.')}
+                                style={{ ...smallBtn, marginInlineStart: 'auto', opacity: revLoading ? 0.6 : 1 }}
+                            >
+                                🔄 {t('تحديث العنوان من الخريطة', 'Refresh address from map')}
+                            </button>
+                        </div>
+                        <textarea
+                            value={details}
+                            onChange={e => {
+                                setDetails(e.target.value.slice(0, 300));
+                                // صار النصّ من يد صاحبه: يسقط الوسم، ويُنسى المرجع فلا
+                                // تدهسه قراءةٌ لاحقة للدبّوس.
+                                setRevFromMap(false);
+                                autoDetailsRef.current = '';
+                            }}
+                            placeholder={t('تفاصيل العنوان: الحي، الشارع، رقم المبنى، الدور، علامة مميزة…', 'Address details: district, street, building, floor, landmark…')}
+                            style={{ ...inputStyle, minHeight: 78, resize: 'none' }}
+                        />
+                        {!details.trim() && !revLoading && (
+                            <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--danger)', marginTop: 6, lineHeight: 1.6 }}>
+                                {t('⚠️ بلا تفاصيل قد لا يجدك التاجر — أضِف الحي والشارع ورقم المبنى.',
+                                   '⚠️ Without details the merchant may not find you — add the district, street and building number.')}
+                            </div>
+                        )}
+                    </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <input
                             value={city}
-                            onChange={e => setCity(e.target.value.slice(0, 60))}
+                            // كما في التفاصيل: كتابةٌ يدوية تُنهي ملكيّتنا للحقل.
+                            onChange={e => { setCity(e.target.value.slice(0, 60)); autoCityRef.current = ''; }}
                             placeholder={t('المدينة', 'City')}
                             style={{ ...inputStyle, flex: '1 1 130px' }}
                         />
@@ -713,8 +1044,8 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                         />
                     </div>
                     <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
-                        {t('التفاصيل والجوال اختياريان — لكنهما ما يستعمله التاجر ليصل إليك، فالأفضل كتابتهما.',
-                           'Details and phone are optional — but they are what the merchant uses to reach you.')}
+                        {t('الدبّوس يحدّد إن كان المتجر يصلك، أمّا التفاصيل والجوال فهما ما يستعمله التاجر ليصل إلى بابك — نقرأ الحي والشارع من الخريطة تلقائياً، وراجِعهما وأضِف رقم المبنى والدور.',
+                           'The pin decides whether the store reaches you; the details and phone are what gets the merchant to your door — we read the district and street from the map automatically, so review them and add the building and floor.')}
                     </div>
 
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

@@ -207,6 +207,38 @@ const rectCorners = (r: RectShape, deg: number): LL[] =>
 const MIN_SIDE_M = 30;   // أصغر ضلع معقول — يمنع مستطيلاً بلا مساحة
 const MAX_SIDE_M = 200000;
 
+/**
+ * لقطة كاملة لحالة المحرّر.
+ *
+ * «إلغاء التعديل يعيد الحالة كما كانت» وعدٌ لا يُوفى بمسح الرسم: التاجر قد يكون
+ * في منتصف رسم نطاق **جديد** حين يضغط «تعديل» على نطاق قديم، فلو مسحنا مسوّدته
+ * ضاع عمله بلا أن يطلب. لذلك ندخل وضع التعديل بلقطة، ونعيدها حرفياً عند الخروج
+ * منه — إلغاءً كان أو حفظاً.
+ */
+interface Draft {
+    kind: ZoneKind;
+    branchId: string | null;
+    zoneName: string;
+    zoneFee: number | undefined;
+    center: LL | null;
+    radiusKm: number | undefined;
+    radDeg: number;
+    rect: RectShape | null;
+    seed: LL | null;
+    wKm: number | undefined;
+    hKm: number | undefined;
+    poly: LL[];
+    polyClosed: boolean;
+    rot: number;
+}
+
+/** ألوان الطبقات على الخريطة — لكل معنى لون واحد لا يتكرّر. */
+const C_SAVED_MINE = '#0d9488';   // نطاقات الفرع المختار — بارزة
+const C_SAVED_OTHER = '#64748b';  // نطاقات فروع أخرى — للسياق فقط
+const C_MUTED = '#94a3b8';        // موقوف · أو «الشكل قبل التعديل»
+const C_DRAFT_NEW = '#f59e0b';    // مسوّدة نطاق جديد
+const C_DRAFT_EDIT = '#e11d48';   // نطاق قيد التعديل — اللون الثالث الواضح
+
 // ── أيقونات ────────────────────────────────────────────────────────────────
 /**
  * 🪤 الفخّ الذي كاد يُفقِد الميزة كلها: أيقونةٌ تُبنى داخل الرسم تعني كائناً
@@ -269,10 +301,22 @@ const storeIcon = (label: string, active: boolean) => cachedIcon(`s:${active ? 1
     iconAnchor: [active ? 16 : 11, active ? 16 : 11],
 }));
 
+/**
+ * طلب تركيز: نقطة دائماً، وحدودٌ اختيارية.
+ * «أرني التحديد السابق» لا يُشبعه توسيطٌ على نقطة — المضلّع قد يخرج كله عن
+ * الشاشة عند تقريب خاطئ. فحين تتوفّر حدود نؤطّرها، والنقطة تبقى خطة بديلة.
+ */
+interface FocusReq {
+    lat: number;
+    lng: number;
+    seq: number;
+    bounds?: Array<[number, number]>;
+}
+
 /** قائد الخريطة: النقر يضيف نقطة، والتركيز يُعاد عند الطلب (عدّاد لا شرط منطقي). */
 const DrawController: React.FC<{
     onTap: (lat: number, lng: number) => void;
-    focus: { lat: number; lng: number; seq: number } | null;
+    focus: FocusReq | null;
 }> = ({ onTap, focus }) => {
     const map = useMap();
     useEffect(() => {
@@ -287,7 +331,17 @@ const DrawController: React.FC<{
     useEffect(() => {
         if (!focus || !finite(focus.lat) || !finite(focus.lng)) return;
         try {
+            // ⚠️ `fitBounds` على حاوية بلا مقاس يرمي — نُقاسها أولاً، وكل فشل
+            // يسقط إلى `setView` البسيط بدل أن يُسقط الصفحة عبر ErrorBoundary.
             map.invalidateSize();
+            const b = focus.bounds;
+            if (b && b.length >= 2) {
+                // `maxZoom` يمنع تقريباً خانقاً على نطاق صغير جداً (٢٠٠ متر).
+                map.fitBounds(L.latLngBounds(b.map(p => L.latLng(p[0], p[1]))), {
+                    padding: [26, 26], maxZoom: 16, animate: true, duration: 0.6,
+                });
+                return;
+            }
             map.setView([focus.lat, focus.lng], Math.max(map.getZoom() || 13, 13), { animate: true, duration: 0.6 });
         } catch {
             try { map.setView([focus.lat, focus.lng], 13, { animate: false }); } catch { /* لا تُسقط الصفحة */ }
@@ -375,14 +429,43 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
     const [polyClosed, setPolyClosed] = useState(false);
     const [rot, setRot] = useState(0);                                 // درجات، مع عقارب الساعة
 
-    const [focus, setFocus] = useState<{ lat: number; lng: number; seq: number } | null>(null);
+    /** `null` = وضع الإضافة · وإلا معرّف النطاق الجاري تعديله. */
+    const [editingId, setEditingId] = useState<string | null>(null);
+    /** الصفّ الأصلي — لنعرف عند الحفظ هل كان للنطاق فرعٌ يجب أن يبقى له. */
+    const editOrigRef = useRef<Zone | null>(null);
+    /** حالة المحرّر قبل الدخول في التعديل — تُعاد كما هي عند الخروج. */
+    const preEditRef = useRef<Draft | null>(null);
+
+    const [focus, setFocus] = useState<FocusReq | null>(null);
     const [locating, setLocating] = useState(false);
     const seqRef = useRef(0);
+    /** حاوية الخريطة — «عرض» و«تعديل» يُنادَيان من قائمة تحت الشاشة. */
+    const mapBoxRef = useRef<HTMLDivElement | null>(null);
 
     const goTo = useCallback((p: LL) => {
         if (!finite(p.lat) || !finite(p.lng)) return;
         seqRef.current += 1;
         setFocus({ lat: p.lat, lng: p.lng, seq: seqRef.current });
+    }, []);
+
+    /** تأطير الخريطة على مجموعة نقاط (بديل `goTo` حين يكون للشكل امتداد). */
+    const fitTo = useCallback((pts: Array<[number, number]>) => {
+        const ok = pts.filter(p => finite(p[0]) && finite(p[1]));
+        if (!ok.length) return;
+        if (ok.length === 1) { goTo({ lat: ok[0][0], lng: ok[0][1] }); return; }
+        seqRef.current += 1;
+        setFocus({ lat: ok[0][0], lng: ok[0][1], seq: seqRef.current, bounds: ok });
+    }, [goTo]);
+
+    /**
+     * الخريطة أعلى الصفحة والقائمة أسفلها؛ فزرٌّ «يطيّر الخريطة» وهي خارج
+     * الشاشة يبدو للتاجر زرّاً لا يفعل شيئاً. لذلك نُحضر الخريطة إليه.
+     */
+    const revealMap = useCallback(() => {
+        const el = mapBoxRef.current;
+        if (!el) return;
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        catch { try { el.scrollIntoView(); } catch { /* لا شيء */ } }
     }, []);
 
     const clearDraft = useCallback(() => {
@@ -513,13 +596,17 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
         // إعادة الضغط على الفرع نفسه = «أرني الفرع»، لا «امسح ما رسمت».
         if (id === branchId) { go(); return; }
         setBranchId(id);
-        clearDraft();
+        // في وضع التعديل تغييرُ الفرع يعني «انقل هذا النطاق لفرع آخر» — والشكل
+        // هو المقصود بالنقل، فمسحه هنا يفقد ما جاء التاجر لتعديله.
+        if (!editingId) clearDraft();
         go();
     };
 
     // ── الرسم ─────────────────────────────────────────────────────────────
     const onTap = useCallback((lat: number, lng: number) => {
-        if (!branchId) return;               // لا رسم قبل اختيار الفرع
+        // لا رسم قبل اختيار الفرع — إلا في تعديل نطاق قديم بلا فرع («كل الفروع»)،
+        // فذاك نطاق قائم لا يُنشأ من جديد.
+        if (!branchId && !editingId) return;
         const p: LL = { lat, lng };
         if (kind === 'circle') { setCenter(p); return; }
         if (kind === 'rect') {
@@ -546,7 +633,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
             }
             return [...prev, p];
         });
-    }, [branchId, kind, rect, seed, polyClosed, onAlert, t]);
+    }, [branchId, editingId, kind, rect, seed, polyClosed, onAlert, t]);
 
     /** الدوران: غير متلف للمستطيل (يُطبَّق عند الرسم)، ومطبَّق فوراً على المضلّع. */
     const applyRot = useCallback((deg: number) => {
@@ -618,7 +705,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
         try {
             const { lat, lng } = await getCurrentPositionSafe();
             goTo({ lat, lng });
-            if (kind === 'circle' && branchId) setCenter({ lat, lng });
+            if (kind === 'circle' && (branchId || editingId)) setCenter({ lat, lng });
         } catch (e) {
             onAlert(geoErrorMessage(e, isRTL));
         } finally {
@@ -660,35 +747,179 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
             : polyCentroid;
     const farFromBranch = !!(branchPoint && draftCenter && distM(branchPoint, draftCenter) > 60000);
 
+    /**
+     * ⚠️ `Number(null) === 0` و`Number('') === 0` — نقطةٌ ناقصة في صفٍّ قديم كانت
+     * تمرّ هكذا إحداثياً صالحاً عند (٠،٠)، فتُرسم في خليج غينيا وتُؤطَّر الخريطة
+     * عليها. `numOrNull` يرفض الفارغ صراحةً بدل أن يترجمه صفراً.
+     */
+    const zonePts = (z: Zone): Array<[number, number]> =>
+        (Array.isArray(z.points) ? z.points : [])
+            .map(p => [numOrNull(p?.[0]), numOrNull(p?.[1])] as [number | null, number | null])
+            .filter((p): p is [number, number] => p[0] != null && p[1] != null);
+
+    /** الركنان المحيطان بالنطاق — للتأطير عليه («أرني التحديد السابق»). */
+    const zoneBounds = (z: Zone): Array<[number, number]> => {
+        if (z.kind === 'circle') {
+            if (!finite(z.center_lat) || !finite(z.center_lng) || !finite(z.radius_km)) return [];
+            const c: LL = { lat: z.center_lat as number, lng: z.center_lng as number };
+            const r = (z.radius_km as number) * 1000;
+            const sw = toLL(-r, -r, c);
+            const ne = toLL(r, r, c);
+            return [[sw.lat, sw.lng], [ne.lat, ne.lng]];
+        }
+        return zonePts(z);
+    };
+
+    /** الخروج من وضع التعديل بإعادة حالة المحرّر كما كانت قبل الدخول إليه. */
+    const leaveEdit = () => {
+        const s = preEditRef.current;
+        preEditRef.current = null;
+        editOrigRef.current = null;
+        setEditingId(null);
+        if (!s) { clearDraft(); setZoneName(''); setZoneFee(undefined); return; }
+        setKind(s.kind); setBranchId(s.branchId); setZoneName(s.zoneName); setZoneFee(s.zoneFee);
+        setCenter(s.center); setRadiusKm(s.radiusKm); setRadDeg(s.radDeg);
+        setRect(s.rect); setSeed(s.seed); setWKm(s.wKm); setHKm(s.hKm);
+        setPoly(s.poly); setPolyClosed(s.polyClosed); setRot(s.rot);
+    };
+
+    /**
+     * فتح نطاق محفوظ داخل المحرّر نفسه بمقابضه.
+     *
+     * 🪤 المستطيل المُدار محفوظ `kind:'polygon'` بأربع نقاط (لا سبيل غيره: عمود
+     * `points` بركنين لا يحمل زاوية)، فيُفتح مضلّعاً بأربعة رؤوس — والنتيجة على
+     * الأرض واحدة، والدوران يعمل عليه كما يعمل على أي مضلّع.
+     */
+    const startEdit = (z: Zone) => {
+        if (zonesBusy) return;
+        const pts = zonePts(z);
+        // نقطةٌ تالفة في صفٍّ قديم تُسقَط عند القراءة — فلو فتحناه للتعديل صار
+        // «الحفظ» كتابةً لشكلٍ أنقص من المحفوظ بلا أن يرى التاجر ما ضاع. نرفض
+        // بدل أن نُغيّر شكلاً لم يطلب أحدٌ تغييره.
+        const rawPts = Array.isArray(z.points) ? z.points.length : 0;
+        if (z.kind !== 'circle' && pts.length !== rawPts) {
+            onAlert(`❌ ${t('في هذا النطاق نقطة تالفة — احذفه وارسمه من جديد بدل تعديله.',
+                            'This zone has a corrupt point — delete it and draw a new one instead of editing.')}`);
+            return;
+        }
+        const asPoly = (list: Array<[number, number]>) => list.map(p => ({ lat: p[0], lng: p[1] }));
+
+        if (z.kind === 'circle' && finite(z.center_lat) && finite(z.center_lng) && finite(z.radius_km)) {
+            setKind('circle');
+            setCenter({ lat: z.center_lat as number, lng: z.center_lng as number });
+            setRadiusKm(round(clamp(z.radius_km as number, 0.2, 200), 3));
+            setRadDeg(90);
+            setRect(null); setSeed(null); setWKm(undefined); setHKm(undefined);
+            setPoly([]); setPolyClosed(false); setRot(0);
+        } else if (z.kind === 'rect' && pts.length === 2) {
+            // ركنان محاذيان للمحاور ⇒ نعيد بناء المركز والأبعاد بالأمتار ليصحّ
+            // سحبُ الأركان وتدويرها كأنّه رُسم للتوّ.
+            const a: LL = { lat: pts[0][0], lng: pts[0][1] };
+            const b: LL = { lat: pts[1][0], lng: pts[1][1] };
+            const d = toXY(b, a);
+            const w = clamp(Math.abs(d.x), MIN_SIDE_M, MAX_SIDE_M);
+            const h = clamp(Math.abs(d.y), MIN_SIDE_M, MAX_SIDE_M);
+            setKind('rect');
+            setRect({ c: { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }, w, h });
+            setWKm(round(w / 1000, 3)); setHKm(round(h / 1000, 3));
+            setRot(0); setSeed(null); setCenter(null); setPoly([]); setPolyClosed(false);
+        } else if (pts.length >= 3) {
+            setKind('polygon');
+            setPoly(asPoly(pts));
+            setPolyClosed(true);   // شكلٌ مكتمل: يُعدَّل بالمقابض لا بإضافة نقاط
+            setRot(0);
+            setCenter(null); setRect(null); setSeed(null); setWKm(undefined); setHKm(undefined);
+        } else {
+            onAlert(`❌ ${t('شكل هذا النطاق غير صالح للعرض — احذفه وارسمه من جديد.',
+                            'This zone’s shape is invalid — delete it and draw a new one.')}`);
+            return;
+        }
+
+        // فرعٌ حُذف يرفضه حارس القاعدة، فلا نُدخله في المحرّر أصلاً: نُفرغ
+        // الاختيار (أو نضعه على الموقع الأساسي لمتجرٍ بموقع واحد) ونقولها.
+        const known = !!z.branch_id && branches.some(b => b.id === z.branch_id);
+        const nextBranch = z.branch_id == null ? null
+            : known ? z.branch_id : (branches.length === 1 ? PRIMARY : null);
+        setBranchId(nextBranch);
+        if (z.branch_id && !known) {
+            // الرسالة تصف ما حدث فعلاً: في متجرٍ بموقع واحد اخترنا له الموقع
+            // الأساسي، وفي متجرٍ بفروع تُرك الاختيار فارغاً ليقرّر التاجر.
+            onAlert(nextBranch
+                ? `⚠️ ${t('فرع هذا النطاق لم يعد موجوداً — رُبط بالموقع الأساسي للمتجر، وسيُحفظ عليه.',
+                          'This zone’s branch no longer exists — it has been tied to the main store location and will be saved there.')}`
+                : `⚠️ ${t('فرع هذا النطاق لم يعد موجوداً — اختر فرعاً قائماً قبل حفظ التعديل.',
+                          'This zone’s branch no longer exists — pick an existing branch before saving.')}`);
+        }
+
+        setZoneName(z.name || '');
+        setZoneFee(z.fee == null ? undefined : Number(z.fee));
+
+        // اللقطة تُؤخذ هنا لا في أول الدالة: كل `set...` أعلاه يجدول تحديثاً ولا
+        // يغيّر ثوابت هذه الدورة، فالقيم أدناه ما زالت قيم ما **قبل** التعديل —
+        // وبتأخيرها إلى ما بعد كل مخارج الفشل لا نترك لقطةً معلّقة بلا تعديل.
+        // وحين ننتقل من نطاق إلى آخر مباشرةً نُبقي أوّل لقطة: هي حالة التاجر
+        // الحقيقية قبل أن يدخل التعديل أصلاً.
+        if (!editingId) {
+            preEditRef.current = {
+                kind, branchId, zoneName, zoneFee,
+                center, radiusKm, radDeg, rect, seed, wKm, hKm, poly, polyClosed, rot,
+            };
+        }
+        editOrigRef.current = z;
+        setEditingId(z.id);
+        const b = zoneBounds(z);
+        if (b.length) fitTo(b);
+        revealMap();
+    };
+
+    /**
+     * أعمدة الشكل كما تُكتب في القاعدة.
+     *
+     * ⚠️ كلها صريحة — بما فيها الفارغة. في التعديل قد ينتقل النطاق من دائرة إلى
+     * مضلّع، فترك `center_lat/radius_km` كما هي يُبقي في الصفّ بقايا شكلٍ سابق
+     * قد تُقرأ لاحقاً. `null` صريحة تُغلق هذا الباب.
+     */
+    const shapeCols = (): Record<string, unknown> | null => {
+        const out: Record<string, unknown> = { kind, center_lat: null, center_lng: null, radius_km: null, points: null };
+        if (kind === 'circle') {
+            if (!center || !radiusOk) return null;
+            out.center_lat = round(center.lat, 6);
+            out.center_lng = round(center.lng, 6);
+            out.radius_km = Number(radiusKm);
+            return out;
+        }
+        if (kind === 'rect') {
+            if (!rect) return null;
+            // مستطيل مُدار ⇒ لم يعد محاذياً للمحاور فيُحفظ مضلّعاً بأربع
+            // نقاط؛ وغير المُدار يبقى `rect` بركنين توافقاً مع القديم.
+            const cs = rectCorners(rect, rot);
+            if (norm360(rot) === 0) {
+                out.points = [[round(cs[0].lat, 6), round(cs[0].lng, 6)], [round(cs[2].lat, 6), round(cs[2].lng, 6)]];
+            } else {
+                out.kind = 'polygon';
+                out.points = cs.map(p => [round(p.lat, 6), round(p.lng, 6)]);
+            }
+            return out;
+        }
+        if (poly.length < 3) return null;
+        out.points = poly.map(p => [round(p.lat, 6), round(p.lng, 6)]);
+        return out;
+    };
+
     const addZone = async () => {
         if (zonesBusy || !drawReady) return;
         if (!branchId) { onAlert(`❌ ${t('اختر الفرع أولاً', 'Pick a branch first')}`); return; }
+        const shape = shapeCols();
+        if (!shape) { onAlert(`❌ ${t('الشكل غير مكتمل — أعد الرسم', 'The shape is incomplete — draw it again')}`); return; }
         setZonesBusy(true);
         try {
             const row: Record<string, unknown> = {
                 store_id: userId,
                 branch_id: branchId,
                 name: zoneName.trim().slice(0, 60) || null,
-                kind,
                 fee: zoneFee == null ? null : Number(zoneFee),
+                ...shape,
             };
-            if (kind === 'circle' && center) {
-                row.center_lat = round(center.lat, 6);
-                row.center_lng = round(center.lng, 6);
-                row.radius_km = Number(radiusKm);
-            } else if (kind === 'rect' && rect) {
-                // مستطيل مُدار ⇒ لم يعد محاذياً للمحاور فيُحفظ مضلّعاً بأربع
-                // نقاط؛ وغير المُدار يبقى `rect` بركنين توافقاً مع القديم.
-                const cs = rectCorners(rect, rot);
-                if (norm360(rot) === 0) {
-                    row.points = [[round(cs[0].lat, 6), round(cs[0].lng, 6)], [round(cs[2].lat, 6), round(cs[2].lng, 6)]];
-                } else {
-                    row.kind = 'polygon';
-                    row.points = cs.map(p => [round(p.lat, 6), round(p.lng, 6)]);
-                }
-            } else {
-                row.points = poly.map(p => [round(p.lat, 6), round(p.lng, 6)]);
-            }
             // ⚠️ إدراجٌ ترفضه RLS يعود بـ error=null وصفر صفوف — نفحص العدد
             // أيضاً، وإلا أعلنّا نجاحاً وهمياً (قاعدة «الأزرار الصامتة»).
             const { data, error } = await supabase.from('store_delivery_zones').insert(row).select('id');
@@ -698,6 +929,54 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
             await loadZones();
             onAlert(t(`✅ أُضيف النطاق لفرع «${pickedBranch ? brName(pickedBranch) : ''}». المشترون داخله وحدهم سيرون خيار التوصيل من هذا الفرع.`,
                       `✅ Zone added for “${pickedBranch ? brName(pickedBranch) : ''}”. Only buyers inside it will see delivery from this branch.`));
+        } catch (e) {
+            onAlert(`❌ ${errMsg(e, isRTL)}`);
+        } finally {
+            setZonesBusy(false);
+        }
+    };
+
+    /**
+     * حفظ التعديل: `UPDATE` على الصفّ نفسه — لا `INSERT`.
+     *
+     * ⚠️ ثلاثة أشياء لا تُلمس هنا عمداً: `id` و`store_id` و`is_active`. إغفال
+     * `is_active` من الحمولة هو ما يجعل نطاقاً «موقوفاً» يبقى موقوفاً بعد
+     * التعديل بدل أن يعود فعّالاً من تلقاء نفسه ويُفاجئ التاجر بطلبات لم يردها.
+     * ولأننا لا نضيف صفّاً فسقف العشرة لا يُستهلك مرّةً ثانية.
+     */
+    const updateZone = async () => {
+        if (zonesBusy || !editingId || !drawReady) return;
+        const orig = editOrigRef.current;
+        // نطاقٌ كان له فرع يجب أن يبقى له فرع قائم: حارس القاعدة يرفض معرّف فرع
+        // محذوف بـ`TAKI_ZONE_BAD:branch`، فنقولها بالعربي قبل أن نُرسل.
+        if (orig?.branch_id && !branchId) {
+            onAlert(`❌ ${t('اختر فرعاً قائماً لهذا النطاق قبل الحفظ', 'Pick an existing branch for this zone before saving')}`);
+            return;
+        }
+        if (branchId && !branches.some(b => b.id === branchId)) {
+            onAlert(`❌ ${t('الفرع المختار لم يعد موجوداً — اختر فرعاً قائماً', 'The chosen branch no longer exists — pick an existing one')}`);
+            return;
+        }
+        const shape = shapeCols();
+        if (!shape) { onAlert(`❌ ${t('الشكل غير مكتمل — أعد الرسم', 'The shape is incomplete — draw it again')}`); return; }
+        setZonesBusy(true);
+        try {
+            const patch: Record<string, unknown> = {
+                branch_id: branchId,
+                name: zoneName.trim().slice(0, 60) || null,
+                fee: zoneFee == null ? null : Number(zoneFee),
+                ...shape,
+            };
+            // ⚠️ تحديثٌ ترفضه RLS يعود بـ error=null وصفر صفوف — العدد هو الدليل
+            // لا غياب الخطأ (قاعدة «الأزرار الصامتة»).
+            const { data, error } = await supabase.from('store_delivery_zones')
+                .update(patch).eq('id', editingId).select('id');
+            if (error) throw error;
+            if (!data || data.length === 0) throw new Error(t('لم يُحفظ التعديل (لا صلاحية)', 'The change was not saved (not allowed)'));
+            leaveEdit();
+            await loadZones();
+            onAlert(t('✅ حُفظ تعديل النطاق. شكله الجديد هو المعتمد الآن لحساب التوصيل.',
+                      '✅ Zone updated. Its new shape is what delivery is measured against from now on.'));
         } catch (e) {
             onAlert(`❌ ${errMsg(e, isRTL)}`);
         } finally {
@@ -728,6 +1007,9 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
             const { data, error } = await supabase.from('store_delivery_zones').delete().eq('id', z.id).select('id');
             if (error) throw error;
             if (!data || data.length === 0) throw new Error(t('لم يُحذف النطاق (لا صلاحية)', 'Zone was not deleted'));
+            // حذف الصفّ الذي نعدّله يترك المحرّر يشير إلى معرّف لا وجود له،
+            // فيصير «حفظ التعديل» تحديثاً لصفر صفوف — نخرج من التعديل هنا.
+            if (editingId === z.id) leaveEdit();
             await loadZones();
             onAlert(t('🗑️ حُذف النطاق.', '🗑️ Zone deleted.'));
         } catch (e) {
@@ -746,6 +1028,9 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                 .update({ branch_id: id }).eq('id', z.id).select('id');
             if (error) throw error;
             if (!data || data.length === 0) throw new Error(t('لم يُحدَّث النطاق (لا صلاحية)', 'Zone was not updated'));
+            // النطاق نفسه مفتوح في المحرّر؟ لولا مزامنة الاختيار هنا لكتب «حفظ
+            // التعديل» الفرعَ القديم فوق التخصيص الذي اختاره التاجر للتوّ.
+            if (editingId === z.id) setBranchId(id);
             await loadZones();
             onAlert(t('✅ صار هذا النطاق خاصاً بالفرع المختار.', '✅ This zone is now tied to the chosen branch.'));
         } catch (e) {
@@ -755,17 +1040,16 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
         }
     };
 
-    const zonePts = (z: Zone): Array<[number, number]> =>
-        (Array.isArray(z.points) ? z.points : [])
-            .map(p => [Number(p[0]), Number(p[1])] as [number, number])
-            .filter(p => finite(p[0]) && finite(p[1]));
-
+    /** «أرني التحديد السابق»: تأطير الخريطة على النطاق كاملاً لا توسيطٌ على نقطة. */
     const focusZone = (z: Zone) => {
-        const p = z.kind === 'circle'
-            ? (finite(z.center_lat) && finite(z.center_lng) ? { lat: z.center_lat as number, lng: z.center_lng as number } : null)
-            : (() => { const q = zonePts(z); return q.length ? { lat: q[0][0], lng: q[0][1] } : null; })();
-        if (!p) return;
-        goTo(p);
+        const b = zoneBounds(z);
+        if (!b.length) {
+            onAlert(`⚠️ ${t('لا يمكن عرض هذا النطاق — شكله المحفوظ غير صالح.',
+                            'This zone cannot be shown — its stored shape is invalid.')}`);
+            return;
+        }
+        fitTo(b);
+        revealMap();
     };
 
     const mapCenter = useMemo<[number, number]>(() => {
@@ -828,7 +1112,29 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
     });
     const stepLabel: React.CSSProperties = { fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-secondary)', marginBottom: 6 };
 
-    const needBranch = branches.length > 1 && !branchId;
+    // تعديل نطاق قائم لا يحتاج «اختر فرعاً» — النطاق موجود أصلاً، وقد يكون
+    // نطاقاً قديماً بلا فرع نريد للتاجر أن يعدّل شكله بلا أن نُجبره على تغيير
+    // معناه («كل الفروع») في نفس اللحظة.
+    const needBranch = branches.length > 1 && !branchId && !editingId;
+    const editingZone = editingId ? zones.find(z => z.id === editingId) || null : null;
+    /**
+     * نطاقٌ كان مربوطاً بفرع (وحُذف ذلك الفرع) لا يُحفظ بلا فرع قائم — حارس
+     * القاعدة يردّه بـ`TAKI_ZONE_BAD:branch`. نُطفئ الزر ونقول السبب بدل أن
+     * ندع التاجر يضغط «حفظ» ثم يُصدم برسالة رفض.
+     */
+    const editBranchMissing = !!editingId && !!editingZone?.branch_id && !branchId;
+    /** لون المسوّدة: كهرماني لنطاق جديد، وقرمزي لنطاق قيد التعديل. */
+    const draftColor = editingId ? C_DRAFT_EDIT : C_DRAFT_NEW;
+    const canSaveEdit = drawReady && !editBranchMissing;
+    /**
+     * القرمزي داخل البطاقة يحتاج درجتين: الغامق يختفي على خلفية ليلية، والفاتح
+     * يذوب على نهارية. (أمّا القرمزي **على الخريطة** فيبقى درجة واحدة — بلاطات
+     * الخريطة فاتحة دائماً مهما كان وضع التطبيق.)
+     */
+    const editFg = darkMode ? '#fda4af' : '#be123c';
+    const editLine = darkMode ? '#fb7185' : C_DRAFT_EDIT;
+    const editTint = darkMode ? 'rgba(251,113,133,0.18)' : 'rgba(225,29,72,0.10)';
+    const editTintSoft = darkMode ? 'rgba(251,113,133,0.12)' : 'rgba(225,29,72,0.07)';
 
     /**
      * لماذا لا يعمل زر «إضافة النطاق»؟ زرٌّ رمادي بلا تفسير يجعل التاجر يظن
@@ -836,6 +1142,8 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
      */
     // (اختيار الفرع مستثنى: نصّ الزر نفسه يقولها، فلا تُكرَّر ثلاث مرات.)
     const blockReason: string | null = zonesBusy || needBranch ? null
+        : editBranchMissing
+            ? t('اختر فرعاً قائماً لهذا النطاق قبل حفظ التعديل.', 'Pick an existing branch for this zone before saving.')
         : kind === 'circle'
                 ? (!center ? t('حدّد مركز الدائرة بالضغط على الخريطة.', 'Set the circle centre by tapping the map.')
                     : !radiusOk ? t('نصف القطر يجب أن يكون بين ٠.٢ و٢٠٠ كم.', 'The radius must be between 0.2 and 200 km.') : null)
@@ -1038,9 +1346,13 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                         {/* ٢) الشكل */}
                         <div style={{ opacity: needBranch ? 0.45 : 1, pointerEvents: needBranch ? 'none' : 'auto' }}>
                             <div style={stepLabel}>{branches.length > 1 ? t('٢) شكل النطاق', '2) Zone shape') : t('شكل النطاق', 'Zone shape')}</div>
+                            {/* إعادة الضغط على النمط نفسه لا تمسح شيئاً — في وضع التعديل كانت
+                                تعني ضياع الشكل الذي جاء التاجر ليعدّله بضغطة عابرة. */}
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                                 {KINDS.map(k => (
-                                    <button key={k.id} type="button" onClick={() => { setKind(k.id); clearDraft(); }} style={chip(kind === k.id)}>
+                                    <button key={k.id} type="button"
+                                        onClick={() => { if (k.id === kind) return; setKind(k.id); clearDraft(); }}
+                                        style={chip(kind === k.id)}>
                                         {k.icon} {isRTL ? k.ar : k.en}
                                     </button>
                                 ))}
@@ -1051,7 +1363,19 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                             {hint}
                         </div>
 
-                        <div style={{ height: 320, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                        {editingId && (
+                            <div style={{
+                                background: editTint,
+                                border: `1.5px solid ${editLine}`, borderRadius: 14, padding: '11px 13px',
+                                fontSize: '0.82rem', fontWeight: 800, color: editFg,
+                                lineHeight: 1.7, marginBottom: 10,
+                            }}>
+                                ✏️ {t(`أنت تعدّل النطاق «${editingZone?.name || t('بلا اسم', 'unnamed')}». الشكل القرمزي هو التعديل الجاري، والخطّ الرمادي المتقطّع هو شكله قبل التعديل. لن يُحفظ شيء حتى تضغط «حفظ التعديل».`,
+                                       `You are editing “${editingZone?.name || 'unnamed'}”. The crimson shape is your live edit; the dashed grey outline is how it was. Nothing is saved until you press “Save changes”.`)}
+                            </div>
+                        )}
+
+                        <div ref={mapBoxRef} style={{ height: 320, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                             <MapContainer center={mapCenter} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
                                 <TileLayer
                                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1072,12 +1396,18 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                 {/* النطاقات المحفوظة: نطاقات الفرع المختار بارزة، وغيرها باهتة */}
                                 {zones.map(z => {
                                     const mine = !branchId || !z.branch_id || z.branch_id === branchId;
-                                    const color = !z.is_active ? '#94a3b8' : mine ? '#0d9488' : '#64748b';
-                                    const opts = {
-                                        color, weight: mine ? 2 : 1.5, fillColor: color,
-                                        fillOpacity: !z.is_active ? 0.05 : mine ? 0.13 : 0.05,
-                                        dashArray: mine ? undefined : '5 5',
-                                    };
+                                    const ghost = z.id === editingId;
+                                    const color = ghost || !z.is_active ? C_MUTED : mine ? C_SAVED_MINE : C_SAVED_OTHER;
+                                    // النطاق قيد التعديل يُرسم شبحاً متقطّعاً بلا تعبئة = «شكله قبل
+                                    // التعديل»، والمسوّدة الحيّة فوقه بالقرمزي — فيرى التاجر مقدار
+                                    // ما غيّره بعينه لا بذاكرته.
+                                    const opts: L.PathOptions = ghost
+                                        ? { color, weight: 1.5, dashArray: '3 7', fill: false, fillOpacity: 0 }
+                                        : {
+                                            color, weight: mine ? 3 : 1.5, fillColor: color,
+                                            fillOpacity: !z.is_active ? 0.05 : mine ? 0.18 : 0.04,
+                                            dashArray: mine ? undefined : '5 5',
+                                        };
                                     if (z.kind === 'circle' && finite(z.center_lat) && finite(z.center_lng) && finite(z.radius_km)) {
                                         return <Circle key={z.id} center={[z.center_lat as number, z.center_lng as number]} radius={(z.radius_km as number) * 1000} pathOptions={opts} />;
                                     }
@@ -1096,11 +1426,11 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                     return null;
                                 })}
 
-                                {/* ── المسوّدة (كهرمانية لتتميّز) + مقابضها ── */}
+                                {/* ── المسوّدة + مقابضها: كهرمانية لنطاق جديد، قرمزية لنطاق قيد التعديل ── */}
                                 {kind === 'circle' && center && finite(radiusKm as number) && (
                                     <>
                                         <Circle center={[center.lat, center.lng]} radius={(radiusKm as number) * 1000}
-                                            pathOptions={{ color: '#f59e0b', weight: 2.5, fillColor: '#f59e0b', fillOpacity: 0.16 }} />
+                                            pathOptions={{ color: draftColor, weight: 2.5, fillColor: draftColor, fillOpacity: 0.16 }} />
                                         <Handle pos={center} icon={moveIcon} onMove={setCenter}
                                             title={t('حرّك مركز الدائرة', 'Move the centre')} />
                                         {circleHandle && (
@@ -1116,7 +1446,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                 {kind === 'rect' && rect && corners.length === 4 && (
                                     <>
                                         <Polygon positions={corners.map(p => [p.lat, p.lng] as [number, number])}
-                                            pathOptions={{ color: '#f59e0b', weight: 2.5, fillColor: '#f59e0b', fillOpacity: 0.16 }} />
+                                            pathOptions={{ color: draftColor, weight: 2.5, fillColor: draftColor, fillOpacity: 0.16 }} />
                                         {rectRotHandle && (
                                             <>
                                                 <Polyline positions={[[rect.c.lat, rect.c.lng], [rectRotHandle.lat, rectRotHandle.lng]]}
@@ -1139,11 +1469,11 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                     <>
                                         {poly.length >= 3 && (
                                             <Polygon positions={poly.map(p => [p.lat, p.lng] as [number, number])}
-                                                pathOptions={{ color: '#f59e0b', weight: 2.5, fillColor: '#f59e0b', fillOpacity: 0.16 }} />
+                                                pathOptions={{ color: draftColor, weight: 2.5, fillColor: draftColor, fillOpacity: 0.16 }} />
                                         )}
                                         {poly.length === 2 && (
                                             <Polyline positions={poly.map(p => [p.lat, p.lng] as [number, number])}
-                                                pathOptions={{ color: '#f59e0b', weight: 2.5, dashArray: '5 5' }} />
+                                                pathOptions={{ color: draftColor, weight: 2.5, dashArray: '5 5' }} />
                                         )}
                                         {poly.map((p, i) => (
                                             <Handle key={`v${i}`} pos={p} icon={vertexIcon(i + 1)} onMove={q => onPolyVertex(i, q)}
@@ -1164,6 +1494,20 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                 )}
                             </MapContainer>
                         </div>
+
+                        {/* مفتاح الألوان: ما لم يُفسَّر يُخمَّن — والتخمين هنا يعني نطاقاً في المدينة الخطأ. */}
+                        {zones.length > 0 && (
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: C_SAVED_MINE, marginInlineEnd: 5 }} />
+                                    {branches.length > 1 ? t('نطاقات هذا الفرع', 'This branch’s zones') : t('نطاقاتك المحفوظة', 'Your saved zones')}</span>
+                                {branches.length > 1 && (
+                                    <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: C_SAVED_OTHER, marginInlineEnd: 5 }} />
+                                        {t('فروع أخرى', 'Other branches')}</span>
+                                )}
+                                <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: draftColor, marginInlineEnd: 5 }} />
+                                    {editingId ? t('التعديل الجاري', 'Live edit') : t('الرسم الجديد', 'New drawing')}</span>
+                            </div>
+                        )}
 
                         {farFromBranch && (
                             <div style={{ ...noteBox('amber'), marginTop: 10 }}>
@@ -1267,22 +1611,43 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                         )}
 
                         <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 10, textAlign: 'center' }}>
-                            {t(`النطاقات الفعّالة: ${activeZones} من 10 لكل المتجر (لا لكل فرع)`, `Active zones: ${activeZones} of 10 for the whole store (not per branch)`)}
+                            {editingId
+                                // تعديل صفٍّ قائم لا يضيف صفّاً، فلا يُحتسب مرّة ثانية على السقف.
+                                ? t(`النطاقات الفعّالة: ${activeZones} من 10 — تعديل نطاق قائم لا يستهلك خانة جديدة`,
+                                    `Active zones: ${activeZones} of 10 — editing an existing zone does not use a new slot`)
+                                : t(`النطاقات الفعّالة: ${activeZones} من 10 لكل المتجر (لا لكل فرع)`,
+                                    `Active zones: ${activeZones} of 10 for the whole store (not per branch)`)}
                         </div>
 
-                        <button type="button" onClick={addZone} disabled={zonesBusy || !drawReady || !branchId}
-                            style={{
-                                ...btn(drawReady && branchId ? 'var(--primary)' : 'var(--gray-200)', drawReady && branchId ? '#fff' : 'var(--text-secondary)'),
-                                width: '100%', marginTop: 10, cursor: drawReady && branchId ? 'pointer' : 'not-allowed',
-                            }}>
-                            {zonesBusy
-                                ? t('⏳ …', '⏳ …')
-                                : needBranch
-                                    ? t('اختر الفرع أولاً', 'Pick a branch first')
-                                    : pickedBranch
-                                        ? t(`➕ إضافة النطاق لفرع «${brName(pickedBranch)}»`, `➕ Add zone to “${brName(pickedBranch)}”`)
-                                        : t('➕ إضافة هذا النطاق', '➕ Add this zone')}
-                        </button>
+                        {editingId ? (
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                                <button type="button" onClick={updateZone} disabled={zonesBusy || !drawReady || editBranchMissing}
+                                    style={{
+                                        ...btn(canSaveEdit ? 'var(--primary)' : 'var(--gray-200)', canSaveEdit ? '#fff' : 'var(--text-secondary)'),
+                                        flex: '1 1 180px', cursor: canSaveEdit ? 'pointer' : 'not-allowed',
+                                    }}>
+                                    {zonesBusy ? t('⏳ …', '⏳ …') : t('💾 حفظ التعديل', '💾 Save changes')}
+                                </button>
+                                <button type="button" onClick={leaveEdit} disabled={zonesBusy}
+                                    style={{ ...btn('var(--body-bg)', 'var(--text-primary)'), border: '1.5px solid var(--border-color)', flex: '0 1 auto' }}>
+                                    ✕ {t('إلغاء التعديل', 'Cancel editing')}
+                                </button>
+                            </div>
+                        ) : (
+                            <button type="button" onClick={addZone} disabled={zonesBusy || !drawReady || !branchId}
+                                style={{
+                                    ...btn(drawReady && branchId ? 'var(--primary)' : 'var(--gray-200)', drawReady && branchId ? '#fff' : 'var(--text-secondary)'),
+                                    width: '100%', marginTop: 10, cursor: drawReady && branchId ? 'pointer' : 'not-allowed',
+                                }}>
+                                {zonesBusy
+                                    ? t('⏳ …', '⏳ …')
+                                    : needBranch
+                                        ? t('اختر الفرع أولاً', 'Pick a branch first')
+                                        : pickedBranch
+                                            ? t(`➕ إضافة النطاق لفرع «${brName(pickedBranch)}»`, `➕ Add zone to “${brName(pickedBranch)}”`)
+                                            : t('➕ إضافة هذا النطاق', '➕ Add this zone')}
+                            </button>
+                        )}
 
                         {/* قائمة النطاقات مجمّعة حسب الفرع */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
@@ -1313,17 +1678,26 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                             const kindLabel = z.kind === 'circle'
                                                 ? t(`دائرة ${z.radius_km} كم`, `Circle ${z.radius_km} km`)
                                                 : z.kind === 'rect' ? t('مستطيل', 'Rectangle') : t(`مضلّع (${zonePts(z).length} نقطة)`, `Polygon (${zonePts(z).length} pts)`);
+                                            const isEd = z.id === editingId;
                                             return (
                                                 <div key={z.id} style={{
                                                     display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, flexWrap: 'wrap',
-                                                    background: 'var(--body-bg)', border: `1px solid ${z.is_active ? 'rgba(13,148,136,0.45)' : 'var(--border-color)'}`,
-                                                    opacity: z.is_active ? 1 : 0.65,
+                                                    background: isEd ? editTintSoft : 'var(--body-bg)',
+                                                    border: isEd
+                                                        ? `1.5px solid ${editLine}`
+                                                        : `1px solid ${z.is_active ? 'rgba(13,148,136,0.45)' : 'var(--border-color)'}`,
+                                                    opacity: z.is_active || isEd ? 1 : 0.65,
                                                 }}>
                                                     <button type="button" onClick={() => focusZone(z)} title={t('اعرضه على الخريطة', 'Show on map')}
                                                         style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#0d9488,#0f766e)', color: '#fff', fontWeight: 900, fontSize: '0.76rem' }}>
                                                         {i + 1}
                                                     </button>
-                                                    <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+                                                    {/* الصفّ نفسه يفتح النطاق على الخريطة — أكبر هدف للإصبع، وهو ما يجرّبه التاجر أولاً. */}
+                                                    <div role="button" tabIndex={0}
+                                                        onClick={() => focusZone(z)}
+                                                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusZone(z); } }}
+                                                        title={t('اعرضه على الخريطة', 'Show on map')}
+                                                        style={{ flex: '1 1 140px', minWidth: 0, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
                                                         <div style={{ fontWeight: 900, fontSize: '0.84rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                             {z.name || kindLabel}
                                                         </div>
@@ -1331,6 +1705,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                                             {kindLabel}
                                                             {z.fee != null ? ` · ${t('رسوم', 'fee')} ${z.fee} ${t('ر.س', 'SAR')}` : ` · ${t('رسوم المتجر', 'store fee')}`}
                                                             {!z.is_active ? ` · ${t('موقوف', 'inactive')}` : ''}
+                                                            {isEd ? ` · ${t('قيد التعديل', 'being edited')}` : ''}
                                                         </div>
                                                     </div>
                                                     {(g.orphan || (g.legacy && branches.length > 1)) && (
@@ -1344,6 +1719,21 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                                             {branches.map(b => <option key={b.id} value={b.id}>{brName(b)}</option>)}
                                                         </select>
                                                     )}
+                                                    <button type="button" onClick={() => focusZone(z)}
+                                                        title={t('اعرض شكله على الخريطة', 'Show its shape on the map')}
+                                                        style={{ ...btn('var(--card-bg)', 'var(--text-primary)'), border: '1px solid var(--border-color)', padding: '7px 11px', fontSize: '0.76rem', flexShrink: 0 }}>
+                                                        👁 {t('عرض', 'Show')}
+                                                    </button>
+                                                    {/* «تعديل» يفتح نفس محرّر الرسم بمقابضه على هذا النطاق — لا حذف وإعادة رسم. */}
+                                                    <button type="button" onClick={() => (isEd ? leaveEdit() : startEdit(z))} disabled={zonesBusy}
+                                                        title={isEd ? t('إلغاء التعديل', 'Cancel editing') : t('عدّل شكل النطاق ورسومه', 'Edit this zone’s shape and fee')}
+                                                        style={{
+                                                            ...btn(isEd ? editTint : 'var(--card-bg)', isEd ? editFg : 'var(--text-primary)'),
+                                                            border: `1px solid ${isEd ? editLine : 'var(--border-color)'}`,
+                                                            padding: '7px 11px', fontSize: '0.76rem', flexShrink: 0,
+                                                        }}>
+                                                        {isEd ? `✕ ${t('إلغاء', 'Cancel')}` : `✏️ ${t('تعديل', 'Edit')}`}
+                                                    </button>
                                                     <button type="button" onClick={() => toggleZone(z)} disabled={zonesBusy}
                                                         style={{ ...btn('var(--card-bg)', 'var(--text-primary)'), border: '1px solid var(--border-color)', padding: '7px 11px', fontSize: '0.76rem', flexShrink: 0 }}>
                                                         {z.is_active ? t('إيقاف', 'Disable') : t('تفعيل', 'Enable')}

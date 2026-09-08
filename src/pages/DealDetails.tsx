@@ -820,6 +820,32 @@ const DealDetails: React.FC = () => {
 
     const [addresses, setAddresses] = useState<BuyerAddr[]>([]);
     const [addrId, setAddrId] = useState<string | null>(null);
+    /**
+     * v14.09 (بلاغ ناصر: «عند الحجز أظهر موقعي الحالي المباشر، أما عند النقر على
+     * توصيل يذهب للعنوان المختار») — الموقع الحيّ **معلومةٌ تُطمئن** لا وجهةً
+     * تلقائية: يبقى عنوان التوصيل هو العنوان المحفوظ المختار، إلا أن يطلب
+     * المشتري صراحةً التوصيل إلى مكانه الآن.
+     *
+     * وحين يطلبها فهي **نقطة عابرة لهذا الطلب وحده**: لا تُدرَج في
+     * `user_addresses` ولا في مرآة الحساب — فمن يطلب إلى مكانٍ هو فيه الساعة لا
+     * يريده عنواناً دائماً، ولا تُخزَّن في خريطة عروض العناوين حتى لا تختلط بها.
+     */
+    const [useLivePoint, setUseLivePoint] = useState(false);
+    /**
+     * لقطة الإحداثيات **لحظة الضغط** لا مرجعٌ حيّ: بعد إقرار الوجهة لا يجوز أن
+     * تزحف مع كل قراءة GPS، وإلا اختلف ما سُعِّر عمّا سيُرسل مع الحجز.
+     */
+    const [livePoint, setLivePoint] = useState<{ lat: number; lng: number } | null>(null);
+    /**
+     * «الوجهة الآن هي النقطة الحيّة» — الحالتان تُضبطان معاً دائماً، لكن الشرط
+     * المركّب هو ما تعتمد عليه بقيّة الشاشة فلا يتكرّر في عشرة مواضع.
+     */
+    const livePicked = useLivePoint && !!livePoint;
+    /** وصفٌ نصّي للنقطة (ترميز عكسي) — يصل متأخراً، وفشله لا يمنع الطلب أبداً. */
+    const [liveDetails, setLiveDetails] = useState<string>('');
+    /** عرض التوصيل إلى الموقع الحيّ — يُقاس دائماً لنعرف: هل نُظهر الزرّ أصلاً؟ */
+    const [liveQuote, setLiveQuote] = useState<DeliveryQuote | null>(null);
+    const [liveQuotedKey, setLiveQuotedKey] = useState<string | null>(null);
     /** عروض التوصيل مفهرسة بمعرّف العنوان؛ المفتاح '' = مرآة العنوان القديم أو «بلا عنوان». */
     const [dlvQuotes, setDlvQuotes] = useState<Record<string, DeliveryQuote>>({});
     /**
@@ -847,12 +873,23 @@ const DealDetails: React.FC = () => {
         setDlvQuotes({});
         setDlvQuotedKey(null);
         setStoreSell(null);
+        setLiveQuote(null);
+        setLiveQuotedKey(null);
     }, [deal?.storeId]);
 
     // الافتراضي الآمن دائماً: استلام من المتجر — ويُعاد ضبطه عند فتح الورقة وحدها،
     // لا عند كل إعادة تسعير، وإلا ضاع اختيار المشتري كلما بدّل الفرع أو العنوان.
+    // والنقطة الحيّة عابرة بطبعها: كل ورقة حجز تبدأ من العنوان المحفوظ.
     useEffect(() => {
-        if (showBookingModal) setFulfillment('pickup');
+        if (showBookingModal) {
+            setFulfillment('pickup');
+            setUseLivePoint(false);
+            setLivePoint(null);
+            setLiveDetails('');
+        } else {
+            // إغلاق الورقة يُلغي أي ترميز عكسي في الطريق — لا فائدة من جوابه بعدها.
+            try { revGeoAbortRef.current?.abort(); } catch { /* ignore */ }
+        }
     }, [showBookingModal]);
 
     // عناوين المشتري: تُقرأ عند فتح ورقة الحجز. الترتيب يضع الافتراضي أولاً،
@@ -888,8 +925,26 @@ const DealDetails: React.FC = () => {
         () => addresses.find(a => a.id === addrId) || null,
         [addresses, addrId]);
 
+    /**
+     * رقم التواصل المرافق للنقطة الحيّة: بلا رقم لا يستطيع المندوب أن يتصل حين
+     * يصل. نأخذه من العنوان المختار ثم الافتراضي ثم رقم الحساب — أوّل موجود.
+     */
+    const livePhone = useMemo(() => (
+        selectedAddr?.phone || addresses.find(a => a.is_default)?.phone
+        || addresses[0]?.phone || user?.phone || user?.contactPhone || ''
+    ), [selectedAddr, addresses, user?.phone, user?.contactPhone]);
+
     /** اللقطة التي تُرسل مع الحجز — حقول العنوان وحدها بلا معرّف ولا أعمدة داخلية. */
     const buyerAddress = useMemo(() => {
+        // النقطة الحيّة — حين يطلبها المشتري صراحةً — تسبق كل عنوان محفوظ،
+        // وتبقى **خارج** جدول العناوين: لهذا الطلب وحده ولا تُحفظ.
+        if (livePicked && livePoint) {
+            return {
+                label: isRTL ? 'موقعي الحالي' : 'My current location',
+                details: liveDetails, city: '', phone: livePhone,
+                lat: livePoint.lat, lng: livePoint.lng,
+            };
+        }
         const src: any = selectedAddr || (addresses.length === 0 ? legacyAddress : null);
         if (!src) return null;
         const lat = finiteOrNull(src.lat), lng = finiteOrNull(src.lng);
@@ -899,7 +954,8 @@ const DealDetails: React.FC = () => {
             city: src.city || '', phone: src.phone || '', lat, lng,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedAddr, addresses.length, legacyAddress?.lat, legacyAddress?.lng, legacyAddress?.details]);
+    }, [livePicked, livePoint?.lat, livePoint?.lng, liveDetails, livePhone, isRTL,
+        selectedAddr, addresses.length, legacyAddress?.lat, legacyAddress?.lng, legacyAddress?.details]);
 
     /** الفرع المختار — نفس القيمة التي تُمرَّر إلى `bookDeal`، فيُقاس النطاق بما سيُحجز فعلاً. */
     const branchId = dealLocations ? (activeLoc?.id || null) : null;
@@ -918,8 +974,29 @@ const DealDetails: React.FC = () => {
      */
     const dlvQuoteKey = `${deal?.storeId || ''}|${branchId || ''}|` +
         quoteTargets.map(t => `${t.key}:${t.lat},${t.lng}`).join('~');
+
+    /** الموقع الحيّ كرقمين حقيقيين أو لا شيء (`Number(null)===0` يضع المشتري في المحيط). */
+    const liveLat = finiteOrNull(liveLocation?.lat);
+    const liveLng = finiteOrNull(liveLocation?.lng);
+    const liveKnown = liveLat !== null && liveLng !== null;
+    /**
+     * بصمة تسعير الموقع الحيّ **مقرَّبةً لثلاث خانات (≈110 م)**: الـGPS يعيد
+     * قراءةً كل ثوانٍ وفرقها أمتار، فبلا هذا التقريب انطلق نداءٌ للقاعدة مع كل
+     * اهتزازة. والنطاقات تُقاس بالكيلومترات، فمئة متر لا تقلب الجواب عملياً.
+     *
+     * وبعد إقرار النقطة نُسعّر **اللقطة** لا الموقع المتحرّك: وإلا مشى المشتري
+     * مئة متر فصار السعر المعروض لنقطةٍ غير التي ستُرسل مع الحجز.
+     */
+    const liveTargetLat = (livePicked && livePoint) ? livePoint.lat : liveLat;
+    const liveTargetLng = (livePicked && livePoint) ? livePoint.lng : liveLng;
+    const liveQuoteKey = (liveTargetLat !== null && liveTargetLng !== null)
+        ? `${deal?.storeId || ''}|${branchId || ''}|${liveTargetLat.toFixed(3)},${liveTargetLng.toFixed(3)}`
+        : null;
     /** قيد التسعير = ما سعّرناه أخيراً ليس ما نعرضه الآن. */
-    const dlvLoading = !!showBookingModal && !!deal?.storeId && dlvQuotedKey !== dlvQuoteKey;
+    const dlvLoading = (!!showBookingModal && !!deal?.storeId && dlvQuotedKey !== dlvQuoteKey)
+        // نقطةٌ حيّة مُختارة وسعرها لم يصل بعد = «قيد التحقق» أيضاً، فلا يُرسل
+        // طلب توصيلٍ إلى نقطة لم يُقرّها الخادم لهذا الفرع بعد.
+        || (livePicked && !!liveQuoteKey && liveQuotedKey !== liveQuoteKey);
 
     // إعادة التسعير: عند فتح الورقة، وعند تبديل **الفرع**، وعند تغيّر قائمة
     // العناوين. (تبديل العنوان المختار لا يستدعي نداءً جديداً لأن كل العناوين
@@ -951,13 +1028,70 @@ const DealDetails: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showBookingModal, deal?.storeId, dlvQuoteKey]);
 
+    /**
+     * هل يوصّل هذا المتجر أصلاً؟ يُقرأ من **عروض العناوين وحدها** لا من عرض
+     * الموقع الحيّ — وإلا صار سؤال «هل نسعّر الموقع الحيّ؟» معتمداً على جواب
+     * ذلك التسعير نفسه. و«التفعيل» حقلٌ على مستوى المتجر فأي عرضٍ يحمله.
+     */
+    const storeDelivers = !!Object.values(dlvQuotes)[0]?.enabled;
+
+    /**
+     * الإحداثيّتان اللتان سُعِّرتا فعلاً — لا البصمة المقرَّبة وحدها. البصمة تحتمل
+     * ≈110 م، فقد يُسعَّر طرفُ الخليّة ويُحجَز طرفها الآخر، وعلى حدّ النطاق يكفي
+     * ذلك ليرفض الخادمُ حجزاً وعدت به الواجهة. فحين يضغط المشتري نُثبّت **نفس**
+     * النقطة التي جاء الجواب عنها، فيتطابق ما سُعِّر وما سيُحجَز حرفاً بحرف.
+     */
+    const liveQuotedPtRef = useRef<{ lat: number; lng: number } | null>(null);
+
+    /**
+     * تسعير **الموقع الحيّ** — نداءٌ منفصل لأن جوابه يقرّر شيئاً لا يقرّره غيره:
+     * هل نعرض زرّ «استعمل موقعي الحالي» أصلاً؟ زرٌّ يظهر ثم يُرفض أسوأ من زرٍّ
+     * لا يظهر. وهو مخنوقٌ بأربع طبقات فلا يلاحق الـGPS: لا يعمل إلا وورقة الحجز
+     * مفتوحة **ومتجرٌ يوصّل فعلاً**، ولا يُعاد إلا إذا تغيّرت البصمة المقرَّبة
+     * (≈110 م) أو الفرع، وبتأخير ٩٠٠ ملّي ثانية يبتلع سلسلة القراءات المتتابعة.
+     *
+     * ⚠️ يُسعَّر **هدف النقطة** (`liveTarget*`) لا قراءة الـGPS اللحظية: بعد
+     * إقرار المشتري صارت اللقطة هي ما سيُرسل مع الحجز، فلو سعّرنا القراءة
+     * المتحرّكة لعرضنا سعر نقطةٍ ونحجز إلى غيرها — وقد تكون خارج النطاق.
+     */
+    useEffect(() => {
+        if (!showBookingModal || !deal?.storeId || !liveQuoteKey) return;
+        if (!storeDelivers) return;
+        if (liveQuotedKey === liveQuoteKey) return;
+        let alive = true;
+        const qLat = liveTargetLat, qLng = liveTargetLng;
+        const t = setTimeout(() => {
+            (async () => {
+                try {
+                    const { supabase } = await import('../services/supabaseClient');
+                    const { data } = await supabase.rpc('delivery_quote', {
+                        p_store_id: deal.storeId,
+                        p_lat: qLat,
+                        p_lng: qLng,
+                        p_location_id: branchId,
+                    });
+                    if (alive) { liveQuotedPtRef.current = (qLat !== null && qLng !== null) ? { lat: qLat, lng: qLng } : null; }
+                    if (alive) setLiveQuote((data as DeliveryQuote) || null);
+                } catch { if (alive) setLiveQuote(null); /* فشلٌ ⇒ لا زرّ، ولا تغيير في السلوك القائم */ }
+                finally { if (alive) setLiveQuotedKey(liveQuoteKey); }
+            })();
+        }, 900);
+        return () => { alive = false; clearTimeout(t); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showBookingModal, deal?.storeId, storeDelivers, liveQuoteKey, liveQuotedKey]);
+
     /** مفتاح العنوان المختار داخل خريطة العروض. */
     const activeQuoteKey = addresses.length ? (addrId || '') : '';
-    const dlvQuote = dlvQuotes[activeQuoteKey] || null;
+    /** النقطة الحيّة عرضها منفصل — لا تُخزَّن في خريطة عروض العناوين أصلاً. */
+    const dlvQuote = livePicked ? liveQuote : (dlvQuotes[activeQuoteKey] || null);
     /**
      * حقول على مستوى المتجر (التفعيل · الحد الأدنى · طريقة الدفع · الملاحظة) لا
      * تختلف باختلاف العنوان — نقرؤها من أي عرضٍ حاضر حتى لا تختفي البطاقة كلها
      * لحظة اختيار عنوانٍ لم يصل عرضه بعد.
+     *
+     * ولا يُستعمل عرضُ الموقع الحيّ ذيلاً هنا: لا يوجد إلا ومعه عرض عنوانٍ سابق
+     * (`storeDelivers` شرطُ طلبه)، فذيلٌ كهذا لا يُضيف حالةً — إلا حالةً ضارّة:
+     * أن يفشل تسعير العناوين فتُمسح خريطته وتبقى بطاقةُ التوصيل ظاهرةً بجوابٍ قديم.
      */
     const dlvStore = dlvQuote || Object.values(dlvQuotes)[0] || null;
     // v14.06 — التوصيل: متاح فقط بعنوانٍ محفوظ داخل نطاق فعّال للفرع المختار.
@@ -996,6 +1130,153 @@ const DealDetails: React.FC = () => {
     useEffect(() => {
         if (!dlvLoading && fulfillment === 'delivery' && !dlvCanChoose) setFulfillment('pickup');
     }, [dlvLoading, fulfillment, dlvCanChoose]);
+    // ونقطةٌ حيّة خرجت عن نطاق الفرع (بدّل الفرع بعد إقرارها) تُترك بهدوء ويعود
+    // العنوان المحفوظ — أهون من وجهةٍ ظاهرة يرفضها الخادم عند الإرسال.
+    //
+    // ⚠️ ولا تُلغى لانقطاع الـGPS: بعد الإقرار صارت الوجهة **لقطةً** محفوظة عندنا
+    // لا قراءةً حيّة، فإسقاطها لأن الجهاز فقد الإشارة لحظةً يبدّل وجهة الطلب من
+    // تحت يد المشتري بلا أن يطلب شيئاً — وهو أسوأ ما يمكن أن يقع هنا.
+    useEffect(() => {
+        if (!livePicked) return;
+        if (dlvLoading) return;
+        if (!liveQuote?.available) { setUseLivePoint(false); setLivePoint(null); setLiveDetails(''); }
+    }, [livePicked, dlvLoading, liveQuote?.available]);
+    /** مسافة مقروءة: أمتار تحت الكيلو، وخانة عشرية فوقه. */
+    const fmtKm = (km: number) => km < 1
+        ? `${Math.round(km * 1000)} ${isRTL ? 'م' : 'm'}`
+        : `${km.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;
+
+    /**
+     * v14.09 — مسافة المشتري إلى **الفرع الذي اختاره** لا إلى أقربها
+     * (`nearestDistanceKm` يخدم حارس الـ100 كم وحده). هذا هو الرقم الذي ينفع
+     * خيار «استلام من المتجر»: كم يبعد المكان الذي سيذهب إليه فعلاً.
+     */
+    const pickupDistanceKm = useMemo<number | null>(() => {
+        if (liveLat === null || liveLng === null) return null;
+        if (dealLocations && activeLoc) {
+            const row = (sortedLocations || []).find((l: any) => l.id === activeLoc.id) as any;
+            return typeof row?.distance === 'number' ? row.distance : null;
+        }
+        const lat = finiteOrNull(deal?.mapLocation?.lat), lng = finiteOrNull(deal?.mapLocation?.lng);
+        if (lat === null || lng === null) return null;
+        return getDistance(liveLat, liveLng, lat, lng);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [liveLat, liveLng, dealLocations, activeLoc?.id, sortedLocations, deal?.mapLocation?.lat, deal?.mapLocation?.lng]);
+
+    /**
+     * المسافة بين **مكانه الآن** و**وجهة التوصيل**. جوهر بلاغ ناصر: الاثنان
+     * شيئان مختلفان، وحين يتباعدان نقولها صراحةً قبل أن يظنّ أن الطلب سيأتيه
+     * إلى حيث يقف.
+     */
+    const liveToDestKm = useMemo<number | null>(() => {
+        if (liveLat === null || liveLng === null || !buyerAddress) return null;
+        return getDistance(liveLat, liveLng, buyerAddress.lat, buyerAddress.lng);
+    }, [liveLat, liveLng, buyerAddress]);
+
+    /** وصل جواب الخادم لهذه النقطة بعينها — قبله لا حكم ولا زرّ. */
+    const liveQuoteReady = !!liveQuoteKey && liveQuotedKey === liveQuoteKey;
+
+    /** يُلغى الترميز العكسي السابق عند بدء آخر. */
+    const revGeoAbortRef = useRef<AbortController | null>(null);
+    /**
+     * حارسا سياسة Nominatim (**طلب واحد في الثانية، وتجاوزها = حظر مؤقّت للنطاق
+     * كلّه لا لهذا المستخدم وحده**): ذاكرةٌ للنقاط التي حُلَّت سلفاً — فالتردّد
+     * بين «موقعي» و«عنوان محفوظ» لا يُعيد سؤال الخدمة عن نفس النقطة — ثم مباعدةٌ
+     * زمنية لا تقلّ عن ١٢٠٠ ملّي ثانية بين طلبين مهما تسارعت الضغطات.
+     */
+    const revGeoCacheRef = useRef<Record<string, string>>({});
+    const revGeoAtRef = useRef(0);
+    /**
+     * إقرار «التوصيل إلى موقعي الآن» — **فعلٌ صريح** بضغطة، فهو الموضع الوحيد
+     * الذي نستدعي فيه الترميز العكسي: التاجر يحتاج وصفاً يقرؤه لا زوج إحداثيات.
+     * وفشلُه يُبتلع بصمت ولا يمنع الطلب — الإحداثيات وحدها تكفي للتوصيل.
+     */
+    const pickLiveLocation = () => {
+        if (liveLat === null || liveLng === null) return;
+        // النقطة التي سُعِّرت هي التي تُثبَّت — لا آخر قراءة زحفت بعد وصول الجواب.
+        const quoted = liveQuoteReady ? liveQuotedPtRef.current : null;
+        const lat = quoted?.lat ?? liveLat, lng = quoted?.lng ?? liveLng;
+        setLivePoint({ lat, lng });
+        setUseLivePoint(true);
+        setFulfillment('delivery');
+        try { revGeoAbortRef.current?.abort(); } catch { /* ignore */ }
+        // مفتاح الذاكرة يشمل اللغة: نفس النقطة توصَف بالعربية غير الإنجليزية.
+        const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}|${isRTL ? 'ar' : 'en'}`;
+        const cached = revGeoCacheRef.current[cacheKey];
+        if (cached !== undefined) { setLiveDetails(cached); return; }
+        setLiveDetails('');
+        const ac = new AbortController();
+        revGeoAbortRef.current = ac;
+        const wait = Math.max(0, 1200 - (Date.now() - revGeoAtRef.current));
+        (async () => {
+            try {
+                if (wait > 0) await new Promise(r => setTimeout(r, wait));
+                // قد يكون أغلق الورقة أو عاد لعنوانٍ محفوظ أثناء الانتظار.
+                if (ac.signal.aborted) return;
+                revGeoAtRef.current = Date.now();
+                const res = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=${isRTL ? 'ar' : 'en'}`,
+                    { signal: ac.signal });
+                if (!res.ok) return;
+                const j = await res.json();
+                const a = j?.address || {};
+                const parts = [a.house_number, a.road, a.neighbourhood || a.suburb || a.quarter, a.city || a.town || a.village]
+                    .filter((p: any) => typeof p === 'string' && p.trim());
+                const text = parts.join(isRTL ? '، ' : ', ');
+                // نحفظ حتى النتيجة الفارغة: نقطةٌ في البرّ لا وصف لها، وإعادة
+                // السؤال عنها لن تغيّر الجواب وإنما تستهلك حصّة الخدمة.
+                revGeoCacheRef.current[cacheKey] = text;
+                if (text && !ac.signal.aborted) setLiveDetails(text);
+            } catch { /* لا شبكة أو رفض الخدمة ⇒ نمضي بالإحداثيات وحدها */ }
+        })();
+    };
+
+    /**
+     * هل يصلح موقعه الحيّ وجهةً فعلاً؟ لا يكفي أن يكون داخل النطاق: لو كان
+     * الطلب تحت الحدّ الأدنى أو بوابة الدفع غير جاهزة فالتوصيل مرفوض أصلاً،
+     * فزرٌّ يعد بما لا يقع أسوأ من غيابه.
+     */
+    const liveDeliverable = dlvOn && liveQuoteReady && !!liveQuote?.available && dlvGateReady && !dlvBelowMin;
+    const liveFee = Number(liveQuote?.fee) > 0 ? Number(liveQuote?.fee) : 0;
+
+    /**
+     * سطر «أين أنت الآن» — يُرسم مرّتين: داخل بطاقة «طريقة الاستلام» للمتاجر
+     * التي توصّل، وفي بطاقةٍ مستقلّة لمن لا يوصّل. بلاغ ناصر عن **الحجز** كلّه
+     * لا عن التوصيل وحده، وأكثر المتاجر لا توصّل — فلو بقي حبيس بطاقة التوصيل
+     * لما رآه أكثر المشترين. ولذلك يُعرَّف مرّة واحدة ويُستعمل في الموضعين.
+     */
+    const livePositionLine = liveKnown ? (
+        <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)', lineHeight: 1.7 }}>
+            📍 {isRTL ? 'موقعك الآن' : 'Your location now'}
+            {pickupDistanceKm !== null && (
+                <span style={{ fontWeight: 800, fontSize: '0.74rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
+                    {isRTL
+                        ? `— يبعد ${fmtKm(pickupDistanceKm)} عن ${activeLoc?.name || 'موقع الاستلام'}`
+                        : `— ${fmtKm(pickupDistanceKm)} from ${activeLoc?.name || 'the pickup point'}`}
+                </span>
+            )}
+        </div>
+    ) : livePicked ? (
+        // سقطت إشارة الجهاز **بعد** إقرار النقطة: الوجهة لقطةٌ محفوظة عندنا فلا
+        // تتأثر، والأسوأ هنا زرّ «حدّد موقعي» يوحي بأن الوجهة ضاعت وهي لم تضِع.
+        <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)', lineHeight: 1.7 }}>
+            📍 {isRTL ? 'وجهة الطلب مثبَّتة على المكان الذي اخترته.' : 'Your order destination stays pinned to the point you picked.'}
+        </div>
+    ) : (
+        <button type="button" onClick={() => { try { requestLiveLocation?.(); } catch { /* ignore */ } }}
+            style={{ width: '100%', padding: '10px', borderRadius: 12, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
+            📍 {isRTL ? 'حدّد موقعي الآن' : 'Locate me now'}
+        </button>
+    );
+
+    /** العودة إلى العناوين المحفوظة بعد تجربة النقطة الحيّة. */
+    const clearLivePoint = () => {
+        try { revGeoAbortRef.current?.abort(); } catch { /* ignore */ }
+        setUseLivePoint(false);
+        setLivePoint(null);
+        setLiveDetails('');
+    };
+
     // «بطاقة فقط» للتوصيل ⇒ الدفع الإلكتروني إلزامي؛ و«عند الاستلام فقط» ⇒ نقداً.
     useEffect(() => {
         if (fulfillment !== 'delivery' || !dlvStore) return;
@@ -1479,10 +1760,11 @@ const DealDetails: React.FC = () => {
                 }
                 const nearest = (sortedLocations || [])[0] as any;
                 if (nearest && nearest.id !== activeLoc.id && typeof nearest.distance === 'number' && nearest.distance < d - 0.05) {
-                    const fmt = (km: number) => km < 1 ? `${Math.round(km * 1000)} ${isRTL ? 'م' : 'm'}` : `${km.toFixed(1)} ${isRTL ? 'كم' : 'km'}`;
+                    // v14.09 — `fmtKm` هو نفسه المنسّق الذي كان معرَّفاً هنا حرفياً:
+                    // نسختان من قاعدة عرضٍ واحدة تفترقان يوماً، فوُحِّدتا.
                     const ok = await customConfirm(isRTL
-                        ? `⚠️ «${activeLoc.name || 'هذا الفرع'}» (${fmt(d)}) ليس الأقرب لك.\nالأقرب هو «${nearest.name || 'فرع'}» على بعد ${fmt(nearest.distance)}.\n\nهل تريد الحجز من «${activeLoc.name || 'هذا الفرع'}» رغم ذلك؟`
-                        : `⚠️ "${activeLoc.name || 'this branch'}" (${fmt(d)}) is not the closest to you.\nNearest is "${nearest.name || 'branch'}" at ${fmt(nearest.distance)}.\n\nBook from "${activeLoc.name || 'this branch'}" anyway?`);
+                        ? `⚠️ «${activeLoc.name || 'هذا الفرع'}» (${fmtKm(d)}) ليس الأقرب لك.\nالأقرب هو «${nearest.name || 'فرع'}» على بعد ${fmtKm(nearest.distance)}.\n\nهل تريد الحجز من «${activeLoc.name || 'هذا الفرع'}» رغم ذلك؟`
+                        : `⚠️ "${activeLoc.name || 'this branch'}" (${fmtKm(d)}) is not the closest to you.\nNearest is "${nearest.name || 'branch'}" at ${fmtKm(nearest.distance)}.\n\nBook from "${activeLoc.name || 'this branch'}" anyway?`);
                     if (!ok) return;
                 }
             }
@@ -2892,6 +3174,78 @@ const DealDetails: React.FC = () => {
                                         );
                                     })}
                                 </div>
+                                {/* v14.09 (بلاغ ناصر: «عند الحجز أظهر موقعي الحالي المباشر،
+                                    أما عند النقر على توصيل يذهب للعنوان المختار») —
+                                    شريطٌ يفصل بين **أين أنت** و**إلى أين يصل الطلب**.
+                                    الأول معلومة تُطمئن وتنفع الاستلام من المتجر، والثاني
+                                    يبقى العنوان المحفوظ ما لم يطلب المشتري غيره صراحةً. */}
+                                <div style={{ marginTop: 12, background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 14, padding: '11px 13px' }}>
+                                    {livePositionLine}
+
+                                    {/* الفصل الصريح: وجهة التوصيل ليست موقعك — إلا أن تختارها أنت. */}
+                                    {fulfillment === 'delivery' && dlvCanChoose && buyerAddress && (
+                                        livePicked ? (
+                                            <div style={{ marginTop: 8, fontWeight: 800, fontSize: '0.77rem', color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                                                🚚 {isRTL ? 'التوصيل إلى موقعك الحالي — لهذا الطلب فقط ولن يُحفظ في عناوينك.'
+                                                          : 'Delivering to your current location — for this order only; it will not be saved.'}
+                                            </div>
+                                        ) : (
+                                            <div style={{ marginTop: 8, fontWeight: 800, fontSize: '0.77rem', color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                                                🚚 {isRTL
+                                                    ? `التوصيل إلى: «${buyerAddress.label || 'عنواني'}» — لا إلى موقعك الحالي.`
+                                                    : `Delivering to: “${buyerAddress.label || 'my address'}” — not to your current location.`}
+                                            </div>
+                                        )
+                                    )}
+                                    {/* ملاحظة هادئة لا تحذير أحمر: بعده عن عنوانه ليس خطأً — فقط يجب ألّا يُفاجأ. */}
+                                    {fulfillment === 'delivery' && dlvCanChoose && !livePicked && liveToDestKm !== null && liveToDestKm > 1 && (
+                                        <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                            ℹ️ {isRTL
+                                                ? `أنت الآن بعيد عن عنوان التوصيل بنحو ${fmtKm(liveToDestKm)} — الطلب سيصل إلى العنوان المختار.`
+                                                : `You are about ${fmtKm(liveToDestKm)} away from the delivery address — the order goes to the selected address.`}
+                                        </div>
+                                    )}
+
+                                    {/* الزرّ لا يظهر إلا حين يكون الموقع معروفاً **وداخل النطاق**؛
+                                        وخارجه يُقال السبب في سطر بدل زرٍّ معطَّل بلا تفسير. */}
+                                    {liveKnown && !livePicked && liveDeliverable && (
+                                        <div style={{ marginTop: 10 }}>
+                                            <button type="button" onClick={pickLiveLocation}
+                                                style={{ width: '100%', padding: '11px', borderRadius: 12, border: '1.5px solid var(--primary)', background: 'var(--card-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
+                                                🚚 {isRTL ? 'استعمل موقعي الحالي وجهةً لهذا الطلب' : 'Use my current location for this order'}
+                                                {liveFee > 0
+                                                    ? (isRTL ? ` — الرسوم ${liveFee} ر.س` : ` — fee ${liveFee} SAR`)
+                                                    : (isRTL ? ' — توصيل مجاني' : ' — free delivery')}
+                                            </button>
+                                            <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                {isRTL ? 'لهذا الطلب فقط — لن يُحفظ في عناويني.' : 'For this order only — it will not be saved to my addresses.'}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {livePicked && (
+                                        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ fontWeight: 900, fontSize: '0.75rem', color: darkMode ? '#4ade80' : '#15803d' }}>
+                                                ✅ {isRTL ? 'الوجهة الآن: موقعك الحالي' : 'Destination: your current location'}
+                                            </span>
+                                            <button type="button" onClick={clearLivePoint}
+                                                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.74rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                {isRTL ? 'العودة إلى عنوان محفوظ' : 'Back to a saved address'}
+                                            </button>
+                                        </div>
+                                    )}
+                                    {liveKnown && !livePicked && !liveDeliverable && dlvOn && (
+                                        <div style={{ marginTop: 8, fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                            {!liveQuoteReady
+                                                ? (isRTL ? '⏳ نتحقّق هل يمكن التوصيل إلى موقعك الحالي…' : '⏳ Checking whether we can deliver to your current location…')
+                                                : liveQuote?.reason === 'no_zones'
+                                                    ? (isRTL ? '🚫 هذا الفرع لم يحدّد نطاق توصيل بعد، فلا يمكن التوصيل إلى موقعك الحالي.'
+                                                             : '🚫 This branch has no delivery area yet, so we cannot deliver to your current location.')
+                                                    : (isRTL ? '🚫 موقعك الحالي خارج نطاق توصيل الفرع المختار — التوصيل إلى عنوانك المحفوظ فقط.'
+                                                             : '🚫 Your current location is outside this branch’s delivery area — delivery goes to your saved address only.')}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* v14.08 (بلاغ ناصر ٤) — عناوين متعددة، ولا بدّ أن يكون
                                     عنوان التوصيل ضمن حدود الفرع المختار. القائمة تظهر ما دام
                                     المتجر يوصّل — لا فقط حين يُختار التوصيل — لأن العنوان
@@ -2913,7 +3267,9 @@ const DealDetails: React.FC = () => {
                                             {addresses.map(a => {
                                                 const q = dlvQuotes[a.id] || null;
                                                 const serviceable = !!q?.available;
-                                                const picked = addrId === a.id;
+                                                // نقطةٌ حيّة مُختارة ⇒ لا عنوان محفوظ «مُختار»،
+                                                // وإلا ظهرت وجهتان معاً وهذا عين ما اشتكى منه ناصر.
+                                                const picked = !livePicked && addrId === a.id;
                                                 const rowFee = Number(q?.fee) > 0 ? Number(q?.fee) : 0;
                                                 // ⚠️ الترتيب مقصود: «جاري التحقق» **أولاً**، وإلا
                                                 // عُرضت رسوم الفرع السابق لعنوانٍ لم يُسعَّر بعد
@@ -2936,8 +3292,8 @@ const DealDetails: React.FC = () => {
                                                 return (
                                                     <div key={a.id}
                                                         role="radio" aria-checked={picked} aria-disabled={rowDisabled} tabIndex={rowDisabled ? -1 : 0}
-                                                        onClick={() => { if (!rowDisabled) setAddrId(a.id); }}
-                                                        onKeyDown={(e) => { if (!rowDisabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setAddrId(a.id); } }}
+                                                        onClick={() => { if (!rowDisabled) { clearLivePoint(); setAddrId(a.id); } }}
+                                                        onKeyDown={(e) => { if (!rowDisabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); clearLivePoint(); setAddrId(a.id); } }}
                                                         style={{
                                                             display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 12,
                                                             cursor: rowDisabled ? 'not-allowed' : 'pointer',
@@ -2956,9 +3312,20 @@ const DealDetails: React.FC = () => {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            {(a.details || a.city) && (
+                                                            {(a.details || a.city) ? (
                                                                 <div style={{ fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
                                                                     {[a.details, a.city].filter(Boolean).join(' — ')}
+                                                                </div>
+                                                            ) : (
+                                                                /* v14.09 — دبّوسٌ بلا وصف يوصل المندوب إلى الشارع لا إلى الباب:
+                                                                   نقولها هنا حيث يختار، لا بعد أن يضيع الطلب. */
+                                                                <div style={{ fontWeight: 800, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
+                                                                    ⚠️ {isRTL ? 'بلا تفاصيل — قد لا يجدك التاجر.' : 'No details — the merchant may not find you.'}
+                                                                    <button type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); history.push('/profile?tab=settings&focus=address'); }}
+                                                                        style={{ background: 'none', border: 'none', padding: 0, marginInlineStart: 6, color: 'var(--primary)', fontWeight: 900, fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                                        {isRTL ? 'أضِف التفاصيل' : 'Add details'}
+                                                                    </button>
                                                                 </div>
                                                             )}
                                                             {/* الأخضر يَعِد بتوصيلٍ مؤكَّد — فلا يُلوَّن به سطرٌ ما زال «قيد التحقق». */}
@@ -2991,8 +3358,10 @@ const DealDetails: React.FC = () => {
                                         📍 {isRTL ? 'أضف عنوان التوصيل' : 'Add delivery address'}
                                     </button>
                                 )}
-                                {/* المرآة القديمة (عنوان مفرد محفوظ قبل جدول العناوين) */}
-                                {addresses.length === 0 && buyerAddress && (
+                                {/* المرآة القديمة (عنوان مفرد محفوظ قبل جدول العناوين).
+                                    لا تُعرض والنقطة الحيّة مُختارة، وإلا قرأها المشتري
+                                    عنواناً محفوظاً وهي ليست كذلك. */}
+                                {addresses.length === 0 && !livePicked && buyerAddress && (
                                     <div style={{ marginTop: 10, background: 'var(--body-bg)', border: '1.5px solid var(--border-color)', borderRadius: 14, padding: '11px 13px' }}>
                                         <div style={{ fontWeight: 900, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
                                             📍 {isRTL ? 'يُسلَّم إلى' : 'Delivering to'}: {buyerAddress.label || (isRTL ? 'عنواني' : 'my address')}
@@ -3017,6 +3386,16 @@ const DealDetails: React.FC = () => {
                                         ℹ️ {dlvStore.note}
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* v14.09 — المتجر الذي **لا يوصّل**: بطاقة «طريقة الاستلام» كلها
+                            لا تظهر له، فلولا هذه لضاع سطر «أين أنت الآن» عن أكثر المشترين.
+                            ولا وجهة هنا أصلاً — الاستلام من المتجر — فالسطر معلومةٌ صافية:
+                            كم تبعد عن الفرع الذي ستذهب إليه. */}
+                        {!dlvOn && (
+                            <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: '16px 20px', marginBottom: 12, border: '1px solid var(--border-color)' }}>
+                                {livePositionLine}
                             </div>
                         )}
 
