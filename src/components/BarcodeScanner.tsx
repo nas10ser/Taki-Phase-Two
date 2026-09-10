@@ -218,8 +218,16 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
 
     const remaining = scanResult ? Math.max(0, scanResult.expiryTime - Date.now()) : 0;
-    const minutes = Math.floor(remaining / 60000);
+    // v14.10 — المهلة صارت تختلف بحسب نوع الطلب (توصيلٌ يُقاس بالساعات)، فصيغة
+    // «دقائق:ثوانٍ» وحدها كانت ستطبع «٣٦٠:٠٠». ومهلة الطلب المدفوع أو المنطلق
+    // متوقّفة أصلاً فلا معنى لعدّها.
+    const hours = Math.floor(remaining / 3600000);
+    const minutes = Math.floor((remaining % 3600000) / 60000);
     const seconds = Math.floor((remaining % 60000) / 1000);
+    const remainingLabel = hours > 0
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        : `${minutes}:${String(seconds).padStart(2, '0')}`;
+    const holdStopped = !!(scanResult && ((scanResult as any).paidAt || (scanResult as any).paid_at));
 
     return (
         <div style={{
@@ -289,10 +297,14 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                     <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{isRTL ? 'الرمز' : 'Code'}</div>
                                     <div style={{ fontWeight: 900, fontFamily: 'monospace' }}>{scanResult.barcode}</div>
                                 </div>
-                                <div style={{ flex: 1, background: remaining > 0 ? '#fef3c7' : '#fee2e2', borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{isRTL ? 'الوقت المتبقي' : 'Time Left'}</div>
-                                    <div style={{ fontWeight: 900, color: remaining > 0 ? '#92400e' : '#b91c1c' }}>
-                                        {remaining > 0 ? `${minutes}:${String(seconds).padStart(2, '0')}` : (isRTL ? 'منتهي' : 'Expired')}
+                                <div style={{ flex: 1, background: holdStopped ? '#dcfce7' : (remaining > 0 ? '#fef3c7' : '#fee2e2'), borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                                        {holdStopped ? (isRTL ? 'الحالة' : 'Status') : (isRTL ? 'الوقت المتبقي' : 'Time Left')}
+                                    </div>
+                                    <div style={{ fontWeight: 900, color: holdStopped ? '#166534' : (remaining > 0 ? '#92400e' : '#b91c1c') }}>
+                                        {holdStopped
+                                            ? (isRTL ? '🔒 مدفوع' : '🔒 Paid')
+                                            : (remaining > 0 ? remainingLabel : (isRTL ? 'منتهي' : 'Expired'))}
                                     </div>
                                 </div>
                             </div>

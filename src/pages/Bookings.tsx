@@ -5,7 +5,7 @@ import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
-import { Booking } from '../repositories/bookingRepository';
+import { Booking, bookingRepository } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
 import PullToRefresh from '../components/PullToRefresh';
 import ReportDialog from '../components/ReportDialog';
@@ -77,6 +77,21 @@ const FulfillmentStrip: React.FC<{ booking: any; isRTL: boolean }> = ({ booking,
 
 /** حالات التتبّع التي تعني أن الطلب غادر المتجر فعلاً. */
 const DELIVERY_STARTED = ['on_the_way', 'arrived', 'delivered'];
+
+/**
+ * v14.10 — هل مهلة هذا الطلب ما زالت تمشي؟
+ * مرآةٌ لقاعدة `expire_due_bookings` على الخادم حرفياً: الطلب المدفوع
+ * إلكترونياً لا يُلغى تلقائياً أبداً، وطلب التوصيل الذي بدأ تجهيزه أو انطلق
+ * مندوبه توقّف عدّاده. أي عدّاد يُعرض خارج هذه الحالة يكذب.
+ */
+const HOLD_STOPPED_STAGES = ['preparing', 'on_the_way', 'arrived', 'delivered'];
+const holdRunning = (b: any, deliveryStage?: string | null): boolean => {
+    if (!b) return false;
+    if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
+    if (b.paidAt) return false;
+    if (HOLD_STOPPED_STAGES.includes(String(deliveryStage || ''))) return false;
+    return true;
+};
 
 /**
  * v14.08 (بلاغ ناصر ٧) — شريط مراحل الطلب.
@@ -278,6 +293,7 @@ const Bookings: React.FC = () => {
      * الشريط ثلاث مراحل بلا أي رسالة خطأ في وجه المشتري.
      */
     const [dlvStage, setDlvStage] = useState<Record<string, string | null>>({});
+    const [confirmingBarcode, setConfirmingBarcode] = useState<string | null>(null);
     /**
      * ما سبق جلبه، مفتاحه «الباركود|حالة الحجز». ربطُه بالحالة مقصود: انتقال
      * الحجز من `pending` إلى `acknowledged` هو بالضبط اللحظة التي يبدأ فيها
@@ -593,8 +609,11 @@ const Bookings: React.FC = () => {
                                                             : (isRTL ? '💳 ادفع الآن إلكترونياً — مدى / فيزا / ماستركارد' : '💳 Pay now — mada / Visa / Mastercard')}
                                                     </button>
                                                 )}
-                                                {/* Timer */}
-                                                {booking.expiryTime > Date.now() && (
+                                                {/* Timer — v14.10: لا نعرض عدّاداً إلا والساعة تمشي فعلاً.
+                                                    طلبٌ مدفوع بالبطاقة لا يُلغى تلقائياً أبداً، وطلب توصيل
+                                                    انطلق مندوبه توقّفت مهلته — فعدّادٌ يتناقص عليهما يكذب
+                                                    على المشتري ويُفزعه بلا سبب. */}
+                                                {holdRunning(booking, dlvStage[booking.barcode]) && booking.expiryTime > Date.now() && (
                                                     <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 800 }}>
                                                             ⏰ {isRTL ? 'ينتهي خلال:' : 'Expires in:'}
@@ -602,6 +621,18 @@ const Bookings: React.FC = () => {
                                                         <div style={{ color: 'white', fontFamily: 'monospace', fontSize: '1.2rem', fontWeight: 900 }}>
                                                             <BookingTimer expiry={booking.expiryTime} onExpire={() => {}} />
                                                         </div>
+                                                    </div>
+                                                )}
+                                                {/* v14.10 — بديل العدّاد حين تتوقّف المهلة: سطرٌ يقول السبب،
+                                                    فلا يظنّ المشتري أن طلبه بلا حماية. */}
+                                                {!holdRunning(booking, dlvStage[booking.barcode])
+                                                  && (booking.status === 'pending' || booking.status === 'acknowledged') && (
+                                                    <div style={{ background: 'var(--dark)', borderRadius: 16, padding: '12px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: '0.78rem', fontWeight: 800 }}>
+                                                        {booking.paidAt
+                                                            ? (isRTL ? '🔒 مدفوع — لا تنتهي مهلته ولا يُلغى تلقائياً'
+                                                                     : '🔒 Paid — no deadline, never auto-cancelled')
+                                                            : (isRTL ? '⏸ توقّفت المهلة — طلبك قيد التجهيز'
+                                                                     : '⏸ Hold paused — your order is being prepared')}
                                                     </div>
                                                 )}
 
@@ -689,6 +720,49 @@ const Bookings: React.FC = () => {
                                                         }}
                                                     >
                                                         🚚 {isRTL ? 'تتبّع الطلب على الخريطة' : 'Track order on the map'}
+                                                    </button>
+                                                )}
+                                                {/* v14.10 — «استلمت طلبي»: كان إغلاق الطلب بيد التاجر وحده،
+                                                    فطلبٌ وصل فعلاً ونسي التاجر ختمه ينقلب «ملغى» وتُرجَع كميته
+                                                    للمخزون فتُباع لشخص آخر. الزرّ لا يظهر إلا بعد أن يعلن
+                                                    التاجر انطلاق المندوب — والقاعدة تفرض الشرط نفسه، فالواجهة
+                                                    مرآةٌ لا حارس. */}
+                                                {booking.fulfillment === 'delivery'
+                                                  && (booking.status === 'pending' || booking.status === 'acknowledged')
+                                                  && DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || '')) && (
+                                                    <button
+                                                        disabled={confirmingBarcode === booking.barcode}
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            if (!(await customConfirm(isRTL
+                                                                ? 'تأكيد أنك استلمت الطلب؟ سيُغلق الطلب نهائياً.'
+                                                                : 'Confirm you received this order? It will be closed.'))) return;
+                                                            setConfirmingBarcode(booking.barcode);
+                                                            try {
+                                                                await bookingRepository.buyerConfirmReceipt(booking.barcode);
+                                                                await Promise.allSettled([reloadActive(), reloadPast()]);
+                                                                refreshBookings();
+                                                                customAlert(isRTL ? '✅ شكراً — أُغلق الطلب.' : '✅ Thanks — order closed.');
+                                                            } catch (err: any) {
+                                                                // رسالة القاعدة عربية وجاهزة للعرض. لا زرّ صامت.
+                                                                customAlert(err?.message || (isRTL ? 'تعذّر تأكيد الاستلام' : 'Could not confirm receipt'));
+                                                            } finally {
+                                                                setConfirmingBarcode(null);
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            width: '100%', marginBottom: 20, padding: '13px',
+                                                            borderRadius: 14, border: 'none',
+                                                            background: 'linear-gradient(135deg, #10b981, #047857)',
+                                                            color: '#fff', fontWeight: 900, fontSize: '0.9rem',
+                                                            cursor: confirmingBarcode === booking.barcode ? 'wait' : 'pointer',
+                                                            opacity: confirmingBarcode === booking.barcode ? 0.7 : 1,
+                                                            boxShadow: '0 6px 18px rgba(16, 185, 129, 0.32)',
+                                                        }}
+                                                    >
+                                                        {confirmingBarcode === booking.barcode
+                                                            ? (isRTL ? '⏳ جارٍ التأكيد…' : '⏳ Confirming…')
+                                                            : (isRTL ? '✅ استلمت طلبي' : '✅ I received my order')}
                                                     </button>
                                                 )}
 

@@ -391,6 +391,24 @@ export const bookingRepository = {
         }
     },
 
+    /**
+     * v14.10 — «استلمت طلبي»: إغلاق المشتري لطلب توصيله بنفسه.
+     *
+     * لماذا دالة مستقلّة لا `updateStatus('completed')`؟ لأن `complete_booking`
+     * تقبل المشتري والتاجر معاً بلا أي شرط آخر، فكان المشتري يستطيع إغلاق طلبٍ
+     * لم يصله أصلاً. `buyer_confirm_receipt` تشترط أن يكون التاجر قد أعلن
+     * انطلاق المندوب — وحالة المندوب لا يستطيع المشتري كتابتها إطلاقاً، فهي
+     * الحصانة الحقيقية الوحيدة. وتُسجّل `completed_by='buyer'` كأثر للنزاعات.
+     *
+     * ترمي عند الرفض برسالة عربية جاهزة للعرض (P0001) — فلا زرّ صامت.
+     */
+    buyerConfirmReceipt: async (barcode: string): Promise<void> => {
+        const { data, error } = await supabase.rpc('buyer_confirm_receipt', { p_barcode: barcode });
+        if (error) throw error;
+        if (!data) throw new Error('RPC returned no row');
+        logger.log('✅ Buyer confirmed receipt:', barcode);
+    },
+
     remove: async (barcode: string): Promise<void> => {
         // v13.71 — كان يبتلع كل شيء: لا يقرأ `error` العائد أصلاً، ولا يميّز
         // حذفاً رفضته RLS (يعود بصفر صفوف و`error=null`). أي نداء مستقبلي كان

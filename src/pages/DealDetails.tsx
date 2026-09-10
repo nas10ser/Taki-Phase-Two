@@ -463,9 +463,19 @@ const DealDetails: React.FC = () => {
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode
+        storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode, platformSettings
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
+
+    // v14.10 — مهلة الحجز في ورقة الحجز تُقرأ من صفّ الإعدادات لا من نصّ مكتوب،
+    // فلا يَعِد النصُّ بساعتين والقاعدة تعطي ستّاً (أو العكس بعد أي ضبط).
+    const holdHours = useMemo(() => {
+        const p = platformSettings.bookingHolds.pickupHours;
+        const d = platformSettings.bookingHolds.deliveryHours;
+        const arPlural = (n: number) =>
+            n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتان' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
+        return { pickup: p, delivery: d, pickupLabelAr: arPlural(p), deliveryLabelAr: arPlural(d) };
+    }, [platformSettings.bookingHolds.pickupHours, platformSettings.bookingHolds.deliveryHours]);
 
     const [reviewScore, setReviewScore] = useState(5);
     const [reviewComment, setReviewComment] = useState('');
@@ -1388,14 +1398,15 @@ const DealDetails: React.FC = () => {
     // the receipt + rating box show. When several qualify, newest wins.
     const activeBooking = useMemo(() => {
         if (!deal) return null;
-        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
         const now = Date.now();
         const recencyOf = (b: any) => b.bookedAt || b.createdAt || 0;
         const stillRelevant = (b: any) => {
             if (!b || b.status === 'cancelled') return false;
             if (b.status === 'completed') return true;
-            const eff = Math.min(b.expiryTime || 0, recencyOf(b) + TWO_HOURS_MS);
-            return eff > now;
+            // v14.10 — لا سقف محلّي على المهلة. الخادم يكتبها بحسب نوع الطلب
+            // (استلام ساعتان · توصيل أطول)، وقصّها هنا كان سيُظهر «احجز الآن»
+            // على طلب توصيل حيّ بعد ساعتين. انظر useBooking.ts.
+            return (b.expiryTime || 0) > now;
         };
         if (linkedBarcode) {
             const b = bookings.find((x: any) => x.barcode === linkedBarcode);
@@ -3480,27 +3491,31 @@ const DealDetails: React.FC = () => {
                                 {isDelivery ? (
                                     isRTL ? (
                                         <>
-                                            <span style={{ fontWeight: 900 }}>طلب توصيل.</span>{' '}
+                                            <span style={{ fontWeight: 900 }}>طلب توصيل — مهلته {holdHours.deliveryLabelAr}.</span>{' '}
                                             يجهّز المتجر طلبك ويرسله إلى عنوانك المحفوظ. تابع حالته من «حجوزاتي»،
-                                            وتأكّد أن جوالك متاح ليصل إليك المندوب.
+                                            وتأكّد أن جوالك متاح ليصل إليك المندوب.{' '}
+                                            <span style={{ fontWeight: 900 }}>وتتوقّف المهلة تماماً بمجرّد أن ينطلق المندوب</span>،
+                                            والطلب المدفوع بالبطاقة لا يُلغى تلقائياً أبداً.
                                         </>
                                     ) : (
                                         <>
-                                            <span style={{ fontWeight: 900 }}>Delivery order.</span>{' '}
+                                            <span style={{ fontWeight: 900 }}>Delivery order — {holdHours.delivery}-hour window.</span>{' '}
                                             The store prepares it and sends it to your saved address. Track it in “My bookings”,
-                                            and keep your phone reachable for the courier.
+                                            and keep your phone reachable for the courier.{' '}
+                                            <span style={{ fontWeight: 900 }}>The clock stops the moment the courier departs</span>,
+                                            and a card-paid order is never auto-cancelled.
                                         </>
                                     )
                                 ) : isRTL ? (
                                     <>
-                                        <span style={{ fontWeight: 900 }}>مدة الحجز ساعتان فقط.</span>{' '}
-                                        يُرجى استلام طلبك من المتجر خلال <span style={{ fontWeight: 900 }}>ساعتين</span> من تأكيد الحجز.
+                                        <span style={{ fontWeight: 900 }}>مدة الحجز {holdHours.pickupLabelAr}.</span>{' '}
+                                        يُرجى استلام طلبك من المتجر خلال <span style={{ fontWeight: 900 }}>{holdHours.pickupLabelAr}</span> من تأكيد الحجز.
                                         وعند انتهاء المهلة دون استلام، يُلغى حجزك تلقائياً ويعود المنتج للبيع — دون أي التزام عليك.
                                     </>
                                 ) : (
                                     <>
-                                        <span style={{ fontWeight: 900 }}>Your booking is valid for 2 hours only.</span>{' '}
-                                        Please collect your order from the store within <span style={{ fontWeight: 900 }}>2 hours</span> of
+                                        <span style={{ fontWeight: 900 }}>Your booking is valid for {holdHours.pickup} hours only.</span>{' '}
+                                        Please collect your order from the store within <span style={{ fontWeight: 900 }}>{holdHours.pickup} hours</span> of
                                         confirming. If the window passes without pickup, the booking is cancelled automatically and the
                                         item is released back for sale — at no obligation to you.
                                     </>

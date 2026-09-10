@@ -23,10 +23,13 @@ export const useBooking = () => {
         return contextBookDeal(deal, quantity, userId, prepTime, notes, selectedOptions, locationId, paymentMethod, fulfillment, deliveryAddress);
     }, [contextBookDeal]);
 
-    // Bookings auto-expire 2h after creation regardless of deal lifespan.
-    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-    const effectiveExpiry = (b: Booking): number =>
-        Math.min(b.expiryTime, (b.bookedAt || Date.now()) + TWO_HOURS_MS);
+    // v14.10 — المهلة يكتبها الخادم وحده الآن، وتختلف بحسب نوع الطلب
+    // (استلام ساعتان · توصيل ست ساعات · قابلة للضبط من صفّ إعدادات واحد).
+    // ⚠️ كان هنا سقفٌ محلّي `Math.min(expiryTime, bookedAt + ساعتين)` يقصّ أي
+    // مهلة أطول — وهو نفس خطأ v12.07 لكن على جانب العميل: كان سيَعتبر طلب
+    // التوصيل ميتاً بعد ساعتين وهو حيٌّ في القاعدة، فيُظهر «احجز الآن» على
+    // طلبٍ قائم. المهلة الوحيدة الصحيحة هي التي جاءت من الخادم.
+    const effectiveExpiry = (b: Booking): number => b.expiryTime;
 
     const isBooked = useCallback((dealId: string): boolean => {
         return bookings.some((b) => b.deal.id === dealId && b.userId === user?.id && b.status !== 'completed' && b.status !== 'cancelled' && effectiveExpiry(b) > Date.now());

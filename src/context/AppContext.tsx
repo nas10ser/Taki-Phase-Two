@@ -193,7 +193,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout; bannerSeconds: number };
+    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout; bannerSeconds: number; bookingHolds: { pickupHours: number; deliveryHours: number } };
     /** v12.48 — true بعد وصول platform_settings من الخادم؛ البوابات المعتمدة على النوافذ الزمنية تنتظرها قبل أي redirect */
     platformSettingsReady: boolean;
     /** Seller's saved branches (store_branches table). Drives the
@@ -556,6 +556,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         seasonCampaign: SeasonCampaign | null;
         sponsorLayout: SponsorLayout;
         bannerSeconds: number;
+        /** v14.10 — مهلة الحجز بالساعات، مصدرها الوحيد صفّ `booking_holds`.
+         *  الافتراضات هنا للعرض حتى يصل الصفّ، والقاعدة هي الحَكَم دائماً. */
+        bookingHolds: { pickupHours: number; deliveryHours: number };
     }>(() => {
         // v12.44 — «هوية المواسم»: apply the cached season skin during the very
         // first render (before paint) so returning visitors never see the base
@@ -565,7 +568,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
             if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
         } catch { /* localStorage may be blocked (private mode) */ }
-        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT, bannerSeconds: 2 };
+        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT, bannerSeconds: 2, bookingHolds: { pickupHours: 2, deliveryHours: 6 } };
     });
     // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
     const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
@@ -623,6 +626,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } else if (key === 'sponsor_layout') {
                 // v12.50 — «تحكم ترتيب الرعاة»: نمط ظهور الإعلانات في القوائم.
                 setPlatformSettings(prev => ({ ...prev, sponsorLayout: parseSponsorLayout(value) }));
+            } else if (key === 'booking_holds') {
+                // v14.10 — مهلة الحجز: استلام · توصيل. الرقم الوحيد في المنصّة
+                // كلها، تقرؤه الواجهة والقاعدة والبوتان من هنا، ويسري تغييره
+                // لحظياً عبر قناة platform-settings-sync بلا نشر.
+                const v: any = value || {};
+                const num = (x: any, d: number) => {
+                    const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
+                    return Number.isFinite(n) && n > 0 && n <= 8760 ? n : d;
+                };
+                setPlatformSettings(prev => ({ ...prev, bookingHolds: {
+                    pickupHours: num(v.pickup_hours, 2),
+                    deliveryHours: num(v.delivery_hours, 6),
+                } }));
             } else if (key === 'banner_autoplay_seconds') {
                 // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
                 const n = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
@@ -634,7 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout', 'banner_autoplay_seconds']);
+                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout', 'banner_autoplay_seconds', 'booking_holds']);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);
@@ -2428,16 +2444,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null) => {
         const barcode = generateBarcode(8);
 
-        // Bookings get a full 2-hour pickup hold from the moment they're made.
-        // v12.07 — we used to cap this to the deal's own end time, which meant
-        // booking a deal near the end of its lifespan produced a hold of only a
-        // few minutes; expire_due_bookings then auto-cancelled it almost
-        // immediately (the "my booking cancelled itself after 2 minutes" bug).
-        // Once a unit is claimed, the buyer's hold is independent of how long
-        // the OFFER stays visible to others.
-        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+        // v14.10 — المهلة صارت من مسؤولية الخادم وحده: مشغّل `tr_ad_set_booking_hold`
+        // يدهس ما نرسله هنا ويكتب المهلة الصحيحة بحسب نوع الطلب (استلام ساعتان ·
+        // توصيل ستّ ساعات · تُضبط من صفّ `platform_settings.booking_holds` وحده).
+        // ما نحسبه هنا قيمةٌ تفاؤلية تُعرض ثوانيَ حتى يصل الصفّ الحقيقي عبر
+        // Realtime، فلا يرى المشتري بطاقةً بلا عدّاد.
+        // v12.07 (يبقى قائماً) — لا تُقصّ المهلة أبداً إلى نهاية العرض.
         const now = Date.now();
-        const expiryTime = now + TWO_HOURS_MS;
+        const optimisticHoldMs = (fulfillment === 'delivery' ? 6 : 2) * 60 * 60 * 1000;
+        const expiryTime = now + optimisticHoldMs;
 
         const booking = {
             deal,

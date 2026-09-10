@@ -718,11 +718,25 @@ function create(deps) {
     }
     // سطر الحالة/العدّاد على بطاقة الحجز: نشط → «صالح حتى» + المتبقّي؛ منتهٍ →
     // سبب واضح بدل «صالح حتى» مضلِّل على حجز مكتمل/ملغي. v12.22
+    // v14.10 — توأم `holdRunning` في bot.js، ومرآةٌ لقاعدة `expire_due_bookings`:
+    // المدفوع إلكترونياً لا يُلغى تلقائياً أبداً، وطلبُ توصيلٍ انطلق مندوبه
+    // توقّف عدّاده. عدّادٌ يتناقص عليهما يكذب على المشتري.
+    const WA_HOLD_STOPPED = ['preparing', 'on_the_way', 'arrived', 'delivered'];
+    const WA_DLV_DISPATCHED = ['on_the_way', 'arrived', 'delivered'];
+    function waHoldRunning(b) {
+        if (!b) return false;
+        if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
+        if (b.paid) return false;
+        if (WA_HOLD_STOPPED.includes(String(b.dlv_status || ''))) return false;
+        return true;
+    }
     function bkStatusLines(b) {
         let extra = '';
         const active = b.status === 'pending' || b.status === 'acknowledged';
         const ms = Number(b.expiry_time) || 0;
-        if (active && ms && ms > Date.now()) {
+        if (active && !waHoldRunning(b)) {
+            extra += '\n' + (b.paid ? tr('hold_paid_no_deadline') : tr('hold_paused_preparing'));
+        } else if (active && ms && ms > Date.now()) {
             extra += tr('wa_bk_valid', fmtDate(new Date(ms)));
             const left = fmtLeft(ms);
             if (left) extra += tr('wa_bk_left', left);
@@ -778,6 +792,18 @@ function create(deps) {
             row3.push({ id: `wa:dwhr:${bc}`, title: trunc(tr('dlv_where_btn'), LIM.btnTitle) });
         row3.push({ id: `wa:bk1:${bc}`, title: tr('wa_back') });
         await sendButtons(from, { body: '—', buttons: row3.slice(0, 3) });
+        // v14.10 — «استلمت طلبي» في صفٍّ مستقلّ: الصفّ أعلاه ممتلئ بثلاثة أزرار
+        // وواتساب يبتر الرابع **بصمت**، فوضعه هناك يعني ميزةً لا تظهر أبداً.
+        // ولا يظهر إلا بعد أن يعلن التاجر انطلاق المندوب — والقاعدة تفرض الشرط نفسه.
+        if (b.fulfillment === 'delivery'
+            && (b.status === 'pending' || b.status === 'acknowledged')
+            && WA_DLV_DISPATCHED.includes(String(b.dlv_status || ''))) {
+            await sendButtons(from, {
+                body: tr('b_confirm_receipt_ask', bc).replace(/\\/g, ''),
+                buttons: [{ id: `wa:rcv:${bc}`, title: trunc(tr('b_confirm_receipt'), LIM.btnTitle) },
+                          { id: `wa:bk1:${bc}`, title: tr('wa_back') }],
+            });
+        }
     }
 
     // ── v13.95: فاتورة الحجز — نصّ عادي (واتساب لا يستعمل MarkdownV2) ────────
@@ -874,6 +900,21 @@ function create(deps) {
         }
         return sendButtons(from, { body: '—', buttons: [{ id: `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn()] });
     }
+    // v14.10 — توأم `doRcv` في تيليجرام.
+    async function doConfirmReceipt(from, s, bc) {
+        const r = await rpc('bot_buyer_confirm_receipt', aid(from, { p_barcode: bc }));
+        if (r && r.success) {
+            await sendText(from, tr('b_confirm_receipt_done').replace(/\\/g, '').replace(/\*/g, ''));
+        } else {
+            const key = (r && r.error) === 'not_dispatched' ? 'b_confirm_receipt_not_sent'
+                      : (r && r.error) === 'not_delivery'   ? 'b_confirm_receipt_pickup'
+                      : (r && r.error) === 'closed'         ? 'b_confirm_receipt_closed'
+                      : 'b_confirm_receipt_failed';
+            await sendText(from, tr(key).replace(/\\/g, ''));
+        }
+        return buyerBookingsMenu(from, s);
+    }
+
     async function doCancel(from, s, bc) {
         const r = await rpc('bot_cancel_booking', aid(from, { p_barcode: bc }));
         await sendText(from, (r && r.success) ? tr('wa_cancel_ok') : tr('wa_cancel_fail'));
@@ -2109,6 +2150,7 @@ function create(deps) {
         if (id.startsWith('wa:bk1:')) return bookingDetail(from, s, id.slice(7));
         if (id.startsWith('wa:pay:')) return sendPayLink(from, s, id.slice(7));
         if (id.startsWith('wa:inv:')) return sendInvoice(from, s, id.slice(7));
+        if (id.startsWith('wa:rcv:')) return doConfirmReceipt(from, s, id.slice(7));
         if (id.startsWith('wa:cancel:')) return askCancel(from, s, id.slice(10));
         if (id.startsWith('wa:dcancel:')) return doCancel(from, s, id.slice(11));
         if (id.startsWith('wa:chat:')) return showChat(from, s, id.slice(8));

@@ -249,7 +249,7 @@ const Terms: React.FC = () => {
                 <Bullets items={isRTL ? [
                     'يَتصفّح المشتري العروض، يَختار ما يُناسبه، ويَضغط «احجز». يُسجَّل الحجز فوراً، يَصِل التاجر إشعار، ويَصِل المشتري تأكيد.',
                     'قد يَتضمّن العرض نسخاً بأسعار مختلفة واختيارات بإضافات سعرية يُحدّدها التاجر؛ يَظهر الإجمالي كاملاً للمشتري قبل تأكيد الحجز، ويَبقى الدفع مباشرةً للتاجر عند الاستلام.',
-                    'مدّة صلاحية الحجز ساعتان من تأكيده (ما لم تُعلن المنصّة خلاف ذلك) — عند انتهائها دون استلام يُلغى الحجز تلقائياً وتُعاد الكمّية للعرض، دون أيّ التزام مالي على المشتري.',
+                    'مدّة صلاحية الحجز ساعتان لطلب الاستلام وستّ ساعات لطلب التوصيل، من لحظة التأكيد (ما لم تُعلن المنصّة خلاف ذلك) — عند انتهائها دون استلام يُلغى الحجز تلقائياً وتُعاد الكمّية للعرض، دون أيّ التزام مالي على المشتري. وفي التوصيل تتوقّف المهلة بمجرّد انطلاق المندوب، والطلب المدفوع إلكترونياً لا يُلغى تلقائياً.',
                     'يَخضع الحجز لساعات عمل المحلّ المُعلَنة، ولحدود الحجز التي يَضبطها التاجر (حدّ أقصى للحجز الواحد، حدّ لكلّ مشترٍ، مدّة انتظار بين الحجوزات) — وتُطبَّق هذه الحدود آلياً.',
                     'يَستلم التاجر الحجز عبر لوحته ويَختار قبوله أو رفضه بحسب توفّر الكمّية وساعات العمل.',
                     'يَحضر المشتري إلى موقع التاجر خلال مدّة صلاحية العرض ليَستلم البضاعة أو يَحصل على الخدمة، ويَدفع الثمن للتاجر مباشرةً.',
@@ -260,7 +260,7 @@ const Terms: React.FC = () => {
                 ] : [
                     'The buyer browses the offers, picks one that suits them, and taps «Book». The booking is recorded immediately; the merchant receives a notification and the buyer a confirmation.',
                     'An offer may include versions at different prices and options with priced add-ons set by the merchant; the full total is shown to the buyer before confirming the booking, and payment remains made directly to the merchant on receipt.',
-                    'A booking is valid for two hours from confirmation (unless the platform announces otherwise) — if the window passes without pickup, the booking is cancelled automatically and the quantity returns to the offer, at no financial obligation on the buyer.',
+                    'A booking is valid for two hours for pickup and six hours for delivery, from confirmation (unless the platform announces otherwise) — if the window passes without pickup, the booking is cancelled automatically and the quantity returns to the offer, at no financial obligation on the buyer. For delivery the clock stops once the courier departs, and a card-paid order is never auto-cancelled.',
                     'Booking is subject to the store\'s published working hours and to the limits set by the merchant (a cap per single booking, a cap per buyer, a waiting period between bookings) — these limits are enforced automatically.',
                     'The merchant receives the booking through their dashboard and chooses to accept or reject it based on quantity availability and operating hours.',
                     'The buyer visits the merchant\'s location within the offer window to collect the goods or receive the service, and pays the merchant directly.',

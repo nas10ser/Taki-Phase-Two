@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.09.0';
+const BOT_VERSION              = '14.10.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1452,6 +1452,20 @@ function countdownBlock(expiryMs){
     const cd = expiryMs ? fmtCountdown(expiryMs) : null;
     return cd ? tr('q1034_countdown_block', cd) : tr('q1034_booking_expired');
 }
+// v14.10 — هل مهلة هذا الطلب ما زالت تمشي؟ مرآةٌ حرفية لقاعدة
+// `expire_due_bookings` على الخادم: المدفوع إلكترونياً لا يُلغى تلقائياً أبداً،
+// وطلبُ توصيلٍ بدأ تجهيزه أو انطلق مندوبه توقّف عدّاده. عرضُ عدّادٍ خارج هذه
+// الحالة كذبٌ على المشتري. الحقلان `paid` و`dlv_status` يأتيان من
+// `bot_get_my_bookings` (v14.10).
+const HOLD_STOPPED = ['preparing','on_the_way','arrived','delivered'];
+const DLV_DISPATCHED = ['on_the_way','arrived','delivered'];
+function holdRunning(b){
+    if (!b) return false;
+    if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
+    if (b.paid) return false;
+    if (HOLD_STOPPED.includes(String(b.dlv_status || ''))) return false;
+    return true;
+}
 // v12.22 — the countdown is LIVE: the button now carries the BARCODE (not the
 // timestamp), and every refresh re-reads the booking from the DB. A completed/
 // cancelled/expired booking says so and drops the refresh button, so an old
@@ -1677,7 +1691,9 @@ async function bookConfirm(ctx, s) {
         m += tr('q1115_closing_soon_warn', md(HRS.fmtMins(os.closes_in_min)), DIV);
     }
     // Task 3 — booking duration + liability disclaimer (verbatim from the website).
-    m += tr('q1118_booking_duration_disclaimer', DIV);
+    // v14.10 — النصّ يفرّع على نوع الطلب: كان يَعِد بساعتين لطلب التوصيل أيضاً
+    // بينما القاعدة تعطيه ستّاً، فصار الوعد مخالفاً للواقع في الاتجاهين.
+    m += isDlv ? tr('dlv_duration_disclaimer', DIV) : tr('q1118_booking_duration_disclaimer', DIV);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(tr('b1120_yes_confirm_booking'),'book:confirm')],
         [Markup.button.callback(tr('b1121_back'),'book:back:note'), Markup.button.callback(tr('b1121_cancel'),'menu:back')]
@@ -1821,7 +1837,10 @@ async function showBuyerBookings(ctx, scope='current') {
         const b = shown[i];
         const active = b.status==='pending'||b.status==='acknowledged';
         let m = `*${i+1}\\.* 🛍 *${md(b.deal_name)}*\n🏪 ${md(b.shop_name)}\n📋 \`${md(b.barcode)}\`\n📦 ${tr('w1190_quantity')}: *${b.quantity}*  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDay(b.booked_at))}`;
-        if (active && b.expiry_time) m += `\n⏰ *${tr('w1191_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
+        const running = holdRunning(b);
+        if (running && b.expiry_time) m += `\n⏰ *${tr('w1191_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
+        else if (active && b.paid) m += `\n${md(tr('hold_paid_no_deadline'))}`;
+        else if (active && HOLD_STOPPED.includes(String(b.dlv_status || ''))) m += `\n${md(tr('hold_paused_preparing'))}`;
         if (b.notes) m += `\n📝 _${md(b.notes)}_`;
         const chatLabel = b.unread>0 ? tr('cm_chat_n', b.unread) : tr('cm_chat');
         const row = [Markup.button.callback(chatLabel, `chat:${b.barcode}`), Markup.button.callback(tr('cm_call'), `call:b:${b.barcode}`)];
@@ -1829,10 +1848,14 @@ async function showBuyerBookings(ctx, scope='current') {
         if (b.status==='completed') row.push(Markup.button.callback(tr('b1198_rate'), `rate:${b.barcode}`));
         const rows = [row];
         const row2 = [];
-        if (active && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${b.barcode}`));
+        if (running && b.expiry_time) row2.push(Markup.button.callback(tr('cm_countdown'), `cd:${b.barcode}`));
         if (b.store_id) row2.push(Markup.button.callback(tr('b1202_store'), `store:${b.store_id}`));
         if (row2.length) rows.push(row2);
         const row3 = [];
+        // v14.10 — «استلمت طلبي»: لا يظهر إلا بعد أن يعلن التاجر انطلاق المندوب،
+        // والقاعدة تفرض الشرط نفسه (`not_dispatched`) فلا زرّ يعرضه البوت ويرفضه الخادم.
+        if (active && String(b.fulfillment||'pickup')==='delivery' && DLV_DISPATCHED.includes(String(b.dlv_status||'')))
+            row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
         if (active) row3.push(Markup.button.callback(tr('b1205_cancel_booking'), `cancel:${b.barcode}`));
         if (b.store_id) row3.push(Markup.button.callback(tr('b1206_report'), `rep:${b.store_id}`));
         if (row3.length) rows.push(row3);
@@ -1854,6 +1877,35 @@ bot.action(/^doCancel:(.+)$/, async ctx => {
     if (result?.success) await ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1223_my_bookings'),'buyer:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
     else { const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed'); await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
 });
+// v14.10 — «استلمت طلبي»: يغلق المشتري طلب توصيله بنفسه بعد انطلاق المندوب.
+// كان الإغلاق بيد التاجر وحده، فطلبٌ وصل ونسي التاجر ختمه ينقلب «ملغى» بعد
+// المهلة وتُرجَع كميته للمخزون فتُباع مرّتين.
+bot.action(/^rcv:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    await ctx.reply(tr('b_confirm_receipt_ask', md(bc)), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('b_confirm_receipt_yes'), 'doRcv:'+bc)],
+        [Markup.button.callback(tr('b1218_no'), 'buyer:bookings')]
+    ]).reply_markup });
+});
+bot.action(/^doRcv:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const result = await rpc('bot_buyer_confirm_receipt', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
+    if (result?.success) {
+        await safeReplyMd(ctx, tr('b_confirm_receipt_done'), { reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('b1223_my_bookings'),'buyer:bookings')],
+            [Markup.button.callback(tr('b1223_menu'),'menu:back')]
+        ]).reply_markup });
+    } else {
+        // كل سبب رفض له رسالته — لا زرّ صامت.
+        const key = result?.error === 'not_dispatched' ? 'b_confirm_receipt_not_sent'
+                  : result?.error === 'not_delivery'   ? 'b_confirm_receipt_pickup'
+                  : result?.error === 'closed'         ? 'b_confirm_receipt_closed'
+                  : 'b_confirm_receipt_failed';
+        await safeReplyMd(ctx, tr(key), { reply_markup: KB_BACK().reply_markup });
+    }
+});
+
 // Seller-side cancel — same RPC (now authorizes the store owner), but the
 // confirm «no» and the success screen route back to SELLER bookings, not the
 // buyer list. v12.07

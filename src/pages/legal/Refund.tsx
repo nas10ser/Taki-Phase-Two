@@ -170,7 +170,7 @@ const Refund: React.FC = () => {
             <Section n={3} title={isRTL ? '📅 إلغاء الحجز (للمشتري)' : '📅 Cancelling a booking (buyers)'}>
                 <Bullets items={isRTL ? [
                     'الحجز التزام مبدئيّ لا دفع — لا يحجز أيّ مبلغ على بطاقتك ولا يلتزم أيّ مال للمنصّة.',
-                    'مدّة صلاحية الحجز ساعتان من التأكيد: إن لم تستلم خلالها يُلغى الحجز تلقائياً وتعود الكمّية (بما فيها كمّيات النسخ المحجوزة) للعرض — دون أيّ التزام مالي عليك.',
+                    'مدّة صلاحية الحجز ساعتان لطلب الاستلام وستّ ساعات لطلب التوصيل: إن لم تستلم خلالها يُلغى الحجز تلقائياً وتعود الكمّية (بما فيها كمّيات النسخ المحجوزة) للعرض — دون أيّ التزام مالي عليك. وفي التوصيل تتوقّف المهلة بمجرّد انطلاق المندوب، والطلب المدفوع إلكترونياً لا يُلغى تلقائياً.',
                     'الإجمالي الظاهر عند الحجز (النسخ + الإضافات المختارة) يُدفع للتاجر مباشرةً عند الاستلام — لا تستلم TAKI أيّ جزء منه.',
                     'يحقّ لك إلغاء الحجز في أيّ وقت قبل انتهاء صلاحيّته من صفحة «حجوزاتي»، بضغطة واحدة، دون أيّ رسوم أو غرامات على المنصّة — وعند الإلغاء تعود الكمّيات المحجوزة للعرض فوراً.',
                     'إذا لم تحضر خلال مدّة العرض، يحقّ للتاجر إلغاء الحجز من جانبه.',
@@ -178,7 +178,7 @@ const Refund: React.FC = () => {
                     'الإكثار من الحجز دون نيّة الحضور قد يُعرّض حسابك لتقييد أو تعليق وفقاً لتقدير الإدارة (لأنّه يُضرّ بثقة التجار في المنصّة).',
                 ] : [
                     'A booking is a preliminary commitment, not a payment — no amount is held on your card and no money is owed to the platform.',
-                    'A booking is valid for two hours from confirmation: if you do not collect within that window, it is cancelled automatically and the quantity (including reserved version quantities) returns to the offer — at no financial obligation on you.',
+                    'A booking is valid for two hours for pickup and six hours for delivery: if you do not collect within that window, it is cancelled automatically and the quantity (including reserved version quantities) returns to the offer — at no financial obligation on you. For delivery the clock stops once the courier departs, and a card-paid order is never auto-cancelled.',
                     'The total shown at booking (versions + selected add-ons) is paid directly to the merchant on receipt — TAKI receives no part of it.',
                     'You may cancel your booking at any time before it expires from the «My Bookings» page in a single tap, with no fees or penalties charged by the platform — on cancellation, the reserved quantities return to the offer immediately.',
                     'If you do not attend within the offer window, the merchant may cancel the booking from their side.',
