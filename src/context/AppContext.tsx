@@ -313,6 +313,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // v11.17: drives the banner exit-button spinner + double-tap guard.
     const [stoppingImp, setStoppingImp] = useState(false);
     const stoppingImpRef = useRef(false);
+    // v14.14 — مرجع حيّ للمستخدم: المؤقّتات ذات `[]` تحبس القيمة الأولى في
+    // إغلاقها، فمن سجّل دخوله بعد الإقلاع يبقى «زائراً» في نظرها إلى الأبد.
+    const userRef = useRef<any>(null);
     // True once the initial Supabase session check has resolved (success OR
     // failure). Distinguishes "still hydrating" from "definitively a guest".
     // Without this, AuthRedirector kicks logged-in admins off /admin on
@@ -323,6 +326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // this guard a single focus would re-pull every list (the refetch storm
     // behind "الموقع ثقيل"). Cleared on sign-out so a re-login re-hydrates.
     const lastSignInHydratedIdRef = useRef<string | null>(null);
+    useEffect(() => { userRef.current = user; }, [user]);
     const [favorites, setFavorites] = useState<string[]>([]);
     const favoritesRef = useRef<string[]>([]);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
@@ -740,8 +744,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Periodic expiry check — every 30s. When a deal crosses its expiry,
     // we flip the local status AND push the change to Supabase so every
     // other device sees the same expiry without waiting for their own
-    // timer to fire. The seller's own client wins the race in practice
-    // (it sees its own deals first), but any client can make the update.
+    // timer to fire.
+    // v14.14 — المزامنة **لصاحب العرض وحده**. كان كل زائر (ومنهم الزائر
+    // المجهول) يحاول الكتابة لكل عرض منتهٍ على شاشته كل ٣٠ ثانية، وترفضه RLS
+    // دائماً: طلب شبكة ضائع + سطر `permission denied for table deals` أحمر في
+    // سجلّ كل زائر — وسجلٌّ مليء بأخطاء متوقَّعة يُخفي الخطأ الحقيقي حين يقع.
     useEffect(() => {
         const interval = setInterval(() => {
             setDeals(prevDeals => {
@@ -762,7 +769,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // when the seller's client makes the same flip.
                 expiringIds.forEach(id => {
                     const deal = updatedDeals.find(d => d.id === id);
-                    if (deal) {
+                    // صاحب العرض وحده تسمح له RLS بالكتابة — فلا نطلب ما نعلم رفضه.
+                    if (deal && userRef.current?.id && deal.storeId === userRef.current.id) {
                         dealRepository.save(deal).catch(() => {});
                     }
                 });
