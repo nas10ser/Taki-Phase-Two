@@ -8,6 +8,7 @@
 import React from 'react';
 import { LegalLayout, Section } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import HoldHours from '../../components/HoldHours';
 
 interface QA {
     q: string;
@@ -144,7 +145,7 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'كم مدّة صلاحية الحجز؟',
-        a: <p><strong>ساعتان لطلب الاستلام من المتجر، وستّ ساعات لطلب التوصيل</strong> — من لحظة التأكيد. وإن انتهت المهلة دون استلام يُلغى الحجز تلقائياً وتعود الكمّية للبيع، دون أيّ التزام عليك. وفي التوصيل <strong>تتوقّف المهلة تماماً بمجرّد أن ينطلق المندوب</strong>، <strong>والطلب المدفوع إلكترونياً لا يُلغى تلقائياً أبداً</strong>. تظهر لك المهلة المتبقّية في صفحة «حجوزاتي».</p>,
+        a: <p><strong><HoldHours kind="pickup" /> لطلب الاستلام من المتجر، و<HoldHours kind="delivery" /> لطلب التوصيل</strong> — من لحظة التأكيد. وإن انتهت المهلة دون استلام يُلغى الحجز تلقائياً وتعود الكمّية للبيع، دون أيّ التزام عليك. وفي التوصيل <strong>تتوقّف المهلة تماماً بمجرّد أن ينطلق المندوب</strong>، <strong>والطلب المدفوع إلكترونياً لا يُلغى تلقائياً أبداً</strong>. تظهر لك المهلة المتبقّية في صفحة «حجوزاتي».</p>,
     },
     {
         q: 'لماذا لا أستطيع الحجز أحياناً؟',
@@ -266,7 +267,7 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'How long does a booking stay valid?',
-        a: <p><strong>Two hours for store pickup, six hours for delivery</strong> — from the moment of confirmation. If the window passes without pickup, the booking is cancelled automatically and the quantity returns to sale, at no obligation to you. For delivery the <strong>clock stops the moment the courier departs</strong>, and <strong>a card-paid order is never auto-cancelled</strong>. The remaining time is shown on your «My Bookings» page.</p>,
+        a: <p><strong><HoldHours kind="pickup" /> for store pickup, <HoldHours kind="delivery" /> for delivery</strong> — from the moment of confirmation. If the window passes without pickup, the booking is cancelled automatically and the quantity returns to sale, at no obligation to you. For delivery the <strong>clock stops the moment the courier departs</strong>, and <strong>a card-paid order is never auto-cancelled</strong>. The remaining time is shown on your «My Bookings» page.</p>,
     },
     {
         q: 'Why am I sometimes unable to book?',

@@ -13,6 +13,7 @@ import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
+import { holdLabel } from '../utils/bookingHold';
 import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
@@ -472,9 +473,9 @@ const DealDetails: React.FC = () => {
     const holdHours = useMemo(() => {
         const p = platformSettings.bookingHolds.pickupHours;
         const d = platformSettings.bookingHolds.deliveryHours;
-        const arPlural = (n: number) =>
-            n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتان' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
-        return { pickup: p, delivery: d, pickupLabelAr: arPlural(p), deliveryLabelAr: arPlural(d) };
+        // v14.12 — الصياغة في `utils/bookingHold.ts` وحده، تستعملها هذه الورقة
+        // والصفحات القانونية الثلاث معاً — فلا تفترق جملةٌ عن أختها بعد ضبط.
+        return { pickup: p, delivery: d, pickupLabelAr: holdLabel(p, true), deliveryLabelAr: holdLabel(d, true) };
     }, [platformSettings.bookingHolds.pickupHours, platformSettings.bookingHolds.deliveryHours]);
 
     const [reviewScore, setReviewScore] = useState(5);

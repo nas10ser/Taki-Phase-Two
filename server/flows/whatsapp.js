@@ -27,6 +27,9 @@ const { getSession } = require('../lib/session');
 const DLV    = require('../lib/delivery');
 // v14.06 — فاتورة PDF: نفس مستند الموقع (باركود الطلب + رموز الكاشير).
 const INV = require('../lib/invoicePdf');
+// v14.12 — مهلة الحجز من لوحة المدير: نفس الوحدة التي يستعملها تيليجرام
+// (نفس العملية ⇒ نفس التخزين المؤقت)، فلا تفترق قناةٌ عن أختها في الوعد.
+const HOLDS = require('../lib/holds');
 
 const { catLabel, CAT, genderLabel, GENDER } = C;
 const { dirLink, fmtKm, remainingText, resolveGoogleLocation } = G;
@@ -611,6 +614,12 @@ function create(deps) {
         }
         m += tr('wa_confirm_total', money(total), cur(), DIV);
         if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN) m += tr('wa_confirm_closing', HRS.fmtMins(os.closes_in_min));
+        // v14.12 — المهلة الحقيقية بالأرقام (كانت القناة تكتفي بإقرار عامّ بلا
+        // رقم، فلا يعرف مشتري واتساب كم أمامه). الرقم من صفّ الإعدادات نفسه.
+        const HH = await HOLDS.get();
+        const hLang = I18N.lang();
+        m += isDlv ? tr('wa_hold_delivery', HOLDS.label(HH.delivery, hLang))
+                   : tr('wa_hold_pickup', HOLDS.label(HH.pickup, hLang));
         m += tr('wa_confirm_disclaimer');
         await sendButtons(from, { body: m, buttons: [
             { id: 'wa:bookok', title: tr('wa_confirm_btn') },

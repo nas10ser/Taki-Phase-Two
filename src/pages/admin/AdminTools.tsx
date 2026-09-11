@@ -19,6 +19,7 @@ import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
 import { SEASONS, campaignSellerOpen, campaignPublicLive, SeasonCampaign } from '../../data/seasons';
 import { BANNER } from '../../utils/imageCompression';
+import { normalizeArabicNumerals } from '../../utils/helpers';
 import ImageOptimizer from '../../components/admin/ImageOptimizer';
 
 // ============================================================
@@ -1080,6 +1081,13 @@ const AdminTools: React.FC = () => {
     // v12.71 — مدة عرض كل بانر في الرئيسية (ثوانٍ) — نص للحقل، يُحفظ رقماً
     const [bannerSeconds, setBannerSeconds] = useState('2');
     const [savingBannerSeconds, setSavingBannerSeconds] = useState(false);
+    // v14.12 — مهلة الحجز بالساعات: استلام · توصيل · شبكة أمان الطلب المنطلق.
+    // الرقم الوحيد في المنصّة كلها: تقرؤه القاعدة (`tr_ad_set_booking_hold`
+    // و`expire_due_bookings`) والموقع والبوتان والصفحات القانونية من هذا الصفّ.
+    const [holdPickup, setHoldPickup] = useState('2');
+    const [holdDelivery, setHoldDelivery] = useState('6');
+    const [holdSafety, setHoldSafety] = useState('72');
+    const [savingHolds, setSavingHolds] = useState(false);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
     const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = new banner
@@ -1091,7 +1099,7 @@ const AdminTools: React.FC = () => {
         // BUG FIX: code used to query a non-existent `global_settings` table
         // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
         // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
-        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes] = await Promise.all([
+        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes, holdsRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
@@ -1102,6 +1110,7 @@ const AdminTools: React.FC = () => {
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
             supabase.from('platform_settings').select('value').eq('key', 'banner_autoplay_seconds').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'booking_holds').maybeSingle(),
         ]);
 
         setPaymentEnabled(paymentRes.data?.value === true);
@@ -1135,6 +1144,16 @@ const AdminTools: React.FC = () => {
         // v12.71 — سرعة تنقّل البانر (ثوانٍ، الافتراضي ٢)
         const bs = Number(bannerSecRes.data?.value);
         setBannerSeconds(Number.isFinite(bs) && bs >= 1 && bs <= 120 ? String(bs) : '2');
+        // v14.12 — مهلة الحجز. الافتراضات هنا تطابق ما تفترضه القاعدة حرفياً
+        // (`taki_booking_hold_hours`) كي لا يعرض الحقل رقماً لا يُطبَّق.
+        const hv = (holdsRes.data?.value ?? {}) as any;
+        const hnum = (x: any, d: number) => {
+            const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
+            return Number.isFinite(n) && n >= 0.25 && n <= 8760 ? String(n) : String(d);
+        };
+        setHoldPickup(hnum(hv.pickup_hours, 2));
+        setHoldDelivery(hnum(hv.delivery_hours, 6));
+        setHoldSafety(hnum(hv.in_progress_hours, 72));
         setLoading(false);
     }, []);
 
@@ -1531,6 +1550,79 @@ const AdminTools: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </div>
+            </section>
+
+            {/* ════════════════════════════════════════════════════════════════
+                v14.12 — مهلة الحجز بيد ناصر (طلبه): الرقم الوحيد في المنصّة.
+                يكتب `platform_settings.booking_holds`، ومنه تقرأ **القاعدة**
+                (تحديد expiry_time عند الإدراج + الإلغاء التلقائي) و**الموقع**
+                (ورقة الحجز والشروط والاسترداد والأسئلة الشائعة) و**البوتان**.
+                يسري فوراً بلا نشر — لا نصّ مكتوب في أي مكان يخالفه.
+               ════════════════════════════════════════════════════════════════ */}
+            <section>
+                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3">⏳ مهلة الحجز</h2>
+                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3">
+                        كم من الوقت يبقى الطلب محجوزاً قبل أن يُلغى تلقائياً وتعود الكمّية للبيع.
+                        يسري فوراً على الطلبات الجديدة، ويتغيّر معه نصّ ورقة الحجز وصفحات
+                        الشروط والاسترداد والأسئلة الشائعة والبوتين في اللحظة نفسها.
+                        <br />
+                        <strong>لا يمسّ الطلبات القائمة</strong> — كل طلب يحتفظ بالمهلة التي وُعد بها وقت حجزه.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {([
+                            { key: 'pickup',   icon: '🏪', label: 'استلام من المتجر', value: holdPickup,   set: setHoldPickup,   hint: 'المشتري يذهب للمتجر — المخزون محبوس طوال المهلة، فالإطالة تعني بيعاً أقلّ.' },
+                            { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', value: holdDelivery, set: setHoldDelivery, hint: 'التجهيز والطريق. تتوقّف المهلة بمجرّد انطلاق المندوب.' },
+                            { key: 'safety',   icon: '🛟', label: 'شبكة أمان الطلب المنطلق', value: holdSafety,   set: setHoldSafety,   hint: 'حدٌّ أقصى لطلبٍ انطلق مندوبه ولم يُغلقه التاجر — كي لا يُحبس المخزون للأبد.' },
+                        ] as const).map(f => (
+                            <div key={f.key} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3">
+                                <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">{f.icon} {f.label}</div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        min={0.25}
+                                        max={8760}
+                                        step={0.25}
+                                        inputMode="decimal"
+                                        value={f.value}
+                                        onChange={(e) => f.set(normalizeArabicNumerals(e.target.value))}
+                                        className="w-24 px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-sm font-extrabold text-[var(--text-primary)] text-center outline-none focus:border-emerald-500"
+                                        dir="ltr"
+                                    />
+                                    <span className="text-xs font-bold text-[var(--text-secondary)]">ساعة</span>
+                                </div>
+                                <div className="text-[0.68rem] text-[var(--gray-400)] mt-2 leading-relaxed">{f.hint}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex items-center justify-end gap-2 mt-3">
+                        <button
+                            onClick={async () => {
+                                const num = (t: string) => parseFloat(normalizeArabicNumerals(t));
+                                const p = num(holdPickup), d = num(holdDelivery), sfy = num(holdSafety);
+                                const bad = [p, d, sfy].some(n => !Number.isFinite(n) || n < 0.25 || n > 8760);
+                                if (bad) { await customAlert('⚠️ كل مهلة يجب أن تكون بين ربع ساعة و8760 ساعة (سنة).'); return; }
+                                // التوصيل أقصر من الاستلام يعني وعداً أقلّ لطلبٍ طريقُه أطول — نسأل لا نمنع.
+                                if (d < p && !(await customConfirm(`⚠️ مهلة التوصيل (${d}) أقصر من مهلة الاستلام (${p}).\nطلب التوصيل يحتاج تجهيزاً وطريقاً، فالأقصر يُلغي طلبات صحيحة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+                                if (sfy < d && !(await customConfirm(`⚠️ شبكة الأمان (${sfy}) أقصر من مهلة التوصيل (${d}).\nمعناها أن طلباً انطلق مندوبه قد يُلغى قبل انتهاء مهلته الأصلية.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+                                setSavingHolds(true);
+                                const { error } = await supabase.from('platform_settings').upsert({
+                                    key: 'booking_holds',
+                                    value: { pickup_hours: p, delivery_hours: d, in_progress_hours: sfy },
+                                    description: 'مهلة الحجز بالساعات: الاستلام · التوصيل · شبكة أمان الطلب المنطلق',
+                                    updated_at: new Date().toISOString(),
+                                });
+                                setSavingHolds(false);
+                                if (error) { await customAlert('❌ ' + error.message); return; }
+                                await customAlert(`✅ تم الحفظ — استلام ${p} ساعة · توصيل ${d} ساعة · شبكة أمان ${sfy} ساعة.\nيسري على الطلبات الجديدة فوراً.`);
+                            }}
+                            disabled={savingHolds}
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all"
+                        >
+                            {savingHolds ? 'جاري الحفظ...' : '💾 حفظ المهل'}
+                        </button>
+                    </div>
                 </div>
             </section>
 

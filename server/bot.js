@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.10.0';
+const BOT_VERSION              = '14.12.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -149,6 +149,10 @@ const HRS = require('./lib/hours');   // ساعات عمل المحل — تنس
 const DLV = require('./lib/delivery');
 // v14.06 — فاتورة PDF: نسخة مستند الموقع نفسه (باركود الطلب + رموز الكاشير).
 const INV = require('./lib/invoicePdf');
+// v14.12 — مهلة الحجز من لوحة المدير (صفّ إعدادات واحد)، لا نصّاً جامداً.
+// التهيئة هنا لا قبلها: `const` لا يُقرأ قبل سطر تعريفه (TDZ).
+const HOLDS = require('./lib/holds');
+HOLDS.init(supabase);   // القارئ المشترك مع قناة واتساب — نفس العملية ونفس التخزين
 if (!INV.fontsAvailable()) {
     console.error('⚠️ خطوط Tajawal غير موجودة في server/assets/fonts — ستُرسل الفاتورة نصاً بدل PDF.');
 }
@@ -1693,7 +1697,13 @@ async function bookConfirm(ctx, s) {
     // Task 3 — booking duration + liability disclaimer (verbatim from the website).
     // v14.10 — النصّ يفرّع على نوع الطلب: كان يَعِد بساعتين لطلب التوصيل أيضاً
     // بينما القاعدة تعطيه ستّاً، فصار الوعد مخالفاً للواقع في الاتجاهين.
-    m += isDlv ? tr('dlv_duration_disclaimer', DIV) : tr('q1118_booking_duration_disclaimer', DIV);
+    // v14.12 — الرقم من `platform_settings.booking_holds` لا من نصّ مكتوب:
+    // ضبطُه من لوحة المدير يصل هنا خلال دقيقة بلا إعادة نشر.
+    const HH = await HOLDS.get();
+    const hLang = I18N.lang();
+    const hNom = md(HOLDS.label(isDlv ? HH.delivery : HH.pickup, hLang));
+    m += isDlv ? tr('dlv_duration_disclaimer', hNom, DIV)
+               : tr('q1118_booking_duration_disclaimer', hNom, md(HOLDS.labelGen(HH.pickup, hLang)), DIV);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(tr('b1120_yes_confirm_booking'),'book:confirm')],
         [Markup.button.callback(tr('b1121_back'),'book:back:note'), Markup.button.callback(tr('b1121_cancel'),'menu:back')]
