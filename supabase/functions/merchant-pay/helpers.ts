@@ -29,9 +29,6 @@ export function timingSafeEqual(a: string, b: string): boolean {
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
 /** ريال → هللات (moyasar/payfort/checkout تتعامل بأصغر وحدة) */
 export const toMinor = (sar: number): number => Math.round(sar * 100);
-/** تطابق مبلغين بهامش قرش واحد */
-export const amountsMatch = (a: number, b: number): boolean => Math.abs(a - b) < 0.011;
-
 export const CORS_HEADERS: Record<string, string> = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-bot-secret',

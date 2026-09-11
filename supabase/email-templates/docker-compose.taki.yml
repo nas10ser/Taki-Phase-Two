@@ -2,7 +2,8 @@
 # نسخة من ملف التجاوز الحيّ على خادم جدة: /opt/taki/supabase/docker-compose.taki.yml
 # ----------------------------------------------------------------------------
 # محفوظ هنا لأن المستودع وحده لا يُعيد بناء الخادم. أي تعديل يُطبَّق في
-# الموضعين معاً. لا يحوي أي سرّ — عناوين ونصوص فقط.
+# الموضعين معاً. ⚠️ المستودع **عام**: السطر الوحيد الذي يحمل سرّاً
+# (GOTRUE_SECURITY_CAPTCHA_SECRET) مطموس هنا عمداً وقيمته على الخادم وحده.
 #
 # ⚠️ فخّ compose: `$` تعني متغيّر بيئة، فتُكتب `$$` لتصل `$` واحدة إلى GoTrue.
 #    بدونها يصبح `{{ $en := false }}` هو `{{  := false }}` ويفشل القالب بصمت.
@@ -24,9 +25,39 @@ services:
   # الافتراضي عربي: أي حساب بلا `lang` يصل بريده بالعربية.
   auth:
     environment:
+      # v13.93 — حمايات الإطلاق. الترتيب مقصود: السقف لا يُرفع إلا مع
+      # Turnstile مفعّلاً، وإلا صار إغراق البريد آلياً ممكناً.
+      GOTRUE_SECURITY_CAPTCHA_ENABLED: "true"
+      GOTRUE_SECURITY_CAPTCHA_PROVIDER: "turnstile"
+      GOTRUE_SECURITY_CAPTCHA_SECRET: "<<<السرّ على الخادم فقط — لا يُرفع لمستودع عام>>>"
+      GOTRUE_PASSWORD_HIBP_ENABLED: "true"
+      # v14.01 (طلب ناصر): الشروط الخمسة تُفرض على **الخادم** لا في الواجهة
+      # وحدها. كانت الاستعادة والإعدادات تقبلان كلمة أضعف مما يقبله التسجيل —
+      # وأضعفُ بابٍ هو ما يحدّد قوة كلمات المرور فعلياً.
+      # ⚠️ ثلاثة مستويات هروب: `:` تفصل المجموعات فتُهرَّب داخلها بـ\: ·
+      #    `$` في compose تعني متغيّراً فتُكتب $$ · `'` في YAML تُضاعَف.
+      GOTRUE_PASSWORD_MIN_LENGTH: "8"
+      GOTRUE_PASSWORD_REQUIRED_CHARACTERS: 'abcdefghijklmnopqrstuvwxyz:ABCDEFGHIJKLMNOPQRSTUVWXYZ:0123456789:!@#$$%^&*()_+-=[]{};''\:"|<>?,./`~'
+
+      # الافتراضي 30/ساعة على مستوى المنصة كلها — كان سيرفض المسجّل الحادي
+      # والثلاثين في أول ساعة إطلاق. الحدّ الحقيقي بعد هذا هو باقة Resend.
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "1000"
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: "https://api.takisa.net/email-templates/confirmation.html"
       GOTRUE_MAILER_TEMPLATES_RECOVERY: "https://api.takisa.net/email-templates/recovery.html"
       GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: "https://api.takisa.net/email-templates/email_change.html"
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Confirm your email address{{ else }}أكِّد بريدك الإلكتروني{{ end }}'
       GOTRUE_MAILER_SUBJECTS_RECOVERY: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Reset your password{{ else }}إعادة تعيين كلمة المرور{{ end }}'
       GOTRUE_MAILER_SUBJECTS_EMAIL_CHANGE: '{{ $$en := false }}{{ if .Data }}{{ if .Data.lang }}{{ if eq (print .Data.lang) "en" }}{{ $$en = true }}{{ end }}{{ end }}{{ end }}{{ if $$en }}Confirm your new email address{{ else }}أكِّد بريدك الإلكتروني الجديد{{ end }}'
+
+  # ════════════════════════════════════════════════════════════════════════
+  # v14.11 — عناوين الدفع كما يراها العالم الخارجي
+  # ────────────────────────────────────────────────────────────────────────
+  # 🪤 داخل الحاوية `SUPABASE_URL=http://kong:8000` (اسم حاوية داخلي). ودالة
+  #    merchant-pay تبني منه رابط صفحة الدفع وعنوان العودة وعنوان الإشعار —
+  #    فكان الجوّال يستقبل رابطاً لا يصل إليه أحد من خارج الخادم، وزرّ «ادفع
+  #    الآن» يفتح صفحة لا تُحمَّل. (صفر صفّ في platform_payment_log منذ الانتقال.)
+  # ليس فيهما أي سرّ — عنوانان عامّان فقط.
+  functions:
+    environment:
+      API_PUBLIC_URL: "https://api.takisa.net"
+      SITE_ORIGIN: "https://www.takisa.net"

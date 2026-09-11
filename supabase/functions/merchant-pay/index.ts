@@ -17,18 +17,27 @@
  * قواعد أمان صلبة (من المخطط المعتمد):
  *  - الأسرار تُفك حصراً هنا عبر RPC ‏_gateway_secrets (service_role فقط)
  *  - لا يُصدَّق أي رد قادم من متصفح المشتري — التأكيد دائماً بنداء خادم→خادم
- *  - المبلغ يُطابَق مع bookings.payment_expected قبل التعليم كمدفوع
+ *  - المبلغ يُطابَق مع إجمالي الفاتورة (bookings.total_amount) قبل التعليم كمدفوع،
+ *    ودفعةٌ أنقص منه لا تُختم «مدفوعة» أبداً (v14.11)
  *  - التكرار يُتجاهل عبر UNIQUE(provider, payment_ref) — _apply_merchant_payment
  *  - بيانات البطاقات لا تلمس تاكي إطلاقاً (Hosted Checkout — نطاق PCI SAQ-A)
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { ADAPTERS, GatewayCfg, PayCtx } from './adapters.ts';
-import { amountsMatch, CORS_HEADERS, hmacSha256Hex, htmlResponse, json, round2, seeOther, timingSafeEqual } from './helpers.ts';
+import { CORS_HEADERS, hmacSha256Hex, htmlResponse, json, round2, seeOther, timingSafeEqual } from './helpers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const FN_BASE = `${SUPABASE_URL}/functions/v1/merchant-pay`;
+/**
+ * v14.11 — عنوان الدالة **كما يراه المتصفح والمزوّد**، لا العنوان الداخلي.
+ * 🪤 مقيس على جدة: `SUPABASE_URL` داخل الحاوية هو `http://kong:8000`، فكان
+ * رابط الدفع العائد للجوّال وعناوين العودة والإشعار كلها تشير إلى اسم حاوية
+ * لا يصل إليه أحد من خارج الخادم ⇒ زرّ «ادفع الآن» يفتح صفحة لا تُحمَّل.
+ * (صفر دفعة في `platform_payment_log` منذ الانتقال للاستضافة الذاتية.)
+ */
+const API_PUBLIC_URL = (Deno.env.get('API_PUBLIC_URL') || Deno.env.get('SUPABASE_PUBLIC_URL') || SUPABASE_URL).replace(/\/+$/, '');
+const FN_BASE = `${API_PUBLIC_URL}/functions/v1/merchant-pay`;
 const SITE_ORIGIN = Deno.env.get('SITE_ORIGIN') ?? 'https://www.takisa.net';
 
 const service = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -76,33 +85,19 @@ async function directPayOn(): Promise<boolean> {
 }
 
 /**
- * المبلغ المتوقع من صفوف القاعدة (نفس معادلة الويب v12.66 حرفياً):
- * نسخ مختارة ⇒ مجموع (سعر النسخة × كميتها)، وإلا سعر العرض × الكمية،
- * ثم مجموع أسعار الإضافات المختارة (سعر الخيار × عدد القطع التي اختارته).
+ * v14.11 — هذه الدالة **لا تحسب مالاً**. الصيغة الوحيدة في القاعدة:
+ * `taki_booking_amount()` ⇒ (نسخ مختارة أو سعر×كمية) + الإضافات + رسوم التوصيل،
+ * مجمَّدة في `bookings.total_amount` لحظة الحجز. فالمبلغ المطلوب هنا هو نفسه
+ * المطبوع على الفاتورة وعلى فاتورة البوتين حرفياً — رقم واحد لا ثلاثة.
+ *
+ * 🪤 الخلل الذي عالجته: كانت النسخة السابقة تحسب البضاعة والإضافات وتُسقط
+ * رسوم التوصيل (`grep -c delivery` = صفر)، فيُقبض ٨٠ عن فاتورة ٩٥ ويُختم
+ * الطلب «مدفوع بالكامل» — خسارة نقدية مباشرة للتاجر أول يوم مزوّد حقيقي.
  */
-function computeExpectedSar(deal: Record<string, unknown>, booking: Record<string, unknown>): number {
-    const options = Array.isArray(deal?.options) ? deal.options as Array<Record<string, unknown>> : [];
-    const variants = Array.isArray(deal?.variants) ? deal.variants as Array<Record<string, unknown>> : [];
-    const sel = Array.isArray(booking?.selected_options) ? booking.selected_options as Array<Record<string, unknown>> : [];
-    const varSel = sel.filter((s) => s?.g === '__variant__');
-    let base = 0;
-    if (variants.length && varSel.length) {
-        for (const s of varSel) {
-            const v = variants.find((x) => x?.id === s?.c);
-            base += (Number(v?.price) || 0) * Math.max(1, Number(s?.qty) || 1);
-        }
-    } else {
-        base = (Number(deal?.discounted_price) || 0) * Math.max(1, Number(booking?.booked_quantity) || 1);
-    }
-    let addons = 0;
-    for (const s of sel) {
-        if (s?.g === '__variant__') continue;
-        const grp = options.find((g) => g?.id === s?.g);
-        const choices = Array.isArray(grp?.choices) ? grp.choices as Array<Record<string, unknown>> : [];
-        const c = choices.find((x) => x?.id === s?.c);
-        addons += (Number(c?.price) || 0) * Math.max(1, Number(s?.qty) || 1);
-    }
-    return round2(base + addons);
+async function amountDueSar(barcode: string): Promise<number> {
+    const { data, error } = await service.rpc('_booking_amount_due', { p_barcode: barcode });
+    if (error) throw new Error(`AMOUNT_RPC_FAILED: ${error.message}`);
+    return round2(Number(data) || 0);
 }
 
 async function gatewayCfg(merchantId: string): Promise<(GatewayCfg & Record<string, unknown>) | null> {
@@ -150,11 +145,22 @@ async function loadBooking(barcode: string): Promise<Record<string, unknown> | n
     return data ?? null;
 }
 
-/** تطبيق نتيجة تأكيد خادمي على الحجز — مع مطابقة المبلغ قبل التعليم كمدفوع */
+/**
+ * تطبيق نتيجة تأكيد خادمي على الحجز — **لا يُختم طلبٌ «مدفوع» بأقلّ من فاتورته**.
+ *
+ * المرجع هو `total_amount` (إجمالي الفاتورة المجمّد لحظة الحجز)، وإن غاب فـ
+ * `payment_expected` الذي كُتب عند إنشاء رابط الدفع. ودفعةٌ أنقص من الفاتورة
+ * تُسجَّل `amount_mismatch` فيبقى الطلب غير مدفوع ويظهر الفرق في سجل الدفعات —
+ * أفضل من ختمٍ كاذب يُخرج بضاعةً بلا مقابلها.
+ *
+ * 🔵 الزيادة ليست نقصاً: مبلغٌ أكبر من الفاتورة يُقبل مدفوعاً (المال وصل التاجر)،
+ *    ويبقى مسجَّلاً بقيمته الفعلية في `paid_amount` وسجلّ الدفعات.
+ */
 async function applyConfirmed(provider: string, merchantId: string, booking: Record<string, unknown>, ref: string, amountSar: number | undefined): Promise<boolean> {
-    const expected = Number(booking.payment_expected || 0);
-    const got = amountSar === undefined || amountSar === 0 ? expected : amountSar;
-    const ok = expected > 0 && amountsMatch(got, expected);
+    const expected = round2(Number(booking.total_amount || 0) || Number(booking.payment_expected || 0));
+    // مزوّد لا يُرجع مبلغاً في ردّ التأكيد: نسأل القاعدة لا نفترض النجاح.
+    const got = (amountSar === undefined || amountSar === 0) ? expected : round2(amountSar);
+    const ok = expected > 0 && (got >= expected - 0.011);
     await service.rpc('_apply_merchant_payment', {
         p_provider: provider,
         p_merchant_id: merchantId,
@@ -212,7 +218,8 @@ Deno.serve(async (req: Request) => {
 
             const { data: deal } = await service.from('deals').select('*').eq('id', String(booking.deal_id)).maybeSingle();
             if (!deal) return json(404, { error: 'DEAL_NOT_FOUND' });
-            const amountSar = computeExpectedSar(deal, booking);
+            // المبلغ من القاعدة وحدها — لا من المتصفح ولا من حساب محلي.
+            const amountSar = await amountDueSar(barcode);
             if (!(amountSar > 0)) return json(409, { error: 'ZERO_AMOUNT' });
 
             const lang: 'ar' | 'en' = body.lang === 'en' ? 'en' : 'ar';
@@ -315,7 +322,7 @@ Deno.serve(async (req: Request) => {
             const adapter = ADAPTERS[provider];
             if (!gatewayLive(cfg) || !adapter?.renderPage) return seeOther(`${SITE_ORIGIN}/bookings?paid=0`);
             const { data: deal } = await service.from('deals').select('*').eq('id', String(booking.deal_id)).maybeSingle();
-            const amountSar = Number(booking.payment_expected || 0) || computeExpectedSar(deal || {}, booking);
+            const amountSar = Number(booking.payment_expected || 0) || await amountDueSar(barcode);
             const ctx = await buildCtx(provider, booking, deal || {}, amountSar, 'ar');
             return htmlResponse(await adapter.renderPage(cfg!, ctx));
         }

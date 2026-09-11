@@ -116,10 +116,13 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
     }
     const notes: string = order?.notes || '';
     const tm = notes.match(/الإجمالي:\s*([\d.]+)/);
-    const totalText = tm ? `${tm[1]} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
-    // v13.30 — الإجمالي رقماً: من سطر الملاحظات، وإلا من مبلغ الدفع الإلكتروني —
-    // لطباعة تفصيل ضريبة القيمة المضافة على الفواتير القديمة والجديدة سواء.
-    const totalAmount = tm ? parseFloat(tm[1]) : (Number(order?.paidAmount) > 0 ? Number(order?.paidAmount) : undefined);
+    // v14.11 — الرقم من العمود الذي كتبه الخادم لحظة الحجز (بضاعة + إضافات +
+    // توصيل)، وهو نفسه ما يطالب به الدفع الإلكتروني. سطر الملاحظات بقي
+    // للحجوزات التي سبقت العمود وحدها، ثم مبلغُ دفعةٍ فعلية كملاذ أخير.
+    const serverTotal = Number(order?.totalAmount) > 0 ? Number(order.totalAmount) : undefined;
+    const totalAmount = serverTotal
+        ?? (tm ? parseFloat(tm[1]) : (Number(order?.paidAmount) > 0 ? Number(order?.paidAmount) : undefined));
+    const totalText = totalAmount != null ? `${totalAmount} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
     const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
     const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
     // v14.06 — التوصيل: الرسوم تدخل الإجمالي (كما يدفعها المشتري فعلاً). سطر

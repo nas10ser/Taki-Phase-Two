@@ -83,6 +83,11 @@ export interface Booking {
     deliveryAddress?: { label?: string; details?: string; city?: string; phone?: string; lat?: number; lng?: number; zone_id?: string } | null;
     /** v14.06 — رسوم التوصيل التي ثبّتها الخادم من نطاق التاجر. */
     deliveryFee?: number;
+    /** v14.11 — إجمالي الفاتورة الذي كتبه **الخادم** لحظة الحجز: بضاعة +
+     *  إضافات + توصيل. هو نفسه المبلغ الذي يطالب به الدفع الإلكتروني وتطبعه
+     *  الفاتورة وفاتورة البوتين — رقم واحد لا ثلاثة. مجمّد، فتغيير التاجر
+     *  لسعر العرض بعد الحجز لا يُغيّر فاتورة طلبٍ قائم. */
+    totalAmount?: number;
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -143,6 +148,7 @@ export const mapBookingRow = (b: any, deal?: any): Booking => ({
     fulfillment: b.fulfillment === 'delivery' ? 'delivery' : 'pickup',
     deliveryAddress: (b.delivery_address && typeof b.delivery_address === 'object') ? b.delivery_address : null,
     deliveryFee: b.delivery_fee != null ? Number(b.delivery_fee) : undefined,
+    totalAmount: b.total_amount != null ? Number(b.total_amount) : undefined,
     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
     locationId: b.location_id || undefined,
     expiryTime: b.expiry_time,
@@ -254,6 +260,7 @@ export const bookingRepository = {
                     fulfillment: b.fulfillment === 'delivery' ? 'delivery' : 'pickup',
                     deliveryAddress: (b.delivery_address && typeof b.delivery_address === 'object') ? b.delivery_address : null,
                     deliveryFee: b.delivery_fee != null ? Number(b.delivery_fee) : undefined,
+                    totalAmount: b.total_amount != null ? Number(b.total_amount) : undefined,
                     // v12.88 — الاختيارات المهيكلة تُقرأ لبناء باركود الكاشير في الفاتورة
                     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
                     // v12.91 — الفرع المختار
@@ -301,6 +308,7 @@ export const bookingRepository = {
                     fulfillment: data.fulfillment === 'delivery' ? 'delivery' : 'pickup',
                     deliveryAddress: (data.delivery_address && typeof data.delivery_address === 'object') ? data.delivery_address : null,
                     deliveryFee: data.delivery_fee != null ? Number(data.delivery_fee) : undefined,
+                    totalAmount: data.total_amount != null ? Number(data.total_amount) : undefined,
                     expiryTime: data.expiry_time
                 };
             }
