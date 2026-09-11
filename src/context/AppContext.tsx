@@ -711,10 +711,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try { localStorage.setItem('TAKI_DARK_MODE', darkMode ? '1' : '0'); } catch { /* ignore */ }
     }, [darkMode]);
 
-    // Request notification permission on mount and (best-effort) subscribe
-    // to Web Push so alerts arrive even when the tab is closed.
+    // v14.13 — لا يُطلب إذن الإشعارات عند الفتح بعد اليوم. 🪤 كان يُطلب لحظة
+    // الإقلاع مقابل لا شيء يراه المستخدم، وأغلب الناس يرفضون، والرفض على الويب
+    // شبه نهائي (لا يُعاد السؤال أبداً) — فكنّا نحرق الطلبة الوحيدة على لا شيء.
+    // الطلب انتقل إلى زرّ صريح بعد أول حجز ناجح («تفعيل الإشعارات» في حجوزاتي
+    // وفي الحساب). وهنا نكتفي بتحديث اشتراكٍ قائم لمن فعّلها فعلاً، كي يبقى
+    // صفّه حيّاً ولا يكنسه تنظيف التسعين يوماً.
     useEffect(() => {
-        pushService.ensurePermissionAndSubscribe().catch(() => {});
+        pushService.refreshIfEnabled().catch(() => {});
     }, []);
 
     const toggleDarkMode = useCallback(() => {

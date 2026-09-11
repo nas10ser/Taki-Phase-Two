@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
+import { PushToggleRow } from '../components/PushOptIn';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
@@ -366,6 +367,9 @@ const Profile: React.FC = () => {
 
                 {activeTab === 'notifications' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* v14.13 — المفتاح الدائم لإشعارات الجوّال على هذا الجهاز.
+                            البانر في «حجوزاتي» يُخفى بضغطة ولا يعود؛ هذا يبقى. */}
+                        <PushToggleRow />
                         {/* Smart Alerts builder — comes FIRST so the user sees the
                             engine that drives the inbox entries, not after them. */}
                         <SmartAlertsCard

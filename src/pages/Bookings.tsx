@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import BottomNav from '../components/BottomNav';
+import PushOptIn from '../components/PushOptIn';
 import Sidebar from '../components/Sidebar';
 import { Booking, bookingRepository } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
@@ -504,6 +505,11 @@ const Bookings: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                {/* v14.13 — زرّ تفعيل إشعارات الجوّال: هنا لا عند فتح التطبيق.
+                    يظهر لمن له طلبٌ فعلاً، فالإشعار عنده له معنى محدَّد («قُبل
+                    طلبك» · «انطلق المندوب» · «اقتربت المهلة»)، ويُخفى بضغطة. */}
+                {(activeTotal > 0 || pastTotal > 0) && <PushOptIn />}
 
                 {/* Active Bookings Section */}
                 {filteredActive.length > 0 && (

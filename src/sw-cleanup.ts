@@ -138,7 +138,18 @@ async function autoCheckServerVersion(): Promise<void> {
         // new SW is already waiting (e.g. user kept the tab open across two
         // deploys), surface the banner immediately.
         try {
-            const reg = await navigator.serviceWorker.getRegistration('/');
+            // v14.13 — تسجيل عامل الخدمة هنا، **مفصولاً تماماً عن إذن الإشعارات**.
+            // 🪤 كان التسجيل يقع داخل `pushService` وحده، فكان الحصول على
+            // التخزين دون اتصال وبانر التحديث مشروطاً بأن يطلب التطبيق إذن
+            // الإشعارات لحظة الفتح — مقابل لا شيء يراه المستخدم. اليوم: العامل
+            // يُسجَّل دائماً، والإذن لا يُطلب إلا بزرٍّ صريح بعد أول حجز ناجح.
+            let reg = await navigator.serviceWorker.getRegistration('/');
+            if (!reg) {
+                // العنوان عبر `import.meta.url` شرطُ Parcel لتجميع العامل صحيحاً.
+                reg = await navigator.serviceWorker.register(
+                    new URL('../sw.js', import.meta.url), { type: 'module' },
+                ).catch(() => undefined);
+            }
             if (reg) {
                 // Immediate update probe on mount — iOS Safari otherwise
                 // waits up to 24 h before checking sw.js on its own. This

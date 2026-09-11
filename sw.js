@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v14.12';
+const CACHE_NAME = 'taki-cache-v14.13';
 // 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
 // manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
 // واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
@@ -194,9 +194,12 @@ self.addEventListener('push', event => {
   let payload = {};
   try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
 
-  const lang = (self.__TAKI_LANG__ === 'en') ? 'en' : 'ar';
-  const title = payload[lang === 'ar' ? 'titleAr' : 'titleEn'] || payload.title || 'TAKI';
-  const body  = payload[lang === 'ar' ? 'bodyAr'  : 'bodyEn']  || payload.body  || '';
+  // v14.13 — اللغة تُحسم على الخادم من `users.preferred_lang` ويصل العنوان
+  // والنصّ جاهزين. 🪤 كان العامل يقرأ `self.__TAKI_LANG__` وهي غير معرَّفة
+  // داخله أبداً — فكان كل مستخدم يصله العربي مهما كانت لغة حسابه.
+  // النسختان ar/en تبقيان احتياطاً لأي رسالة من إصدار أقدم.
+  const title = payload.title || payload.titleAr || payload.titleEn || 'TAKI';
+  const body  = payload.body  || payload.bodyAr  || payload.bodyEn  || '';
   const data  = payload.data || {};
   const url   = data.dealId ? `/deal/${data.dealId}` : (data.url || '/profile');
 

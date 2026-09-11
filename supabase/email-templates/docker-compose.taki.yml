@@ -61,3 +61,12 @@ services:
     environment:
       API_PUBLIC_URL: "https://api.takisa.net"
       SITE_ORIGIN: "https://www.takisa.net"
+      # v14.13 — إشعارات الجوّال (Web Push). القيم في /opt/taki/supabase/.env
+      # على الخادم وحده — المستودع **عام** فلا يحمل مفتاحاً خاصاً ولا سرّاً.
+      # PUSH_SHARED_SECRET يحرس الدالة: خادم الدوال يعمل بـVERIFY_JWT=false
+      # (لأن مشغّل القاعدة لا يحمل JWT)، فبلا هذا السرّ يستطيع أي أحد دفع
+      # إشعار باسم أي مستخدم.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      PUSH_SHARED_SECRET: ${PUSH_SHARED_SECRET}
