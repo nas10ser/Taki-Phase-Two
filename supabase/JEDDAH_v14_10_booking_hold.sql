@@ -535,3 +535,37 @@ SELECT 'طلبات توصيل حيّة بمهلة قديمة' AS "الفحص",
                      AND COALESCE(fulfillment,'pickup')='delivery'
                      AND expiry_time < booked_at + (public.taki_booking_hold_hours('delivery')*3600000)::bigint) = 0
             THEN '✅' ELSE '❌' END AS "الحالة";
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v14.10b — إتاحة قراءة `booking_holds` للمتصفّح
+--
+-- 🪤 كُشف بالقياس بعد النشر: سياسة القراءة على `platform_settings` قائمةُ
+-- سماحٍ صريحة بالمفاتيح، ولم يكن `booking_holds` فيها. فالموقع كان يقرأ صفراً
+-- صفوف **بلا أي خطأ ظاهر** ويقع على افتراضاته المحلية (٢/٦). اليوم تطابق
+-- القاعدة فلا يظهر شيء — ولحظة تغيير ناصر للرقم كانت ورقة الحجز ستبقى تَعِد
+-- بالقديم بينما القاعدة تفرض الجديد. وهذا بالضبط نوع الانحراف الصامت الذي
+-- بُني كل التصميم على منعه («الرقم في مكان واحد»).
+--
+-- المفتاح ثلاثة أرقام لا سرّ فيها، وقراءته عامة كنظرائه (ساعات البانر مثلاً).
+-- ═══════════════════════════════════════════════════════════════════════════
+DROP POLICY IF EXISTS platform_settings_select ON public.platform_settings;
+CREATE POLICY platform_settings_select ON public.platform_settings
+  FOR SELECT USING (
+    key = ANY (ARRAY[
+      'oauth_google_enabled','oauth_apple_enabled','telegram_bot_enabled',
+      'whatsapp_bot_enabled','whatsapp_bot_number','seasonal_theme',
+      'season_campaign','sponsor_layout','banner_autoplay_seconds',
+      'payment_gateway_enabled','tax_settings','location_packages',
+      'booking_holds'
+    ])
+    OR (SELECT public.is_admin())
+  );
+
+SELECT 'قراءة booking_holds من المتصفّح' AS "الفحص",
+       COALESCE((SELECT value::text FROM public.platform_settings WHERE key='booking_holds'),'—') AS "النتيجة",
+       CASE WHEN 'booking_holds' = ANY (
+              SELECT unnest(ARRAY['booking_holds'])
+              WHERE pg_get_expr(polqual, polrelid) LIKE '%booking_holds%')
+            THEN '✅' ELSE '❌' END AS "الحالة"
+  FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+ WHERE c.relname = 'platform_settings' AND p.polname = 'platform_settings_select';
