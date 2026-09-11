@@ -158,12 +158,20 @@ const ImageZoomViewer: React.FC<{
 
     const reset = () => { setScale(1); setOffset({ x: 0, y: 0 }); };
     React.useEffect(() => { reset(); setImgError(false); setImgLoading(true); }, [index]);
-    // Warm the browser cache for EVERY image the moment the viewer opens, so
-    // navigating between them is instant instead of a multi-second black gap
-    // (each <img> remount otherwise refetches the full-res photo). v11.35
+    // تسخين ذاكرة المتصفّح ليكون التنقّل فورياً بلا فجوة سوداء (v11.35).
+    // v14.14 — **الجاران فقط** لا كل الصور: كان فتح العارض يبدأ تحميل كل صور
+    // العرض بحجمها الكامل دفعةً واحدة (أكبر صورة مقيسة ٨٫٥ ميجابايت)، فتزدحم
+    // الشبكة ويتأخّر ظهور الصورة التي يطلبها المستخدم فعلاً. الجار الواحد
+    // يكفي: التنقّل خطوة بخطوة، ولا أحد يقفز عشر صور دفعة.
     React.useEffect(() => {
-        images.forEach((src) => { try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch {} });
-    }, [images]);
+        const warm = (i: number) => {
+            const src = images[i];
+            if (!src) return;
+            try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch { /* ignore */ }
+        };
+        warm(index + 1);
+        warm(index - 1);
+    }, [images, index]);
 
     const onWheel = (e: React.WheelEvent) => {
         e.preventDefault();
@@ -1455,14 +1463,31 @@ const DealDetails: React.FC = () => {
             .catch(() => { /* القياس لا يُعطّل الصفحة */ });
     }, [id, deal?.storeId]);
 
-    // Pre-decode every gallery image the moment the deal is known, so tapping a
-    // thumbnail/dot swaps the hero INSTANTLY with no per-image fetch+decode lag.
-    // (Nasser: «التنقل بين الصور بطيء أريده سريع جداً» — v11.99) */
+    // تسخين الصورة المجاورة ليبقى تبديل الصورة فورياً (طلب ناصر v11.99:
+    // «التنقل بين الصور بطيء أريده سريع جداً»).
+    // v14.14 — كان هذا يسحب **كل** صور العرض بحجمها الكامل لحظة فتح الصفحة،
+    // قبل أن يطلب المستخدم صورةً ثانية أصلاً. عرضٌ بستّ صور ثقيلة = عشرات
+    // الميجابايت على باقة جوّال مقابل لا شيء. اليوم: الجاران فقط، وبعد أن
+    // يفرغ المتصفّح من رسم الصفحة (requestIdleCallback) فلا يزاحم الصورة
+    // الأولى ولا بقية الموارد.
     React.useEffect(() => {
         const imgs = deal?.images;
         if (!imgs || imgs.length < 2) return;
-        imgs.forEach((src) => { try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch { /* ignore */ } });
-    }, [deal?.id]);
+        const warm = () => {
+            for (const i of [currentImage + 1, currentImage - 1]) {
+                const src = imgs[i];
+                if (!src) continue;
+                try { const im = new Image(); im.decoding = 'async'; im.src = src; } catch { /* ignore */ }
+            }
+        };
+        const ric = (window as any).requestIdleCallback;
+        if (typeof ric === 'function') {
+            const h = ric(warm, { timeout: 1500 });
+            return () => (window as any).cancelIdleCallback?.(h);
+        }
+        const t = window.setTimeout(warm, 600);
+        return () => window.clearTimeout(t);
+    }, [deal?.id, currentImage]);
 
     if (!deal) {
         return (

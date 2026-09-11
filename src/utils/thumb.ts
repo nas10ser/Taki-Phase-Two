@@ -20,7 +20,14 @@
  */
 
 // روابط تخزين Supabase فقط (لا نلمس روابط خارجية مثل unsplash/picsum).
-const SUPABASE_DEAL_IMAGE = /\/storage\/v1\/object\/public\/deals\/([^/?#]+)\.(jpe?g|png|webp)(\?.*)?$/i;
+// ⚠️ v14.14: المسار قد يحوي مجلّداً (`deals/bot/...` لصور البوتين) — كان النمط
+// يرفض الشرطة المائلة فلا تُصغَّر صورة بوتٍ واحدة أبداً. ١١ من ٤٣ صورة معروضة
+// كانت تحت `bot/`، أي ربع الصور تُحمَّل بحجمها الكامل في بطاقة عرض صغيرة.
+const SUPABASE_DEAL_IMAGE = /\/storage\/v1\/object\/public\/deals\/(.+?)\.(jpe?g|png|webp)(\?.*)?$/i;
+
+/** عرض المصغّرة بالبكسل — نفس ما يولَّد ويُخزَّن عند الرفع. */
+const THUMB_WIDTH = 600;
+const THUMB_QUALITY = 70;
 
 /** علامة «لهذه الصورة مصغّرة مرفوعة ومؤكَّدة» — تُكتب في الرابط لحظة الرفع. */
 export const THUMB_MARK = 't=1';
@@ -46,11 +53,22 @@ export const hasThumb = (url?: string | null): boolean => {
 export const thumbUrl = (url?: string | null): string => {
     const u = String(url || '');
     if (!u) return '';
-    if (!hasThumb(u)) return u;             // صورة قديمة أو خارجية → الأصل مباشرة
     const m = u.match(SUPABASE_DEAL_IMAGE);
     if (!m) return u;                       // رابط خارجي أو بصيغة غير متوقعة
     if (/_t$/i.test(m[1])) return u;        // مصغّرة أصلاً
-    return u.replace(SUPABASE_DEAL_IMAGE, `/storage/v1/object/public/deals/${m[1]}_t.jpg${m[3] || ''}`);
+    if (hasThumb(u)) {
+        // مصغّرة ثابتة مرفوعة ومؤكَّدة: ملفٌّ عادي بترويسة سنة — أرخص ما يمكن.
+        return u.replace(SUPABASE_DEAL_IMAGE, `/storage/v1/object/public/deals/${m[1]}_t.jpg${m[3] || ''}`);
+    }
+    // v14.14 — صورة في مستودعنا بلا مصغّرة مؤكَّدة: نطلب من الخادم تصغيرها
+    // لحظياً بدل تحميل الأصل كاملاً في بطاقة صغيرة. (مقيس على صور حقيقية:
+    // ٨٫٥ ميجابايت ⇐ ٧٤ كيلوبايت.) هذه شبكة أمان دائمة: أي صورة تفلت من
+    // توليد المصغّرة عند الرفع لا تعود تُحمَّل بحجمها الكامل أبداً.
+    // وإن تعذّر التصغير لأي سبب ارتدّ `imgFallback` إلى الأصل.
+    const q = m[3] || '';
+    const sep = q ? '&' : '?';
+    return u.replace('/storage/v1/object/public/deals/', '/storage/v1/render/image/public/deals/')
+        + `${sep}width=${THUMB_WIDTH}&quality=${THUMB_QUALITY}`;
 };
 
 /** الصورة البديلة الافتراضية حين يفشل الأصل نفسه. */

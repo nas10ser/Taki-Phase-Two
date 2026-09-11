@@ -102,13 +102,40 @@ Deno.serve(async (req) => {
     const { mime, ext } = normaliseImageMime(parsed.pathname, resp.headers.get("content-type") || "");
     const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 14);
     const path = `bot/${Date.now()}_${rand}.${ext}`;
+    // v14.14 — ترويسة تخزين سنة كاملة. 🪤 بدونها يقع الملف على `no-cache`،
+    // فيُعاد تحميل نفس الصورة من الخادم في كل فتحة للتطبيق. (مقيس: ١٧٢ ملفاً
+    // بـ`no-cache` مجموعها ١٣٢ ميجابايت، مقابل ١٨ ملفاً فقط بترويسة سنة.)
+    // الأسماء فريدة و`upsert:false`، فالتخزين الطويل آمن بلا احتمال بيات.
     const { error: upErr } = await admin.storage.from("deals").upload(path, bytes, {
-      contentType: mime, upsert: false,
+      contentType: mime, upsert: false, cacheControl: "31536000",
     });
     if (upErr) return json({ error: "upload failed: " + upErr.message }, 500);
 
     const { data: pub } = admin.storage.from("deals").getPublicUrl(path);
-    return json({ success: true, url: pub.publicUrl }, 200);
+
+    // v14.14 — توأم مصغّر بجوار الأصل (٦٠٠ بكسل) كما يفعل رفع الموقع تماماً،
+    // نولّده من خدمة التصغير على الخادم نفسه. ونُعلّم الرابط بـ`t=1` **فقط**
+    // بعد نجاح رفع المصغّرة فعلاً — التطبيق لا يطلب مصغّرة إلا بهذه العلامة،
+    // فعلامةٌ كاذبة تعني صورة مكسورة للحظة في كل بطاقة (درس v13.71).
+    let url = pub.publicUrl;
+    try {
+      const stem = path.replace(/\.[A-Za-z0-9]+$/, "");
+      const rendered = await fetch(
+        `${SUPABASE_URL}/storage/v1/render/image/public/deals/${path}?width=600&quality=70`,
+      );
+      if (rendered.ok) {
+        const thumbBytes = new Uint8Array(await rendered.arrayBuffer());
+        if (thumbBytes.length > 500) {
+          const { error: tErr } = await admin.storage.from("deals").upload(
+            `${stem}_t.jpg`, thumbBytes,
+            { contentType: "image/jpeg", upsert: true, cacheControl: "31536000" },
+          );
+          if (!tErr) url += (url.includes("?") ? "&" : "?") + "t=1";
+        }
+      }
+    } catch { /* المصغّرة تحسينٌ لا شرط — الأصل مرفوع ويعمل */ }
+
+    return json({ success: true, url }, 200);
   } catch (e) {
     return json({ error: "internal: " + ((e as Error)?.message || String(e)) }, 500);
   }
