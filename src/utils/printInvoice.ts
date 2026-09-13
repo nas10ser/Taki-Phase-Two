@@ -290,7 +290,10 @@ const buildHtml = (d: InvoiceData): string => {
         // لا مجرّد صحّة صيغة الرقم. كانت الورقة تُعنون نفسها «فاتورة ضريبية مبسطة»
         // في أعلاها ثم تقول في أسفلها «المتجر غير مسجّل ولم تُحصَّل ضريبة» — مستندٌ
         // يناقض نفسه ولا يصمد أمام أي تدقيق.
-        if (d.vatAmount != null && isValidSaudiVat(d.sellerVatNumber)) {
+        // v14.22 — الشرط **صدور رقم الفاتورة** لا وجود اللقطة. اللقطة تُكتب لحظة
+        // الحجز، فطلبٌ أُلغي أو انتهت مهلته كان يُطبع «فاتورة ضريبية مبسطة» برمز
+        // زاتكا عن بيعٍ لم يقع — مستندٌ ضريبيّ لمعاملة غير موجودة.
+        if (d.invoiceNo && d.vatAmount != null && isValidSaudiVat(d.sellerVatNumber)) {
             return `<div class="sub"><b>${L('فاتورة ضريبية مبسطة', 'Simplified Tax Invoice')}</b><br>${L('الرقم الضريبي', 'VAT No')}: ${esc(String(d.sellerVatNumber))}${d.sellerAddress ? `<br>${esc(String(d.sellerAddress))}` : ''}</div>`;
         }
         return `<div class="sub">${L('فاتورة / سند طلب', 'Order receipt')}</div>`;
@@ -325,7 +328,7 @@ const buildHtml = (d: InvoiceData): string => {
         }
         const cur = L('ر.س', 'SAR');
         // v14.17 — لا حساب هنا إطلاقاً: الأساس والضريبة رقمان مجمّدان في الفاتورة.
-        if (d.vatAmount == null || d.vatBase == null) {
+        if (!d.invoiceNo || d.vatAmount == null || d.vatBase == null) {
             return `
     <div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
     <div class="note" style="text-align:center">${L('المتجر غير مسجّل في ضريبة القيمة المضافة — لم تُحصَّل ضريبة على هذا الطلب.', 'Store not VAT-registered — no VAT was charged.')}</div>`;
@@ -493,7 +496,7 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
         }
         // رمز الفوترة الإلكترونية يُبنى من أرقام اللقطة نفسها — لا من حسابٍ محلّي،
         // وإلا حمل الرمزُ مبلغاً غير الذي تقرؤه العين على نفس الورقة.
-        if (data.vatAmount != null && isValidSaudiVat(data.sellerVatNumber)
+        if (data.invoiceNo && data.vatAmount != null && isValidSaudiVat(data.sellerVatNumber)
             && Number(data.totalAmount) > 0 && !data.qrDataUrl) {
             data.qrDataUrl = await zatcaQrDataUrl({
                 sellerName: data.shopName,

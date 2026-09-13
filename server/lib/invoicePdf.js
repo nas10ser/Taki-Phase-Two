@@ -377,7 +377,8 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
     // الطلب (لقطة الفاتورة)، لا لمجرّد صحّة صيغة الرقم الضريبي.
     // 🪤 كانت الورقة تُعنون نفسها «فاتورة ضريبية مبسطة» في أعلاها ثم تقول في
     // أسفلها «المتجر غير مسجّل ولم تُحصَّل ضريبة» — مستندٌ يناقض نفسه.
-    const vatOk = isValidSaudiVat(v.vat_number) && v.vat_amount != null;
+    // v14.22 — الشرط صدورُ رقم الفاتورة: لا مستند ضريبيّ لبيعٍ لم يقع.
+    const vatOk = !!v.invoice_no && isValidSaudiVat(v.vat_number) && v.vat_amount != null;
     const paid = !!v.paid;
     const delivery = v.fulfillment === 'delivery';
     const addr = (delivery && v.delivery && typeof v.delivery === 'object') ? v.delivery : null;
@@ -540,7 +541,9 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
             // الرمز يحمل أرقام الفاتورة نفسها — لا حساباً محلّياً، وإلا حمل الرمزُ
             // مبلغاً غير الذي تقرؤه العين على نفس الورقة.
             const tlv = zatcaTlvBase64(shop, String(v.vat_number),
-                new Date(v.issued_at || Number(v.booked_at) || 0).toISOString(),
+                // 🪤 `Number()` على نصّ ISO يُعطي NaN فيسقط إلى صفر، فيحمل الرمز
+                // تاريخ ١٩٧٠-٠١-٠١ على فاتورة ضريبية. `Date.parse` يقرأ الاثنين.
+                new Date(v.issued_at || v.booked_at || Date.now()).toISOString(),
                 fmtSAR(totalAmount), fmtSAR(v.vat_amount));
             qrBuf = await QRCode.toBuffer(tlv, { errorCorrectionLevel: 'M', margin: 2, width: 260 });
         } catch { qrBuf = null; }
