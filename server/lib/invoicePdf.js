@@ -372,8 +372,12 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
     };
 
     // ── البيانات ─────────────────────────────────────────────────────────────
-    const shop = clean(v.shop_name) || L('متجر', 'Store');
-    const vatOk = isValidSaudiVat(v.vat_number);
+    const shop = clean(v.seller_name) || clean(v.shop_name) || L('متجر', 'Store');
+    // v14.17 — «فاتورة ضريبية مبسطة» تُعلَن فقط إذا حُصِّلت ضريبة فعلاً على هذا
+    // الطلب (لقطة الفاتورة)، لا لمجرّد صحّة صيغة الرقم الضريبي.
+    // 🪤 كانت الورقة تُعنون نفسها «فاتورة ضريبية مبسطة» في أعلاها ثم تقول في
+    // أسفلها «المتجر غير مسجّل ولم تُحصَّل ضريبة» — مستندٌ يناقض نفسه.
+    const vatOk = isValidSaudiVat(v.vat_number) && v.vat_amount != null;
     const paid = !!v.paid;
     const delivery = v.fulfillment === 'delivery';
     const addr = (delivery && v.delivery && typeof v.delivery === 'object') ? v.delivery : null;
@@ -401,6 +405,7 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
     hr({ width: 2, gap: 8, top: 6 });
 
     // ── .row — الصفوف بترتيب القالب ───────────────────────────────────────
+    if (v.invoice_no) row(L('رقم الفاتورة', 'Invoice #'), String(v.invoice_no));
     row(L('رقم الطلب', 'Order #'), String(v.barcode || ''));
     if (v.backup_code && v.backup_code !== v.barcode) row(L('كود احتياطي', 'Backup code'), String(v.backup_code));
     if (v.booked_at) row(L('التاريخ', 'Date'), fmtDate(v.booked_at, rtl));
@@ -499,12 +504,15 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
         space(6);
     };
     if (totalAmount != null) {
-        if (vatOk && v.vat_amount != null) {
-            const s = splitInclusive(totalAmount, v.vat_rate);
-            row(L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)'), `${fmtSAR(s.base)} ${cur}`);
-            row(L(`ضريبة القيمة المضافة ${v.vat_rate == null ? 15 : v.vat_rate}٪ (مضمّنة)`, `VAT ${v.vat_rate == null ? 15 : v.vat_rate}% (included)`), `${fmtSAR(s.vat)} ${cur}`);
+        if (vatOk && v.vat_base != null) {
+            // v14.17 — الأرقام كما جُمِّدت في الفاتورة لحظة البيع.
+            // 🪤 كان هذا الملفّ **يتجاهل** vat_base/vat_amount القادمين من القاعدة
+            // ويعيد القسمة محلّياً، فيطبع على الطلب الواحد أرقاماً تخالف ما تقوله
+            // القاعدة عنه — والملفّ هو ما يصل التاجر والمشتري فعلاً.
+            row(L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)'), `${fmtSAR(v.vat_base)} ${cur}`);
+            row(L(`ضريبة القيمة المضافة ${v.vat_rate == null ? 15 : v.vat_rate}٪ (مضمّنة)`, `VAT ${v.vat_rate == null ? 15 : v.vat_rate}% (included)`), `${fmtSAR(v.vat_amount)} ${cur}`);
             solidTotalRule();
-            row(L('الإجمالي شامل الضريبة', 'Total (VAT incl.)'), `${fmtSAR(s.total)} ${cur}`, { size: F.total, keyColor: C.text });
+            row(L('الإجمالي شامل الضريبة', 'Total (VAT incl.)'), `${fmtSAR(totalAmount)} ${cur}`, { size: F.total, keyColor: C.text });
         } else {
             solidTotalRule();
             row(L('الإجمالي', 'Total'), `${fmtSAR(totalAmount)} ${cur}`, { size: F.total, keyColor: C.text });
@@ -519,10 +527,12 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
     // ── رمز زاتكا QR — للتاجر المسجّل ضريبياً فقط ───────────────────────
     let qrBuf = null;
     if (vatOk && totalAmount != null && v.vat_amount != null) {
-        const s = splitInclusive(totalAmount, v.vat_rate);
         try {
+            // الرمز يحمل أرقام الفاتورة نفسها — لا حساباً محلّياً، وإلا حمل الرمزُ
+            // مبلغاً غير الذي تقرؤه العين على نفس الورقة.
             const tlv = zatcaTlvBase64(shop, String(v.vat_number),
-                new Date(Number(v.booked_at) || 0).toISOString(), fmtSAR(s.total), fmtSAR(s.vat));
+                new Date(v.issued_at || Number(v.booked_at) || 0).toISOString(),
+                fmtSAR(totalAmount), fmtSAR(v.vat_amount));
             qrBuf = await QRCode.toBuffer(tlv, { errorCorrectionLevel: 'M', margin: 2, width: 260 });
         } catch { qrBuf = null; }
         if (qrBuf) {

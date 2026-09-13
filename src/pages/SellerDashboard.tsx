@@ -34,7 +34,8 @@ import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 // v14.06 — رابط الملاحة إلى عنوان التوصيل (قاعدة روابط الخرائط الموحّدة)
 import { directionsLink } from '../utils/mapLinks';
-import { KSA_VAT_RATE, splitInclusive, fmtSAR } from '../utils/vat';
+import { splitInclusive, fmtSAR } from '../utils/vat';
+import { isValidSaudiVat } from '../utils/zatcaQr';
 import { thumbUrl, imgFallback } from '../utils/thumb';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
@@ -382,6 +383,23 @@ const SellerDashboard: React.FC = () => {
         return () => { alive = false; };
     }, [user?.id, ingestDeals]);
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
+    // v14.17 — هل هذا التاجر مسجَّل ضريبياً؟ حاسبة الضريبة في نموذج العرض وحدها
+    // تعتمد عليه: غير المسجَّل لا يجوز له تحصيل ضريبة، فعرضُ حاسبةٍ تَعِده بأنها
+    // «تُطبع على فاتورة كل طلب» وعدٌ لا يتحقّق له.
+    const [vatRegistered, setVatRegistered] = useState(false);
+    React.useEffect(() => {
+        if (!user?.id) { setVatRegistered(false); return; }
+        let alive = true;
+        (async () => {
+            try {
+                const { supabase } = await import('../services/supabaseClient');
+                const { data } = await supabase.from('store_profiles')
+                    .select('vat_number').eq('store_id', user.id).maybeSingle();
+                if (alive) setVatRegistered(isValidSaudiVat((data as any)?.vat_number));
+            } catch { /* الحاسبة تبقى مخفيّة عند أي فشل */ }
+        })();
+        return () => { alive = false; };
+    }, [user?.id]);
     // v12.93 — تمرير موثوق لأعلى عند فتح أي تبويب/نموذج (بلاغ ناصر: يفتح المنتج
     // للتعديل فيجد نفسه في أسفل الصفحة). السبب: التمرير «الأملس» يُقطَع بتحميل
     // خريطة Leaflet والصور. الحل: تمرير فوري بعد الرسم + تمريرة متابعة قصيرة.
@@ -3744,7 +3762,13 @@ const SellerDashboard: React.FC = () => {
                         {(() => {
                             const sell = Number(normalizedDiscountedPrice) || 0;
                             if (!(sell > 0)) return null;
-                            const s = splitInclusive(sell);
+                            // v14.17 — النسبة من مصدرها الوحيد لا من ثابتٍ في الكود،
+                            // والحاسبة تظهر فقط للتاجر المسجَّل ضريبياً: غير المسجَّل
+                            // لا يجوز له تحصيل ضريبة، وكانت البطاقة تَعِده بأنها
+                            // «تُطبع تلقائياً على فاتورة كل طلب» وهي لا تُطبع له.
+                            if (!vatRegistered) return null;
+                            const rate = platformSettings.merchantVatRate;
+                            const s = splitInclusive(sell, rate);
                             return (
                                 <div style={{
                                     margin: '-12px 0 16px', padding: '10px 14px', borderRadius: 12,
@@ -3752,8 +3776,8 @@ const SellerDashboard: React.FC = () => {
                                     color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800, lineHeight: 1.8,
                                 }}>
                                     🧾 {isRTL
-                                        ? <>حاسبة الضريبة (السعودية {KSA_VAT_RATE}٪): سعر البيع <b>{fmtSAR(s.total)}</b> ر.س شامل الضريبة = الأساس <b>{fmtSAR(s.base)}</b> ر.س + ضريبة <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> ر.س — تُطبع تلقائياً على فاتورة كل طلب.</>
-                                        : <>VAT calculator (KSA {KSA_VAT_RATE}%): selling price <b>{fmtSAR(s.total)}</b> SAR incl. VAT = base <b>{fmtSAR(s.base)}</b> + VAT <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> — shown automatically on every order invoice.</>}
+                                        ? <>حاسبة الضريبة ({rate}٪): سعر البيع <b>{fmtSAR(s.total)}</b> ر.س شامل الضريبة = الأساس <b>{fmtSAR(s.base)}</b> ر.س + ضريبة <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> ر.س — تُطبع تلقائياً على فاتورة كل طلب.</>
+                                        : <>VAT calculator ({rate}%): selling price <b>{fmtSAR(s.total)}</b> SAR incl. VAT = base <b>{fmtSAR(s.base)}</b> + VAT <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> — shown automatically on every order invoice.</>}
                                 </div>
                             );
                         })()}

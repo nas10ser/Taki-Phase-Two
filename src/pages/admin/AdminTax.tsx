@@ -26,6 +26,7 @@ import { CsvColumn } from '../../utils/csvExport';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
 import { invalidateVatMode } from '../../hooks/useVatMode';
+import { normalizeArabicNumerals } from '../../utils/helpers';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
 interface TaxSettings {
@@ -105,6 +106,94 @@ function lastQuarters(): Quarter[] {
  * VatStatusPanel (v13.38) — من أعلن وضعه الضريبي ومن لم يفعل.
  * «لم يحدّد» هي الخانة الخطرة: قد يكون بينهم مسجّل تصدر فواتيره بلا ضريبة.
  */
+/**
+ * MerchantVatCard — ضريبة **طلبات التجار** (v14.17)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * مفصولة تماماً عن ضريبة اشتراكات تاكي. قاعدتان تحكمانها ولا ثالث:
+ *   ١) تظهر الضريبة على فاتورة الطلب **برقم التاجر الضريبي وحده** — لا بمفتاح
+ *      من هنا. البائع في ذلك العقد هو التاجر، فتسجيلُ تاكي لا يخصّه.
+ *   ٢) أسعار التجزئة في السعودية **شاملة** الضريبة، فتُستخرج من السعر المعلن
+ *      ولا تُضاف فوقه. لا خيار هنا لأن لا خيار في النظام.
+ * والنسبة رقمٌ واحد يقرؤه الموقع والبوتان والقاعدة معاً من هذه البطاقة.
+ */
+const MerchantVatCard: React.FC = () => {
+    const { customAlert } = useApp();
+    const [rate, setRate] = useState('15');
+    const [saved, setSaved] = useState('15');
+    const [busy, setBusy] = useState(false);
+    const [stats, setStats] = useState<{ invoices: number; taxed: number } | null>(null);
+
+    useEffect(() => {
+        (async () => {
+            const { data } = await supabase.from('platform_settings').select('value').eq('key', 'merchant_vat').maybeSingle();
+            const r = Number((data?.value as any)?.rate);
+            const v = Number.isFinite(r) && r >= 0 && r <= 100 ? String(r) : '15';
+            setRate(v); setSaved(v);
+            const [{ count: all }, { count: taxed }] = await Promise.all([
+                supabase.from('order_invoices').select('barcode', { count: 'exact', head: true }),
+                supabase.from('order_invoices').select('barcode', { count: 'exact', head: true }).not('vat_amount', 'is', null),
+            ]);
+            setStats({ invoices: all || 0, taxed: taxed || 0 });
+        })().catch(() => { /* البطاقة تبقى على الافتراضي */ });
+    }, []);
+
+    const card = 'bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm';
+    const dirty = rate !== saved;
+
+    const save = async () => {
+        const n = parseFloat(normalizeArabicNumerals(rate));
+        if (!Number.isFinite(n) || n < 0 || n > 100) { await customAlert('⚠️ أدخل نسبة بين 0 و100.'); return; }
+        setBusy(true);
+        const { error } = await supabase.from('platform_settings').upsert({
+            key: 'merchant_vat',
+            value: { rate: n },
+            description: 'نسبة ضريبة القيمة المضافة على طلبات التجار (تجزئة، مضمّنة في السعر)',
+            updated_at: new Date().toISOString(),
+        });
+        setBusy(false);
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        setSaved(String(n));
+        await customAlert(`✅ حُفظت النسبة (${n}٪). تسري على الطلبات **الجديدة** فقط — الفواتير الصادرة تحتفظ بنسبتها المجمّدة.`);
+    };
+
+    return (
+        <section className={card}>
+            <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-1">🧾 ضريبة طلبات التجار</h3>
+            <p className="text-[11px] font-bold text-[var(--text-secondary)] mb-3 leading-relaxed">
+                الضريبة تظهر على فاتورة الطلب <b>إذا كان لذلك التاجر رقم ضريبي صحيح</b> — لا دخل لتسجيل تاكي بها،
+                لأن البائع في ذلك الطلب هو التاجر. وأسعار التجزئة في السعودية <b>شاملة</b> الضريبة، فتُستخرج من
+                السعر المعلن ولا تُضاف فوقه.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                    <span className="text-[10px] font-bold text-[var(--text-secondary)] block mb-1">نسبة الضريبة ٪</span>
+                    <input
+                        type="number" min={0} max={100} step={0.5} inputMode="decimal" dir="ltr"
+                        value={rate}
+                        onChange={e => setRate(normalizeArabicNumerals(e.target.value))}
+                        className="w-28 px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-extrabold text-[var(--text-primary)] text-center outline-none focus:border-teal-500"
+                    />
+                </label>
+                <button onClick={save} disabled={busy || !dirty}
+                    className="px-5 py-2 rounded-xl text-xs font-extrabold text-white disabled:opacity-40"
+                    style={{ background: 'linear-gradient(135deg,#0d9488,#0f766e)' }}>
+                    {busy ? 'جاري الحفظ…' : dirty ? '💾 حفظ النسبة' : '✓ محفوظة'}
+                </button>
+                {stats && (
+                    <div className="text-[11px] font-bold text-[var(--text-secondary)]">
+                        الفواتير: <b className="text-[var(--text-primary)]">{stats.invoices.toLocaleString('en-US')}</b>
+                        {' · '}عليها ضريبة: <b className="text-[var(--text-primary)]">{stats.taxed.toLocaleString('en-US')}</b>
+                    </div>
+                )}
+            </div>
+            <div className="text-[11px] font-bold text-amber-600 mt-3 leading-relaxed">
+                ⚠️ تغيير النسبة يسري على الطلبات الجديدة وحدها. كل فاتورة صادرة تحتفظ بنسبتها ومبلغها كما جُمِّدا
+                لحظة البيع — فلا تتغيّر ورقةٌ سُلِّمت لمشترٍ.
+            </div>
+        </section>
+    );
+};
+
 const VatStatusPanel: React.FC = () => {
     const [data, setData] = useState<any>(null);
     useEffect(() => {
@@ -206,7 +295,7 @@ const AdminTax: React.FC = () => {
         // فتظهر آثار التفعيل فوراً في كل الصفحات بلا إعادة تحميل.
         invalidateVatMode();
         await customAlert(settings.vat_enabled && settings.vat_number
-            ? '✅ حُفظت الإعدادات — الضريبة مفعّلة الآن وستظهر تلقائياً على الاشتراكات والفواتير وبطاقات التجار.'
+            ? '✅ حُفظت الإعدادات — ضريبة الاشتراكات مفعّلة الآن وتظهر على فواتير الباقات. (فواتير طلبات المشترين لا تتأثّر — تلك ترتبط برقم كل تاجر الضريبي وحده.)'
             : '✅ حُفظت إعدادات الزكاة والضريبة.');
     };
 
@@ -545,9 +634,19 @@ const AdminTax: React.FC = () => {
             {/* v13.38 — الأوضاع الضريبية للتجار */}
             <VatStatusPanel />
 
+            {/* v14.17 — ضريبة **طلبات التجار**، مفصولة تماماً عن ضريبة اشتراكات تاكي */}
+            <MerchantVatCard />
+
             {/* الإعدادات */}
             <section className={card}>
-                <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-3">⚙️ إعدادات الفواتير والضريبة</h3>
+                <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-1">⚙️ ضريبة اشتراكات تاكي وفواتيرها</h3>
+                {/* v14.17 — كان مفتاح واحد يقود أمرين متعاكسين: ضريبة اشتراكات
+                    تاكي (بين منشأتين، تُضاف فوق السعر) وضريبة طلب المشتري (تجزئة،
+                    مضمّنة في السعر). فُصلا. هذا القسم للاشتراكات وحدها. */}
+                <p className="text-[11px] font-bold text-[var(--text-secondary)] mb-3 leading-relaxed">
+                    هذه الإعدادات تخصّ <b>فواتير اشتراكات التجار في تاكي</b> وحدها: هويّة منشأتك، ورقمك الضريبي،
+                    وهل تُضاف الضريبة فوق سعر الباقة. <b>لا تمسّ فواتير طلبات المشترين إطلاقاً</b> — تلك في البطاقة أعلاه.
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <label className="block"><span className={lbl}>اسم المنشأة (يظهر على الفاتورة)</span>
                         <input className={inputCls} value={settings.entity_name} onChange={e => upd({ entity_name: e.target.value })} /></label>
@@ -561,11 +660,11 @@ const AdminTax: React.FC = () => {
                 <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => upd({ vat_enabled: !settings.vat_enabled })}
                         className={`px-3 py-2 rounded-xl text-xs font-extrabold ${settings.vat_enabled ? 'bg-teal-600 text-white' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
-                        {settings.vat_enabled ? '✅ الضريبة مفعّلة (مسجَّل في الهيئة)' : '⭕ الضريبة غير مفعّلة (قبل التسجيل)'}
+                        {settings.vat_enabled ? '✅ ضريبة الاشتراكات مفعّلة (تاكي مسجَّلة)' : '⭕ ضريبة الاشتراكات غير مفعّلة'}
                     </button>
                     <button onClick={() => upd({ prices_include_vat: !settings.prices_include_vat })}
                         className={`px-3 py-2 rounded-xl text-xs font-extrabold ${settings.prices_include_vat ? 'bg-blue-600 text-white' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
-                        {settings.prices_include_vat ? 'الأسعار شاملة الضريبة' : 'الضريبة تُضاف فوق السعر'}
+                        {settings.prices_include_vat ? 'أسعار الباقات شاملة الضريبة' : 'الضريبة تُضاف فوق سعر الباقة'}
                     </button>
                     <button onClick={saveSettings} disabled={saving || !dirty}
                         className="px-5 py-2 rounded-xl text-xs font-extrabold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#0d9488,#0f766e)' }}>

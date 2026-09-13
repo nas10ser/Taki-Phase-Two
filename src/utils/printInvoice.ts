@@ -11,7 +11,7 @@
 // الضريبية (زاتكا) — تلك يصدرها التاجر من نظامه لأن الدفع يتم على حسابه.
 
 import { code128SVG } from './barcode128';
-import { KSA_VAT_RATE, splitInclusive, fmtSAR } from './vat';
+import { KSA_VAT_RATE, fmtSAR } from './vat';
 import { zatcaQrDataUrl, isValidSaudiVat } from './zatcaQr';
 import { supabase } from '../services/supabaseClient';
 
@@ -78,6 +78,15 @@ export interface InvoiceData {
     /** v13.35 — لجلب الرقم الضريبي للتاجر (توافق الهيئة): مسجّل ← فاتورة مبسطة بQR */
     storeId?: string;
     sellerVatNumber?: string | null;
+    /** v14.17 — لقطة الفاتورة كما جُمِّدت لحظة البيع (جدول order_invoices).
+     *  لا تُحسب هنا ولا تُقرأ من إعدادات حيّة: الرقم الذي طُبع أوّل مرّة هو
+     *  الرقم الذي يُطبع دائماً، مهما عدّل التاجر بياناته بعدها. */
+    invoiceNo?: string | null;
+    issuedAt?: string | null;
+    vatRate?: number | null;
+    vatBase?: number | null;
+    vatAmount?: number | null;
+    sellerAddress?: string | null;
     /** يُملأ داخلياً قبل الطباعة — صورة QR للفوترة الإلكترونية */
     qrDataUrl?: string;
     isRTL: boolean;
@@ -271,13 +280,18 @@ const buildHtml = (d: InvoiceData): string => {
       ${(() => {
         // v13.35 — توافق الهيئة: التاجر المسجّل ضريبياً تُطبع له «فاتورة ضريبية
         // مبسطة» باسمها الصحيح ورقمه الضريبي؛ غير المسجّل يبقى «سند طلب».
-        if (isValidSaudiVat(d.sellerVatNumber)) {
-            return `<div class="sub"><b>${L('فاتورة ضريبية مبسطة', 'Simplified Tax Invoice')}</b><br>${L('الرقم الضريبي', 'VAT No')}: ${esc(String(d.sellerVatNumber))}</div>`;
+        // v14.17 — الشرط هو **أن ضريبةً حُصِّلت فعلاً على هذا الطلب** (لقطة الفاتورة)،
+        // لا مجرّد صحّة صيغة الرقم. كانت الورقة تُعنون نفسها «فاتورة ضريبية مبسطة»
+        // في أعلاها ثم تقول في أسفلها «المتجر غير مسجّل ولم تُحصَّل ضريبة» — مستندٌ
+        // يناقض نفسه ولا يصمد أمام أي تدقيق.
+        if (d.vatAmount != null && isValidSaudiVat(d.sellerVatNumber)) {
+            return `<div class="sub"><b>${L('فاتورة ضريبية مبسطة', 'Simplified Tax Invoice')}</b><br>${L('الرقم الضريبي', 'VAT No')}: ${esc(String(d.sellerVatNumber))}${d.sellerAddress ? `<br>${esc(String(d.sellerAddress))}` : ''}</div>`;
         }
         return `<div class="sub">${L('فاتورة / سند طلب', 'Order receipt')}</div>`;
       })()}
     </div>
     ${orderBarcodeHtml}
+    ${d.invoiceNo ? `<div class="row"><span class="k">${L('رقم الفاتورة', 'Invoice #')}</span><span class="v">${esc(d.invoiceNo)}</span></div>` : ''}
     <div class="row"><span class="k">${L('رقم الطلب', 'Order #')}</span><span class="v">${esc(d.barcode)}</span></div>
     ${d.backupCode && d.backupCode !== d.barcode ? `<div class="row"><span class="k">${L('كود احتياطي', 'Backup code')}</span><span class="v">${esc(d.backupCode)}</span></div>` : ''}
     ${dateStr ? `<div class="row"><span class="k">${L('التاريخ', 'Date')}</span><span class="v">${esc(dateStr)}</span></div>` : ''}
@@ -304,17 +318,17 @@ const buildHtml = (d: InvoiceData): string => {
             return d.totalText ? `<div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${esc(d.totalText)}</span></div>` : '';
         }
         const cur = L('ر.س', 'SAR');
-        const registered = isValidSaudiVat(d.sellerVatNumber);
-        if (!registered) {
+        // v14.17 — لا حساب هنا إطلاقاً: الأساس والضريبة رقمان مجمّدان في الفاتورة.
+        if (d.vatAmount == null || d.vatBase == null) {
             return `
     <div class="total"><span>${L('الإجمالي', 'Total')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
     <div class="note" style="text-align:center">${L('المتجر غير مسجّل في ضريبة القيمة المضافة — لم تُحصَّل ضريبة على هذا الطلب.', 'Store not VAT-registered — no VAT was charged.')}</div>`;
         }
-        const s = splitInclusive(Number(d.totalAmount));
+        const rate = d.vatRate ?? KSA_VAT_RATE;
         return `
-    <div class="row" style="margin-top:10px"><span class="k">${L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)')}</span><span class="v">${fmtSAR(s.base)} ${cur}</span></div>
-    <div class="row"><span class="k">${L(`ضريبة القيمة المضافة ${KSA_VAT_RATE}٪ (مضمّنة)`, `VAT ${KSA_VAT_RATE}% (included)`)}</span><span class="v">${fmtSAR(s.vat)} ${cur}</span></div>
-    <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(s.total)} ${cur}</span></div>
+    <div class="row" style="margin-top:10px"><span class="k">${L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)')}</span><span class="v">${fmtSAR(Number(d.vatBase))} ${cur}</span></div>
+    <div class="row"><span class="k">${L(`ضريبة القيمة المضافة ${rate}٪ (مضمّنة)`, `VAT ${rate}% (included)`)}</span><span class="v">${fmtSAR(Number(d.vatAmount))} ${cur}</span></div>
+    <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
     ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${d.qrDataUrl}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
     })()}
     ${d.totalIsEstimate && Number(d.totalAmount) > 0 ? `<div class="foot" style="margin-top:8px">${L('الإجمالي محسوب من سعر العرض وقد لا يشمل إضافات اتُّفق عليها مع التاجر.', 'Total is derived from the deal price and may exclude extras agreed with the merchant.')}</div>` : ''}
@@ -425,20 +439,36 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
     // v13.35 — توافق الهيئة: اجلب الرقم الضريبي للمتجر لحظة الطباعة، وإن كان
     // مسجّلاً ولّد رمز QR (TLV) محلياً — فتخرج «فاتورة ضريبية مبسطة» مكتملة.
     // كل خطوة best-effort: أي فشل يطبع السند كما كان ولا يعطّل الزر أبداً.
+    // v14.17 — كل ما يخصّ الضريبة يأتي من **لقطة الفاتورة** على القاعدة.
+    // 🪤 ما كان قبلها: الرقم الضريبي يُقرأ حيّاً من `store_profiles` لحظة الضغط،
+    // والنسبة ثابتة ١٥ في الكود، والتقسيم يُعاد حسابه هنا — فثلاث نسخ مستقلّة
+    // (الموقع · ملفّ البوتين · القاعدة) تختلف على الطلب الواحد، وفاتورةٌ قديمة
+    // تتغيّر أرقامها كلّما عدّل التاجر بياناته.
     try {
-        if (data.storeId && data.sellerVatNumber === undefined) {
-            const { data: prof } = await supabase.from('store_profiles')
-                .select('vat_number').eq('store_id', data.storeId).maybeSingle();
-            data.sellerVatNumber = (prof as any)?.vat_number ?? null;
+        if (data.barcode && data.vatAmount === undefined) {
+            const { data: inv } = await supabase.rpc('get_order_invoice', { p_barcode: data.barcode });
+            const v: any = inv || null;
+            if (v) {
+                data.invoiceNo = v.invoice_no ?? null;
+                data.issuedAt = v.issued_at ?? null;
+                data.vatRate = v.vat_rate != null ? Number(v.vat_rate) : null;
+                data.vatBase = v.vat_base != null ? Number(v.vat_base) : null;
+                data.vatAmount = v.vat_amount != null ? Number(v.vat_amount) : null;
+                data.sellerVatNumber = v.seller?.vat_number ?? null;
+                data.sellerAddress = v.seller?.address ?? null;
+                if (v.seller?.name) data.shopName = String(v.seller.name);
+            }
         }
-        if (isValidSaudiVat(data.sellerVatNumber) && Number(data.totalAmount) > 0 && !data.qrDataUrl) {
-            const s = splitInclusive(Number(data.totalAmount));
+        // رمز الفوترة الإلكترونية يُبنى من أرقام اللقطة نفسها — لا من حسابٍ محلّي،
+        // وإلا حمل الرمزُ مبلغاً غير الذي تقرؤه العين على نفس الورقة.
+        if (data.vatAmount != null && isValidSaudiVat(data.sellerVatNumber)
+            && Number(data.totalAmount) > 0 && !data.qrDataUrl) {
             data.qrDataUrl = await zatcaQrDataUrl({
                 sellerName: data.shopName,
                 vatNumber: String(data.sellerVatNumber),
-                isoDateTime: new Date(data.createdAt || Date.now()).toISOString(),
-                totalWithVat: fmtSAR(s.total),
-                vatAmount: fmtSAR(s.vat),
+                isoDateTime: new Date(data.issuedAt || data.createdAt || Date.now()).toISOString(),
+                totalWithVat: fmtSAR(Number(data.totalAmount)),
+                vatAmount: fmtSAR(Number(data.vatAmount)),
             });
         }
     } catch { /* السند يُطبع بلا QR عند أي فشل */ }
