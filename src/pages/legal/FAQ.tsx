@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
@@ -41,7 +42,7 @@ const Group: React.FC<{ title: string; emoji: string; items: QA[] }> = ({ title,
 const howItWorksAR: QA[] = [
     {
         q: 'ما هي منصّة TAKI باختصار؟',
-        a: <p>TAKI منصّة سعودية رقمية لحجز التخفيضات والعروض من التجار المحلّيين، تعمل عبر الموقع وتطبيق الهاتف. مهمّتنا أن نَربط المشتري الباحث عن صفقة بالتاجر الذي يريد تصريف مخزون أو زيادة الإقبال — بضغطة واحدة، وبدون رسوم على المشتري.</p>,
+        a: <p>TAKI منصّة سعودية رقمية لحجز التخفيضات والعروض من التجار المحلّيين، تعمل عبر الموقع وتطبيق الهاتف. مهمّتنا أن نَربط المشتري الباحث عن صفقة بالتاجر الذي يريد تصريف مخزون أو زيادة الإقبال — بضغطة واحدة. والتصفّح والحجز مجانيان للمشتري؛ وإن أتاح التاجر التوصيل فرسومه يحدّدها هو وتظهر قبل التأكيد.</p>,
     },
     {
         q: 'هل TAKI تبيع المنتجات بنفسها؟',
@@ -49,7 +50,7 @@ const howItWorksAR: QA[] = [
     },
     {
         q: 'ما الفرق بين TAKI والمتاجر الإلكترونية التقليدية؟',
-        a: <p>في المتجر الإلكتروني التقليدي تشتري المنتج، يُحجَز ثمنه، ويُشحَن إليك. في TAKI أنت <strong>تَحجِز عرضاً</strong>، تذهب إلى موقع التاجر في المدّة المحدّدة، تتفقّد البضاعة بنفسك وتدفع ثمنها مباشرةً للتاجر. لا شحن، لا انتظار طويل، ولا حجز مال على بطاقتك.</p>,
+        a: <p>في المتجر الإلكتروني التقليدي تشتري المنتج، يُحجَز ثمنه، ويُشحَن إليك. في TAKI أنت <strong>تَحجِز عرضاً</strong>، تذهب إلى موقع التاجر في المدّة المحدّدة، تتفقّد البضاعة بنفسك وتدفع ثمنها مباشرةً للتاجر. الأصل أن تستلم من المتجر: لا انتظار شحن ولا حجز مال على بطاقتك. وبعض التجار يتيح التوصيل إلى عنوانك برسوم يحدّدها هو وتظهر لك قبل التأكيد، وقد تختار الدفع الإلكتروني فيُخصم المبلغ لحساب التاجر مباشرة.</p>,
     },
     {
         q: 'كيف تَكسِب TAKI من المنصّة إذاً؟',
@@ -84,7 +85,7 @@ const howItWorksEN: QA[] = [
     },
     {
         q: 'How does TAKI differ from a traditional online store?',
-        a: <p>In a traditional online store you buy the product, the price is charged, and it is shipped to you. On TAKI you <strong>book an offer</strong>, go to the merchant's location within the offer window, inspect the goods yourself, and pay for them directly to the merchant. No shipping, no long wait, and no hold on your card.</p>,
+        a: <p>In a traditional online store you buy the product, the price is charged, and it is shipped to you. On TAKI you <strong>book an offer</strong>, go to the merchant's location within the offer window, inspect the goods yourself, and pay for them directly to the merchant. By default you collect from the store: no shipping wait and no hold on your card. Some merchants also offer delivery to your address for a fee they set, shown before you confirm; you may then choose to pay online, and the amount goes straight to the merchant.</p>,
     },
     {
         q: 'So how does TAKI earn from the platform?',
@@ -114,7 +115,7 @@ const howItWorksEN: QA[] = [
 const buyerFAQ_AR: QA[] = [
     {
         q: 'هل التسجيل والاستخدام مجاني للمشتري؟',
-        a: <p>نعم، 100% مجاني. لا اشتراك، لا عمولة، لا رسوم خفية. كلّ ما تحتاجه: تسجيل حساب بسيط برقم الجوّال أو البريد، ويمكنك تصفّح كل العروض حول موقعك.</p>,
+        a: <p>نعم — التصفّح والحجز مجانيان. لا اشتراك، ولا عمولة، ولا رسوم خفية من المنصّة. المبلغ الوحيد الذي قد تدفعه فوق ثمن البضاعة هو <strong>رسوم التوصيل</strong> إن اخترته، ويحدّدها التاجر لا المنصّة وتظهر لك كاملةً قبل تأكيد الطلب.</p>,
     },
     {
         q: 'كيف أحجز عرضاً؟',
@@ -237,7 +238,7 @@ const buyerFAQ_AR: QA[] = [
 const buyerFAQ_EN: QA[] = [
     {
         q: 'Is registration and use free for buyers?',
-        a: <p>Yes — 100% free. No subscriptions, no commission, no hidden fees. All you need is a quick account using your mobile number or email, and you can browse every offer around you.</p>,
+        a: <p>Yes — browsing and booking are free. No subscription, no commission and no hidden platform fees. The only amount you may pay beyond the goods is a delivery fee, set by the merchant and shown before you confirm. All you need is a quick account using your mobile number or email, and you can browse every offer around you.</p>,
     },
     {
         q: 'How do I book an offer?',
@@ -561,7 +562,7 @@ const FAQ: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'الأسئلة الشائعة' : 'Frequently Asked Questions'}
             subtitle={isRTL ? 'Frequently Asked Questions · TAKI' : 'الأسئلة الشائعة · TAKI'}
-            lastUpdated="2026-07-23"
+            lastUpdated={LEGAL_VERSION}
             draftNotice={false}
         >
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">

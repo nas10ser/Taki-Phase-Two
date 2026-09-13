@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
@@ -24,7 +25,7 @@ const Terms: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'شروط الاستخدام' : 'Terms of Service'}
             subtitle={isRTL ? 'Terms of Service · TAKI' : 'Terms of Service · TAKI'}
-            lastUpdated="2026-07-23"
+            lastUpdated={LEGAL_VERSION}
         >
             <Paragraph>
                 {isRTL ? (
@@ -148,12 +149,14 @@ const Terms: React.FC = () => {
                     'تَقديم بيانات صحيحة، دقيقة، محدَّثة، تَعود إليك شخصياً. أيّ تَزوير أو انتحال جريمة بموجب نظام مكافحة جرائم المعلوماتية تُحال للجهات المختصّة.',
                     'الحفاظ على سرّية كلمة المرور وعدم مشاركة بيانات الحساب مع أيّ طرف، وتَحمّل كامل المسؤولية عن كلّ نشاط يَصدر من الحساب.',
                     'إبلاغ الإدارة فوراً عند أيّ استخدام غير مصرَّح به للحساب أو أيّ اشتباه باختراق.',
+                    <>حذف الحساب: يُعطَّل حسابك <strong>فوراً</strong> عند طلب الحذف فلا يظهر ولا يُستعمل، ويمكنك التراجع بتسجيل الدخول خلال <strong>٣٠ يوماً</strong>. وبعد انقضائها تُمحى بياناتك الشخصية نهائياً (الاسم والجوّال والبريد والعناوين والصورة)، وتبقى طلباتك السابقة في سجلّ التاجر <strong>بلا هوية</strong> لأنّها سجلّه ودفاتره الضريبية التي يُلزمه النظام بحفظها.</>,
                     'التعاون مع الإدارة في أيّ طلب للتحقّق من الهوية أو الأهلية.',
                 ] : [
                     'Attainment of the legal age of majority (18 years or above) and full capacity to enter into binding contracts. Registration below this age is prohibited and the account is deleted as soon as it is discovered.',
                     'Submission of accurate, current and up-to-date information belonging to you personally. Any falsification or impersonation is an offence under the Anti-Cyber Crime Law and is referred to the competent authorities.',
                     'Maintaining the confidentiality of your password and not sharing account credentials with any party, and taking full responsibility for every activity carried out from the account.',
                     'Notifying the administration immediately of any unauthorised use of the account or any suspicion of compromise.',
+                    'Account deletion: your account is deactivated **immediately** on request, so it neither appears nor can be used, and you may undo this by signing in within **30 days**. After that window your personal data is permanently erased (name, mobile, email, addresses, photo), while your past orders remain in the merchant\'s records **without identity**, because those are their books and tax invoices which the law requires them to keep.',
                     'Cooperating with the administration with any request to verify identity or eligibility.',
                 ]} />
                 <Paragraph><strong>{isRTL ? 'ب‌. شروط إضافية للمتجر/التاجر:' : 'B. Additional conditions for the store/merchant:'}</strong></Paragraph>
@@ -269,6 +272,31 @@ const Terms: React.FC = () => {
                     'Repeated unjustified no-shows, or booking without intent to attend, may lead to restrictions on the buyer\'s account at the administration\'s discretion.',
                     'Both parties undertake that dealings will take place in safe public locations, that they will verify the other party\'s identity before any action, that they will inspect goods before receipt, and that they will use the approved payment methods described in the platform\'s guidance.',
                     'It is strictly prohibited to use contact details obtained through the platform (mobile number, location, chat) for any purpose outside performing this specific booking, or to attempt to take the dealing off-platform, or to channel the customer elsewhere — any breach is a material default.',
+                ]} />
+
+                {/* v14.19 — التوصيل: أُطلق في v14.06 والوثائق سبقته، فلم يكن فيها
+                    ذكرٌ لعنوان ولا لتتبّع ولا لمن يتحمّل تلف الطريق. قرارات ناصر
+                    (١٣ سبتمبر): التاجر يتحمّل التلف · ورسوم التوصيل تُردّ عند فشل
+                    التسليم · وتتبّع الموقع يُمحى بعد ساعة. */}
+                <Paragraph><strong>{isRTL ? 'التوصيل إلى عنوان المشتري (إن أتاحه التاجر):' : 'Delivery to the buyer\'s address (where the merchant offers it):'}</strong></Paragraph>
+                <Bullets items={isRTL ? [
+                    <>التوصيل خدمة <strong>يقدّمها التاجر</strong> ويحدّد نطاقها ورسومها ومدّتها. TAKI لا تشحن ولا توصّل ولا تتعاقد مع مندوبين، وإنّما تعرض ما أعلنه التاجر وتنقل الطلب إليه.</>,
+                    'رسوم التوصيل تظهر كاملةً ضمن إجمالي الطلب قبل تأكيد الحجز، وتدخل الفاتورة، وتُدفع للتاجر لا للمنصّة.',
+                    'يُطلب عنوان التوصيل (وصفه ومدينته وجوّال التواصل وإحداثياته) لتنفيذ الطلب، ويُحفظ داخل الطلب نفسه لأنّه جزءٌ من مستنده — الفاتورة تحمله، والتاجر يحتاجه عند أيّ خلاف.',
+                    <><strong>تتبّع الموقع اللحظي</strong> لا يعمل إلا بعد أن يُعلن التاجر انطلاق المندوب، ولمشتري ذلك الطلب وحده، ويُمحى مع سجلّه بعد <strong>ساعة</strong> من إغلاق الطلب.</>,
+                    <><strong>تلف البضاعة أو فقدها أثناء النقل على التاجر</strong>، فهو من اختار وسيلة التوصيل ومن تعاقد مع المندوب. وعلى المشتري أن يتفقّد البضاعة عند الاستلام وأن يُبلّغ التاجر فوراً بأيّ تلف.</>,
+                    <><strong>إذا لم يصل الطلب</strong>، أو تعذّر التسليم لسببٍ يعود للتاجر أو مندوبه، <strong>تُردّ رسوم التوصيل كاملةً</strong> مع ثمن البضاعة إن كان مدفوعاً — عبر مسار «طلب إلغاء واسترداد» في صفحة «حجوزاتي».</>,
+                    'إذا تعذّر التسليم لسببٍ يعود للمشتري (عنوان خاطئ، أو عدم الردّ، أو الغياب عن الموقع المتّفق عليه)، فالتصرّف في الطلب ورسومه يخضع لسياسة التاجر المُعلَنة.',
+                    'مدد التوصيل المعروضة تقديرية يحدّدها التاجر، ولا تُعدّ التزاماً من المنصّة.',
+                ] : [
+                    <>Delivery is a service <strong>provided by the merchant</strong>, who sets its zone, its fee and its timing. TAKI does not ship, does not deliver and does not contract couriers; it displays what the merchant published and passes the order on.</>,
+                    'The delivery fee is shown in full inside the order total before the booking is confirmed, appears on the invoice, and is paid to the merchant — not to the platform.',
+                    'A delivery address (description, city, contact mobile and coordinates) is required to fulfil the order and is stored inside the order itself, because it is part of its record — the invoice carries it and the merchant needs it in any dispute.',
+                    <><strong>Live location tracking</strong> only runs once the merchant declares the courier has departed, is visible to that order\'s buyer alone, and is erased together with its record <strong>one hour</strong> after the order closes.</>,
+                    <><strong>Loss of or damage to the goods in transit is the merchant\'s responsibility</strong>, since the merchant chose the delivery method and engaged the courier. The buyer must inspect the goods on receipt and report any damage to the merchant immediately.</>,
+                    <><strong>If the order does not arrive</strong>, or delivery fails for a reason attributable to the merchant or their courier, <strong>the delivery fee is refunded in full</strong> together with the price of the goods if it was paid — through the «cancellation and refund request» path in «My Bookings».</>,
+                    'If delivery fails for a reason attributable to the buyer (wrong address, no answer, absence from the agreed location), the treatment of the order and its fee follows the merchant\'s published policy.',
+                    'Displayed delivery times are estimates set by the merchant and are not an undertaking by the platform.',
                 ]} />
             </Section>
 

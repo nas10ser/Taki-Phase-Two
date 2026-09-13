@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { LEGAL_VERSION } from '../data/legalVersion';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { validationService } from '../services/validationService';
@@ -67,6 +68,21 @@ const Register: React.FC = () => {
     const handleTelegramQuickStart = useCallback(async () => {
         try {
             const ok = await loginViaTelegram();
+            // v14.19 — هذا المسار كان يُنشئ حساباً **بلا أي أثر موافقة**: لا
+            // إصدار ولا وقت ولا إقرار سنّ. ثلاثة من ستّة حسابات حيّة بلا سجلّ
+            // موافقة، وهذا أحد سببيه. النصّ فوق الزرّ يذكر الشروط، فالإقرار قائم
+            // ويجب أن يُسجَّل مثله في مسار البريد تماماً.
+            if (ok) {
+                try {
+                    await supabase.rpc('record_user_consent', {
+                        p_terms_version: TERMS_VERSION,
+                        p_ip: null,
+                        p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
+                        p_kind: 'terms',
+                        p_min_age: MIN_AGE,
+                    });
+                } catch { /* لا يُعطّل الدخول */ }
+            }
             if (!ok) {
                 await customAlert(language === 'ar'
                     ? '⚠️ تعذّر إنشاء حساب عبر تيليجرام، حاول مجدداً أو سجّل بالبريد.'
@@ -140,7 +156,12 @@ const Register: React.FC = () => {
     // disables submission until ticked. After auth completes, record_user_consent
     // RPC writes the timestamp + IP + user-agent for legal evidence.
     const [acceptedLegal, setAcceptedLegal] = useState(false);
-    const TERMS_VERSION = '2026-05-20';
+    // v14.19 — الإصدار يطابق تاريخ آخر تحديث للوثائق الثلاث. 🪤 كان '2026-05-20'
+    // ولا يقابله تاريخُ أي صفحة، فما كان الأثر المحفوظ يدلّ على نصٍّ بعينه.
+    const TERMS_VERSION = LEGAL_VERSION;
+    // v14.19 — سنّ الأهلية للتعاقد في السعودية. يُخزَّن **إقرارٌ** لا تاريخ
+    // ميلاد: أقلّ بيانٍ شخصي يكفي للغرض (طلب ناصر).
+    const MIN_AGE = 18;
     // v12.30 — «من أين سمعت عن تاكي؟» (اختياري) + رمز دعوة المتجر من الرابط.
     // ?ref=CODE يُلتقط فور فتح الصفحة ويثبت في sessionStorage حتى لو تنقّل
     // المستخدم بين الشاشات قبل إكمال التسجيل — فلا يفقد المتجر إحالته.
@@ -743,8 +764,13 @@ const Register: React.FC = () => {
         try {
             await supabase.rpc('record_user_consent', {
                 p_terms_version: TERMS_VERSION,
-                p_ip: null, // server side determines if needed
+                // v14.19 — العنوان يُشتقّ على الخادم من ترويسة الطلب. ما يقوله
+                // المتصفّح عن عنوانه ليس دليلاً، وكان يُمرَّر `null` دائماً
+                // فبقي العمود فارغاً عند الجميع بينما الشروط تَعِد بتسجيله.
+                p_ip: null,
                 p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
+                p_kind: 'terms',
+                p_min_age: MIN_AGE,
             });
         } catch { /* non-blocking */ }
 
@@ -1058,7 +1084,7 @@ const Register: React.FC = () => {
                                 {t('متابعة سريعة كمتسوّق عبر تيليجرام', 'Quick start as a shopper via Telegram')}
                             </button>
                             <div style={{ textAlign: 'center', opacity: 0.4, fontSize: '0.72rem' }}>
-                                {t('يُنشئ حساب متسوّق جديداً فوراً — اختر «تسجيل الدخول» فوق إن كان لديك حساب.', 'Creates a new shopper account instantly — pick "Sign In" above if you already have one.')}
+                                {t(`يُنشئ حساب متسوّق جديداً فوراً — اختر «تسجيل الدخول» فوق إن كان لديك حساب. وبالمتابعة تُقرّ بأنك أتممتَ ${MIN_AGE} عاماً وتوافق على الشروط وسياستَي الخصوصية والاسترداد.`, `Creates a new shopper account instantly — pick "Sign In" above if you already have one. By continuing you confirm you are at least ${MIN_AGE} years old and agree to the Terms, Privacy and Refund policies.`)}
                             </div>
                         </>
                     )}
@@ -1433,7 +1459,7 @@ const Register: React.FC = () => {
                                         >
                                             {t('سياسة الاسترداد', 'Refund Policy')}
                                         </a>
-                                        {t('، وأتعهّد بتحمّل المسؤولية الكاملة عن أي محتوى أنشره أو معاملة أُجريها على TAKI.', ', and I take full responsibility for any content I publish or transactions I make on TAKI.')}
+                                        {t(`، وأُقرّ بأنني أتممتُ ${MIN_AGE} عاماً، وأتعهّد بتحمّل المسؤولية الكاملة عن أي محتوى أنشره أو معاملة أُجريها على TAKI.`, `, I confirm I am at least ${MIN_AGE} years old, and I take full responsibility for any content I publish or transactions I make on TAKI.`)}
                                     </div>
                                 </label>
                                 <div style={{
@@ -1446,8 +1472,8 @@ const Register: React.FC = () => {
                                     fontWeight: 500,
                                 }}>
                                     {t(
-                                        '⚖️ موافقتك توقيع إلكتروني ملزم وفقاً لنظام التعاملات الإلكترونية السعودي (المادة 7). يُسجَّل التاريخ والوقت كدليل قانوني.',
-                                        '⚖️ Your consent is a legally binding electronic signature under Saudi Electronic Transactions Law (Art. 7). The date and time are logged as legal evidence.'
+                                        `⚖️ موافقتك توقيع إلكتروني ملزم وفقاً لنظام التعاملات الإلكترونية السعودي (المادة 7). يُسجَّل تاريخ الموافقة ووقتها وإصدار الوثائق (${TERMS_VERSION}) وعنوان الإنترنت كدليل قانوني.`,
+                                        `⚖️ Your consent is a legally binding electronic signature under Saudi Electronic Transactions Law (Art. 7). The date, time, document version (${TERMS_VERSION}) and IP address are logged as legal evidence.`
                                     )}
                                 </div>
                             </div>

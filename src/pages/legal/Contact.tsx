@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 
@@ -18,7 +19,7 @@ const Contact: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'اتصل بنا' : 'Contact Us'}
             subtitle={isRTL ? 'Contact TAKI' : 'Contact TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated={LEGAL_VERSION}
             draftNotice={false}
         >
             <Paragraph>

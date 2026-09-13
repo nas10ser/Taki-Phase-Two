@@ -294,7 +294,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             </button>
                             <button
                                 onClick={async () => {
-                                    if (await customConfirm(isRTL ? 'هل أنت متأكد من حذف الحساب؟ سيتم حذف جميع بياناتك نهائياً.' : 'Are you sure? All your data will be permanently deleted.')) {
+                                    // v14.19 — النصّ يقول الحقيقة: تعطيلٌ فوري ثم محوٌ بعد ٣٠ يوماً مع
+                                // إمكانية تراجع. كان يَعِد بمحوٍ فوري نهائي وهو ليس ما يحدث.
+                                if (await customConfirm(isRTL
+                                    ? 'حذف الحساب؟\n\nيُعطَّل حسابك فوراً فلا يظهر ولا يُستعمل. ويمكنك التراجع بتسجيل الدخول خلال ٣٠ يوماً.\n\nوبعدها تُمحى بياناتك الشخصية نهائياً، وتبقى طلباتك السابقة في سجلّ التاجر بلا هويتك (دفاتره الضريبية يُلزمه النظام بحفظها).'
+                                    : 'Delete account?\n\nYour account is deactivated immediately. You can undo it by signing in within 30 days.\n\nAfter that your personal data is permanently erased, and your past orders stay in the merchant\'s records without your identity (their tax books, which the law requires them to keep).')) {
                                         deleteAccount();
                                         onClose();
                                         history.push('/register');
@@ -302,7 +306,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 }}
                                 style={{ width: '100%', padding: '8px', color: 'var(--text-secondary)', background: 'none', border: 'none', fontSize: '0.72rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
                             >
-                                {isRTL ? 'حذف الحساب نهائياً' : 'Delete Account'}
+                                {isRTL ? 'حذف الحساب' : 'Delete Account'}
                             </button>
                         </>
                     )}

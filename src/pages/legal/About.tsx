@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 
@@ -14,7 +15,7 @@ const About: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'من نحن' : 'About Us'}
             subtitle={isRTL ? 'About TAKI' : 'About TAKI'}
-            lastUpdated="2026-07-22"
+            lastUpdated={LEGAL_VERSION}
             draftNotice={false}
         >
             <Paragraph>
@@ -43,7 +44,7 @@ const About: React.FC = () => {
                             وأطعمة لا تُستهلَك، وعروض لا يعرف بها أحد.{' '}
                             <strong>TAKI</strong> تربط التاجر الراغب في تصريف مخزون أو
                             زيادة إقبال، بالمشتري الذي يبحث عن قيمة حقيقية — في الوقت
-                            المناسب، وبدون وسيط معقّد، وبدون رسوم على المشتري.
+                            المناسب، وبدون وسيط معقّد. والتصفّح والحجز مجانيان للمشتري تماماً: لا اشتراك ولا عمولة. وإن اختار التاجر إتاحة التوصيل، فرسومه يحدّدها التاجر وتظهر كاملةً قبل تأكيد الطلب.
                         </>
                     ) : (
                         <>

@@ -201,8 +201,14 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
     const acceptAgreement = async () => {
         if (!agreeChecked) return;
         try {
-            // توثيق الموافقة بنسختها وتاريخها (سجل قانوني) ثم ختمها على البوابة
-            await supabase.rpc('record_user_consent', { p_terms_version: MERCHANT_GATEWAY_AGREEMENT_VERSION });
+            // توثيق الموافقة بنسختها وتاريخها (سجل قانوني) ثم ختمها على البوابة.
+            // v14.19 — `p_kind:'gateway'` يكتبها في عمودها الخاص. 🪤 كانت تُكتب
+            // في `consent_terms_version` نفسه فتدهس إصدارَ الشروط الذي وافق عليه
+            // التاجر — فضاع الأثر القانوني عند اثنين من ستّة مستخدمين.
+            await supabase.rpc('record_user_consent', {
+                p_terms_version: MERCHANT_GATEWAY_AGREEMENT_VERSION,
+                p_kind: 'gateway',
+            });
             const { data, error } = await supabase.rpc('merchant_accept_gateway_agreement');
             if (error) throw error;
             hydrate(data as GatewayState);

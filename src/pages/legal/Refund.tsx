@@ -11,6 +11,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
@@ -24,7 +25,7 @@ const Refund: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الاسترداد' : 'Refund Policy'}
             subtitle={isRTL ? 'Refund Policy · TAKI' : 'Refund Policy · TAKI'}
-            lastUpdated="2026-07-23"
+            lastUpdated={LEGAL_VERSION}
         >
             <Paragraph>
                 {isRTL ? (
@@ -170,20 +171,28 @@ const Refund: React.FC = () => {
 
             <Section n={3} title={isRTL ? '📅 إلغاء الحجز (للمشتري)' : '📅 Cancelling a booking (buyers)'}>
                 <Bullets items={isRTL ? [
-                    'الحجز التزام مبدئيّ لا دفع — لا يحجز أيّ مبلغ على بطاقتك ولا يلتزم أيّ مال للمنصّة.',
+                    'الحجز بالدفع عند الاستلام التزام مبدئيّ لا دفع — لا يُحجز أيّ مبلغ على بطاقتك ولا يلتزم أيّ مال للمنصّة. أمّا إن اخترت الدفع الإلكتروني فالمبلغ يُخصم فعلاً ويذهب إلى حساب التاجر مباشرةً، ولا يمرّ بـTAKI في أيّ لحظة.',
                     <>مدّة صلاحية الحجز <HoldHours kind="pickup" /> لطلب الاستلام و<HoldHours kind="delivery" /> لطلب التوصيل: إن لم تستلم خلالها يُلغى الحجز تلقائياً وتعود الكمّية (بما فيها كمّيات النسخ المحجوزة) للعرض — دون أيّ التزام مالي عليك. وفي التوصيل تتوقّف المهلة بمجرّد انطلاق المندوب، والطلب المدفوع إلكترونياً لا يُلغى تلقائياً.</>,
                     'الإجمالي الظاهر عند الحجز (النسخ + الإضافات المختارة) يُدفع للتاجر مباشرةً عند الاستلام — لا تستلم TAKI أيّ جزء منه.',
-                    'يحقّ لك إلغاء الحجز في أيّ وقت قبل انتهاء صلاحيّته من صفحة «حجوزاتي»، بضغطة واحدة، دون أيّ رسوم أو غرامات على المنصّة — وعند الإلغاء تعود الكمّيات المحجوزة للعرض فوراً.',
-                    'إذا لم تحضر خلال مدّة العرض، يحقّ للتاجر إلغاء الحجز من جانبه.',
-                    'الإلغاء لا يترتّب عليه أيّ مبلغ مالي لأنّه لا دفع تمّ أصلاً عبر TAKI.',
+                    '**الطلب غير المدفوع** (الدفع عند الاستلام): يحقّ لك إلغاؤه في أيّ وقت قبل انتهاء صلاحيّته من صفحة «حجوزاتي» بضغطة واحدة، دون أيّ رسوم أو غرامات — وتعود الكمّيات المحجوزة للعرض فوراً، ولا يترتّب عليه أيّ مبلغ لأنّه لا دفع تمّ أصلاً.',
+                    '**الطلب المدفوع إلكترونياً لا يُلغى بضغطة واحدة.** المال في حساب التاجر لا عند TAKI، فالإلغاء وحده يتركك بلا بضاعة ولا مال. الزرّ في «حجوزاتي» يُرسل **طلب إلغاء واسترداد** يصل التاجر فوراً، ويبقى طلبك قائماً حتى يبتّ فيه.',
+                    'قرار الاسترداد وتنفيذه على **التاجر** وفق سياسته المُعلَنة في صفحة متجره وصفحة العرض. TAKI تُسجّل طلبك وتُبلّغ التاجر وتُثبت ما جرى بتاريخ ومرجع ومبلغ وتُظهره إشعاراً دائناً على فاتورتك — ولا تحتفظ بالمال ولا تردّه ولا تبتّ في الخلاف.',
+                    'إن اضطرّ التاجر لإلغاء طلب مدفوع (نفاد البضاعة مثلاً) يُسجَّل المبلغ ديناً عليه لك ويصلك إشعار بذلك، ثم إشعارٌ ثانٍ عند تأكيده التحويل.',
+                    'إذا رفض التاجر الاسترداد خلافاً لسياسته المُعلَنة، ارفع شكوى عبر «📣 الشكاوى» داخل التطبيق. تتدخّل TAKI ميسِّرةً للتواصل دون أن تكون ملزَمة بنتيجة معيّنة.',
+                    'مدّة وصول المبلغ المُعاد إلى حسابك تحدّدها جهة الدفع (بنكك أو بوابة التاجر) لا TAKI.',
+                    'إذا لم تحضر خلال مدّة العرض، يحقّ للتاجر إلغاء الحجز من جانبه — وإن كان مدفوعاً سرى عليه مسار الاسترداد أعلاه.',
                     'الإكثار من الحجز دون نيّة الحضور قد يُعرّض حسابك لتقييد أو تعليق وفقاً لتقدير الإدارة (لأنّه يُضرّ بثقة التجار في المنصّة).',
                 ] : [
-                    'A booking is a preliminary commitment, not a payment — no amount is held on your card and no money is owed to the platform.',
+                    'A cash-on-collection booking is a preliminary commitment, not a payment — no amount is held on your card and no money is owed to the platform. If you choose online payment, the amount is actually charged and goes straight to the merchant\'s account; it never passes through TAKI.',
                     <>A booking is valid for <HoldHours kind="pickup" /> for pickup and <HoldHours kind="delivery" /> for delivery: if you do not collect within that window, it is cancelled automatically and the quantity (including reserved version quantities) returns to the offer — at no financial obligation on you. For delivery the clock stops once the courier departs, and a card-paid order is never auto-cancelled.</>,
                     'The total shown at booking (versions + selected add-ons) is paid directly to the merchant on receipt — TAKI receives no part of it.',
-                    'You may cancel your booking at any time before it expires from the «My Bookings» page in a single tap, with no fees or penalties charged by the platform — on cancellation, the reserved quantities return to the offer immediately.',
-                    'If you do not attend within the offer window, the merchant may cancel the booking from their side.',
-                    'Cancellation does not give rise to any financial amount, because no payment was made through TAKI in the first place.',
+                    '**Unpaid orders** (cash on collection): you may cancel at any time before expiry from «My Bookings» in a single tap, with no fees or penalties — the reserved quantities return immediately and no amount arises, because no payment was made.',
+                    '**A card-paid order cannot be cancelled with one tap.** The money sits in the merchant\'s account, not with TAKI, so a bare cancellation would leave you with neither goods nor money. The button in «My Bookings» sends a **cancellation and refund request** to the merchant, and your order stands until they decide.',
+                    'The refund decision and its execution rest with the **merchant**, under the policy published on their store page and deal page. TAKI records your request, notifies the merchant, documents what happened with a date, a reference and an amount, and shows it as a credit note on your invoice — it never holds the money, cannot return it and does not adjudicate.',
+                    'If the merchant must cancel a paid order (out of stock, say), the amount is recorded as owed to you and you are notified, then notified again when they confirm the transfer.',
+                    'If a merchant refuses a refund contrary to their published policy, raise a complaint via «📣» in the app. TAKI intervenes as a facilitator without being bound to any particular outcome.',
+                    'The time for a refunded amount to reach your account is set by the payment provider (your bank or the merchant\'s gateway), not TAKI.',
+                    'If you do not attend within the offer window, the merchant may cancel the booking from their side — and if it was paid, the refund path above applies.',
                     'Frequent bookings without intention to attend may lead to your account being restricted or suspended at the administration\'s discretion (since this undermines merchants\' trust in the platform).',
                 ]} />
             </Section>

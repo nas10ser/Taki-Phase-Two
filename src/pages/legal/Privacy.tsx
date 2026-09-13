@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import { PRIVACY_PAYMENT_CLAUSE } from '../../data/legalTexts';
@@ -20,7 +21,7 @@ const Privacy: React.FC = () => {
         <LegalLayout
             title={isRTL ? 'سياسة الخصوصية' : 'Privacy Policy'}
             subtitle={isRTL ? 'Privacy Policy · TAKI' : 'Privacy Policy · TAKI'}
-            lastUpdated="2026-07-23"
+            lastUpdated={LEGAL_VERSION}
         >
             <Paragraph>
                 {isRTL ? (
@@ -86,7 +87,9 @@ const Privacy: React.FC = () => {
                     <><strong>بيانات الاستخدام التحليلية</strong>: مشاهدات العروض، النقرات، عمليات البحث، وفترات فتح التطبيق — تُعالَج بشكل مجمّع لتحسين الخدمة، وتُعرض إحصاءات الجمهور على مستوى المدن والمناطق فقط دون كشف مواقع فردية.</>,
                     <><strong>مشاركات المسابقات والاستبيانات</strong>: إجاباتك تُحفظ للإدارة فقط ولا تُعرض للعموم، وتُعلَن نتائج السحوبات بهوية مموّهة.</>,
                     <><strong>محتوى التواصل</strong>: محادثاتك مع التجار/المشترين عبر شات الحجز، تقييماتك، شكاويك.</>,
-                    <><strong>بيانات الموافقات القانونية</strong>: تاريخ ووقت موافقتك على الشروط والسياسات.</>,
+                    <><strong>بيانات التوصيل</strong> (عند طلب التوصيل فقط): عنوان التسليم ووصفه ومدينته وجوّال التواصل وإحداثياته. يُحفظ داخل الطلب لأنّه جزء من مستنده وفاتورته. ويمكنك حفظ عناوين في حسابك لتسهيل الطلب التالي، وحذفها متى شئت.</>,
+                    <><strong>موقع مندوب التوصيل اللحظي</strong>: يُبثّ من جهاز التاجر أو مندوبه بعد إعلان الانطلاق، ويُعرض <strong>لمشتري ذلك الطلب وحده</strong>. لا نحفظ مسار الرحلة — آخر نقطة فقط — وتُمحى فور إغلاق الطلب، ويُحذف سجلّ التتبّع بعد ساعة.</>,
+                    <><strong>بيانات الموافقات القانونية</strong>: تاريخ ووقت موافقتك على الشروط والسياسات، وإصدار الوثائق الذي وافقت عليه، وإقرارك بالسنّ، وعنوان الإنترنت ونوع المتصفّح وقت الموافقة — دليلاً على التوقيع الإلكتروني.</>,
                 ] : [
                     <><strong>Identity and contact data</strong>: name, mobile number, email, account type (buyer or merchant).</>,
                     <><strong>Merchant data</strong>: store name, activity category, location, branches, images, and what is needed to verify the commercial activity.</>,
@@ -96,7 +99,9 @@ const Privacy: React.FC = () => {
                     <><strong>Analytics usage data</strong>: offer views, clicks, searches and app-open sessions — processed in aggregate to improve the service; audience statistics are presented at city and region level only, with no individual locations disclosed.</>,
                     <><strong>Contest and survey entries</strong>: your answers are kept for the administration only and are never displayed publicly, and draw results are announced with masked identities.</>,
                     <><strong>Communications content</strong>: your conversations with merchants/buyers via the booking chat, your reviews, and your complaints.</>,
-                    <><strong>Consent records</strong>: the date and time of your acceptance of the terms and policies.</>,
+                    <><strong>Delivery data</strong> (only when you request delivery): the delivery address, its description, city, contact mobile and coordinates. It is stored inside the order because it forms part of its record and invoice. You may also save addresses in your account for the next order and delete them whenever you wish.</>,
+                    <><strong>Live courier location</strong>: broadcast from the merchant\'s or courier\'s device after departure is declared, and visible to <strong>that order\'s buyer alone</strong>. We do not keep a route — only the last point — it is erased the moment the order closes, and the tracking record is deleted one hour later.</>,
+                    <><strong>Consent records</strong>: the date and time of your acceptance, the document version you accepted, your age attestation, and the IP address and browser at the time of consent — as evidence of the electronic signature.</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
@@ -288,6 +293,26 @@ const Privacy: React.FC = () => {
                         </>
                     )}
                 </Paragraph>
+
+                {/* v14.19 — مدد محدَّدة لا معايير عامّة. القسم كان يذكر «ما تقتضيه
+                    الخدمة» بلا رقم واحد، وكُتب قبل إطلاق التوصيل فلم يذكر عنواناً
+                    ولا تتبّعاً. هذه المدد مطبَّقة فعلاً بمهامّ مجدولة على الخادم. */}
+                <Paragraph><strong>{isRTL ? 'المدد المطبَّقة فعلياً:' : 'The periods actually applied:'}</strong></Paragraph>
+                <Bullets items={isRTL ? [
+                    <><strong>تتبّع موقع مندوب التوصيل:</strong> يُعرض لمشتري الطلب وحده وأثناء الطريق فقط، ويُمحى موقعه فور إغلاق الطلب، ويُحذف سجلّ التتبّع كلّه بعد <strong>ساعة واحدة</strong> من إغلاقه.</>,
+                    <><strong>عنوان التوصيل داخل الطلب:</strong> يبقى ما بقي الطلب — لأنّه جزء من مستنده وفاتورته، ويحتاجه الطرفان عند أيّ خلاف، وتُلزم الأنظمة الضريبية بحفظ الفواتير.</>,
+                    <><strong>عناوينك المحفوظة</strong> في حسابك: تبقى حتى تحذفها بنفسك أو تحذف حسابك.</>,
+                    <><strong>الطلبات والفواتير:</strong> تبقى في سجلّ التاجر — هي دفاتره التي يُلزمه النظام بحفظها. وعند حذف حسابك تبقى <strong>بلا هويّتك</strong>.</>,
+                    <><strong>سجلّ النشاط:</strong> ٩٠ يوماً · <strong>جلسات الدخول:</strong> ٣٠ يوماً · <strong>قياسات المتاجر:</strong> ٩٠ يوماً · <strong>أحداث فتح التطبيق:</strong> ١٨٠ يوماً · <strong>اشتراكات الإشعارات غير المستعملة:</strong> ٩٠ يوماً.</>,
+                    <><strong>الحساب المحذوف:</strong> تعطيلٌ فوريّ وإمكانية تراجع خلال <strong>٣٠ يوماً</strong>، ثم محوٌ نهائي للبيانات الشخصية.</>,
+                ] : [
+                    <><strong>Courier location tracking:</strong> shown to that order\'s buyer only and only while in transit; the position is erased the moment the order closes, and the whole tracking record is deleted <strong>one hour</strong> after closure.</>,
+                    <><strong>The delivery address inside an order:</strong> kept for as long as the order exists — it is part of its record and its invoice, both parties need it in any dispute, and tax law requires invoices to be kept.</>,
+                    <><strong>Addresses saved</strong> in your account: kept until you delete them or delete your account.</>,
+                    <><strong>Orders and invoices:</strong> kept in the merchant\'s records — they are the books the law requires them to keep. If you delete your account they remain <strong>without your identity</strong>.</>,
+                    <><strong>Activity log:</strong> 90 days · <strong>sign-in sessions:</strong> 30 days · <strong>store analytics:</strong> 90 days · <strong>app-open events:</strong> 180 days · <strong>unused notification subscriptions:</strong> 90 days.</>,
+                    <><strong>A deleted account:</strong> deactivated immediately with a <strong>30-day</strong> window to undo, then personal data is permanently erased.</>,
+                ]} />
             </Section>
 
             <Section n={8} title={isRTL ? 'نقل البيانات' : 'Data transfer'}>
