@@ -480,6 +480,9 @@ function create(deps) {
         } else {
             body += `\n${tr('hrs_always_open')}\n${tr('hrs_not_set')}`;
         }
+        // v14.18 — السياسة المعلنة كاملةً في بطاقة المتجر (توأم تيليجرام).
+        body += await policyBlock(storeId, 0);
+        body = trunc(body, LIM.body);
         const btns = [];
         if (s.userId) btns.push({ id: `wa:fol:${storeId}`, title: st.following ? tr('wa_unfollow') : tr('wa_follow') });
         btns.push(menuBtn());
@@ -620,6 +623,8 @@ function create(deps) {
         const hLang = I18N.lang();
         m += isDlv ? tr('wa_hold_delivery', HOLDS.label(HH.delivery, hLang))
                    : tr('wa_hold_pickup', HOLDS.label(HH.pickup, hLang));
+        // v14.18 — سياسة التاجر تُقرأ قبل التأكيد لا بعده (توأم تيليجرام).
+        m += await policyBlock(d.store_id, 200);
         m += tr('wa_confirm_disclaimer');
         await sendButtons(from, { body: m, buttons: [
             { id: 'wa:bookok', title: tr('wa_confirm_btn') },
@@ -788,7 +793,13 @@ function create(deps) {
         if (payInfo && payInfo.payable) btns.push({ id: `wa:pay:${bc}`, title: trunc(tr('wa_pay_btn'), LIM.btnTitle) });
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
         const row2 = [];
-        if (b.status === 'pending' || b.status === 'acknowledged') row2.push({ id: `wa:cancel:${bc}`, title: tr('wa_bk_cancel') });
+        // v14.18 — الطلب المدفوع: الزرّ يطلب استرداداً ولا يُلغي. القاعدة ترفض
+        // الإلغاء أصلاً، فزرٌّ يعد بما يرفضه الخادم أسوأ من غيابه.
+        if (b.status === 'pending' || b.status === 'acknowledged') {
+            row2.push(b.paid
+                ? { id: `wa:rfq:${bc}`, title: trunc(tr('wa_rf_request_btn'), LIM.btnTitle) }
+                : { id: `wa:cancel:${bc}`, title: tr('wa_bk_cancel') });
+        }
         row2.push({ id: `wa:call:${bc}`, title: tr('wa_bk_call') });
         row2.push({ id: 'wa:bookings', title: tr('menu_bookings_buyer') });
         await sendButtons(from, { body: '—', buttons: row2.slice(0, 3) });
@@ -924,8 +935,44 @@ function create(deps) {
         return buyerBookingsMenu(from, s);
     }
 
+    // ── v14.18 — طلب إلغاء واسترداد (طلبٌ مدفوع) ──────────────────────────
+    // تاكي وسيط: تُسجّل وتُبلّغ وتُثبت، ولا تحتفظ بالمال ولا تبتّ.
+    async function askRefund(from, s, bc) {
+        const inv = await rpc('bot_get_booking_invoice', aid(from, { p_barcode: bc }));
+        const amt = Number(inv && inv.paid_amount) > 0 ? Number(inv.paid_amount) : Number((inv && inv.total) || 0);
+        return sendButtons(from, { body: trunc(tr('wa_rf_confirm_ask', money(amt), cur()), LIM.body), buttons: [
+            { id: `wa:rfgo:${bc}`, title: tr('wa_rf_request_btn') },
+            { id: `wa:bk1:${bc}`, title: tr('wa_back') },
+        ] });
+    }
+    async function doRefundRequest(from, s, bc) {
+        const r = await rpc('bot_request_booking_refund', aid(from, { p_barcode: bc, p_reason: null }));
+        await sendText(from, (r && r.success) ? tr('wa_rf_sent') : tr('wa_rf_failed'));
+        return buyerBookingsMenu(from, s);
+    }
+    // السياسة المعلنة كما يقرؤها المشتري قبل الحجز. السطر الأخير ثابت.
+    async function policyBlock(storeId, max) {
+        if (!storeId) return '';
+        let p = null;
+        try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = null; }
+        const cut = (t) => { const x = String(t || '').trim(); return max && x.length > max ? x.slice(0, max - 1) + '…' : x; };
+        const pol = cut(p && p.refund_policy);
+        const ter = max ? '' : cut(p && p.store_terms);
+        let out = pol ? tr('wa_pol_title', pol) : tr('wa_pol_none');
+        if (ter) out += tr('wa_pol_terms', ter);
+        return out + tr('wa_pol_intermediary');
+    }
+
     async function doCancel(from, s, bc) {
         const r = await rpc('bot_cancel_booking', aid(from, { p_barcode: bc }));
+        // v14.18 — توأم تيليجرام حرفياً: طلبٌ مدفوع لا يُلغى بضغطة، والبوت يدلّ
+        // على المسار الصحيح بدل رسالة فشل عمياء.
+        if (r && r.error === 'paid_needs_refund') {
+            return sendButtons(from, { body: tr('wa_rf_paid_cannot_cancel'), buttons: [
+                { id: `wa:rfq:${bc}`, title: tr('wa_rf_request_btn') },
+                { id: `wa:bk1:${bc}`, title: tr('wa_back') },
+            ] });
+        }
         await sendText(from, (r && r.success) ? tr('wa_cancel_ok') : tr('wa_cancel_fail'));
         return buyerBookingsMenu(from, s);
     }
@@ -2162,6 +2209,8 @@ function create(deps) {
         if (id.startsWith('wa:rcv:')) return doConfirmReceipt(from, s, id.slice(7));
         if (id.startsWith('wa:cancel:')) return askCancel(from, s, id.slice(10));
         if (id.startsWith('wa:dcancel:')) return doCancel(from, s, id.slice(11));
+        if (id.startsWith('wa:rfq:')) return askRefund(from, s, id.slice(7));
+        if (id.startsWith('wa:rfgo:')) return doRefundRequest(from, s, id.slice(8));
         if (id.startsWith('wa:chat:')) return showChat(from, s, id.slice(8));
         if (id.startsWith('wa:cmsg:')) return promptChat(from, s, id.slice(8));
         if (id.startsWith('wa:edit:')) return editBooking(from, s, id.slice(8));

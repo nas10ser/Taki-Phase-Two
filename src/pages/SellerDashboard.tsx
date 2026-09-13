@@ -36,6 +36,8 @@ import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { directionsLink } from '../utils/mapLinks';
 import { splitInclusive, fmtSAR } from '../utils/vat';
 import { isValidSaudiVat } from '../utils/zatcaQr';
+import RefundPanel from '../components/seller/RefundPanel';
+import StorePoliciesCard from '../components/seller/StorePoliciesCard';
 import { thumbUrl, imgFallback } from '../utils/thumb';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
@@ -3092,6 +3094,11 @@ const SellerDashboard: React.FC = () => {
                             على هذا المتجر، فلا معنى لأن يملأ التاجر نموذج منتج قبله. */}
                         <PaymentDeclarationCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                        {/* v14.18 — سياسة الاسترداد والاستبدال وشروط المتجر: تُعرض
+                            للمشتري في صفحة المتجر وفي صفحة العرض **قبل الحجز**.
+                            صفحة الاسترداد كانت تَعِد المشتري بأن يقرأها هناك، ولم يكن
+                            في النظام حقلٌ يكتبها فيه أصلاً. */}
+                        <StorePoliciesCard />
                         {/* v13.38 — الوضع الضريبي للتاجر: يحدّد شكل فواتير طلباته،
                             ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
                         <VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
@@ -5293,7 +5300,11 @@ const SellerDashboard: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
-                                {(order.status === 'pending' || order.status === 'acknowledged') && (
+                                {/* v14.18 — الطلب المدفوع له لوحته: القاعدة ترفض إلغاءه
+                                    بضغطة (المال في حساب التاجر)، والبديل مسارٌ موثّق
+                                    بمبلغ ومرجع وإشعار دائن. وغير المدفوع يبقى كما كان. */}
+                                <RefundPanel order={order} isRTL={isRTL} onChanged={refreshOrderLists} />
+                                {(order.status === 'pending' || order.status === 'acknowledged') && !order.paidAt && (
                                     <button onClick={async () => {
                                         const ok = await customConfirm(isRTL
                                             ? '⚠️ سيتم إلغاء الطلب نهائياً وإعادة الكمية للمخزون، وسيُبلَّغ المشتري. هل أنت متأكد؟'

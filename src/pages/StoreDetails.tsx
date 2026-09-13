@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useParams, useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
+import StorePolicies from '../components/StorePolicies';
 import DealCard from '../components/DealCard';
 import { getStore } from '../data/mock';
 import { useApp } from '../context/AppContext';
@@ -826,6 +827,12 @@ const StoreDetails: React.FC = () => {
                         </>
                     )}
 
+                </div>
+
+                {/* v14.18 — سياسة المتجر المعلنة، يراها المشتري في صفحة المتجر
+                    كما في صفحة العرض. */}
+                <div style={{ padding: '0 16px' }}>
+                    <StorePolicies storeId={id} />
                 </div>
 
                 {/* v13.74 (أمر ناصر: «أخرِج المحدَّد من صندوق الاتصال والواتساب

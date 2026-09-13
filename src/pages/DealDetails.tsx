@@ -14,6 +14,7 @@ import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealCo
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
 import { holdLabel } from '../utils/bookingHold';
+import StorePolicies from '../components/StorePolicies';
 import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
@@ -2498,6 +2499,11 @@ const DealDetails: React.FC = () => {
                     <h3 style={{ fontWeight: 800, marginBottom: 10, fontSize: '0.95rem' }}>{isRTL ? 'الوصف' : 'Description'}</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.8, fontWeight: 600 }}>{deal.description}</p>
                 </div>
+
+                {/* v14.18 — سياسة الاسترداد والاستبدال **قبل زرّ الحجز**: صفحة
+                    الاسترداد تَعِد المشتري منذ يوليو بأن يقرأها هنا. وموضعها فوق
+                    «احجز الآن» مقصود — بعده لا معنى للاطّلاع. */}
+                <StorePolicies storeId={deal.storeId} />
 
                 {/* Location — v12.91: عند تعدد المواقع تعرض الفرع المختار من المنتقي أعلاه. */}
                 {(loc || deal.mapLocation || dealLocations) && (() => {

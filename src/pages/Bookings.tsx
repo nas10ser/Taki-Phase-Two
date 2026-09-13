@@ -5,6 +5,7 @@ import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import BottomNav from '../components/BottomNav';
 import PushOptIn from '../components/PushOptIn';
+import RefundAction from '../components/RefundAction';
 import Sidebar from '../components/Sidebar';
 import { Booking, bookingRepository } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
@@ -805,17 +806,21 @@ const Bookings: React.FC = () => {
                                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 800 }}>
                                                             {isRTL ? 'الرمز الاحتياطي:' : 'Backup Code:'} <span style={{ color: 'var(--text-primary)' }}>{booking.backupCode}</span>
                                                         </div>
-                                                        <button onClick={async () => {
-                                                            if (await customConfirm(isRTL ? 'إلغاء الحجز؟' : 'Cancel?')) {
+                                                        {/* v14.18 — الطلب المدفوع لا يُلغى بضغطة: الزرّ يصير
+                                                            «طلب إلغاء واسترداد» بتحذير يذكر المبلغ ويشرح المسار.
+                                                            🪤 كانت هذه البطاقة نفسها تقول «🔒 مدفوع — لا يُلغى
+                                                            تلقائياً» وتحتها زرُّ إلغاء بلا أي شرط. */}
+                                                        <RefundAction
+                                                            booking={booking}
+                                                            onCancel={async () => {
                                                                 // v13.71 — ننتظر القاعدة ثم نُعيد تحميل القائمتين:
                                                                 // الصفوف تأتي من الخادم (keyset) لا من مصفوفة السياق،
                                                                 // فبلا هذا يبقى الحجز الملغى مكانه ولا ينتقل لـ«السابقة».
                                                                 await cancelBooking(booking.barcode);
                                                                 await Promise.allSettled([reloadActive(), reloadPast()]);
-                                                            }
-                                                        }} style={{ marginTop: 24, background: 'none', border: 'none', color: '#f43f5e', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>
-                                                            {isRTL ? 'إلغاء الحجز ❌' : 'Cancel Booking ❌'}
-                                                        </button>
+                                                            }}
+                                                            onChanged={async () => { await Promise.allSettled([reloadActive(), reloadPast()]); }}
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>

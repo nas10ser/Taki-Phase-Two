@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.17.0';
+const BOT_VERSION              = '14.18.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1302,6 +1302,8 @@ async function renderStore(ctx, storeId) {
     } else {
         m += `\n\n${tr('store_hours_label')}\n${md(tr('hrs_always_open'))}\n_${md(tr('hrs_not_set'))}_`;
     }
+    // v14.18 — السياسة المعلنة كاملةً في بطاقة المتجر.
+    m += await policyBlock(st.id || storeId, 0);
     const btns = [];
     const folRow = [];
     if (s.userId) folRow.push(Markup.button.callback(st.following ? tr('b939_following_cancel') : tr('b939_follow_store'), st.following ? `folAsk:${storeId}` : `fol:${storeId}`));
@@ -1461,6 +1463,28 @@ function countdownBlock(expiryMs){
 // وطلبُ توصيلٍ بدأ تجهيزه أو انطلق مندوبه توقّف عدّاده. عرضُ عدّادٍ خارج هذه
 // الحالة كذبٌ على المشتري. الحقلان `paid` و`dlv_status` يأتيان من
 // `bot_get_my_bookings` (v14.10).
+// v14.18 — سياسة التاجر المعلنة كما يقرؤها المشتري **قبل الحجز**.
+// `max` يقصّ النصّ على شاشة التأكيد (حدّ تيليجرام للتسمية التوضيحية ١٠٢٤ حرفاً)
+// ويُعرض كاملاً في بطاقة المتجر. والسطر الأخير ثابت لا يملك التاجر تغييره.
+async function policyBlock(storeId, max) {
+    if (!storeId) return '';
+    let p = null;
+    try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = null; }
+    const cut = (t) => { const x = String(t || '').trim(); return max && x.length > max ? x.slice(0, max - 1) + '…' : x; };
+    const pol = cut(p && p.refund_policy);
+    const ter = max ? '' : cut(p && p.store_terms);
+    let out = pol ? tr('pol_title', md(pol)) : tr('pol_none');
+    if (ter) out += tr('pol_terms', md(ter));
+    return out + tr('pol_intermediary');
+}
+
+// v14.18 — تسمية حالة الاسترداد بلغة المستخدم (مشتركة مع بطاقات الطلب).
+function refundStatusLabel(st) {
+    return tr({
+        requested: 'rf_st_requested', declined: 'rf_st_declined', approved: 'rf_st_approved',
+        refunded: 'rf_st_refunded', withdrawn: 'rf_st_withdrawn',
+    }[String(st || '')] || 'rf_st_requested');
+}
 const HOLD_STOPPED = ['preparing','on_the_way','arrived','delivered'];
 const DLV_DISPATCHED = ['on_the_way','arrived','delivered'];
 function holdRunning(b){
@@ -1704,6 +1728,9 @@ async function bookConfirm(ctx, s) {
     const hNom = md(HOLDS.label(isDlv ? HH.delivery : HH.pickup, hLang));
     m += isDlv ? tr('dlv_duration_disclaimer', hNom, DIV)
                : tr('q1118_booking_duration_disclaimer', hNom, md(HOLDS.labelGen(HH.pickup, hLang)), DIV);
+    // v14.18 — سياسة التاجر تُقرأ **قبل** التأكيد لا بعده. مقتطعة هنا، وكاملة
+    // في بطاقة المتجر. صفحة الاسترداد تَعِد المشتري بأن يجدها في الموضعين.
+    m += await policyBlock(d.store_id, 220);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(tr('b1120_yes_confirm_booking'),'book:confirm')],
         [Markup.button.callback(tr('b1121_back'),'book:back:note'), Markup.button.callback(tr('b1121_cancel'),'menu:back')]
@@ -1866,7 +1893,9 @@ async function showBuyerBookings(ctx, scope='current') {
         // والقاعدة تفرض الشرط نفسه (`not_dispatched`) فلا زرّ يعرضه البوت ويرفضه الخادم.
         if (active && String(b.fulfillment||'pickup')==='delivery' && DLV_DISPATCHED.includes(String(b.dlv_status||'')))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
-        if (active) row3.push(Markup.button.callback(tr('b1205_cancel_booking'), `cancel:${b.barcode}`));
+        if (active) row3.push(Markup.button.callback(
+            b.paid ? tr('rf_request_btn') : tr('b1205_cancel_booking'),
+            b.paid ? `rfq:${b.barcode}` : `cancel:${b.barcode}`));
         if (b.store_id) row3.push(Markup.button.callback(tr('b1206_report'), `rep:${b.store_id}`));
         if (row3.length) rows.push(row3);
         await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
@@ -1883,9 +1912,40 @@ bot.action(/^cancel:(.+)$/, async ctx => {
 });
 bot.action(/^doCancel:(.+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1221_cancelling'));
-    const result = await rpc('bot_cancel_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
-    if (result?.success) await ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1223_my_bookings'),'buyer:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
-    else { const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed'); await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
+    const bc = ctx.match[1];
+    const result = await rpc('bot_cancel_booking', { p_telegram_id: tgId(ctx), p_barcode: bc });
+    if (result?.success) return ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1223_my_bookings'),'buyer:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
+    // v14.18 — طلبٌ مدفوع: القاعدة ترفض الإلغاء، والبوت لا يترك المشتري بلا مخرج
+    // بل يدلّه على المسار الصحيح. (نفس حارس الموقع حرفياً.)
+    if (result?.error === 'paid_needs_refund') {
+        return safeReplyMd(ctx, tr('rf_paid_cannot_cancel'), { reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('rf_request_btn'), `rfq:${bc}`)],
+            [Markup.button.callback(tr('b1223_my_bookings'), 'buyer:bookings')],
+        ]).reply_markup });
+    }
+    const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed');
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
+});
+
+// ── v14.18 — طلب إلغاء واسترداد (طلبٌ مدفوع) ─────────────────────────────
+// تاكي وسيط: تُسجّل الطلب وتُبلّغ التاجر وتُثبت ما جرى، ولا تحتفظ بالمال ولا تبتّ.
+bot.action(/^rfq:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const bc = ctx.match[1];
+    const inv = await rpc('bot_get_booking_invoice', { p_uid: getSession(tgId(ctx)).userId, p_barcode: bc });
+    const amt = Number(inv?.paid_amount) > 0 ? Number(inv.paid_amount) : Number(inv?.total || 0);
+    await safeReplyMd(ctx, tr('rf_confirm_ask', money(amt), md(tr('inv_sar'))), { reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('rf_confirm_yes'), `rfgo:${bc}`)],
+        [Markup.button.callback(tr('b1218_no'), 'buyer:bookings')],
+    ]).reply_markup });
+});
+bot.action(/^rfgo:(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const r = await rpc('bot_request_booking_refund', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1], p_reason: null });
+    const back = Markup.inlineKeyboard([[Markup.button.callback(tr('b1223_my_bookings'), 'buyer:bookings')]]).reply_markup;
+    if (r?.success && r?.already) return safeReplyMd(ctx, tr('rf_already', md(refundStatusLabel(r.status))), { reply_markup: back });
+    if (r?.success) return safeReplyMd(ctx, tr('rf_sent'), { reply_markup: back });
+    await safeReplyMd(ctx, tr('rf_failed'), { reply_markup: back });
 });
 // v14.10 — «استلمت طلبي»: يغلق المشتري طلب توصيله بنفسه بعد انطلاق المندوب.
 // كان الإغلاق بيد التاجر وحده، فطلبٌ وصل ونسي التاجر ختمه ينقلب «ملغى» بعد

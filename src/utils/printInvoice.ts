@@ -87,6 +87,12 @@ export interface InvoiceData {
     vatBase?: number | null;
     vatAmount?: number | null;
     sellerAddress?: string | null;
+    /** v14.18 — إشعار دائن: طلبٌ رُدّ مبلغه. يُطبع على نفس الورقة فلا تبقى
+     *  فاتورةٌ تقول «مدفوع» عن مالٍ عاد لصاحبه. */
+    creditNoteNo?: string | null;
+    refundAmount?: number | null;
+    refundRef?: string | null;
+    refundedAt?: string | null;
     /** يُملأ داخلياً قبل الطباعة — صورة QR للفوترة الإلكترونية */
     qrDataUrl?: string;
     isRTL: boolean;
@@ -331,6 +337,12 @@ const buildHtml = (d: InvoiceData): string => {
     <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
     ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${d.qrDataUrl}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
     })()}
+    ${d.creditNoteNo ? `
+    <div class="delivery" style="margin-top:12px;border-color:#10b981">
+      <div class="d-main">${L('إشعار دائن', 'Credit note')} ${esc(d.creditNoteNo)} — ${L('رُدّ المبلغ للمشتري', 'Refunded to the buyer')}</div>
+      <div class="d-sub">${L('المبلغ المُعاد', 'Refunded amount')}: ${fmtSAR(Number(d.refundAmount || 0))} ${L('ر.س', 'SAR')}${d.refundRef ? ` — ${L('المرجع', 'Ref')}: ${esc(d.refundRef)}` : ''}</div>
+      ${d.refundedAt ? `<div class="d-sub">${L('بتاريخ', 'On')}: ${esc(new Date(d.refundedAt).toLocaleString(rtl ? 'ar-SA-u-ca-gregory' : 'en-GB'))}</div>` : ''}
+    </div>` : ''}
     ${d.totalIsEstimate && Number(d.totalAmount) > 0 ? `<div class="foot" style="margin-top:8px">${L('الإجمالي محسوب من سعر العرض وقد لا يشمل إضافات اتُّفق عليها مع التاجر.', 'Total is derived from the deal price and may exclude extras agreed with the merchant.')}</div>` : ''}
     ${(() => {
         // v13.13 — بانر حالة الطلب على الفاتورة (طلب ناصر): الملغي لا تُطبع له
@@ -457,6 +469,19 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
                 data.sellerVatNumber = v.seller?.vat_number ?? null;
                 data.sellerAddress = v.seller?.address ?? null;
                 if (v.seller?.name) data.shopName = String(v.seller.name);
+            }
+        }
+        // v14.18 — إشعار دائن إن رُدّ المبلغ.
+        if (data.barcode && data.creditNoteNo === undefined) {
+            const { data: rf } = await supabase.rpc('get_booking_refund', { p_barcode: data.barcode });
+            const r: any = rf || null;
+            if (r && r.status === 'refunded') {
+                data.creditNoteNo = r.credit_note_no ?? null;
+                data.refundAmount = r.refund_amount != null ? Number(r.refund_amount) : null;
+                data.refundRef = r.refund_ref ?? null;
+                data.refundedAt = r.refunded_at ?? null;
+            } else {
+                data.creditNoteNo = null;
             }
         }
         // رمز الفوترة الإلكترونية يُبنى من أرقام اللقطة نفسها — لا من حسابٍ محلّي،
