@@ -480,13 +480,16 @@ function create(deps) {
         } else {
             body += `\n${tr('hrs_always_open')}\n${tr('hrs_not_set')}`;
         }
-        // v14.18 — السياسة المعلنة كاملةً في بطاقة المتجر (توأم تيليجرام).
-        body += await policyBlock(storeId, 0);
+        // v14.21 — السياسة رسالةٌ مستقلّة بعد البطاقة: جسم البطاقة سقفه ١٠٢٤
+        // حرفاً، والسياسة وحدها قد تبلغ ١٥٠٠ — فكانت تُبتر ويسقط معها السطر
+        // الثابت «تاكي وسيط لا يبتّ»، وهو آخر ما يجوز أن يُبتر.
+        const polMsg = await policyBlock(storeId, 0);
         body = trunc(body, LIM.body);
         const btns = [];
         if (s.userId) btns.push({ id: `wa:fol:${storeId}`, title: st.following ? tr('wa_unfollow') : tr('wa_follow') });
         btns.push(menuBtn());
         await sendButtons(from, { body, buttons: btns });
+        if (polMsg) await sendText(from, trunc(polMsg.trim(), LIM.text));
         const deals = Array.isArray(st.deals) ? st.deals : [];
         if (deals.length) {
             const rows = deals.slice(0, 9).map(d => row(`wa:deal:${d.id}`, d.item_name, `${money(d.discounted_price)} ${cur()} • -${d.discount_percentage}%`));
@@ -607,7 +610,7 @@ function create(deps) {
         const dlvFee = isDlv ? (Number(s.temp.dlvFee) || 0) : 0;
         const total = d.discounted_price * (s.temp.dealQty || 1) + dlvFee;
         let m = tr('wa_confirm_head', DIV, d.item_name, d.shop_name, s.temp.dealQty || 1, prepLabel(s.temp.prepTime));
-        if (s.temp.notes) m += tr('wa_confirm_note', s.temp.notes);
+        if (s.temp.notes) m += tr('wa_confirm_note', trunc(s.temp.notes, 140));
         if (isDlv) {
             m += tr('dlv_confirm_line', s.temp.dlvLabel || tr('inv_delivery'));
             if (dlvFee > 0) m += tr('dlv_fee_confirm', money(dlvFee), cur());
@@ -623,9 +626,10 @@ function create(deps) {
         const hLang = I18N.lang();
         m += isDlv ? tr('wa_hold_delivery', HOLDS.label(HH.delivery, hLang))
                    : tr('wa_hold_pickup', HOLDS.label(HH.pickup, hLang));
-        // v14.18 — سياسة التاجر تُقرأ قبل التأكيد لا بعده (توأم تيليجرام).
-        m += await policyBlock(d.store_id, 200);
+        // v14.21 — الإقرار الثابت **قبل** السياسة: جسم الرسالة سقفه ١٠٢٤ حرفاً،
+        // فكان ملاحظةُ مشترٍ طويلة تدفع الإقرار خارج الحدّ فيُبتر بصمت.
         m += tr('wa_confirm_disclaimer');
+        m += await policyBlock(d.store_id, 200);
         await sendButtons(from, { body: m, buttons: [
             { id: 'wa:bookok', title: tr('wa_confirm_btn') },
             { id: 'wa:bback:note', title: tr('wa_back') },
@@ -946,7 +950,10 @@ function create(deps) {
     // ── v14.18 — طلب إلغاء واسترداد (طلبٌ مدفوع) ──────────────────────────
     // تاكي وسيط: تُسجّل وتُبلّغ وتُثبت، ولا تحتفظ بالمال ولا تبتّ.
     async function askRefund(from, s, bc) {
-        const inv = await rpc('bot_get_booking_invoice', aid(from, { p_barcode: bc }));
+        // 🪤 `aid()` يمرّر p_telegram_id/p_whatsapp_id، وهذه الدالّة توقيعها
+        // (p_uid, p_barcode) — فلا يجدها PostgREST ويعود null، فيُعرض «المبلغ
+        // المدفوع: 0 ر.س» في شاشة طلب الاسترداد دائماً.
+        const inv = s.userId ? await rpc('bot_get_booking_invoice', { p_uid: s.userId, p_barcode: bc }) : null;
         const amt = Number(inv && inv.paid_amount) > 0 ? Number(inv.paid_amount) : Number((inv && inv.total) || 0);
         return sendButtons(from, { body: trunc(tr('wa_rf_confirm_ask', money(amt), cur()), LIM.body), buttons: [
             { id: `wa:rfgo:${bc}`, title: tr('wa_rf_request_btn') },
@@ -955,17 +962,27 @@ function create(deps) {
     }
     async function doRefundRequest(from, s, bc) {
         const r = await rpc('bot_request_booking_refund', aid(from, { p_barcode: bc, p_reason: null }));
+        // توأم تيليجرام: طلبٌ قائم أصلاً يُعرض بحالته لا بـ«وصل طلبك» من جديد.
+        if (r && r.success && r.already) {
+            const lbl = { requested: 'rf_st_requested', declined: 'rf_st_declined', approved: 'rf_st_approved',
+                          refunded: 'rf_st_refunded', withdrawn: 'rf_st_withdrawn' }[String(r.status)] || 'rf_st_requested';
+            await sendText(from, `↩️ ${tr(lbl)}`);
+            return buyerBookingsMenu(from, s);
+        }
         await sendText(from, (r && r.success) ? tr('wa_rf_sent') : tr('wa_rf_failed'));
         return buyerBookingsMenu(from, s);
     }
     // السياسة المعلنة كما يقرؤها المشتري قبل الحجز. السطر الأخير ثابت.
     async function policyBlock(storeId, max) {
         if (!storeId) return '';
-        let p = null;
-        try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = null; }
+        let p;
+        try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = undefined; }
+        // 🪤 فشل النداء ليس «لا سياسة»: مهلة أو خطأ عابر كان يجعل البوت يقول
+        // للمشتري إن المتجر لم يُعلن سياسة — وهو أعلنها. الصمت أصدق من نفيٍ كاذب.
+        if (p === null || p === undefined) return tr('wa_pol_intermediary');
         const cut = (t) => { const x = String(t || '').trim(); return max && x.length > max ? x.slice(0, max - 1) + '…' : x; };
-        const pol = cut(p && p.refund_policy);
-        const ter = max ? '' : cut(p && p.store_terms);
+        const pol = cut(p.refund_policy);
+        const ter = max ? '' : cut(p.store_terms);
         let out = pol ? tr('wa_pol_title', pol) : tr('wa_pol_none');
         if (ter) out += tr('wa_pol_terms', ter);
         return out + tr('wa_pol_intermediary');
@@ -1421,6 +1438,13 @@ function create(deps) {
     }
     async function doSellerCancel(from, s, bc) {
         const r = await rpc('bot_cancel_booking', aid(from, { p_barcode: bc }));
+        // v14.21 — توأم تيليجرام: التاجر يصطدم بحارس الدفع أيضاً، وكان يُردّ
+        // عليه «تعذّر الإلغاء» بلا سبب ولا مخرج ومحاولته لن تنجح أبداً.
+        if (r && r.error === 'paid_needs_refund') {
+            await sendText(from, tr('wa_rf_seller_paid_cannot_cancel'));
+            s.temp.soCache = {};
+            return showSellerOrders(from, s, 'current');
+        }
         await sendText(from, (r && r.success) ? tr('wa_cancel_ok') : tr('wa_cancel_fail'));
         s.temp.soCache = {};
         return showSellerOrders(from, s, 'current');

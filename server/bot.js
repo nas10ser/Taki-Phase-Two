@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.22.0';
+const BOT_VERSION              = '14.23.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1468,11 +1468,14 @@ function countdownBlock(expiryMs){
 // ويُعرض كاملاً في بطاقة المتجر. والسطر الأخير ثابت لا يملك التاجر تغييره.
 async function policyBlock(storeId, max) {
     if (!storeId) return '';
-    let p = null;
-    try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = null; }
+    let p;
+    try { p = await rpc('store_policies', { p_store_id: storeId }); } catch { p = undefined; }
+    // 🪤 فشل النداء ليس «لا سياسة»: مهلة أو خطأ عابر كان يجعل البوت ينفي وجود
+    // سياسةٍ أعلنها التاجر. الصمت أصدق من نفيٍ كاذب.
+    if (p === null || p === undefined) return tr('pol_intermediary');
     const cut = (t) => { const x = String(t || '').trim(); return max && x.length > max ? x.slice(0, max - 1) + '…' : x; };
-    const pol = cut(p && p.refund_policy);
-    const ter = max ? '' : cut(p && p.store_terms);
+    const pol = cut(p.refund_policy);
+    const ter = max ? '' : cut(p.store_terms);
     let out = pol ? tr('pol_title', md(pol)) : tr('pol_none');
     if (ter) out += tr('pol_terms', md(ter));
     return out + tr('pol_intermediary');
@@ -1993,8 +1996,16 @@ bot.action(/^scancel:(.+)$/, async ctx => {
 bot.action(/^sdoCancel:(.+)$/, async ctx => {
     await ctx.answerCbQuery(tr('b1221_cancelling'));
     const result = await rpc('bot_cancel_booking', { p_telegram_id: tgId(ctx), p_barcode: ctx.match[1] });
-    if (result?.success) await ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('menu_seller_bookings'),'seller:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
-    else { const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed'); await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup }); }
+    if (result?.success) return ctx.reply(tr('b1223_booking_cancelled'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('menu_seller_bookings'),'seller:bookings')],[Markup.button.callback(tr('b1223_menu'),'menu:back')]]).reply_markup });
+    // v14.21 — التاجر أيضاً يصطدم بحارس الدفع، وكان يُردّ عليه «تعذّر الإلغاء»
+    // بلا سبب ولا مخرج — ومحاولته لن تنجح أبداً. نصٌّ خاصّ به يدلّه على المسار.
+    if (result?.error === 'paid_needs_refund') {
+        return safeReplyMd(ctx, tr('rf_seller_paid_cannot_cancel'), { reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(tr('menu_seller_bookings'), 'seller:bookings')],
+        ]).reply_markup });
+    }
+    const m = result?.error==='cannot_cancel' ? tr('b1224_cannot_cancel') : tr('b1224_cancel_failed');
+    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
 });
 
 // ── Task 1 — single-booking view (chat «back» lands here, then «back» → list) ──

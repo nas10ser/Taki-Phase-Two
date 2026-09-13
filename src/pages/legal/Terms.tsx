@@ -81,7 +81,7 @@ const Terms: React.FC = () => {
                     <><strong>التاجر / موفّر الخدمة</strong>: الشخص الحاصل على ما يَلزم من تَراخيص نظامية، يَستخدم المنصّة لنشر عروضه.</>,
                     <><strong>المتجر الإلكتروني</strong>: حساب التاجر الذي يَعرض من خلاله العروض ويَتلقّى الحجوزات.</>,
                     <><strong>العرض</strong>: التخفيض أو الباقة أو الخدمة التي يُتيحها التاجر للحجز عبر المنصّة، بسعر وشروط يُحدّدها بنفسه.</>,
-                    <><strong>الحجز</strong>: التزام أوّليّ بين المشتري والتاجر بإتمام الصفقة خلال مدّة صلاحية العرض، يُسجَّل على المنصّة. ليس دفعاً ولا حجز مبلغ على بطاقة المشتري.</>,
+                    <><strong>الحجز</strong>: التزام أوّليّ بين المشتري والتاجر بإتمام الصفقة خلال مدّة صلاحية العرض، يُسجَّل على المنصّة. الأصل فيه الدفع عند الاستلام فلا يُحجز مبلغ على البطاقة؛ وإن أتاح التاجر الدفع الإلكتروني واختاره المشتري فالمبلغ يُخصم فعلاً ويذهب إلى حساب التاجر مباشرةً، ولا يمرّ بـTAKI في أيّ لحظة.</>,
                     <><strong>المحتوى</strong>: كلّ ما يُدخله المستخدم على المنصّة من نصوص، صور، فيديو، تقييمات، رسائل، مواقع جغرافية، أو روابط.</>,
                     <><strong>الإدارة</strong>: مالك المنصّة ومن يَنوب عنه من الموظّفين والمشرفين والمستشارين.</>,
                     <><strong>الوثائق القانونية</strong>: هذه الشروط، وسياسة الخصوصية، وسياسة الاسترداد، وأيّ سياسة لاحقة تُنشَر على المنصّة — تُقرَأ كوثيقة واحدة متكاملة.</>,
@@ -230,8 +230,9 @@ const Terms: React.FC = () => {
                 </Paragraph>
                 <Bullets items={isRTL ? [
                     <><strong>TAKI ليست طرفاً</strong> في أيّ عقد بَين المشتري والتاجر، سواء عند الحجز أو الاستلام أو الدفع.</>,
-                    <><strong>الحجز التزام مبدئيّ</strong> — لا دفع ولا حجز مبلغ على بطاقة المشتري.</>,
-                    <><strong>الدفع يَتمّ مباشرة</strong> بين المشتري والتاجر في موقع التاجر، عند الاستلام، بالطريقة التي يَتّفقان عليها (نقد / بطاقة / تَحويل بنكيّ).</>,
+                    <><strong>الحجز بالدفع عند الاستلام التزام مبدئيّ</strong> — لا دفع ولا حجز مبلغ على بطاقة المشتري.</>,
+                    <><strong>الدفع الإلكتروني اختياريّ</strong> ويُتيحه التاجر من بوابته المرخّصة: المبلغ يُخصم من بطاقة المشتري ويصل <strong>حساب التاجر مباشرةً</strong>، ولا يمرّ بـTAKI ولا تحتفظ به ولا تستطيع ردّه — ولذلك يكون الاسترداد بينهما وفق سياسة التاجر المُعلَنة.</>,
+                    <><strong>الدفع عند الاستلام يَتمّ مباشرة</strong> بين المشتري والتاجر في موقع التاجر أو عند التوصيل، بالطريقة التي يَتّفقان عليها (نقد / بطاقة / تَحويل بنكيّ).</>,
                     <><strong>سياسة الاسترجاع والاستبدال محصورة بين التاجر والمشتري</strong>، وتَختلف من تاجر إلى آخر بحسب طبيعة عرضه. TAKI ليست طرفاً فيها، ولا تَضمنها، ولا تُنفِّذها، ولا تَتحمّل تَبعاتها. لكلّ متجر سياسته الخاصّة، ومسؤولية المشتري أن يَطّلع عليها قبل الحجز.</>,
                     <><strong>كلّ ادّعاء يَتعلّق بالعرض</strong> — جودة، سعر، توفّر، صلاحية، مُطابقة وصف، التزام التاجر بتسليمه — مسؤوليّة التاجر وحده.</>,
                     <><strong>كلّ ادّعاء يَتعلّق بالمشتري</strong> — حضوره، سلوكه، احترامه لشروط العرض، استخدامه السليم له — مسؤوليّة المشتري وحده.</>,
@@ -239,8 +240,9 @@ const Terms: React.FC = () => {
                     <><strong>لا توجد بين TAKI وأيّ تاجر أيّ علاقة شراكة، أو وكالة، أو استخدام، أو مشروع مشترك</strong>؛ وكلّ طرف مستقلّ تماماً عن الآخر.</>,
                 ] : [
                     <><strong>TAKI is not a party</strong> to any contract between buyer and merchant — whether at booking, receipt or payment.</>,
-                    <><strong>A booking is a preliminary commitment</strong> — there is no payment and no hold on the buyer's card.</>,
-                    <><strong>Payment is made directly</strong> between buyer and merchant at the merchant's location, on receipt, by whatever means they agree (cash / card / bank transfer).</>,
+                    <><strong>A cash-on-collection booking is a preliminary commitment</strong> — there is no payment and no hold on the buyer's card.</>,
+                    <><strong>Online payment is optional</strong> and offered by the merchant through their own licensed gateway: the amount is charged to the buyer's card and lands <strong>in the merchant's account directly</strong>. It never passes through TAKI, which neither holds it nor can return it — which is why refunds are between the two parties under the merchant's published policy.</>,
+                    <><strong>Payment on collection is made directly</strong> between buyer and merchant at the merchant's location or on delivery, by whatever means they agree (cash / card / bank transfer).</>,
                     <><strong>Returns and exchange policy is confined between merchant and buyer</strong>, and varies from one merchant to another depending on the nature of the offer. TAKI is not a party to it, does not guarantee it, does not implement it, and does not bear its consequences. Each store has its own policy, and it is the buyer's responsibility to review it before booking.</>,
                     <><strong>Every claim relating to the offer</strong> — quality, price, availability, validity, fitness for description, the merchant's obligation to deliver it — is the sole responsibility of the merchant.</>,
                     <><strong>Every claim relating to the buyer</strong> — attendance, conduct, compliance with offer conditions, proper use — is the sole responsibility of the buyer.</>,
@@ -285,7 +287,7 @@ const Terms: React.FC = () => {
                     'يُطلب عنوان التوصيل (وصفه ومدينته وجوّال التواصل وإحداثياته) لتنفيذ الطلب، ويُحفظ داخل الطلب نفسه لأنّه جزءٌ من مستنده — الفاتورة تحمله، والتاجر يحتاجه عند أيّ خلاف.',
                     <><strong>تتبّع الموقع اللحظي</strong> لا يعمل إلا بعد أن يُعلن التاجر انطلاق المندوب، ولمشتري ذلك الطلب وحده، ويُمحى مع سجلّه بعد <strong>ساعة</strong> من إغلاق الطلب.</>,
                     <><strong>تلف البضاعة أو فقدها أثناء النقل على التاجر</strong>، فهو من اختار وسيلة التوصيل ومن تعاقد مع المندوب. وعلى المشتري أن يتفقّد البضاعة عند الاستلام وأن يُبلّغ التاجر فوراً بأيّ تلف.</>,
-                    <><strong>إذا لم يصل الطلب</strong>، أو تعذّر التسليم لسببٍ يعود للتاجر أو مندوبه، <strong>تُردّ رسوم التوصيل كاملةً</strong> مع ثمن البضاعة إن كان مدفوعاً — عبر مسار «طلب إلغاء واسترداد» في صفحة «حجوزاتي».</>,
+                    <><strong>إذا لم يصل الطلب</strong>، أو تعذّر التسليم لسببٍ يعود للتاجر أو مندوبه، <strong>يستحقّ المشتري ردّ رسوم التوصيل كاملةً</strong> مع ثمن البضاعة إن كان مدفوعاً. يُرفع الطلب عبر مسار «طلب إلغاء واسترداد» في صفحة «حجوزاتي»، فتُسجّله TAKI وتُبلّغ التاجر وتُثبت ما جرى بتاريخ ومرجع ومبلغ — <strong>والتنفيذ على التاجر</strong> لأن المال في حسابه لا عند المنصّة. وعند الامتناع تُرفع شكوى عبر «📣 الشكاوى»، وتتدخّل TAKI ميسِّرةً دون أن تكون ملزَمة بنتيجة.</>,
                     'إذا تعذّر التسليم لسببٍ يعود للمشتري (عنوان خاطئ، أو عدم الردّ، أو الغياب عن الموقع المتّفق عليه)، فالتصرّف في الطلب ورسومه يخضع لسياسة التاجر المُعلَنة.',
                     'مدد التوصيل المعروضة تقديرية يحدّدها التاجر، ولا تُعدّ التزاماً من المنصّة.',
                 ] : [
@@ -294,7 +296,7 @@ const Terms: React.FC = () => {
                     'A delivery address (description, city, contact mobile and coordinates) is required to fulfil the order and is stored inside the order itself, because it is part of its record — the invoice carries it and the merchant needs it in any dispute.',
                     <><strong>Live location tracking</strong> only runs once the merchant declares the courier has departed, is visible to that order\'s buyer alone, and is erased together with its record <strong>one hour</strong> after the order closes.</>,
                     <><strong>Loss of or damage to the goods in transit is the merchant\'s responsibility</strong>, since the merchant chose the delivery method and engaged the courier. The buyer must inspect the goods on receipt and report any damage to the merchant immediately.</>,
-                    <><strong>If the order does not arrive</strong>, or delivery fails for a reason attributable to the merchant or their courier, <strong>the delivery fee is refunded in full</strong> together with the price of the goods if it was paid — through the «cancellation and refund request» path in «My Bookings».</>,
+                    <><strong>If the order does not arrive</strong>, or delivery fails for a reason attributable to the merchant or their courier, <strong>the buyer is entitled to the delivery fee back in full</strong> together with the price of the goods if it was paid. The claim is raised through the «cancellation and refund request» path in «My Bookings»; TAKI records it, notifies the merchant and documents it with a date, a reference and an amount — <strong>execution rests with the merchant</strong>, since the money is in their account, not the platform's.</>,
                     'If delivery fails for a reason attributable to the buyer (wrong address, no answer, absence from the agreed location), the treatment of the order and its fee follows the merchant\'s published policy.',
                     'Displayed delivery times are estimates set by the merchant and are not an undertaking by the platform.',
                 ]} />

@@ -926,6 +926,19 @@ const Bookings: React.FC = () => {
                                                     style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginTop: 16 }}>
                                                     {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
                                                 </button>
+                                                {/* v14.23 — مسار الاسترداد على الطلبات المنتهية أيضاً.
+                                                    الشروط تُحيل مشتري طلبٍ **لم يصل** إلى هذا الزرّ، والتاجر
+                                                    يستطيع ختم الطلب «مكتمل» من لوحته دون أن يصل شيء —
+                                                    فكان الزرّ يختفي في اللحظة التي يُحتاج فيها. */}
+                                                {booking.paidAt && (
+                                                    <div style={{ marginTop: 4 }}>
+                                                        <RefundAction
+                                                            booking={booking}
+                                                            onCancel={async () => { /* لا إلغاء لطلب منتهٍ */ }}
+                                                            onChanged={async () => { await Promise.allSettled([reloadActive(), reloadPast()]); }}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
