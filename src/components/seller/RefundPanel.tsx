@@ -51,9 +51,12 @@ export const RefundPanel: React.FC<{
 
     const doRefund = async (r: BookingRefund | null) => {
         const due = Number(r?.amount ?? amount);
+        // v14.21 — الطلب المكتمل لا يُلغى ولا تعود كمّيته (البضاعة خرجت فعلاً)،
+        // فلا نَعِد التاجر بما لن يحدث.
+        const stillOpen = order.status === 'pending' || order.status === 'acknowledged';
         const ok = await customConfirm(isRTL
-            ? `تأكيد ردّ المبلغ\n\nالمبلغ: ${money(due)} ر.س\n\nأكّد هذا فقط بعد أن ترسل المبلغ فعلاً من بوابتك أو حسابك. سيُسجَّل إشعار دائن على الفاتورة، ويُلغى الطلب وتعود الكمّية للبيع، ويصل المشتري إشعار.`
-            : `Confirm refund\n\nAmount: ${money(due)} SAR\n\nConfirm only after you actually sent the money. A credit note is recorded, the order is cancelled, the stock returns and the buyer is notified.`);
+            ? `تأكيد ردّ المبلغ\n\nالمبلغ: ${money(due)} ر.س\n\nأكّد هذا فقط بعد أن ترسل المبلغ فعلاً من بوابتك أو حسابك. سيُسجَّل إشعار دائن على الفاتورة ويصل المشتري إشعار.\n\n${stillOpen ? 'وسيُلغى الطلب وتعود الكمّية للبيع.' : 'والطلب مغلق أصلاً، فلن تعود كمّيته للبيع — البضاعة خرجت.'}`
+            : `Confirm refund\n\nAmount: ${money(due)} SAR\n\nConfirm only after you actually sent the money. A credit note is recorded and the buyer is notified.\n\n${stillOpen ? 'The order will be cancelled and the stock returned.' : 'The order is already closed, so the stock will not return.'}`);
         if (!ok) return;
         const ref = await customPrompt(isRTL
             ? 'رقم مرجع التحويل (من بوابتك أو بنكك) — يُطبع على الفاتورة:'
@@ -65,7 +68,9 @@ export const RefundPanel: React.FC<{
         setBusy(false);
         if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
         await reload(); await onChanged?.();
-        await customAlert(isRTL ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}` : `✅ Refund recorded. Credit note: ${res.creditNoteNo}`);
+        await customAlert(isRTL
+            ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}${res.orderCancelled ? '\nوأُلغي الطلب وعادت الكمّية للبيع.' : '\nوالطلب مغلق أصلاً، فلم تعد كمّيته للبيع.'}`
+            : `✅ Refund recorded. Credit note: ${res.creditNoteNo}${res.orderCancelled ? '\nThe order was cancelled and the stock returned.' : '\nThe order was already closed, so the stock did not return.'}`);
     };
 
     // ── لا طلب بعد: التاجر يملك إلغاءً يُسجّل الدَّين عليه ─────────────────
@@ -78,7 +83,7 @@ export const RefundPanel: React.FC<{
                 </div>
                 <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
                     {isRTL
-                        ? 'لا يُلغى هذا الطلب بضغطة: المال في حسابك أنت، فإلغاؤه يترك المشتري بلا بضاعة ولا مال. إن اضطررت للإلغاء (نفاد البضاعة مثلاً) يُسجَّل المبلغ ديناً عليك حتى تؤكّد ردّه.'
+                        ? 'لا يُلغى هذا الطلب بضغطة: المال في حسابك أنت، فإلغاؤه يترك المشتري بلا بضاعة ولا مال. إن اضطررت للإلغاء (نفاد البضاعة مثلاً) يُسجَّل المبلغ ديناً عليك ويبقى الطلب قائماً حتى تؤكّد ردّه.'
                         : 'This order cannot be cancelled with one tap: the money is in your account. If you must cancel (out of stock), the amount is recorded as owed to the buyer until you confirm the refund.'}
                 </div>
                 {refund?.status === 'declined' && (
@@ -89,9 +94,11 @@ export const RefundPanel: React.FC<{
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                     <button disabled={busy} style={btn('linear-gradient(135deg,#f59e0b,#d97706)')}
                         onClick={async () => {
+                            // v14.21 — الصياغة تطابق ما يحدث: هذا **إقرار** بالإلغاء
+                            // ويُسجّل الدَّين؛ والطلب لا يُغلق إلا عند تأكيد التحويل.
                             const ok = await customConfirm(isRTL
-                                ? `⚠️ إلغاء طلب مدفوع\n\nالمبلغ ${money(amount)} ر.س سيُسجَّل ديناً عليك للمشتري، ويصله إشعار بذلك. ثم أكّد الردّ من نفس البطاقة بعد التحويل.\n\nهل تريد المتابعة؟`
-                                : `⚠️ Cancel a paid order\n\n${money(amount)} SAR will be recorded as owed to the buyer and they will be notified. Confirm the refund from this card after you transfer it.\n\nContinue?`);
+                                ? `⚠️ إقرار إلغاء طلب مدفوع\n\nالمبلغ ${money(amount)} ر.س يُسجَّل ديناً عليك للمشتري ويصله إشعار بذلك.\n\nالطلب يبقى قائماً حتى تؤكّد التحويل من نفس البطاقة — وعندها يُغلق وتعود الكمّية للبيع.\n\nهل تريد المتابعة؟`
+                                : `⚠️ Approve cancelling a paid order\n\n${money(amount)} SAR is recorded as owed to the buyer and they are notified.\n\nThe order stays open until you confirm the transfer from this card — only then is it closed and the stock returned.\n\nContinue?`);
                             if (!ok) return;
                             const note = await customPrompt(isRTL ? 'سبب الإلغاء (يصل المشتري):' : 'Cancellation reason (sent to the buyer):');
                             setBusy(true);
@@ -100,7 +107,7 @@ export const RefundPanel: React.FC<{
                             if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
                             await reload(); await onChanged?.();
                         }}>
-                        {isRTL ? '❌ إلغاء وتسجيل الدَّين' : '❌ Cancel & record the debt'}
+                        {isRTL ? '❌ أقرّ الإلغاء وسجّل الدَّين' : '❌ Approve cancelling & record the debt'}
                     </button>
                 </div>
             </div>
@@ -156,7 +163,7 @@ export const RefundPanel: React.FC<{
                     💛 {isRTL ? `مبلغ مستحقّ للمشتري — ${money(refund.amount)} ر.س` : `Owed to the buyer — ${money(refund.amount)} SAR`}
                 </div>
                 <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
-                    {isRTL ? 'حوِّل المبلغ من بوابتك ثم أكّده هنا ليُسجَّل إشعار دائن على الفاتورة.'
+                    {isRTL ? 'الطلب ما زال قائماً. حوِّل المبلغ من بوابتك ثم أكّده هنا — عندها يُغلق الطلب ويُسجَّل إشعار دائن على الفاتورة.'
                            : 'Transfer it from your gateway, then confirm here so a credit note is recorded on the invoice.'}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>

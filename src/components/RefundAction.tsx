@@ -163,8 +163,8 @@ export const RefundAction: React.FC<{
                     {isRTL ? '💛 أقرّ التاجر الاسترداد' : '💛 The merchant approved the refund'}
                 </div>
                 <div style={{ marginTop: 4 }}>
-                    {isRTL ? `المبلغ ${money(refund.amount)} ر.س مستحقّ لك من التاجر. سيصلك إشعار عند تأكيد التحويل.`
-                           : `${money(refund.amount)} SAR is due to you from the merchant. You will be notified once they confirm the transfer.`}
+                    {isRTL ? `المبلغ ${money(refund.amount)} ر.س مستحقّ لك من التاجر. ويبقى طلبك قائماً هنا حتى يؤكّد التحويل، وعندها يُغلق ويصلك إشعار بالمرجع.`
+                           : `${money(refund.amount)} SAR is due to you from the merchant. Your order stays here until they confirm the transfer, and then it closes and you are notified with the reference.`}
                 </div>
             </div>
         );

@@ -87,7 +87,7 @@ export const refundRepository = {
         barcode: string,
         action: 'decline' | 'refund' | 'open',
         opts: { note?: string; amount?: number; ref?: string; method?: string } = {},
-    ): Promise<{ ok: boolean; error?: string; creditNoteNo?: string }> => {
+    ): Promise<{ ok: boolean; error?: string; creditNoteNo?: string; orderCancelled?: boolean }> => {
         const { data, error } = await supabase.rpc('resolve_booking_refund', {
             p_barcode: barcode,
             p_action: action,
@@ -99,7 +99,7 @@ export const refundRepository = {
         if (error) return { ok: false, error: error.message };
         const d: any = data || {};
         if (!d.ok) return { ok: false, error: d.error || 'FAILED' };
-        return { ok: true, creditNoteNo: d.credit_note_no };
+        return { ok: true, creditNoteNo: d.credit_note_no, orderCancelled: !!d.order_cancelled };
     },
 
     /** السياسة المعلنة لمتجر — يقرؤها الزائر قبل الحجز. */

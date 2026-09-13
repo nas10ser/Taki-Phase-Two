@@ -524,6 +524,15 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
         }
     }
 
+    // ── v14.21 — الإشعار الدائن: مالٌ عاد لصاحبه يُكتب على نفس الورقة ────
+    if (v.credit_note_no) {
+        space(4);
+        row(L('إشعار دائن', 'Credit note'), String(v.credit_note_no), { keyColor: C.text });
+        if (v.refund_amount != null) row(L('المبلغ المُعاد', 'Refunded amount'), `${fmtSAR(v.refund_amount)} ${cur}`);
+        if (v.refund_ref) row(L('مرجع التحويل', 'Transfer ref'), clean(v.refund_ref));
+        if (v.refunded_at) row(L('تاريخ الردّ', 'Refunded on'), fmtDate(Date.parse(v.refunded_at), rtl));
+    }
+
     // ── رمز زاتكا QR — للتاجر المسجّل ضريبياً فقط ───────────────────────
     let qrBuf = null;
     if (vatOk && totalAmount != null && v.vat_amount != null) {
@@ -547,7 +556,13 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
 
     // ── .pay / .status — بانرات الدفع والحالة (نفس نصوص القالب) ───────────
     space(2);
-    if (v.status === 'cancelled') {
+    // v14.21 — طلبٌ رُدّ مبلغه: «لم تتم أي محاسبة على العميل» كذبٌ على ورقة
+    // تحمل إشعاراً دائناً. حُوسب ثم رُدّ إليه.
+    if (v.status === 'cancelled' && (v.cancelled_by === 'refund' || v.credit_note_no)) {
+        banner('cross', L('الطلب ملغي بعد ردّ المبلغ', 'Cancelled after refund'),
+            `${L('حُوسب العميل ثم رُدّ إليه المبلغ', 'The buyer was charged and then refunded')}${v.credit_note_no ? ` — ${L('إشعار دائن', 'credit note')} ${clean(v.credit_note_no)}` : ''}`,
+            C.voidBg, C.voidFg, C.voidBd);
+    } else if (v.status === 'cancelled') {
         const who = v.cancelled_by === 'buyer' ? L('أُلغِي من العميل', 'Cancelled by the buyer')
             : v.cancelled_by === 'seller' ? L('أُلغِي من التاجر', 'Cancelled by the merchant')
             : (v.cancelled_by === 'expired' || v.cancelled_by === 'system') ? L('أُلغِي تلقائياً (انتهت مهلة الاستلام)', 'Auto-cancelled (pickup window expired)')

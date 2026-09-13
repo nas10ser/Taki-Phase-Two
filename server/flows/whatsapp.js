@@ -792,6 +792,14 @@ function create(deps) {
         // أزرار الرد سقفها ٣ — «ادفع الآن» ثالثاً في صف البطاقة (٢ موجودة + ١)
         if (payInfo && payInfo.payable) btns.push({ id: `wa:pay:${bc}`, title: trunc(tr('wa_pay_btn'), LIM.btnTitle) });
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
+        // v14.21 — حالة الاسترداد على البطاقة نفسها (توأم تيليجرام).
+        if (b.refund_status) {
+            const lbl = { requested: 'rf_st_requested', declined: 'rf_st_declined', approved: 'rf_st_approved',
+                          refunded: 'rf_st_refunded', withdrawn: 'rf_st_withdrawn' }[String(b.refund_status)] || 'rf_st_requested';
+            let line = `↩️ ${tr(lbl)}`;
+            if (b.credit_note_no) line += `\n🧾 ${b.credit_note_no}`;
+            await sendText(from, line.trim());
+        }
         const row2 = [];
         // v14.18 — الطلب المدفوع: الزرّ يطلب استرداداً ولا يُلغي. القاعدة ترفض
         // الإلغاء أصلاً، فزرٌّ يعد بما يرفضه الخادم أسوأ من غيابه.

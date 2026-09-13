@@ -1894,7 +1894,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const { error } = await supabase.rpc('soft_delete_my_account');
             if (error) throw error;
         } catch (e) {
-            console.error('Soft delete failed, falling back to hard delete:', e);
+            // v14.21 — المسار الاحتياطي لم يعد يمسح شيئاً: `delete_user_account`
+            // صارت تُعطّل وتجدول التجهيل بعد ٣٠ يوماً مثل المسار الأوّل تماماً.
+            // 🔴 كانت تمسح صفّ المصادقة، والحذف يتسلسل إلى الطلبات والفواتير.
+            console.error('Soft delete RPC failed, using the deactivation fallback:', e);
             await authService.deleteAccount();
         }
         // Sign out locally so the next visit forces a fresh login (which is

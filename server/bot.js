@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.18.0';
+const BOT_VERSION              = '14.21.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1893,6 +1893,12 @@ async function showBuyerBookings(ctx, scope='current') {
         // والقاعدة تفرض الشرط نفسه (`not_dispatched`) فلا زرّ يعرضه البوت ويرفضه الخادم.
         if (active && String(b.fulfillment||'pickup')==='delivery' && DLV_DISPATCHED.includes(String(b.dlv_status||'')))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
+        // v14.18/v14.21 — حالة الاسترداد على البطاقة نفسها، فلا يبقى المشتري
+        // ينتظر جواباً لا يراه. الحقول تأتي من `bot_get_my_bookings`/الفاتورة.
+        if (b.refund_status) {
+            m += tr('rf_status_line', md(refundStatusLabel(b.refund_status)));
+            if (b.credit_note_no) m += tr('rf_credit_note', md(String(b.credit_note_no)));
+        }
         if (active) row3.push(Markup.button.callback(
             b.paid ? tr('rf_request_btn') : tr('b1205_cancel_booking'),
             b.paid ? `rfq:${b.barcode}` : `cancel:${b.barcode}`));

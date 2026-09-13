@@ -349,6 +349,11 @@ const buildHtml = (d: InvoiceData): string => {
         // «طريقة الدفع» (لم تتم محاسبة)، بل «الطلب ملغي» مع ذكر من ألغاه؛ والمكتمل
         // يُطبع «الطلب مكتمل» + كيف حوسب العميل (نقداً/إلكترونياً).
         if (d.status === 'cancelled') {
+            // v14.21 — طلبٌ رُدّ مبلغه: «لم تتم أي محاسبة على العميل» كذبٌ صريح
+            // على ورقة تحمل فوقها إشعاراً دائناً بـ٩٠٠ ريال. حُوسب ثم رُدّ.
+            if (d.cancelledBy === 'refund' || d.creditNoteNo) {
+                return `<div class="status void">${L('❌ الطلب ملغي بعد ردّ المبلغ', '❌ Cancelled after refund')}<span class="status-sub">${L('حُوسب العميل ثم رُدّ إليه المبلغ', 'The buyer was charged and then refunded')}${d.creditNoteNo ? ` — ${L('إشعار دائن', 'credit note')} ${esc(d.creditNoteNo)}` : ''}</span></div>`;
+            }
             const who = d.cancelledBy === 'buyer'
                 ? L('أُلغِي من العميل', 'Cancelled by the buyer')
                 : d.cancelledBy === 'seller'
@@ -368,7 +373,9 @@ const buildHtml = (d: InvoiceData): string => {
                 ? `${L('💳 الدفع إلكتروني — بانتظار السداد', '💳 Online payment — pending')}<span class="pay-sub">${L('يُسدَّد عبر بوابة التاجر قبل التسليم', 'Paid via the merchant’s gateway before handover')}</span>`
                 : `${delivery ? L('💵 الدفع عند التوصيل', '💵 Pay on delivery') : L('💵 الدفع عند الاستلام', '💵 Pay at pickup')}<span class="pay-sub">${L('استلم المبلغ نقداً/شبكة من العميل', 'Collect payment from the buyer')}</span>`}</div>`;
         const doneHtml = d.status === 'completed'
-            ? `<div class="status done">${L('✅ الطلب مكتمل', '✅ Order completed')}<span class="status-sub">${d.paidOnline ? L('حوسب العميل إلكترونياً — وصل حساب التاجر', 'Charged online — sent to merchant') : L('حوسب العميل عند الاستلام (نقداً/شبكة)', 'Charged at pickup (cash/card)')}</span></div>`
+            ? `<div class="status done">${L('✅ الطلب مكتمل', '✅ Order completed')}<span class="status-sub">${d.creditNoteNo
+                ? `${L('حوسب العميل ثم رُدّ إليه المبلغ', 'Charged and then refunded')} — ${L('إشعار دائن', 'credit note')} ${esc(d.creditNoteNo)}`
+                : d.paidOnline ? L('حوسب العميل إلكترونياً — وصل حساب التاجر', 'Charged online — sent to merchant') : L('حوسب العميل عند الاستلام (نقداً/شبكة)', 'Charged at pickup (cash/card)')}</span></div>`
             : '';
         return payHtml + doneHtml;
     })()}
