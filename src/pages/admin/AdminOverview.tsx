@@ -163,7 +163,7 @@ function formatTimeAgo(date: Date): string {
 const AdminOverview: React.FC<{
     onNavigate: (tab: 'buyers' | 'sellers' | 'tools' | 'analytics') => void;
 }> = ({ onNavigate }) => {
-    const { user } = useApp();
+    const { user, hasPermission } = useApp();
     const history = useHistory();
     const [stats, setStats] = useState<LiveStats | null>(null);
     const [activity, setActivity] = useState<ActivityRow[]>([]);
@@ -282,14 +282,19 @@ const AdminOverview: React.FC<{
                         gradient="bg-gradient-to-br from-purple-500 to-fuchsia-600"
                         trend={deltas.new_users}
                     />
-                    <KpiCard
-                        icon="💰"
-                        label="إيراد شهري متوقّع"
-                        value={`${(stats?.mrr ?? 0).toLocaleString('ar-SA')} ر.س`}
-                        subtitle={`${stats?.paying_sellers ?? 0} مشترك مدفوع`}
-                        gradient="bg-gradient-to-br from-amber-500 to-orange-600"
-                        trend={deltas.mrr}
-                    />
+                    {/* v14.38 — «💰 الأمور المالية» كانت مربّع اختيار بلا قارئ:
+                        ناصر يمنعها عن أدمن فرعي فيقرأ الإيراد كاملاً. الإخفاء لا
+                        التعطيل، كما في التبويبات. */}
+                    {hasPermission('action_view_finance') && (
+                        <KpiCard
+                            icon="💰"
+                            label="إيراد شهري متوقّع"
+                            value={`${(stats?.mrr ?? 0).toLocaleString('ar-SA')} ر.س`}
+                            subtitle={`${stats?.paying_sellers ?? 0} مشترك مدفوع`}
+                            gradient="bg-gradient-to-br from-amber-500 to-orange-600"
+                            trend={deltas.mrr}
+                        />
+                    )}
                 </div>
             </div>
 

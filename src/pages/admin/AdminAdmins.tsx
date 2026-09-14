@@ -17,6 +17,7 @@
  *    grid — staff admins should not see who else is staff.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ADMIN_PERMS, type PermDef } from '../../data/adminPermissions';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
 import type { AdminPermission } from '../../services/authService';
@@ -32,39 +33,14 @@ interface StaffAdmin {
     created_at: string | null;
 }
 
-interface PermDef {
-    key: AdminPermission;
-    label: string;
-    description: string;
-    group: 'tabs' | 'actions';
-    onlySuper?: boolean;
-}
 
 // Catalogue rendered in the grid. Order matters — first by group, then by
 // importance. `tab_overview` is intentionally always-on for staff (an admin
 // with zero permissions is useless), but we still surface it as a checkbox
 // so the super admin sees the full surface area.
-const PERMS: PermDef[] = [
-    { key: 'tab_overview',  label: '🏠 الرئيسية',         description: 'نظرة عامة على المنصة', group: 'tabs' },
-    { key: 'tab_buyers',    label: '🛒 المشترون',         description: 'تبويب المشترين + التعديل', group: 'tabs' },
-    { key: 'tab_sellers',   label: '🏪 البائعون',         description: 'تبويب البائعين + التعديل', group: 'tabs' },
-    { key: 'tab_reports',   label: '🚩 البلاغات والشكاوى', description: 'مراجعة البلاغات + التعامل معها', group: 'tabs' },
-    { key: 'tab_analytics', label: '📊 التحليلات',         description: 'مؤشرات لحظية ورسوم', group: 'tabs' },
-    { key: 'tab_tools',     label: '🛠️ الأدوات',          description: 'البنرات والحملات والإعدادات', group: 'tabs' },
-    { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة كل المحادثات لحظياً', group: 'tabs' },
-    { key: 'tab_contests',  label: '🎁 المسابقات',         description: 'استبيانات بجوائز + تصحيح + سحب', group: 'tabs' },
-    { key: 'tab_launch',    label: '🚀 الإطلاق',           description: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق', group: 'tabs' },
-    { key: 'tab_admins',    label: '👑 إدارة المسؤولين',    description: 'هذه الصفحة (super admin فقط)', group: 'tabs', onlySuper: true },
-    { key: 'action_impersonate',       label: '🔓 دخول كحساب آخر',        description: 'فتح جلسة كاملة كأي مستخدم', group: 'actions' },
-    { key: 'action_manage_sponsors',   label: '🌟 الرعاة الرسميون',         description: 'منح/إلغاء صفة راعٍ وتحديد الاستهداف', group: 'actions' },
-    { key: 'action_moderate_messages', label: '🚨 حذف/إنذار في الرسائل',    description: 'حذف رسالة أو إنذار مستخدم', group: 'actions' },
-    { key: 'action_view_finance',      label: '💰 الأمور المالية',          description: 'GMV/MRR/الإيرادات/الاشتراكات', group: 'actions' },
-    { key: 'action_manage_users',      label: '✏️ تعديل حسابات المستخدمين', description: 'تغيير بيانات أو حذف حسابات', group: 'actions' },
-    { key: 'action_delete_deals',      label: '🗑️ حذف العروض',              description: 'حذف منشورات التجار', group: 'actions' },
-    { key: 'action_manage_seasonal',   label: '🌟 عروض الموسم',             description: 'تثبيت / إلغاء عروض الموسم', group: 'actions' },
-    { key: 'action_manage_campaigns',  label: '📣 الحملات الترويجية',       description: 'إنشاء / تعديل / إيقاف الحملات', group: 'actions' },
-    { key: 'action_manage_banners',    label: '🎨 البنرات الإعلانية',       description: 'بنرات الإعلانات داخل التطبيق', group: 'actions' },
-];
+// v14.38 — الكتالوج صار مصدراً واحداً في src/data/adminPermissions.ts
+// (كان مكرَّراً في ثلاثة ملفات وقد تفارقت فعلاً).
+const PERMS = ADMIN_PERMS;
 
 const AdminAdmins: React.FC = () => {
     const { user, isSuperAdmin, customAlert, customConfirm } = useApp();

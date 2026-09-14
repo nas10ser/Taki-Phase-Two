@@ -1060,6 +1060,13 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
 // Main Component
 // ============================================================
 const AdminTools: React.FC = () => {
+    // v14.38 — ثلاث صلاحيات كانت مربّعات اختيار بلا قارئ في الكود ولا في القاعدة:
+    // ناصر يمنع أدمن فرعياً من الحملات أو البنرات أو عروض الموسم، ويبقى قادراً
+    // عليها كلها. تُفحص هنا في **الفعل** لا في إخفاء الزرّ وحده.
+    // (و`action_manage_seasonal` محروسة في RLS على `pinned_stores` ولا شاشة لها.)
+    const { hasPermission: hasPerm } = useApp();
+    const canCampaigns = hasPerm('action_manage_campaigns');
+    const canBanners   = hasPerm('action_manage_banners');
     const { customAlert, customConfirm } = useApp();
     const [paymentEnabled, setPaymentEnabled] = useState(false);
     const [telegramBotEnabled, setTelegramBotEnabled] = useState(true);
@@ -1234,6 +1241,7 @@ const AdminTools: React.FC = () => {
     // v12.48 — «حملة الموسم»: حفظ/إنهاء الحملة + إشعار التجار + تواريخ التذكير.
     // كل التواريخ يقررها ناصر يدوياً؛ الحارس النهائي للنافذة DB trigger.
     const saveCampaign = async () => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         if (!camp.season_id) { await customAlert('⚠️ اختر الموسم أولاً'); return; }
         if (!camp.seller_from || !camp.seller_to || !camp.public_from || !camp.public_to) {
             await customAlert('⚠️ أكمل التواريخ الأربعة: نافذة التجار (من/إلى) والنافذة العامة (من/إلى)');
@@ -1374,6 +1382,7 @@ const AdminTools: React.FC = () => {
     };
 
     const deleteBanner = async (id: string) => {
+        if (!canBanners) { await customAlert('⛔ ليست لديك صلاحية إدارة البنرات.'); return; }
         const ok = await customConfirm('هل تريد حذف هذا البانر نهائياً؟');
         if (!ok) return;
         // Optimistic remove — UI reacts instantly; rollback on failure.
@@ -1455,6 +1464,7 @@ const AdminTools: React.FC = () => {
      * يُقصي استهدافُه قبل أن يضغط.
      */
     const toggleCampaign = async (c: any) => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         const next = !c.is_active;
         if (next) {
             const { data: aud } = await supabase.rpc('admin_campaign_audience', { p_campaign_id: c.id });

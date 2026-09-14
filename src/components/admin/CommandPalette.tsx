@@ -11,6 +11,8 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
+import type { AdminPermission } from '../../services/authService';
 import { useHistory } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
 import { useAdminRecents, RecentEntity } from '../../hooks/useAdminRecents';
@@ -48,6 +50,8 @@ type NavCommand = {
     icon: string;
     keywords: string;
     tab: AdminTab;
+    /** v14.38 — الصلاحية اللازمة لرؤية هذه الوجهة. */
+    perm?: AdminPermission;
 };
 type ActionCommand = {
     kind: 'action';
@@ -57,6 +61,7 @@ type ActionCommand = {
     keywords: string;
     subtitle?: string;
     run: () => void;
+    perm?: AdminPermission;
 };
 type UserCommand = {
     kind: 'user';
@@ -84,23 +89,24 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const { recents } = useAdminRecents();
+    const { hasPermission } = useApp();
 
     // Static nav + action commands. Memoized so identity is stable for
     // dependency arrays.
     const navCommands: NavCommand[] = useMemo(() => [
-        { kind: 'nav', id: 'nav-overview',  label: 'الرئيسية',         icon: '🏠', keywords: 'overview home dashboard رئيسية',                    tab: 'overview' },
-        { kind: 'nav', id: 'nav-buyers',    label: 'إدارة المشترين',   icon: '🛒', keywords: 'buyers customers مشتري مشترين عميل',                tab: 'buyers' },
-        { kind: 'nav', id: 'nav-sellers',   label: 'إدارة البائعين',   icon: '🏪', keywords: 'sellers merchants تاجر متاجر بائع اشتراك',          tab: 'sellers' },
-        { kind: 'nav', id: 'nav-reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
-        { kind: 'nav', id: 'nav-moderation', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
-        { kind: 'nav', id: 'nav-analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
-        { kind: 'nav', id: 'nav-analyst',   label: 'المحلل الذكي',     icon: '🧠', keywords: 'ai analyst insights churn محلل ذكي رؤى عزوف توصيات ذروة', tab: 'analyst' },
-        { kind: 'nav', id: 'nav-tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
-        { kind: 'nav', id: 'nav-locations', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
-        { kind: 'nav', id: 'nav-launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
-        { kind: 'nav', id: 'nav-tax',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
-        { kind: 'nav', id: 'nav-invoices',  label: 'فواتير الموقع',    icon: '💳', keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير الموقع سجل', tab: 'invoices' },
-        { kind: 'nav', id: 'nav-messaging', label: 'الإشعارات والرسائل', icon: '📨', keywords: 'messaging notifications email templates اشعارات رسائل ايميل بريد قوالب تذكير اشتراك حجز', tab: 'messaging' },
+        { kind: 'nav', id: 'nav-overview', perm: 'tab_overview',  label: 'الرئيسية',         icon: '🏠', keywords: 'overview home dashboard رئيسية',                    tab: 'overview' },
+        { kind: 'nav', id: 'nav-buyers', perm: 'tab_buyers',    label: 'إدارة المشترين',   icon: '🛒', keywords: 'buyers customers مشتري مشترين عميل',                tab: 'buyers' },
+        { kind: 'nav', id: 'nav-sellers', perm: 'tab_sellers',   label: 'إدارة البائعين',   icon: '🏪', keywords: 'sellers merchants تاجر متاجر بائع اشتراك',          tab: 'sellers' },
+        { kind: 'nav', id: 'nav-reports', perm: 'tab_reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
+        { kind: 'nav', id: 'nav-moderation', perm: 'tab_reports', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
+        { kind: 'nav', id: 'nav-analytics', perm: 'tab_analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
+        { kind: 'nav', id: 'nav-analyst', perm: 'tab_analytics',   label: 'المحلل الذكي',     icon: '🧠', keywords: 'ai analyst insights churn محلل ذكي رؤى عزوف توصيات ذروة', tab: 'analyst' },
+        { kind: 'nav', id: 'nav-tools', perm: 'tab_tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
+        { kind: 'nav', id: 'nav-locations', perm: 'tab_tools', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
+        { kind: 'nav', id: 'nav-launch', perm: 'tab_launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
+        { kind: 'nav', id: 'nav-tax', perm: 'action_view_finance',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
+        { kind: 'nav', id: 'nav-invoices', perm: 'action_view_finance',  label: 'فواتير الموقع',    icon: '💳', keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير الموقع سجل', tab: 'invoices' },
+        { kind: 'nav', id: 'nav-messaging', perm: 'tab_messages', label: 'الإشعارات والرسائل', icon: '📨', keywords: 'messaging notifications email templates اشعارات رسائل ايميل بريد قوالب تذكير اشتراك حجز', tab: 'messaging' },
     ], []);
 
     const actionCommands: ActionCommand[] = useMemo(() => [
@@ -179,8 +185,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const q = query.trim().toLowerCase();
     const matchesQ = (c: NavCommand | ActionCommand) =>
         !q || c.label.toLowerCase().includes(q) || c.keywords.toLowerCase().includes(q);
-    const filteredNav = navCommands.filter(matchesQ);
-    const filteredActions = actionCommands.filter(matchesQ);
+    // v14.38 — 🪤 كانت لوحة الأوامر تعرض **كل** الوجهات الثلاث عشرة لأي أدمن
+    // مهما كانت صلاحياته: أدمن بصلاحية «الرئيسية» وحدها يضغط ⌘K فيرى «الزكاة
+    // والضريبة» و«فواتير الموقع» و«إدارة البائعين» — عكس ما تَعِد به لوحة
+    // الصلاحيات تماماً («كل مسؤول يرى فقط التبويبات والأزرار المسموح بها له»).
+    // الإخفاء هنا لا التعطيل، مطابقةً لنهج التبويبات.
+    const allowed = (c: { perm?: AdminPermission }) => !c.perm || hasPermission(c.perm);
+    const filteredNav = navCommands.filter(c => allowed(c) && matchesQ(c));
+    const filteredActions = actionCommands.filter(c => allowed(c) && matchesQ(c));
 
     // Recents only show when the input is empty — once typing starts,
     // the search results take over so the list isn't cluttered.

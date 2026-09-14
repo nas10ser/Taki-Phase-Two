@@ -14,36 +14,12 @@
  * out without thought.
  */
 import React, { useState } from 'react';
+import { ADMIN_PERMS } from '../../data/adminPermissions';
 import { createRoot, Root } from 'react-dom/client';
 
-interface PermDef {
-    key: string;
-    label: string;
-    description: string;
-    group: 'tabs' | 'actions';
-    defaultOn: boolean;
-}
 
-const PERMS: PermDef[] = [
-    { key: 'tab_overview',  label: '🏠 الرئيسية',         description: 'نظرة عامة',                  group: 'tabs',    defaultOn: true  },
-    { key: 'tab_buyers',    label: '🛒 المشترون',         description: 'تبويب المشترين',             group: 'tabs',    defaultOn: true  },
-    { key: 'tab_sellers',   label: '🏪 البائعون',         description: 'تبويب البائعين',             group: 'tabs',    defaultOn: true  },
-    { key: 'tab_reports',   label: '🚩 البلاغات والشكاوى', description: 'مراجعة البلاغات',            group: 'tabs',    defaultOn: true  },
-    { key: 'tab_analytics', label: '📊 التحليلات',         description: 'مؤشرات لحظية',               group: 'tabs',    defaultOn: false },
-    { key: 'tab_tools',     label: '🛠️ الأدوات',          description: 'البنرات والحملات والإعدادات', group: 'tabs',    defaultOn: true  },
-    { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة كل المحادثات لحظياً',   group: 'tabs',    defaultOn: false },
-    { key: 'tab_contests',  label: '🎁 المسابقات',         description: 'استبيانات بجوائز + تصحيح + سحب', group: 'tabs', defaultOn: false },
-    { key: 'tab_launch',    label: '🚀 الإطلاق',           description: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق', group: 'tabs', defaultOn: false },
-    { key: 'action_impersonate',       label: '🔓 دخول كحساب آخر',        description: 'فتح جلسة كاملة كأي مستخدم',     group: 'actions', defaultOn: false },
-    { key: 'action_manage_sponsors',   label: '🌟 الرعاة الرسميون',         description: 'منح/إلغاء صفة راعٍ وتحديد الاستهداف', group: 'actions', defaultOn: false },
-    { key: 'action_moderate_messages', label: '🚨 حذف/إنذار في الرسائل',    description: 'حذف رسالة أو إنذار مستخدم',     group: 'actions', defaultOn: false },
-    { key: 'action_view_finance',      label: '💰 الأمور المالية',          description: 'GMV / MRR / الإيرادات',          group: 'actions', defaultOn: false },
-    { key: 'action_manage_users',      label: '✏️ تعديل حسابات المستخدمين', description: 'تغيير بيانات أو تعليق حسابات',  group: 'actions', defaultOn: false },
-    { key: 'action_delete_deals',      label: '🗑️ حذف العروض',              description: 'حذف منشورات التجار',             group: 'actions', defaultOn: true  },
-    { key: 'action_manage_seasonal',   label: '🌟 عروض الموسم',             description: 'تثبيت / إلغاء عروض الموسم',      group: 'actions', defaultOn: true  },
-    { key: 'action_manage_campaigns',  label: '📣 الحملات الترويجية',       description: 'إنشاء / تعديل الحملات',           group: 'actions', defaultOn: true  },
-    { key: 'action_manage_banners',    label: '🎨 البنرات الإعلانية',       description: 'بنرات الإعلانات',                group: 'actions', defaultOn: true  },
-];
+// v14.38 — نفس الكتالوج الواحد (كان نسخة ثالثة مستقلّة).
+const PERMS = ADMIN_PERMS;
 
 interface DialogProps {
     targetName: string;

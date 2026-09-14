@@ -67,6 +67,9 @@ const SubscriptionModal = memo<{
     const canImpersonate = hasPermission('action_impersonate');
     const canPromote = isSuperAdmin && seller.user_type !== 'admin';
     const canManageSponsors = hasPermission('action_manage_sponsors');
+    // v14.38 — الأرقام المالية والتعديل على الحسابات صارا محروسين فعلاً.
+    const canSeeFinance = hasPermission('action_view_finance');
+    const canManageUsers = hasPermission('action_manage_users');
     // Loading flag for the "act as seller" button — see AdminBuyers comment.
     const [opening, setOpening] = useState(false);
     const [promoting, setPromoting] = useState(false);
@@ -1914,6 +1917,9 @@ const AdminsBox: React.FC = () => {
 };
 
 const AdminSellers: React.FC = () => {
+    // v14.38 — الأرقام المالية تُخفى عمّن لا يملك «💰 الأمور المالية».
+    const { hasPermission: hasPerm } = useApp();
+    const canSeeFinanceMain = hasPerm('action_view_finance');
     const { isSuperAdmin, customAlert } = useApp();
     const [query, setQuery] = useState('');
     const [boxesRefresh, setBoxesRefresh] = useState(0);
@@ -2045,12 +2051,19 @@ const AdminSellers: React.FC = () => {
 
             {/* Stats strip */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg">
-                    <div className="text-3xl font-extrabold tabular-nums">
-                        {stats.mrr.toLocaleString('ar-SA')}
+                {canSeeFinanceMain && (
+                    <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg">
+                        <div className="text-3xl font-extrabold tabular-nums">
+                            {stats.mrr.toLocaleString('ar-SA')}
+                        </div>
+                        <div className="text-xs opacity-90 mt-0.5">
+                            MRR (ر.س/شهر)
+                            {/* v14.34 — يُطرح خصم التاجر هنا ولا يُطرح في «الرئيسية»،
+                                فالرقمان اختلفا بلا تفسير. النصّ يوضّح أيّهما هذا. */}
+                            <span className="opacity-70"> · بعد الخصومات</span>
+                        </div>
                     </div>
-                    <div className="text-xs opacity-90 mt-0.5">MRR (ر.س/شهر)</div>
-                </div>
+                )}
                 <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
                     <div className="text-2xl font-extrabold text-emerald-600">{stats.premium}</div>
                     <div className="text-xs text-[var(--text-secondary)] mt-0.5">⭐ مميز</div>
