@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict egciWEEdABLryXLhbK4FOgMOLWpXtkt11KdLEdGjXfXSwCQQZin2IkqTePnU6Mh
+\restrict 9UHVZU8xVoOY5UDpe5fmbGh0VWeVCotWE8KldIr0JgCVOSRRKxwdS84Ki55v5a7
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -636,60 +636,60 @@ $$;
 
 CREATE FUNCTION public._broadcast_campaign_core(p_campaign_id text, p_force boolean DEFAULT false) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
+    SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE
-    camp RECORD;
-    affected INTEGER := 0;
+DECLARE camp RECORD; affected INTEGER := 0;
 BEGIN
-    SELECT * INTO camp FROM public.promotional_campaigns WHERE id = p_campaign_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Campaign % not found', p_campaign_id;
-    END IF;
+  SELECT * INTO camp FROM public.promotional_campaigns WHERE id = p_campaign_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Campaign % not found', p_campaign_id; END IF;
 
-    IF p_force THEN
-        DELETE FROM public.promo_impressions WHERE campaign_id = camp.id;
-    END IF;
+  IF p_force THEN
+    DELETE FROM public.promo_impressions WHERE campaign_id = camp.id;
+  END IF;
 
-    INSERT INTO public.notifications (
-        user_id, title_ar, title_en, body_ar, body_en, type, meta_data, created_at
-    )
-    SELECT
-        u.id,
-        camp.title_ar, camp.title_en, camp.body_ar, camp.body_en,
-        'marketing',
-        jsonb_build_object(
-            'campaignId', camp.id,
-            'imageUrl', camp.image_url,
-            'actionUrl', camp.action_url,
-            'actionLabelAr', camp.action_label_ar,
-            'actionLabelEn', camp.action_label_en
-        ),
-        NOW()
-    FROM public.users u
-    WHERE
-        (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
-        AND NOT EXISTS (
-            SELECT 1 FROM public.promo_impressions p
-            WHERE p.campaign_id = camp.id AND p.user_id = u.id
-        );
+  INSERT INTO public.notifications (
+    user_id, title_ar, title_en, body_ar, body_en, type, meta_data, created_at)
+  SELECT u.id, camp.title_ar, camp.title_en, camp.body_ar, camp.body_en, 'marketing',
+    jsonb_build_object(
+      'campaignId',    camp.id,
+      'imageUrl',      camp.image_url,
+      'actionUrl',     camp.action_url,
+      'actionLabelAr', camp.action_label_ar,
+      'actionLabelEn', camp.action_label_en,
+      -- 🪤 البوتان يقرآن الشرطة السفلية. مفتاحٌ واحد بالسنام كان يعني أن زرّ
+      -- الحملة لا يظهر في تيليجرام ولا واتساب أبداً، وناصر يملأ «رابط عند
+      -- الضغط» ولا يجد أحدٌ ما يضغطه.
+      'action_url',    camp.action_url,
+      'image_url',     camp.image_url,
+      'action_label_ar', camp.action_label_ar,
+      'action_label_en', camp.action_label_en),
+    NOW()
+  FROM public.users u
+  WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
+    AND u.deleted_at IS NULL
+    AND COALESCE(u.is_suspended, false) = false
+    AND public.taki_user_in_campaign(u.id, camp.target_city, camp.target_region)
+    AND NOT EXISTS (SELECT 1 FROM public.promo_impressions p
+                    WHERE p.campaign_id = camp.id AND p.user_id = u.id);
 
-    GET DIAGNOSTICS affected = ROW_COUNT;
+  GET DIAGNOSTICS affected = ROW_COUNT;
 
-    INSERT INTO public.promo_impressions (campaign_id, user_id, seen_at, clicked)
-    SELECT camp.id, u.id, NOW(), FALSE
-    FROM public.users u
-    WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
-    ON CONFLICT (campaign_id, user_id) DO NOTHING;
+  INSERT INTO public.promo_impressions (campaign_id, user_id, seen_at, clicked)
+  SELECT camp.id, u.id, NOW(), FALSE
+  FROM public.users u
+  WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
+    AND u.deleted_at IS NULL
+    AND COALESCE(u.is_suspended, false) = false
+    AND public.taki_user_in_campaign(u.id, camp.target_city, camp.target_region)
+  ON CONFLICT (campaign_id, user_id) DO NOTHING;
 
-    UPDATE public.promotional_campaigns
-       SET current_impressions = COALESCE(current_impressions, 0) + affected,
-           last_broadcast_at = NOW()
-     WHERE id = camp.id;
+  UPDATE public.promotional_campaigns
+     SET current_impressions = COALESCE(current_impressions, 0) + affected,
+         last_broadcast_at = NOW()
+   WHERE id = camp.id;
 
-    RETURN affected;
-END;
-$$;
+  RETURN affected;
+END $$;
 
 
 --
@@ -2668,6 +2668,42 @@ $$;
 
 
 --
+-- Name: admin_campaign_audience(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_campaign_audience(p_campaign_id text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE camp RECORD; v_all int; v_hit int; v_new int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT * INTO camp FROM public.promotional_campaigns WHERE id = p_campaign_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'not_found'); END IF;
+
+  SELECT count(*) INTO v_all FROM public.users u
+  WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
+    AND u.deleted_at IS NULL AND COALESCE(u.is_suspended,false) = false;
+
+  SELECT count(*) INTO v_hit FROM public.users u
+  WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
+    AND u.deleted_at IS NULL AND COALESCE(u.is_suspended,false) = false
+    AND public.taki_user_in_campaign(u.id, camp.target_city, camp.target_region);
+
+  SELECT count(*) INTO v_new FROM public.users u
+  WHERE (camp.target_audience = 'all' OR u.user_type = camp.target_audience)
+    AND u.deleted_at IS NULL AND COALESCE(u.is_suspended,false) = false
+    AND public.taki_user_in_campaign(u.id, camp.target_city, camp.target_region)
+    AND NOT EXISTS (SELECT 1 FROM public.promo_impressions p
+                    WHERE p.campaign_id = camp.id AND p.user_id = u.id);
+
+  RETURN jsonb_build_object('ok', true, 'eligible', v_all, 'targeted', v_hit,
+                            'will_receive', v_new,
+                            'targeted_city', camp.target_city, 'targeted_region', camp.target_region);
+END $$;
+
+
+--
 -- Name: admin_category_funnel(integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3819,6 +3855,25 @@ $$;
 
 
 --
+-- Name: admin_list_store_name_requests(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_list_store_name_requests(p_status text DEFAULT 'requested'::text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v jsonb;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.requested_at DESC), '[]'::jsonb) INTO v
+  FROM (SELECT r.*, u.name AS owner_name, u.phone AS owner_phone
+        FROM public.store_name_requests r JOIN public.users u ON u.id = r.store_id
+        WHERE p_status IS NULL OR r.status = p_status) t;
+  RETURN jsonb_build_object('ok', true, 'rows', v);
+END $$;
+
+
+--
 -- Name: admin_list_warned_users(text, integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4444,6 +4499,33 @@ END $$;
 
 
 --
+-- Name: admin_reports_summary(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_reports_summary() RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v jsonb;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT jsonb_build_object(
+    'reports', jsonb_build_object(
+      'open',     (SELECT count(*) FROM public.reports WHERE status = 'open'),
+      'review',   (SELECT count(*) FROM public.reports WHERE status = 'under_review'),
+      'resolved', (SELECT count(*) FROM public.reports WHERE status = 'resolved'),
+      'total',    (SELECT count(*) FROM public.reports)),
+    'complaints', jsonb_build_object(
+      'open',     (SELECT count(*) FROM public.complaints WHERE status = 'open'),
+      'review',   (SELECT count(*) FROM public.complaints WHERE status = 'reviewing'),
+      'resolved', (SELECT count(*) FROM public.complaints WHERE status = 'resolved'),
+      'total',    (SELECT count(*) FROM public.complaints))
+  ) INTO v;
+  RETURN v;
+END $$;
+
+
+--
 -- Name: admin_reset_contest_winners(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4458,6 +4540,47 @@ begin
     where id = p_contest_id and status = 'drawn';
   return jsonb_build_object('success', true);
 end; $$;
+
+
+--
+-- Name: admin_resolve_store_name(text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_resolve_store_name(p_id text, p_approve boolean, p_note text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE r public.store_name_requests%ROWTYPE; v_msg text;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT * INTO r FROM public.store_name_requests WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); END IF;
+  IF r.status <> 'requested' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'ALREADY_DECIDED', 'status', r.status);
+  END IF;
+
+  IF p_approve THEN
+    -- المشغّل على `users.shop` ينشر الاسم على كل عروض المتجر تلقائياً.
+    UPDATE public.users SET shop = r.wanted_name WHERE id = r.store_id;
+    v_msg := '✅ اعتُمد اسم متجرك الجديد: ' || r.wanted_name;
+  ELSE
+    v_msg := '❌ لم يُعتمد تغيير اسم متجرك إلى «' || r.wanted_name || '»'
+             || CASE WHEN COALESCE(btrim(p_note),'') <> '' THEN ' — ' || btrim(p_note) ELSE '' END || '.';
+  END IF;
+
+  UPDATE public.store_name_requests
+     SET status = CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END,
+         admin_note = NULLIF(btrim(COALESCE(p_note,'')), ''),
+         admin_id = auth.uid()::text, decided_at = now()
+   WHERE id = p_id;
+
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (r.store_id, CASE WHEN p_approve THEN '✅ اسم المتجر' ELSE '❌ اسم المتجر' END,
+          CASE WHEN p_approve THEN '✅ Store name' ELSE '❌ Store name' END,
+          v_msg, v_msg, 'system', jsonb_build_object('audience','seller'));
+
+  RETURN jsonb_build_object('ok', true, 'approved', p_approve);
+END $$;
 
 
 --
@@ -4599,7 +4722,11 @@ BEGIN
     SELECT u.id, u.name, u.phone, u.email, u.user_type, u.shop, u.address,
            COALESCE(u.is_suspended, FALSE),
            (SELECT COUNT(*)::int FROM bookings b WHERE b.user_id = u.id),
-           COALESCE(u.total_spent, 0)::numeric,
+           -- v14.33 — `u.total_spent` عمودٌ ميّت: DEFAULT 0 ولا يكتبه أحد في
+           -- المنصّة كلها (قِيس: صفر لكل الحسابات). فبطاقة المشتري كانت تقول
+           -- «٠ ر.س مصروفة» مهما أنفق، ومرشّح «الأكثر إنفاقاً» يرتّب بقيمة
+           -- ثابتة فلا يرتّب. المصدر الصحيح هو الإجمالي المُجمَّد على الحجز.
+           public.taki_user_spend(u.id),
            u.last_active_at, u.created_at,
            sp.subscription_plan,
            sp.subscription_expires_at,
@@ -6398,44 +6525,54 @@ CREATE FUNCTION public.bot_delivery_quote(p_telegram_id bigint, p_whatsapp_id te
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE v_uid text; v_addr jsonb; v_q jsonb;
 BEGIN
-  v_uid := public._bot_uid(p_telegram_id, p_whatsapp_id);
-  IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'not_linked'); END IF;
-  SELECT delivery_address INTO v_addr FROM public.users WHERE id = v_uid;
-  v_q := public.delivery_quote(p_store_id,
-           nullif(v_addr->>'lat','')::float8, nullif(v_addr->>'lng','')::float8, NULL);
-  RETURN v_q || jsonb_build_object(
-    'ok', true,
-    'has_address', (v_addr IS NOT NULL AND (v_addr->>'lat') IS NOT NULL),
-    'label',   v_addr->>'label',
-    'details', v_addr->>'details');
-END
-$$;
+  RETURN public.bot_delivery_quote_at(p_telegram_id, p_whatsapp_id, p_store_id, NULL, NULL);
+END $$;
 
 
 --
--- Name: bot_delivery_quote_at(bigint, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: bot_delivery_quote_at(bigint, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.bot_delivery_quote_at(p_telegram_id bigint, p_whatsapp_id text, p_store_id text, p_location_id text) RETURNS jsonb
+CREATE FUNCTION public.bot_delivery_quote_at(p_telegram_id bigint, p_whatsapp_id text, p_store_id text, p_location_id text DEFAULT NULL::text, p_address_id text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE v_uid text; v_addr jsonb; v_q jsonb;
+DECLARE v_uid text; v_lat float8; v_lng float8; v_label text; v_details text; v_q jsonb;
 BEGIN
+  -- 🔒 الحارس. غيابُه كان يجعل هذه الدالة بوّابةً مفتوحة لعناوين الناس.
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_authorized');
+  END IF;
+
   v_uid := public._bot_uid(p_telegram_id, p_whatsapp_id);
   IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'not_linked'); END IF;
-  SELECT delivery_address INTO v_addr FROM public.users WHERE id = v_uid;
-  v_q := public.delivery_quote(p_store_id,
-           nullif(v_addr->>'lat','')::float8, nullif(v_addr->>'lng','')::float8, p_location_id);
+
+  IF p_address_id IS NOT NULL THEN
+    -- `user_id = v_uid` شرطٌ لا تجميل: بدونه يقرأ أيّ باحثٍ عنوان غيره بمعرّفه.
+    SELECT a.lat, a.lng, a.label, a.details INTO v_lat, v_lng, v_label, v_details
+    FROM public.user_addresses a WHERE a.id = p_address_id AND a.user_id = v_uid;
+    IF v_lat IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'address_not_found'); END IF;
+  ELSE
+    -- الافتراضي: أوّل عنوان مُعلَّم افتراضياً، وإلا الحقل القديم على المستخدم.
+    SELECT a.lat, a.lng, a.label, a.details INTO v_lat, v_lng, v_label, v_details
+    FROM public.user_addresses a WHERE a.user_id = v_uid
+    ORDER BY a.is_default DESC, a.created_at ASC LIMIT 1;
+    IF v_lat IS NULL THEN
+      SELECT nullif(u.delivery_address->>'lat','')::float8, nullif(u.delivery_address->>'lng','')::float8,
+             u.delivery_address->>'label', u.delivery_address->>'details'
+        INTO v_lat, v_lng, v_label, v_details
+      FROM public.users u WHERE u.id = v_uid;
+    END IF;
+  END IF;
+
+  v_q := public.delivery_quote(p_store_id, v_lat, v_lng, p_location_id);
   RETURN v_q || jsonb_build_object(
     'ok', true,
-    'has_address', (v_addr IS NOT NULL AND (v_addr->>'lat') IS NOT NULL),
-    'label',   v_addr->>'label',
-    'details', v_addr->>'details');
-END
-$$;
+    'has_address', (v_lat IS NOT NULL),
+    'label', v_label, 'details', v_details,
+    'address_id', p_address_id, 'location_id', p_location_id);
+END $$;
 
 
 --
@@ -7575,6 +7712,34 @@ BEGIN
            last_error = LEFT(COALESCE(p_error,'unknown'), 500)
      WHERE id = p_id;
   END IF;
+END $$;
+
+
+--
+-- Name: bot_my_addresses(bigint, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bot_my_addresses(p_telegram_id bigint, p_whatsapp_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_uid text; v_rows jsonb;
+BEGIN
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_authorized');
+  END IF;
+  v_uid := public._bot_uid(p_telegram_id, p_whatsapp_id);
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'not_linked'); END IF;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'id', a.id, 'label', COALESCE(NULLIF(a.label,''),'عنوان'),
+           'details', COALESCE(a.details,''), 'city', a.city,
+           'is_default', a.is_default)
+         ORDER BY a.is_default DESC, a.created_at ASC), '[]'::jsonb)
+    INTO v_rows
+  FROM public.user_addresses a WHERE a.user_id = v_uid;
+
+  RETURN jsonb_build_object('ok', true, 'rows', v_rows);
 END $$;
 
 
@@ -10739,10 +10904,14 @@ BEGIN
         'bookings_hour',  (SELECT COUNT(*)::INT FROM bookings WHERE created_at > NOW() - INTERVAL '1 hour'),
         'bookings_5min',  (SELECT COUNT(*)::INT FROM bookings WHERE created_at > NOW() - INTERVAL '5 minutes'),
         'new_users_today',(SELECT COUNT(*)::INT FROM users    WHERE created_at >= NOW()::DATE),
-        'total_users',    (SELECT COUNT(*)::INT FROM users),
-        'total_buyers',   (SELECT COUNT(*)::INT FROM users WHERE user_type = 'buyer'),
-        'total_sellers',  (SELECT COUNT(*)::INT FROM users WHERE user_type = 'seller'),
-        'active_deals',   (SELECT COUNT(*)::INT FROM deals  WHERE status IS NULL OR status NOT IN ('deleted','expired')),
+        -- v14.33 — كانت تعدّ المحذوفين، بينما «إدارة المشترين» تستبعدهم.
+        -- فالزرّ في الرئيسية يقول عدداً والقائمة التي يفتحها تعرض أقلّ منه.
+        'total_users',    (SELECT COUNT(*)::INT FROM users WHERE deleted_at IS NULL),
+        'total_buyers',   (SELECT COUNT(*)::INT FROM users WHERE user_type = 'buyer'  AND deleted_at IS NULL),
+        'total_sellers',  (SELECT COUNT(*)::INT FROM users WHERE user_type = 'seller' AND deleted_at IS NULL),
+        -- «النشطة» كانت تشمل `paused` لأن الشرط نفيٌ لحالتين فقط، ومجال
+        -- الحالات أربع. الإثبات أوضح من النفي.
+        'active_deals',   (SELECT COUNT(*)::INT FROM deals  WHERE status = 'active'),
         'paying_sellers', (SELECT COUNT(*)::INT FROM store_profiles WHERE subscription_plan = 'premium' AND (subscription_expires_at IS NULL OR subscription_expires_at > NOW())),
         'mrr',            (SELECT COALESCE(SUM(subscription_amount), 0)::NUMERIC FROM store_profiles WHERE subscription_plan = 'premium' AND (subscription_expires_at IS NULL OR subscription_expires_at > NOW())),
         'as_of',          NOW()
@@ -11574,6 +11743,41 @@ $$;
 
 
 --
+-- Name: handle_new_complaint(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_new_complaint() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE a RECORD; v_from text; v_body text;
+BEGIN
+  SELECT COALESCE(NULLIF(name,''), NULLIF(email,''), 'مستخدم') INTO v_from
+  FROM public.users WHERE id = NEW.user_id;
+  v_body := COALESCE(v_from, 'مستخدم') || ': ' || left(COALESCE(NEW.message, NEW.subject, ''), 160);
+
+  FOR a IN SELECT id FROM public.users
+           WHERE user_type = 'admin' AND deleted_at IS NULL
+  LOOP
+    INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+    VALUES (a.id, '📮 شكوى جديدة', '📮 New complaint', v_body, v_body, 'system',
+            jsonb_build_object('audience','admin', 'complaintId', NEW.id,
+                               'actionUrl', '/admin?tab=reports',
+                               'action_url', '/admin?tab=reports'));
+    -- البريد هو القناة الوحيدة التي تصل ناصر وهو خارج التطبيق وبلا إشعارات مثبَّتة.
+    BEGIN
+      PERFORM public.taki_queue_email(a.id, 'admin_complaint',
+        '📮 شكوى جديدة على تاكي',
+        '<div dir="rtl" style="font-family:system-ui"><h2>📮 شكوى جديدة</h2><p>'
+        || coalesce(v_body,'') || '</p><p><a href="https://www.takisa.net/admin?tab=reports">فتح لوحة البلاغات</a></p></div>');
+    EXCEPTION WHEN others THEN NULL;  -- تعذّر البريد لا يمنع الشكوى من الوصول
+    END;
+  END LOOP;
+  RETURN NEW;
+END $$;
+
+
+--
 -- Name: handle_new_seller_trial(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -12344,6 +12548,54 @@ BEGIN
   INSERT INTO public.activity_log (user_id, user_type, action, entity_type, entity_id, metadata)
   VALUES (v_uid, 'seller', 'gateway_agreement_accepted', 'merchant_gateway', v_uid, '{}'::jsonb);
   RETURN public.get_my_gateway();
+END $$;
+
+
+--
+-- Name: merchant_request_store_name(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.merchant_request_store_name(p_name text, p_reason text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_uid  text := auth.uid()::text;
+  v_name text := btrim(COALESCE(p_name, ''));
+  v_cur  text; v_type text; v_id text;
+BEGIN
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'AUTH_REQUIRED'); END IF;
+  SELECT COALESCE(shop, name), user_type INTO v_cur, v_type FROM public.users WHERE id = v_uid;
+  IF v_type NOT IN ('seller','admin') THEN RETURN jsonb_build_object('ok', false, 'error', 'NOT_A_MERCHANT'); END IF;
+  IF length(v_name) < 2 OR length(v_name) > 60 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'BAD_NAME');
+  END IF;
+  IF v_name = COALESCE(v_cur, '') THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'SAME_NAME');
+  END IF;
+  -- انتحال علامة قائمة: يُرفض قبل أن يصل الطابور أصلاً.
+  IF EXISTS (SELECT 1 FROM public.users u
+             WHERE u.id <> v_uid AND u.deleted_at IS NULL
+               AND public.taki_norm(COALESCE(u.shop,'')) = public.taki_norm(v_name)) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'NAME_TAKEN');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.store_name_requests
+             WHERE store_id = v_uid AND status = 'requested') THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'ALREADY_PENDING');
+  END IF;
+
+  INSERT INTO public.store_name_requests (store_id, current_name, wanted_name, reason)
+  VALUES (v_uid, v_cur, v_name, NULLIF(btrim(COALESCE(p_reason,'')), ''))
+  RETURNING id INTO v_id;
+
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  SELECT a.id, '🏷 طلب تغيير اسم متجر', '🏷 Store rename request',
+         COALESCE(v_cur,'—') || ' ← ' || v_name, COALESCE(v_cur,'—') || ' → ' || v_name,
+         'system', jsonb_build_object('audience','admin','actionUrl','/admin?tab=sellers',
+                                      'action_url','/admin?tab=sellers','nameRequestId', v_id)
+  FROM public.users a WHERE a.user_type = 'admin' AND a.deleted_at IS NULL;
+
+  RETURN jsonb_build_object('ok', true, 'id', v_id, 'status', 'requested');
 END $$;
 
 
@@ -15281,6 +15533,62 @@ END $$;
 
 
 --
+-- Name: taki_guard_publish_needs_declaration(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_guard_publish_needs_declaration() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_sell jsonb; v_msg text;
+BEGIN
+  IF NEW.status <> 'active' THEN RETURN NEW; END IF;
+  -- لا نُزعج عرضاً نشطاً يُحدَّث لسببٍ آخر وهو مقرٌّ أصلاً.
+  IF TG_OP = 'UPDATE' AND OLD.status = 'active' THEN RETURN NEW; END IF;
+
+  v_sell := public.store_can_sell(NEW.store_id);
+  IF COALESCE((v_sell->>'ok')::boolean, false) THEN RETURN NEW; END IF;
+
+  NEW.status := 'paused';
+
+  v_msg := CASE v_sell->>'reason'
+    WHEN 'no_method' THEN
+      '📝 عرضك «' || COALESCE(NEW.item_name,'') || '» حُفظ مسوّدة. أقررتَ ألّا تقبل الدفع عند الاستلام ولا الدفع الإلكتروني — فلا وسيلة لتحصيل ثمنه. عدّل إقرار طريقة الحساب في لوحة التاجر ثم انشره.'
+    ELSE
+      '📝 عرضك «' || COALESCE(NEW.item_name,'') || '» حُفظ مسوّدة ولم يُنشر: لم تُقرّ بعد بطريقة حساب متجرك. أكمل «إقرار طريقة الحساب» في لوحة التاجر ثم انشره بضغطة.'
+  END;
+
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (NEW.store_id, '📝 عرضك محفوظ مسوّدة', '📝 Your deal is saved as a draft',
+          v_msg, v_msg, 'system',
+          jsonb_build_object('audience','seller','dealId', NEW.id,
+                             'actionUrl','/seller','action_url','/seller'));
+  RETURN NEW;
+END $$;
+
+
+--
+-- Name: taki_guard_store_rename(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_guard_store_rename() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.shop IS DISTINCT FROM OLD.shop
+     AND NOT COALESCE(public.is_admin(), false)
+     -- الدوال المالكة (طابور الموافقة) تعمل بلا `auth.uid()` أو بهوية الأدمن،
+     -- وهذا الشرط يسمح لها ويمنع التاجر من الكتابة المباشرة من المتصفّح.
+     AND auth.uid()::text = NEW.id THEN
+    RAISE EXCEPTION 'تغيير اسم المتجر يمرّ بموافقة إدارة تاكي — أرسل طلباً من لوحة التاجر.'
+      USING ERRCODE = 'P0020';
+  END IF;
+  RETURN NEW;
+END $$;
+
+
+--
 -- Name: taki_guard_suspended_publish(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15539,6 +15847,27 @@ $$;
 
 
 --
+-- Name: taki_notify_deal_published(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_notify_deal_published() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_msg text;
+BEGIN
+  IF NEW.status <> 'active' THEN RETURN NEW; END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status = 'active' THEN RETURN NEW; END IF;
+  v_msg := '✅ نُشر عرضك «' || COALESCE(NEW.item_name,'') || '» وصار ظاهراً للمشترين في الرئيسية والبحث وفي البوتين.';
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (NEW.store_id, '✅ نُشر عرضك', '✅ Your deal is live', v_msg, v_msg, 'deal',
+          jsonb_build_object('audience','seller','dealId', NEW.id,
+                             'actionUrl','/deal/' || NEW.id, 'action_url','/deal/' || NEW.id));
+  RETURN NEW;
+END $$;
+
+
+--
 -- Name: taki_process_booking_expiry(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15551,6 +15880,24 @@ BEGIN
   PERFORM public.notify_shops_closing_soon();
   PERFORM public.expire_due_bookings();
 END; $$;
+
+
+--
+-- Name: taki_propagate_store_name(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_propagate_store_name() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.shop IS DISTINCT FROM OLD.shop THEN
+    UPDATE public.deals
+       SET shop_name = COALESCE(NULLIF(btrim(NEW.shop), ''), NULLIF(btrim(NEW.name), ''), 'متجر')
+     WHERE store_id = NEW.id;
+  END IF;
+  RETURN NEW;
+END $$;
 
 
 --
@@ -16212,6 +16559,80 @@ BEGIN
     RETURN jsonb_build_object('mode','paid','warned',v_warned,'renewed',v_renewed,'expired',v_expired,'frozen',v_frozen,'banners_hidden',v_banners,'warn_days',v_days);
 END;
 
+$$;
+
+
+--
+-- Name: taki_sync_deal_shop_name(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_sync_deal_shop_name() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_name text;
+BEGIN
+  SELECT COALESCE(NULLIF(btrim(u.shop), ''), NULLIF(btrim(u.name), ''), 'متجر')
+    INTO v_name FROM public.users u WHERE u.id = NEW.store_id;
+  NEW.shop_name := COALESCE(v_name, 'متجر');
+  RETURN NEW;
+END $$;
+
+
+--
+-- Name: taki_user_in_campaign(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_user_in_campaign(p_uid text, p_city text, p_region text) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_city text := NULLIF(btrim(COALESCE(p_city, '')), '');
+  v_reg  text := NULLIF(btrim(COALESCE(p_region, '')), '');
+  v_lat double precision; v_lng double precision;
+  v_near text; v_near_reg text;
+BEGIN
+  IF v_city IS NULL AND v_reg IS NULL THEN RETURN true; END IF;   -- بلا استهداف = الجميع
+
+  -- (ب) سابقة الحجز — أرخص وأدقّ من الإحداثيات، فنبدأ بها.
+  IF EXISTS (
+    SELECT 1 FROM public.bookings b JOIN public.deals d ON d.id = b.deal_id
+    WHERE b.user_id = p_uid
+      AND (v_city IS NULL OR d.city   = v_city)
+      AND (v_reg  IS NULL OR d.region = v_reg)
+  ) THEN RETURN true; END IF;
+
+  -- وللتاجر: مدينة عروضه هو.
+  IF EXISTS (
+    SELECT 1 FROM public.deals d
+    WHERE d.store_id = p_uid
+      AND (v_city IS NULL OR d.city   = v_city)
+      AND (v_reg  IS NULL OR d.region = v_reg)
+  ) THEN RETURN true; END IF;
+
+  -- (أ) أقرب مدينة لإحداثياته.
+  SELECT lat, lng INTO v_lat, v_lng FROM public.users WHERE id = p_uid;
+  IF v_lat IS NULL OR v_lng IS NULL THEN RETURN false; END IF;
+  SELECT g.city_id, g.region_id INTO v_near, v_near_reg
+  FROM public.sa_cities_geo g
+  ORDER BY ((g.lat - v_lat) ^ 2 + (g.lng - v_lng) ^ 2) ASC
+  LIMIT 1;
+  RETURN (v_city IS NULL OR v_near = v_city) AND (v_reg IS NULL OR v_near_reg = v_reg);
+END $$;
+
+
+--
+-- Name: taki_user_spend(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_user_spend(p_uid text) RETURNS numeric
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(SUM(b.total_amount), 0)::numeric
+  FROM public.bookings b
+  WHERE b.user_id = p_uid AND b.status = 'completed';
 $$;
 
 
@@ -20149,6 +20570,25 @@ CREATE TABLE public.store_invoice_counters (
 
 
 --
+-- Name: store_name_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.store_name_requests (
+    id text DEFAULT ('snr_'::text || replace((gen_random_uuid())::text, '-'::text, ''::text)) NOT NULL,
+    store_id text NOT NULL,
+    current_name text,
+    wanted_name text NOT NULL,
+    status text DEFAULT 'requested'::text NOT NULL,
+    reason text,
+    admin_note text,
+    admin_id text,
+    requested_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT store_name_requests_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'approved'::text, 'rejected'::text, 'withdrawn'::text])))
+);
+
+
+--
 -- Name: store_profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -21396,6 +21836,14 @@ ALTER TABLE ONLY public.store_delivery_zones
 
 ALTER TABLE ONLY public.store_invoice_counters
     ADD CONSTRAINT store_invoice_counters_pkey PRIMARY KEY (store_id);
+
+
+--
+-- Name: store_name_requests store_name_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.store_name_requests
+    ADD CONSTRAINT store_name_requests_pkey PRIMARY KEY (id);
 
 
 --
@@ -22800,6 +23248,27 @@ CREATE INDEX idx_sessions_type ON public.user_sessions USING btree (user_type, l
 
 
 --
+-- Name: idx_snr_one_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_snr_one_open ON public.store_name_requests USING btree (store_id) WHERE (status = 'requested'::text);
+
+
+--
+-- Name: idx_snr_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_snr_open ON public.store_name_requests USING btree (status) WHERE (status = 'requested'::text);
+
+
+--
+-- Name: idx_snr_store; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_snr_store ON public.store_name_requests USING btree (store_id, requested_at DESC);
+
+
+--
 -- Name: idx_spn_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -23213,6 +23682,13 @@ CREATE TRIGGER tr_ab_guard_booking_integrity BEFORE INSERT OR UPDATE ON public.b
 
 
 --
+-- Name: users tr_ab_guard_store_rename; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_ab_guard_store_rename BEFORE UPDATE OF shop ON public.users FOR EACH ROW EXECUTE FUNCTION public.taki_guard_store_rename();
+
+
+--
 -- Name: deals tr_ab_guard_suspended_publish; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -23220,10 +23696,24 @@ CREATE TRIGGER tr_ab_guard_suspended_publish BEFORE INSERT OR UPDATE ON public.d
 
 
 --
+-- Name: deals tr_ab_sync_deal_shop_name; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_ab_sync_deal_shop_name BEFORE INSERT OR UPDATE ON public.deals FOR EACH ROW EXECUTE FUNCTION public.taki_sync_deal_shop_name();
+
+
+--
 -- Name: bookings tr_ac_booking_delivery; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER tr_ac_booking_delivery BEFORE INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION public.tr_guard_booking_delivery();
+
+
+--
+-- Name: deals tr_ac_publish_needs_declaration; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_ac_publish_needs_declaration BEFORE INSERT OR UPDATE OF status ON public.deals FOR EACH ROW EXECUTE FUNCTION public.taki_guard_publish_needs_declaration();
 
 
 --
@@ -23633,6 +24123,13 @@ CREATE TRIGGER tr_zy_issue_order_invoice AFTER UPDATE OF status, paid_at ON publ
 
 
 --
+-- Name: deals tr_zy_notify_deal_published; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_zy_notify_deal_published AFTER INSERT OR UPDATE OF status ON public.deals FOR EACH ROW EXECUTE FUNCTION public.taki_notify_deal_published();
+
+
+--
 -- Name: bookings tr_zz_close_delivery_track; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -23644,6 +24141,20 @@ CREATE TRIGGER tr_zz_close_delivery_track AFTER UPDATE OF status ON public.booki
 --
 
 CREATE TRIGGER tr_zz_guard_rating_purchase BEFORE INSERT OR UPDATE ON public.ratings FOR EACH ROW EXECUTE FUNCTION public.tr_guard_rating_purchase();
+
+
+--
+-- Name: complaints tr_zz_new_complaint; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_zz_new_complaint AFTER INSERT ON public.complaints FOR EACH ROW EXECUTE FUNCTION public.handle_new_complaint();
+
+
+--
+-- Name: users tr_zz_propagate_store_name; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_zz_propagate_store_name AFTER UPDATE OF shop ON public.users FOR EACH ROW EXECUTE FUNCTION public.taki_propagate_store_name();
 
 
 --
@@ -24190,6 +24701,14 @@ ALTER TABLE ONLY public.store_delivery_zones
 
 ALTER TABLE ONLY public.store_invoice_counters
     ADD CONSTRAINT store_invoice_counters_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: store_name_requests store_name_requests_store_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.store_name_requests
+    ADD CONSTRAINT store_name_requests_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -25360,6 +25879,13 @@ CREATE POLICY sessions_upsert_self ON public.user_sessions FOR INSERT WITH CHECK
 
 
 --
+-- Name: store_name_requests snr_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY snr_select_own ON public.store_name_requests FOR SELECT TO authenticated USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+
+
+--
 -- Name: sponsorships spn_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -25450,6 +25976,12 @@ ALTER TABLE public.store_delivery_zones ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.store_invoice_counters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: store_name_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.store_name_requests ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: store_profiles; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25703,5 +26235,5 @@ ALTER TABLE storage.vector_indexes ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict egciWEEdABLryXLhbK4FOgMOLWpXtkt11KdLEdGjXfXSwCQQZin2IkqTePnU6Mh
+\unrestrict 9UHVZU8xVoOY5UDpe5fmbGh0VWeVCotWE8KldIr0JgCVOSRRKxwdS84Ki55v5a7
 

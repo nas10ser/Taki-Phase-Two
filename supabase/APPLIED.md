@@ -107,3 +107,14 @@
 | 2026-09-13 | `JEDDAH_v14_22_retention_fixes.sql` | 3 | ✅ 3/3 |
 | 2026-09-13 | `JEDDAH_v14_23_review_round3.sql` | 2 | ✅ 2/2 |
 | 2026-09-14 | `JEDDAH_v14_24_browse_refund.sql` | 1 | ✅ 1/1 |
+| 2026-09-14 | `JEDDAH_v14_26_pagination.sql` | 2 | ✅ 2/2 |
+| 2026-09-14 | `JEDDAH_v14_27_chat_attachments.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_29_bot_attachments.sql` | 2 | ✅ 2/2 |
+| 2026-09-14 | `JEDDAH_v14_30_rotate_bot_secret.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_31_barcode_lookup.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_32_real_suspension.sql` | 6 | ✅ 6/6 |
+| 2026-09-14 | `JEDDAH_v14_33_campaigns_reports.sql` | 5 | ✅ 5/5 |
+| 2026-09-14 | `JEDDAH_v14_34_true_numbers.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_35_bot_delivery.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_36_store_name.sql` | 7 | ✅ 7/7 |
+| 2026-09-14 | `JEDDAH_v14_37_attestation_gate.sql` | 2 | ✅ 2/2 |
