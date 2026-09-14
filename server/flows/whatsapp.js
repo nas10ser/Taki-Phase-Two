@@ -183,6 +183,24 @@ function create(deps) {
         } catch (e) { console.warn('uploadWaPhoto:', e.message); return null; }
     }
 
+    /**
+     * مرفقات محادثة الطلب (v14.29) — مستودع `chat` خاصّ والبوت بمفتاح عامّ،
+     * فالرفع والتوقيع كلاهما عبر `bot-chat-attachment` خلف السرّ المشترك.
+     * وهي تتحقّق من عضوية الحجز في كل نداء، فالسرّ وحده لا يفتح محادثة غيرك.
+     */
+    async function chatAttach(action, payload) {
+        if (!GATEWAY || !SB_URL) return null;
+        try {
+            const r = await fetchWithTimeout(`${SB_URL}/functions/v1/bot-chat-attachment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-bot-secret': GATEWAY, Authorization: `Bearer ${SB_KEY}`, apikey: SB_KEY },
+                body: JSON.stringify({ action, ...payload }),
+            });
+            const j = await r.json().catch(() => ({}));
+            return (j && j.success) ? j : null;
+        } catch (e) { console.warn('chatAttach:', e.message); return null; }
+    }
+
     // ── الجلسة + الهوية ────────────────────────────────────────────────────────
     const waSess   = phone => getSession('wa:' + phone);
     const ownsStore = s => s.userType === 'seller' || !!s.shop;
@@ -1018,8 +1036,19 @@ function create(deps) {
         btns.push({ id: ownsStore(s) ? `wa:so1:${bc}` : `wa:bk1:${bc}`, title: tr('wa_back') });
         btns.push(menuBtn());
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
+
+        // v14.29 — الصور بعد البطاقة: واتساب لا يعرض صورة داخل رسالة أزرار،
+        // والمستودع خاصّ فلا يُفتح رابطه بلا توقيع. نكتفي بآخر ثلاث صور كي لا
+        // تُغرق محادثةً بأكملها عند كل فتح.
+        const withAtt = msgs.filter(m => m.attachment).slice(-3);
+        for (const m of withAtt) {
+            const sig = await chatAttach('sign', { uid: r.uid, barcode: r.barcode, path: m.attachment });
+            if (!sig || !sig.url) continue;
+            try { await sendImage(from, sig.url, '📎 ' + (m.mine ? tr('wa_chat_me', '') : r.other_name)); }
+            catch (e) { console.warn('wa chat photo:', e.message); }
+        }
     }
-    async function promptChat(from, s, bc) { s.temp.chatBarcode = bc; s.step = 'await_chat_msg'; await sendText(from, tr('wa_chat_prompt')); }
+    async function promptChat(from, s, bc) { s.temp.chatBarcode = bc; s.step = 'await_chat_msg'; await sendText(from, tr('wa_chat_prompt') + '\n' + tr('wa_chat_or_photo')); }
     async function sendChat(from, s, body) {
         const bc = s.temp.chatBarcode; s.step = 'idle';
         const r = await rpc('bot_send_booking_message', aid(from, { p_barcode: bc, p_body: body }));
@@ -1851,6 +1880,32 @@ function create(deps) {
         return afterDealEdit(from, s, r);
     }
     async function onPhoto(from, s, imageMsg) {
+        // v14.29 — صورة أثناء انتظار رسالة المحادثة ⇒ مرفق في الطلب.
+        // **قبل** مسارات صور العروض: التاجر قد يكون داخل محادثة طلب، ولو سبقه
+        // مسار «إضافة صورة للعرض» لابتلع الصورة ووضعها في المكان الخطأ.
+        if (s.step === 'await_chat_msg' && s.temp.chatBarcode) {
+            const bc = s.temp.chatBarcode; s.step = 'idle';
+            const mid = imageMsg && imageMsg.id;
+            if (!mid) { await sendText(from, tr('wa_photo_fail')); await showChat(from, s, bc); return true; }
+            const chat = await rpc('bot_booking_chat', aid(from, { p_barcode: bc }));
+            if (!chat || !chat.success) { await sendText(from, tr('wa_chat_fail')); await showChat(from, s, bc); return true; }
+            await sendText(from, tr('wa_photo_uploading'));
+            let mj = {};
+            try {
+                const m = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${mid}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+                mj = await m.json().catch(() => ({}));
+            } catch (e) { console.warn('wa media:', e.message); }
+            const up = mj && mj.url
+                ? await chatAttach('upload', { uid: chat.uid, barcode: chat.barcode, file_url: mj.url, fetch_auth: `Bearer ${TOKEN}` })
+                : null;
+            if (!up || !up.path) { await sendText(from, tr('wa_photo_fail')); await showChat(from, s, bc); return true; }
+            const caption = String((imageMsg && imageMsg.caption) || '').slice(0, 500);
+            const r = await rpc('bot_send_booking_message', aid(from, { p_barcode: bc, p_body: caption, p_attachment_path: up.path }));
+            if (!r || !r.success) await sendText(from, tr('wa_chat_fail'));
+            await showChat(from, s, bc);
+            return true;
+        }
+
         // إضافة صور للصور الحالية من مدير الصور (v12.18) — تُلحق بدل أن تستبدل.
         if (s.step === 'ed_phadd') {
             const imgs = s.temp.phEdit || (s.temp.phEdit = []);

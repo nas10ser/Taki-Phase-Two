@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.23.0';
+const BOT_VERSION              = '14.29.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -237,6 +237,30 @@ async function botEnabled() {
 }
 
 // ── Upload a Telegram photo → public deal image URL (via secure Edge Fn) ──────
+/**
+ * مرفقات محادثة الطلب (v14.29) — مستودع `chat` **خاصّ**، والبوت لا يملك إلا
+ * المفتاح العام، فلا يرفع فيه ولا يوقّع روابطه. الصلاحية في الدالة الطرفية
+ * `bot-chat-attachment` خلف السرّ المشترك، وهي تتحقّق من عضوية الحجز في كل
+ * نداء — فلا يصير السرّ مفتاحاً لقراءة مرفقات المحادثات كلّها.
+ */
+async function chatAttach(action, payload) {
+    if (!BOT_GATEWAY_SECRET || !SUPABASE_URL) return null;
+    try {
+        const r = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/bot-chat-attachment`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-bot-secret': BOT_GATEWAY_SECRET,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'apikey': SUPABASE_KEY,
+            },
+            body: JSON.stringify({ action, ...payload }),
+        });
+        const j = await r.json().catch(() => ({}));
+        return j?.success ? j : null;
+    } catch (e) { console.warn('chatAttach:', e.message); return null; }
+}
+
 async function uploadPhoto(ctx, fileId) {
     if (!BOT_GATEWAY_SECRET || !SUPABASE_URL) return null;
     try {
@@ -2356,13 +2380,27 @@ async function renderChat(ctx, barcode) {
     btns.push([Markup.button.callback(tr('b1288_refresh'), `chat:${r.barcode}`), Markup.button.callback(tr('b1288_call'), `call:b:${r.barcode}`)]);
     btns.push([Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${r.barcode}`)]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+
+    // v14.29 — الصور تُرسَل بعد النصّ لا داخله: تيليجرام لا يعرض صورة داخل
+    // رسالة نصّية، ورابط المستودع الخاصّ لا يُفتح بلا توقيع. الرابط الموقّع
+    // عمره ١٥ دقيقة، وتيليجرام يُنزّل الصورة إلى خوادمه فورَ الإرسال — فبقاؤها
+    // معروضة لا يعتمد على بقاء الرابط.
+    for (const x of msgs) {
+        if (!x.attachment) continue;
+        const sig = await chatAttach('sign', { uid: r.uid, barcode: r.barcode, path: x.attachment });
+        if (!sig?.url) continue;
+        const who = x.mine ? tr('q1279_you') : r.other_name;
+        try {
+            await ctx.replyWithPhoto(sig.url, { caption: `📎 ${who} — ${fmtTime(x.at)}` });
+        } catch (e) { console.warn('chat photo:', e.message); }
+    }
 }
 bot.action(/^chatmsg:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
     const s = getSession(tgId(ctx));
     s.temp.chatBarcode = ctx.match[1];
     setStep(tgId(ctx),'await_chat_msg');
-    await ctx.reply(tr('b1297_write_your_message'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1297_cancel'),`chat:${ctx.match[1]}`)]]).reply_markup });
+    await ctx.reply(tr('b1297_write_your_message') + '\n' + tr('w1429_or_send_photo'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1297_cancel'),`chat:${ctx.match[1]}`)]]).reply_markup });
 });
 
 // ── Edit a pending booking (quantity / prep-time / note) ──────────────────────
@@ -3379,6 +3417,40 @@ bot.action('admin:reports', async ctx => { await ctx.answerCbQuery(); await ctx.
 // ── Photo handler → delegated to the seller-deal flow (1–4 images) ──────────
 bot.on('photo', async ctx => {
     const s = getSession(tgId(ctx));
+
+    // v14.29 — صورة أثناء انتظار رسالة المحادثة ⇒ مرفق في الطلب.
+    // تُفحص **قبل** مسار التاجر: التاجر قد يكون في محادثة طلب، ولو سبقه
+    // `handlePhoto` لابتلعها ظنّاً أنها صورة عرض جديد.
+    if (s.step === 'await_chat_msg' && s.temp.chatBarcode) {
+        const bc = s.temp.chatBarcode;
+        setStep(tgId(ctx),'idle');
+        try {
+            const chat = await rpc('bot_booking_chat', { p_telegram_id: tgId(ctx), p_barcode: bc });
+            if (!chat?.success) { await ctx.reply(tr('b2254_chat_send_failed'), { parse_mode:'MarkdownV2' }); return renderChat(ctx, bc); }
+            // أعلى دقّة يرسلها تيليجرام هي آخر عنصر في المصفوفة.
+            const ph = ctx.message.photo || [];
+            const fid = ph.length ? ph[ph.length - 1].file_id : null;
+            if (!fid) return renderChat(ctx, bc);
+            await ctx.reply(tr('w1429_uploading_photo'), { parse_mode:'MarkdownV2' });
+            const link = await ctx.telegram.getFileLink(fid);
+            const up = await chatAttach('upload', {
+                uid: chat.uid, barcode: chat.barcode,
+                file_url: link?.href || String(link),
+            });
+            if (!up?.path) { await ctx.reply(tr('w1429_photo_failed'), { parse_mode:'MarkdownV2' }); return renderChat(ctx, bc); }
+            const caption = sanitize(ctx.message.caption || '', 500);
+            const r = await rpc('bot_send_booking_message', {
+                p_telegram_id: tgId(ctx), p_barcode: bc,
+                p_body: caption, p_attachment_path: up.path,
+            });
+            if (!r?.success) await ctx.reply(tr('b2254_chat_send_failed'), { parse_mode:'MarkdownV2' });
+        } catch (e) {
+            console.warn('chat photo in:', e.message);
+            await ctx.reply(tr('w1429_photo_failed'), { parse_mode:'MarkdownV2' });
+        }
+        return renderChat(ctx, bc);
+    }
+
     try { if (await sellerH.handlePhoto(ctx, s)) return; } catch (e) { console.warn('photo:', e.message); }
 });
 
