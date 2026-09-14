@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { goRegister } from '../utils/returnTo';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { PushToggleRow } from '../components/PushOptIn';
@@ -239,7 +240,7 @@ const Profile: React.FC = () => {
                 <div style={{ fontSize: '4rem', marginBottom: 20 }}>👋</div>
                 <h2 style={{ fontWeight: 900, fontSize: '1.5rem', marginBottom: 8 }}>{isRTL ? 'مرحباً بك في تاكي' : 'Welcome to TAKI'}</h2>
                 <p style={{ color: 'var(--text-secondary)', marginBottom: 30, fontWeight: 600 }}>{isRTL ? 'يرجى تسجيل الدخول للوصول لهذه الصفحة' : 'Please login to access this page'}</p>
-                <button onClick={() => history.push('/register')}
+                <button onClick={() => goRegister(history)}
                     style={{ width: '100%', maxWidth: 320, padding: '16px', borderRadius: 16, background: 'var(--dark)', color: 'white', fontWeight: 900, border: 'none', fontSize: '1rem' }}>
                     {isRTL ? 'تسجيل الدخول' : 'Login / Register'}
                 </button>
@@ -517,7 +518,7 @@ const Profile: React.FC = () => {
 
                         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: 20, borderRadius: 20 }}>
                             <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 15 }}>{isRTL ? 'إدارة الحساب' : 'Account Management'}</h3>
-                            <button onClick={() => { logout(); history.push('/register'); }} style={{ width: '100%', padding: '16px', borderRadius: 15, background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800, border: 'none', marginBottom: 10 }}>
+                            <button onClick={() => { logout(); goRegister(history); }} style={{ width: '100%', padding: '16px', borderRadius: 15, background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800, border: 'none', marginBottom: 10 }}>
                                 {isRTL ? 'تسجيل الخروج' : 'Logout'}
                             </button>
                             <button onClick={async () => {
@@ -526,7 +527,7 @@ const Profile: React.FC = () => {
                                     : 'Your account will be deactivated. You have 30 days to restore it by logging in again — after that, it and all data will be permanently deleted. Continue?';
                                 if (await customConfirm(confirmMsg)) {
                                     await deleteAccount();
-                                    history.push('/register');
+                                    goRegister(history);
                                 }
                             }}
                                 style={{ width: '100%', background: 'none', border: 'none', color: 'var(--gray-400)', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>

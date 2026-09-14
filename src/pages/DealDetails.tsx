@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useStoreReviews } from '../hooks/useStoreReviews';
+import { goRegister } from '../utils/returnTo';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -497,6 +499,10 @@ const DealDetails: React.FC = () => {
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
+    // v14.28 — الحجز ينتظر ردّ جدة. هذان يمنعان ضغطتين متتاليتين ويعرضان
+    // سبب الرفض داخل ورقة الحجز بدل صفحةٍ أخرى بعد فوات الأوان.
+    const [bookingSubmitting, setBookingSubmitting] = useState(false);
+    const [bookingError, setBookingError] = useState<string | null>(null);
     // v12.66 — «اختيارات لكل قطعة»: كل قطعة محجوزة لها اختياراتها المستقلة
     // (برغر ١ بدون جبنة، برغر ٢ بجبنة — علم كبير ١ أحمر، علم كبير ٢ أزرق).
     // البنية: {مفتاح القطعة → {قسم → {خيار → 1}}}. مفتاح القطعة يشتق من
@@ -576,14 +582,21 @@ const DealDetails: React.FC = () => {
     // مباشر من بوت/إشعار/مشاركة، أو عرض قديم لم يصل إليه التمرير). نجلبه
     // بمعرّفه وندخله للسياق فتفتح الصفحة طبيعياً بدل «العرض غير موجود».
     const fetchedMissingRef = useRef<string | null>(null);
+    // v14.28 — «جارٍ التحميل» لا «غير موجود». الجلب أعلاه يستغرق جولة كاملة
+    // إلى جدة، وطوالها كانت الشاشة تقول للزائر بثقة **العرض غير موجود** ثم
+    // تنقلب. من فتح رابطاً من واتساب على شبكة بطيئة رأى النفي أولاً وخرج.
+    // صفحة المتجر في نفس المشروع تفعلها صحيحاً (`loadingStore`)، فهذا هو نظيرها.
+    const [dealFetchDone, setDealFetchDone] = useState(false);
     useEffect(() => {
         if (!id || deal || fetchedMissingRef.current === id) return;
         fetchedMissingRef.current = id;
+        setDealFetchDone(false);
         let alive = true;
         import('../repositories/dealRepository')
             .then(({ dealRepository: dr }) => dr.getById(id))
             .then(d => { if (alive && d) ingestDeals([d]); })
-            .catch(() => { /* تُعرض حالة «غير موجود» كما كانت */ });
+            .catch(() => { /* لا شيء: العلَم أدناه يُنهي الانتظار على أي حال */ })
+            .finally(() => { if (alive) setDealFetchDone(true); });
         return () => { alive = false; };
     }, [id, deal, ingestDeals]);
 
@@ -1490,6 +1503,33 @@ const DealDetails: React.FC = () => {
         return () => window.clearTimeout(t);
     }, [deal?.id, currentImage]);
 
+    // ⚠️ هذان **خطّافان**، فموضعهما فوق كل `return` مبكّر شرطٌ لا تجميل:
+    // نداؤهما بعد فرع «العرض غير موجود» يجعل عددَ الخطّافات يختلف بين رسمة
+    // وأخرى، وReact يُسقط الشجرة كلها بـ«Rendered fewer hooks than expected».
+    const reviewFeed = useStoreReviews(deal?.storeId, !!deal?.storeId);
+    const [reviewsShown, setReviewsShown] = useState(5);
+    const [submittingReview, setSubmittingReview] = useState(false);
+    // خطأٌ قديم يبقى معلّقاً بعد أن يصحّح المشتري اختياره يجعله يظنّ أن
+    // المحاولة الجديدة فشلت أيضاً. يُمسح مع كل فتح للورقة.
+    useEffect(() => { if (showBookingModal) setBookingError(null); }, [showBookingModal]);
+
+    // ما زال الجلب جارياً ⇒ لا نحكم بعد.
+    if (!deal && !dealFetchDone) {
+        return (
+            <div className="empty-state animate-fade-in" aria-busy="true">
+                <div style={{
+                    width: 44, height: 44, margin: '0 auto 18px',
+                    border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)',
+                    borderRadius: '50%', animation: 'taki-spin 0.8s linear infinite',
+                }} />
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-secondary)' }}>
+                    {isRTL ? 'جارٍ تحميل العرض…' : 'Loading the deal…'}
+                </div>
+                <style>{'@keyframes taki-spin{to{transform:rotate(360deg)}}'}</style>
+            </div>
+        );
+    }
+
     if (!deal) {
         return (
             <div className="empty-state animate-fade-in">
@@ -1518,6 +1558,23 @@ const DealDetails: React.FC = () => {
     // buyer account can't keep re-rating). If they already rated, we show that
     // review (it's in the list) + a follow option instead of an add-review form.
     const myStoreReview = user ? storeReviews.find(r => r.userId === user.id) : undefined;
+
+    // v14.27 — «لا شيء يسقط». كان العرض `storeReviews.slice(0, 5)` بلا زرّ،
+    // فالمراجعة السادسة غير موجودة في نظر المشتري. ومصدر تلك الخمس نفسه
+    // مسقوف: المراجعات تُحمَّل مع صفحة العروض بسقفٍ واحدٍ لثلاثين عرضاً.
+    // الآن: الصفحات من `browse_store_ratings`، والنافذة المحلّية تُدمج معها
+    // كي تظهر مراجعةٌ كُتبت للتوّ قبل أن تصل جولة الخادم.
+    const mergedReviews = (() => {
+        const map = new Map<string, any>();
+        for (const r of reviewFeed.rows) map.set(r.id, r);
+        // المحلّي يفوز: يحمل الشكل الكامل وأحدث حالة إعجاب بعد الضغط مباشرة.
+        for (const r of storeReviews) if (r.id) map.set(r.id, r);
+        return Array.from(map.values())
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    })();
+    const shownReviews = mergedReviews.slice(0, reviewsShown);
+    const reviewTotal = Math.max(reviewFeed.total, mergedReviews.length);
+    const moreReviewsAvailable = shownReviews.length < reviewTotal;
     const loc = getLocation(deal.locationId);
     const booked = isBooked(deal.id);
     const images = deal.images.length > 0 ? deal.images : ['https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=800'];
@@ -1592,9 +1649,10 @@ const DealDetails: React.FC = () => {
         return true;
     };
 
+
     const handleBooking = async () => {
         if (!user) {
-            history.push('/register');
+            goRegister(history);
             return;
         }
         if (isSoldOut) return;
@@ -1842,11 +1900,26 @@ const DealDetails: React.FC = () => {
                 : '💳 This store accepts card payment only — choose online payment and try again.');
             return;
         }
+        setBookingSubmitting(true);
+        setBookingError(null);
         const newBooking = bookDeal(
             deal, selectedQuantity, user.id, selectedPrepTime, notesWithOptions, selectedOptions,
             dealLocations ? (activeLoc?.id || null) : null, paymentIntent,
             isDelivery ? 'delivery' : 'pickup',
             isDelivery ? buyerAddress : null);
+
+        // v14.28 — ننتظر ردّ جدة قبل أن نقول شيئاً. قبله كانت الشاشة تُعلن
+        // «✅ تم تأكيد الحجز» وتنتقل، ثم يصل الرفض (نفاد مخزون، تجاوز حدّ،
+        // حارس توصيل) فيظهر **في صفحة أخرى** ويختفي الطلب من القائمة.
+        const res = await newBooking.settled;
+        setBookingSubmitting(false);
+        if (!res.ok) {
+            // السبب يظهر داخل ورقة الحجز نفسها، والورقة ما زالت مفتوحة،
+            // فيرى المشتري ما اختاره ويصحّحه في مكانه.
+            setBookingError(res.error || (isRTL ? 'تعذّر إتمام الحجز.' : 'Booking failed.'));
+            return;
+        }
+        setShowBookingModal(false);
 
         // v13.14 — خصم المخزون صار ذرّياً بالكامل في القاعدة (تريغر يقفل صف
         // العرض ويرفض عند النفاد) + خصم محلي تفاؤلي داخل bookDeal نفسه.
@@ -1891,11 +1964,10 @@ const DealDetails: React.FC = () => {
         }
     };
 
-    const [submittingReview, setSubmittingReview] = useState(false);
     const handleReview = async () => {
         if (submittingReview) return;
         if (!user) {
-            history.push('/register');
+            goRegister(history);
             return;
         }
         setSubmittingReview(true);
@@ -1948,7 +2020,7 @@ const DealDetails: React.FC = () => {
                     </div>
                     <button onClick={() => { 
                         if(user && deal) toggleFollowMerchant(deal.storeId); 
-                        else if(!user) history.push('/register'); 
+                        else if(!user) goRegister(history); 
                     }} style={{ 
                         background: isFollowed ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', 
                         border: 'none', width: 40, height: 40, borderRadius: 12, fontSize: '1.2rem', 
@@ -2602,13 +2674,13 @@ const DealDetails: React.FC = () => {
                         </div>
                     )}
 
-                    {storeReviews.length > 0 ? storeReviews.slice(0, 5).map((r, i) => {
+                    {shownReviews.length > 0 ? shownReviews.map((r: any, i: number) => {
                         const ratingKey = r.id || `${r.userId}-${i}`;
                         const liked = !!(user && r.likedBy && r.likedBy.includes(user.id));
                         const canDelete = !!user && (user.id === r.userId || user.userType === 'admin');
                         const canReply = isOwner && !!r.id;
                         return (
-                        <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < Math.min(storeReviews.length, 5) - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                        <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < shownReviews.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                                 <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{r.userName}</span>
                                 <span style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</span>
@@ -2750,6 +2822,24 @@ const DealDetails: React.FC = () => {
                             {isRTL ? 'لا توجد تقييمات بعد - كن أول من يقيّم!' : 'No reviews yet - be the first!'}
                         </div>
                     )}
+                    {moreReviewsAvailable && (
+                        <button
+                            onClick={() => { setReviewsShown(n => n + 10); if (reviewFeed.hasMore) reviewFeed.loadMore(); }}
+                            disabled={reviewFeed.busy}
+                            style={{
+                                width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 14,
+                                background: 'var(--body-bg)', color: 'var(--text-primary)',
+                                border: '1.5px solid var(--border-color)', fontWeight: 900,
+                                fontSize: '0.82rem', cursor: reviewFeed.busy ? 'default' : 'pointer',
+                                opacity: reviewFeed.busy ? 0.6 : 1,
+                            }}
+                        >
+                            {reviewFeed.busy
+                                ? (isRTL ? 'جارٍ التحميل…' : 'Loading…')
+                                : (isRTL ? `عرض المزيد — ظهر ${shownReviews.length} من ${reviewTotal}`
+                                         : `Show more — ${shownReviews.length} of ${reviewTotal}`)}
+                        </button>
+                    )}
                 </div>
 
                 {/* v10.67 — Book CTA is now part of the scrolling content
@@ -2879,7 +2969,7 @@ const DealDetails: React.FC = () => {
                                     <button
                                         onClick={async () => {
                                             if (!user) {
-                                                history.push('/register');
+                                                goRegister(history);
                                                 return;
                                             }
                                             if (booked) {
@@ -3560,11 +3650,27 @@ const DealDetails: React.FC = () => {
                                 {bookBlockedReason}
                             </div>
                         )}
+                        {bookingError && (
+                            <div role="alert" style={{
+                                marginBottom: 10, padding: '12px 14px', borderRadius: 14,
+                                background: 'rgba(244,63,94,0.10)', border: '1.5px solid rgba(244,63,94,0.45)',
+                                fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)',
+                                lineHeight: 1.75, whiteSpace: 'pre-line',
+                            }}>
+                                {bookingError}
+                                <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                    {isRTL ? 'لم يُسجَّل أي طلب، ولم يُخصم شيء. عدّل اختيارك وأعد المحاولة.'
+                                           : 'No order was created and nothing was charged. Adjust and try again.'}
+                                </div>
+                            </div>
+                        )}
                         <button
-                            disabled={!!bookBlockedReason}
-                            onClick={() => { if (bookBlockedReason) return; setShowBookingModal(false); handleBooking(); }}
-                            style={{ width: '100%', padding: '16px', borderRadius: 16, background: bookBlockedReason ? 'var(--gray-200)' : 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: bookBlockedReason ? 'not-allowed' : 'pointer', opacity: bookBlockedReason ? 0.75 : 1, boxShadow: bookBlockedReason ? 'none' : '0 8px 20px var(--primary-glow)' }}>
-                            {payChoice === 'online' && payMode !== 'cod'
+                            disabled={!!bookBlockedReason || bookingSubmitting}
+                            onClick={() => { if (bookBlockedReason || bookingSubmitting) return; handleBooking(); }}
+                            style={{ width: '100%', padding: '16px', borderRadius: 16, background: (bookBlockedReason || bookingSubmitting) ? 'var(--gray-200)' : 'var(--primary)', color: 'white', fontWeight: 900, fontSize: '1.1rem', border: 'none', cursor: (bookBlockedReason || bookingSubmitting) ? 'not-allowed' : 'pointer', opacity: (bookBlockedReason || bookingSubmitting) ? 0.75 : 1, boxShadow: (bookBlockedReason || bookingSubmitting) ? 'none' : '0 8px 20px var(--primary-glow)' }}>
+                            {bookingSubmitting
+                                ? (isRTL ? 'جارٍ تأكيد الحجز…' : 'Confirming…')
+                                : payChoice === 'online' && payMode !== 'cod'
                                 ? (isDelivery
                                     ? (isRTL ? 'تأكيد طلب التوصيل والانتقال للدفع 💳' : 'Confirm delivery & pay 💳')
                                     : (isRTL ? 'تأكيد الحجز والانتقال للدفع 💳' : 'Confirm & Pay Online 💳'))

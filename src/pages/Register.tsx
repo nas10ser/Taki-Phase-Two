@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { returnTo } from '../utils/returnTo';
 import { LEGAL_VERSION } from '../data/legalVersion';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -575,7 +576,13 @@ const Register: React.FC = () => {
                 // user state change, but if anything delays that (rare), we
                 // still get the user off /register immediately.
                 const meta = result.data.user.user_metadata || {};
-                const dest = meta.user_type === 'admin' ? '/admin'
+                // v14.28 — هذا التحويل يسابق AuthRedirector. لو أخذ هو الرئيسية
+                // وأخذ الآخر وجهة العودة لتقافزت الشاشة بين اثنتين. فليقرأ
+                // كلاهما من نفس المصدر: أوّلُ من يقرأ يستهلكه والثاني لا يجد شيئاً.
+                const back = returnTo.take();
+                const dest = back
+                           ? back
+                           : meta.user_type === 'admin' ? '/admin'
                            : meta.user_type === 'seller' ? '/seller'
                            : '/';
                 history.replace(dest);

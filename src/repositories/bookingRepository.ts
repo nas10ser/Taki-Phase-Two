@@ -14,6 +14,8 @@ export interface BookingMessage {
     body: string;
     createdAt: number;
     readAt: number | null;
+    /** اسم الكائن في مستودع `chat` الخاص — لا عنوان عام (v14.27). */
+    attachmentPath?: string | null;
 }
 
 /**
@@ -105,6 +107,7 @@ const mapMessage = (m: any): BookingMessage => ({
     body: m.body,
     createdAt: new Date(m.created_at).getTime(),
     readAt: m.read_at ? new Date(m.read_at).getTime() : null,
+    attachmentPath: m.attachment_path ?? null,
 });
 
 // Status progression rank — higher = more advanced. When local and remote
@@ -450,10 +453,11 @@ export const bookingRepository = {
         return (data || []).map(mapMessage);
     },
 
-    sendMessage: async (barcode: string, body: string): Promise<BookingMessage> => {
+    sendMessage: async (barcode: string, body: string, attachmentPath?: string | null): Promise<BookingMessage> => {
         const { data, error } = await supabase.rpc('send_booking_message', {
             p_barcode: barcode,
             p_body: body,
+            p_attachment_path: attachmentPath || null,
         });
         if (error) throw error;
         if (!data) throw new Error('RPC returned no row');

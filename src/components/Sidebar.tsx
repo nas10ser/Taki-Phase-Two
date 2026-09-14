@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { goRegister } from '../utils/returnTo';
 import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -280,7 +281,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
                     {!user ? (
                         <button
-                            onClick={() => { onClose(); history.push('/register'); }}
+                            onClick={() => { onClose(); goRegister(history); }}
                             style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: 'var(--primary, #00897b)', color: 'white', fontWeight: 900, cursor: 'pointer', fontSize: '0.9rem' }}>
                             {isRTL ? 'تسجيل الدخول / إنشاء حساب' : 'Login / Sign up'}
                         </button>
@@ -301,7 +302,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     : 'Delete account?\n\nYour account is deactivated immediately. You can undo it by signing in within 30 days.\n\nAfter that your personal data is permanently erased, and your past orders stay in the merchant\'s records without your identity (their tax books, which the law requires them to keep).')) {
                                         deleteAccount();
                                         onClose();
-                                        history.push('/register');
+                                        goRegister(history);
                                     }
                                 }}
                                 style={{ width: '100%', padding: '8px', color: 'var(--text-secondary)', background: 'none', border: 'none', fontSize: '0.72rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}

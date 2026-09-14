@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { goRegister } from '../utils/returnTo';
 import SearchInput from './SearchInput';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -40,7 +41,7 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
 
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                         {!user ? (
-                            <button onClick={() => history.push('/register')}
+                            <button onClick={() => goRegister(history)}
                                 style={{ padding: '8px 18px', borderRadius: 12, background: 'var(--card-bg)', color: 'var(--primary)', fontWeight: 800, fontSize: '0.85rem', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                                 {isRTL ? 'تسجيل' : 'Login'}
                             </button>

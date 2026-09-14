@@ -1,6 +1,7 @@
 // ⚠️ أول استيراد عمداً: وحدةُ كشف مسار الاستعادة تقرأ تجزئة العنوان لحظة
 // تحميلها، ويجب أن يسبق ذلك تهيئةَ عميل supabase الذي يمسح التجزئة.
 import { isPasswordRecovery } from './utils/passwordRecovery';
+import { returnTo } from './utils/returnTo';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Switch, Route, Redirect, useHistory, useLocation } from 'react-router-dom';
 import { useApp } from './context/AppContext';
@@ -107,6 +108,11 @@ const AuthRedirector = () => {
                 if (phoneMissing || shopMissing) return '/complete-profile';
             }
         } catch {}
+        // v14.28 — الوجهة التي جاء منها الزائر أولى بالعودة من الرئيسية.
+        // ترتيبها بعد `complete-profile` عمداً: من لا يملك هاتفاً لا يستطيع
+        // الحجز أصلاً، فإعادته إلى العرض تُوقعه في رفضٍ لا يفهمه.
+        const back = returnTo.take();
+        if (back) return back;
         return uType === 'admin' ? '/admin' : uType === 'seller' ? '/seller' : '/';
     };
 

@@ -118,7 +118,7 @@ interface AppContextType {
     cancelBooking: (barcode: string) => void;
     completeBooking: (barcode: string) => void;
     acknowledgeBooking: (barcode: string, note?: string) => void;
-    sendBookingMessage: (barcode: string, body: string) => Promise<void>;
+    sendBookingMessage: (barcode: string, body: string, attachmentPath?: string | null) => Promise<void>;
     fetchBookingMessages: (barcode: string) => Promise<void>;
     markBookingMessagesRead: (barcode: string) => Promise<void>;
     customPrompt: (message: string) => Promise<string | null>;
@@ -2540,7 +2540,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // v13.29 — نهاية القِمع: حجز اكتمل فعلاً. يُسجَّل **بعد** نجاح الحفظ فقط،
         // فلا يُحتسب حجزٌ تراجعنا عنه (مخزون نفد/شبكة انقطعت) — وإلا لأظهرت
         // لوحة التاجر تحويلاً لم يحدث.
+        // v14.28 — كان هذا «أطلق وانسَ»: الشاشة تقول «✅ تم تأكيد الحجز» وتنتقل
+        // إلى «حجوزاتي»، ثم يصل ردّ الخادم بالرفض (نفد المخزون، تجاوز الحدّ،
+        // حارس التوصيل) فيظهر تنبيه ثانٍ **في صفحة أخرى** ويختفي الطلب.
+        // المشتري يقرأ نجاحاً ثم فشلاً لنفس الفعل.
+        // الآن: `settled` وعدٌ لا يُحسم إلا بعد ردّ الخادم، والنداء ينتظره قبل
+        // أن يُعلن شيئاً. ورسائل الرفض المصقولة تُمرَّر إليه ليعرضها في مكانها.
+        let settle!: (r: { ok: boolean; error?: string }) => void;
+        const settled = new Promise<{ ok: boolean; error?: string }>(res => { settle = res; });
+        const reject = (m: string) => settle({ ok: false, error: m });
+
         bookingRepository.save(booking as any).then(() => {
+            settle({ ok: true });
             import('../services/analyticsTracker')
                 .then(({ trackEvent }) => trackEvent('booking_completed', deal.storeId, deal.id, {
                     metadata: { qty: quantity },
@@ -2570,14 +2581,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     : `"${variantOut[1]}" is sold out — others booked it first (available now: ${variantOut[2]})`)
                 : msg;
             if (/NEEDS_OPTIONS/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '⚠️ اختر خيارات المنتج المطلوبة أولاً ثم أعد المحاولة.'
                     : '⚠️ Please choose the required product options first, then try again.');
                 return;
             }
             const isStockReject = !!variantOut || /نفدت|سبقك/.test(msg);
             if (isStockReject) {
-                customAlertRef.current(`⛔ ${stockMsg}`);
+                reject(`⛔ ${stockMsg}`);
                 return;
             }
             // v13.31 — كشفه اختبار التزاحم: حدود الحجز يرفعها
@@ -2596,55 +2607,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     : limitCode[1] === 'REBOOK_LIMIT'
                         ? `⛔ You reached the limit (${n}) of bookings on this deal.`
                         : `⏳ You can rebook this deal in ${n} minute(s).`;
-                customAlertRef.current(language === 'ar' ? ar : en);
+                reject(language === 'ar' ? ar : en);
                 return;
             }
             // v14.06 — رفض حارس التوصيل (SQLSTATE P0013). الرموز آلية، والمشتري
             // يجب أن يقرأ السبب لا الرمز — وإلا ظنّ أن الشبكة هي العلّة.
             const dlvMin = msg.match(/TAKI_DELIVERY_MIN_ORDER:([0-9.]+)/);
             if (dlvMin) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? `⛔ الحد الأدنى لطلب التوصيل من هذا المتجر ${dlvMin[1]} ر.س — أضِف المزيد أو اختر الاستلام من المتجر.`
                     : `⛔ This store's delivery minimum is ${dlvMin[1]} SAR — add more or choose pickup.`);
                 return;
             }
             if (/TAKI_DELIVERY_OUT_OF_ZONE/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '⛔ عنوانك خارج نطاق التوصيل الذي حدّده هذا المتجر — اختر الاستلام من المتجر أو حدّث عنوانك.'
                     : '⛔ Your address is outside this store\'s delivery area — choose pickup or update your address.');
                 return;
             }
             if (/TAKI_DELIVERY_NO_ADDRESS/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '📍 لا يوجد عنوان توصيل محفوظ — أضِفه من «حسابي ← الإعدادات ← عنوان التوصيل» ثم أعد المحاولة.'
                     : '📍 No saved delivery address — add it in “My account → Settings → Delivery address”, then retry.');
                 return;
             }
             if (/TAKI_DELIVERY_CARD_ONLY/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '💳 التوصيل لدى هذا المتجر بالبطاقة فقط — اختر الدفع الإلكتروني ثم أعد المحاولة.'
                     : '💳 Delivery at this store is card-only — choose online payment and retry.');
                 return;
             }
             if (/TAKI_DELIVERY_OFF/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '🚫 أوقف هذا المتجر خدمة التوصيل — الاستلام من المتجر متاح.'
                     : '🚫 This store turned delivery off — pickup is available.');
                 return;
             }
             if (/DEAL_NOT_ACTIVE/.test(msg)) {
-                customAlertRef.current(language === 'ar'
+                reject(language === 'ar'
                     ? '⛔ هذا العرض لم يعد متاحاً — أوقفه التاجر أو انتهى. حدّث الصفحة لترى العروض السارية.'
                     : '⛔ This deal is no longer available — the merchant paused it or it ended. Refresh to see live deals.');
                 return;
             }
             const isRateReject = /محاولات|الحد الأقصى لعدد/.test(msg);
-            customAlertRef.current(language === 'ar'
+            reject(language === 'ar'
                 ? (isRateReject ? msg : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)
                 : (isRateReject ? msg : `⚠️ Booking was not saved — check your connection and try again.${msg ? `\n(${msg})` : ''}`));
         });
 
-        return booking;
+        // كل مسار في `catch` أعلاه ينتهي بـ`reject(...)`، وفرع النجاح بـ`settle({ok:true})`.
+        // فالوعد محسومٌ دائماً ولا يبقى الزرّ «جارٍ…» معلّقاً.
+        return Object.assign(booking, { settled });
     }, [user, language]);
 
     // In-flight tracker: prevents double-tap from a barcode scanner firing
@@ -2773,11 +2786,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
-    const sendBookingMessage = useCallback(async (barcode: string, body: string) => {
+    const sendBookingMessage = useCallback(async (barcode: string, body: string, attachmentPath?: string | null) => {
         const text = (body || '').trim();
-        if (!text) return;
+        // v14.27 — صورةٌ بلا نصّ رسالةٌ كاملة. الخادم يضع 📎 نصّاً لأن الجدول
+        // يمنع الفراغ، فلا نمنعها هنا بشرطٍ أقدم من الميزة.
+        if (!text && !attachmentPath) return;
         try {
-            const inserted = await bookingRepository.sendMessage(barcode, text);
+            const inserted = await bookingRepository.sendMessage(barcode, text, attachmentPath);
             setBookings(prev => prev.map(b => {
                 if (b.barcode !== barcode) return b;
                 const existing = b.messages || [];

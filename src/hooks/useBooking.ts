@@ -14,7 +14,7 @@ export const useBooking = () => {
         acknowledgeBooking: contextAcknowledgeBooking
     } = useApp();
 
-    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null): Booking => {
+    const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null): Booking & { settled: Promise<{ ok: boolean; error?: string }> } => {
         // v12.53 — selectedOptions: اختيارات المنتج المهيكلة (حارس المخزون يقرؤها)
         // v12.91 — locationId: الفرع المختار للعرض متعدد المواقع (خصم مخزون الفرع)
         // v13.11 — paymentMethod: نية الدفع (cod/online) لإخفاء «ادفع الآن» عن COD

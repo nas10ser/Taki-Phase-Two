@@ -1,6 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import type { BookingMessage } from '../repositories/bookingRepository';
+import { chatAttachments } from '../services/chatAttachments';
+
+/**
+ * المرفق داخل الفقاعة. المستودع خاصّ، فالصورة لا تُعرض بعنوان مباشر وإنما
+ * برابط موقّع يُطلب عند ظهورها. ولذلك تُطلب **مرّة واحدة لكل رسالة** لا عند
+ * كل إعادة رسم — وإلا صار فتح المحادثة عشرين نداءً للخادم.
+ */
+const Attachment: React.FC<{ path: string; isRTL: boolean }> = ({ path, isRTL }) => {
+    const [url, setUrl] = useState<string | null>(null);
+    const [failed, setFailed] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        chatAttachments.signedUrl(path).then(u => {
+            if (!alive) return;
+            if (u) setUrl(u); else setFailed(true);
+        });
+        return () => { alive = false; };
+    }, [path]);
+
+    if (failed) {
+        return (
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, opacity: 0.8, marginBottom: 6 }}>
+                {isRTL ? '📎 تعذّر تحميل الصورة — حدّث الصفحة' : '📎 Could not load the image'}
+            </div>
+        );
+    }
+    return (
+        <div style={{
+            marginBottom: 6, borderRadius: 10, overflow: 'hidden',
+            background: 'rgba(0,0,0,0.08)', minHeight: url ? 0 : 90,
+        }}>
+            {url && (
+                <img
+                    src={url}
+                    alt={isRTL ? 'مرفق' : 'attachment'}
+                    onError={() => setFailed(true)}
+                    onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                    style={{ display: 'block', width: '100%', maxHeight: 220, objectFit: 'cover', cursor: 'zoom-in' }}
+                />
+            )}
+        </div>
+    );
+};
 
 /**
  * Two-party message thread between buyer and seller for a single booking.
@@ -24,6 +67,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
         sendBookingMessage,
         fetchBookingMessages,
         markBookingMessagesRead,
+        customAlert,
     } = useApp();
     const isRTL = language === 'ar';
 
@@ -33,6 +77,13 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
 
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
+    const [pending, setPending] = useState<{ file: File; preview: string } | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const fileRef = useRef<HTMLInputElement | null>(null);
+
+    // معاينة الصورة عنوان blob يحجز ذاكرة حتى يُحرَّر. إغلاق البطاقة قبل
+    // الإرسال كان يتركه معلّقاً — ومع بطاقات كثيرة يتراكم بلا حدّ.
+    useEffect(() => () => { if (pending) URL.revokeObjectURL(pending.preview); }, [pending]);
     const listRef = useRef<HTMLDivElement | null>(null);
 
     // Lazy load + mark-read.
@@ -103,11 +154,24 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
 
     const handleSend = async () => {
         const text = draft.trim();
-        if (!text || sending || reachedMyCap) return;
+        if ((!text && !pending) || sending || reachedMyCap) return;
         setSending(true);
         try {
-            await sendBookingMessage(barcode, text);
+            let path: string | null = null;
+            if (pending) {
+                setUploading(true);
+                const up = await chatAttachments.upload(barcode, pending.file);
+                setUploading(false);
+                if (!up.ok) {
+                    // الرفع فشل ⇒ لا تُرسل الرسالة بلا صورتها ولا تُفرغ ما كتبه.
+                    await customAlert('⚠️ ' + (up.error || (isRTL ? 'تعذّر رفع الصورة' : 'Upload failed')));
+                    return;
+                }
+                path = up.path!;
+            }
+            await sendBookingMessage(barcode, text, path);
             setDraft('');
+            if (pending) { URL.revokeObjectURL(pending.preview); setPending(null); }
         } catch {
             // alert already shown by context
         } finally {
@@ -180,7 +244,8 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                                 whiteSpace: 'pre-wrap',
                                 wordBreak: 'break-word',
                             }}>
-                                {m.body}
+                                {m.attachmentPath && <Attachment path={m.attachmentPath} isRTL={isRTL} />}
+                                {m.body === '📎' && m.attachmentPath ? null : m.body}
                                 <div style={{
                                     fontSize: '0.6rem',
                                     fontWeight: 700,
@@ -213,7 +278,61 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                         : '⚠️ You\'ve reached the 3-message limit. For anything else, contact the other party directly.'}
                 </div>
             ) : (
+                <div>
+                {pending && (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+                        padding: 8, borderRadius: 12, background: 'var(--body-bg)',
+                        border: '1px solid var(--border-color)',
+                    }}>
+                        <img src={pending.preview} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover' }} />
+                        <div style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                            {isRTL ? 'صورة مرفقة' : 'Image attached'}
+                            <div style={{ fontWeight: 700, opacity: 0.8 }}>
+                                {(pending.file.size / 1048576).toFixed(1)} {isRTL ? 'م.ب' : 'MB'}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => { URL.revokeObjectURL(pending.preview); setPending(null); }}
+                            style={{ background: 'none', border: 'none', color: '#f43f5e', fontWeight: 900, fontSize: '0.75rem', cursor: 'pointer' }}
+                        >
+                            {isRTL ? 'إزالة' : 'Remove'}
+                        </button>
+                    </div>
+                )}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={e => {
+                            const f = e.target.files?.[0];
+                            // تصفير القيمة: بلا هذا لا يُطلق اختيارُ نفس الملف مرّتين متتاليتين أي حدث.
+                            e.target.value = '';
+                            if (!f) return;
+                            if (f.size > 5 * 1024 * 1024) {
+                                customAlert(isRTL
+                                    ? `⚠️ الصورة ${(f.size / 1048576).toFixed(1)} م.ب — الحدّ ٥ م.ب.`
+                                    : `⚠️ ${(f.size / 1048576).toFixed(1)} MB — limit is 5 MB.`);
+                                return;
+                            }
+                            if (pending) URL.revokeObjectURL(pending.preview);
+                            setPending({ file: f, preview: URL.createObjectURL(f) });
+                        }}
+                    />
+                    <button
+                        onClick={() => fileRef.current?.click()}
+                        disabled={sending || !!pending}
+                        title={isRTL ? 'إرفاق صورة' : 'Attach an image'}
+                        aria-label={isRTL ? 'إرفاق صورة' : 'Attach an image'}
+                        style={{
+                            background: 'var(--body-bg)', border: '1.5px solid var(--border-color)',
+                            borderRadius: 12, minWidth: 44, minHeight: 40, fontSize: '1.05rem',
+                            cursor: (sending || pending) ? 'not-allowed' : 'pointer',
+                            opacity: (sending || pending) ? 0.5 : 1,
+                        }}
+                    >📎</button>
                     <textarea
                         value={draft}
                         onChange={(e) => setDraft(e.target.value.slice(0, 500))}
@@ -242,22 +361,23 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                     />
                     <button
                         onClick={handleSend}
-                        disabled={!draft.trim() || sending}
+                        disabled={(!draft.trim() && !pending) || sending}
                         style={{
-                            background: !draft.trim() || sending ? 'var(--gray-200)' : 'var(--primary)',
-                            color: !draft.trim() || sending ? 'var(--text-secondary, var(--gray-400))' : '#ffffff',
+                            background: (!draft.trim() && !pending) || sending ? 'var(--gray-200)' : 'var(--primary)',
+                            color: (!draft.trim() && !pending) || sending ? 'var(--text-secondary, var(--gray-400))' : '#ffffff',
                             border: 'none',
                             borderRadius: 12,
                             padding: '0 16px',
                             minHeight: 40,
                             fontWeight: 900,
                             fontSize: '0.8rem',
-                            cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+                            cursor: (!draft.trim() && !pending) || sending ? 'not-allowed' : 'pointer',
                             whiteSpace: 'nowrap',
                         }}
                     >
-                        {sending ? '…' : (isRTL ? 'إرسال' : 'Send')}
+                        {uploading ? (isRTL ? 'يرفع…' : 'Uploading…') : sending ? '…' : (isRTL ? 'إرسال' : 'Send')}
                     </button>
+                </div>
                 </div>
             )}
         </div>

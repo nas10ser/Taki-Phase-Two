@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { goRegister } from '../utils/returnTo';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { contestRepository, Contest, MaskedWinner, isContestPubliclyVisible, contestMatchesAudience } from '../repositories/contestRepository';
@@ -194,7 +195,7 @@ const ContestEntry: React.FC<{ contest: Contest; onBack: () => void; user: any }
                 <div className="text-5xl mb-3">🔐</div>
                 <div className="text-lg font-extrabold text-purple-900">سجّل دخولك للمشاركة</div>
                 <div className="text-sm text-purple-800 mt-2 leading-relaxed">نأخذ اسمك ورقم جوالك من حسابك مباشرةً — لا حاجة لكتابتهما، وأكثر أماناً للسحب.</div>
-                <button onClick={() => history.push('/register')} className="w-full mt-5 py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600">تسجيل الدخول / إنشاء حساب</button>
+                <button onClick={() => goRegister(history)} className="w-full mt-5 py-3 rounded-xl text-sm font-extrabold text-white bg-purple-600">تسجيل الدخول / إنشاء حساب</button>
             </div>
         );
     }
