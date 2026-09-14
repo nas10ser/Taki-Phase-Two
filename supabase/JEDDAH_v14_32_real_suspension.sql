@@ -231,7 +231,7 @@ BEGIN
       FROM users WHERE user_type = 'admin';
     END IF;
   END LOOP;
-END $function$
+END $function$;
 
 
 -- ── ٥. محرّك العرض: عروض الموقوف تختفي ─────────────────────────────────────
@@ -365,7 +365,7 @@ BEGIN
   RETURN COALESCE(v_out, jsonb_build_object('rows','[]'::jsonb,'has_more',false))
        || jsonb_build_object('total', LEAST(v_total, c_cap), 'total_capped', v_total > c_cap,
                              'limit', v_lim, 'sort', v_sort);
-END $function$
+END $function$;
 
 
 CREATE OR REPLACE FUNCTION public.browse_nearby(p_lat double precision, p_lng double precision, p_radius_km double precision DEFAULT 0, p_query text DEFAULT NULL::text, p_category text DEFAULT NULL::text, p_region text DEFAULT NULL::text, p_city text DEFAULT NULL::text, p_location_id text DEFAULT NULL::text, p_loc_type text DEFAULT NULL::text, p_open_now boolean DEFAULT false, p_blocked text[] DEFAULT NULL::text[], p_limit integer DEFAULT 30, p_cursor_dist double precision DEFAULT NULL::double precision, p_cursor_key text DEFAULT NULL::text)
@@ -512,7 +512,7 @@ BEGIN
 
   RETURN COALESCE(v_out, jsonb_build_object('rows','[]'::jsonb,'has_more',false))
        || jsonb_build_object('total', LEAST(v_total, c_cap), 'total_capped', v_total > c_cap);
-END $function$
+END $function$;
 
 
 -- ════════════════════════════════════════════════════════════════════════════
