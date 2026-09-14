@@ -28,9 +28,21 @@ $guard$;
 -- ── ١. توليد السرّ الجديد على الخادم نفسه ───────────────────────────────────
 -- يُولَّد هنا لا في جلسة Claude: فلا يمرّ في أي سجلّ محادثة، ولا يُكتب في أي
 -- ملف في المستودع العام. ٦٤ محرفاً ست عشرياً = ٢٥٦ بت من عشوائية القاعدة.
-INSERT INTO public.app_secrets (key, value)
-VALUES ('bot_gateway_secret_next', encode(gen_random_bytes(32), 'hex'))
-ON CONFLICT (key) DO NOTHING;   -- إن وُجد فالتدوير جارٍ أصلاً: لا نُبدّله تحت أقدام Render
+-- 🪤 `public.app_secrets` **عرضٌ لا جدول**: يقرأ من خزنة Supabase
+-- (`vault.decrypted_secrets`) بأسماء على هيئة `app_secret:<المفتاح>`. الكتابة
+-- فيه مباشرةً ترفضها القاعدة، والإنشاء يكون بـ`vault.create_secret`.
+DO $mk$
+BEGIN
+  IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = 'app_secret:bot_gateway_secret_next') THEN
+    RAISE NOTICE 'السرّ الجديد موجود أصلاً — التدوير جارٍ، لا نُبدّله تحت أقدام Render.';
+  ELSE
+    PERFORM vault.create_secret(
+      encode(gen_random_bytes(32), 'hex'),
+      'app_secret:bot_gateway_secret_next',
+      'سرّ بوّابة البوت الجديد — نافذة تدوير v14.30 (٢٠٢٦-٠٩-١٤)');
+  END IF;
+END
+$mk$;
 
 -- ── ٢. البوّابة تقبل الاثنين خلال النافذة ───────────────────────────────────
 CREATE OR REPLACE FUNCTION public._bot_gate_ok()
