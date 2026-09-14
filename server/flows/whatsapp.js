@@ -603,7 +603,9 @@ function create(deps) {
         if (off.reason === 'no_address') {
             body += `\n\n${tr('dlv_no_address')}`;
         } else if (off.reason === 'out_of_zone') {
-            body += `\n\n${tr(off.reason === 'no_zones' ? 'dlv_no_zones'
+            body += `\n\n${tr(off.reason === 'platform_off' ? 'dlv_platform_off'
+                               : off.reason === 'admin_blocked' ? 'dlv_admin_blocked'
+                               : off.reason === 'no_zones' ? 'dlv_no_zones'
                                : off.reason === 'no_location' ? 'dlv_no_store_location'
                                : 'dlv_out_of_zone')}`;
         } else if (off.reason === 'min_order') {

@@ -63,7 +63,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 BEGIN
   IF NEW.delivery_blocked_by_admin IS DISTINCT FROM OLD.delivery_blocked_by_admin
-     AND NOT COALESCE(public.taki_admin_perm('tab_sellers'), false)
+     AND NOT COALESCE(public.taki_admin_perm('tab_delivery'), false)
      AND auth.uid()::text = NEW.store_id THEN
     RAISE EXCEPTION 'إيقاف التوصيل على هذا المتجر قرارٌ إداري — تواصل مع إدارة تاكي.'
       USING ERRCODE = 'P0021';
@@ -170,7 +170,7 @@ RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF NOT public.taki_admin_perm('tab_sellers') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+  IF NOT public.taki_admin_perm('tab_delivery') THEN RAISE EXCEPTION 'Not allowed'; END IF;
   INSERT INTO public.platform_settings (key, value)
   VALUES ('delivery_enabled', CASE WHEN p_enabled THEN 'true' ELSE 'false' END)
   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
@@ -184,7 +184,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE v_msg text;
 BEGIN
-  IF NOT public.taki_admin_perm('tab_sellers') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+  IF NOT public.taki_admin_perm('tab_delivery') THEN RAISE EXCEPTION 'Not allowed'; END IF;
   UPDATE public.store_profiles
      SET delivery_blocked_by_admin = p_blocked,
          delivery_block_reason = CASE WHEN p_blocked THEN NULLIF(btrim(COALESCE(p_reason,'')),'') END,
@@ -218,11 +218,13 @@ BEGIN
 END
 $g$;
 
+-- صلاحية مستقلّة `tab_delivery`: التوصيل قرارٌ تشغيليّ يُفوَّض لمن لا يُفوَّض
+-- له بالضرورة الاطّلاع على اشتراكات التجار ومبالغها.
 INSERT INTO public.admin_rpc_permissions (rpc_name, required_perm) VALUES
-  ('admin_delivery_overview','tab_sellers'), ('admin_delivery_orders','tab_sellers'),
-  ('admin_delivery_stores','tab_sellers'), ('admin_set_delivery_global','tab_sellers'),
-  ('admin_set_store_delivery','tab_sellers')
-ON CONFLICT DO NOTHING;
+  ('admin_delivery_overview','tab_delivery'), ('admin_delivery_orders','tab_delivery'),
+  ('admin_delivery_stores','tab_delivery'), ('admin_set_delivery_global','tab_delivery'),
+  ('admin_set_store_delivery','tab_delivery')
+ON CONFLICT (rpc_name) DO UPDATE SET required_perm = EXCLUDED.required_perm;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- التحقّق

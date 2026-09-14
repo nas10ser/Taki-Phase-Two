@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.35.0';
+const BOT_VERSION              = '14.39.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1703,6 +1703,8 @@ async function askFulfillment(ctx, s) {
         // v14.35 — `?focus=address` يفتح بطاقة العنوان مباشرةً؛ `tab=settings`
         // كان يُنزل المشتري في الإعدادات ويتركه يبحث عنها.
         rows.push([Markup.button.webApp(tr('dlv_add_address_btn'), W('/profile?focus=address'))]);
+    } else if (off.reason === 'platform_off' || off.reason === 'admin_blocked') {
+        body += '\n\n' + md(tr(off.reason === 'platform_off' ? 'dlv_platform_off' : 'dlv_admin_blocked'));
     } else if (off.reason === 'no_zones') {
         // التاجر لم يرسم نطاقاً — ليست مشكلة عنوان المشتري.
         body += '\n\n' + md(tr('dlv_no_zones'));

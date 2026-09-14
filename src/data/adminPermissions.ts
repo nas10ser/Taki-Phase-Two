@@ -45,6 +45,8 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminDashboard + RLS contests/entries/draws' },
     { key: 'tab_launch',    label: '🚀 الإطلاق',            description: 'الفحص الشامل وقائمة ما قبل الإطلاق', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
+    { key: 'tab_delivery',  label: '🚚 التوصيل',            description: 'طلبات التوصيل والمتاجر المفعّلة ومفاتيح الإيقاف', group: 'tabs',
+      enforcedAt: 'AdminDashboard + admin_rpc_permissions(admin_delivery_*)' },
     { key: 'tab_admins',    label: '👑 إدارة المسؤولين',     description: 'هذه الصفحة — للأدمن الأعلى وحده', group: 'tabs', onlySuper: true,
       enforcedAt: 'AdminDashboard (isSuperAdmin)' },
 

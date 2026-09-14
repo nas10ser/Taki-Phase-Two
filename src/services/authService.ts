@@ -60,6 +60,7 @@ export type AdminPermission =
     | 'tab_messages'
     | 'tab_contests'
     | 'tab_launch'
+    | 'tab_delivery'
     | 'tab_admins'
     | 'action_impersonate'
     | 'action_view_finance'

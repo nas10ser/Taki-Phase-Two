@@ -33,6 +33,11 @@ function deliveryOffer(q, goods) {
         ask: false, canDeliver: false, reason: 'off',
         fee: 0, minOrder: 0, payment: 'cod', eta: null, zoneName: '', label: null,
     };
+    // v14.39 — مفتاحا الإيقاف (العام ولكل متجر) لهما رسالتان مميّزتان: «موقوف
+    // مؤقّتاً» ليست «عنوانك خارج النطاق» ولا «التاجر أطفأها».
+    if (q && (q.reason === 'platform_off' || q.reason === 'admin_blocked')) {
+        return { ...off, reason: q.reason };
+    }
     if (!q || q.ok !== true || !q.enabled) return off;
 
     const fee = Number(q.fee) || 0;

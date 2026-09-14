@@ -34,7 +34,8 @@ export type AdminTab =
     | 'invoices'
     | 'messages'
     | 'messaging'
-    | 'admins';
+    | 'admins'
+    | 'delivery';
 
 interface CommandPaletteProps {
     open: boolean;
@@ -101,6 +102,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-moderation', perm: 'tab_reports', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
         { kind: 'nav', id: 'nav-analytics', perm: 'tab_analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
         { kind: 'nav', id: 'nav-analyst', perm: 'tab_analytics',   label: 'المحلل الذكي',     icon: '🧠', keywords: 'ai analyst insights churn محلل ذكي رؤى عزوف توصيات ذروة', tab: 'analyst' },
+        { kind: 'nav', id: 'nav-delivery', perm: 'tab_delivery', label: 'التوصيل', icon: '🚚', keywords: 'delivery courier zones توصيل مندوب نطاق نطاقات شحن', tab: 'delivery' },
         { kind: 'nav', id: 'nav-tools', perm: 'tab_tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
         { kind: 'nav', id: 'nav-locations', perm: 'tab_tools', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
         { kind: 'nav', id: 'nav-launch', perm: 'tab_launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },

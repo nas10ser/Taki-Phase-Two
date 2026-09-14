@@ -36,6 +36,7 @@ const AdminReports   = lazy(() => import('./admin/AdminReports'));
 const AdminModeration = lazy(() => import('./admin/AdminModeration'));
 const AdminLaunch    = lazy(() => import('./admin/AdminLaunch'));
 const AdminTax       = lazy(() => import('./admin/AdminTax'));
+const AdminDelivery  = lazy(() => import('./admin/AdminDelivery'));
 const AdminInvoices  = lazy(() => import('./admin/AdminInvoices'));
 const AdminMessages  = lazy(() => import('./admin/AdminMessages'));
 const AdminMessaging = lazy(() => import('./admin/AdminMessaging'));
@@ -67,6 +68,7 @@ const TABS: TabDef[] = [
     { value: 'audience',  label: 'جمهور المدن',       icon: '🗺',  gradient: 'from-teal-500 to-cyan-700',        hint: 'أماكن المشترين على الخريطة + كم دخلوا وحجزوا يومياً لكل منطقة/مدينة/نطاق + المصادر (ويب/تيليجرام/واتساب) + إنذار هبوط', permission: 'tab_analytics' },
     { value: 'tools',     label: 'الأدوات',           icon: '🛠️',  gradient: 'from-pink-500 to-rose-600',        hint: 'بانرات، حملات، إعدادات',                              permission: 'tab_tools'     },
     { value: 'locations', label: 'المولات والأسواق',  icon: '🏬',  gradient: 'from-teal-500 to-emerald-600',     hint: 'إضافة وتعديل وحذف المولات والأسواق (الموقع + البوتين)', permission: 'tab_tools'     },
+    { value: 'delivery',  label: 'التوصيل',           icon: '🚚',  gradient: 'from-orange-500 to-amber-600',     hint: 'طلبات التوصيل وحالاتها + المتاجر المفعّلة ونطاقاتها + مفتاح إيقاف عام وآخر لكل متجر', permission: 'tab_delivery' },
     { value: 'contests',  label: 'المسابقات',         icon: '🎁',  gradient: 'from-purple-500 to-fuchsia-600',   hint: 'استبيانات بجوائز + تصحيح تلقائي + سحب',              permission: 'tab_contests'  },
     { value: 'launch',    label: 'الإطلاق',           icon: '🚀',  gradient: 'from-slate-700 to-slate-900',      hint: 'فحص شامل + بوابة الدفع + قائمة ما قبل الإطلاق',     permission: 'tab_launch'    },
     { value: 'tax',       label: 'الزكاة والضريبة',   icon: '🧾',  gradient: 'from-teal-600 to-emerald-700',     hint: 'عدّاد التسجيل الضريبي + جدول شهري + فواتير جاهزة',   permission: 'tab_launch'    },
@@ -348,6 +350,7 @@ const AdminDashboard: React.FC = () => {
                         {activeTab === 'contests'  && hasPermission('tab_contests')  && <AdminContests />}
                         {activeTab === 'launch'    && hasPermission('tab_launch')    && <AdminLaunch />}
                         {activeTab === 'tax'       && hasPermission('tab_launch')    && <AdminTax />}
+                        {activeTab === 'delivery'  && hasPermission('tab_delivery')  && <AdminDelivery />}
                         {activeTab === 'invoices'  && hasPermission('tab_launch')    && <AdminInvoices />}
                         {activeTab === 'messages'  && hasPermission('tab_messages')  && <AdminMessages />}
                         {activeTab === 'messaging' && hasPermission('tab_tools')     && <AdminMessaging />}
