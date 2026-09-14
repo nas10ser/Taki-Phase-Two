@@ -9,7 +9,7 @@ import { dealRepository, DEALS_PAGE_SIZE, type DealCursor } from '../repositorie
 import { userRepository, mapUserRowToProfile } from '../repositories/userRepository';
 import { authService, UserProfile } from '../services/authService';
 import { dealService } from '../services/dealService';
-import { notificationRepository } from '../repositories/notificationRepository';
+import { notificationRepository, type AppNotification } from '../repositories/notificationRepository';
 import { bookingRepository } from '../repositories/bookingRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { sponsorRepository } from '../repositories/sponsorRepository';
@@ -61,16 +61,10 @@ const readHomeCity = (): HomeCity | null => {
     } catch { return null; }
 };
 
-interface Notification {
-    id: string;
-    userId: string;
-    title: { ar: string, en: string };
-    body: { ar: string, en: string };
-    type: 'booking' | 'deal' | 'system' | 'rating' | 'follow' | 'marketing' | 'report';
-    isRead: boolean;
-    createdAt: number;
-    metadata?: any;
-}
+// v14.26 — كان هنا تعريفٌ ثانٍ للإشعار يكرّر تعريف المستودع، وقد **تفارقا**:
+// نسخة المستودع بلا `report`. أي تغيير يُكتب في أحدهما وحده يمرّ صامتاً حتى
+// يصطدم بالآخر. التعريف الآن واحد، من المستودع.
+type Notification = AppNotification;
 
 interface AppContextType {
     language: 'ar' | 'en';
@@ -99,6 +93,8 @@ interface AppContextType {
     blockedMerchants: string[];
     toggleBlockMerchant: (merchantId: string) => Promise<void>;
     notifications: Notification[];
+    /** عدد غير المقروء من الجدول كلّه لا من النافذة المحمّلة (v14.26). */
+    notifUnread: number;
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
     markAllNotifsRead: () => void;
@@ -248,6 +244,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // fetch in initData still runs and overwrites this; the snapshot is a
     // render cache, never the source of truth.
     const [deals, setDeals] = useState<Deal[]>(() => readSnapshot<Deal[]>('deals') || []);
+    // v14.26 — عدد غير المقروء **من الجدول كلّه**. عدّ النافذة المحلّية يكذب:
+    // النافذة أحدث ١٠٠ صفّ، وحسابٌ قِيس عليه ٧٤٧ إشعاراً.
+    const [notifUnread, setNotifUnread] = useState(0);
     // v13.22 — نافذة الواجهة المُحمّلة + مؤشّر الصفحة التالية (keyset).
     // `deals` لم تعد «كل العروض» بل ما حُمّل من الواجهة؛ الصفحات المتخصّصة
     // (لوحة التاجر / صفحة المتجر) تستعلم عن متجرها مباشرة فتبقى مكتملة.
@@ -898,7 +897,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             // not gate isAuthReady; pages render immediately.
                             Promise.allSettled([
                                 userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + uid, f); }),
-                                notificationRepository.fetchByUserId(uid).then(n => { setNotifications(n); writeSnapshot('notif_' + uid, n); }),
+                                notificationRepository.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + uid, p.rows); }),
                                 import('../repositories/bookingRepository').then(({ bookingRepository }) =>
                                     // Pass the deals we already have so getByUser
                                     // does NOT re-fetch the entire deals + ratings
@@ -1109,7 +1108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 br.getByUser(spUser.id, dealsRef.current).then(b => { setBookings(b); writeSnapshot('bk_' + spUser.id, b); }).catch(() => {})
                             );
                             import('../repositories/notificationRepository').then(({ notificationRepository: nr }) =>
-                                nr.fetchByUserId(spUser.id).then(n => { setNotifications(n); writeSnapshot('notif_' + spUser.id, n); }).catch(() => {})
+                                nr.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + spUser.id, p.rows); }).catch(() => {})
                             );
                             userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + spUser.id, f); }).catch(() => {});
                             userRepository.getFollowedMerchants().then(setFollowedMerchants).catch(() => {});
@@ -1677,7 +1676,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [user?.id]);
 
     const markNotifRead = useCallback((id: string) => {
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+        setNotifications(prev => {
+            // لا نُنقص العدّاد إلا إن كان الصفّ غير مقروء فعلاً — الضغط مرّتين
+            // على نفس الإشعار كان سيُنقصه مرّتين فيُظهر رقماً أقلّ من الحقيقة.
+            if (prev.some(n => n.id === id && !n.isRead)) setNotifUnread(c => Math.max(0, c - 1));
+            return prev.map(n => n.id === id ? { ...n, isRead: true } : n);
+        });
         // Sync read status to Supabase
         notificationRepository.markAsRead(id);
     }, []);
@@ -1689,6 +1693,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const uid = user?.id;
         if (!uid) return;
         setNotifications(prev => prev.map(n => (n.userId === uid && !n.isRead) ? { ...n, isRead: true } : n));
+        setNotifUnread(0);   // التحديث الجملي على الخادم يشمل ما خرج عن النافذة
         notificationRepository.markAllAsRead(uid);
     }, [user]);
 
@@ -3234,7 +3239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             return fresh.map((b: any) => ({ ...b, messages: byBarcode[b.barcode]?.messages }));
                         });
                     })) : Promise.resolve(),
-                    ruid ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.fetchByUserId(ruid).then(n => { setNotifications(n); writeSnapshot('notif_' + ruid, n); })) : Promise.resolve(),
+                    ruid ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + ruid, p.rows); })) : Promise.resolve(),
                     ruid ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + ruid, f); })) : Promise.resolve(),
                     // v13.80 — دمج لا استبدال: الاستبدال كان يمسح ملفات المتاجر
                     // التي جُلبت بالمعرّف (متجر خارج الصفحة المسقوفة) فتفقد
@@ -3367,7 +3372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, addNotification, markNotifRead, markAllNotifsRead,
+        notifications, notifUnread, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
@@ -3396,7 +3401,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, addNotification, markNotifRead, markAllNotifsRead,
+        notifications, notifUnread, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,

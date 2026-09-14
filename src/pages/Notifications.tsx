@@ -1,5 +1,6 @@
 import React from 'react';
 import { useHistory } from 'react-router-dom';
+import { useNotifBrowse } from '../hooks/useNotifBrowse';
 import { useApp } from '../context/AppContext';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
@@ -17,6 +18,8 @@ const Notifications: React.FC = () => {
     } = useApp();
 
     const isRTL = language === 'ar';
+    // v14.26 — الصفحات من الخادم. الحالة العامة تبقى مصدر ما يصل لحظياً فقط.
+    const feed = useNotifBrowse(user?.id, notifications);
 
     // Wait for the auth gate before deciding the visitor is a guest.
     // Without this check, a refresh on /notifications briefly shows the
@@ -50,9 +53,8 @@ const Notifications: React.FC = () => {
         );
     }
 
-    const myNotifications = notifications.filter(n => n.userId === user.id)
-        .sort((a, b) => b.createdAt - a.createdAt);
-    const unreadCount = myNotifications.filter(n => !n.isRead).length;
+    const myNotifications = feed.rows;
+    const unreadCount = feed.unread;
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', paddingBottom: 100, direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -64,7 +66,7 @@ const Notifications: React.FC = () => {
                         <h1 style={{ fontSize: '1.5rem', fontWeight: 900, margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
                             📬 {isRTL ? 'الإشعارات' : 'Notifications'}
                             <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>
-                                {myNotifications.length}
+                                {feed.total || myNotifications.length}
                             </span>
                         </h1>
                         {unreadCount > 0 && (
@@ -204,6 +206,34 @@ const Notifications: React.FC = () => {
                                     </button>
                                 );
                             })}
+                            {feed.hasMore && (
+                                <button
+                                    onClick={feed.loadMore}
+                                    disabled={feed.busy}
+                                    style={{
+                                        marginTop: 6, padding: '13px 0', width: '100%',
+                                        background: 'var(--card-bg)', color: 'var(--text-primary)',
+                                        border: '1.5px solid var(--border-color)', borderRadius: 16,
+                                        fontWeight: 900, fontSize: '0.85rem',
+                                        cursor: feed.busy ? 'default' : 'pointer', opacity: feed.busy ? 0.6 : 1,
+                                    }}
+                                >
+                                    {feed.busy
+                                        ? (isRTL ? 'جارٍ التحميل…' : 'Loading…')
+                                        : (isRTL
+                                            ? `عرض المزيد — ظهر ${myNotifications.length} من ${feed.total}`
+                                            : `Show more — ${myNotifications.length} of ${feed.total}`)}
+                                </button>
+                            )}
+                            {!feed.hasMore && feed.total > 40 && (
+                                <div style={{ textAlign: 'center', padding: '10px 0', fontSize: '0.75rem', fontWeight: 800, color: 'var(--gray-400)' }}>
+                                    {isRTL ? `— هذه كل إشعاراتك (${feed.total}) —` : `— that is all (${feed.total}) —`}
+                                </div>
+                            )}
+                        </div>
+                    ) : feed.busy && !feed.ready ? (
+                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)', fontWeight: 800 }}>
+                            {isRTL ? 'جارٍ تحميل إشعاراتك…' : 'Loading your notifications…'}
                         </div>
                     ) : (
                         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>

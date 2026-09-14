@@ -5,13 +5,74 @@ export interface AppNotification {
     userId: string;
     title: { ar: string, en: string };
     body: { ar: string, en: string };
-    type: 'booking' | 'deal' | 'system' | 'rating' | 'follow' | 'marketing';
+    /** 🪤 `report` موجود في الواجهة ولا تسمح به قيود الجدول اليوم (٦ أنواع فقط)،
+     *  فتوجيه «تقرير بلاغات» في صفحة الإشعارات فرعٌ ميت لا يُنفَّذ أبداً.
+     *  أُبقي في النوع كي لا يتعطّل الفرع يوم يُوسَّع القيد. */
+    type: 'booking' | 'deal' | 'system' | 'rating' | 'follow' | 'marketing' | 'report';
     isRead: boolean;
     createdAt: number;
     metadata?: any;
 }
 
+export interface NotifPage {
+    rows: AppNotification[];
+    hasMore: boolean;
+    unreadTotal: number;
+    total: number;
+    cursor: { at: string; id: string } | null;
+}
+
+const fromRow = (n: any): AppNotification => ({
+    id: n.id,
+    userId: n.user_id,
+    title: { ar: n.title_ar, en: n.title_en },
+    body: { ar: n.body_ar, en: n.body_en },
+    type: n.type as any,
+    isRead: n.is_read,
+    createdAt: new Date(n.created_at).getTime(),
+    metadata: n.meta_data,
+});
+
 export const notificationRepository = {
+    /**
+     * صفحة من الإشعارات بترقيم المفتاح (v14.26).
+     *
+     * 🪤 ما كان قبله: `fetchByUserId` تجلب ١٠٠ وتتوقّف، والشاشة تعرضها كلها بلا
+     * زرّ «المزيد». قِيس على الإنتاج في ١٤ سبتمبر: حسابٌ لديه ٧٤٧ إشعاراً، أي
+     * **٦٤٧ إشعاراً غير مرئية**، وعدّادُ الشريط السفلي يعدّ غير المقروء داخل
+     * المئة وحدها فيكذب على صاحبه.
+     *
+     * المؤشّر مركّب `(created_at, id)` لا `created_at` وحده: إشعارات الحجز
+     * الواحد تُكتب في نفس اللحظة من نفس المشغّل، فبلا فاصلٍ ثانٍ ثابت يتكرّر
+     * صفٌّ ويُبتلع آخر عند حدّ الصفحة.
+     */
+    browsePage: async (
+        cursor?: { at: string; id: string } | null,
+        limit = 40,
+    ): Promise<NotifPage> => {
+        const empty: NotifPage = { rows: [], hasMore: false, unreadTotal: 0, total: 0, cursor: null };
+        try {
+            const { data, error } = await supabase.rpc('browse_notifications', {
+                p_cursor_at: cursor?.at ?? null,
+                p_cursor_id: cursor?.id ?? null,
+                p_limit: limit,
+            });
+            if (error) { console.warn('browse_notifications:', error.message); return empty; }
+            const d: any = data || {};
+            if (!d.ok) return empty;
+            const raw: any[] = Array.isArray(d.rows) ? d.rows : [];
+            const last = raw[raw.length - 1];
+            return {
+                rows: raw.map(fromRow),
+                hasMore: !!d.has_more,
+                unreadTotal: Number(d.unread_total) || 0,
+                total: Number(d.total) || 0,
+                cursor: last ? { at: last.created_at, id: last.id } : null,
+            };
+        } catch { return empty; }
+    },
+
+
     fetchByUserId: async (userId: string): Promise<AppNotification[]> => {
         try {
             const { data, error } = await supabase
@@ -23,16 +84,7 @@ export const notificationRepository = {
 
             if (error) throw error;
 
-            return (data || []).map(n => ({
-                id: n.id,
-                userId: n.user_id,
-                title: { ar: n.title_ar, en: n.title_en },
-                body: { ar: n.body_ar, en: n.body_en },
-                type: n.type as any,
-                isRead: n.is_read,
-                createdAt: new Date(n.created_at).getTime(),
-                metadata: n.meta_data
-            }));
+            return (data || []).map(fromRow);
         } catch (error) {
             console.warn('❌ Failed to fetch notifications:', error);
             return [];

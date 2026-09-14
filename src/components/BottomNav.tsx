@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 const BottomNav: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType } = useApp();
+    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType, notifUnread } = useApp();
 
     const isRTL = language === 'ar';
 
@@ -17,7 +17,11 @@ const BottomNav: React.FC = () => {
     // because their real userType is admin.
     const showSellerNav = effectiveUserType === 'seller' || effectiveUserType === 'admin';
 
-    const unreadCount = notifications.filter(n => !n.isRead && n.userId === user?.id).length;
+    // v14.26 — العدّ من الخادم أولاً. النافذة المحلّية أحدث ١٠٠ صفّ، وحسابٌ
+    // قِيس عليه ٧٤٧ إشعاراً — فعدّ النافذة كان يُظهر رقماً أصغر من الحقيقة.
+    // والنافذة تبقى احتياطاً لثوانٍ قبل وصول أول جواب من الخادم.
+    const localUnread = notifications.filter(n => !n.isRead && n.userId === user?.id).length;
+    const unreadCount = Math.max(notifUnread || 0, localUnread);
 
     type NavItem = { id: string; icon: string; ar: string; en: string; path: string; badgeCount?: number };
     let items: NavItem[] = [
