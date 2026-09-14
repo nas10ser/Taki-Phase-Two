@@ -862,12 +862,12 @@ interface ChecklistItem {
 
 const LAUNCH_CHECKLIST: ChecklistItem[] = [
     // ───── Security (الأمان) ─────
-    { id: 'rls',             category: 'security', status: 'ready',       label: 'RLS مفعّل على كل الجداول الحساسة',          detail: 'فحص الـHealth Check يتأكد منها' },
+    { id: 'rls',             category: 'security', status: 'ready',       label: 'RLS مفعّل على كل الجداول',                   detail: 'يُقاس لحظياً من القاعدة أدناه — لا ادّعاء' },
     { id: 'admin-rpc',       category: 'security', status: 'ready',       label: 'كل admin_* RPCs محمية بـis_admin()',       detail: 'مطبّق منذ v9.7' },
     { id: 'csp',             category: 'security', status: 'ready',       label: 'Content Security Policy صارمة',             detail: 'مفعّلة في index.html — تمنع XSS' },
     { id: 'https',           category: 'security', status: 'ready',       label: 'HTTPS مفروض على كل الطلبات',                detail: 'Vercel يفرضه افتراضياً' },
     { id: 'referrer',        category: 'security', status: 'ready',       label: 'Referrer policy آمن',                       detail: 'strict-origin-when-cross-origin' },
-    { id: 'rate-limit',      category: 'security', status: 'manual',      label: 'Rate limiting على الـauth + RPCs',         detail: 'Supabase يوفّر إعدادات افتراضية — راجعها في Dashboard' },
+    { id: 'rate-limit',      category: 'security', status: 'ready',       label: 'Rate limiting على الـauth + RPCs',         detail: 'مطبَّق في القاعدة منذ v13.15 — لا علاقة له بلوحة supabase.com' },
     { id: 'pentest',         category: 'security', status: 'manual',      label: 'Penetration testing',                       detail: 'لإطلاق رسمي على نطاق واسع — استعن بمختبر معتمد' },
     { id: 'secrets',         category: 'security', status: 'ready',       label: 'لا توجد مفاتيح سرّية في الكود',             detail: 'Anon key فقط في الـclient، باقي المفاتيح في Vercel env' },
 
@@ -907,7 +907,7 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
     { id: 'cross-browser',   category: 'tech',     status: 'manual',      label: 'Cross-browser: Safari + Chrome + Firefox',  detail: 'Safari خاصة (iOS) له اختلافات' },
 
     // ───── Business (الأعمال) ─────
-    { id: 'payment',         category: 'business', status: 'needs_work',  label: 'بوابة الدفع متكاملة فعلياً',                detail: 'الـUI جاهز — يحتاج مفاتيح Moyasar حقيقية' },
+    { id: 'payment',         category: 'business', status: 'needs_work',  label: 'بوابة الدفع متكاملة فعلياً',                detail: 'الكود والدالة الطرفية منشوران — العائق أن مؤشّر مفاتيح المتجر يشير إلى سرّ لم ينجُ من انتقال أغسطس: احفظ المفاتيح مرّة من لوحة التاجر' },
     { id: 'edge-fn',         category: 'business', status: 'needs_work',  label: 'Edge Function للـwebhook منشورة',          detail: 'تستقبل أحداث الدفع وتنشئ subscription_payment' },
     { id: 'pricing',         category: 'business', status: 'manual',      label: 'خطة تسعير واضحة للتجار',                   detail: 'إذا فعّلت الدفع — كم يدفع التاجر شهرياً؟ ما الباقات؟' },
     { id: 'support',         category: 'business', status: 'manual',      label: 'قناة دعم عملاء',                            detail: 'واتساب أو إيميل مخصّص — راجع response time SLA' },
@@ -931,12 +931,69 @@ const CHECKLIST_STATUS: Record<string, { label: string; cls: string; icon: strin
 };
 
 const LaunchChecklist: React.FC = () => {
-    const summary = useMemo(() => {
-        const ready = LAUNCH_CHECKLIST.filter((i) => i.status === 'ready').length;
-        const work = LAUNCH_CHECKLIST.filter((i) => i.status === 'needs_work').length;
-        const manual = LAUNCH_CHECKLIST.filter((i) => i.status === 'manual').length;
-        return { ready, work, manual, total: LAUNCH_CHECKLIST.length };
+    /**
+     * v14.41 — 🪤 كانت هذه القائمة **نصّاً ثابتاً**: حالة كل بند كلمةٌ كتبتُها
+     * أنا في ملف، لا قياس. وثلاثة بنود كانت تكذب صراحةً — أشهرها «RLS مفعّل —
+     * فحص الـHealth Check يتأكد منها»، والفحص لا يتضمّن أي فحص RLS إطلاقاً.
+     * ولم يكن لناصر طريقة ليُعلّم بنداً أنجزه خارج المنصّة ويحفظه.
+     *
+     * الآن: `admin_launch_audit()` تقيس من القاعدة لحظة الفتح وتدهس الحالة
+     * المكتوبة، و`launch_checklist_state` تحفظ ما يُعلّمه ناصر بيده.
+     * وما لا يُقاس من القاعدة (النسخ الاحتياطية، وهي خارج الخادم عمداً) يُقال
+     * عنه ذلك بدل أن يُطلى بالأخضر.
+     */
+    const { customAlert, customPrompt } = useApp();
+    const [audit, setAudit] = useState<Record<string, { ok: boolean | null; detail: string }>>({});
+    const [manualState, setManualState] = useState<Record<string, { done: boolean; note?: string }>>({});
+    const [auditAt, setAuditAt] = useState<string>('');
+
+    const loadAudit = useCallback(async () => {
+        const [a, m] = await Promise.all([
+            supabase.rpc('admin_launch_audit'),
+            supabase.from('launch_checklist_state').select('item_id,done,note'),
+        ]);
+        const map: Record<string, { ok: boolean | null; detail: string }> = {};
+        for (const c of ((a.data as any)?.checks || [])) map[c.id] = { ok: c.ok, detail: c.detail };
+        setAudit(map);
+        setAuditAt((a.data as any)?.measured_at || '');
+        const ms: Record<string, { done: boolean; note?: string }> = {};
+        for (const r of ((m.data as any[]) || [])) ms[r.item_id] = { done: !!r.done, note: r.note };
+        setManualState(ms);
     }, []);
+    useEffect(() => { loadAudit(); }, [loadAudit]);
+
+    const toggleManual = async (it: ChecklistItem) => {
+        const now = !manualState[it.id]?.done;
+        let note: string | null = null;
+        if (now) {
+            const v = await customPrompt(`✓ تعليم «${it.label}» منجزاً.\n\nاكتب ملاحظة (اختياري) — ما الذي أنجزته بالضبط:`);
+            if (v == null) return;
+            note = String(v).trim() || null;
+        }
+        const { error } = await supabase.rpc('admin_set_launch_item', {
+            p_item_id: it.id, p_done: now, p_note: note,
+        });
+        if (error) { await customAlert('❌ ' + error.message); return; }
+        setManualState(p => ({ ...p, [it.id]: { done: now, note: note || undefined } }));
+    };
+
+    /** الحالة الفعلية: القياس يدهس المكتوب، والتعليم اليدوي يدهسهما. */
+    const effective = useCallback((it: ChecklistItem): ChecklistItem['status'] => {
+        if (manualState[it.id]?.done) return 'ready';
+        const a = audit[it.id];
+        if (a && a.ok === true) return 'ready';
+        if (a && a.ok === false) return 'needs_work';
+        return it.status;
+    }, [audit, manualState]);
+
+    const summary = useMemo(() => {
+        let ready = 0, work = 0, manual = 0;
+        for (const i of LAUNCH_CHECKLIST) {
+            const st = effective(i);
+            if (st === 'ready') ready++; else if (st === 'needs_work') work++; else manual++;
+        }
+        return { ready, work, manual, total: LAUNCH_CHECKLIST.length };
+    }, [effective]);
 
     const grouped = useMemo(() => {
         const map: Record<string, ChecklistItem[]> = {};
@@ -951,6 +1008,11 @@ const LaunchChecklist: React.FC = () => {
             </h3>
             <p className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
                 التقييم الصادق: {summary.ready} جاهز / {summary.work} يحتاج عمل / {summary.manual} يحتاج قرار منك
+            </p>
+            <p className="text-[10px] text-[var(--gray-400)] mb-3 font-bold leading-relaxed">
+                {auditAt
+                    ? `⚡ البنود المقيسة تُقرأ من القاعدة لحظة فتح الصفحة (آخر قياس ${new Date(auditAt).toLocaleString('ar-SA-u-ca-gregory', { dateStyle: 'short', timeStyle: 'short' })}). البنود اليدوية تُعلَّم بيدك وتُحفظ.`
+                    : '⏳ جارٍ القياس من القاعدة…'}
             </p>
             <div className="grid grid-cols-3 gap-2 mb-4">
                 <SummaryTile label="جاهز" value={summary.ready} tone="emerald" />
@@ -967,7 +1029,10 @@ const LaunchChecklist: React.FC = () => {
                             </div>
                             <div className="space-y-1.5">
                                 {items.map((it) => {
-                                    const s = CHECKLIST_STATUS[it.status];
+                                    const st = effective(it);
+                                    const s = CHECKLIST_STATUS[st];
+                                    const a = audit[it.id];
+                                    const mine = manualState[it.id];
                                     return (
                                         <div key={it.id} className="flex items-start gap-2 bg-[var(--body-bg)] rounded-xl p-3">
                                             <span className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-xs font-extrabold ${s.cls}`}>
@@ -975,11 +1040,31 @@ const LaunchChecklist: React.FC = () => {
                                             </span>
                                             <div className="flex-1 min-w-0">
                                                 <div className="font-bold text-sm text-[var(--text-primary)]">{it.label}</div>
-                                                <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{it.detail}</div>
+                                                {/* القياس يدهس النصّ المكتوب: ما تقوله القاعدة الآن أصدق مما كتبتُه يوماً. */}
+                                                <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                                                    {a ? a.detail : it.detail}
+                                                </div>
+                                                {a && <span className="text-[9px] font-extrabold text-emerald-600">⚡ مقيس الآن</span>}
+                                                {mine?.done && (
+                                                    <div className="text-[10px] text-blue-600 font-bold mt-0.5">
+                                                        ✓ علّمته أنت{mine.note ? ` — ${mine.note}` : ''}
+                                                    </div>
+                                                )}
                                             </div>
-                                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${s.cls} flex-shrink-0`}>
-                                                {s.label}
-                                            </span>
+                                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${s.cls}`}>
+                                                    {s.label}
+                                                </span>
+                                                {/* بندٌ يقيسه الخادم لا يُعلَّم يدوياً — وإلا صار التعليم كذباً على النفس. */}
+                                                {!a && (
+                                                    <button
+                                                        onClick={() => toggleManual(it)}
+                                                        className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-[var(--border-color)]"
+                                                    >
+                                                        {mine?.done ? '↩ إلغاء' : '✓ أنجزته'}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}
