@@ -166,10 +166,34 @@ const AccountSettingsCard: React.FC = () => {
         }
         setBusy(true);
         try {
-            const patch: any = { name: trimmed };
-            if (user.userType === 'seller') patch.shop = shop.trim() || user.shop;
-            await updateProfile(patch);
-            await customAlert(isRTL ? '✅ تم حفظ الاسم' : '✅ Name saved');
+            // v14.36 — اسم المتجر لم يعد يُكتب مباشرةً (قرار ناصر: التوثيق أولاً).
+            // 🪤 وكان الحفظ يقول «✅ تم حفظ الاسم» بينما **لا يصل عروض التاجر نفسه**:
+            // لكل عرض نسخة مجمّدة من الاسم. الآن الاسم مصدرٌ واحد، وتغييره طلبٌ
+            // يبتّ فيه الأدمن — والتغيير المباشر يرفضه حارس في القاعدة.
+            const wantsRename = user.userType === 'seller'
+                && shop.trim() && shop.trim() !== (user.shop || '');
+            await updateProfile({ name: trimmed });
+
+            if (wantsRename) {
+                const { data } = await supabase.rpc('merchant_request_store_name', {
+                    p_name: shop.trim(), p_reason: null,
+                });
+                const d: any = data || {};
+                if (d.ok) {
+                    await customAlert(isRTL
+                        ? '✅ حُفظ اسمك.\n\n🏷 وطلب تغيير اسم المتجر أُرسل لإدارة تاكي — يصلك إشعار بالقرار. اسمك الحالي يبقى ظاهراً حتى يُعتمد.'
+                        : '✅ Name saved.\n\n🏷 Your store-rename request was sent to TAKI for review.');
+                } else {
+                    const why = d.error === 'NAME_TAKEN'      ? (isRTL ? 'هذا الاسم مستخدَم من متجر آخر.' : 'That name is already taken.')
+                              : d.error === 'ALREADY_PENDING' ? (isRTL ? 'لديك طلب تغيير اسم قيد المراجعة.' : 'You already have a pending rename request.')
+                              : d.error === 'BAD_NAME'        ? (isRTL ? 'الاسم قصير جداً أو طويل جداً.' : 'Name too short or too long.')
+                              : d.error === 'SAME_NAME'       ? (isRTL ? 'هذا اسمك الحالي.' : 'That is already your name.')
+                              : (isRTL ? 'تعذّر إرسال الطلب.' : 'Could not send the request.');
+                    await customAlert('✅ ' + (isRTL ? 'حُفظ اسمك' : 'Name saved') + '\n\n⚠️ ' + why);
+                }
+            } else {
+                await customAlert(isRTL ? '✅ تم حفظ الاسم' : '✅ Name saved');
+            }
             close();
         } catch (e: any) {
             renewCaptcha();

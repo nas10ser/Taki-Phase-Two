@@ -16,6 +16,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
+import { StoreNameRequests } from '../../components/admin/StoreNameRequests';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
@@ -2022,6 +2023,9 @@ const AdminSellers: React.FC = () => {
 
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
+            {/* v14.36 — طلبات تغيير اسم المتجر أولاً: طلبٌ معلّق يجب أن يُرى قبل
+                أي شيء آخر، والبطاقة تُخفي نفسها حين لا يوجد طلب. */}
+            <StoreNameRequests />
             {/* Header */}
             <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>

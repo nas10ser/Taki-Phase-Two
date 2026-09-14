@@ -3675,9 +3675,23 @@ const SellerDashboard: React.FC = () => {
                                 <label style={labelStyle}>{isRTL ? 'اسم المنتج' : 'Item Name'}</label>
                                 <input style={fieldInputStyle} value={itemName} onChange={e => setItemName(e.target.value)} />
                             </div>
+                            {/* v14.36 — كان هنا حقلٌ حرّ «اسم المحل» يكتبه التاجر في كل عرض.
+                                وهو **مصدرٌ ثانٍ مستقلّ** للاسم يُجمَّد يوم النشر ولا يتحدّث —
+                                وهذا هو سبب «اسم المتجر القديم يظهر عند الحجز». وكان أيضاً
+                                سطح انتحال علامات بلا أي فحص: أي تاجر يكتب «ستاربكس» فتظهر
+                                في الرئيسية. الاسم الآن يُشتقّ من ملف المتجر بمشغّل في القاعدة،
+                                وتغييره يمرّ بموافقة الإدارة. */}
                             <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>{isRTL ? 'اسم المحل' : 'Shop Name'}</label>
-                                <input style={fieldInputStyle} value={shopName} onChange={e => setShopName(e.target.value)} />
+                                <label style={labelStyle}>{isRTL ? 'اسم المتجر' : 'Store name'}</label>
+                                <div style={{ ...fieldInputStyle, display: 'flex', alignItems: 'center',
+                                              opacity: 0.75, cursor: 'not-allowed' }}>
+                                    {user?.shop || user?.name || (isRTL ? 'متجرك' : 'Your store')}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.7 }}>
+                                    {isRTL
+                                        ? 'يُؤخذ من ملف متجرك تلقائياً ويظهر على كل عروضك. لتغييره: «حسابي ← بيانات الحساب» — ويمرّ بموافقة الإدارة.'
+                                        : 'Taken from your store profile and shown on every deal. To change it, use Account settings — it needs admin approval.'}
+                                </div>
                             </div>
                         </div>
 
