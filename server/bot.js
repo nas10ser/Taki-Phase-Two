@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.29.0';
+const BOT_VERSION              = '14.30.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -3876,6 +3876,15 @@ app.post('/webhook/whatsapp', async (req, res) => {
 });
 
 // ── Health + Boot ─────────────────────────────────────────────────────────────
+// v14.30 — أيّ السرّين يستعمله هذا البوت؟ نافذة التدوير مفتوحة، ولا يجوز
+// حذف السرّ القديم بالتخمين. يُبلّغ البوت عن نفسه مرّة عند كل إقلاع، فأقرأ
+// الجواب من القاعدة وأحذف القديم بيقين لا بظنّ.
+setTimeout(() => {
+    rpc('bot_report_gate', { p_version: BOT_VERSION })
+        .then(r => console.log('🔑 بوّابة البوت:', r && r.using ? r.using : 'مجهول'))
+        .catch(e => console.warn('bot_report_gate:', e.message));
+}, 8000);
+
 app.get('/health', (_,res) => res.json({ status:'active', version:BOT_VERSION, mode:BOT_MODE, uptime:Math.round(process.uptime()), services:{ telegram:!!bot, supabase:!!supabase, photo_upload:!!BOT_GATEWAY_SECRET, email:!!mailer } }));
 app.listen(PORT, () => {
     console.log(`🚀 TAKI Bot v${BOT_VERSION} | port ${PORT} | mode: ${BOT_MODE}`);

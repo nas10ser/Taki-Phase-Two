@@ -61,11 +61,19 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data: secretRow } = await admin
-      .from("app_secrets").select("value").eq("key", "bot_gateway_secret").maybeSingle();
-    const expected = secretRow?.value || "";
+    // v14.30 — نافذة تدوير: سرّان صالحان معاً حتى يُحدَّث متغيّر البيئة على
+    // Render. قبولُ واحدٍ فقط هنا كان سيُسقط رفع الصور بينما بقيّة البوت تعمل،
+    // وهو أسوأ من السقوط الكامل: عطبٌ جزئي لا يُلاحَظ.
+    const { data: secretRows } = await admin
+      .from("app_secrets").select("key,value")
+      .in("key", ["bot_gateway_secret", "bot_gateway_secret_next"]);
     const provided = req.headers.get("x-bot-secret") || "";
-    if (!expected || !timingSafeEqual(provided, expected)) return json({ error: "unauthorized" }, 401);
+    const accepted = (secretRows || [])
+      .map((r: any) => String(r?.value || ""))
+      .filter((v: string) => v.length > 0);
+    let ok = false;
+    for (const v of accepted) ok = timingSafeEqual(provided, v) || ok;
+    if (!accepted.length || !ok) return json({ error: "unauthorized" }, 401);
 
     let body: any = {};
     try { body = await req.json(); } catch { /* ignore */ }
