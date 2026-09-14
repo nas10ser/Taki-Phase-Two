@@ -584,7 +584,14 @@ function create(deps) {
         s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
         let q = null;
         if (s.temp.dealStoreId) {
-            try { q = await rpc('bot_delivery_quote', aid(from, { p_store_id: s.temp.dealStoreId })); } catch { q = null; }
+            // v14.35 — بالفرع لا بالمحل الرئيس (نفس إصلاح تيليجرام).
+            try {
+                q = await rpc('bot_delivery_quote_at', aid(from, {
+                    p_store_id: s.temp.dealStoreId,
+                    p_location_id: s.temp.locationId || s.temp.branchId || null,
+                    p_address_id: s.temp.addressId || null,
+                }));
+            } catch { q = null; }
         }
         const goods = (Number(s.temp.dealPrice) || 0) * (s.temp.dealQty || 1);
         const off = DLV.deliveryOffer(q, goods);
@@ -596,7 +603,9 @@ function create(deps) {
         if (off.reason === 'no_address') {
             body += `\n\n${tr('dlv_no_address')}`;
         } else if (off.reason === 'out_of_zone') {
-            body += `\n\n${tr('dlv_out_of_zone')}`;
+            body += `\n\n${tr(off.reason === 'no_zones' ? 'dlv_no_zones'
+                               : off.reason === 'no_location' ? 'dlv_no_store_location'
+                               : 'dlv_out_of_zone')}`;
         } else if (off.reason === 'min_order') {
             body += `\n\n${tr('dlv_min_order', money(off.minOrder), cur())}`;
         } else {
@@ -690,7 +699,10 @@ function create(deps) {
                 : e === 'not_linked' ? tr('wa_login_first')
                 : e === 'delivery_no_address' ? tr('dlv_no_address')
                 : e === 'delivery_min_order' ? tr('dlv_min_order', money(r.min_order || 0), cur())
-                : e === 'delivery_unavailable' ? (r.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
+                : e === 'delivery_unavailable' ? (r.reason === 'out_of_zone' ? tr('dlv_out_of_zone')
+                                                : r.reason === 'no_zones'    ? tr('dlv_no_zones')
+                                                : r.reason === 'no_location' ? tr('dlv_no_store_location')
+                                                : tr('dlv_unavailable'))
                 : e === 'store_no_payment' ? tr('bk_err_store_no_payment')
                 : e === 'suspended' ? tr('wa_book_err_suspended')
                 : tr('wa_book_err_fail');
@@ -1355,7 +1367,14 @@ function create(deps) {
             if (one && one.success && one.booking) { b = one.booking; s.temp.soCache[b.barcode] = b; }
         }
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:orders', title: tr('menu_seller_bookings') }] });
-        let dlv = '';
+        // v14.35 — طريقة الدفع وحالة السداد (طلب ناصر ٧). الدالة تُرجعهما منذ
+        // v13.11 ولم تكن البطاقة تعرض أيّاً منهما، فالتاجر قد يسلّم طلباً اختار
+        // صاحبه البطاقة ولم يدفع بعد.
+        const online = String(b.payment_method || '') === 'online';
+        let dlv = '\n' + (!online ? '💵 ' + tr('pay_cod_line')
+                          : b.paid ? '💳 ' + tr('pay_online_paid')
+                                   : '⏳ ' + tr('pay_online_unpaid'));
+        if (b.merchant_note) dlv += `\n🏪 ${b.merchant_note}`;
         if (b.fulfillment === 'delivery') {
             dlv += `\n${tr('dlv_seller_line', [b.delivery_label, b.delivery_details].filter(x => x && String(x).trim()).join(' — ') || tr('inv_delivery'))}`;
             if (Number(b.delivery_fee) > 0) dlv += `\n🚚 ${tr('inv_delivery_fee')}: ${money(b.delivery_fee)} ${cur()}`;

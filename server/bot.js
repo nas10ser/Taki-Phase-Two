@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.34.0';
+const BOT_VERSION              = '14.35.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -334,6 +334,19 @@ async function refreshSession(ctx) {
 // so the Arabic experience is byte-for-byte unchanged («بدون تغيير أي شي»). v11.83
 const I18N = require('./lib/i18n');
 const tr = I18N.tr;   // request-scoped translate — language resolved from ALS (set in middleware)
+
+/**
+ * سطر الدفع على بطاقة الطلب (v14.35).
+ * `payment_method` هو ما اختاره المشتري، و`paid` هل وصل المال فعلاً. عرضُ
+ * أحدهما بلا الآخر يُضلّل: «إلكتروني» وحدها تُفهم «مدفوع»، وهي قد تكون
+ * «اختار البطاقة ولم يدفع بعد» — والتاجر يسلّم بضاعةً لم يُقبض ثمنها.
+ */
+function payLine(b) {
+    const online = String((b && b.payment_method) || '') === 'online';
+    if (!online) return '💵 ' + tr('pay_cod_line');
+    return (b && b.paid) ? '💳 ' + tr('pay_online_paid') : '⏳ ' + tr('pay_online_unpaid');
+}
+
 // Language toggle button — shows the OTHER language (tap to switch). Plain text.
 const langBtn = () => (I18N.lang() === 'en')
     ? Markup.button.callback('🌐 العربية', 'lang:set:ar')
@@ -1664,8 +1677,18 @@ async function askFulfillment(ctx, s) {
     s.temp.dlvFee = 0; s.temp.dlvLabel = null; s.temp.dlvPay = null; s.temp.dlvEta = null;
     let q = null;
     if (s.temp.dealStoreId) {
-        try { q = await rpc('bot_delivery_quote', { p_telegram_id: tgId(ctx), p_whatsapp_id: null, p_store_id: s.temp.dealStoreId }); }
-        catch { q = null; }
+        // v14.35 — الفرع الذي عليه الطلب لا المحل الرئيس (طلب ناصر ٧).
+        // 🪤 كان التسعير يقيس المسافة من الموقع الرئيس دائماً، فمشترٍ بجوار فرعٍ
+        // قريب يُرفض «خارج النطاق» لأن الرئيس بعيد، أو يُحاسَب برسوم فرعٍ لن
+        // يخرج منه طلبه أصلاً.
+        try {
+            q = await rpc('bot_delivery_quote_at', {
+                p_telegram_id: tgId(ctx), p_whatsapp_id: null,
+                p_store_id: s.temp.dealStoreId,
+                p_location_id: s.temp.locationId || s.temp.branchId || null,
+                p_address_id: s.temp.addressId || null,
+            });
+        } catch { q = null; }
     }
     // لا توصيل (أو تعذّر السؤال) ⇒ لا سؤال: استلام من المتجر كالمعتاد.
     const goods = (Number(s.temp.dealPrice) || 0) * (s.temp.dealQty || 1);
@@ -1677,7 +1700,14 @@ async function askFulfillment(ctx, s) {
 
     if (off.reason === 'no_address') {
         body += '\n\n' + md(tr('dlv_no_address'));
-        rows.push([Markup.button.webApp(tr('dlv_add_address_btn'), W('/profile?tab=settings'))]);
+        // v14.35 — `?focus=address` يفتح بطاقة العنوان مباشرةً؛ `tab=settings`
+        // كان يُنزل المشتري في الإعدادات ويتركه يبحث عنها.
+        rows.push([Markup.button.webApp(tr('dlv_add_address_btn'), W('/profile?focus=address'))]);
+    } else if (off.reason === 'no_zones') {
+        // التاجر لم يرسم نطاقاً — ليست مشكلة عنوان المشتري.
+        body += '\n\n' + md(tr('dlv_no_zones'));
+    } else if (off.reason === 'no_location') {
+        body += '\n\n' + md(tr('dlv_no_store_location'));
     } else if (off.reason === 'out_of_zone') {
         body += '\n\n' + md(tr('dlv_out_of_zone'));
     } else if (off.reason === 'min_order') {
@@ -1817,7 +1847,10 @@ async function execBooking(ctx) {
                 : e==='rebook_wait'     ? tr('bk_err_rebook_wait', md(HRS.fmtMins(result.wait_minutes??1)))
                 : e==='delivery_no_address'  ? tr('dlv_no_address')
                 : e==='delivery_min_order'   ? tr('dlv_min_order', money(result.min_order || 0), tr('inv_sar'))
-                : e==='delivery_unavailable' ? (result.reason === 'out_of_zone' ? tr('dlv_out_of_zone') : tr('dlv_unavailable'))
+                : e==='delivery_unavailable' ? (result.reason === 'out_of_zone' ? tr('dlv_out_of_zone')
+                                              : result.reason === 'no_zones'    ? tr('dlv_no_zones')
+                                              : result.reason === 'no_location' ? tr('dlv_no_store_location')
+                                              : tr('dlv_unavailable'))
                 // v14.08 — متجر لم يُقرّ طريقة حسابه: القاعدة ترفض الحجز، والمشتري
                 // يستحقّ سبباً مفهوماً لا «فشل الحجز» الغامض (بلاغ ناصر ٨).
                 : e==='store_no_payment' ? tr('bk_err_store_no_payment')
@@ -1840,9 +1873,21 @@ async function execBooking(ctx) {
     if (result.location_name) okMsg += tr('bk_loc_line', md(String(result.location_name)));
     // v14.06 — يعرف المشتري فوراً: هل ينتظر المندوب أم يذهب للمتجر؟
     if (result.fulfillment === 'delivery') okMsg += tr('dlv_booked_line', md(String(result.delivery_label || tr('inv_delivery'))));
+    // v14.35 — زرّ الدفع فور الحجز (طلب ناصر ٧).
+    // 🪤 البوت كان يقول قبل التأكيد: «بعد التأكيد ستظهر لك صفحة الدفع»، ثم لا
+    // تظهر. المشتري يختار الدفع الإلكتروني ويُترك بلا أي زرّ، فينتهي الحجز
+    // بانتهاء مهلته وهو ينتظر صفحةً وُعد بها.
+    let payNow = null;
+    if (bc && s.userId) {
+        try { payNow = await rpc('bot_get_pay_info', { p_uid: s.userId, p_barcode: bc }); }
+        catch { /* لا زرّ خيرٌ من زرٍّ يفشل */ }
+    }
+    if (payNow?.payable) okMsg += '\n' + tr('pay_after_booking_hint');
+
     await ctx.reply(
         okMsg,
         { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+            ...(payNow?.payable ? [[Markup.button.callback(tr('pay_btn'), `payb:${bc}`)]] : []),
             [Markup.button.callback(tr('b1149_chat_merchant'),`chat:${bc}`), Markup.button.callback(tr('b1149_call_merchant'),`call:b:${bc}`)],
             ...(expiryMs && bc ? [[Markup.button.callback(tr('b1150_countdown'),`cd:${bc}`)]] : []),
             ...(result.store_id ? [[Markup.button.callback(tr('b1151_store_page'),`store:${result.store_id}`)]] : []),
@@ -2080,7 +2125,10 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         (seller ? `👤 ${md(b.user_name)}  •  📞 ${md(b.user_phone)}\n` : `🏪 ${md(b.shop_name)}\n`) +
         `📦 ${tr('w1250_quantity')}: *${b.quantity}*  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDate(b.booked_at))}`;
     if (active && b.expiry_time) m += `\n⏰ *${tr('w1251_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
+    m += `\n${md(payLine(b))}`;
     if (b.notes) m += `\n📝 _${md(b.notes)}_`;
+    // v14.35 — ملاحظة التاجر كانت تُكتب عند الإتمام وتضيع: لا تظهر في أي بطاقة.
+    if (b.merchant_note) m += `\n🏪 _${md(b.merchant_note)}_`;
     // v14.06 — طريقة الاستلام: التاجر يرى العنوان والجوال (هو من يوصّل)، والمشتري
     // يرى وسم عنوانه فقط. البيانات من نفس صفّ الحجز (لقطةٌ ثبّتها حارس القاعدة
     // وقت الحجز) لا من ملف المشتري الحالي — فتغييره لعنوانه لاحقاً لا يحرّك طلباً قائماً.
@@ -3084,6 +3132,11 @@ async function showSellerBookings(ctx, scope='current') {
         const active = b.status==='pending'||b.status==='acknowledged';
         let m = `*${i+1}\\.* 📋 \`${md(b.barcode)}\`\n👤 *${md(b.user_name)}*  📞 ${md(b.user_phone)}\n🛍 ${md(b.deal_name)}  •  📦 ×${b.quantity}  •  ⏱ ${md(prepLabel(b.prep_time))}\n${statusLabel(b.status)}  •  📅 ${md(fmtDate(b.booked_at))}`;
         if (active && b.expiry_time) m += `\n⏰ *${tr('w1191_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
+        // v14.35 — طريقة الدفع وحالة السداد على بطاقة التاجر (طلب ناصر ٧).
+        // الدالة `bot_get_seller_bookings` تُرجع `payment_method` و`paid` منذ
+        // v13.11 ولم تكن البطاقة تعرض أيّاً منهما، فالتاجر يحضّر طلباً مدفوعاً
+        // إلكترونياً ولا يعرف أنه مدفوع — أو يسلّمه ظانّاً أنه دُفع وهو لم يُدفع.
+        m += `\n${md(payLine(b))}`;
         if (b.notes) m += `\n📝 _${md(b.notes)}_`;
         const rows = [];
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1942_confirm_and_prepare'), `ack:${b.barcode}`)]);
