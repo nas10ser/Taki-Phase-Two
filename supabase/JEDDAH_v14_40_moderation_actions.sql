@@ -170,9 +170,12 @@ BEGIN
 END
 $g$;
 
+-- 🪤 المفتاح الأساسي **مركّب** `(rpc_name, required_perm)`، فدالةٌ واحدة قد
+-- تحمل صفّين بصلاحيتين. و`is_admin()` تقرأ بـ`LIMIT 1` فتختار إحداهما عشوائياً
+-- — حارسٌ يتغيّر بتغيّر ترتيب الصفوف. نضمن صفّاً واحداً: حذفٌ ثم إدراج.
+DELETE FROM public.admin_rpc_permissions WHERE rpc_name IN ('admin_hide_deal','admin_delete_rating');
 INSERT INTO public.admin_rpc_permissions (rpc_name, required_perm) VALUES
-  ('admin_hide_deal','action_delete_deals'), ('admin_delete_rating','action_delete_deals')
-ON CONFLICT (rpc_name) DO UPDATE SET required_perm = EXCLUDED.required_perm;
+  ('admin_hide_deal','action_delete_deals'), ('admin_delete_rating','action_delete_deals');
 
 -- ── اسم المتجر يدخل الرقابة الآلية ─────────────────────────────────────────
 -- كان **الحقل الوحيد الذي يُنتحَل هو الحقل الوحيد غير المفحوص**: الماسح يقرأ

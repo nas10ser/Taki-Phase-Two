@@ -220,11 +220,14 @@ $g$;
 
 -- صلاحية مستقلّة `tab_delivery`: التوصيل قرارٌ تشغيليّ يُفوَّض لمن لا يُفوَّض
 -- له بالضرورة الاطّلاع على اشتراكات التجار ومبالغها.
+-- 🪤 المفتاح الأساسي مركّب، فـ`ON CONFLICT (rpc_name)` يفشل. وصفّان لدالةٍ
+-- واحدة يجعلان `is_admin()` (بـLIMIT 1) تختار حارساً عشوائياً.
+DELETE FROM public.admin_rpc_permissions WHERE rpc_name LIKE 'admin_delivery%'
+   OR rpc_name IN ('admin_set_delivery_global','admin_set_store_delivery');
 INSERT INTO public.admin_rpc_permissions (rpc_name, required_perm) VALUES
   ('admin_delivery_overview','tab_delivery'), ('admin_delivery_orders','tab_delivery'),
   ('admin_delivery_stores','tab_delivery'), ('admin_set_delivery_global','tab_delivery'),
-  ('admin_set_store_delivery','tab_delivery')
-ON CONFLICT (rpc_name) DO UPDATE SET required_perm = EXCLUDED.required_perm;
+  ('admin_set_store_delivery','tab_delivery');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- التحقّق
