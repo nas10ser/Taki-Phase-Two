@@ -121,7 +121,7 @@ BEGIN
     );
   END IF;
   RETURN jsonb_build_object('success',true,'user_name',COALESCE(v_b.user_name,'—'),'quantity',v_b.booked_quantity);
-END; $function$
+END; $function$;
 
 
 -- ════════════════════════════════════════════════════════════════════════════
