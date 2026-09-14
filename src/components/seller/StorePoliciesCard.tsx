@@ -27,8 +27,10 @@ export const StorePoliciesCard: React.FC = () => {
     const load = useCallback(async () => {
         if (!user?.id) return;
         const r = await refundRepository.storePolicies(user.id);
-        const p = r?.refundPolicy || '';
-        const t = r?.storeTerms || '';
+        // تعذّرت القراءة: لا نُفرغ الحقول ولا نفتح البطاقة كأنّ التاجر لم يكتب شيئاً.
+        if (!r.ok) return;
+        const p = r.refundPolicy || '';
+        const t = r.storeTerms || '';
         setPolicy(p); setTerms(t); setSaved({ p, t });
         // بطاقة فارغة تُفتح تلقائياً: التاجر يراها ولا يبحث عنها.
         if (!p && !t) setOpen(true);
@@ -71,7 +73,10 @@ export const StorePoliciesCard: React.FC = () => {
                     <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                         {isRTL ? 'سياسة الاسترداد والاستبدال وشروط متجرك' : 'Your refund, exchange and store terms'}
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: '0.74rem', color: empty ? '#b45309' : 'var(--text-secondary)', marginTop: 3 }}>
+                    {/* v14.24 — كهرمانيّ فاتح: الغامق (#b45309) على البطاقة الداكنة
+                        تباينُه ٣:١ عند ١٢px — فالسطر الوحيد المقصود أن يلفت النظر كان
+                        أصعب ما يُقرأ في الوضع الليلي. */}
+                    <div style={{ fontWeight: 700, fontSize: '0.74rem', color: empty ? 'var(--secondary, #f59e0b)' : 'var(--text-secondary)', marginTop: 3 }}>
                         {empty
                             ? (isRTL ? '⚠️ لم تكتبها بعد — المشتري لا يرى شيئاً قبل الحجز' : '⚠️ Not written yet — buyers see nothing before booking')
                             : (isRTL ? '✅ معلنة في صفحة متجرك وفي كل عروضك' : '✅ Published on your store page and every deal')}

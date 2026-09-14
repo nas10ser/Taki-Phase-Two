@@ -15,7 +15,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { refundRepository, BookingRefund } from '../repositories/refundRepository';
+import { refundRepository, mapRefundRow, BookingRefund } from '../repositories/refundRepository';
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
 
@@ -37,8 +37,16 @@ export const RefundAction: React.FC<{
     const [busy, setBusy] = useState(false);
     const [loaded, setLoaded] = useState(false);
 
-    const reload = useCallback(async () => {
+    // `force` بعد أي إجراء: الصفّ الممرَّر صار قديماً لحظتها، فلا يُقرأ منه.
+    const reload = useCallback(async (force = false) => {
         if (!paid || !booking?.barcode) { setLoaded(true); return; }
+        // v14.24 — الصفّ يحمل الحالة أصلاً (browse_bookings): نداءٌ لكل بطاقة
+        // كان يعني عشرين نداءً في صفحة واحدة، أغلبها يعود فارغاً.
+        if (!force && booking.refund !== undefined) {
+            setRefund(booking.refund ? mapRefundRow(booking.refund) : null);
+            setLoaded(true);
+            return;
+        }
         const r = await refundRepository.get(booking.barcode);
         setRefund(r);
         setLoaded(true);
@@ -103,6 +111,7 @@ export const RefundAction: React.FC<{
                         if (!ok) return;
                         const reason = await customPrompt(
                             isRTL ? 'سبب الطلب (اختياري) — يساعد التاجر على البتّ أسرع:' : 'Reason (optional):');
+                        if (reason == null) return;   // «إلغاء» يعني تراجُعاً لا إرسالاً
                         setBusy(true);
                         const res = await refundRepository.request(booking.barcode, String(reason || ''));
                         setBusy(false);
@@ -110,7 +119,7 @@ export const RefundAction: React.FC<{
                             await customAlert(isRTL ? '⚠️ تعذّر إرسال الطلب. حاول مجدداً.' : '⚠️ Could not send the request.');
                             return;
                         }
-                        await reload();
+                        await reload(true);
                         await onChanged?.();
                         await customAlert(isRTL
                             ? '✅ وصل طلبك للتاجر. سيصلك إشعار بقراره.'
@@ -144,7 +153,7 @@ export const RefundAction: React.FC<{
                         setBusy(true);
                         await refundRepository.withdraw(booking.barcode);
                         setBusy(false);
-                        await reload();
+                        await reload(true);
                         await onChanged?.();
                     }}
                     style={{ ...linkBtn, color: 'var(--text-secondary)', marginTop: 12 }}

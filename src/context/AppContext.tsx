@@ -3837,7 +3837,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
                         textAlign: 'center'
                     }}>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: 24, lineHeight: 1.6 }}>{dialogConfig.message}</div>
+                        {/* v14.24 — `whiteSpace: pre-line` يُبقي فواصل الأسطر. بدونها
+                            تنهار كل `\n` إلى مسافة واحدة، فتحذير الاسترداد الذي يذكر
+                            المبلغ في سطرٍ مستقلّ يصير جداراً من سبعين كلمة يُبتلع فيه
+                            الرقم — وهو أهمّ ما في الرسالة. */}
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: 24, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{dialogConfig.message}</div>
                         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
                             {dialogConfig.type === 'confirm' && (
                                 <button onClick={() => { dialogConfig.resolve(false); closeDialog(); }}
@@ -3864,7 +3868,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         width: '100%', maxWidth: 400, boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
                         textAlign: 'center'
                     }}>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: 20, color: 'var(--text-primary)' }}>{promptConfig.message}</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: 20, color: 'var(--text-primary)', whiteSpace: 'pre-line' }}>{promptConfig.message}</div>
                         <textarea 
                             id="custom-prompt-input"
                             autoFocus

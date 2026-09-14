@@ -88,6 +88,9 @@ export interface Booking {
      *  الفاتورة وفاتورة البوتين — رقم واحد لا ثلاثة. مجمّد، فتغيير التاجر
      *  لسعر العرض بعد الحجز لا يُغيّر فاتورة طلبٍ قائم. */
     totalAmount?: number;
+    /** v14.24 — حالة الاسترداد داخل الصفّ نفسه (من `browse_bookings`)، فلا
+     *  تُطلق كل بطاقة نداءً مستقلّاً. `null` = لا طلب استرداد على هذا الحجز. */
+    refund?: any | null;
     status: 'pending' | 'acknowledged' | 'completed' | 'cancelled';
     /** Messages exchanged on this booking. Up to 3 from each side
      *  (buyer + seller). Loaded lazily — undefined means "not fetched yet". */
@@ -149,6 +152,7 @@ export const mapBookingRow = (b: any, deal?: any): Booking => ({
     deliveryAddress: (b.delivery_address && typeof b.delivery_address === 'object') ? b.delivery_address : null,
     deliveryFee: b.delivery_fee != null ? Number(b.delivery_fee) : undefined,
     totalAmount: b.total_amount != null ? Number(b.total_amount) : undefined,
+    refund: b.refund ?? undefined,
     selectedOptions: Array.isArray(b.selected_options) ? b.selected_options : undefined,
     locationId: b.location_id || undefined,
     expiryTime: b.expiry_time,

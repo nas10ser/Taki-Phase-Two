@@ -5076,6 +5076,11 @@ const SellerDashboard: React.FC = () => {
                                                 style={{ width: '100%', marginTop: 12, padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer' }}>
                                                 {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
                                             </button>
+                                            {/* v14.24 — طلبُ استردادٍ مفتوح كان يختفي من اللوحتين بمجرّد
+                                                اكتمال الطلب: البطاقة تعيش في «نشطة» وحدها، والطلب ينتقل
+                                                للسجلّ بمسح الرمز أو بضغط المشتري «استلمت طلبي». فيبقى
+                                                المشتري ينتظر قراراً لا يرى التاجرُ مكانَه. */}
+                                            {order.paidAt && <RefundPanel order={order} isRTL={isRTL} onChanged={refreshOrderLists} />}
                                         </div>
                                     );
                                 })

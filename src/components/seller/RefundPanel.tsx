@@ -10,7 +10,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { refundRepository, BookingRefund } from '../../repositories/refundRepository';
+import { refundRepository, mapRefundRow, BookingRefund } from '../../repositories/refundRepository';
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
 
@@ -29,8 +29,16 @@ export const RefundPanel: React.FC<{
     const [busy, setBusy] = useState(false);
     const [ready, setReady] = useState(false);
 
-    const reload = useCallback(async () => {
+    // `force` بعد أي إجراء: الصفّ الممرَّر صار قديماً لحظتها، فلا يُقرأ منه.
+    const reload = useCallback(async (force = false) => {
         if (!paid || !order?.barcode) { setReady(true); return; }
+        // v14.24 — الصفّ يحمل الحالة أصلاً (browse_bookings): نداءٌ لكل بطاقة
+        // كان يعني عشرين نداءً في صفحة واحدة، أغلبها يعود فارغاً.
+        if (!force && order.refund !== undefined) {
+            setRefund(order.refund ? mapRefundRow(order.refund) : null);
+            setReady(true);
+            return;
+        }
         setRefund(await refundRepository.get(order.barcode));
         setReady(true);
     }, [paid, order?.barcode]);
@@ -61,13 +69,24 @@ export const RefundPanel: React.FC<{
         const ref = await customPrompt(isRTL
             ? 'رقم مرجع التحويل (من بوابتك أو بنكك) — يُطبع على الفاتورة:'
             : 'Transfer reference (from your gateway or bank) — printed on the invoice:');
+        // 🔴 v14.24 — ضغطُ «إلغاء» على هذه النافذة كان يمضي في التسجيل: يُختم
+        // الاسترداد ويُحرق رقمٌ من سلسلة الإشعارات الدائنة ويُلغى الطلب ويصل
+        // المشتري إشعار «أكّد التاجر ردّ المبلغ» — وهو لم يحوّل شيئاً بعد.
+        // خطوة لا رجعة فيها تُبنى على ضغطةِ تراجع.
+        if (ref == null) return;
+        if (!String(ref).trim()) {
+            await customAlert(isRTL
+                ? '⚠️ رقم المرجع مطلوب: هو إثبات التحويل ويُطبع على فاتورة المشتري.'
+                : '⚠️ A reference is required — it is the proof of transfer printed on the buyer\'s invoice.');
+            return;
+        }
         setBusy(true);
         const res = await refundRepository.resolve(order.barcode, 'refund', {
             amount: due, ref: String(ref || ''), method: isRTL ? 'بوابة الدفع' : 'gateway',
         });
         setBusy(false);
         if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
-        await reload(); await onChanged?.();
+        await reload(true); await onChanged?.();
         await customAlert(isRTL
             ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}${res.orderCancelled ? '\nوأُلغي الطلب وعادت الكمّية للبيع.' : '\nوالطلب مغلق أصلاً، فلم تعد كمّيته للبيع.'}`
             : `✅ Refund recorded. Credit note: ${res.creditNoteNo}${res.orderCancelled ? '\nThe order was cancelled and the stock returned.' : '\nThe order was already closed, so the stock did not return.'}`);
@@ -75,6 +94,8 @@ export const RefundPanel: React.FC<{
 
     // ── لا طلب بعد: التاجر يملك إلغاءً يُسجّل الدَّين عليه ─────────────────
     if (!refund || refund.status === 'withdrawn' || refund.status === 'declined') {
+        // طلبٌ مغلق بلا طلب استرداد قائم: لا شيء يُعرض. أمّا الطلب المفتوح
+        // فيُعرض له زرّ «أقرّ الإلغاء».
         if (!(order.status === 'pending' || order.status === 'acknowledged')) return null;
         return (
             <div style={wrap}>
@@ -101,11 +122,12 @@ export const RefundPanel: React.FC<{
                                 : `⚠️ Approve cancelling a paid order\n\n${money(amount)} SAR is recorded as owed to the buyer and they are notified.\n\nThe order stays open until you confirm the transfer from this card — only then is it closed and the stock returned.\n\nContinue?`);
                             if (!ok) return;
                             const note = await customPrompt(isRTL ? 'سبب الإلغاء (يصل المشتري):' : 'Cancellation reason (sent to the buyer):');
+                            if (note == null) return;   // «إلغاء» يعني تراجُعاً لا متابعة
                             setBusy(true);
                             const res = await refundRepository.resolve(order.barcode, 'open', { note: String(note || '') });
                             setBusy(false);
                             if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
-                            await reload(); await onChanged?.();
+                            await reload(true); await onChanged?.();
                         }}>
                         {isRTL ? '❌ أقرّ الإلغاء وسجّل الدَّين' : '❌ Approve cancelling & record the debt'}
                     </button>
@@ -146,7 +168,7 @@ export const RefundPanel: React.FC<{
                             const res = await refundRepository.resolve(order.barcode, 'decline', { note: String(note || '') });
                             setBusy(false);
                             if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
-                            await reload(); await onChanged?.();
+                            await reload(true); await onChanged?.();
                         }}>
                         {isRTL ? '↩️ اعتذار وفق السياسة' : '↩️ Decline per policy'}
                     </button>
@@ -163,8 +185,9 @@ export const RefundPanel: React.FC<{
                     💛 {isRTL ? `مبلغ مستحقّ للمشتري — ${money(refund.amount)} ر.س` : `Owed to the buyer — ${money(refund.amount)} SAR`}
                 </div>
                 <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
-                    {isRTL ? 'الطلب ما زال قائماً. حوِّل المبلغ من بوابتك ثم أكّده هنا — عندها يُغلق الطلب ويُسجَّل إشعار دائن على الفاتورة.'
-                           : 'Transfer it from your gateway, then confirm here so a credit note is recorded on the invoice.'}
+                    {isRTL
+                        ? `${(order.status === 'pending' || order.status === 'acknowledged') ? 'الطلب ما زال قائماً. ' : ''}حوِّل المبلغ من بوابتك ثم أكّده هنا ليُسجَّل إشعار دائن على الفاتورة.`
+                        : 'Transfer it from your gateway, then confirm here so a credit note is recorded on the invoice.'}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                     <button disabled={busy} style={btn('linear-gradient(135deg,#10b981,#059669)')}

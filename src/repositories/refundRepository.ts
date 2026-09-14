@@ -32,7 +32,9 @@ export interface BookingRefund {
     creditNoteNo?: string | null;
 }
 
-const map = (r: any): BookingRefund | null => r ? ({
+/** يحوّل صفّ القاعدة إلى الشكل الذي تقرؤه الواجهة. مُصدَّر لأن الصفّ
+ *  قد يصل داخل `browse_bookings` بلا نداء منفصل (v14.24). */
+export const mapRefundRow = (r: any): BookingRefund | null => r ? ({
     barcode: r.barcode,
     status: r.status,
     amount: Number(r.amount) || 0,
@@ -54,7 +56,7 @@ export const refundRepository = {
         try {
             const { data, error } = await supabase.rpc('get_booking_refund', { p_barcode: barcode });
             if (error) { logger.warn('get_booking_refund:', error.message); return null; }
-            return map(data);
+            return mapRefundRow(data);
         } catch { return null; }
     },
 
@@ -102,14 +104,19 @@ export const refundRepository = {
         return { ok: true, creditNoteNo: d.credit_note_no, orderCancelled: !!d.order_cancelled };
     },
 
-    /** السياسة المعلنة لمتجر — يقرؤها الزائر قبل الحجز. */
-    storePolicies: async (storeId: string): Promise<{ refundPolicy?: string; storeTerms?: string } | null> => {
+    /**
+     * السياسة المعلنة لمتجر — يقرؤها الزائر قبل الحجز.
+     * 🪤 يجب التفريق بين «أجاب الخادم ولا سياسة» و«لم يُجب»: كان الفشل العابر
+     * يُترجَم على الشاشة «لم يُعلن هذا المتجر سياسة استرداد» — نفيٌ قاطع عن
+     * تاجرٍ أعلنها. `ok:false` تعني «تعذّرت القراءة»، لا «لا شيء».
+     */
+    storePolicies: async (storeId: string): Promise<{ ok: boolean; refundPolicy?: string; storeTerms?: string }> => {
         try {
-            const { data } = await supabase.rpc('store_policies', { p_store_id: storeId });
-            const d: any = data || null;
-            if (!d) return null;
-            return { refundPolicy: d.refund_policy || undefined, storeTerms: d.store_terms || undefined };
-        } catch { return null; }
+            const { data, error } = await supabase.rpc('store_policies', { p_store_id: storeId });
+            if (error) { logger.warn('store_policies:', error.message); return { ok: false }; }
+            const d: any = data || {};
+            return { ok: true, refundPolicy: d.refund_policy || undefined, storeTerms: d.store_terms || undefined };
+        } catch { return { ok: false }; }
     },
 
     /** التاجر يحفظ سياسته وشروطه. */

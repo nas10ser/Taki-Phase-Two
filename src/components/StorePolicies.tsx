@@ -16,7 +16,7 @@ import { refundRepository } from '../repositories/refundRepository';
 export const StorePolicies: React.FC<{ storeId?: string | null; compact?: boolean }> = ({ storeId, compact = false }) => {
     const { language } = useApp();
     const isRTL = language === 'ar';
-    const [data, setData] = useState<{ refundPolicy?: string; storeTerms?: string } | null>(null);
+    const [data, setData] = useState<{ ok: boolean; refundPolicy?: string; storeTerms?: string } | null>(null);
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
@@ -29,6 +29,7 @@ export const StorePolicies: React.FC<{ storeId?: string | null; compact?: boolea
     }, [storeId]);
 
     if (!ready) return null;
+    const failed = !data || data.ok === false;
     const policy = data?.refundPolicy?.trim();
     const terms = data?.storeTerms?.trim();
 
@@ -52,9 +53,13 @@ export const StorePolicies: React.FC<{ storeId?: string | null; compact?: boolea
                 }}>{policy}</p>
             ) : (
                 <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.9, color: 'var(--text-secondary)' }}>
-                    {isRTL
-                        ? 'لم يُعلن هذا المتجر سياسة استرداد واستبدال. اسأله عبر المحادثة قبل الحجز.'
-                        : 'This store has not published a refund policy. Ask them in the chat before booking.'}
+                    {failed
+                        ? (isRTL
+                            ? 'تعذّر تحميل سياسة المتجر الآن — حدّث الصفحة، أو اسأل التاجر عبر المحادثة قبل الحجز.'
+                            : 'Could not load the store policy right now — refresh, or ask the merchant in the chat before booking.')
+                        : (isRTL
+                            ? 'لم يُعلن هذا المتجر سياسة استرداد واستبدال. اسأله عبر المحادثة قبل الحجز.'
+                            : 'This store has not published a refund policy. Ask them in the chat before booking.')}
                 </p>
             )}
 

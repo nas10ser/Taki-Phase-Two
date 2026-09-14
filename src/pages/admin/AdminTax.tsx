@@ -153,7 +153,7 @@ const MerchantVatCard: React.FC = () => {
         setBusy(false);
         if (error) { await customAlert('❌ ' + error.message); return; }
         setSaved(String(n));
-        await customAlert(`✅ حُفظت النسبة (${n}٪). تسري على الطلبات **الجديدة** فقط — الفواتير الصادرة تحتفظ بنسبتها المجمّدة.`);
+        await customAlert(`✅ حُفظت النسبة (${n}٪).\nتسري على الطلبات الجديدة فقط — والفواتير الصادرة تحتفظ بنسبتها كما جُمِّدت.`);
     };
 
     return (
