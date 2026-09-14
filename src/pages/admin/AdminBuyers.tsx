@@ -118,7 +118,18 @@ const UserEditModal = memo<{
         // "جاري الحفظ..." (v11.22).
         let res: { success: boolean; error?: string } = { success: false };
         try {
-            res = await adminService.updateUser(user.id, form);
+            // v14.32 — الإيقاف لا يمرّ مع بقية الحقول: `admin_update_user` تضبط
+            // العمود ولا تمنع دخولاً ولا تُنهي جلسة ولا تُشعر أحداً. المسار
+            // الصحيح دالةٌ مستقلّة، فنفصله عن الحفظ العادي.
+            const wantsSuspendChange = form.is_suspended !== !!user.is_suspended;
+            const { is_suspended: _drop, ...rest } = form as any;
+            res = await adminService.updateUser(user.id, rest);
+            if (res.success && wantsSuspendChange) {
+                const sr = await adminService.suspendAccount(
+                    user.id, form.is_suspended,
+                    form.is_suspended ? (form.admin_notes || 'قرار إداري') : undefined);
+                if (!sr.success) res = { success: false, error: sr.error };
+            }
         } catch (e: any) {
             res = { success: false, error: e?.message || 'فشل الحفظ' };
         } finally {
@@ -278,7 +289,8 @@ const UserEditModal = memo<{
                         <div>
                             <div className="font-bold text-sm text-red-800">تعليق الحساب</div>
                             <div className="text-xs text-red-600 mt-0.5">
-                                المستخدم لن يستطيع تسجيل الدخول
+                                يُمنع من الدخول فوراً · تُنهى جلساته المفتوحة · وإن كان
+                                تاجراً تختفي عروضه ولا ينشر غيرها
                             </div>
                         </div>
                         <button
@@ -585,14 +597,14 @@ const AdminBuyers: React.FC = () => {
         if (selected.size === 0) return;
         const ok = await customConfirm(
             `${suspend ? 'تعليق' : 'استرجاع'} ${selected.size} حساب؟${
-                suspend ? '\nالحسابات المُعلَّقة لا تستطيع تسجيل الدخول.' : ''
+                suspend ? '\nسيُمنعون من الدخول فوراً وتُنهى جلساتهم المفتوحة.' : ''
             }`
         );
         if (!ok) return;
         setBulkBusy(true);
         const ids = Array.from(selected);
         const results = await Promise.allSettled(
-            ids.map((id) => adminService.updateUser(id, { is_suspended: suspend }))
+            ids.map((id) => adminService.suspendAccount(id, suspend, suspend ? 'قرار إداري جماعي' : undefined))
         );
         const okCount = results.filter(
             (r) => r.status === 'fulfilled' && (r.value as any).success,

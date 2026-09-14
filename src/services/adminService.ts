@@ -354,6 +354,31 @@ export const adminService = {
         return { success: !!data?.success };
     },
 
+    /**
+     * إيقاف حساب أو إعادة تفعيله (v14.32).
+     *
+     * 🪤 كان الإيقاف يمرّ عبر `admin_update_user({is_suspended})` — أي أنه يضبط
+     * عموداً ولا يفعل شيئاً آخر. والعمود يُقرأ في **حارس الحجز وحده**: الموقوف
+     * يسجّل الدخول متى شاء، وجلسته المفتوحة تبقى تعمل، ويتصفّح ويحادث ويقيّم.
+     * واللوحة تقول له «لن يتمكّن من استخدام المنصّة».
+     *
+     * `admin_suspend_account` هي المسار الصحيح: تمنع الدخول فعلاً، وتنهي
+     * الجلسات القائمة، وتُسجّل السبب إنذاراً، وتُشعر صاحب الحساب.
+     */
+    async suspendAccount(
+        userId: string, suspend: boolean, reason?: string,
+    ): Promise<{ success: boolean; sessionsKilled?: number; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_suspend_account', {
+            p_user_id: userId, p_suspend: suspend, p_reason: reason || null,
+        });
+        if (error) {
+            console.error('[adminService.suspendAccount]', error);
+            return { success: false, error: error.message };
+        }
+        clearAdminCache();
+        return { success: !!(data as any)?.success, sessionsKilled: Number((data as any)?.sessions_killed) || 0 };
+    },
+
     async softDeleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
         const { data, error } = await supabase.rpc('admin_soft_delete_user', {
             p_user_id: userId,

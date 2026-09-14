@@ -2649,6 +2649,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     : '⛔ This deal is no longer available — the merchant paused it or it ended. Refresh to see live deals.');
                 return;
             }
+            // v14.32 — رفضُ الحارس بسبب الإيقاف أو تعليق الحجز كان يسقط في فرع
+            // «تحقق من اتصالك»، فيقرأ الموقوف أن المشكلة في الإنترنت ويعيد
+            // المحاولة مراراً ويتّصل بالدعم شاكياً من «عطل في الموقع». القاعدة
+            // ترفع نصّاً عربياً واضحاً بالفعل — فلنُوصله كما هو.
+            if (/حسابك موقوف|تم تعليق الحجز|حسابك معلّق/.test(msg)) {
+                reject(`⛔ ${msg}`);
+                return;
+            }
+            if (/P0018|لا يمكنك نشر عروض/.test(msg)) {
+                reject(`⛔ ${msg}`);
+                return;
+            }
             const isRateReject = /محاولات|الحد الأقصى لعدد/.test(msg);
             reject(language === 'ar'
                 ? (isRateReject ? msg : `⚠️ لم يكتمل تسجيل الحجز — تحقق من اتصالك وحاول مرة أخرى.${msg ? `\n(${msg})` : ''}`)

@@ -143,10 +143,24 @@ const AdminReports: React.FC = () => {
     };
 
     const toggleSuspend = async (userId: string, suspend: boolean, name: string) => {
-        const ok = await customConfirm(suspend ? `إيقاف حساب «${name}»؟ لن يتمكّن من استخدام المنصّة.` : `إعادة تفعيل حساب «${name}»؟`);
+        if (suspend) {
+            // السبب ليس تحسيناً: هو ما يظهر لصاحب الحساب في إشعاره وفي سجلّ
+            // إنذاراته، وما تعود إليه أنت بعد شهر حين يسألك «لماذا أُوقفت؟».
+            const reason = await customPrompt(
+                `⛔ إيقاف حساب «${name}»\n\nسيُمنع من تسجيل الدخول فوراً، وتُنهى جلساته المفتوحة، وإن كان تاجراً تختفي عروضه من المنصّة ولا يستطيع نشر غيرها.\n\nاكتب السبب (يصل صاحب الحساب ويُحفظ في سجلّه):`);
+            if (reason == null) return;
+            const txt = String(reason).trim();
+            if (txt.length < 3) { await customAlert('⚠️ اكتب سبباً واضحاً — يصل صاحب الحساب.'); return; }
+            const r = await adminService.suspendAccount(userId, true, txt);
+            if (!r.success) { customAlert('❌ تعذّر تنفيذ الإجراء'); return; }
+            await customAlert(`⛔ أُوقف الحساب.\n• مُنع من تسجيل الدخول\n• أُنهيت ${r.sessionsKilled || 0} جلسة مفتوحة\n• وصله إشعار بالسبب`);
+            load();
+            return;
+        }
+        const ok = await customConfirm(`إعادة تفعيل حساب «${name}»؟ سيعود الدخول والعروض كما كانت.`);
         if (!ok) return;
-        const r = await adminService.updateUser(userId, { is_suspended: suspend });
-        if (r.success) { await customAlert(suspend ? '⛔ تم إيقاف الحساب' : '✅ تم إعادة التفعيل'); load(); }
+        const r = await adminService.suspendAccount(userId, false);
+        if (r.success) { await customAlert('✅ تم إعادة التفعيل'); load(); }
         else customAlert('❌ تعذّر تنفيذ الإجراء');
     };
 
