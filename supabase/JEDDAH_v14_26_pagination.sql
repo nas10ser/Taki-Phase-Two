@@ -80,7 +80,13 @@ BEGIN
     'unread_total', v_unread, 'total', v_total);
 END $$;
 
+-- 🪤 فخّان متعاكسان، ولا بدّ من الاثنين معاً:
+--   • الإلغاء من `anon` وحده لا يفعل شيئاً — المنح موروث من `PUBLIC`.
+--   • والإلغاء من `PUBLIC` وحده لا يكفي — Supabase يمنح `anon` منحاً **مباشراً**
+--     على كل دالة جديدة في `public`، وهو منحٌ مستقلّ لا يزيله الأول.
+-- القياس أثبته: بعد REVOKE … FROM PUBLIC وحده قال الفحص «❌ الزائر يملك التنفيذ».
 REVOKE ALL ON FUNCTION public.browse_notifications(timestamptz, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.browse_notifications(timestamptz, text, integer) FROM anon;
 GRANT EXECUTE ON FUNCTION public.browse_notifications(timestamptz, text, integer) TO authenticated;
 
 -- ── ٢. المراجعات ───────────────────────────────────────────────────────────
