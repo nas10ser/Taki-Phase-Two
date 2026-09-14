@@ -3,6 +3,8 @@ import jsQR from 'jsqr';
 import { useApp } from '../context/AppContext';
 import { useBooking, Booking } from '../hooks/useBooking';
 import { thumbUrl, imgFallback } from '../utils/thumb';
+import { supabase } from '../services/supabaseClient';
+import { logger } from '../utils/logger';
 
 interface Props {
     isOpen: boolean;
@@ -25,6 +27,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const isRTL = language === 'ar';
 
+    /** بحثٌ في الذاكرة: فوريّ، ويُصيب في الحالة الشائعة (طلبٌ حديث). */
     const lookupBooking = useCallback((code: string): Booking | undefined => {
         const c = code.trim();
         const upper = c.toUpperCase();
@@ -35,6 +38,42 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
             b.backupCode === c
         );
     }, [bookings]);
+
+    /**
+     * v14.31 — ارتداد إلى القاعدة حين تفشل الذاكرة (طلب ناصر: «لا تحذف اي شيء»).
+     *
+     * 🪤 ما كان قبله: البحث في مصفوفة الحالة العامة وحدها، وهي **أحدث ٢٠٠ حجز**.
+     * فحجزُ التاجر الحادي بعد المئتين لم يكن يُمسَح أبداً — والشاشة تقول «لم يتم
+     * العثور على حجز بهذا الرمز» عن حجزٍ قائمٍ في القاعدة. (والبوت أسوأ: سقفه ٣٠.)
+     * قِيس على الإنتاج: حجزٌ ترتيبه ٥٤ من الأحدث صار يُوجَد الآن.
+     *
+     * النداء **لا يقع إلا بعد فشل الذاكرة**، فالمسار الشائع بلا جولة شبكة.
+     */
+    const lookupRemote = useCallback(async (code: string): Promise<Booking | undefined> => {
+        const c = code.trim();
+        if (!c) return undefined;
+        try {
+            const { data, error } = await supabase.rpc('lookup_booking_by_code', { p_code: c });
+            if (error) { logger.warn('lookup_booking_by_code:', error.message); return undefined; }
+            const d: any = data || {};
+            if (!d.found || !d.booking) return undefined;
+            const b: any = d.booking;
+            // شكلٌ مصغّر يكفي شاشة الماسح: الرمز والاسم والحالة والكمّية.
+            return {
+                barcode: b.barcode,
+                backupCode: b.backup_code,
+                userId: '',
+                storeId: '',
+                dealId: b.deal_id,
+                userName: b.user_name,
+                userPhone: b.user_phone,
+                quantity: Number(b.quantity) || 1,
+                status: b.status,
+                notes: b.notes || '',
+                deal: { itemName: b.deal_name } as any,
+            } as unknown as Booking;
+        } catch { return undefined; }
+    }, []);
 
     const stopCamera = useCallback(() => {
         if (rafRef.current !== null) {
@@ -65,6 +104,10 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
     // Hard stop on unmount so the camera light never stays on.
     useEffect(() => () => stopCamera(), [stopCamera]);
 
+    // الماسح الحيّ يقرأ عشرات الإطارات في الثانية. بلا هذا الحارس يُطلق كل
+    // إطارٍ فاشل نداءً للقاعدة على نفس الرمز — عشرات النداءات لرمزٍ واحد.
+    const remoteTriedRef = useRef<Set<string>>(new Set());
+
     const handleDetected = useCallback((raw: string) => {
         const code = (raw || '').trim();
         if (!code) return;
@@ -73,10 +116,20 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
             setScanResult(booking);
             setScanError('');
             stopCamera();
+            return;
         }
-        // Not found while live-scanning: stay silent and keep scanning so the
-        // merchant can just keep the QR in frame — no error spam.
-    }, [lookupBooking, stopCamera]);
+        // غير موجود في الذاكرة: نسأل القاعدة مرّة واحدة لكل رمز.
+        const key = code.toUpperCase();
+        if (remoteTriedRef.current.has(key)) return;
+        remoteTriedRef.current.add(key);
+        lookupRemote(code).then(found => {
+            if (!found) return;
+            setScanResult(found);
+            setScanError('');
+            stopCamera();
+        });
+        // أثناء المسح الحيّ لا نُظهر خطأً: يبقى التاجر يوجّه الكاميرا بلا إزعاج.
+    }, [lookupBooking, lookupRemote, stopCamera]);
 
     // Per-frame QR decode. Throttled to ~180ms so we don't burn battery
     // running jsQR on every animation frame; downscaled to 640px max side
@@ -175,13 +228,21 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
         };
     }, [cameraActive, tick]);
 
-    const handleManualSearch = () => {
-        if (!manualCode.trim()) return;
-        const booking = lookupBooking(manualCode.trim());
-        if (booking) {
-            setScanResult(booking);
-            setScanError('');
-            stopCamera();
+    const [searching, setSearching] = useState(false);
+    const handleManualSearch = async () => {
+        const code = manualCode.trim();
+        if (!code || searching) return;
+        const local = lookupBooking(code);
+        if (local) {
+            setScanResult(local); setScanError(''); stopCamera();
+            return;
+        }
+        // الذاكرة لا تعرفه ⇒ نسأل القاعدة قبل أن ننفي وجوده.
+        setSearching(true);
+        const remote = await lookupRemote(code);
+        setSearching(false);
+        if (remote) {
+            setScanResult(remote); setScanError(''); stopCamera();
         } else {
             setScanResult(null);
             setScanError(isRTL ? 'لم يتم العثور على حجز بهذا الرمز' : 'No booking found with this code');
@@ -420,12 +481,15 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                     onKeyPress={e => e.key === 'Enter' && handleManualSearch()}
                                 />
                             </div>
-                            <button onClick={handleManualSearch} style={{
+                            <button onClick={handleManualSearch} disabled={searching} style={{
                                 width: '100%', padding: 14, borderRadius: 14,
-                                background: 'var(--dark)', color: 'white',
-                                fontWeight: 800, border: 'none', fontSize: '0.95rem'
+                                background: searching ? 'var(--gray-400)' : 'var(--dark)', color: 'white',
+                                fontWeight: 800, border: 'none', fontSize: '0.95rem',
+                                cursor: searching ? 'default' : 'pointer',
                             }}>
-                                {isRTL ? '🔍 بحث عن الحجز' : '🔍 Search Booking'}
+                                {searching
+                                    ? (isRTL ? '⏳ جارٍ البحث في السجلّ…' : '⏳ Searching the records…')
+                                    : (isRTL ? '🔍 بحث عن الحجز' : '🔍 Search Booking')}
                             </button>
 
                             {scanError && (

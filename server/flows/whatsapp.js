@@ -787,7 +787,13 @@ function create(deps) {
         const all = await rpc('bot_get_my_bookings', aid(from, { p_scope: 'all' })) || [];
         s.temp.bkCache = s.temp.bkCache || {};
         all.forEach(x => { s.temp.bkCache[x.barcode] = x; });
-        const b = bkVal(s, bc);
+        let b = bkVal(s, bc);
+        // v14.31 — القائمة مسقوفة بـ٢٠ صفّاً، فطلبٌ أقدم لم يكن يُوجَد أبداً.
+        // نسأل القاعدة عن هذا الباركود وحده قبل أن ننفي وجوده.
+        if (!b) {
+            const one = await rpc('bot_lookup_booking', aid(from, { p_code: bc }));
+            if (one && one.success && one.booking) { b = one.booking; s.temp.bkCache[b.barcode] = b; }
+        }
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:bookings', title: tr('menu_bookings_buyer') }] });
         // v12.81 — الدفع المباشر لحساب التاجر: فحص خفيف (خلف بوابة السر) هل
         // الحجز قابل للدفع الإلكتروني أو مدفوع أصلاً. لا منطق دفع في البوت.
@@ -1341,7 +1347,13 @@ function create(deps) {
         const all = await rpc('bot_get_seller_bookings', aid(from, { p_scope: 'all' })) || [];
         s.temp.soCache = s.temp.soCache || {};
         all.forEach(x => { s.temp.soCache[x.barcode] = x; });
-        const b = soVal(s, bc);
+        let b = soVal(s, bc);
+        // v14.31 — سقف القائمة ٣٠ صفّاً. طلبُ التاجر الحادي والثلاثون كان يُقابَل
+        // بـ«انتهت الجلسة» وهو قائمٌ في القاعدة. نسأل عنه وحده قبل النفي.
+        if (!b) {
+            const one = await rpc('bot_lookup_booking', aid(from, { p_code: bc }));
+            if (one && one.success && one.booking) { b = one.booking; s.temp.soCache[b.barcode] = b; }
+        }
         if (!b) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:orders', title: tr('menu_seller_bookings') }] });
         let dlv = '';
         if (b.fulfillment === 'delivery') {

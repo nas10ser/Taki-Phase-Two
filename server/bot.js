@@ -82,7 +82,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.30.0';
+const BOT_VERSION              = '14.31.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2061,6 +2061,18 @@ async function renderOneBooking(ctx, barcode, roleCtx){
     };
     if (roleCtx === 'b') { if (!(await tryBuyer())) await trySeller(); }
     else { if (!(await trySeller())) await tryBuyer(); }
+
+    // v14.31 — الارتداد إلى القاعدة (طلب ناصر ١٠: «لا تحذف اي شيء»).
+    // 🪤 القائمتان أعلاه **مسقوفتان**: `bot_get_seller_bookings` تُرجع ٣٠ صفّاً
+    // و`bot_get_my_bookings` تُرجع ٢٠. فحجزُ التاجر الحادي والثلاثون لم يكن
+    // يُوجَد أبداً، والبوت يقول «لم نعد نجد هذا الحجز» عن حجزٍ قائم.
+    // قِيس على الإنتاج: حجزٌ ترتيبه ٥٤ من الأحدث صار يُوجَد.
+    // النداء لا يقع إلا بعد فشل القائمتين، فالمسار الشائع بلا جولة إضافية.
+    if (!b) {
+        const one = await rpc('bot_lookup_booking', { p_telegram_id: tgId(ctx), p_code: bc });
+        if (one && one.success && one.booking) { b = one.booking; seller = one.role === 'seller'; }
+    }
+
     const listCb = seller?'seller:bookings':'buyer:bookings';
     if (!b) return ctx.reply(tr('b1248_booking_not_found'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1248_bookings'), listCb)]]).reply_markup });
     const active = b.status==='pending'||b.status==='acknowledged';
