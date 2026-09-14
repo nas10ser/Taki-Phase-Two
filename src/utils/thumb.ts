@@ -92,6 +92,11 @@ export const imgFallback = (original?: string | null, placeholder: string = FALL
     (e: React.SyntheticEvent<HTMLImageElement>): void => {
         const img = e.currentTarget;
         const full = String(original || '');
+        // v14.28 — `srcset` يتقدّم على `src` دائماً في اختيار المتصفّح. فتعيينُ
+        // `src` وحده هنا كان سيبقى بلا أثر ما دام `srcset` قائماً، ويظلّ
+        // المصدر المكسور هو المختار. نمسحهما معاً قبل الارتداد.
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
         if (full && img.dataset.imgStep !== 'full' && img.dataset.imgStep !== 'placeholder' && img.src !== full) {
             img.dataset.imgStep = 'full';
             img.src = full;
@@ -101,3 +106,46 @@ export const imgFallback = (original?: string | null, placeholder: string = FALL
         img.dataset.imgStep = 'placeholder';
         img.src = placeholder;
     };
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * v14.28 — الحجم بحسب حجم العرض، لا حجماً واحداً للجميع
+ * ═══════════════════════════════════════════════════════════════════════════
+ * قِيس على صورة حقيقية من الإنتاج (١٤ سبتمبر ٢٠٢٦):
+ *
+ *   الأصل           ١٢٣٫٩ ك.ب
+ *   المصغّرة ٦٠٠     ٥٧٫٨ ك.ب   ← ما كان يُرسل لكل بطاقة مهما صَغُرت
+ *   ٤٠٠ بكسل        ٢٨٫٥ ك.ب
+ *   ٢٠٠ بكسل         ٨٫٨ ك.ب   ← أصغر ٦٫٦ مرّات
+ *
+ * بطاقةٌ عرضها ١٧٠ بكسل على جوال كانت تُنزّل ٥٧٫٨ ك.ب. الآن يختار المتصفّح
+ * بنفسه بحسب عرض البطاقة وكثافة الشاشة، فجهازٌ عادي يأخذ ٢٠٠ وجهازٌ عالي
+ * الكثافة يأخذ ٤٠٠ — ولا أحد يُنزّل ما لا يراه.
+ *
+ * لماذا `render/image` وليس ملفات ثابتة: توليد أربع مصغّرات لكل صورة عند
+ * الرفع يعني أربعة أضعاف التخزين وأربع فرص للفشل. والمحوّل يُخزَّن مؤقّتاً
+ * سنةً كاملة (قِيس بعد إصلاح خاصّية الملفات في v14.28)، فالتكلفة مرّة واحدة.
+ */
+const SRCSET_WIDTHS = [200, 300, 400, 600, 900];
+
+/** `srcset` بعروض متعدّدة — أو سلسلة فارغة لصورة ليست في مستودعنا. */
+export const thumbSrcSet = (url?: string | null): string => {
+    const u = String(url || '');
+    if (!u) return '';
+    const m = u.match(SUPABASE_DEAL_IMAGE);
+    if (!m) return '';                       // خارجية: لا نتحكّم في أحجامها
+    if (/_t$/i.test(m[1])) return '';        // مصغّرة ثابتة: حجمٌ واحد لا خيار فيه
+    const q = m[3] || '';
+    const sep = q ? '&' : '?';
+    const base = u.replace('/storage/v1/object/public/deals/', '/storage/v1/render/image/public/deals/');
+    return SRCSET_WIDTHS.map(w => `${base}${sep}width=${w}&quality=${THUMB_QUALITY} ${w}w`).join(', ');
+};
+
+/**
+ * `sizes` للبطاقات في الشبكة. بلا هذا يفترض المتصفّح أن الصورة بعرض الشاشة
+ * كاملاً فيختار أكبر مقاس في `srcset` — أي أن srcset بلا sizes يضرّ ولا ينفع.
+ */
+export const CARD_SIZES = '(max-width: 480px) 45vw, (max-width: 900px) 30vw, 300px';
+
+/** `sizes` لصورة تملأ عرض الشاشة (صفحة المنتج، العارض). */
+export const FULL_SIZES = '100vw';

@@ -12,7 +12,7 @@ import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { isDealComingSoon, sponsorLabelText, SponsorLabel, getAuthenticityBadge } from '../utils/helpers';
 import { getShopStatus } from '../utils/workingHours';
-import { thumbUrl, imgFallback } from '../utils/thumb';
+import { thumbUrl, thumbSrcSet, CARD_SIZES, imgFallback } from '../utils/thumb';
 import DealCountdown from './DealCountdown';
 
 interface Props {
@@ -138,6 +138,8 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                        أكثر. الصور المرفوعة قبل v13.32 بلا مصغّرة، فـonError يرتدّ
                        للأصل ثم للصورة البديلة. */
                     src={thumbUrl(imageUrl)}
+                    srcSet={thumbSrcSet(imageUrl) || undefined}
+                    sizes={thumbSrcSet(imageUrl) ? CARD_SIZES : undefined}
                     loading="lazy"
                     decoding="async"
                     width={400}

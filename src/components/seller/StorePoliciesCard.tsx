@@ -15,8 +15,29 @@ import { refundRepository } from '../../repositories/refundRepository';
 
 const MAX = 1500;
 
+/**
+ * نموذج جاهز يعدّله التاجر (v14.28، قرار ناصر: «لا تُلزم، ولكن اكتب تحذيراً»).
+ * كُتب ليكون صالحاً كما هو لمتجرٍ عادي، ومع ذلك كل سطر فيه قابل للحذف أو
+ * التغيير — فالسياسة سياسة التاجر لا سياسة تاكي.
+ */
+const TEMPLATE_AR = `• الاستبدال أو الاسترداد خلال ٣ أيام من الاستلام، بالفاتورة أو رقم الطلب.
+• يجب أن يكون المنتج بحالته الأصلية وبكامل تغليفه وملحقاته وغير مستعمل.
+• لا استرداد نقدي على: المنتجات الغذائية، ومنتجات العناية الشخصية المفتوحة، والمنتجات المخفَّضة تخفيضاً نهائياً.
+• المنتج المعيب أو المخالف للوصف: نستبدله أو نردّ قيمته كاملة، ونتحمّل نحن تكلفة الإرجاع.
+• تغيير الرأي: يتحمّل المشتري تكلفة الإرجاع.
+• مدّة وصول المبلغ المُعاد تحدّدها جهة الدفع (البنك أو البوابة).
+• للتواصل: راسلنا عبر محادثة الطلب داخل تاكي.`;
+
+const TEMPLATE_EN = `• Exchange or refund within 3 days of receipt, with the receipt or order number.
+• The item must be unused, in its original condition, packaging and accessories.
+• No cash refunds on: food items, opened personal-care products, and final-sale discounted items.
+• Faulty or not-as-described items: we replace them or refund in full and cover the return cost.
+• Change of mind: the buyer covers the return cost.
+• The time for a refund to reach your account is set by your bank or the payment provider.
+• Contact us through the order chat inside TAKI.`;
+
 export const StorePoliciesCard: React.FC = () => {
-    const { user, language, customAlert } = useApp();
+    const { user, language, customAlert, customConfirm } = useApp();
     const isRTL = language === 'ar';
     const [policy, setPolicy] = useState('');
     const [terms, setTerms] = useState('');
@@ -78,7 +99,7 @@ export const StorePoliciesCard: React.FC = () => {
                         أصعب ما يُقرأ في الوضع الليلي. */}
                     <div style={{ fontWeight: 700, fontSize: '0.74rem', color: empty ? 'var(--secondary, #f59e0b)' : 'var(--text-secondary)', marginTop: 3 }}>
                         {empty
-                            ? (isRTL ? '⚠️ لم تكتبها بعد — المشتري لا يرى شيئاً قبل الحجز' : '⚠️ Not written yet — buyers see nothing before booking')
+                            ? (isRTL ? '⚠️ لم تكتبها بعد — صفحاتك تقول للمشتري: «لم يُعلن هذا المتجر سياسة استرداد»' : '⚠️ Not written yet — your pages tell buyers: "this store has not published a refund policy"')
                             : (isRTL ? '✅ معلنة في صفحة متجرك وفي كل عروضك' : '✅ Published on your store page and every deal')}
                     </div>
                 </div>
@@ -97,7 +118,39 @@ export const StorePoliciesCard: React.FC = () => {
                             : 'What you write here is shown to buyers before they book, and it is your reference when they request a refund. TAKI is an intermediary: it neither imposes nor adjudicates store policies.'}
                     </div>
 
-                    <label style={label}>{isRTL ? 'سياسة الاسترداد والاستبدال' : 'Refund & exchange policy'}</label>
+                    {empty && (
+                        <div style={{
+                            padding: '12px 14px', borderRadius: 12, marginBottom: 14,
+                            background: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.45)',
+                            fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.95,
+                        }}>
+                            {isRTL ? '⚠️ كتابتها اختيارية — وتركها مكلف' : '⚠️ Optional — but leaving it empty costs you'}
+                            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                {isRTL
+                                    ? 'متجرٌ بلا سياسة معلنة يتردّد المشتري في الحجز منه، ويظنّ أن لا ضمان له إن وصله المنتج مخالفاً. وحين يقع خلاف لن يكون لديك مرجعٌ مكتوب تحتكم إليه — فتخسر الحقّ والسمعة معاً. وأنظمة التجارة الإلكترونية في السعودية تُلزم البائع بالإفصاح عن شروط الاستبدال والاسترجاع قبل إتمام البيع؛ تاكي لا تفرضها عليك ولا تبتّ فيها، لكنها تنبّهك.'
+                                    : 'Buyers hesitate to book from a store with no published policy, and assume they have no recourse. In a dispute you would have no written reference to rely on. Saudi e-commerce regulations require sellers to disclose return and exchange terms before the sale; TAKI does not impose or adjudicate your policy, but it does warn you.'}
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                        <label style={{ ...label, marginBottom: 0 }}>{isRTL ? 'سياسة الاسترداد والاستبدال' : 'Refund & exchange policy'}</label>
+                        <button
+                            onClick={async () => {
+                                if (policy.trim() && !(await customConfirm(isRTL
+                                    ? 'سيستبدل النموذج ما كتبته هنا. أتريد المتابعة؟'
+                                    : 'The template will replace what you wrote. Continue?'))) return;
+                                setPolicy(isRTL ? TEMPLATE_AR : TEMPLATE_EN);
+                            }}
+                            style={{
+                                background: 'none', border: '1px solid var(--border-color)', borderRadius: 10,
+                                padding: '5px 10px', fontSize: '0.7rem', fontWeight: 900,
+                                color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap',
+                            }}
+                        >
+                            {isRTL ? '📝 ابدأ بنموذج جاهز' : '📝 Start from a template'}
+                        </button>
+                    </div>
                     <textarea
                         style={field}
                         value={policy}

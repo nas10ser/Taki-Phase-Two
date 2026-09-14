@@ -25,7 +25,10 @@ const CACHE_NAME = 'taki-cache-v14.28';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.webmanifest'
+  '/manifest.webmanifest',
+  // v14.28 — شاشة الانقطاع. كان آخر مخرجٍ عند فقد الشبكة `Response('Offline')`:
+  // كلمةٌ إنجليزية واحدة على صفحة بيضاء، بلا عربية ولا سببٍ ولا زرّ.
+  '/offline.html'
 ];
 
 const isAsset = url => /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|gif|ico)(?:\?.*)?$/i.test(url.pathname);
@@ -58,6 +61,31 @@ self.addEventListener('install', event => {
         .then(res => (res && res.ok) ? cache.put(u, res.clone()) : null)
         .catch(() => null)
     ));
+
+    // v14.28 — تخزينٌ أوّليّ كافٍ للعمل بلا إنترنت.
+    // 🪤 لم يكن ممكناً سرد حِزَم البرنامج هنا: Parcel يبصم أسماءها في كل بناء
+    // (`index.4f2a8c1b.js`)، فأي قائمة ثابتة تتقادم مع أول نشر. والنتيجة أن
+    // أول زائر يفقد الشبكة **قبل** أن يُحمّل الحِزم لا يجد ما يفتح به شيئاً:
+    // الصفحة مخزَّنة والبرنامج الذي يُشغّلها ليس كذلك.
+    // الحلّ: نقرأ index.html المخزَّن للتوّ ونستخرج منه أسماء الحِزم الفعلية
+    // لهذا البناء. فالقائمة تتجدّد وحدها مع كل إصدار بلا صيانة.
+    try {
+      const shell = await cache.match('/index.html');
+      if (shell) {
+        const html = await shell.clone().text();
+        const refs = new Set();
+        const add = (m) => { if (m) refs.add(m.startsWith('/') ? m : '/' + m.replace(/^\.\//, '')); };
+        for (const m of html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) add(m[1]);
+        for (const m of html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']/gi)) add(m[1]);
+        for (const m of html.matchAll(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']stylesheet["']/gi)) add(m[1]);
+        // روابط خارجية (خطوط، شبكات توصيل) تُترك للمتصفّح: تخزينها هنا يخاطر
+        // باستجابات مبهمة (opaque) تملأ الحصّة بلا فائدة.
+        const local = [...refs].filter(u => !/^https?:/i.test(u));
+        await Promise.all(local.map(u =>
+          fetch(u).then(res => (res && res.ok) ? cache.put(u, res.clone()) : null).catch(() => null)
+        ));
+      }
+    } catch { /* التخزين الأوّلي تحسينٌ لا شرط: فشلُه لا يُسقط التثبيت */ }
   })());
 });
 
@@ -144,7 +172,19 @@ self.addEventListener('fetch', event => {
             if (cached) break;
           }
         }
-        return cached || new Response('Offline', { status: 503 });
+        // لا نسخة من الصفحة في أي مخزون ⇒ شاشة الانقطاع العربية.
+        if (cached) return cached;
+        for (const n of await caches.keys()) {
+          const c = await caches.open(n);
+          const off = await c.match('/offline.html');
+          if (off) return off;
+        }
+        return new Response(
+          '<!doctype html><html lang=ar dir=rtl><meta charset=utf-8>' +
+          '<body style="font-family:system-ui;text-align:center;padding:40px">' +
+          '<h1>لا يوجد اتصال بالإنترنت</h1><p>تحقّق من اتصالك ثم أعد المحاولة.</p></body></html>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
       }
     })());
     return;

@@ -11,7 +11,7 @@ import { getDistance } from '../utils/helpers';
 import { REGIONS, CITIES } from '../data/mock';
 import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
-import { thumbUrl, imgFallback } from '../utils/thumb';
+import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 import SearchInput from '../components/SearchInput';
 
 /**
@@ -627,7 +627,7 @@ const Nearby: React.FC = () => {
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(dealHref); } }}
                             style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent', position: 'relative' }}
                         >
-                            <img src={thumbUrl(deal.images[0])} loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
+                            <img src={thumbUrl(deal.images[0])} srcSet={thumbSrcSet(deal.images[0]) || undefined} sizes="85px" loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
                                 onError={imgFallback(deal.images[0], 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300')} />
                              <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>

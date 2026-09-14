@@ -8,13 +8,23 @@
   "scope": "./",
   "id": "/?source=pwa",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "orientation": "portrait-primary",
-  "categories": ["shopping", "lifestyle", "business"],
+  "categories": [
+    "shopping",
+    "lifestyle",
+    "business"
+  ],
   "prefer_related_applications": false,
-  "launch_handler": { "client_mode": "navigate-existing" },
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "icons": [
     {
       "src": "https://taki-test-eight.vercel.app/logo192.png",
@@ -47,14 +57,47 @@
       "short_name": "حولي",
       "description": "اكتشف أقرب التخفيضات حولك",
       "url": "/nearby",
-      "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "https://taki-test-eight.vercel.app/logo192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "حجوزاتي",
       "short_name": "حجوزاتي",
       "description": "إدارة حجوزاتك النشطة",
       "url": "/bookings",
-      "icons": [{ "src": "https://taki-test-eight.vercel.app/logo192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "https://taki-test-eight.vercel.app/logo192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "./screenshots/home.png",
+      "sizes": "540x1170",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "الصفحة الرئيسية — عروض اليوم قريبة منك"
+    },
+    {
+      "src": "./screenshots/deals.png",
+      "sizes": "540x1170",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "كل العروض — فلترة بالمنطقة والتصنيف والوقت"
+    },
+    {
+      "src": "./screenshots/deal.png",
+      "sizes": "540x1170",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "صفحة العرض — السعر والخصم والمواقع المتاحة"
     }
   ]
 }

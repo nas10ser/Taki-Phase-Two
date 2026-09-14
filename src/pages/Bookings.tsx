@@ -14,7 +14,7 @@ import ReportDialog from '../components/ReportDialog';
 import DeliveryTrackMap from '../components/DeliveryTrackMap';
 import { supabase } from '../services/supabaseClient';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
-import { thumbUrl, imgFallback } from '../utils/thumb';
+import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -544,6 +544,8 @@ const Bookings: React.FC = () => {
                                         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                             <img 
                                                 src={thumbUrl(booking.deal?.images?.[0]) || 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=400'}
+                                                srcSet={thumbSrcSet(booking.deal?.images?.[0]) || undefined}
+                                                sizes="96px"
                                                 onError={imgFallback(booking.deal?.images?.[0])}
                                                 width={65} height={65} 
                                                 alt={booking.deal?.itemName || ''}
@@ -863,6 +865,8 @@ const Bookings: React.FC = () => {
                                         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                             <img 
                                                 src={thumbUrl(booking.deal?.images?.[0]) || 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=400'}
+                                                srcSet={thumbSrcSet(booking.deal?.images?.[0]) || undefined}
+                                                sizes="96px"
                                                 onError={imgFallback(booking.deal?.images?.[0])}
                                                 width={60} height={60} 
                                                 alt={booking.deal?.itemName || ''}

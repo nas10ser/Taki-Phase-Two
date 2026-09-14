@@ -38,7 +38,7 @@ import { splitInclusive, fmtSAR } from '../utils/vat';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
-import { thumbUrl, imgFallback } from '../utils/thumb';
+import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 
 const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
     useMapEvents({
@@ -4884,6 +4884,8 @@ const SellerDashboard: React.FC = () => {
                                         width={400}
                                         height={180}
                                         src={thumbUrl(deal.images[0])}
+                                        srcSet={thumbSrcSet(deal.images[0]) || undefined}
+                                        sizes="(max-width: 480px) 40vw, 200px"
                                         alt={deal.itemName}
                                         style={{ width: '100%', height: 180, objectFit: 'cover', filter: !isActiveDeal ? 'grayscale(50%)' : 'none' }}
                                         onError={imgFallback(deal.images[0])}
