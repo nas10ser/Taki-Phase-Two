@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict tGRJMTHptJif5NXOqZRv5zupvQnRfn13SeII5suTnMbKeyCA8ES69gYgPfGtLSE
+\restrict egciWEEdABLryXLhbK4FOgMOLWpXtkt11KdLEdGjXfXSwCQQZin2IkqTePnU6Mh
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -380,6 +380,46 @@ $$;
 
 
 --
+-- Name: _booking_card(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public._booking_card(p_barcode text, p_role text) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+    'barcode', b.barcode, 'backup_code', b.backup_code,
+    'user_name', COALESCE(b.user_name,'—'), 'user_phone', COALESCE(b.user_phone,'—'),
+    'shop_name', COALESCE(NULLIF(u.shop,''), NULLIF(u.name,''), '—'),
+    'deal_name', COALESCE(d.item_name,'العرض'), 'deal_id', b.deal_id,
+    'quantity', b.booked_quantity, 'status', b.status,
+    'notes', COALESCE(b.notes,''), 'merchant_note', COALESCE(b.merchant_note,''),
+    'prep_time', b.prep_time, 'sort_at', b.booked_at, 'booked_at', b.booked_at,
+    'expiry_time', b.expiry_time,
+    'unread', (SELECT count(*) FROM booking_messages m
+               WHERE m.barcode = b.barcode
+                 AND m.sender_role <> p_role AND m.read_at IS NULL),
+    'fulfillment', COALESCE(b.fulfillment,'pickup'),
+    'delivery_fee', b.delivery_fee,
+    'delivery_label',   b.delivery_address->>'label',
+    'delivery_details', b.delivery_address->>'details',
+    'delivery_phone',   b.delivery_address->>'phone',
+    'delivery_lat',     b.delivery_address->>'lat',
+    'delivery_lng',     b.delivery_address->>'lng',
+    'payment_method', b.payment_method,
+    'paid', b.paid_at IS NOT NULL,
+    'paid_amount', b.paid_amount,
+    'total_amount', b.total_amount,
+    'role', p_role
+  )
+  FROM public.bookings b
+  LEFT JOIN public.deals d ON d.id = b.deal_id
+  LEFT JOIN public.users u ON u.id = b.store_id
+  WHERE b.barcode = p_barcode;
+$$;
+
+
+--
 -- Name: _bot_gate_ok(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -389,11 +429,13 @@ CREATE FUNCTION public._bot_gate_ok() RETURNS boolean
     AS $$
   SELECT
     COALESCE((SELECT value FROM public.app_secrets WHERE key = 'bot_gate_enforced'), '0') <> '1'
+    -- لا ترويسات = نداءٌ من داخل القاعدة (مشغّل/كرون/خدمي) لا من متصفّح.
+    -- PostgREST يضع الترويسات دائماً، فهذا الفرع غير قابل للوصول من الشبكة.
     OR current_setting('request.headers', true) IS NULL
     OR current_setting('request.headers', true) = ''
     OR EXISTS (
       SELECT 1 FROM public.app_secrets
-      WHERE key = 'bot_gateway_secret'
+      WHERE key IN ('bot_gateway_secret', 'bot_gateway_secret_next')
         AND value IS NOT NULL AND value <> ''
         AND value = (current_setting('request.headers', true)::json ->> 'x-bot-secret')
     );
@@ -4982,27 +5024,48 @@ $$;
 
 CREATE FUNCTION public.admin_suspend_account(p_user_id text, p_suspend boolean, p_reason text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
+    SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE v_msg text; v_type text;
+DECLARE v_msg text; v_type text; v_uuid uuid; v_sessions int := 0;
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
   SELECT user_type INTO v_type FROM users WHERE id = p_user_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'المستخدم غير موجود'; END IF;
   IF v_type = 'admin' THEN RAISE EXCEPTION 'لا يمكن إيقاف حساب إداري من هنا'; END IF;
+
   UPDATE users SET is_suspended = p_suspend WHERE id = p_user_id;
+  BEGIN v_uuid := p_user_id::uuid; EXCEPTION WHEN others THEN v_uuid := NULL; END;
+
   IF p_suspend THEN
+    -- (أ) منع الدخول. GoTrue يرفض إصدار أي رمز ما دام `banned_until` مستقبلاً.
+    --     تاريخٌ بعيد لا «إلى الأبد»: العمود زمنيّ، وفكّ الإيقاف يُفرغه.
+    IF v_uuid IS NOT NULL THEN
+      UPDATE auth.users SET banned_until = now() + interval '100 years' WHERE id = v_uuid;
+      -- (ب) إنهاء ما هو قائم. بلا هذا يبقى الموقوف يعمل من تبويبٍ مفتوح
+      --     أسابيع: منعُ الدخول لا يلمس رمزاً صدر قبله.
+      DELETE FROM auth.refresh_tokens WHERE user_id = p_user_id;
+      WITH d AS (DELETE FROM auth.sessions WHERE user_id = v_uuid RETURNING 1)
+      SELECT count(*) INTO v_sessions FROM d;
+    END IF;
+
     v_msg := '⛔ تم إيقاف حسابك من إدارة تاكي' ||
              CASE WHEN COALESCE(TRIM(p_reason), '') <> '' THEN ' — السبب: ' || TRIM(p_reason) ELSE '' END || '.';
     INSERT INTO user_warnings (user_id, user_role, reason, admin_id)
     VALUES (p_user_id, v_type, v_msg, auth.uid()::text);
   ELSE
+    IF v_uuid IS NOT NULL THEN
+      UPDATE auth.users SET banned_until = NULL WHERE id = v_uuid;
+    END IF;
     v_msg := '✅ تم إعادة تفعيل حسابك — أهلاً بعودتك.';
   END IF;
+
   INSERT INTO notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
   VALUES (p_user_id, CASE WHEN p_suspend THEN '⛔ إيقاف الحساب' ELSE '✅ إعادة التفعيل' END,
           CASE WHEN p_suspend THEN '⛔ Account suspended' ELSE '✅ Account restored' END,
           v_msg, v_msg, 'system', jsonb_build_object('audience', 'user'));
-  RETURN jsonb_build_object('success', true, 'suspended', p_suspend);
+
+  RETURN jsonb_build_object('success', true, 'suspended', p_suspend,
+                            'sessions_killed', v_sessions);
 END $$;
 
 
@@ -5909,7 +5972,8 @@ CREATE FUNCTION public.bot_booking_chat(p_telegram_id bigint, p_barcode text, p_
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_uid text; v_b bookings%ROWTYPE; v_role text; v_msgs jsonb; v_my int; v_other int; v_other_name text; v_deal_name text;
+DECLARE v_uid text; v_b bookings%ROWTYPE; v_role text; v_msgs jsonb; v_my int; v_other int;
+        v_other_name text; v_deal_name text;
 BEGIN
   SELECT id INTO v_uid FROM users WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
   IF v_uid IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'not_linked'); END IF;
@@ -5922,8 +5986,11 @@ BEGIN
   UPDATE booking_messages SET read_at = NOW()
     WHERE barcode = v_b.barcode AND sender_role <> v_role AND read_at IS NULL;
 
+  -- `attachment` مسارٌ داخل مستودع خاصّ، لا عنوان يُفتح. البوت يبادله برابط
+  -- موقّع قصير العمر عبر الدالة الطرفية، وهي تتحقّق من العضوية مرّة أخرى.
   SELECT jsonb_agg(jsonb_build_object('role', m.sender_role, 'body', m.body, 'at', m.created_at,
-                                      'mine', (m.sender_role = v_role)) ORDER BY m.created_at)
+                                      'mine', (m.sender_role = v_role),
+                                      'attachment', m.attachment_path) ORDER BY m.created_at)
     INTO v_msgs FROM booking_messages m WHERE m.barcode = v_b.barcode;
   SELECT count(*) FILTER (WHERE sender_role = v_role), count(*) FILTER (WHERE sender_role <> v_role)
     INTO v_my, v_other FROM booking_messages WHERE barcode = v_b.barcode;
@@ -5933,9 +6000,10 @@ BEGIN
   SELECT item_name INTO v_deal_name FROM deals WHERE id = v_b.deal_id;
 
   RETURN jsonb_build_object('success', true, 'role', v_role, 'status', v_b.status, 'barcode', v_b.barcode,
+    'uid', v_uid,
     'deal_name', COALESCE(v_deal_name,'العرض'), 'other_name', v_other_name,
     'my_count', COALESCE(v_my,0), 'other_count', COALESCE(v_other,0), 'messages', COALESCE(v_msgs,'[]'::jsonb));
-END; $$;
+END $$;
 
 
 --
@@ -7451,6 +7519,45 @@ $$;
 
 
 --
+-- Name: bot_lookup_booking(bigint, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bot_lookup_booking(p_telegram_id bigint, p_code text, p_whatsapp_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_uid  text;
+  v_code text := upper(btrim(COALESCE(p_code, '')));
+  v_b    public.bookings%ROWTYPE;
+  v_role text;
+BEGIN
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not_authorized');
+  END IF;
+  SELECT id INTO v_uid FROM public.users
+  WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'not_linked'); END IF;
+  IF v_code = '' OR length(v_code) > 32 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not_found');
+  END IF;
+
+  SELECT * INTO v_b FROM public.bookings
+  WHERE upper(barcode) = v_code OR upper(backup_code) = v_code
+  LIMIT 1;
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'not_found'); END IF;
+
+  IF    v_uid = v_b.store_id THEN v_role := 'seller';
+  ELSIF v_uid = v_b.user_id  THEN v_role := 'buyer';
+  ELSE  RETURN jsonb_build_object('success', false, 'error', 'not_found');
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'role', v_role,
+                            'booking', public._booking_card(v_b.barcode, v_role));
+END $$;
+
+
+--
 -- Name: bot_mark_email(uuid, boolean, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7734,6 +7841,35 @@ END $$;
 
 
 --
+-- Name: bot_report_gate(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bot_report_gate(p_version text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_hdr text; v_which text;
+BEGIN
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not_authorized');
+  END IF;
+  v_hdr := current_setting('request.headers', true)::json ->> 'x-bot-secret';
+  SELECT CASE key WHEN 'bot_gateway_secret_next' THEN 'next' ELSE 'current' END
+    INTO v_which
+  FROM public.app_secrets
+  WHERE key IN ('bot_gateway_secret', 'bot_gateway_secret_next') AND value = v_hdr
+  LIMIT 1;
+
+  INSERT INTO public.bot_gate_usage (id, which, seen_at, bot_version)
+  VALUES (1, COALESCE(v_which, 'unknown'), now(), p_version)
+  ON CONFLICT (id) DO UPDATE
+    SET which = EXCLUDED.which, seen_at = EXCLUDED.seen_at, bot_version = EXCLUDED.bot_version;
+
+  RETURN jsonb_build_object('success', true, 'using', COALESCE(v_which, 'unknown'));
+END $$;
+
+
+--
 -- Name: bot_request_booking_refund(bigint, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7942,32 +8078,60 @@ $$;
 
 
 --
--- Name: bot_send_booking_message(bigint, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: bot_send_booking_message(bigint, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.bot_send_booking_message(p_telegram_id bigint, p_barcode text, p_body text, p_whatsapp_id text DEFAULT NULL::text) RETURNS jsonb
+CREATE FUNCTION public.bot_send_booking_message(p_telegram_id bigint, p_barcode text, p_body text, p_whatsapp_id text DEFAULT NULL::text, p_attachment_path text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_uid text; v_b bookings%ROWTYPE; v_role text; v_cnt int; v_clean text;
+DECLARE
+  v_uid text; v_b bookings%ROWTYPE; v_role text; v_cnt int;
+  v_body text := btrim(COALESCE(p_body, ''));
+  v_att  text := NULLIF(btrim(COALESCE(p_attachment_path, '')), '');
 BEGIN
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not_authorized');
+  END IF;
+
   SELECT id INTO v_uid FROM users WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
   IF v_uid IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'not_linked'); END IF;
-  v_clean := btrim(COALESCE(p_body,''));
-  IF v_clean = '' OR length(v_clean) > 500 THEN RETURN jsonb_build_object('success', false, 'error', 'bad_length'); END IF;
+
+  -- صورةٌ بلا نصّ رسالةٌ كاملة، لكن الجدول يمنع النصّ الفارغ.
+  IF v_body = '' AND v_att IS NOT NULL THEN v_body := '📎'; END IF;
+  IF v_body = '' OR length(v_body) > 500 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'bad_body');
+  END IF;
+
   SELECT * INTO v_b FROM bookings WHERE barcode = UPPER(p_barcode) LIMIT 1;
   IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'not_found'); END IF;
   IF v_uid = v_b.user_id THEN v_role := 'buyer';
   ELSIF v_uid = v_b.store_id THEN v_role := 'seller';
   ELSE RETURN jsonb_build_object('success', false, 'error', 'not_authorized'); END IF;
+
   IF v_b.status IN ('cancelled','completed','expired') THEN
-    RETURN jsonb_build_object('success', false, 'error', v_b.status);
+    RETURN jsonb_build_object('success', false, 'error', 'chat_closed');
   END IF;
+
+  -- المرفق تحت مجلّد هذا الحجز، وموجودٌ فعلاً. (المِلكية تحقّقت منها الدالة
+  -- الطرفية قبل الرفع — البوت لا يحمل هوية قاعدة بيانات ليُقارَن بها.)
+  IF v_att IS NOT NULL THEN
+    IF split_part(v_att, '/', 1) <> v_b.barcode THEN
+      RETURN jsonb_build_object('success', false, 'error', 'attachment_outside_booking');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = 'chat' AND o.name = v_att) THEN
+      RETURN jsonb_build_object('success', false, 'error', 'attachment_missing');
+    END IF;
+  END IF;
+
   SELECT count(*) INTO v_cnt FROM booking_messages WHERE barcode = v_b.barcode AND sender_role = v_role;
-  IF v_cnt >= 3 THEN RETURN jsonb_build_object('success', false, 'error', 'cap_reached'); END IF;
-  INSERT INTO booking_messages (barcode, sender_id, sender_role, body) VALUES (v_b.barcode, v_uid, v_role, v_clean);
-  RETURN jsonb_build_object('success', true, 'my_count', v_cnt + 1, 'role', v_role);
-END; $$;
+  IF v_cnt >= 3 THEN RETURN jsonb_build_object('success', false, 'error', 'limit_reached'); END IF;
+
+  INSERT INTO booking_messages (barcode, sender_id, sender_role, body, attachment_path)
+  VALUES (v_b.barcode, v_uid, v_role, v_body, v_att);
+
+  RETURN jsonb_build_object('success', true, 'my_count', v_cnt + 1);
+END $$;
 
 
 --
@@ -8731,6 +8895,49 @@ END $_$;
 
 
 --
+-- Name: browse_deal_ratings(text, timestamp with time zone, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.browse_deal_ratings(p_deal_id text, p_cursor_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id text DEFAULT NULL::text, p_limit integer DEFAULT 20) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_lim  int := GREATEST(1, LEAST(50, COALESCE(p_limit, 20)));
+  v_rows jsonb;
+  v_more boolean := false;
+BEGIN
+  IF p_deal_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'DEAL_REQUIRED');
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC, r.id DESC), '[]'::jsonb)
+    INTO v_rows
+  FROM (
+    SELECT rt.*
+    FROM public.ratings rt
+    WHERE rt.deal_id = p_deal_id
+      AND rt.deleted_at IS NULL
+      AND (
+        p_cursor_at IS NULL
+        OR rt.created_at < p_cursor_at
+        OR (rt.created_at = p_cursor_at AND rt.id < p_cursor_id)
+      )
+    ORDER BY rt.created_at DESC, rt.id DESC
+    LIMIT v_lim + 1
+  ) r;
+
+  IF jsonb_array_length(v_rows) > v_lim THEN
+    v_more := true;
+    v_rows := (SELECT jsonb_agg(e) FROM (
+                 SELECT e FROM jsonb_array_elements(v_rows) e LIMIT v_lim) s);
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'rows', COALESCE(v_rows, '[]'::jsonb), 'has_more', v_more);
+END $$;
+
+
+--
 -- Name: browse_deals(text, text, text, text, text, text, text, text, text, text, boolean, boolean, double precision, text, integer, text[], text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8776,6 +8983,13 @@ BEGIN
 
   v_where := 'd.status = ''active'''
           || ' AND (d.is_unlimited OR COALESCE(d.quantity,0) > 0 OR COALESCE(d.initial_quantity,0) <= 0)';
+  -- v14.32 — عروض متجرٍ موقوف لا تُعرض. كان الإيقاف يُخفي صفحة المتجر من
+  -- الدليل وحدها، بينما عروضه تبقى في الرئيسية وفي «القريب مني» ويفتحها
+  -- المشترون ويحجزون — أي أن «إيقاف التاجر» لم يكن يوقف بيعه.
+  -- الفلترة هنا لا في صفوف العروض: فكّ الإيقاف يُعيدها كما كانت بلا أي إصلاح.
+  v_where := v_where || ' AND NOT EXISTS (SELECT 1 FROM public.users su'
+                     || ' WHERE su.id = d.store_id AND (su.is_suspended OR su.deleted_at IS NOT NULL))';
+
 
   IF lower(COALESCE(p_mode,'live')) = 'coming_soon' THEN
     v_where := v_where || format(' AND d.starts_at IS NOT NULL AND d.starts_at > %s AND d.starts_at <= %s', v_now, v_now + 604800000);
@@ -8899,6 +9113,13 @@ BEGIN
                     ' + (CASE WHEN COALESCE(d.expires_in_minutes,0) = 0 THEN 120'
                     '         ELSE d.expires_in_minutes END)::bigint * 60000)', v_now)
           || ' AND b.lat IS NOT NULL AND b.lng IS NOT NULL';
+  -- v14.32 — عروض متجرٍ موقوف لا تُعرض. كان الإيقاف يُخفي صفحة المتجر من
+  -- الدليل وحدها، بينما عروضه تبقى في الرئيسية وفي «القريب مني» ويفتحها
+  -- المشترون ويحجزون — أي أن «إيقاف التاجر» لم يكن يوقف بيعه.
+  -- الفلترة هنا لا في صفوف العروض: فكّ الإيقاف يُعيدها كما كانت بلا أي إصلاح.
+  v_where := v_where || ' AND NOT EXISTS (SELECT 1 FROM public.users su'
+                     || ' WHERE su.id = d.store_id AND (su.is_suspended OR su.deleted_at IS NOT NULL))';
+
 
   -- المرشّح الصندوقي: ضربة فهرس قبل أي حساب مثلثات
   IF COALESCE(p_radius_km, 0) > 0 THEN
@@ -8998,6 +9219,103 @@ BEGIN
   RETURN COALESCE(v_out, jsonb_build_object('rows','[]'::jsonb,'has_more',false))
        || jsonb_build_object('total', LEAST(v_total, c_cap), 'total_capped', v_total > c_cap);
 END $_$;
+
+
+--
+-- Name: browse_notifications(timestamp with time zone, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.browse_notifications(p_cursor_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id text DEFAULT NULL::text, p_limit integer DEFAULT 40) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_uid  text := auth.uid()::text;
+  v_lim  int  := GREATEST(1, LEAST(100, COALESCE(p_limit, 40)));
+  v_rows jsonb;
+  v_more boolean := false;
+  v_unread int;
+  v_total  int;
+BEGIN
+  IF v_uid IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'AUTH_REQUIRED');
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC, r.id DESC), '[]'::jsonb)
+    INTO v_rows
+  FROM (
+    SELECT n.*
+    FROM public.notifications n
+    WHERE n.user_id = v_uid
+      AND (
+        p_cursor_at IS NULL
+        OR n.created_at < p_cursor_at
+        OR (n.created_at = p_cursor_at AND n.id < p_cursor_id)
+      )
+    ORDER BY n.created_at DESC, n.id DESC
+    LIMIT v_lim + 1               -- صفٌّ زائد: به نعرف «هل بعدها المزيد» بلا عدٍّ ثانٍ
+  ) r;
+
+  IF jsonb_array_length(v_rows) > v_lim THEN
+    v_more := true;
+    v_rows := (SELECT jsonb_agg(e) FROM (
+                 SELECT e FROM jsonb_array_elements(v_rows) e LIMIT v_lim) s);
+  END IF;
+
+  -- العدّان من الجدول كلّه لا من الصفحة — وهذا بيت القصيد.
+  SELECT count(*) FILTER (WHERE NOT is_read), count(*)
+    INTO v_unread, v_total
+  FROM public.notifications WHERE user_id = v_uid;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'rows', COALESCE(v_rows, '[]'::jsonb), 'has_more', v_more,
+    'unread_total', v_unread, 'total', v_total);
+END $$;
+
+
+--
+-- Name: browse_store_ratings(text, timestamp with time zone, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.browse_store_ratings(p_store_id text, p_cursor_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id text DEFAULT NULL::text, p_limit integer DEFAULT 10) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_lim int := GREATEST(1, LEAST(50, COALESCE(p_limit, 10)));
+  v_rows jsonb; v_more boolean := false; v_total int;
+BEGIN
+  IF p_store_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'STORE_REQUIRED');
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC, r.id DESC), '[]'::jsonb)
+    INTO v_rows
+  FROM (
+    SELECT rt.*, d.item_name
+    FROM public.ratings rt
+    JOIN public.deals d ON d.id = rt.deal_id
+    WHERE d.store_id = p_store_id
+      AND rt.deleted_at IS NULL
+      AND (p_cursor_at IS NULL
+           OR rt.created_at < p_cursor_at
+           OR (rt.created_at = p_cursor_at AND rt.id < p_cursor_id))
+    ORDER BY rt.created_at DESC, rt.id DESC
+    LIMIT v_lim + 1
+  ) r;
+
+  IF jsonb_array_length(v_rows) > v_lim THEN
+    v_more := true;
+    v_rows := (SELECT jsonb_agg(e) FROM (SELECT e FROM jsonb_array_elements(v_rows) e LIMIT v_lim) s);
+  END IF;
+
+  SELECT count(*) INTO v_total
+  FROM public.ratings rt JOIN public.deals d ON d.id = rt.deal_id
+  WHERE d.store_id = p_store_id AND rt.deleted_at IS NULL;
+
+  RETURN jsonb_build_object('ok', true, 'rows', COALESCE(v_rows,'[]'::jsonb),
+                            'has_more', v_more, 'total', v_total);
+END $$;
 
 
 --
@@ -11933,6 +12251,41 @@ END $$;
 
 
 --
+-- Name: lookup_booking_by_code(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lookup_booking_by_code(p_code text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_uid  text := auth.uid()::text;
+  v_code text := upper(btrim(COALESCE(p_code, '')));
+  v_b    public.bookings%ROWTYPE;
+  v_role text;
+BEGIN
+  -- جوابٌ واحد لكل حالات الفشل: لا يفرّق المستمع بين «غير موجود» و«ليس لك».
+  IF v_uid IS NULL OR v_code = '' OR length(v_code) > 32 THEN
+    RETURN jsonb_build_object('found', false);
+  END IF;
+
+  SELECT * INTO v_b FROM public.bookings
+  WHERE upper(barcode) = v_code OR upper(backup_code) = v_code
+  LIMIT 1;
+  IF NOT FOUND THEN RETURN jsonb_build_object('found', false); END IF;
+
+  IF    v_uid = v_b.store_id THEN v_role := 'seller';
+  ELSIF v_uid = v_b.user_id  THEN v_role := 'buyer';
+  ELSIF public.is_admin()    THEN v_role := 'admin';
+  ELSE  RETURN jsonb_build_object('found', false);
+  END IF;
+
+  RETURN jsonb_build_object('found', true,
+                            'booking', public._booking_card(v_b.barcode, v_role));
+END $$;
+
+
+--
 -- Name: mark_booking_messages_read(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13079,68 +13432,89 @@ CREATE TABLE public.booking_messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     read_at timestamp with time zone,
     recipient_id text,
+    attachment_path text,
     CONSTRAINT booking_messages_body_check CHECK (((length(body) > 0) AND (length(body) <= 500))),
     CONSTRAINT booking_messages_sender_role_check CHECK ((sender_role = ANY (ARRAY['buyer'::text, 'seller'::text])))
 );
 
 
 --
--- Name: send_booking_message(text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: COLUMN booking_messages.attachment_path; Type: COMMENT; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.send_booking_message(p_barcode text, p_body text) RETURNS public.booking_messages
+COMMENT ON COLUMN public.booking_messages.attachment_path IS 'اسم الكائن داخل مستودع chat الخاص (<barcode>/<uuid>.<ext>) — لا عنوان عام. يُقرأ برابط موقّع مؤقّت.';
+
+
+--
+-- Name: send_booking_message(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.send_booking_message(p_barcode text, p_body text, p_attachment_path text DEFAULT NULL::text) RETURNS public.booking_messages
     LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
+    SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-    caller text := auth.uid()::text;
-    booking_row public.bookings;
-    role text;
-    sent_count int;
-    inserted public.booking_messages;
-    clean_body text;
+  caller      text := auth.uid()::text;
+  booking_row public.bookings;
+  v_role      text;
+  sent_count  int;
+  inserted    public.booking_messages;
+  clean_body  text;
+  v_att       text := NULLIF(btrim(COALESCE(p_attachment_path, '')), '');
 BEGIN
-    IF caller IS NULL THEN
-        RAISE EXCEPTION 'يجب تسجيل الدخول لإرسال الرسالة' USING ERRCODE = '28000';
+  IF caller IS NULL THEN
+    RAISE EXCEPTION 'يجب تسجيل الدخول لإرسال الرسالة' USING ERRCODE = '28000';
+  END IF;
+
+  clean_body := btrim(p_body);
+  -- رسالةٌ بمرفقٍ بلا نصّ مشروعة (صورة تكفي)، لكن الجدول يمنع النصّ الفارغ.
+  IF clean_body = '' AND v_att IS NOT NULL THEN clean_body := '📎'; END IF;
+  IF clean_body = '' OR length(clean_body) > 500 THEN
+    RAISE EXCEPTION 'الرسالة يجب أن تكون بين ١ و ٥٠٠ حرف' USING ERRCODE = 'P0003';
+  END IF;
+
+  SELECT * INTO booking_row FROM public.bookings WHERE barcode = p_barcode;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'لم يتم العثور على الحجز' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF caller = booking_row.user_id THEN v_role := 'buyer';
+  ELSIF caller = booking_row.store_id THEN v_role := 'seller';
+  ELSE RAISE EXCEPTION 'ليست لديك صلاحية للكتابة على هذا الحجز' USING ERRCODE = '42501';
+  END IF;
+
+  IF booking_row.status IN ('cancelled') THEN
+    RAISE EXCEPTION 'الحجز ملغى — لا يمكن إرسال رسائل' USING ERRCODE = 'P0001';
+  END IF;
+
+  -- المرفق يُصدَّق على ثلاثة: أنه رُفع فعلاً، وأنه تحت هذا الباركود، وأن
+  -- المرسِل هو من رفعه. بلا ذلك يستطيع طرفٌ أن يُشير إلى مرفق محادثةٍ أخرى.
+  IF v_att IS NOT NULL THEN
+    IF split_part(v_att, '/', 1) <> p_barcode THEN
+      RAISE EXCEPTION 'المرفق لا يخصّ هذا الطلب' USING ERRCODE = 'P0017';
     END IF;
-
-    clean_body := btrim(p_body);
-    IF clean_body = '' OR length(clean_body) > 500 THEN
-        RAISE EXCEPTION 'الرسالة يجب أن تكون بين ١ و ٥٠٠ حرف' USING ERRCODE = 'P0003';
+    IF NOT EXISTS (
+      SELECT 1 FROM storage.objects o
+      WHERE o.bucket_id = 'chat' AND o.name = v_att AND o.owner = auth.uid()
+    ) THEN
+      RAISE EXCEPTION 'المرفق غير موجود أو ليس لك' USING ERRCODE = 'P0017';
     END IF;
+  END IF;
 
-    SELECT * INTO booking_row FROM public.bookings WHERE barcode = p_barcode;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'لم يتم العثور على الحجز' USING ERRCODE = 'P0002';
-    END IF;
+  SELECT COUNT(*) INTO sent_count
+  FROM public.booking_messages
+  WHERE barcode = p_barcode AND sender_role = v_role;
 
-    IF caller = booking_row.user_id THEN
-        role := 'buyer';
-    ELSIF caller = booking_row.store_id THEN
-        role := 'seller';
-    ELSE
-        RAISE EXCEPTION 'ليست لديك صلاحية للكتابة على هذا الحجز' USING ERRCODE = '42501';
-    END IF;
+  IF sent_count >= 3 THEN
+    RAISE EXCEPTION 'وصلت الحد الأقصى (٣ رسائل). اتصل بالطرف الآخر مباشرة.' USING ERRCODE = 'P0004';
+  END IF;
 
-    IF booking_row.status IN ('cancelled') THEN
-        RAISE EXCEPTION 'الحجز ملغى — لا يمكن إرسال رسائل' USING ERRCODE = 'P0001';
-    END IF;
+  INSERT INTO public.booking_messages (barcode, sender_id, sender_role, body, attachment_path)
+  VALUES (p_barcode, caller, v_role, clean_body, v_att)
+  RETURNING * INTO inserted;
 
-    SELECT COUNT(*) INTO sent_count
-    FROM public.booking_messages
-    WHERE barcode = p_barcode AND sender_role = role;
-
-    IF sent_count >= 3 THEN
-        RAISE EXCEPTION 'وصلت الحد الأقصى (٣ رسائل). اتصل بالطرف الآخر مباشرة.' USING ERRCODE = 'P0004';
-    END IF;
-
-    INSERT INTO public.booking_messages (barcode, sender_id, sender_role, body)
-    VALUES (p_barcode, caller, role, clean_body)
-    RETURNING * INTO inserted;
-
-    RETURN inserted;
-END;
-$$;
+  RETURN inserted;
+END $$;
 
 
 --
@@ -13889,12 +14263,31 @@ BEGIN
       AND u.user_type <> 'admin'
       AND COALESCE(u.is_suspended, false) = false
       AND (u.booking_banned_until IS NULL OR u.booking_banned_until < now())
+      -- 🔴 v14.32 — العقوبة كانت تُجدّد نفسها إلى ما لا نهاية.
+      -- السبب: فحص المهلة وعدّاد الإنذارات يبحثان عن صفوفٍ نصّها يبدأ بـ
+      -- «⚠️ إلغاءات متكررة»، بينما صفّ **العقوبة** نصّه يبدأ بـ«⏸️ تم تعليق
+      -- الحجز» أو «⛔ تم إيقاف حسابك». فالماسح لا يرى عقوبته السابقة إطلاقاً.
+      -- والنتيجة: مشترٍ عوقب ٧ أيام على ثلاثة إلغاءات، يُعاقَب ٧ أيام أخرى
+      -- فور انقضائها على **نفس** الإلغاءات، ويتكرّر حتى تخرج من نافذة الثلاثين
+      -- يوماً — أي حظرٌ شبه دائم على مخالفةٍ واحدة.
+      -- العلاج: لا يُحسب إلا ما وقع **بعد** آخر إجراء. فالعقوبة مرّة لكل مجموعة.
+      AND b.created_at > COALESCE((
+            SELECT max(w.created_at) FROM user_warnings w
+             WHERE w.user_id = b.user_id
+               AND (w.reason LIKE '⏸️ تم تعليق الحجز%'
+                 OR w.reason LIKE '⛔ تم إيقاف حسابك بسبب تكرار%')
+          ), '-infinity'::timestamptz)
     GROUP BY b.user_id, u.name
     HAVING count(*) >= v_thresh
   LOOP
     -- المهلة بين إنذار وإنذار — يحددها المالك
+    -- المهلة تُقاس من آخر **أي** إجراء (إنذاراً كان أو عقوبة) لا من آخر إنذار
+    -- وحده — وإلا أنذر الماسحُ من عاقبه قبل ساعة.
     SELECT max(created_at) INTO v_last FROM user_warnings
-     WHERE user_id = r.user_id AND reason LIKE '⚠️ إلغاءات متكررة%';
+     WHERE user_id = r.user_id
+       AND (reason LIKE '⚠️ إلغاءات متكررة%'
+         OR reason LIKE '⏸️ تم تعليق الحجز%'
+         OR reason LIKE '⛔ تم إيقاف حسابك بسبب تكرار%');
     IF v_last IS NOT NULL AND v_last > now() - make_interval(hours => v_gap) THEN CONTINUE; END IF;
 
     SELECT count(*) INTO v_warn_count FROM user_warnings
@@ -14024,6 +14417,28 @@ CREATE FUNCTION public.taki_category_label_en(p_id text) RETURNS text
         ELSE COALESCE(p_id, '')
     END;
 $$;
+
+
+--
+-- Name: taki_chat_member(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_chat_member(p_object_name text) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_uid text := auth.uid()::text;
+  v_bc  text;
+BEGIN
+  IF v_uid IS NULL OR p_object_name IS NULL THEN RETURN false; END IF;
+  v_bc := split_part(p_object_name, '/', 1);
+  IF v_bc = '' OR v_bc = p_object_name THEN RETURN false; END IF;   -- لا مجلّد ⇒ مرفوض
+  RETURN EXISTS (
+    SELECT 1 FROM public.bookings b
+    WHERE b.barcode = v_bc AND (b.user_id = v_uid OR b.store_id = v_uid)
+  );
+END $$;
 
 
 --
@@ -14836,6 +15251,53 @@ BEGIN
   RETURN v_wiped + v_deleted;
 END
 $$;
+
+
+--
+-- Name: taki_guard_banned_signup(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_guard_banned_signup() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_hit text;
+BEGIN
+  SELECT id INTO v_hit FROM public.users
+  WHERE is_suspended = true
+    AND id <> NEW.id
+    AND (   (NULLIF(btrim(lower(NEW.email)), '') IS NOT NULL
+             AND lower(email) = btrim(lower(NEW.email)))
+         OR (NULLIF(btrim(NEW.phone), '') IS NOT NULL
+             AND regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g')
+               = regexp_replace(NEW.phone, '[^0-9]', '', 'g')) )
+  LIMIT 1;
+  IF v_hit IS NOT NULL THEN
+    RAISE EXCEPTION 'هذا البريد أو الجوال مرتبط بحساب موقوف. تواصل مع إدارة تاكي.'
+      USING ERRCODE = 'P0019';
+  END IF;
+  RETURN NEW;
+END $$;
+
+
+--
+-- Name: taki_guard_suspended_publish(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_guard_suspended_publish() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_blocked boolean;
+BEGIN
+  SELECT (is_suspended OR deleted_at IS NOT NULL) INTO v_blocked
+  FROM public.users WHERE id = NEW.store_id;
+  IF COALESCE(v_blocked, false) THEN
+    RAISE EXCEPTION 'حسابك موقوف — لا يمكنك نشر عروض. تواصل مع إدارة تاكي.'
+      USING ERRCODE = 'P0018';
+  END IF;
+  RETURN NEW;
+END $$;
 
 
 --
@@ -18898,6 +19360,19 @@ COMMENT ON TABLE public.booking_refunds IS 'طلب إلغاء واسترداد �
 
 
 --
+-- Name: bot_gate_usage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bot_gate_usage (
+    id integer DEFAULT 1 NOT NULL,
+    which text NOT NULL,
+    seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    bot_version text,
+    CONSTRAINT bot_gate_usage_id_check CHECK ((id = 1))
+);
+
+
+--
 -- Name: cities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20548,6 +21023,14 @@ ALTER TABLE ONLY public.bookings
 
 
 --
+-- Name: bot_gate_usage bot_gate_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bot_gate_usage
+    ADD CONSTRAINT bot_gate_usage_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cities cities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21638,6 +22121,13 @@ CREATE INDEX idx_booking_refunds_store ON public.booking_refunds USING btree (st
 
 
 --
+-- Name: idx_bookings_backup_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bookings_backup_code ON public.bookings USING btree (backup_code);
+
+
+--
 -- Name: idx_bookings_deal_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22226,10 +22716,24 @@ CREATE INDEX idx_push_subs_user ON public.push_subscriptions USING btree (user_i
 
 
 --
+-- Name: idx_ratings_created_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ratings_created_id ON public.ratings USING btree (created_at DESC, id DESC) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: idx_ratings_deal; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ratings_deal ON public.ratings USING btree (deal_id);
+
+
+--
+-- Name: idx_ratings_deal_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ratings_deal_created ON public.ratings USING btree (deal_id, created_at DESC, id DESC) WHERE (deleted_at IS NULL);
 
 
 --
@@ -22660,6 +23164,13 @@ CREATE TRIGGER set_updated_at_users BEFORE UPDATE ON public.users FOR EACH ROW E
 
 
 --
+-- Name: users tr_aa_guard_banned_signup; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_aa_guard_banned_signup BEFORE INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.taki_guard_banned_signup();
+
+
+--
 -- Name: deal_authenticity_votes tr_aa_rate_limit_authvote; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22699,6 +23210,13 @@ CREATE TRIGGER tr_aa_rate_limit_rating BEFORE INSERT ON public.ratings FOR EACH 
 --
 
 CREATE TRIGGER tr_ab_guard_booking_integrity BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION public.tr_guard_booking_integrity();
+
+
+--
+-- Name: deals tr_ab_guard_suspended_publish; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_ab_guard_suspended_publish BEFORE INSERT OR UPDATE ON public.deals FOR EACH ROW WHEN ((new.status = 'active'::text)) EXECUTE FUNCTION public.taki_guard_suspended_publish();
 
 
 --
@@ -24076,6 +24594,12 @@ CREATE POLICY bookings_update_auth ON public.bookings FOR UPDATE USING ((((( SEL
 
 
 --
+-- Name: bot_gate_usage; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bot_gate_usage ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: store_branches branches_delete_own; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -25120,6 +25644,20 @@ ALTER TABLE storage.buckets_analytics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage.buckets_vectors ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: objects chat_read_members; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY chat_read_members ON storage.objects FOR SELECT TO authenticated USING (((bucket_id = 'chat'::text) AND public.taki_chat_member(name)));
+
+
+--
+-- Name: objects chat_write_members; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY chat_write_members ON storage.objects FOR INSERT TO authenticated WITH CHECK (((bucket_id = 'chat'::text) AND public.taki_chat_member(name) AND (owner = auth.uid())));
+
+
+--
 -- Name: iceberg_namespaces; Type: ROW SECURITY; Schema: storage; Owner: -
 --
 
@@ -25165,5 +25703,5 @@ ALTER TABLE storage.vector_indexes ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tGRJMTHptJif5NXOqZRv5zupvQnRfn13SeII5suTnMbKeyCA8ES69gYgPfGtLSE
+\unrestrict egciWEEdABLryXLhbK4FOgMOLWpXtkt11KdLEdGjXfXSwCQQZin2IkqTePnU6Mh
 
