@@ -1407,12 +1407,19 @@ function create(deps) {
         // وصفّا البطاقة أعلاه ممتلئان أصلاً. يظهر لطلب توصيل نشط وحده، وزرّ
         // الإيقاف يحلّ محلّ زرّ البدء ما دام البثّ مُفعَّلاً فلا يبحث عنه أحد.
         if (b.fulfillment === 'delivery' && (b.status === 'pending' || b.status === 'acknowledged')) {
-            const on = s.temp.trackBarcode === bc;
-            await sendButtons(from, { body: on ? tr('dlv_trk_on_line') : '—', buttons: [
+            // v14.42 — الحالة من القاعدة لا من الذاكرة (تُمسح مع كل إعادة تشغيل).
+            const trkNow = b.dlv_status || (s.temp.trackBarcode === bc ? 'on_the_way' : null);
+            const on = trkNow === 'on_the_way' || trkNow === 'arrived';
+            // 🪤 واتساب يبتر الزرّ الرابع في الصفّ **بصمت**، فلا نتجاوز ثلاثة.
+            // «وصلت» تُعرض في صفّها حين يكون البثّ جارياً ولم يصل بعد.
+            const row = [
                 on ? { id: `wa:dtrkoff:${bc}`, title: trunc(tr('dlv_trk_wa_stop'), LIM.btnTitle) }
                    : { id: `wa:dtrk:${bc}`,    title: trunc(tr('dlv_trk_wa_btn'),  LIM.btnTitle) },
-                { id: `wa:so1:${bc}`, title: tr('wa_back') },
-            ] });
+            ];
+            if (trkNow === 'on_the_way') row.push({ id: `wa:dtrkar:${bc}`, title: trunc(tr('dlv_trk_arrived_btn'), LIM.btnTitle) });
+            if (on) row.push({ id: `wa:dtrkdl:${bc}`, title: trunc(tr('dlv_trk_delivered_btn'), LIM.btnTitle) });
+            if (row.length < 3) row.push({ id: `wa:so1:${bc}`, title: tr('wa_back') });
+            await sendButtons(from, { body: on ? tr('dlv_trk_on_line') : '—', buttons: row.slice(0, 3) });
         }
     }
 
@@ -1441,7 +1448,26 @@ function create(deps) {
     }
     async function stopTrack(from, s, bc) {
         s.temp.trackBarcode = null; s.temp.trackOn = false;
+        // v14.42 — 🪤 كان الإيقاف يمسح حقلاً في الذاكرة ولا يكتب شيئاً في
+        // القاعدة، والصفّ يبقى `on_the_way` فيظلّ المشتري يرى دبّوساً حيّاً.
+        await rpc('bot_delivery_track_status', aid(from, { p_barcode: bc, p_status: 'cancelled' })).catch(() => {});
         await sendButtons(from, { body: tr('dlv_trk_wa_stopped'), buttons: [{ id: `wa:so1:${bc}`, title: tr('wa_back') }] });
+    }
+
+    // v14.42 — «وصلت» و«تم التسليم»: لم تكونا موجودتين في واتساب إطلاقاً.
+    async function setTrackState(from, s, st, bc) {
+        if (!sellerGate(from, s)) return;
+        const r = await rpc('bot_delivery_track_status', aid(from, { p_barcode: bc, p_status: st }));
+        if (!r || !r.ok) {
+            const e = r && r.error;
+            return sendButtons(from, {
+                body: tr(e === 'not_acknowledged' ? 'dlv_trk_ack_first' : 'dlv_trk_state_failed'),
+                buttons: [{ id: `wa:so1:${bc}`, title: tr('wa_back') }] });
+        }
+        if (st === 'delivered') { s.temp.trackBarcode = null; s.temp.trackOn = false; }
+        await sendButtons(from, {
+            body: tr(st === 'arrived' ? 'dlv_trk_arrived_ok' : 'dlv_trk_delivered_ok'),
+            buttons: [{ id: `wa:so1:${bc}`, title: tr('wa_back') }] });
     }
     // نبضة واحدة → القاعدة. true = الموقع استُهلك للتتبّع (فيتوقّف onLocation عندها).
     async function trackPing(from, s, loc) {
@@ -2375,6 +2401,8 @@ function create(deps) {
         if (id.startsWith('wa:ack:')) return ackOrder(from, s, id.slice(7));
         // v14.07 — تتبّع التوصيل (الإيقاف أولاً كي لا يلتبس البادئتان مستقبلاً)
         if (id.startsWith('wa:dtrkoff:')) return stopTrack(from, s, id.slice(11));
+        if (id.startsWith('wa:dtrkar:'))  return setTrackState(from, s, 'arrived',   id.slice(10));
+        if (id.startsWith('wa:dtrkdl:'))  return setTrackState(from, s, 'delivered', id.slice(10));
         if (id.startsWith('wa:dtrk:')) return startTrack(from, s, id.slice(8));
         if (id.startsWith('wa:dwhr:')) return whereIsOrder(from, s, id.slice(8));
         if (id.startsWith('wa:done:')) { const bc = id.slice(8); return completeOrder(from, s, bc, null); }
