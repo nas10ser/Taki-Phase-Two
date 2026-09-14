@@ -202,19 +202,33 @@ const AdminReports: React.FC = () => {
         else history.push(`/admin?tab=buyers&q=${encodeURIComponent(name || id)}`);
     };
 
-    // Summary counts so admin can see at-a-glance how many open items.
+    // v14.33 — البطاقات كانت تعدّ **الصفوف المحمّلة** وتكتب تحتها «الإجمالي»،
+    // ومع سقف ١٠٠ صفّاً كان «الإجمالي» يتجمّد عند ١٠٠ إلى الأبد وقرارات الرقابة
+    // تُتّخذ على عيّنة يظنّها ناصر كلّ شيء. الآن العدّ من الجدول كلّه.
+    const [serverSummary, setServerSummary] = useState<any>(null);
+    useEffect(() => {
+        let alive = true;
+        supabase.rpc('admin_reports_summary').then(({ data }) => { if (alive) setServerSummary(data); });
+        return () => { alive = false; };
+    }, [view, reports.length, complaints.length]);
+
     const summary = useMemo(() => {
-        if (view === 'reports') {
-            const open = reports.filter(r => r.status === 'open').length;
-            const review = reports.filter(r => r.status === 'under_review').length;
-            const resolved = reports.filter(r => r.status === 'resolved').length;
-            return { open, review, resolved, total: reports.length };
+        const side = view === 'reports' ? serverSummary?.reports : serverSummary?.complaints;
+        if (side) {
+            return { open: Number(side.open) || 0, review: Number(side.review) || 0,
+                     resolved: Number(side.resolved) || 0, total: Number(side.total) || 0 };
         }
-        const open = complaints.filter(c => c.status === 'open').length;
-        const review = complaints.filter(c => c.status === 'reviewing').length;
-        const resolved = complaints.filter(c => c.status === 'resolved').length;
-        return { open, review, resolved, total: complaints.length };
-    }, [view, reports, complaints]);
+        // احتياطٌ لثوانٍ قبل وصول جواب الخادم — لا بديلٌ دائم.
+        const rows: any[] = view === 'reports' ? reports : complaints;
+        const openKey = view === 'reports' ? 'open' : 'open';
+        const revKey  = view === 'reports' ? 'under_review' : 'reviewing';
+        return {
+            open: rows.filter(r => r.status === openKey).length,
+            review: rows.filter(r => r.status === revKey).length,
+            resolved: rows.filter(r => r.status === 'resolved').length,
+            total: rows.length,
+        };
+    }, [view, reports, complaints, serverSummary]);
 
     const warnSummary = useMemo(() => {
         const danger = warned.filter((w) => w.warn_count >= 3).length;
@@ -441,6 +455,15 @@ const AdminReports: React.FC = () => {
                                 onStatusChange={changeReportStatus}
                             />
                         ))}
+                        {hasMore && (
+                            <button
+                                onClick={() => setShown(n => n + PAGE)}
+                                disabled={loading}
+                                className="w-full py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] font-black text-sm disabled:opacity-60"
+                            >
+                                {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${reports.length} من ${summary.total}`}
+                            </button>
+                        )}
                     </div>
                 )
             ) : view === 'complaints' ? (
@@ -460,6 +483,15 @@ const AdminReports: React.FC = () => {
                                 onStatusChange={changeComplaintStatus}
                             />
                         ))}
+                        {hasMore && (
+                            <button
+                                onClick={() => setShown(n => n + PAGE)}
+                                disabled={loading}
+                                className="w-full py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] font-black text-sm disabled:opacity-60"
+                            >
+                                {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${complaints.length} من ${summary.total}`}
+                            </button>
+                        )}
                     </div>
                 )
             ) : view === 'suspended' ? (

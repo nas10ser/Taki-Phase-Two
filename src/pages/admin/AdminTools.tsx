@@ -1442,13 +1442,47 @@ const AdminTools: React.FC = () => {
         }
     };
 
+    /**
+     * v14.33 — «تفعيل» كان يقلب عموداً ولا يبثّ شيئاً.
+     *
+     * 🪤 ناصر يحفظ حملة و«تفعيل الحملة فوراً» مُطفأ (أو يعدّل حملة قديمة)، ثم
+     * يقلب «تفعيل» في القائمة منتظراً أن تخرج. لا إشعار يخرج، ولا دفعة، ولا
+     * رسالة تيليجرام — لأن هذا المفتاح لا ينادي `broadcast_campaign` إطلاقاً.
+     * والحملة تبقى «مفعّلة» في الشاشة، فيظنّها أُرسلت.
+     *
+     * والآن يعرض عدد من ستصلهم **قبل** الإرسال: الاستهداف بالمدينة صار يعمل
+     * فعلاً (كان يُهمَل فتصل حملةُ الرياض المملكةَ كلها)، فمن حقّه أن يرى كم
+     * يُقصي استهدافُه قبل أن يضغط.
+     */
     const toggleCampaign = async (c: any) => {
         const next = !c.is_active;
+        if (next) {
+            const { data: aud } = await supabase.rpc('admin_campaign_audience', { p_campaign_id: c.id });
+            const a: any = aud || {};
+            const scope = [a.targeted_city, a.targeted_region].filter(Boolean).join(' · ');
+            const ok = await customConfirm(
+                `📣 تفعيل وبثّ «${c.title_ar}»؟\n\n` +
+                `• الجمهور المؤهّل: ${a.eligible ?? '—'}\n` +
+                `• داخل الاستهداف${scope ? ` (${scope})` : ''}: ${a.targeted ?? '—'}\n` +
+                `• سيصلهم الآن (لم يُشعَروا بها بعد): ${a.will_receive ?? '—'}\n\n` +
+                `سيصلهم إشعار في الموقع والتطبيق وتيليجرام وواتساب.`);
+            if (!ok) return;
+        }
         setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: next } : x));
         const { error } = await supabase.from('promotional_campaigns').update({ is_active: next }).eq('id', c.id);
         if (error) {
             setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: !next } : x));
             await customAlert('❌ ' + error.message);
+            return;
+        }
+        if (!next) return;
+        try {
+            const sent = await promoRepository.broadcastNow(c.id);
+            await customAlert(sent > 0
+                ? `✅ فُعّلت وبُثّت إلى ${sent} مستخدماً.`
+                : 'ℹ️ فُعّلت. لم يصل أحدٌ جديد — إمّا أن جمهورها أُشعِر بها سابقاً، أو أن استهداف المدينة لا يطابق أحداً.');
+        } catch (e: any) {
+            await customAlert('⚠️ فُعّلت الحملة لكن تعذّر البثّ: ' + (e?.message || ''));
         }
     };
 
