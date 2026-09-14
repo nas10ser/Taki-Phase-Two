@@ -1,0 +1,98 @@
+name: مراقبة النسخ الاحتياطية
+
+# النسخة ترفع نفسها من خادم جدة ٣:١٨ فجراً بتوقيت الرياض (٠٠:١٨ غرينتش).
+# هذا الفحص يعمل بعدها بساعتين، **من خارج الخادم** — فهو يكشف ما لا يكشفه
+# الخادم عن نفسه: أن الجهاز مات، أو أن المؤقّت توقّف، أو أن الرفع فشل صامتاً.
+#
+# التنبيه: فشل هذا السير يُرسل بريداً من GitHub إلى ناصر — نفس نهج
+# `uptime-monitor.yml`. لا قناة ثانية تحتاج صيانة.
+#
+# الرابط `OCI_BACKUP_LIST_URL` رابط **قراءة وسرد فقط** لمستودع النسخ، لا يملك
+# حذفاً ولا كتابة، وينتهي ١ سبتمبر ٢٠٢٧. (رابط الخادم منفصل: كتابة فقط.)
+on:
+  schedule:
+    - cron: '0 2 * * *'      # ٢:٠٠ غرينتش = ٥:٠٠ صباحاً بتوقيت الرياض
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: هل وصلت نسخة أمس؟ وهل حجمها معقول؟
+        env:
+          LIST_URL: ${{ secrets.OCI_BACKUP_LIST_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LIST_URL:-}" ]; then
+            echo "::error::السرّ OCI_BACKUP_LIST_URL غير مضبوط — الفحص لا يستطيع العمل."
+            exit 1
+          fi
+          # `fields=` ضروري: السرد الافتراضي يُرجع الأسماء وحدها بلا حجم ولا تاريخ.
+          curl -fsS --max-time 60 "${LIST_URL}?fields=name,size,timeCreated" -o list.json
+          python3 - <<'PY'
+          import json, sys, datetime
+
+          raw   = json.load(open('list.json'))['objects']
+          base  = json.load(open('supabase/ops/backup-baseline.json'))
+          names = {o['name'] for o in raw}
+          now   = datetime.datetime.now(datetime.timezone.utc)
+
+          def age_h(o):
+              return (now - datetime.datetime.fromisoformat(
+                  o['timeCreated'].replace('Z', '+00:00'))).total_seconds() / 3600
+
+          # نسختان مختلفتان في نفس المستودع، ولا يجوز خلطهما:
+          #   الجذر     → الليلية الكاملة (قاعدة + صور + إعدادات) ≈ ٤٠ م.ب
+          #   hourly/   → القاعدة وحدها كل ساعة ≈ ٤ م.ب
+          # لو قارنّا أحدث ملف مهما كان بخطّ أساس الليلية لأنذر كل ساعة بلا سبب.
+          full   = sorted((o for o in raw if o['name'].endswith('.tar.gpg')
+                           and '/' not in o['name']), key=lambda o: o['timeCreated'])
+          hourly = sorted((o for o in raw if o['name'].startswith('hourly/')
+                           and o['name'].endswith('.tar.gpg')), key=lambda o: o['timeCreated'])
+
+          errs = []
+          if not full:
+              sys.exit('❌ لا توجد أي نسخة ليلية كاملة إطلاقاً.')
+
+          newest = full[-1]
+          mb, exp, a = newest['size'] / 1048576, base['expected_mb'], age_h(newest)
+          print(f"الليلية: {newest['name']}")
+          print(f"  {mb:.1f} م.ب (خط الأساس {exp}) · عمرها {a:.1f} ساعة · المجموع {len(full)}")
+
+          if a > 26:
+              errs.append(f"لم تُرفع نسخة ليلية منذ {a:.0f} ساعة — المتوقّع كل ٢٤. "
+                          "افحص مؤقّت taki-backup.timer على خادم جدة.")
+          if mb < exp * base['min_ratio']:
+              errs.append(f"النسخة الليلية أصغر من خط الأساس بكثير ({mb:.1f} مقابل {exp} م.ب) — "
+                          "إمّا مبتورة، أو حُذفت بيانات. إن كان الحذف مقصوداً فحدّث "
+                          "supabase/ops/backup-baseline.json.")
+          if mb > exp * base['max_ratio']:
+              errs.append(f"النسخة الليلية أكبر من خط الأساس بكثير ({mb:.1f} مقابل {exp} م.ب) — "
+                          "نموّ غير متوقّع يستحق نظرة.")
+          if newest['size'] < 1_000_000:
+              errs.append(f"النسخة الليلية أصغر من ميجابايت ({newest['size']} بايت) — شبه مؤكّد أنها فاسدة.")
+          # بصمة التحقّق تُرفع بعد الأرشيف؛ غيابها تعني رفعاً انقطع في منتصفه.
+          if newest['name'][:-8] + '.sha256' not in names:
+              errs.append("بصمة sha256 المرافقة للنسخة الليلية مفقودة — الرفع انقطع قبل أن يكتمل.")
+
+          # نسخ الساعة هي ما يحدّ الخسارة إلى ساعة بدل يوم. سكوتها هو الخطر.
+          if not hourly:
+              errs.append("لا توجد أي نسخة بالساعة — مؤقّت taki-backup-hourly.timer متوقّف.")
+          else:
+              h  = hourly[-1]
+              hm, hexp, ha = h['size'] / 1048576, base['hourly_expected_mb'], age_h(h)
+              print(f"بالساعة: {h['name'].split('/')[-1]}")
+              print(f"  {hm:.1f} م.ب (خط الأساس {hexp}) · عمرها {ha:.1f} ساعة · المحفوظ {len(hourly)}")
+              if ha > base['max_hourly_age_h']:
+                  errs.append(f"آخر نسخة بالساعة عمرها {ha:.1f} ساعة — المتوقّع كل ساعة. "
+                              "افحص مؤقّت taki-backup-hourly.timer.")
+              if hm < hexp * base['hourly_min_ratio']:
+                  errs.append(f"نسخة الساعة أصغر من المتوقّع ({hm:.1f} مقابل {hexp} م.ب) — قد تكون مبتورة.")
+
+          if errs:
+              for e in errs:
+                  print(f"::error::{e}")
+              sys.exit(1)
+          print("✅ النسخ الاحتياطية سليمة.")
+          PY
