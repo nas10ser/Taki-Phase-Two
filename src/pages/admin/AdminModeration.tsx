@@ -26,6 +26,8 @@ interface FlagRow {
     id: string; kind: 'text' | 'image'; source: 'chat' | 'rating' | 'deal' | 'upload';
     store_id: string | null; offender_id: string | null; offender_name: string | null;
     content: string | null; matched: string[] | null;
+    /** v14.40 — مرجع الصفّ المخالف: id العرض أو التقييم أو باركود الحجز. */
+    ref_id?: string | null;
     status: 'open' | 'reviewed'; created_at: string;
 }
 interface TermRow { id: number; term: string; match_mode: 'word' | 'substr'; }
@@ -46,7 +48,8 @@ const fmtWhen = (iso: string) => {
 };
 
 const AdminModeration: React.FC = () => {
-    const { customAlert, customConfirm } = useApp();
+    const { customAlert, customConfirm, customPrompt, hasPermission } = useApp();
+    const canAct = hasPermission('action_delete_deals');
     const [overview, setOverview] = useState<{ total_open: number; stores: StoreRow[] } | null>(null);
     const [flags, setFlags] = useState<FlagRow[]>([]);
     const [storeFilter, setStoreFilter] = useState<string | null>(null);
@@ -142,6 +145,54 @@ const AdminModeration: React.FC = () => {
             setFlags(prev);
             await customAlert('❌ ' + error.message);
         }
+    };
+
+    /**
+     * v14.40 — إجراءان كانا مفقودين تماماً (طلب ناصر ٢).
+     *
+     * 🪤 كانت الشاشة تعرض نصّ المخالفة ولا زرّ يزيلها ولا رابط يفتحها: على
+     * ناصر أن يبحث عن العرض يدوياً في المتاجر. ولو أراد حذفه فلا يستطيع —
+     * سياسة الحذف على `deals` للمالك وحده.
+     *
+     * والعرض **يُخفى لا يُحذف** (قراره: «لا تحذف اي شيء»): `paused` تُخفيه عن
+     * الجميع وتُبقي طلباته وفواتيره سليمة. والتقييم يُحذف حذفاً ناعماً.
+     */
+    const hideDeal = async (f: FlagRow) => {
+        if (!f.ref_id) { await customAlert('⚠️ هذا الإنذار قديم ولا يحمل مرجعاً للعرض — الإنذارات الجديدة تحمله.'); return; }
+        const why = await customPrompt(
+            '🚫 إخفاء هذا العرض؟\n\nيختفي عن كل المشترين فوراً، وتبقى طلباته وفواتيره كما هي.\nيصل التاجر إشعار بالسبب ويُسجَّل في سجلّه.\n\nاكتب السبب:');
+        if (why == null) return;
+        const reason = String(why).trim();
+        if (reason.length < 3) { await customAlert('⚠️ اكتب سبباً واضحاً — يصل التاجر.'); return; }
+        const { data, error } = await supabase.rpc('admin_hide_deal', {
+            p_deal_id: f.ref_id, p_hide: true, p_reason: reason,
+        });
+        if (error || !(data as any)?.ok) { await customAlert('❌ ' + (error?.message || (data as any)?.error || '')); return; }
+        await customAlert('🚫 أُخفي العرض ووصل التاجر السبب.');
+    };
+
+    const removeRating = async (f: FlagRow) => {
+        if (!f.ref_id) { await customAlert('⚠️ هذا الإنذار قديم ولا يحمل مرجعاً للتقييم.'); return; }
+        const why = await customPrompt('🚫 حذف هذا التقييم؟\n\nيختفي عن صفحة المتجر ويُعاد حساب المتوسط.\n\nاكتب السبب (يصل صاحبه):');
+        if (why == null) return;
+        const reason = String(why).trim();
+        if (reason.length < 3) { await customAlert('⚠️ اكتب سبباً واضحاً.'); return; }
+        const { data, error } = await supabase.rpc('admin_delete_rating', {
+            p_rating_id: f.ref_id, p_reason: reason,
+        });
+        if (error || !(data as any)?.ok) { await customAlert('❌ ' + (error?.message || (data as any)?.error || '')); return; }
+        await customAlert('🚫 حُذف التقييم ووصل صاحبه السبب.');
+    };
+
+    /** رابط مباشر إلى المحتوى المخالف نفسه — كان البحث عنه يدوياً. */
+    const openContent = (f: FlagRow) => {
+        if (!f.ref_id) { customAlert('⚠️ هذا الإنذار قديم ولا يحمل مرجعاً.'); return; }
+        const url = f.source === 'deal'   ? `/deal/${f.ref_id}`
+                  : f.source === 'chat'   ? `/booking/${f.ref_id}`
+                  : f.source === 'rating' ? (f.store_id ? `/store/${f.store_id}` : null)
+                  : null;
+        if (!url) { customAlert('⚠️ لا صفحة مباشرة لهذا النوع.'); return; }
+        window.open(url, '_blank', 'noopener,noreferrer');
     };
 
     const addTerm = async () => {
@@ -359,6 +410,27 @@ const AdminModeration: React.FC = () => {
                                     {f.content && (
                                         <div className="text-xs text-[var(--text-primary)] bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg px-2.5 py-2 leading-relaxed break-words">
                                             {f.content}
+                                        </div>
+                                    )}
+                                    {/* v14.40 — الإجراء في مكانه: رابطٌ يفتح المحتوى، وزرّ يزيله. */}
+                                    {f.ref_id && (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button onClick={() => openContent(f)}
+                                                className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-[var(--body-bg)] border border-[var(--border-color)]">
+                                                ↗ فتح المحتوى
+                                            </button>
+                                            {canAct && f.source === 'deal' && (
+                                                <button onClick={() => hideDeal(f)}
+                                                    className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
+                                                    🚫 إخفاء العرض
+                                                </button>
+                                            )}
+                                            {canAct && f.source === 'rating' && (
+                                                <button onClick={() => removeRating(f)}
+                                                    className="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200">
+                                                    🚫 حذف التقييم
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                     {f.matched && f.matched.length > 0 && (
