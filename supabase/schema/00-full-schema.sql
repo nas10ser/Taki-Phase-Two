@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9UHVZU8xVoOY5UDpe5fmbGh0VWeVCotWE8KldIr0JgCVOSRRKxwdS84Ki55v5a7
+\restrict WRn6cHwyZWSg5OrxeBmOcUU6MHJV63OSY7v7yQEBx41mq3iMBf6McLLIZX7aczl
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -406,6 +406,9 @@ CREATE FUNCTION public._booking_card(p_barcode text, p_role text) RETURNS jsonb
     'delivery_phone',   b.delivery_address->>'phone',
     'delivery_lat',     b.delivery_address->>'lat',
     'delivery_lng',     b.delivery_address->>'lng',
+    -- v14.42 — حالة التوصيل من القاعدة: بلا هذا يقرأ البوت الحالةَ من ذاكرة
+    -- المحادثة التي تُمسح مع كل إعادة تشغيل، فيعرض «ابدأ البثّ» وهو جارٍ.
+    'dlv_status', (SELECT dt.status FROM delivery_tracks dt WHERE dt.barcode = b.barcode),
     'payment_method', b.payment_method,
     'paid', b.paid_at IS NOT NULL,
     'paid_amount', b.paid_amount,
@@ -3042,6 +3045,42 @@ END $$;
 
 
 --
+-- Name: admin_delete_rating(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_delete_rating(p_rating_id text, p_reason text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_r public.ratings%ROWTYPE; v_msg text;
+BEGIN
+  IF NOT public.taki_admin_perm('action_delete_deals') THEN
+    RAISE EXCEPTION 'ليست لديك صلاحية حذف التقييمات';
+  END IF;
+  IF COALESCE(btrim(p_reason),'') = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'REASON_REQUIRED');
+  END IF;
+  SELECT * INTO v_r FROM public.ratings WHERE id = p_rating_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); END IF;
+  IF v_r.deleted_at IS NOT NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'ALREADY_DELETED');
+  END IF;
+
+  -- حذفٌ ناعم: المتوسط والعدد على `deals` يُعاد حسابهما بمشغّل التقييمات،
+  -- والصفّ يبقى دليلاً على ما جرى.
+  UPDATE public.ratings SET deleted_at = now() WHERE id = p_rating_id;
+
+  v_msg := '🚫 حذفت إدارة تاكي تقييمك — ' || btrim(p_reason) || '.';
+  INSERT INTO public.user_warnings (user_id, user_role, reason, admin_id)
+  VALUES (v_r.user_id, 'buyer', v_msg, auth.uid()::text);
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (v_r.user_id, '🚫 حذف تقييم', '🚫 Review removed', v_msg, v_msg, 'system',
+          jsonb_build_object('audience','user'));
+  RETURN jsonb_build_object('ok', true);
+END $$;
+
+
+--
 -- Name: admin_delete_warning(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3055,6 +3094,97 @@ BEGIN
   DELETE FROM public.user_warnings WHERE id = p_warning_id;
   IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'not_found'); END IF;
   RETURN jsonb_build_object('success', true);
+END $$;
+
+
+--
+-- Name: admin_delivery_orders(text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_delivery_orders(p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v jsonb; v_lim int := GREATEST(1, LEAST(200, COALESCE(p_limit,50)));
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.booked_at DESC), '[]'::jsonb) INTO v
+  FROM (
+    SELECT b.barcode, b.status, b.booked_at, b.total_amount, b.delivery_fee,
+           b.user_name, b.user_phone,
+           COALESCE(NULLIF(u.shop,''), u.name) AS store_name, b.store_id,
+           d.item_name, b.payment_method, (b.paid_at IS NOT NULL) AS paid,
+           b.delivery_address->>'label'   AS addr_label,
+           b.delivery_address->>'details' AS addr_details,
+           dt.status AS track_status, dt.updated_at AS track_at
+    FROM bookings b
+    LEFT JOIN users u ON u.id = b.store_id
+    LEFT JOIN deals d ON d.id = b.deal_id
+    LEFT JOIN delivery_tracks dt ON dt.barcode = b.barcode
+    WHERE b.fulfillment = 'delivery'
+      AND (p_status IS NULL OR b.status = p_status)
+    ORDER BY b.booked_at DESC
+    LIMIT v_lim OFFSET GREATEST(0, COALESCE(p_offset,0))
+  ) t;
+  RETURN jsonb_build_object('ok', true, 'rows', v,
+    'total', (SELECT count(*) FROM bookings WHERE fulfillment='delivery'
+                AND (p_status IS NULL OR status = p_status)));
+END $$;
+
+
+--
+-- Name: admin_delivery_overview(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_delivery_overview() RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v jsonb;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT jsonb_build_object(
+    'global_on',       public.taki_delivery_globally_on(),
+    'orders_delivery', (SELECT count(*) FROM bookings WHERE fulfillment = 'delivery'),
+    'orders_pickup',   (SELECT count(*) FROM bookings WHERE COALESCE(fulfillment,'pickup') = 'pickup'),
+    'revenue_delivery',(SELECT COALESCE(SUM(total_amount),0) FROM bookings WHERE fulfillment='delivery' AND status='completed'),
+    'fees_collected',  (SELECT COALESCE(SUM(delivery_fee),0) FROM bookings WHERE fulfillment='delivery' AND status='completed'),
+    'stores_enabled',  (SELECT count(*) FROM store_profiles WHERE delivery_enabled AND NOT delivery_blocked_by_admin),
+    'stores_blocked',  (SELECT count(*) FROM store_profiles WHERE delivery_blocked_by_admin),
+    'zones',           (SELECT count(*) FROM store_delivery_zones WHERE is_active),
+    'tracks_live',     (SELECT count(*) FROM delivery_tracks WHERE status IN ('on_the_way','arrived')),
+    'by_status',       (SELECT COALESCE(jsonb_object_agg(status, n), '{}'::jsonb)
+                        FROM (SELECT status, count(*) n FROM bookings
+                              WHERE fulfillment='delivery' GROUP BY status) t)
+  ) INTO v;
+  RETURN v;
+END $$;
+
+
+--
+-- Name: admin_delivery_stores(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_delivery_stores() RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v jsonb;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Admin only'; END IF;
+  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.store_name), '[]'::jsonb) INTO v
+  FROM (
+    SELECT sp.store_id,
+           COALESCE(NULLIF(u.shop,''), u.name, '—') AS store_name,
+           sp.delivery_enabled, sp.delivery_blocked_by_admin, sp.delivery_block_reason,
+           sp.delivery_fee, sp.delivery_min_order, sp.delivery_eta_min, sp.delivery_payment,
+           (SELECT count(*) FROM store_delivery_zones z WHERE z.store_id = sp.store_id AND z.is_active) AS zones,
+           (SELECT count(*) FROM bookings b WHERE b.store_id = sp.store_id AND b.fulfillment='delivery') AS orders
+    FROM store_profiles sp
+    LEFT JOIN users u ON u.id = sp.store_id
+    WHERE sp.delivery_enabled OR sp.delivery_blocked_by_admin
+  ) t;
+  RETURN jsonb_build_object('ok', true, 'rows', v);
 END $$;
 
 
@@ -3489,6 +3619,49 @@ $$;
 
 
 --
+-- Name: admin_hide_deal(text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_hide_deal(p_deal_id text, p_hide boolean, p_reason text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_d public.deals%ROWTYPE; v_msg text;
+BEGIN
+  IF NOT public.taki_admin_perm('action_delete_deals') THEN
+    RAISE EXCEPTION 'ليست لديك صلاحية إخفاء العروض';
+  END IF;
+  SELECT * INTO v_d FROM public.deals WHERE id = p_deal_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); END IF;
+  IF p_hide AND COALESCE(btrim(p_reason),'') = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'REASON_REQUIRED');
+  END IF;
+
+  -- 🪤 `tr_guard_deal_publish` يرفض أي `UPDATE OF status` من العميل، وهذه دالة
+  -- مالكة فتتجاوزه. ولا نحذف: الإخفاء يُبقي الطلبات والفواتير المرتبطة سليمة.
+  UPDATE public.deals SET status = CASE WHEN p_hide THEN 'paused' ELSE 'active' END
+   WHERE id = p_deal_id;
+
+  v_msg := CASE WHEN p_hide
+    THEN '🚫 أخفت إدارة تاكي عرضك «' || COALESCE(v_d.item_name,'') || '» — ' || btrim(p_reason)
+         || '. عدّله ثم راسل الإدارة لإعادته.'
+    ELSE '✅ أُعيد عرضك «' || COALESCE(v_d.item_name,'') || '» للظهور.' END;
+
+  IF p_hide THEN
+    INSERT INTO public.user_warnings (user_id, user_role, reason, admin_id)
+    VALUES (v_d.store_id, 'seller', v_msg, auth.uid()::text);
+  END IF;
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (v_d.store_id, CASE WHEN p_hide THEN '🚫 إخفاء عرض' ELSE '✅ إعادة عرض' END,
+          CASE WHEN p_hide THEN '🚫 Deal hidden' ELSE '✅ Deal restored' END,
+          v_msg, v_msg, 'system',
+          jsonb_build_object('audience','seller','dealId', p_deal_id,
+                             'actionUrl','/deal/'||p_deal_id,'action_url','/deal/'||p_deal_id));
+  RETURN jsonb_build_object('ok', true, 'hidden', p_hide);
+END $$;
+
+
+--
 -- Name: admin_investor_kpis(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3604,6 +3777,92 @@ BEGIN
         v_buyers, v_sellers, v_active_merchants;
 END;
 $$;
+
+
+--
+-- Name: admin_launch_audit(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_launch_audit() RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_no_rls int; v_unguarded int; v_anon_write int; v_crons int;
+  v_undeclared int; v_vat_rate text; v_gw int; v_gw_ok int;
+  v_suspend_ok boolean; v_perm_policies int; v_bare_admin int;
+BEGIN
+  IF NOT public.taki_admin_perm('tab_launch') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+
+  SELECT count(*) INTO v_no_rls FROM pg_tables t
+   WHERE t.schemaname = 'public'
+     AND NOT (SELECT relrowsecurity FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE c.relname = t.tablename AND n.nspname = 'public');
+
+  SELECT count(*) INTO v_unguarded FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname LIKE 'admin\_%'
+     AND pg_get_functiondef(p.oid) NOT LIKE '%is_admin%'
+     AND pg_get_functiondef(p.oid) NOT LIKE '%_admin_require_ctx%'
+     AND pg_get_functiondef(p.oid) NOT LIKE '%taki_admin_perm%'
+     AND pg_get_functiondef(p.oid) NOT LIKE '%is_super_admin%'
+     AND pg_get_functiondef(p.oid) NOT LIKE '%user_type%';
+
+  SELECT count(*) INTO v_anon_write FROM information_schema.role_table_grants
+   WHERE grantee = 'anon' AND table_schema = 'public'
+     AND privilege_type IN ('INSERT','UPDATE','DELETE');
+
+  SELECT count(*) INTO v_crons FROM cron.job WHERE active;
+
+  SELECT count(*) INTO v_undeclared FROM public.users u
+   WHERE u.user_type IN ('seller','admin') AND u.deleted_at IS NULL
+     AND NOT COALESCE((public.store_can_sell(u.id)->>'ok')::boolean, false);
+
+  SELECT (value #>> '{}') INTO v_vat_rate FROM public.platform_settings WHERE key = 'merchant_vat';
+  SELECT count(*), count(*) FILTER (WHERE verified_at IS NOT NULL)
+    INTO v_gw, v_gw_ok FROM public.merchant_gateways;
+
+  v_suspend_ok := pg_get_functiondef(to_regprocedure('public.admin_suspend_account(text,boolean,text)'))
+                  LIKE '%banned_until%';
+
+  SELECT count(*) INTO v_perm_policies FROM pg_policies
+   WHERE schemaname='public' AND (qual LIKE '%taki_admin_perm%' OR with_check LIKE '%taki_admin_perm%');
+  SELECT count(*) INTO v_bare_admin FROM pg_policies
+   WHERE schemaname='public' AND (qual LIKE '%is_admin%' OR with_check LIKE '%is_admin%')
+     AND COALESCE(qual,'') NOT LIKE '%has_admin_permission%'
+     AND COALESCE(qual,'') NOT LIKE '%taki_admin_perm%'
+     AND COALESCE(with_check,'') NOT LIKE '%taki_admin_perm%';
+
+  RETURN jsonb_build_object('measured_at', now(), 'checks', jsonb_build_array(
+    jsonb_build_object('id','rls','ok', v_no_rls = 0,
+      'detail', CASE WHEN v_no_rls = 0 THEN 'كل جداول public عليها RLS — قِيس الآن'
+                     ELSE v_no_rls || ' جدولاً بلا RLS' END),
+    jsonb_build_object('id','admin-rpc','ok', v_unguarded = 0,
+      'detail', CASE WHEN v_unguarded = 0 THEN 'كل دوال admin_* عليها حارس — قِيس الآن'
+                     ELSE v_unguarded || ' دالة بلا حارس' END),
+    jsonb_build_object('id','subperms','ok', v_bare_admin <= 1,
+      'detail', v_perm_policies || ' سياسة واعية بالصلاحية الفرعية · ' || v_bare_admin || ' بقيت على is_admin العارية'),
+    jsonb_build_object('id','anon-write','ok', v_anon_write = 0,
+      'detail', CASE WHEN v_anon_write = 0 THEN 'الزائر لا يملك كتابة على أي جدول'
+                     ELSE v_anon_write || ' منح كتابة للزائر' END),
+    jsonb_build_object('id','rate-limit','ok', to_regclass('public.rate_limit_counters') IS NOT NULL,
+      'detail','مطبَّق في القاعدة منذ v13.15 — لا علاقة له بلوحة supabase.com'),
+    jsonb_build_object('id','crons','ok', v_crons >= 15,
+      'detail', v_crons || ' مهمة جدولة مفعّلة'),
+    jsonb_build_object('id','suspension','ok', v_suspend_ok,
+      'detail', CASE WHEN v_suspend_ok THEN 'الإيقاف يمنع الدخول ويُنهي الجلسات — قِيس'
+                     ELSE 'الإيقاف يضبط عموداً فقط' END),
+    jsonb_build_object('id','attestation','ok', v_undeclared = 0,
+      'detail', CASE WHEN v_undeclared = 0 THEN 'كل المتاجر أقرّت بطريقة الحساب'
+                     ELSE v_undeclared || ' متجراً لم يُقرّ — عروضه تبقى مسوّدة' END),
+    jsonb_build_object('id','vat','ok', COALESCE(v_vat_rate,'0') <> '0',
+      'detail','نسبة ضريبة التجار: ' || COALESCE(v_vat_rate,'غير مضبوطة')),
+    jsonb_build_object('id','payment','ok', v_gw_ok > 0,
+      'detail', v_gw || ' بوابة مسجّلة · ' || v_gw_ok || ' موثّقة'),
+    jsonb_build_object('id','backup','ok', NULL,
+      'detail','لا يُقاس من القاعدة عمداً: النسخ خارج الخادم. الحارس الحقيقي هو الفحص اليومي على GitHub')
+  ));
+END $$;
 
 
 --
@@ -4077,7 +4336,7 @@ DECLARE v jsonb;
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'admin only'; END IF;
   SELECT coalesce(jsonb_agg(jsonb_build_object(
-      'id', t.id, 'kind', t.kind, 'source', t.source,
+      'id', t.id, 'kind', t.kind, 'source', t.source, 'ref_id', t.ref_id,
       'store_id', t.store_id, 'offender_id', t.offender_id, 'offender_name', t.offender_name,
       'content', t.content, 'matched', t.matched, 'status', t.status,
       'created_at', t.created_at) ORDER BY t.created_at DESC), '[]'::jsonb)
@@ -4819,6 +5078,22 @@ END $$;
 
 
 --
+-- Name: admin_set_delivery_global(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_set_delivery_global(p_enabled boolean) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT public.taki_admin_perm('tab_delivery') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+  INSERT INTO public.platform_settings (key, value) VALUES ('delivery_enabled', to_jsonb(p_enabled))
+  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+  RETURN jsonb_build_object('ok', true, 'enabled', p_enabled);
+END $$;
+
+
+--
 -- Name: admin_set_flag_status(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4861,6 +5136,26 @@ BEGIN
           CASE WHEN p_blocked THEN 'The platform temporarily suspended online payment for your store — your products fall back to pay-on-pickup automatically.'
                ELSE 'Online payment for your store has been re-enabled.' END,
           'system', jsonb_build_object('audience', 'seller'));
+END $$;
+
+
+--
+-- Name: admin_set_launch_item(text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_set_launch_item(p_item_id text, p_done boolean, p_note text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NOT public.taki_admin_perm('tab_launch') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+  IF COALESCE(btrim(p_item_id),'') = '' THEN RETURN jsonb_build_object('ok', false); END IF;
+  INSERT INTO public.launch_checklist_state (item_id, done, note, admin_id, updated_at)
+  VALUES (btrim(p_item_id), p_done, NULLIF(btrim(COALESCE(p_note,'')),''), auth.uid()::text, now())
+  ON CONFLICT (item_id) DO UPDATE
+    SET done = EXCLUDED.done, note = EXCLUDED.note,
+        admin_id = EXCLUDED.admin_id, updated_at = now();
+  RETURN jsonb_build_object('ok', true, 'item', p_item_id, 'done', p_done);
 END $$;
 
 
@@ -5011,6 +5306,37 @@ BEGIN
     END IF;
 
     RETURN jsonb_build_object('success', TRUE, 'store_id', p_store_id, 'store_name', v_store_name, 'label_type', v_label);
+END $$;
+
+
+--
+-- Name: admin_set_store_delivery(text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_set_store_delivery(p_store_id text, p_blocked boolean, p_reason text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_msg text;
+BEGIN
+  IF NOT public.taki_admin_perm('tab_sellers') THEN RAISE EXCEPTION 'Not allowed'; END IF;
+  UPDATE public.store_profiles
+     SET delivery_blocked_by_admin = p_blocked,
+         delivery_block_reason = CASE WHEN p_blocked THEN NULLIF(btrim(COALESCE(p_reason,'')),'') END,
+         delivery_blocked_at = CASE WHEN p_blocked THEN now() END
+   WHERE store_id = p_store_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'STORE_NOT_FOUND'); END IF;
+
+  v_msg := CASE WHEN p_blocked
+    THEN '🚚 أوقفت إدارة تاكي خدمة التوصيل على متجرك'
+         || CASE WHEN COALESCE(btrim(p_reason),'')<>'' THEN ' — ' || btrim(p_reason) ELSE '' END
+         || '. الاستلام من المتجر يبقى متاحاً.'
+    ELSE '✅ أُعيدت خدمة التوصيل على متجرك.' END;
+  INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+  VALUES (p_store_id, CASE WHEN p_blocked THEN '🚚 إيقاف التوصيل' ELSE '✅ إعادة التوصيل' END,
+          CASE WHEN p_blocked THEN '🚚 Delivery paused' ELSE '✅ Delivery restored' END,
+          v_msg, v_msg, 'system', jsonb_build_object('audience','seller'));
+  RETURN jsonb_build_object('ok', true, 'blocked', p_blocked);
 END $$;
 
 
@@ -6427,7 +6753,14 @@ BEGIN
   IF NOT FOUND THEN RETURN jsonb_build_object('success',false,'error','not_found'); END IF;
   IF v_b.status='completed' THEN RETURN jsonb_build_object('success',false,'error','already_completed'); END IF;
   IF v_b.status='cancelled' THEN RETURN jsonb_build_object('success',false,'error','cancelled'); END IF;
-  UPDATE bookings SET status='completed', completed_at=NOW() WHERE barcode=UPPER(p_barcode) AND store_id=v_sid;
+  -- v14.42 — ملاحظة التاجر تُحفظ على الطلب لا في نصّ إشعارٍ عابر.
+  -- 🪤 كانت `p_message` تُستعمل لصياغة الإشعار **فقط**: التاجر يكتب «تُرك عند
+  -- الحارس» فتصل رسالةً تُقرأ مرّة وتضيع، ولا تظهر في بطاقة الطلب ولا في
+  -- «💬 ملاحظة التاجر» التي يقرؤها المشتري في الموقع.
+  UPDATE bookings
+     SET status='completed', completed_at=NOW(),
+         merchant_note = COALESCE(NULLIF(btrim(COALESCE(p_message,'')),''), merchant_note)
+   WHERE barcode=UPPER(p_barcode) AND store_id=v_sid;
 
   v_msg := NULLIF(btrim(COALESCE(p_message,'')),'');
   IF v_msg IS NOT NULL THEN
@@ -6675,6 +7008,62 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'remaining_km', v_km, 'eta_min', v_eta, 'status', v_prev.status);
 END
 $$;
+
+
+--
+-- Name: bot_delivery_track_status(bigint, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bot_delivery_track_status(p_telegram_id bigint, p_barcode text, p_status text, p_whatsapp_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_uid text; v_b public.bookings%ROWTYPE; v_msg text;
+BEGIN
+  IF NOT public._bot_gate_ok() THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_authorized');
+  END IF;
+  IF p_status NOT IN ('on_the_way','arrived','delivered','cancelled') THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'bad_status');
+  END IF;
+  SELECT id INTO v_uid FROM public.users
+   WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'not_linked'); END IF;
+
+  SELECT * INTO v_b FROM public.bookings WHERE barcode = upper(btrim(p_barcode));
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'not_found'); END IF;
+  -- التاجر وحده يحرّك حالة التوصيل: هو من يوصّل.
+  IF v_b.store_id IS DISTINCT FROM v_uid THEN RETURN jsonb_build_object('ok', false, 'error', 'forbidden'); END IF;
+  IF COALESCE(v_b.fulfillment,'pickup') <> 'delivery' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_delivery');
+  END IF;
+  IF p_status IN ('on_the_way','arrived') AND v_b.status = 'pending' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_acknowledged');
+  END IF;
+
+  INSERT INTO public.delivery_tracks (barcode, store_id, user_id, status, updated_at)
+  VALUES (upper(btrim(p_barcode)), v_b.store_id, v_b.user_id, p_status, now())
+  ON CONFLICT (barcode) DO UPDATE
+    SET status = EXCLUDED.status, updated_at = now();
+
+  -- المشتري يُشعَر بما يعنيه فعلاً. «ألغي البثّ» ليس خبراً سيئاً فلا نُقلقه به.
+  v_msg := CASE p_status
+    WHEN 'arrived'   THEN '📍 وصل المندوب إلى عنوانك — طلبك عند الباب.'
+    WHEN 'delivered' THEN '✅ سُلّم طلبك. إن لم تستلمه فراسل التاجر فوراً.'
+    ELSE NULL END;
+  IF v_msg IS NOT NULL THEN
+    INSERT INTO public.notifications (user_id, title_ar, title_en, body_ar, body_en, type, meta_data)
+    VALUES (v_b.user_id,
+            CASE p_status WHEN 'arrived' THEN '📍 وصل المندوب' ELSE '✅ سُلّم طلبك' END,
+            CASE p_status WHEN 'arrived' THEN '📍 Courier arrived' ELSE '✅ Delivered' END,
+            v_msg, v_msg, 'booking',
+            jsonb_build_object('audience','buyer','barcode', v_b.barcode,
+                               'actionUrl','/bookings?barcode='||v_b.barcode,
+                               'action_url','/bookings?barcode='||v_b.barcode));
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'status', p_status, 'barcode', v_b.barcode);
+END $$;
 
 
 --
@@ -7210,6 +7599,9 @@ BEGIN
       'delivery_phone', b.delivery_address->>'phone',
       'delivery_lat', b.delivery_address->>'lat',
       'delivery_lng', b.delivery_address->>'lng',
+      -- v14.42 — حالة التوصيل من القاعدة: بلا هذا يقرأ البوت الحالةَ من ذاكرة
+      -- المحادثة التي تُمسح مع كل إعادة تشغيل، فيعرض «ابدأ البثّ» وهو جارٍ.
+      'dlv_status', (SELECT dt.status FROM delivery_tracks dt WHERE dt.barcode = b.barcode),
       'payment_method', b.payment_method,
       'paid', b.paid_at IS NOT NULL
     ) AS row
@@ -10015,9 +10407,19 @@ DECLARE
   v_loc text := coalesce(nullif(btrim(coalesce(p_location_id, '')), ''), 'primary');
   v_zone_count int;
 BEGIN
+  -- v14.39 — مفتاح الإيقاف العام. هذه الدالة هي المختنق الذي تمرّ به كل
+  -- المسارات (الموقع والبوتان وحارس الحجز)، فالفحص هنا يُغطّيها جميعاً.
+  IF NOT public.taki_delivery_globally_on() THEN
+    RETURN jsonb_build_object('enabled', false, 'available', false, 'reason', 'platform_off');
+  END IF;
+
   SELECT * INTO sp FROM public.store_profiles WHERE store_id = p_store_id;
   IF NOT FOUND OR NOT coalesce(sp.delivery_enabled, false) THEN
     RETURN jsonb_build_object('enabled', false, 'available', false, 'reason', 'disabled');
+  END IF;
+  -- إيقافٌ إداريّ على هذا المتجر بعينه — عمودٌ لا يملكه التاجر فلا يرفعه بضغطة.
+  IF coalesce(sp.delivery_blocked_by_admin, false) THEN
+    RETURN jsonb_build_object('enabled', false, 'available', false, 'reason', 'admin_blocked');
   END IF;
 
   -- النطاقات التي تحكم هذا الحجز: نطاقات الفرع المختار + النطاقات العامة
@@ -12562,7 +12964,7 @@ CREATE FUNCTION public.merchant_request_store_name(p_name text, p_reason text DE
 DECLARE
   v_uid  text := auth.uid()::text;
   v_name text := btrim(COALESCE(p_name, ''));
-  v_cur  text; v_type text; v_id text;
+  v_cur  text; v_type text; v_id text; v_bad text[];
 BEGIN
   IF v_uid IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'AUTH_REQUIRED'); END IF;
   SELECT COALESCE(shop, name), user_type INTO v_cur, v_type FROM public.users WHERE id = v_uid;
@@ -12573,7 +12975,10 @@ BEGIN
   IF v_name = COALESCE(v_cur, '') THEN
     RETURN jsonb_build_object('ok', false, 'error', 'SAME_NAME');
   END IF;
-  -- انتحال علامة قائمة: يُرفض قبل أن يصل الطابور أصلاً.
+  v_bad := public.taki_match_terms(v_name);
+  IF array_length(v_bad, 1) IS NOT NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'BAD_WORDS');
+  END IF;
   IF EXISTS (SELECT 1 FROM public.users u
              WHERE u.id <> v_uid AND u.deleted_at IS NULL
                AND public.taki_norm(COALESCE(u.shop,'')) = public.taki_norm(v_name)) THEN
@@ -14374,6 +14779,25 @@ $$;
 
 
 --
+-- Name: taki_admin_perm(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_admin_perm(p_perm text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = (SELECT auth.uid())::text
+      AND u.user_type = 'admin'
+      AND u.deleted_at IS NULL
+      AND ( COALESCE(u.is_super_admin, false)
+         OR p_perm = ANY(COALESCE(u.admin_permissions, '{}'::text[])) )
+  );
+$$;
+
+
+--
 -- Name: taki_booking_amount(text, integer, jsonb, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -14711,6 +15135,20 @@ BEGIN
     UPDATE pending_warnings SET sent_at = now() WHERE id = r.id;
   END LOOP;
 END $$;
+
+
+--
+-- Name: taki_delivery_globally_on(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_delivery_globally_on() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT (value #>> '{}') FROM public.platform_settings WHERE key = 'delivery_enabled'),
+    'true') <> 'false';
+$$;
 
 
 --
@@ -15533,6 +15971,24 @@ END $$;
 
 
 --
+-- Name: taki_guard_delivery_block(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.taki_guard_delivery_block() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.delivery_blocked_by_admin IS DISTINCT FROM OLD.delivery_blocked_by_admin
+     AND NOT COALESCE(public.taki_admin_perm('tab_delivery'), false)
+     AND auth.uid()::text = NEW.store_id THEN
+    RAISE EXCEPTION 'إيقاف التوصيل على هذا المتجر قرارٌ إداري — تواصل مع إدارة تاكي.' USING ERRCODE='P0021';
+  END IF;
+  RETURN NEW;
+END $$;
+
+
+--
 -- Name: taki_guard_publish_needs_declaration(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -16137,12 +16593,14 @@ DECLARE
   v_store text;
   v_offender text;
   v_matched text[];
+  v_ref text;
 BEGIN
   BEGIN
     IF TG_TABLE_NAME = 'booking_messages' THEN
       v_content := NEW.body;
       v_source := 'chat';
       v_offender := NEW.sender_id;
+      v_ref := NEW.barcode;
       SELECT b.store_id INTO v_store FROM bookings b WHERE b.barcode = NEW.barcode LIMIT 1;
     ELSIF TG_TABLE_NAME = 'ratings' THEN
       IF TG_OP = 'UPDATE' AND NEW.comment IS NOT DISTINCT FROM OLD.comment THEN RETURN NEW; END IF;
@@ -16150,6 +16608,7 @@ BEGIN
       v_source := 'rating';
       v_offender := NEW.user_id;
       v_store := NEW.store_id;
+      v_ref := NEW.id::text;
     ELSE -- deals
       IF TG_OP = 'UPDATE'
          AND NEW.item_name IS NOT DISTINCT FROM OLD.item_name
@@ -16158,13 +16617,16 @@ BEGIN
       v_source := 'deal';
       v_offender := NEW.store_id;
       v_store := NEW.store_id;
+      v_ref := NEW.id::text;
     END IF;
 
     v_matched := public.taki_match_terms(v_content);
     IF array_length(v_matched, 1) IS NULL THEN RETURN NEW; END IF;
 
-    INSERT INTO moderation_flags (kind, source, store_id, offender_id, offender_name, content, matched)
-    VALUES ('text', v_source, v_store, v_offender,
+    -- v14.40 — `ref_id`: بلا مرجعٍ للصفّ المخالف لا يستطيع الأدمن فتح المحتوى
+    -- ولا إخفاءه — يقرأ النصّ ويبحث عنه يدوياً في المتاجر.
+    INSERT INTO moderation_flags (kind, source, ref_id, store_id, offender_id, offender_name, content, matched)
+    VALUES ('text', v_source, v_ref, v_store, v_offender,
             (SELECT coalesce(u.shop, u.name) FROM users u WHERE u.id = v_offender),
             left(v_content, 500), v_matched);
   EXCEPTION WHEN OTHERS THEN
@@ -19985,6 +20447,19 @@ ALTER TABLE ONLY public.favorites REPLICA IDENTITY FULL;
 
 
 --
+-- Name: launch_checklist_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.launch_checklist_state (
+    item_id text NOT NULL,
+    done boolean DEFAULT false NOT NULL,
+    note text,
+    admin_id text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: locations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20040,10 +20515,18 @@ CREATE TABLE public.moderation_flags (
     matched text[],
     status text DEFAULT 'open'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    ref_id text,
     CONSTRAINT moderation_flags_kind_check CHECK ((kind = ANY (ARRAY['text'::text, 'image'::text]))),
     CONSTRAINT moderation_flags_source_check CHECK ((source = ANY (ARRAY['chat'::text, 'rating'::text, 'deal'::text, 'upload'::text]))),
     CONSTRAINT moderation_flags_status_check CHECK ((status = ANY (ARRAY['open'::text, 'reviewed'::text])))
 );
+
+
+--
+-- Name: COLUMN moderation_flags.ref_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.moderation_flags.ref_id IS 'مرجع الصفّ المخالف: deal.id أو rating.id أو booking.barcode بحسب `source` (v14.40).';
 
 
 --
@@ -20627,6 +21110,9 @@ CREATE TABLE public.store_profiles (
     payment_declared_at timestamp with time zone,
     refund_policy text,
     store_terms text,
+    delivery_blocked_by_admin boolean DEFAULT false NOT NULL,
+    delivery_block_reason text,
+    delivery_blocked_at timestamp with time zone,
     CONSTRAINT store_profiles_delivery_chk CHECK (((delivery_payment = ANY (ARRAY['cod'::text, 'card'::text, 'both'::text])) AND (delivery_fee >= (0)::numeric) AND (delivery_fee <= (1000)::numeric) AND (delivery_min_order >= (0)::numeric) AND (delivery_min_order <= (100000)::numeric) AND ((delivery_eta_min IS NULL) OR ((delivery_eta_min >= 0) AND (delivery_eta_min <= 1440))) AND ((delivery_note IS NULL) OR (length(delivery_note) <= 300)))),
     CONSTRAINT store_profiles_policies_chk CHECK ((((refund_policy IS NULL) OR (length(refund_policy) <= 1500)) AND ((store_terms IS NULL) OR (length(store_terms) <= 1500)))),
     CONSTRAINT store_profiles_vat_status_check CHECK (((vat_status IS NULL) OR (vat_status = ANY (ARRAY['registered'::text, 'not_registered'::text]))))
@@ -21572,6 +22058,14 @@ ALTER TABLE ONLY public.expense_invoices
 
 ALTER TABLE ONLY public.favorites
     ADD CONSTRAINT favorites_pkey PRIMARY KEY (user_id, deal_id);
+
+
+--
+-- Name: launch_checklist_state launch_checklist_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.launch_checklist_state
+    ADD CONSTRAINT launch_checklist_state_pkey PRIMARY KEY (item_id);
 
 
 --
@@ -23682,6 +24176,13 @@ CREATE TRIGGER tr_ab_guard_booking_integrity BEFORE INSERT OR UPDATE ON public.b
 
 
 --
+-- Name: store_profiles tr_ab_guard_delivery_block; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tr_ab_guard_delivery_block BEFORE UPDATE ON public.store_profiles FOR EACH ROW EXECUTE FUNCTION public.taki_guard_delivery_block();
+
+
+--
 -- Name: users tr_ab_guard_store_rename; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -24936,7 +25437,7 @@ ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 -- Name: activity_log activity_select_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY activity_select_admin ON public.activity_log FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY activity_select_admin ON public.activity_log FOR SELECT USING (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
@@ -24949,21 +25450,21 @@ ALTER TABLE public.admin_draws ENABLE ROW LEVEL SECURITY;
 -- Name: admin_draws admin_draws_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY admin_draws_admin_all ON public.admin_draws USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY admin_draws_admin_all ON public.admin_draws USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
 -- Name: admin_impersonation_log admin_imp_log_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY admin_imp_log_insert ON public.admin_impersonation_log FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY admin_imp_log_insert ON public.admin_impersonation_log FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('action_impersonate'::text) AS taki_admin_perm));
 
 
 --
 -- Name: admin_impersonation_log admin_imp_log_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY admin_imp_log_select ON public.admin_impersonation_log FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY admin_imp_log_select ON public.admin_impersonation_log FOR SELECT USING (( SELECT public.taki_admin_perm('action_impersonate'::text) AS taki_admin_perm));
 
 
 --
@@ -25029,7 +25530,7 @@ ALTER TABLE public.banners ENABLE ROW LEVEL SECURITY;
 -- Name: banners banners_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY banners_select ON public.banners FOR SELECT USING ((((is_active = true) AND ((expires_at IS NULL) OR (expires_at > now()))) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY banners_select ON public.banners FOR SELECT USING ((((is_active = true) AND ((expires_at IS NULL) OR (expires_at > now()))) OR ( SELECT public.taki_admin_perm('action_manage_banners'::text) AS taki_admin_perm)));
 
 
 --
@@ -25073,7 +25574,7 @@ ALTER TABLE public.booking_refunds ENABLE ROW LEVEL SECURITY;
 -- Name: booking_refunds booking_refunds_select_parties; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY booking_refunds_select_parties ON public.booking_refunds FOR SELECT USING (((( SELECT (auth.uid())::text AS uid) = buyer_id) OR (( SELECT (auth.uid())::text AS uid) = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY booking_refunds_select_parties ON public.booking_refunds FOR SELECT USING (((( SELECT (auth.uid())::text AS uid) = buyer_id) OR (( SELECT (auth.uid())::text AS uid) = store_id) OR ( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 
 
 --
@@ -25122,14 +25623,14 @@ ALTER TABLE public.bot_gate_usage ENABLE ROW LEVEL SECURITY;
 -- Name: store_branches branches_delete_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY branches_delete_own ON public.store_branches FOR DELETE USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY branches_delete_own ON public.store_branches FOR DELETE USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: store_branches branches_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY branches_insert_own ON public.store_branches FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY branches_insert_own ON public.store_branches FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
@@ -25143,7 +25644,7 @@ CREATE POLICY branches_select_all ON public.store_branches FOR SELECT USING (tru
 -- Name: store_branches branches_update_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY branches_update_own ON public.store_branches FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY branches_update_own ON public.store_branches FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
@@ -25169,28 +25670,28 @@ ALTER TABLE public.complaints ENABLE ROW LEVEL SECURITY;
 -- Name: complaints complaints_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY complaints_delete_admin ON public.complaints FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY complaints_delete_admin ON public.complaints FOR DELETE USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
 -- Name: complaints complaints_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY complaints_insert ON public.complaints FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = user_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY complaints_insert ON public.complaints FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = user_id) OR ( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: complaints complaints_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY complaints_select ON public.complaints FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = user_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY complaints_select ON public.complaints FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = user_id) OR ( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: complaints complaints_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY complaints_update_admin ON public.complaints FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY complaints_update_admin ON public.complaints FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
@@ -25209,28 +25710,28 @@ ALTER TABLE public.contests ENABLE ROW LEVEL SECURITY;
 -- Name: contests contests_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY contests_delete_admin ON public.contests FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY contests_delete_admin ON public.contests FOR DELETE USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
 -- Name: contests contests_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY contests_insert_admin ON public.contests FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY contests_insert_admin ON public.contests FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
 -- Name: contests contests_select_public; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY contests_select_public ON public.contests FOR SELECT USING (((status = ANY (ARRAY['active'::text, 'closed'::text, 'drawn'::text])) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY contests_select_public ON public.contests FOR SELECT USING (((status = ANY (ARRAY['active'::text, 'closed'::text, 'drawn'::text])) OR ( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: contests contests_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY contests_update_admin ON public.contests FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY contests_update_admin ON public.contests FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
@@ -25303,21 +25804,21 @@ ALTER TABLE public.delivery_tracks ENABLE ROW LEVEL SECURITY;
 -- Name: delivery_tracks delivery_tracks_select_parties; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY delivery_tracks_select_parties ON public.delivery_tracks FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = user_id) OR ((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY delivery_tracks_select_parties ON public.delivery_tracks FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = user_id) OR ((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: store_delivery_zones delivery_zones_delete_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY delivery_zones_delete_own ON public.store_delivery_zones FOR DELETE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY delivery_zones_delete_own ON public.store_delivery_zones FOR DELETE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: store_delivery_zones delivery_zones_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY delivery_zones_insert_own ON public.store_delivery_zones FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY delivery_zones_insert_own ON public.store_delivery_zones FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
@@ -25331,7 +25832,7 @@ CREATE POLICY delivery_zones_select_all ON public.store_delivery_zones FOR SELEC
 -- Name: store_delivery_zones delivery_zones_update_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY delivery_zones_update_own ON public.store_delivery_zones FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY delivery_zones_update_own ON public.store_delivery_zones FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
@@ -25344,28 +25845,28 @@ ALTER TABLE public.email_outbox ENABLE ROW LEVEL SECURITY;
 -- Name: email_outbox email_outbox_admin_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY email_outbox_admin_read ON public.email_outbox FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY email_outbox_admin_read ON public.email_outbox FOR SELECT USING (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
 -- Name: contest_entries entries_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY entries_delete_admin ON public.contest_entries FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY entries_delete_admin ON public.contest_entries FOR DELETE USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
 -- Name: contest_entries entries_select_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY entries_select_admin ON public.contest_entries FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY entries_select_admin ON public.contest_entries FOR SELECT USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
 -- Name: contest_entries entries_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY entries_update_admin ON public.contest_entries FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY entries_update_admin ON public.contest_entries FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_contests'::text) AS taki_admin_perm));
 
 
 --
@@ -25430,6 +25931,19 @@ CREATE POLICY imp_update_own ON public.promo_impressions FOR UPDATE USING (((( S
 
 
 --
+-- Name: launch_checklist_state; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.launch_checklist_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: launch_checklist_state lcs_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY lcs_admin_read ON public.launch_checklist_state FOR SELECT USING (( SELECT public.taki_admin_perm('tab_launch'::text) AS taki_admin_perm));
+
+
+--
 -- Name: locations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25464,7 +25978,7 @@ ALTER TABLE public.moderation_flags ENABLE ROW LEVEL SECURITY;
 -- Name: moderation_flags moderation_flags_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY moderation_flags_admin_all ON public.moderation_flags USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY moderation_flags_admin_all ON public.moderation_flags USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
@@ -25524,35 +26038,35 @@ ALTER TABLE public.order_invoices ENABLE ROW LEVEL SECURITY;
 -- Name: order_invoices order_invoices_select_parties; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY order_invoices_select_parties ON public.order_invoices FOR SELECT USING (((( SELECT (auth.uid())::text AS uid) = buyer_id) OR (( SELECT (auth.uid())::text AS uid) = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY order_invoices_select_parties ON public.order_invoices FOR SELECT USING (((( SELECT (auth.uid())::text AS uid) = buyer_id) OR (( SELECT (auth.uid())::text AS uid) = store_id) OR ( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: subscription_payments pay_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pay_delete_admin ON public.subscription_payments FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pay_delete_admin ON public.subscription_payments FOR DELETE USING (( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm));
 
 
 --
 -- Name: subscription_payments pay_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pay_insert_admin ON public.subscription_payments FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pay_insert_admin ON public.subscription_payments FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm));
 
 
 --
 -- Name: subscription_payments pay_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pay_select ON public.subscription_payments FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY pay_select ON public.subscription_payments FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: subscription_payments pay_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pay_update_admin ON public.subscription_payments FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pay_update_admin ON public.subscription_payments FOR UPDATE USING (( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm));
 
 
 --
@@ -25572,7 +26086,7 @@ CREATE POLICY payment_attempts_insert ON public.payment_attempts FOR INSERT WITH
 -- Name: payment_attempts payment_attempts_self; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY payment_attempts_self ON public.payment_attempts FOR SELECT USING ((( SELECT public.is_admin() AS is_admin) OR (merchant_id = (( SELECT auth.uid() AS uid))::text)));
+CREATE POLICY payment_attempts_self ON public.payment_attempts FOR SELECT USING ((( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm) OR (merchant_id = (( SELECT auth.uid() AS uid))::text)));
 
 
 --
@@ -25585,14 +26099,14 @@ ALTER TABLE public.pending_warnings ENABLE ROW LEVEL SECURITY;
 -- Name: pinned_stores pin_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pin_delete_admin ON public.pinned_stores FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pin_delete_admin ON public.pinned_stores FOR DELETE USING (( SELECT public.taki_admin_perm('action_manage_seasonal'::text) AS taki_admin_perm));
 
 
 --
 -- Name: pinned_stores pin_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pin_insert_admin ON public.pinned_stores FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pin_insert_admin ON public.pinned_stores FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('action_manage_seasonal'::text) AS taki_admin_perm));
 
 
 --
@@ -25606,7 +26120,7 @@ CREATE POLICY pin_select_all ON public.pinned_stores FOR SELECT USING (true);
 -- Name: pinned_stores pin_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY pin_update_admin ON public.pinned_stores FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY pin_update_admin ON public.pinned_stores FOR UPDATE USING (( SELECT public.taki_admin_perm('action_manage_seasonal'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('action_manage_seasonal'::text) AS taki_admin_perm));
 
 
 --
@@ -25619,14 +26133,14 @@ ALTER TABLE public.pinned_stores ENABLE ROW LEVEL SECURITY;
 -- Name: subscription_plans plans_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY plans_delete_admin ON public.subscription_plans FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY plans_delete_admin ON public.subscription_plans FOR DELETE USING (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
 -- Name: subscription_plans plans_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY plans_insert_admin ON public.subscription_plans FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY plans_insert_admin ON public.subscription_plans FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
@@ -25640,7 +26154,7 @@ CREATE POLICY plans_select_all ON public.subscription_plans FOR SELECT USING (tr
 -- Name: subscription_plans plans_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY plans_update_admin ON public.subscription_plans FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY plans_update_admin ON public.subscription_plans FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
@@ -25659,7 +26173,7 @@ ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
 -- Name: platform_settings platform_settings_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY platform_settings_select ON public.platform_settings FOR SELECT USING (((key = ANY (ARRAY['oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'vapid_public_key'::text, 'merchant_vat'::text])) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY platform_settings_select ON public.platform_settings FOR SELECT USING (((key = ANY (ARRAY['delivery_enabled'::text, 'oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'vapid_public_key'::text, 'merchant_vat'::text])) OR ( SELECT public.is_admin() AS is_admin)));
 
 
 --
@@ -25673,7 +26187,7 @@ CREATE POLICY platform_settings_write_scoped ON public.platform_settings USING (
 -- Name: platform_payment_log ppl_select_parties; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY ppl_select_parties ON public.platform_payment_log FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ((( SELECT auth.uid() AS uid))::text = buyer_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY ppl_select_parties ON public.platform_payment_log FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ((( SELECT auth.uid() AS uid))::text = buyer_id) OR ( SELECT public.taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 
 
 --
@@ -25799,28 +26313,28 @@ ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 -- Name: reports reports_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY reports_delete_admin ON public.reports FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY reports_delete_admin ON public.reports FOR DELETE USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
 -- Name: reports reports_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY reports_insert ON public.reports FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = reporter_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY reports_insert ON public.reports FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = reporter_id) OR ( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: reports reports_select_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY reports_select_admin ON public.reports FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY reports_select_admin ON public.reports FOR SELECT USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
 -- Name: reports reports_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY reports_update_admin ON public.reports FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY reports_update_admin ON public.reports FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
@@ -25833,14 +26347,14 @@ ALTER TABLE public.sa_cities_geo ENABLE ROW LEVEL SECURITY;
 -- Name: sa_cities_geo sa_cities_geo_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sa_cities_geo_delete_admin ON public.sa_cities_geo FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sa_cities_geo_delete_admin ON public.sa_cities_geo FOR DELETE USING (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
 -- Name: sa_cities_geo sa_cities_geo_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sa_cities_geo_insert_admin ON public.sa_cities_geo FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sa_cities_geo_insert_admin ON public.sa_cities_geo FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
@@ -25854,14 +26368,14 @@ CREATE POLICY sa_cities_geo_read_all ON public.sa_cities_geo FOR SELECT USING (t
 -- Name: sa_cities_geo sa_cities_geo_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sa_cities_geo_update_admin ON public.sa_cities_geo FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sa_cities_geo_update_admin ON public.sa_cities_geo FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
 -- Name: user_sessions sessions_select_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sessions_select_admin ON public.user_sessions FOR SELECT USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sessions_select_admin ON public.user_sessions FOR SELECT USING (( SELECT public.taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
 
 
 --
@@ -25882,21 +26396,21 @@ CREATE POLICY sessions_upsert_self ON public.user_sessions FOR INSERT WITH CHECK
 -- Name: store_name_requests snr_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY snr_select_own ON public.store_name_requests FOR SELECT TO authenticated USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY snr_select_own ON public.store_name_requests FOR SELECT TO authenticated USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: sponsorships spn_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY spn_delete_admin ON public.sponsorships FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY spn_delete_admin ON public.sponsorships FOR DELETE USING (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
 -- Name: sponsorships spn_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY spn_insert_admin ON public.sponsorships FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY spn_insert_admin ON public.sponsorships FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
@@ -25910,7 +26424,7 @@ CREATE POLICY spn_select_all ON public.sponsorships FOR SELECT USING (true);
 -- Name: sponsorships spn_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY spn_update_admin ON public.sponsorships FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY spn_update_admin ON public.sponsorships FOR UPDATE USING (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
@@ -25923,14 +26437,14 @@ ALTER TABLE public.sponsors ENABLE ROW LEVEL SECURITY;
 -- Name: sponsors sponsors_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sponsors_delete_admin ON public.sponsors FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sponsors_delete_admin ON public.sponsors FOR DELETE USING (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
 -- Name: sponsors sponsors_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sponsors_insert_admin ON public.sponsors FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sponsors_insert_admin ON public.sponsors FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
@@ -25944,7 +26458,7 @@ CREATE POLICY sponsors_select_all ON public.sponsors FOR SELECT USING (true);
 -- Name: sponsors sponsors_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sponsors_update_admin ON public.sponsors FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY sponsors_update_admin ON public.sponsors FOR UPDATE USING (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('action_manage_sponsors'::text) AS taki_admin_perm));
 
 
 --
@@ -25993,7 +26507,7 @@ ALTER TABLE public.store_profiles ENABLE ROW LEVEL SECURITY;
 -- Name: store_profiles store_profiles_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY store_profiles_insert ON public.store_profiles FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY store_profiles_insert ON public.store_profiles FOR INSERT WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
@@ -26007,35 +26521,35 @@ CREATE POLICY store_profiles_select_all ON public.store_profiles FOR SELECT USIN
 -- Name: store_profiles store_profiles_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY store_profiles_update ON public.store_profiles FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY store_profiles_update ON public.store_profiles FOR UPDATE USING ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm))) WITH CHECK ((((( SELECT auth.uid() AS uid))::text = store_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: merchant_subscriptions subs_delete_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY subs_delete_admin ON public.merchant_subscriptions FOR DELETE USING (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY subs_delete_admin ON public.merchant_subscriptions FOR DELETE USING (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
 -- Name: merchant_subscriptions subs_insert_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY subs_insert_admin ON public.merchant_subscriptions FOR INSERT WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY subs_insert_admin ON public.merchant_subscriptions FOR INSERT WITH CHECK (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
 -- Name: merchant_subscriptions subs_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY subs_select ON public.merchant_subscriptions FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY subs_select ON public.merchant_subscriptions FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = merchant_id) OR ( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: merchant_subscriptions subs_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY subs_update_admin ON public.merchant_subscriptions FOR UPDATE USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY subs_update_admin ON public.merchant_subscriptions FOR UPDATE USING (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
 
 
 --
@@ -26106,7 +26620,7 @@ ALTER TABLE public.user_warnings ENABLE ROW LEVEL SECURITY;
 -- Name: user_warnings user_warnings_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY user_warnings_admin_all ON public.user_warnings USING (( SELECT public.is_admin() AS is_admin)) WITH CHECK (( SELECT public.is_admin() AS is_admin));
+CREATE POLICY user_warnings_admin_all ON public.user_warnings USING (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm)) WITH CHECK (( SELECT public.taki_admin_perm('tab_reports'::text) AS taki_admin_perm));
 
 
 --
@@ -26126,14 +26640,14 @@ CREATE POLICY users_insert_own ON public.users FOR INSERT WITH CHECK (((( SELECT
 -- Name: users users_select_own_or_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY users_select_own_or_admin ON public.users FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = id) OR ( SELECT public.is_admin() AS is_admin)));
+CREATE POLICY users_select_own_or_admin ON public.users FOR SELECT USING ((((( SELECT auth.uid() AS uid))::text = id) OR ( SELECT public.taki_admin_perm('tab_buyers'::text) AS taki_admin_perm)));
 
 
 --
 -- Name: users users_update_admin; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY users_update_admin ON public.users FOR UPDATE USING ((( SELECT public.is_admin() AS is_admin) OR ((( SELECT auth.uid() AS uid))::text = id))) WITH CHECK ((( SELECT public.is_admin() AS is_admin) OR ((( SELECT auth.uid() AS uid))::text = id)));
+CREATE POLICY users_update_admin ON public.users FOR UPDATE USING ((( SELECT public.taki_admin_perm('action_manage_users'::text) AS taki_admin_perm) OR ((( SELECT auth.uid() AS uid))::text = id))) WITH CHECK ((( SELECT public.taki_admin_perm('action_manage_users'::text) AS taki_admin_perm) OR ((( SELECT auth.uid() AS uid))::text = id)));
 
 
 --
@@ -26235,5 +26749,5 @@ ALTER TABLE storage.vector_indexes ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9UHVZU8xVoOY5UDpe5fmbGh0VWeVCotWE8KldIr0JgCVOSRRKxwdS84Ki55v5a7
+\unrestrict WRn6cHwyZWSg5OrxeBmOcUU6MHJV63OSY7v7yQEBx41mq3iMBf6McLLIZX7aczl
 

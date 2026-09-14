@@ -118,3 +118,12 @@
 | 2026-09-14 | `JEDDAH_v14_35_bot_delivery.sql` | 3 | ✅ 3/3 |
 | 2026-09-14 | `JEDDAH_v14_36_store_name.sql` | 7 | ✅ 7/7 |
 | 2026-09-14 | `JEDDAH_v14_37_attestation_gate.sql` | 2 | ✅ 2/2 |
+| 2026-09-14 | `JEDDAH_v14_38_subpermissions.sql` | 1 | ✅ 1/1 |
+| 2026-09-14 | `JEDDAH_v14_39_delivery_admin.sql` | 7 | ✅ 7/7 |
+| 2026-09-14 | `JEDDAH_v14_39b_delivery_killswitch.sql` | 1 | ✅ 1/1 |
+| 2026-09-14 | `JEDDAH_v14_39c_jsonb_fix.sql` | 2 | ✅ 2/2 |
+| 2026-09-14 | `JEDDAH_v14_40_moderation_actions.sql` | 4 | ✅ 4/4 |
+| 2026-09-14 | `JEDDAH_v14_40b_flag_ref.sql` | 1 | ✅ 1/1 |
+| 2026-09-14 | `JEDDAH_v14_41_launch_audit.sql` | 3 | ✅ 3/3 |
+| 2026-09-14 | `JEDDAH_v14_42_track_state.sql` | 2 | ✅ 2/2 |
+| 2026-09-14 | `JEDDAH_v14_42b_card_track.sql` | 2 | ✅ 2/2 |
