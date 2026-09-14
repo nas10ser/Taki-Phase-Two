@@ -101,18 +101,32 @@ const AdminReports: React.FC = () => {
     const [days, setDays] = useState<number>(0);
     const [role, setRole] = useState<string>('');
     const [warnMin, setWarnMin] = useState<number>(1);
+    // v14.33 — كان النداء بلا حدّ، فتُرجع القاعدة ١٠٠ صفّاً افتراضياً وتتوقّف،
+    // بلا زرّ ولا رسالة. أي أن البلاغ رقم ١٠١ **غير موجود** في نظر الإدارة.
+    // والبطاقات الأربع فوق القائمة تعدّ الصفوف المحمّلة وتكتب تحتها «الإجمالي».
+    const PAGE = 50;
+    const [shown, setShown] = useState(PAGE);
+    const [hasMore, setHasMore] = useState(false);
+    // كل تغيير في المرشِّحات يُعيد العدّ من أوّله — وإلا بقي «عرض المزيد» يقيس قائمةً أخرى.
+    useEffect(() => { setShown(PAGE); }, [view, q, status, rtype, days, role, warnMin]);
 
     const load = useCallback(async () => {
         setLoading(true);
         if (view === 'reports') {
+            // صفٌّ زائد: به نعرف «هل بعدها المزيد» بلا نداء عدٍّ ثانٍ.
             const rows = await adminService.listReports({
                 query: q, status: status || null, type: rtype || null,
                 reportedRole: (role || null) as any, days,
+                limit: shown + 1, offset: 0,
             });
-            setReports(rows);
+            setHasMore(rows.length > shown);
+            setReports(rows.slice(0, shown));
         } else if (view === 'complaints') {
-            const rows = await adminService.listComplaints({ query: q, status: status || null });
-            setComplaints(rows);
+            const rows = await adminService.listComplaints({
+                query: q, status: status || null, limit: shown + 1, offset: 0,
+            });
+            setHasMore(rows.length > shown);
+            setComplaints(rows.slice(0, shown));
         } else if (view === 'suspended') {
             const { data } = await supabase.rpc('admin_suspended_accounts');
             setSuspended(Array.isArray(data) ? data : []);
@@ -121,7 +135,7 @@ const AdminReports: React.FC = () => {
             setWarned(rows);
         }
         setLoading(false);
-    }, [view, q, status, rtype, days, role, warnMin]);
+    }, [view, q, status, rtype, days, role, warnMin, shown]);
 
     useEffect(() => { load(); }, [load]);
 

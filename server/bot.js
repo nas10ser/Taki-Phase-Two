@@ -3712,7 +3712,10 @@ async function deliverNotification(n) {
     if (n.type==='booking' && bc) url = W(`/booking/${bc}`);
     else if (dealId)  url = W(`/deal/${dealId}`);
     else if (storeId) url = W(`/store/${storeId}`);
-    else if (n.meta_data?.action_url) url = n.meta_data.action_url;
+    // v14.33 — المفتاحان معاً: القاعدة كانت تكتب `actionUrl` بالسنام والبوت
+    // يقرأ `action_url` وحدها، فزرّ الحملة لم يظهر في تيليجرام ولا واتساب قطّ.
+    // الهجرة صارت تكتب الاثنين، وهذا يُصلح الإشعارات **القديمة** أيضاً.
+    else if (n.meta_data?.action_url || n.meta_data?.actionUrl) url = n.meta_data.action_url || n.meta_data.actionUrl;
 
     // ── Telegram ── (gated by the admin kill-switch for parity with WhatsApp:
     //    a disabled bot stops OUTBOUND notifications too, not just inbound. v11.97b)
