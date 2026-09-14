@@ -2164,11 +2164,27 @@ async function renderOneBooking(ctx, barcode, roleCtx){
         // v14.07 — التتبّع الحيّ. للتاجر: بدء البثّ أو إيقافه — وزرّ الإيقاف حاضرٌ
         // ما دام البثّ مُفعَّلاً فلا يبحث عنه أحد. للمشتري: «أين طلبي؟».
         // مقصورٌ على طلب نشط: لا معنى لبثّ موقع على طلب مكتمل أو ملغى.
-        if (active) rows.push([ seller
-            ? (s.temp.trackBarcode === b.barcode
-                ? Markup.button.callback(tr('dlv_trk_stop_btn'), `dtrkoff:${b.barcode}`)
-                : Markup.button.callback(tr('dlv_trk_btn'), `dtrk:${b.barcode}`))
-            : Markup.button.callback(tr('dlv_where_btn'), `dwhr:${b.barcode}`) ]);
+        // v14.42 — حالة الأزرار من **القاعدة** لا من ذاكرة المحادثة.
+        // 🪤 كانت `s.temp.trackBarcode` هي كل ما يعرفه البوت عن البثّ الجاري،
+        // وهي ذاكرةٌ تُمسح مع كل إعادة تشغيل (تقع مع كل نشر). فبعدها تعرض
+        // البطاقة «🚚 بثّ موقعي» كأنّ لا بثّ، بينما صفّ القاعدة ما زال
+        // `on_the_way` وهاتف المندوب يبثّ فعلاً.
+        if (active && seller) {
+            const trkNow = b.dlv_status || (s.temp.trackBarcode === b.barcode ? 'on_the_way' : null);
+            const live = trkNow === 'on_the_way' || trkNow === 'arrived';
+            rows.push(live
+                ? [Markup.button.callback(tr('dlv_trk_stop_btn'), `dtrkoff:${b.barcode}`)]
+                : [Markup.button.callback(tr('dlv_trk_btn'), `dtrk:${b.barcode}`)]);
+            // «وصلت» و«تم التسليم» لم تكونا موجودتين في البوت إطلاقاً: الحالتان
+            // معرَّفتان كتسميات للعرض فقط، فتاجرٌ يدير متجره من تيليجرام لا
+            // يستطيع نقل طلبٍ إلى «وصل المندوب» ولا مشتريه يرى ذلك أبداً.
+            const act = [];
+            if (trkNow === 'on_the_way') act.push(Markup.button.callback(tr('dlv_trk_arrived_btn'), `dtrkst:arrived:${b.barcode}`));
+            if (live) act.push(Markup.button.callback(tr('dlv_trk_delivered_btn'), `dtrkst:delivered:${b.barcode}`));
+            if (act.length) rows.push(act);
+        } else if (active) {
+            rows.push([Markup.button.callback(tr('dlv_where_btn'), `dwhr:${b.barcode}`)]);
+        }
     }
     if (seller){
         if (b.status==='pending') rows.push([Markup.button.callback(tr('b1257_confirm_start_prep'),`ack:${b.barcode}`)]);
@@ -2233,8 +2249,37 @@ bot.action(/^dtrkoff:(.+)$/, async ctx => {
     const bc = String(ctx.match[1]).toUpperCase();
     const s = getSession(tgId(ctx));
     s.temp.trackBarcode = null; s.temp.trackOn = false; s.temp.trackNoteAt = 0;
+    // v14.42 — 🪤 كان الإيقاف يمسح حقلاً في الذاكرة **ولا يكتب شيئاً في
+    // القاعدة**، ويقول للتاجر «أوقفنا إرسال موقعك للعميل». والحقيقة أن الصفّ
+    // يبقى `on_the_way` فيظلّ المشتري يرى دبّوساً حيّاً حتى تنقضي نافذة
+    // الطزاجة. وعدُ خصوصيةٍ لا يقع.
+    await rpc('bot_delivery_track_status', {
+        p_telegram_id: tgId(ctx), p_barcode: bc, p_status: 'cancelled', p_whatsapp_id: null,
+    }).catch(() => {});
     await safeReplyMd(ctx, tr('dlv_trk_stopped'), {
         reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)]]).reply_markup });
+});
+
+// v14.42 — «📍 وصلت» و«✅ تم التسليم»: تُكتبان في القاعدة ويصل المشتري إشعارٌ بها.
+bot.action(/^dtrkst:(arrived|delivered):(.+)$/, async ctx => {
+    await ctx.answerCbQuery();
+    const st = ctx.match[1];
+    const bc = String(ctx.match[2]).toUpperCase();
+    const r = await rpc('bot_delivery_track_status', {
+        p_telegram_id: tgId(ctx), p_barcode: bc, p_status: st, p_whatsapp_id: null,
+    });
+    if (!r || !r.ok) {
+        const e = r && r.error;
+        return safeReplyMd(ctx, tr(e === 'not_acknowledged' ? 'dlv_trk_ack_first' : 'dlv_trk_state_failed'),
+            { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)]]).reply_markup });
+    }
+    // التسليم ينهي البثّ: لا معنى لإرسال موقع المندوب بعد أن سلّم.
+    if (st === 'delivered') {
+        const s = getSession(tgId(ctx));
+        s.temp.trackBarcode = null; s.temp.trackOn = false; s.temp.trackNoteAt = 0;
+    }
+    await safeReplyMd(ctx, tr(st === 'arrived' ? 'dlv_trk_arrived_ok' : 'dlv_trk_delivered_ok'),
+        { reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b1263_back_to_bookings'), `bkOne:${bc}`)]]).reply_markup });
 });
 
 // نبضة موقع واحدة → القاعدة. تُرجع true إن كانت النبضة تخصّ تتبّعاً مُفعَّلاً
