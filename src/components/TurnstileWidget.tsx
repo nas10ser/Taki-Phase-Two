@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Cloudflare Turnstile — the bot check in front of registration.
@@ -13,6 +13,19 @@ import React, { useEffect, useRef } from 'react';
  * demanding a token. A token nobody checks is harmless; a server demanding a
  * token no page produces locks everybody out of signing up. So the client ships
  * first, the server switch flips second.
+ *
+ * ── v14.46 — الفشل الصامت (بلاغ ناصر بلقطة ٢ سبتمبر) ──────────────────────
+ * قِيس على الإنتاج في ١٥ سبتمبر بمتصفّح حقيقي على `www.takisa.net`: الودجت
+ * **يعمل** ويُصدر رمزاً — وهو مضبوط في Cloudflare على النمط **غير المرئي**،
+ * فصندوقه يبقى فارغاً في الحالة السليمة. هذا هو سبب «الفراغ» الذي يراه الناظر.
+ *
+ * 🪤 ولذلك بالضبط كان الفشل كارثيَّ العرض: حين تتعذّر Cloudflare (شبكة، حجب،
+ * انقطاع) لا يظهر **أي شيء** — لا رسالة ولا زرّ — ويكتشف المستخدم الرفض فقط
+ * بعد أن يملأ النموذج ويضغط «إرسال»، فيقرأ «تعذّر التحقق من أنك لست روبوتاً»
+ * بلا أن يعرف ما الذي يفعله. والكابتشا صارت مفروضة على الخادم منذ ٣ سبتمبر
+ * (`GOTRUE_SECURITY_CAPTCHA_ENABLED=true`)، فالرمز لم يعد تحسيناً.
+ *
+ * فالآن: الفشل يقول اسمه في مكانه، ومعه زرّ إعادة محاولة يُعيد بناء الودجت.
  */
 const SITE_KEY = process.env.TURNSTILE_SITE_KEY || '0x4AAAAAAEHE5xdLn_Bn5wIN';
 const SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -67,6 +80,11 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal =
     const cb = useRef(onToken);
     cb.current = onToken;
 
+    /** 'pending' حتى يصل رمز أو يقع خطأ — لا نُخيف المستخدم أثناء الانتظار. */
+    const [failed, setFailed] = useState(false);
+    /** v14.46 — زيادته تُعيد بناء الودجت من الصفر بعد فشل. */
+    const [attempt, setAttempt] = useState(0);
+
     useEffect(() => {
         let cancelled = false;
 
@@ -76,15 +94,17 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal =
                 widgetId.current = window.turnstile.render(holder.current, {
                     sitekey: SITE_KEY,
                     language: isRTL ? 'ar' : 'en',
-                    callback: (token: string) => cb.current(token),
+                    callback: (token: string) => { if (!cancelled) setFailed(false); cb.current(token); },
                     'expired-callback': () => cb.current(''),
-                    'error-callback': () => cb.current(''),
+                    // انتهاء الصلاحية ليس عطلاً: Cloudflare تُجدّد وحدها. أمّا
+                    // `error-callback` فهو تعذُّرٌ فعليّ يستحق أن يُرى.
+                    'error-callback': () => { if (!cancelled) setFailed(true); cb.current(''); },
                 });
             })
             .catch(() => {
-                // Cloudflare unreachable (offline, blocked). Stay silent and let
-                // the auth server be the judge — it is the only side that counts.
-                if (!cancelled) cb.current('');
+                // Cloudflare unreachable (offline, blocked). نقولها في مكانها بدل
+                // أن نترك فراغاً يكتشفه المستخدم عند الإرسال وحده.
+                if (!cancelled) { setFailed(true); cb.current(''); }
             });
 
         return () => {
@@ -94,9 +114,10 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal =
                 widgetId.current = null;
             }
         };
-        // Mount once. isRTL only picks the widget's language at creation time.
+        // يُعاد البناء عند ضغط «أعد المحاولة» وحده. isRTL only picks the widget's
+        // language at creation time.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [attempt]);
 
     // إعادة التحدّي بعد محاولة فاشلة — نتخطّى أول تشغيل حتى لا نمسح رمزاً
     // حلّه المستخدم للتوّ قبل أن يُرسله.
@@ -108,7 +129,45 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal =
         try { window.turnstile.reset(widgetId.current); } catch { /* الودجت اختفى */ }
     }, [resetSignal]);
 
-    return <div ref={holder} className="flex justify-center my-3" />;
+    const retry = useCallback(() => {
+        setFailed(false);
+        setAttempt(n => n + 1);
+    }, []);
+
+    return (
+        <div className="flex justify-center my-3" style={{ flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <div ref={holder} />
+            {failed && (
+                <div
+                    role="alert"
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        justifyContent: 'center', padding: '9px 14px', borderRadius: 12,
+                        border: '1px solid rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.10)',
+                        fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)',
+                        textAlign: 'center',
+                    }}
+                >
+                    <span>
+                        {isRTL
+                            ? '⚠️ تعذّر التحقّق من أنك لست روبوتاً — تحقّق من اتصالك ثم أعد المحاولة.'
+                            : '⚠️ The human check could not load — check your connection and retry.'}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={retry}
+                        style={{
+                            padding: '6px 14px', borderRadius: 9, border: 'none', cursor: 'pointer',
+                            background: '#b45309', color: '#fff', fontWeight: 900, fontSize: '0.72rem',
+                            fontFamily: 'inherit',
+                        }}
+                    >
+                        {isRTL ? '↻ أعد المحاولة' : '↻ Retry'}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
 };
 
 export default TurnstileWidget;

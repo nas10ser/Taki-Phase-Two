@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
+import { notifySetupGapsChanged } from './SetupGapsBanner';
 
 /**
  * PaymentDeclarationCard — إقرار التاجر بطريقة الحساب (v14.08)
@@ -128,6 +129,7 @@ const PaymentDeclarationCard: React.FC<{ userId: string; isRTL: boolean; onAlert
             // ردّ بلا شكل معروف = لا نُعلن نجاحاً كاذباً؛ نعيد القراءة من المصدر.
             if (!next) { await load(); throw new Error(isRTL ? 'ردّ غير متوقّع من الخادم' : 'Unexpected server response'); }
             writeCache(userId, next);
+            notifySetupGapsChanged();
             if (alive.current) { setSnap(next); setEditing(false); }
             onAlert(acceptsCod
                 ? (isRTL ? '✅ تم الحفظ — متجرك يقبل الدفع عند الاستلام، والحجز مفتوح لعملائك.' : '✅ Saved — your store accepts cash on delivery and bookings are open.')

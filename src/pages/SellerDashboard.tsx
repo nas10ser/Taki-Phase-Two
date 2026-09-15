@@ -14,6 +14,8 @@ import GatewayCard from '../components/seller/GatewayCard';
 import DeliveryCard from '../components/seller/DeliveryCard';
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
+// v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
+import SetupGapsBanner from '../components/seller/SetupGapsBanner';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 import DeliveryTrackerCard from '../components/seller/DeliveryTrackerCard';
 import VatStatusCard from '../components/seller/VatStatusCard';
@@ -3086,6 +3088,9 @@ const SellerDashboard: React.FC = () => {
             )}
 
             <div style={{ padding: 16 }}>
+                {/* v14.45 — نواقص الإعداد فوق كل تبويب، لا في تبويب الإضافة وحده:
+                    التاجر الذي يعيش في «طلباتي» كان لا يمرّ ببطاقاتها أصلاً. */}
+                {user && <SetupGapsBanner userId={user.id} isRTL={isRTL} onFix={() => { setView('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
                 {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
                 {view === 'form' && user && (
                     <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>

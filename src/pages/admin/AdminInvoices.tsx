@@ -45,6 +45,10 @@ interface GatewayRow {
     key_last4: string | null;
     agreement_accepted_at: string | null;
     created_at: string;
+    /** v14.44 — المفتاح السرّي موجود في الخزنة فعلاً؟ (لا «المؤشِّر غير فارغ») */
+    secret_ok?: boolean;
+    /** v14.44 — ما يراه المشتري فعلاً بعد كل الحرّاس */
+    effective_mode?: string;
 }
 
 const PROVIDER_AR: Record<string, string> = {
@@ -469,6 +473,7 @@ const AdminInvoices: React.FC = () => {
                                     <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
                                         {PROVIDER_AR[g.provider] || g.provider} · طرق الدفع: {g.payment_modes === 'both' ? 'الاثنان' : g.payment_modes === 'online' ? 'إلكتروني فقط' : 'عند الاستلام'}
                                         {g.key_last4 ? ` · سر ••••${g.key_last4}` : ''}
+                                        {g.effective_mode ? ` · يراه المشتري: ${g.effective_mode === 'both' ? 'الاثنان' : g.effective_mode === 'online' ? 'إلكتروني فقط' : 'عند الاستلام'}` : ''}
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -478,6 +483,9 @@ const AdminInvoices: React.FC = () => {
                                     {g.verified_at
                                         ? <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>✓ مختبرة</span>
                                         : <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#b45309' }}>لم تُختبر</span>}
+                                    {/* v14.44 — المفتاح يُقاس من الخزنة. مؤشِّرٌ معلَّق كان يظهر
+                                        «محفوظ» فتبقى البوّابة ميتة بلا أن يظهر سببها في أي شاشة. */}
+                                    {g.secret_ok === false && <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>🔑 لا مفتاح في الخزنة</span>}
                                     {g.fail_count >= 5 && <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>فشل متكرر</span>}
                                     <button onClick={() => toggleGatewayBlock(g)}
                                         style={{

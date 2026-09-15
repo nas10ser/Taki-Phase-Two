@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository } from '../../repositories/refundRepository';
+import { notifySetupGapsChanged } from './SetupGapsBanner';
 
 const MAX = 1500;
 
@@ -183,6 +184,7 @@ export const StorePoliciesCard: React.FC = () => {
                                 setBusy(false);
                                 if (!res.ok) { await customAlert('❌ ' + (res.error || '')); return; }
                                 setSaved({ p: policy.trim(), t: terms.trim() });
+                                notifySetupGapsChanged();
                                 await customAlert(isRTL
                                     ? '✅ حُفظت. تظهر الآن للمشتري في صفحة متجرك وفي كل عروضك قبل الحجز.'
                                     : '✅ Saved. Buyers now see it on your store page and every deal before booking.');
