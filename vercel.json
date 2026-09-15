@@ -22,6 +22,28 @@
       ],
       "destination": "https://www.takisa.net/$1",
       "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "taki-test-nasser-projects1.vercel.app"
+        }
+      ],
+      "destination": "https://www.takisa.net/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "taki-test-git-main-nasser-projects1.vercel.app"
+        }
+      ],
+      "destination": "https://www.takisa.net/$1",
+      "permanent": true
     }
   ],
   "rewrites": [
