@@ -1156,7 +1156,7 @@ export default function () {
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
                 <div className="text-xs font-extrabold text-red-900">⛔ مهم</div>
                 <div className="text-[11px] text-red-800 mt-0.5 font-bold leading-relaxed">
-                    لا تشغّل k6 ضد الإنتاج <strong>taki-test-eight.vercel.app</strong> أبداً. ستستهلك حصة Supabase الشهرية + قد توقف الموقع للمستخدمين الحقيقيين.
+                    لا تشغّل k6 ضد الإنتاج <strong>www.takisa.net</strong> أبداً. ستستهلك حصة Supabase الشهرية + قد توقف الموقع للمستخدمين الحقيقيين.
                 </div>
             </div>
         </section>

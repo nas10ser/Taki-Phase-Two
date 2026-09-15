@@ -74,15 +74,28 @@ const WHATSAPP_ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN || '';
 // المكتوب** لا وجهته، فيرى المستخدم اسم vercel ويخرج من التطبيق إلى المتصفّح.
 // الإصلاح في الكود لا في لوحة Render: أي عنوان قديم معروف يُترجم إلى النطاق
 // الرسمي، فلا تبقى الميزة رهينة متغيّر بيئة يُنسى تحديثه.
+const CANONICAL_APP_URL = 'https://www.takisa.net';
 const LEGACY_HOSTS = ['taki-test-eight.vercel.app', 'takisa.net'];
+/**
+ * v14.49 — الحارس كان **إنقاذاً باتّجاه واحد**: يُترجم العناوين القديمة
+ * المعروفة، ويُمرِّر أي قيمة أخرى كما هي. فحصٌ خصمٌ في ١٥ سبتمبر نفّذ المنطق
+ * فوجد أن `http://www.takisa.net` أو `www.takisa.net` بلا بروتوكول **تمرّان
+ * بلا تصحيح** — وتيليجرام يشترط HTTPS لأزرار `web_app`، فخطأٌ مطبعيّ واحد في
+ * لوحة Render كان يُسقط ٢٣ زرّاً **بصمت**: لا رسالة خطأ في أي مكان، فقط لوحة
+ * أزرارٍ لا تظهر. والحارس نفسه كان يوهم بأن المتغيّر محروس.
+ * الآن: يُقبل فقط عنوان https صالح؛ وكل ما عداه يرتدّ إلى النطاق الرسمي.
+ */
 const APP_URL                  = (() => {
-    const raw = (process.env.APP_URL || 'https://www.takisa.net').replace(/\/$/, '');
-    return LEGACY_HOSTS.some(h => raw.includes(h)) && !raw.includes('www.takisa.net')
-        ? 'https://www.takisa.net' : raw;
+    const raw = (process.env.APP_URL || CANONICAL_APP_URL).trim().replace(/\/+$/, '');
+    let u;
+    try { u = new URL(raw); } catch { return CANONICAL_APP_URL; }
+    if (u.protocol !== 'https:') return CANONICAL_APP_URL;
+    if (LEGACY_HOSTS.includes(u.hostname)) return CANONICAL_APP_URL;
+    return raw;
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.42.0';
+const BOT_VERSION              = '14.49.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB

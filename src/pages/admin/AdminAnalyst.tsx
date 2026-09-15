@@ -1533,7 +1533,7 @@ const AdminAnalyst: React.FC = () => {
                             <li>بعد انضمامه أرسل له توصية «تنشيط متجر خامل» من الإرسال المستهدف ليبدأ صح.</li>
                         </ol>
                         <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
-                            «أهلاً 👋 منصة تاكي توصل عروض محلك لمشترين يبحثون فعلاً في مدينتك — تحليلنا يُظهر طلباً على قسمك الآن. التسجيل دقائق وأول ١٤ يوماً مجاناً: taki-test-eight.vercel.app»
+                            «أهلاً 👋 منصة تاكي توصل عروض محلك لمشترين يبحثون فعلاً في مدينتك — تحليلنا يُظهر طلباً على قسمك الآن. التسجيل دقائق وأول ١٤ يوماً مجاناً: www.takisa.net»
                         </div>
                     </div>
                     <div className="bg-[var(--body-bg)] rounded-xl p-3 leading-relaxed">
@@ -1546,7 +1546,7 @@ const AdminAnalyst: React.FC = () => {
                             <li>قبل كل موسم (انظر التقويم أعلاه): بانر + حملة مجدولة من «الإشعارات والرسائل».</li>
                         </ol>
                         <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
-                            «خصومات حقيقية في {(((data.cities || [])[0] as GeoRow | undefined)?.city) || 'مدينتك'} تصل ٥٠٪ 🔥 احجز قبل نفاد الكمية — بدون تحميل تطبيق: taki-test-eight.vercel.app»
+                            «خصومات حقيقية في {(((data.cities || [])[0] as GeoRow | undefined)?.city) || 'مدينتك'} تصل ٥٠٪ 🔥 احجز قبل نفاد الكمية — بدون تحميل تطبيق: www.takisa.net»
                         </div>
                     </div>
                 </div>

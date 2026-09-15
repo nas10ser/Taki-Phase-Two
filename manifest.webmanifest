@@ -27,25 +27,25 @@
   },
   "icons": [
     {
-      "src": "https://taki-test-eight.vercel.app/logo192.png",
+      "src": "/logo192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://taki-test-eight.vercel.app/logo512.png",
+      "src": "/logo512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://taki-test-eight.vercel.app/logo192.png",
+      "src": "/logo192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "https://taki-test-eight.vercel.app/logo512.png",
+      "src": "/logo512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -59,7 +59,7 @@
       "url": "/nearby",
       "icons": [
         {
-          "src": "https://taki-test-eight.vercel.app/logo192.png",
+          "src": "/logo192.png",
           "sizes": "192x192"
         }
       ]
@@ -71,7 +71,7 @@
       "url": "/bookings",
       "icons": [
         {
-          "src": "https://taki-test-eight.vercel.app/logo192.png",
+          "src": "/logo192.png",
           "sizes": "192x192"
         }
       ]
