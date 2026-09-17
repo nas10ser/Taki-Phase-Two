@@ -90,7 +90,15 @@ export const storageService = {
             // البنرات والشعارات لا تحتاجها (تُعرض بمقاس واحد) فتُخطّى.
             const wantThumb = opts?.thumb !== false;
             const thumb = wantThumb ? await compressImage(rawFile, THUMB) : null;
-            const stem = `${Date.now()}_${Math.random().toString(36).substring(2)}`;
+            // v14.57 — 🔴 كانت الصور تُرفع في **جذر المستودع** بلا مجلّد، وسياسة
+            // الكتابة لا تفحص إلا امتداد الاسم: `bucket_id='deals' AND name LIKE
+            // '%.jpg'`. أي أن **أي مستخدم موثَّق** — ولو مشترياً لا متجر له —
+            // يرفع ما يشاء بأي اسم وبأي عدد، بما فيه أسماءٌ تبدو ملفّات تاجرٍ آخر.
+            // الآن لكل مستخدم مجلّده باسم معرّفه، والسياسة تفرضه في القاعدة.
+            const { data: authData } = await supabase.auth.getUser();
+            const uid = authData?.user?.id;
+            if (!uid) throw new Error('AUTH_REQUIRED');
+            const stem = `${uid}/${Date.now()}_${Math.random().toString(36).substring(2)}`;
             const fileName = `${stem}.jpg`;
             logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB${thumb ? ` (مصغّرة ${Math.round(thumb.size/1024)}KB)` : ''}`);
 

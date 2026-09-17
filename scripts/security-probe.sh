@@ -99,15 +99,27 @@ req() { # method path [body]
     ERRC=$(printf '%s' "$BODY" | grep -oE '"code":"[^"]*"' | head -1 | cut -d'"' -f4)
 }
 
+# 🔴 v14.57 — «غير موجود» ليس نجاحاً، بل **فحصٌ خاطئ**.
+# كان `404` يُحسب «محجوب ✅». و`404` من PostgREST يعني `PGRST205`: **الجدول غير
+# موجود في المخطّط**. أي أن خطأً مطبعياً في اسم جدول، أو جدولاً أُعيدت تسميته،
+# يجعل الفحص يقول «محجوب ✅» عن سطحٍ لم يُفحص أصلاً. وأسوأ منه: سطحٌ حقيقيّ
+# مكشوف يبقى بلا فحص بينما العدّاد يزداد خضرة.
+# القاعدة الآن: السطح يجب أن **يُثبت وجودَه** قبل أن يُقال إنه محميّ.
+#   موجود ومحميّ بـRLS  ⇒ 200 + []        ✅
+#   موجود وبلا منحة     ⇒ 401/403 + 42501 ✅
+#   غير موجود           ⇒ 404 + PGRST205  ❌ (فحصٌ خاطئ، يُصلَح لا يُحتسب)
+probe_err() { printf '  ❌ %s\n' "$1"; fail=$((fail+1)); }
+
 read_denied() { # label path
     req GET "$2"
     case "$CODE" in
-        401|403|404) ok "$1 — محجوب ($CODE)" ;;
-        200) if [ "$BODY" = "[]" ] || [ -z "$BODY" ]; then ok "$1 — لا يُعيد شيئاً للزائر"
+        401|403) ok "$1 — محجوب ($CODE ${ERRC:-})" ;;
+        404) probe_err "$1 — الجدول/المسار **غير موجود** (${ERRC:-404}) ⇒ الفحص يفحص اسماً خاطئاً، لا سطحاً محميّاً. صحّح الاسم." ;;
+        200) if [ "$BODY" = "[]" ] || [ -z "$BODY" ]; then ok "$1 — موجود ويُعيد صفراً من الصفوف للزائر"
              else bad "$1 — 🚨 يُعيد بيانات للزائر: $(printf '%.100s' "$BODY")"; fi ;;
         000) bad "$1 — لا استجابة من الخادم" ;;
-        400) inf "$1 — اسم عمود خاطئ في الفحص نفسه ($ERRC) — ليست نتيجة أمنية" ;;
-        *)   inf "$1 — رمز غير متوقّع ($CODE ${ERRC:-})" ;;
+        400) probe_err "$1 — طلبٌ خاطئ في الفحص نفسه ($ERRC) ⇒ لم يُفحص شيء. صحّح الفحص." ;;
+        *)   probe_err "$1 — رمز غير متوقّع ($CODE ${ERRC:-}) ⇒ نتيجةٌ لا تُقرأ" ;;
     esac
 }
 
@@ -115,17 +127,23 @@ write_blocked() { # label method path body
     req "$2" "$3" "$4"
     case "$CODE" in
         200|201|204) bad "$1 — 🚨 نجحت الكتابة من زائر مجهول!" ; return ;;
-        401|403|404) ok "$1 — مرفوض عند الصلاحيات ($CODE)" ; return ;;
     esac
     case "${ERRC:-}" in
-        42501|PGRST301|PGRST302|42P01|PGRST205|PGRST106|PGRST202)
-            ok "$1 — مرفوض عند الصلاحيات (${ERRC})" ;;
+        # موجودٌ ومرفوض عند الصلاحيات — هذا وحده نجاح.
+        42501|PGRST301|PGRST302|PGRST106)
+            ok "$1 — موجود ومرفوض عند الصلاحيات (${ERRC})" ;;
+        # 🔴 «غير موجود» كان في القائمة أعلاه يُحسب نجاحاً. ليس نجاحاً: لا شيء
+        # هناك ليُرفض. جدولٌ أُعيدت تسميته أو دالةٌ حُذفت تُخرج الفحص من الخدمة
+        # بصمت — والعدّاد يقول «سليم».
+        42P01|PGRST205|PGRST202)
+            probe_err "$1 — الهدف **غير موجود** (${ERRC}) ⇒ فحصٌ خاطئ لا نتيجة أمنية. صحّح الاسم أو احذف الفحص." ;;
         23502|23503|23505|23514)
             bad "$1 — 🚨 تجاوز طبقة الصلاحيات ووصل لفحص القيود (${ERRC}) ⇒ الزائر يملك حقّ الكتابة" ;;
         42703|PGRST204|PGRST100|22P02)
-            inf "$1 — اسم عمود/حقل خاطئ في الفحص نفسه (${ERRC}) — صحّح الفحص، ليست نتيجة أمنية" ;;
-        "") inf "$1 — رمز $CODE بلا تصنيف: $(printf '%.90s' "$BODY")" ;;
-        *)  inf "$1 — رُفض بـ${ERRC} (راجعه يدوياً)" ;;
+            probe_err "$1 — اسم عمود/حقل خاطئ في الفحص نفسه (${ERRC}) ⇒ لم يُفحص شيء" ;;
+        "") if [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then ok "$1 — مرفوض ($CODE)"
+            else probe_err "$1 — رمز $CODE بلا تصنيف: $(printf '%.90s' "$BODY")"; fi ;;
+        *)  probe_err "$1 — رُفض بـ${ERRC} ولا نعرف أهو صلاحية أم غياب ⇒ صنّفه" ;;
     esac
 }
 
@@ -147,7 +165,33 @@ read_denied "الإشعارات"                          "/rest/v1/notification
 read_denied "مفاتيح بوابات الدفع للتجار"        "/rest/v1/merchant_gateways?select=*&limit=1"
 read_denied "أحداث التحليلات"                    "/rest/v1/store_analytics_events?select=*&limit=1"
 read_denied "مشاركات المسابقات (بيانات شخصية)"  "/rest/v1/contest_entries?select=*&limit=1"
-read_denied "أسرار الخزنة"                       "/rest/v1/vault_secrets?select=*&limit=1"
+# 🪤 كان هنا `vault_secrets` — **جدولٌ لا وجود له**، فكان الفحص يردّ ٤٠٤ ويُحسب
+# «محجوباً ✅» منذ كُتب. السطح الحقيقي `public.app_secrets` وهو **عرضٌ** على
+# خزنة Supabase. هذا بالضبط الكذب الذي أُصلح في v14.57: سطحٌ حقيقي بلا فحص،
+# وعدّادٌ أخضر.
+read_denied "أسرار المنصّة (app_secrets)"        "/rest/v1/app_secrets?select=*&limit=1"
+read_denied "نبض النظام (أرقام الخادم الخام)"    "/rest/v1/system_heartbeat?select=*&limit=1"
+
+# ── v14.57 — التوصيل والعناوين والتتبّع (طلب ناصر: وسّع الفحص للأسطح الحقيقية)
+# الأسماء مأخوذة من المخطّط الحيّ لا من التخمين:
+#   SELECT relname FROM pg_class … ILIKE '%deliver%|%address%|%track%|%zone%'
+read_denied "عناوين المشترين"                    "/rest/v1/user_addresses?select=*&limit=1"
+read_denied "مواقع المندوبين الحيّة"             "/rest/v1/delivery_tracks?select=*&limit=1"
+read_denied "نطاقات توصيل التجار"                "/rest/v1/store_delivery_zones?select=*&limit=1"
+
+write_blocked "دسّ عنوان لمستخدم"      POST  "/rest/v1/user_addresses" '{"user_id":"__taki_probe__"}'
+write_blocked "تزوير موقع مندوب"       POST  "/rest/v1/delivery_tracks" '{"barcode":"__taki_probe__"}'
+write_blocked "رسم نطاق توصيل لمتجر"   POST  "/rest/v1/store_delivery_zones" '{"store_id":"__taki_probe__"}'
+write_blocked "تعديل نطاق متجر آخر"    PATCH "/rest/v1/store_delivery_zones?store_id=eq.__taki_probe__" '{"name":"__taki_probe__"}'
+# عرضُ التوصيل دالةٌ عامّة عمداً (المشتري يحتاجها قبل الحجز) — فالمفحوص هنا
+# أنها **لا تُسرّب** عنواناً ولا نطاقاً، لا أنها محجوبة.
+req POST "/rest/v1/rpc/delivery_quote" '{"p_store_id":"__taki_probe__","p_lat":24.7,"p_lng":46.7,"p_location_id":null}'
+case "${ERRC:-}" in
+  PGRST202|42P01) probe_err "عرض التوصيل — الدالة غير موجودة بهذه المعاملات (${ERRC}) ⇒ فحصٌ خاطئ" ;;
+  *) if printf '%s' "$BODY" | grep -qiE '"(lat|lng|address|phone|center_lat|center_lng|zone)"'; then
+         bad "🚨 عرض التوصيل يُسرّب عنواناً أو إحداثيات لزائر: $(printf '%.90s' "$BODY")"
+     else ok "عرض التوصيل يردّ بلا تسريب عنوان أو إحداثيات"; fi ;;
+esac
 
 # ── ٤) الكتابة: هل يستطيع زائر مجهول أن يغيّر شيئاً؟ ────────────────────
 hdr "الكتابة — محاولات تخريب من زائر مجهول (لا تُكتب أي بيانات)"
