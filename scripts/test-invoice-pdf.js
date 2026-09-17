@@ -66,6 +66,16 @@ const cases = {
       label: `خيار ${i + 1}`, qty: 1, sku: `S${i}`, kind: i === 0 ? 'main' : 'addon',
     })),
   },
+  // v14.50 — 🪤 قِيس أن أطول حالة (٦٠٠ بنداً) تقف عند ١٣٩٩٤pt، أي **ستّ نقاط**
+  // تحت السقف ١٤٠٠٠. فمسار إعادة التخطيط — الذي يُسقط بنوداً ليبقى الملف صالحاً —
+  // لم يكن يُنفَّذ في أي حالة اختبار قطّ، وتأكيدُ الارتفاع لم يكن يستطيع الفشل.
+  // أُثبت ذلك بتعطيل الحلقة عمداً: الاختبار بقي أخضر. هذه الحالة تُجبره.
+  M_1500_items_forces_relayout: {
+    ...base, quantity: 1500, total: 150000,
+    items: Array.from({ length: 1500 }, (_, i) => ({
+      label: `خيار ${i + 1}`, qty: 1, sku: `S${i}`, kind: i === 0 ? 'main' : 'addon',
+    })),
+  },
   J_bad_coords: {
     ...base, fulfillment: 'delivery', delivery_fee: 5, total: 15,
     delivery: { label: 'عنوان', details: 'تفاصيل', lat: 'abc', lng: null },
@@ -85,9 +95,22 @@ const cases = {
         const h = mb ? +mb[2] : -1;
         const bad = [];
         if (!buf.length || buf.subarray(0, 5).toString() !== '%PDF-') bad.push('ليس PDF صالحاً');
-        if (h > 14400) bad.push(`ارتفاع ${h} > 14400 (ملف يرفضه القارئ)`);
+        // v14.50 — 🪤 قراءة الارتفاع من الـPDF **لا تستطيع الفشل**: السطر
+        // `H = Math.min(MAX_PAGE_H, plan.height)` يقصّ الصفحة لا المحتوى، فالرقم
+        // المكتوب في الملف مسقوفٌ دائماً بينما المحتوى يفيض خارج الورقة بصمت.
+        // أُثبت: عُطِّلت حلقة الإسقاط كلياً فبقي الاختبار أخضر. فنقرأ الخطّة قبل
+        // القصّ — وهي العقد الحقيقي.
+        if (h > B.MAX_PAGE_H) bad.push(`ارتفاع الصفحة ${h} > ${B.MAX_PAGE_H}`);
+        const plan = await B.planFinal(v, lang);
+        if (plan.height > B.MAX_PAGE_H) bad.push(`المحتوى ${plan.height}pt يفيض خارج ورقة ${B.MAX_PAGE_H}pt (إعادة التخطيط لم تعمل)`);
+        if (plan.omitted > 0 && plan.omitted === plan.itemsAll) bad.push('أُسقطت كل الأصناف');
         if (w !== 420) bad.push(`عرض ${w} ≠ 420`);
-        if (ms > 5000) bad.push(`بطيء ${Math.round(ms)}ms`);
+        // 🪤 الزمن هو التأكيد الوحيد غير الحتميّ هنا. على جهاز التطوير أبطأُ حالة
+        // ~١.٣ث، لكن آلة بناء مشتركة قد تتضاعف عليها مرّات — وحدٌّ ضيّق يعني
+        // بوّابة نشرٍ تُغلق لأن الآلة كانت مشغولة، لا لأن الكود ساء. فالحدّ هنا
+        // يكشف **انفجاراً خوارزمياً** (حلقة لا تنتهي) لا بطءَ عتاد.
+        const budget = process.env.CI ? 20000 : 5000;
+        if (ms > budget) bad.push(`بطيء ${Math.round(ms)}ms (الحدّ ${budget})`);
         console.log(`${bad.length ? '❌' : '✅'} ${name.padEnd(24)} [${lang}] ${(buf.length / 1024).toFixed(0)}KB ${w}x${h}pt ${Math.round(ms)}ms ${bad.join(' · ')}`);
         if (bad.length) fail++;
         if (lang === 'ar' && /^[ABCIJKL]_/.test(name)) fs.writeFileSync(`${OUT}/stress_${name}.pdf`, buf);

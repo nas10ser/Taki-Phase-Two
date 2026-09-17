@@ -634,8 +634,17 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
  * @param {'ar'|'en'} lang لغة المستخدم في البوت
  * @returns {Promise<Buffer>}
  */
-async function buildInvoicePdf(v, lang) {
-    const rtl = lang !== 'en';
+/**
+ * v14.50 — الخطّة **النهائية** بعد إعادة التخطيط، مستخرجةً من `buildInvoicePdf`.
+ *
+ * 🪤 لماذا فُصلت: السطر `const H = Math.min(MAX_PAGE_H, plan.height)` يقصّ
+ * **الصفحة** لا المحتوى، فارتفاع MediaBox في الملف الناتج لا يتجاوز السقف
+ * أبداً مهما انكسر منطقُ الإسقاط — والمحتوى يفيض خارج الورقة بصمت. ومعنى ذلك
+ * أن أي تأكيدٍ يقرأ الارتفاع من الـPDF **لا يستطيع الفشل**: أُثبت بتعطيل حلقة
+ * الإسقاط كلياً، فبقي الاختبار أخضر. فالعقد الحقيقي هو `plan.height` قبل القصّ،
+ * وهذه الدالة تكشفه للاختبار بلا أن يُعاد بناء المنطق مرّتين.
+ */
+async function planFinal(v, lang) {
     let plan = await planInvoice(v, lang, Infinity, Infinity);
     if (plan.height > MAX_PAGE_H) {
         // (١) قلّل باركودات الأصناف — الرمز يُطبع نصّاً فيُدخله الكاشير يدوياً.
@@ -655,6 +664,12 @@ async function buildInvoicePdf(v, lang) {
             }
         }
     }
+    return plan;
+}
+
+async function buildInvoicePdf(v, lang) {
+    const rtl = lang !== 'en';
+    const plan = await planFinal(v, lang);
     const H = Math.min(MAX_PAGE_H, plan.height);
     return await new Promise((resolve, reject) => {
         const doc = new PDFDocument({
@@ -684,4 +699,4 @@ const invoiceFileName = (v) => `TAKI-${String((v && v.barcode) || 'invoice').rep
 /** الخطوط موجودة؟ يُفحص عند الإقلاع فيُسجَّل تحذير مبكّر بدل فشل صامت. */
 const fontsAvailable = () => fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD);
 
-module.exports = { buildInvoicePdf, invoiceFileName, fontsAvailable, encode128B, zatcaTlvBase64, bidiRuns, splitInclusive };
+module.exports = { buildInvoicePdf, planFinal, invoiceFileName, fontsAvailable, encode128B, zatcaTlvBase64, bidiRuns, splitInclusive, MAX_PAGE_H };
