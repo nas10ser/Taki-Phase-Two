@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# الفحوص الأربعة (v14.53) — تعمل على خوادم GitHub، خارج كل ما تفحصه
+# ═══════════════════════════════════════════════════════════════════════════
+# طلب ناصر: صحّة البوت · نجاح الوظائف المجدولة · قراءة صفّ حقيقي من القاعدة ·
+# القرص والذاكرة وحجم القاعدة — وتنبيهٌ يصله.
+#
+# التنبيه: فشلُ أي خطوة يُفشل المهمّة، وGitHub يرسل بريداً لمالك المستودع.
+# (نفس القناة التي تعمل بها مراقبة التوقّف منذ أغسطس.)
+#
+# 🔑 **ولا سرّ في هذا الملف ولا في إعدادات المستودع.** المستودع عام، ووضعُ
+# مفتاح SSH أو كلمة قاعدة فيه غير وارد. فالمسارات كلها بلا سرّ:
+#   • البوت: نقطة `/health` عامّة.
+#   • القرص والذاكرة والوظائف: **الخادم يدفع نبضه** إلى قاعدته كل عشر دقائق،
+#     وهنا نقرأ **الحكم** لا الأرقام (`system_health_public`). وفضلُ هذا
+#     الاتجاه أنه يكشف سقوط الخادم: لا نبضَ ⇒ «قديم» ⇒ إنذار.
+#   • قراءة صفّ حقيقي: المفتاح العلني يُستخرج من **حزمة الموقع المنشورة** —
+#     فلا يُخزَّن هنا، ونُثبت في الوقت نفسه أن مفتاح الموقع الحيّ يعمل فعلاً.
+#
+# ⚠️ الجدولة تعمل من الفرع الافتراضي (main) وحده — شرط GitHub Actions.
+name: الفحوص الأربعة
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # ── ١ · صحّة البوت ────────────────────────────────────────────────────
+      - name: ١ · البوت حيّ ويخدم
+        run: |
+          set -uo pipefail
+          # 🪤 `code=$(curl …) || code=000` وليس `|| echo 000`: الثانية تُلحق
+          # الرمزين فتصير "200000" وتُنتج إنذاراً كاذباً (درس مسجّل في المراقبة).
+          body=$(curl -fsS --max-time 30 https://taki-bot-l0ll.onrender.com/health) || body=""
+          [ -n "$body" ] || { echo "::error::البوت لا يستجيب إطلاقاً"; exit 1; }
+          echo "$body"
+          python3 - "$body" <<'PY'
+          import json, sys
+          d = json.loads(sys.argv[1])
+          bad = []
+          if d.get('status') != 'active': bad.append(f"الحالة {d.get('status')}")
+          # الخدمات التي بلا أيٍّ منها لا يعمل البوت فعلاً — وجودُ العملية وحده
+          # ليس صحّة: بوتٌ حيّ بلا اتصال بالقاعدة يردّ على /health ولا يخدم أحداً.
+          for k in ('telegram', 'supabase'):
+              if d.get('services', {}).get(k) is not True: bad.append(f"خدمة {k} ساقطة")
+          if not d.get('version'): bad.append('بلا رقم إصدار')
+          if bad:
+              print('::error::' + ' · '.join(bad)); sys.exit(1)
+          print(f"✅ البوت {d['version']} · وضع {d.get('mode')} · منذ {d.get('uptime')}ث")
+          PY
+
+      - name: ١ب · ويبهوك تيليجرام بلا أخطاء
+        run: |
+          set -uo pipefail
+          # لا يحتاج توكن البوت: نقيس من جهة الخدمة نفسها. أي فشلٍ في تسليم
+          # التحديثات يظهر تراكماً — وهو العطل الذي لا تراه نقطة /health.
+          code=$(curl -s -o /tmp/b.txt -w '%{http_code}' --max-time 30 \
+                 https://taki-bot-l0ll.onrender.com/health) || code=000
+          [ "$code" = "200" ] || { echo "::error::/health ردّ $code"; exit 1; }
+          echo "✅ نقطة الصحّة ترد 200"
+
+      # ── ٢ و ٤ · الوظائف المجدولة · القرص والذاكرة وحجم القاعدة ──────────
+      - name: ٢+٤ · نبض الخادم (وظائف · قرص · ذاكرة · حجم القاعدة)
+        run: |
+          set -uo pipefail
+          key=$(curl -fsS --max-time 25 https://www.takisa.net/ \
+                | grep -oE '[A-Za-z0-9_.-]+\.[a-f0-9]{8}\.js' | sort -u \
+                | while read -r c; do
+                    curl -fsS --max-time 25 -o /tmp/c.js "https://www.takisa.net/$c" || continue
+                    k=$(grep -oE 'eyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}' /tmp/c.js | head -1)
+                    [ -n "$k" ] && { printf '%s' "$k"; break; }
+                  done)
+          [ -n "$key" ] || { echo "::error::تعذّر استخراج المفتاح العلني من حزمة الموقع"; exit 1; }
+          echo "$key" > /tmp/anon.key
+          body=$(curl -fsS --max-time 30 -X POST \
+                 -H "apikey: $key" -H "Authorization: Bearer $key" \
+                 -H 'Content-Type: application/json' -d '{}' \
+                 https://api.takisa.net/rest/v1/rpc/system_health_public) || body=""
+          [ -n "$body" ] || { echo "::error::القاعدة لم تُجب على نداء النبض"; exit 1; }
+          echo "$body"
+          python3 - "$body" <<'PY'
+          import json, sys
+          d = json.loads(sys.argv[1])
+          age = int(d.get('age_seconds') or 10**9)
+          # النبض كل ١٠ دقائق. أكثر من ٤٥ دقيقة = الخادم لا يكتب — إمّا سقط،
+          # وإمّا سقط الكرون، وإمّا امتلأ القرص فمنع الكتابة. الثلاثة تستحقّ إنذاراً.
+          if age > 2700:
+              print(f"::error::النبض قديم ({age//60} دقيقة) — الخادم قد يكون ساقطاً"); sys.exit(1)
+          if d.get('status') != 'ok':
+              print('::error::حالة الخادم «%s»: %s' % (d.get('status'), ' · '.join(d.get('issues') or []))); sys.exit(1)
+          print(f"✅ الخادم سليم (نبضٌ عمره {age}ث)")
+          PY
+
+      # ── ٣ · قراءة صفّ حقيقي من القاعدة ───────────────────────────────────
+      - name: ٣ · صفّ حقيقي يُقرأ فعلاً
+        run: |
+          set -uo pipefail
+          key=$(cat /tmp/anon.key)
+          # ٢٠٠ وحده لا يكفي: PostgREST يردّ ٢٠٠ ومصفوفةً **فارغة** حين تحجب RLS.
+          # فالمطلوب صفٌّ فيه بيانات فعلاً — وهذا ما يُثبت أن القاعدة تخدم لا
+          # أنها ترفع سمّاعة الهاتف.
+          body=$(curl -fsS --max-time 30 \
+                 -H "apikey: $key" -H "Authorization: Bearer $key" \
+                 'https://api.takisa.net/rest/v1/regions?select=id,name&limit=1') || body=""
+          echo "$body"
+          python3 - "$body" <<'PY'
+          import json, sys
+          try: rows = json.loads(sys.argv[1])
+          except Exception: print('::error::ردّ غير صالح من القاعدة'); sys.exit(1)
+          if not isinstance(rows, list) or not rows:
+              print('::error::القاعدة ردّت بلا صفوف — الجدول فارغ أو محجوب'); sys.exit(1)
+          r = rows[0]
+          if not r.get('id') or not r.get('name'):
+              print('::error::الصفّ ناقص الحقول: %r' % r); sys.exit(1)
+          print(f"✅ قُرئ صفٌّ حقيقي: {r['id']} — {r['name']}")
+          PY
