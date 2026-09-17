@@ -1027,7 +1027,15 @@ const SellerDashboard: React.FC = () => {
                 // reliable path for `maps.app.goo.gl` short links pasted from
                 // mobile when public proxies are blocked by CSP or throttled.
                 try {
+                    // v14.54 — البوّابة صارت تشترط هوية: كانت مفتوحة للإنترنت
+                    // كلّه بلا توثيق ولا حدّ معدّل. نمرّر جلسة التاجر نفسها
+                    // (لا سرّ جديد)، والقاعدة هي من يقرّر: تاجرٌ غير موقوف،
+                    // وعشرون نداءً في الساعة.
+                    const { supabase } = await import('../services/supabaseClient');
+                    const { data: sess } = await supabase.auth.getSession();
+                    const jwt = sess?.session?.access_token;
                     const ownRes = await fetch(`/api/resolve-map?url=${encodeURIComponent(target)}`, {
+                        headers: jwt ? { Authorization: `Bearer ${jwt}` } : undefined,
                         signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
                     });
                     if (ownRes.ok) {

@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist",
     "postinstall": "node scripts/strip-tfjs-maps.js",
-    "test": "node scripts/test-delivery-logic.js && node scripts/test-invoice-pdf.js"
+    "test": "node scripts/test-delivery-logic.js && node scripts/test-invoice-pdf.js && node scripts/test-map-ssrf.js"
   },
   "keywords": [],
   "author": "",

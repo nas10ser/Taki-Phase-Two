@@ -1,33 +1,55 @@
-// Vercel serverless function: resolve a Google Maps short link (maps.app.goo.gl)
-// to its expanded URL on the server, sidestepping browser CORS/CSP that blocks
-// public proxies. Returns { url, lat, lng } when extractable.
+// ═══════════════════════════════════════════════════════════════════════════
+// resolve-map — فكّ روابط خرائط جوجل المختصرة على الخادم (v14.54)
+// ═══════════════════════════════════════════════════════════════════════════
+// الغرض: التاجر يلصق رابط `maps.app.goo.gl` لموقع محلّه، والمتصفّح لا يستطيع
+// تتبّعه (CORS/CSP) — فنفكّه هنا ونُعيد الإحداثيات.
+//
+// ما كان مكسوراً قبل v14.54، مقيساً لا مفترضاً:
+//  🔴 **مفتوحة للإنترنت كلّه.** ناديتُها من سطر الأوامر بلا أي هوية فردّت ٢٠٠
+//     ونتيجةً كاملة. وحارس «الأصل» الموجود فيها لا يحرس شيئاً: يضبط ترويسة
+//     CORS للمتصفّح ولا يمنع تشغيل الدالة — وقائمتُه لا تحوي `www.takisa.net`
+//     أصلاً. ضابطٌ لا يُنفَّذ على أحد ليس ضابطاً.
+//  🔴 **قائمة النطاقات تُفحص على القفزة الأولى وحدها.** الحلقة تقرأ `Location`
+//     ثم `continue` فتجلب العنوان التالي **بلا إعادة فحص**. ورابطُ جوجل مختصر
+//     يُنشئه أي أحد ويوجّهه حيث شاء — فالفحصُ الأوّل يحرس الباب ويترك النافذة.
+//  🔴 **بلا حدّ معدّل** — نداءٌ بلا سقف على حصّة Vercel المجانية.
+//
+// وما صار الآن:
+//  ١) **توثيق**: لا يُنفَّذ شيء قبل أن تقول القاعدة إن المنادي تاجرٌ موثَّق غير
+//     موقوف. السياسة في `taki_map_gate()` داخل القاعدة لا هنا — تُعدَّل بلا
+//     نشر، ولا تفترق نسختان منها. ولا سرّ جديد: نمرّر JWT المستخدم نفسه.
+//  ٢) **حدّ معدّل**: ٢٠ نداءً/ساعة لكل تاجر، بعدّاد ذرّي في القاعدة
+//     (`rate_limit_counters`) — لا في ذاكرة النسخة، فعدّادُ الذاكرة يُصفَّر مع
+//     كل نسخةٍ باردة وهو حدٌّ لا يحدّ.
+//  ٣) **كل قفزة تُفحص**: `assertAllowed()` تُنادى على العنوان الأوّل وعلى كل
+//     `Location` وكل `meta refresh` قبل جلبه. وأي عنوان خارج القائمة يُنهي
+//     المحاولة بدل أن يُتبع.
+//  ٤) **لا يُعاد عنوانٌ خارج القائمة** إلى المتصفّح، فلا يصير الردّ قناةَ تسريب.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://api.takisa.net').replace(/\/+$/, '');
+const ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 const tryExtract = (text) => {
     if (!text || typeof text !== 'string') return null;
-    
-    // Decode URI components where possible to simplify regex matching (%2C -> ,)
-    let decoded = text;
-    try { decoded = decodeURIComponent(text); } catch(e) {}
 
-    const isValidKSA = (lat, lng) => {
-        // Saudi Arabia approximate bounding box
-        return lat > 15 && lat < 33 && lng > 33 && lng < 56;
-    };
+    let decoded = text;
+    try { decoded = decodeURIComponent(text); } catch (e) { /* نصّ غير مُرمَّز */ }
+
+    // صندوق السعودية التقريبي — إحداثيةٌ خارجه ليست موقع محلّ.
+    const isValidKSA = (lat, lng) => lat > 15 && lat < 33 && lng > 33 && lng < 56;
 
     let bestMatch = null;
     const trySet = (latStr, lngStr) => {
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
-        if (isValidKSA(lat, lng)) {
-            bestMatch = { lat, lng };
-            return true;
-        }
+        if (isValidKSA(lat, lng)) { bestMatch = { lat, lng }; return true; }
         return false;
     };
 
     const patterns = [
         /@(-?\d+\.\d+)\s*(?:,|%2C)\s*(-?\d+\.\d+)/gi,
-        /[?&](?:q|ll|query|center|markers|latlng|daddr|destination)=(-?\d+\.\d+)\s*(?:,|%2C)\s*(-?\d+\.\d+)/gi
+        /[?&](?:q|ll|query|center|markers|latlng|daddr|destination)=(-?\d+\.\d+)\s*(?:,|%2C)\s*(-?\d+\.\d+)/gi,
     ];
 
     for (const p of patterns) {
@@ -39,16 +61,16 @@ const tryExtract = (text) => {
     const lng2d = text.match(/!(?:2d|4d)(-?\d+\.\d+)/) || decoded.match(/!(?:2d|4d)(-?\d+\.\d+)/);
     if (lat3d && lng2d && trySet(lat3d[1], lng2d[1])) return bestMatch;
 
-    const brute = [...text.matchAll(/(-?\d+\.\d+)\s*(?:,|%2C)\s*(-?\d+\.\d+)/g), ...decoded.matchAll(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/g)];
-    for (const b of brute) {
-        if (trySet(b[1], b[2])) return bestMatch;
-    }
-    
+    const brute = [
+        ...text.matchAll(/(-?\d+\.\d+)\s*(?:,|%2C)\s*(-?\d+\.\d+)/g),
+        ...decoded.matchAll(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/g),
+    ];
+    for (const b of brute) if (trySet(b[1], b[2])) return bestMatch;
+
     return null;
 };
 
-// ====================== SECURITY: URL Allowlist ======================
-// Only accept URLs from known Google Maps domains to prevent SSRF attacks.
+// ═══════════════ الأمان: قائمة النطاقات، وتُفحص عند كل قفزة ═══════════════
 const ALLOWED_HOSTS = [
     'maps.app.goo.gl',
     'goo.gl',
@@ -59,101 +81,119 @@ const ALLOWED_HOSTS = [
     'maps.google.co.uk',
 ];
 
-// Reject requests to private/internal IP ranges (SSRF protection)
-const BLOCKED_PATTERNS = [
-    /^https?:\/\/localhost/i,
-    /^https?:\/\/127\./,
-    /^https?:\/\/10\./,
-    /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./,
-    /^https?:\/\/192\.168\./,
-    /^https?:\/\/169\.254\./,  // AWS metadata
-    /^https?:\/\/0\./,
-    /^https?:\/\/\[/,          // IPv6
-];
-
-function isUrlAllowed(urlStr) {
-    try {
-        const parsed = new URL(urlStr);
-        // Block private/internal IPs
-        if (BLOCKED_PATTERNS.some(p => p.test(urlStr))) return false;
-        // Only allow known Google Maps hosts
-        return ALLOWED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
-    } catch {
+/**
+ * 🪤 الفحص على السلسلة النصّية (`/^https?:\/\/127\./`) لا يكفي ولم يعد مستعملاً:
+ * `http://0x7f.1/` و`http://2130706433/` و`http://127.1/` كلها المضيف المحلّي
+ * ولا يطابقها. فالفحص هنا على **اسم المضيف بعد التحليل** وعلى الشكل الرقمي.
+ */
+const isPrivateHost = (hostname) => {
+    const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+    if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true;
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+    if (m) {
+        const [a, b] = [Number(m[1]), Number(m[2])];
+        if (a === 10 || a === 127 || a === 0) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 169 && b === 254) return true;   // بيانات وصف السحابة
+        if (a >= 224) return true;                  // بثّ متعدّد ومحجوز
         return false;
     }
+    // شكلٌ رقميّ غير منقّط (عشري/ثماني/ستّ عشري) = محاولةُ تحايل لا عنوان خرائط.
+    if (/^(0x[0-9a-f]+|\d+)$/.test(h)) return true;
+    return false;
+};
+
+/** يرمي عند أي عنوان لا يجوز جلبه — تُنادى على العنوان الأوّل وعلى كل قفزة. */
+function assertAllowed(urlStr) {
+    let u;
+    try { u = new URL(urlStr); } catch { throw new Error('BAD_URL'); }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('BAD_SCHEME');
+    if (isPrivateHost(u.hostname)) throw new Error('PRIVATE_HOST');
+    const ok = ALLOWED_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith('.' + h));
+    if (!ok) throw new Error('HOST_NOT_ALLOWED');
+    return u;
 }
 
-// ====================== SECURITY: CORS Allowlist ======================
-const ALLOWED_ORIGINS = [
-    'https://taki.app',
-    'https://www.taki.app',
-    /^https:\/\/taki[\w-]*\.vercel\.app$/,
-];
-
-function isOriginAllowed(origin) {
-    if (!origin) return false;
-    return ALLOWED_ORIGINS.some(o => {
-        if (typeof o === 'string') return o === origin;
-        return o.test(origin);
-    });
+/** سياسة الدخول تُسأل من القاعدة بهوية المستخدم نفسه — لا سرّ هنا. */
+async function gate(authHeader) {
+    if (!authHeader || !/^Bearer\s+\S+/i.test(authHeader)) return { ok: false, error: 'AUTH_REQUIRED' };
+    if (!ANON_KEY) return { ok: false, error: 'SERVER_MISCONFIGURED' };
+    let r;
+    try {
+        r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/taki_map_gate`, {
+            method: 'POST',
+            headers: { apikey: ANON_KEY, Authorization: authHeader, 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+    } catch {
+        // تعذّر سؤال القاعدة ⇒ **نمنع**. البوّابة تفشل مغلقةً لا مفتوحة.
+        return { ok: false, error: 'GATE_UNAVAILABLE' };
+    }
+    if (!r.ok) return { ok: false, error: 'AUTH_REQUIRED' };
+    const d = await r.json().catch(() => null);
+    return d && d.ok === true ? { ok: true } : { ok: false, error: (d && d.error) || 'FORBIDDEN' };
 }
 
 module.exports = async (req, res) => {
-    res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
+    // 🪤 لا تخزين مشترك: الردّ يعتمد على هوية المنادي وحدّ معدّله، فتخزينُه
+    // على الحافة كان سيخدم إجابةَ تاجرٍ لآخر ويلتفّ على الحدّ.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Vary', 'Authorization');
 
-    // CORS: restrict to TAKI origins only (+ dev localhost)
-    const origin = req.headers && req.headers.origin;
-    if (origin && (isOriginAllowed(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(origin))) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    // Preflight
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type');
         return res.status(204).end();
     }
-    
-    const target = (req.query && req.query.url) || '';
-    if (!target || !/^https?:\/\//i.test(target)) {
-        return res.status(400).json({ error: 'missing url' });
+    if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
+
+    const g = await gate(req.headers && req.headers.authorization);
+    if (!g.ok) {
+        const code = g.error === 'RATE_LIMIT' ? 429 : (g.error === 'GATE_UNAVAILABLE' ? 503 : 401);
+        return res.status(code).json({ error: g.error });
     }
 
-    // SSRF protection: only allow known Google Maps domains
-    if (!isUrlAllowed(target)) {
-        return res.status(403).json({ error: 'URL domain not allowed. Only Google Maps links are accepted.' });
+    const target = (req.query && req.query.url) || '';
+    if (!target || typeof target !== 'string') return res.status(400).json({ error: 'missing url' });
+
+    let first;
+    try { first = assertAllowed(target); } catch (e) {
+        return res.status(403).json({ error: 'URL domain not allowed. Only Google Maps links are accepted.', reason: e.message });
     }
 
     try {
-        let current = target;
+        let current = first.toString();
         let html = '';
         let coords = tryExtract(current);
 
-        // Max 6 redirects/fetches
         for (let i = 0; i < 6 && !coords; i++) {
-            // Using WhatsApp User-Agent tricks Google Maps into returning OpenGraph meta tags
-            // instead of a complex JS app or an interstitial consent page. This makes it
-            // work exactly like when pasting the link into WhatsApp.
+            // ترويسة واتساب تجعل خرائط جوجل تُعيد وسوم OpenGraph بدل تطبيقٍ
+            // جافاسكربتي أو صفحة موافقة — نفس ما يحدث عند لصق الرابط في واتساب.
             const resp = await fetch(current, {
                 redirect: 'manual',
-                headers: { 
-                    'User-Agent': 'WhatsApp/2.21.12.21 A',
-                    'Accept-Language': 'en-US,en;q=0.9'
-                }
+                headers: { 'User-Agent': 'WhatsApp/2.21.12.21 A', 'Accept-Language': 'en-US,en;q=0.9' },
             });
-            
+
             const loc = resp.headers.get('location');
             if (loc) {
-                current = loc.startsWith('http') ? loc : new URL(loc, current).toString();
+                const next = loc.startsWith('http') ? loc : new URL(loc, current).toString();
+                // ★ هنا كان الثقب: كان يُجلب بلا فحص. الآن كل قفزة تُفحص.
+                assertAllowed(next);
+                current = next;
                 coords = tryExtract(current);
                 continue;
             }
-            
+
             html = await resp.text().catch(() => '');
-            
-            // Check for meta refresh redirect
+
             const metaRefresh = html.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["']?\d+;\s*url=([^"']+)["']?/i);
             if (metaRefresh && metaRefresh[1]) {
-                const nextLoc = metaRefresh[1].replace(/&amp;/g, '&');
-                current = nextLoc.startsWith('http') ? nextLoc : new URL(nextLoc, current).toString();
+                const raw = metaRefresh[1].replace(/&amp;/g, '&');
+                const next = raw.startsWith('http') ? raw : new URL(raw, current).toString();
+                assertAllowed(next);
+                current = next;
                 coords = tryExtract(current);
                 continue;
             }
@@ -162,31 +202,39 @@ module.exports = async (req, res) => {
             break;
         }
 
-        // Fallback: Geocode title if no coords found
+        // ارتداد: حوِّل اسم المكان إلى إحداثيات عبر خدمة الأسماء المفتوحة.
         if (!coords && html) {
             const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
-            let placeName = titleMatch && titleMatch[1]
+            const placeName = titleMatch && titleMatch[1]
                 .replace(/\s*[-|·]\s*Google Maps.*$/i, '')
                 .replace(/^Google Maps[:\s-]*/i, '')
                 .trim();
-            
-            if (placeName && placeName.length > 3 && placeName !== 'Google Maps') {
+
+            if (placeName && placeName.length > 3 && placeName.length < 200 && placeName !== 'Google Maps') {
                 const geo = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&countrycodes=sa&limit=1`,
-                    { headers: { 'User-Agent': 'TakiApp/1.0' } }
-                ).then(r => r.json()).catch(() => null);
-                
+                    { headers: { 'User-Agent': 'TakiApp/1.0 (+https://www.takisa.net)' } }
+                ).then((r) => r.json()).catch(() => null);
                 if (geo && geo[0]) coords = { lat: parseFloat(geo[0].lat), lng: parseFloat(geo[0].lon) };
             }
         }
 
-        if (coords) {
-            res.status(200).json({ url: current, lat: coords.lat, lng: coords.lng });
-        } else {
-            res.status(200).json({ url: current, lat: null, lng: null });
-        }
+        // العنوان النهائي يُعاد فقط إن بقي داخل القائمة — فلا يصير الردّ قناةَ
+        // تسريبٍ لوجهةٍ خارجية بلغتها السلسلة.
+        let safeUrl = null;
+        try { assertAllowed(current); safeUrl = current; } catch { safeUrl = null; }
+
+        return res.status(200).json({ url: safeUrl, lat: coords ? coords.lat : null, lng: coords ? coords.lng : null });
     } catch (e) {
-        res.status(500).json({ error: e && e.message ? e.message : 'server error' });
+        const msg = e && e.message;
+        if (msg === 'HOST_NOT_ALLOWED' || msg === 'PRIVATE_HOST' || msg === 'BAD_URL' || msg === 'BAD_SCHEME') {
+            // تحويلٌ خرج من القائمة أثناء التتبّع — نقف ولا نُتبعه.
+            return res.status(403).json({ error: 'redirect left the allowed Google Maps domains', reason: msg });
+        }
+        return res.status(502).json({ error: 'upstream error' });
     }
 };
 
+// تُصدَّر للاختبار وحده (`scripts/test-map-ssrf.js`). ضابطُ أمانٍ بلا اختبار
+// ضابطٌ مجهول: لا يُعرف أنه يعمل إلا يوم يُهاجَم.
+module.exports._internals = { assertAllowed, isPrivateHost, ALLOWED_HOSTS, tryExtract };
