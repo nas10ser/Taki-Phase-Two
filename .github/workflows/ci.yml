@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# بوّابة الجودة — تعمل على كل دفعة (v14.50)
+# ═══════════════════════════════════════════════════════════════════════════
+# لماذا وُجدت: حتى اليوم لم يكن بين دفعةٍ إلى `main` وبين www.takisa.net أي فحص
+# إطلاقاً. وبناءُ Vercel **ليس** فحصاً: Parcel يحذف الأنواع بـSWC ولا يفحصها
+# (`@parcel/validator-typescript` غير مثبّت — قِيس)، فخطأُ TypeScript يُبنى
+# بنجاح ويُنشر ويسقط في المتصفّح.
+#
+# ما يفحصه، بالترتيب الذي يُفشل أسرعَ ما يُفشل:
+#   ١) الأنواع      — `tsc --noEmit`: الفحص الوحيد الذي يرى ما لا يراه Parcel.
+#   ٢) الاختبارات   — منطق التوصيل (٢٤ حالة) وفاتورة PDF (٢٤ حالة).
+#   ٣) رقم النسخة   — `CACHE_NAME` رُفع إن تغيّر كودُ التطبيق (وإلا بقي آيفون
+#                     على نسخة قديمة بلا شكوى).
+#   ٤) البناء       — بما فيه حارس متغيّرات البيئة.
+#   ٥) الإنتاج حيّ   — حزمة الموقع المنشورة تشير فعلاً إلى api.takisa.net.
+#
+# 🔑 لا سرّ في هذا الملف ولا حاجة إليه. قيمتا Supabase أدناه **وهميّتان
+# مقصودتان**: هدف هذه الخطوة إثبات أن الكود يُبنى، لا إنتاج حزمةٍ للنشر. ومفتاحُ
+# `anon` الحقيقي عامٌّ أصلاً (يُسلَّم لكل زائر في حزمة المتصفّح) لكن وضعَه هنا
+# يُوهم القارئ القادم أن الأسرار تُكتب في سير العمل — فلا يُوضع.
+# والمتغيّرات الحقيقية تُفحص في مكانها: `scripts/check-env.js` يعمل داخل بناء
+# Vercel نفسه فيكسره إن كانت ناقصة.
+name: بوّابة الجودة
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # دفعتان متتاليتان: تُلغى الأولى. ولا نُلغي على main حتى تبقى لكل كوميتٍ
+  # نتيجةٌ خاصّة به — بوّابة النشر تعتمد عليها.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 🪤 الافتراضي `fetch-depth: 1` — أي بلا أب، فيسقط فحص رفع النسخة
+          # بخطأ git غامض بدل أن يُفيد. صفرٌ = التاريخ كاملاً.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: تثبيت الحزم
+        run: |
+          npm ci
+          # اختبار الفاتورة يحتاج pdfkit، وهي في تبعيات البوت لا الجذر.
+          npm ci --prefix server
+
+      - name: ١ · فحص الأنواع
+        run: npm run typecheck
+
+      - name: ٢ · الاختبارات
+        run: npm test
+
+      - name: ٣ · رقم النسخة (CACHE_NAME)
+        run: |
+          # `github.event.before` أصفارٌ على أوّل دفعةٍ لفرع وبعد أي force-push،
+          # والسكربت يرتدّ عندها إلى الأب المباشر.
+          node scripts/check-cache-bump.js "${{ github.event.before }}" "${{ github.sha }}"
+
+      - name: ٤ · البناء
+        env:
+          # وهميّتان مقصودتان — انظر الشرح في أعلى الملف.
+          SUPABASE_URL: https://ci-placeholder.takisa.net
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6ImNpLXBsYWNlaG9sZGVyIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjIwMDAwMDAwMDAsInJlZiI6ImNpIn0.ci_placeholder_signature_not_a_real_key_00
+        run: npm run build
+
+      - name: ٥ · الإنتاج الحيّ يشير إلى القاعدة الصحيحة
+        # ليست فحصاً على هذه الدفعة بل على ما هو منشورٌ الآن: بناءٌ أخضر
+        # وVercel «READY» لا يُثبتان أن الصفحة تعمل. هذه تُثبت أن الحزمة
+        # المنشورة تحمل عنوان القاعدة فعلاً — وهو ما كان سيكشف «الشاشة البيضاء».
+        # تعمل على main وحده: فرعٌ آخر لم يُنشر بعد فلا معنى لفحص إنتاجه.
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          html=$(curl -fsS --max-time 25 https://www.takisa.net/)
+          # 🪤 الصفحة تحمّل أكثر من حزمة دخول، وعنوان القاعدة في **واحدة** منها
+          # لا في الأولى. أخذُ الأولى وحدها أنتج «فشلاً» على موقعٍ سليم عند
+          # تجربتي المحلية — فحصٌ كاذبٌ كان سيصرخ كل مرّة. نفحصها كلها.
+          chunks=$(printf '%s' "$html" | grep -oE '[A-Za-z0-9_.-]+\.[a-f0-9]{8}\.js' | sort -u)
+          [ -n "$chunks" ] || { echo "::error::تعذّر إيجاد أي حزمة في صفحة الموقع"; exit 1; }
+          # 🪤 ولا يُكتب `curl … | grep -q`: الأخير يخرج فور أوّل تطابق فيغلق
+          # الأنبوب، فيموت curl بـSIGPIPE و`pipefail` يُسقط الأمر كلّه —
+          # أي أن **الحزمة الصحيحة نفسها** تُرفض. قِيس محلياً: curl (56).
+          # التنزيل إلى ملفٍ أولاً يُلغي الأنبوب من أصله.
+          found=0
+          for c in $chunks; do
+            curl -fsS --max-time 25 -o /tmp/chunk.js "https://www.takisa.net/$c" || continue
+            if grep -q 'api\.takisa\.net' /tmp/chunk.js; then
+              echo "✅ $c تشير إلى api.takisa.net"; found=1; break
+            fi
+          done
+          [ "$found" = "1" ] || { echo "::error::لا حزمة منشورة تحمل api.takisa.net — الموقع قد يكون بلا قاعدة"; exit 1; }

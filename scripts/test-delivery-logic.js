@@ -20,7 +20,15 @@ check('متجر لا يوصّل', deliveryOffer({ ok: true, enabled: false }, 10
 check('الدالة أعادت خطأ (not_linked)', deliveryOffer({ ok: false, error: 'not_linked' }, 100), { ask: false, canDeliver: false });
 check('انقطاع الشبكة (null)', deliveryOffer(null, 100), { ask: false, canDeliver: false });
 check('ناتج مشوّه (بلا ok)', deliveryOffer({ enabled: true, available: true }, 100), { ask: false });
-check('متجر يوصّل بلا نطاقات (no_zones)', deliveryOffer({ ok: true, enabled: true, available: false, has_address: true, reason: 'no_zones' }, 100), { ask: true, canDeliver: false, reason: 'out_of_zone' });
+// v14.50 — 🪤 كان هذا الفحص **أحمر على main** منذ ١٤ سبتمبر ولا أحد يعلم: عنوانه
+// يقول `no_zones` وتوقّعه كان يقول `out_of_zone`. الكود صحيح — v14.35 أوقفت عمداً
+// طيّ أربعة أسباب مختلفة في سببٍ واحد لأن المشتري كان يقرأ «عنوانك خارج النطاق»
+// بينما التاجر لم يرسم نطاقاً بعد. فالاختبار هو الذي تخلّف عن الكود.
+// والأسباب الأربعة تُفحص الآن كلها، لا واحدٌ منها.
+check('متجر يوصّل بلا نطاقات ⇒ يمرّ السبب كما هو', deliveryOffer({ ok: true, enabled: true, available: false, has_address: true, reason: 'no_zones' }, 100), { ask: true, canDeliver: false, reason: 'no_zones' });
+check('المتجر بلا موقع ⇒ يمرّ السبب كما هو', deliveryOffer({ ok: true, enabled: true, available: false, has_address: true, reason: 'no_location' }, 100), { ask: true, canDeliver: false, reason: 'no_location' });
+check('التوصيل موقوف إدارياً ⇒ يمرّ السبب كما هو', deliveryOffer({ ok: true, enabled: true, available: false, has_address: true, reason: 'disabled' }, 100), { ask: true, canDeliver: false, reason: 'disabled' });
+check('غير متاح بلا سبب ⇒ الارتداد out_of_zone', deliveryOffer({ ok: true, enabled: true, available: false, has_address: true }, 100), { ask: true, canDeliver: false, reason: 'out_of_zone' });
 
 // ── يُسأل ولا يستطيع (السبب يُقال للمستخدم) ─────────────────────────────────
 check('لا عنوان محفوظ', deliveryOffer({ ok: true, enabled: true, has_address: false, available: false, reason: 'no_location', min_order: 0 }, 100),
