@@ -15,6 +15,36 @@
  * يمرّان من فحص «غير فارغ» ثم يسقطان في المتصفّح. فالفحص على الشكل الحقيقي.
  */
 
+/**
+ * 🪤 v14.61 — لا يكفي قراءة `process.env`: **Parcel يقرأ `.env` أيضاً**، فقد
+ * تكون القيمة سليمةً في الملفّ والفحصُ يقول «غير مضبوط إطلاقاً» — وهو إنذارٌ
+ * كاذب يوقف بناءً صحيحاً. حدث فعلاً: `preview-env.js` يكتب `.env` لبناء
+ * المعاينة، فرفضه هذا الفحص لأنه لم ينظر فيه. والمطوّر الذي يملك `.env` بلا
+ * تصدير في الصدفة كان سيُرفض بنفس الطريقة.
+ * فالفحص يقرأ ما سيقرؤه Parcel: البيئة أوّلاً ثم الملفّ.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const fromDotenv = (() => {
+    const out = {};
+    for (const f of ['.env', `.env.${process.env.NODE_ENV || 'production'}`, '.env.local']) {
+        let raw;
+        try { raw = fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8'); } catch { continue; }
+        for (const line of raw.split('\n')) {
+            const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+            if (!m) continue;
+            let v = m[2].trim();
+            if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+            out[m[1]] = v;
+        }
+    }
+    return out;
+})();
+
+/** نفس ترتيب أسبقية Parcel: متغيّر البيئة يسبق الملفّ. */
+const readVar = (k) => process.env[k] || fromDotenv[k] || '';
+
 const REQUIRED = [
     {
         key: 'SUPABASE_URL',
@@ -50,7 +80,7 @@ const REQUIRED = [
 
 const problems = [];
 for (const r of REQUIRED) {
-    const raw = process.env[r.key];
+    const raw = readVar(r.key);
     if (!raw || !raw.trim()) {
         problems.push(`${r.key} (${r.ar}) — غير مضبوط إطلاقاً`);
         continue;
