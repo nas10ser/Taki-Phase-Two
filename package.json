@@ -6,7 +6,7 @@
   "scripts": {
     "start": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
     "dev": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
-    "build": "node scripts/check-env.js && npm run typecheck && npm test && parcel build index.html --public-url / && node scripts/fix-head-tags.js && node scripts/copy-static.js",
+    "build": "node scripts/preview-env.js && node scripts/check-env.js && npm run typecheck && npm test && parcel build index.html --public-url / && node scripts/fix-head-tags.js && node scripts/copy-static.js",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist",
     "postinstall": "node scripts/strip-tfjs-maps.js",
