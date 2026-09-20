@@ -109,6 +109,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         { kind: 'nav', id: 'nav-tax', perm: 'action_view_finance',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
         { kind: 'nav', id: 'nav-invoices', perm: 'action_view_finance',  label: 'فواتير الموقع',    icon: '💳', keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير الموقع سجل', tab: 'invoices' },
         { kind: 'nav', id: 'nav-messaging', perm: 'tab_messages', label: 'الإشعارات والرسائل', icon: '📨', keywords: 'messaging notifications email templates اشعارات رسائل ايميل بريد قوالب تذكير اشتراك حجز', tab: 'messaging' },
+        // v14.65 — أربعة تبويبات موجودة في اللوحة ولم يكن البحث السريع يعرفها،
+        // فمن يبحث عنها يظنّها غير موجودة. (كُشفت في تدقيق ٩ سبتمبر.)
+        { kind: 'nav', id: 'nav-audience', perm: 'tab_analytics', label: 'جمهور المدن', icon: '🗺', keywords: 'audience cities map geo جمهور مدن خريطة مناطق نطاق مصادر هبوط', tab: 'audience' },
+        { kind: 'nav', id: 'nav-contests', perm: 'tab_contests', label: 'المسابقات', icon: '🎁', keywords: 'contests surveys draw prizes مسابقة مسابقات استبيان سحب جوائز فائز', tab: 'contests' },
+        { kind: 'nav', id: 'nav-messages', perm: 'tab_messages', label: 'الرسائل (مراقبة المحادثات)', icon: '💬', keywords: 'messages chat monitor conversations رسائل محادثات مراقبة دردشة شات', tab: 'messages' },
+        { kind: 'nav', id: 'nav-admins', perm: 'tab_admins', label: 'المسؤولون', icon: '👑', keywords: 'admins team permissions roles مسؤول مسؤولون فريق صلاحيات ادمن', tab: 'admins' },
     ], []);
 
     const actionCommands: ActionCommand[] = useMemo(() => [

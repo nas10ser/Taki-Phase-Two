@@ -406,7 +406,10 @@ const SellerDashboard: React.FC = () => {
             .catch(() => { /* الاستطلاع الدوري يغطّي */ });
         return () => { alive = false; };
     }, [user?.id, ingestDeals]);
-    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'notifications' | 'insights' | 'reviews'>('form');
+    // v14.65 — أُزيلت `notifications` من النوع: شاشةٌ لا وجود لها، وكان
+    // `?tab=notifications` (من رابطٍ قديم) يفتح تبويباً **فارغاً**. التبويب
+    // نفسه أُزيل من الشريطين في v13.72، وهذه بقيّته.
+    const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'insights' | 'reviews'>('form');
     // v14.17 — هل هذا التاجر مسجَّل ضريبياً؟ حاسبة الضريبة في نموذج العرض وحدها
     // تعتمد عليه: غير المسجَّل لا يجوز له تحصيل ضريبة، فعرضُ حاسبةٍ تَعِده بأنها
     // «تُطبع على فاتورة كل طلب» وعدٌ لا يتحقّق له.
@@ -603,7 +606,7 @@ const SellerDashboard: React.FC = () => {
         const editId = params.get('edit');
         if (editId) {
             setView('form');
-        } else if (tab && (['form' , 'products' , 'orders' , 'notifications' , 'scanner' , 'insights' , 'reviews'] as const).includes(tab as any)) {
+        } else if (tab && (['form' , 'products' , 'orders' , 'scanner' , 'insights' , 'reviews'] as const).includes(tab as any)) {
             setView(tab as any);
         } else if (!tab) {
             setView('form');
