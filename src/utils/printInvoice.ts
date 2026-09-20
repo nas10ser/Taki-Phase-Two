@@ -480,7 +480,13 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
                 data.vatAmount = v.vat_amount != null ? Number(v.vat_amount) : null;
                 // v14.68 — الإجمالي المطبوع من اللقطة نفسها التي بُني منها الرمز.
                 // بدونها يُطبع رقمٌ من الحجز ويُرمَّز رقمٌ من الفاتورة على ورقة واحدة.
-                if (Number(v.total) > 0) data.totalAmount = Number(v.total);
+                if (Number(v.total) > 0) {
+                    data.totalAmount = Number(v.total);
+                    // ولم يعد تقديراً: الرقم من اللقطة المجمّدة. بدون هذا السطر
+                    // تبقى الورقة تقول «الإجمالي محسوب من سعر العرض» تحت رقمٍ
+                    // مأخوذٍ من الفاتورة نفسها — نصٌّ يكذّب الرقم الذي فوقه.
+                    data.totalIsEstimate = false;
+                }
                 data.zatcaTlv = v.zatca_tlv ?? null;
                 data.sellerVatNumber = v.seller?.vat_number ?? null;
                 data.sellerAddress = v.seller?.address ?? null;

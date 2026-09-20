@@ -437,6 +437,9 @@ function kbAdmin(s = {}) {
         rows.push([Markup.button.webApp(tr('menu_store_dashboard'), W('/seller'))]);
         // الأدمن-المالك يحتاج إدارة اشتراك/باقات متجره من البوت أيضاً (نفس مصدر الموقع). v11.91
         rows.push([Markup.button.callback(tr('menu_subscription'),'seller:sub')]);
+        // v14.70 — وإعدادات التوصيل كذلك: لوحة الأدمن لوحةٌ مستقلّة عن لوحة
+        // التاجر، فزرٌّ يُضاف هناك وحده لا يصل مالك المتجر الأدمن إطلاقاً.
+        rows.push([Markup.button.callback(tr('menu_delivery'),'seller:delivery')]);
     }
     rows.push([Markup.button.webApp(tr('menu_full_admin'), W('/admin'))]);
     rows.push([Markup.button.callback(tr('menu_help'),'help'), Markup.button.callback(tr('menu_logout'),'logout')]);
