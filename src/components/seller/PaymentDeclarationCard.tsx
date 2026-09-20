@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
-import { notifySetupGapsChanged } from './SetupGapsBanner';
+import { notifySetupGapsChanged } from './SetupPath';
 
 /**
  * PaymentDeclarationCard — إقرار التاجر بطريقة الحساب (v14.08)

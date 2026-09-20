@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { isValidSaudiVat } from '../../utils/zatcaQr';
 import { useVatMode } from '../../hooks/useVatMode';
+import { notifySetupGapsChanged } from './SetupPath';
 
 /**
  * VatStatusCard — الوضع الضريبي للتاجر (v13.38)
@@ -109,6 +110,7 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
         if (error) { onAlert(isRTL ? '❌ تعذّر الحفظ، حاول مجدداً.' : '❌ Could not save.'); return; }
         setVatNumber(n); setStatus('registered'); setEditing(false);
         writeCache(userId, { status: 'registered', vatNumber: n });
+        notifySetupGapsChanged();   // v14.69 — «حدّد وضعك الضريبي» خطوةٌ في المسار المرشد
         onAlert(isRTL
             ? '✅ تم الحفظ — فواتير طلباتك صارت «فاتورة ضريبية مبسطة» برمز QR.'
             : '✅ Saved — your order invoices are now simplified tax invoices with QR.');
@@ -122,6 +124,7 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
         if (error) { onAlert(isRTL ? '❌ تعذّر الحفظ.' : '❌ Could not save.'); return; }
         setVatNumber(''); setStatus('not_registered');
         writeCache(userId, { status: 'not_registered', vatNumber: '' });
+        notifySetupGapsChanged();   // إجابة «غير مسجّل» إجابةٌ كاملة — فالخطوة تكتمل بها
     };
 
     // الزيارة الأولى على هذا الجهاز فقط: هيكل شبحي يحجز مساحة البطاقة تقريباً،

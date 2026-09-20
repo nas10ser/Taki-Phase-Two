@@ -12,7 +12,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository } from '../../repositories/refundRepository';
-import { notifySetupGapsChanged } from './SetupGapsBanner';
+import { notifySetupGapsChanged } from './SetupPath';
 
 const MAX = 1500;
 

@@ -15,7 +15,7 @@ import DeliveryCard from '../components/seller/DeliveryCard';
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
-import SetupGapsBanner from '../components/seller/SetupGapsBanner';
+import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SetupPath';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 import DeliveryTrackerCard from '../components/seller/DeliveryTrackerCard';
 import VatStatusCard from '../components/seller/VatStatusCard';
@@ -410,6 +410,38 @@ const SellerDashboard: React.FC = () => {
     // `?tab=notifications` (من رابطٍ قديم) يفتح تبويباً **فارغاً**. التبويب
     // نفسه أُزيل من الشريطين في v13.72، وهذه بقيّته.
     const [view, setView] = useState<'form' | 'products' | 'orders' | 'scanner' | 'insights' | 'reviews'>('form');
+
+    // v14.69 — الانتقال إلى خطوة الإعداد من المسار المرشد.
+    // 🪤 بطاقات الإعداد لا توجد في الـDOM إلا داخل تبويب «إضافة عرض»، فالتمرير
+    //    قبل تبديل التبويب يمرّر إلى لا شيء. نبدّل أولاً ثم نبحث عن المِرساة
+    //    بعد أن يرسم المتصفّح — وبإعادة محاولةٍ قصيرة لأن بعض البطاقات تُركَّب
+    //    بعد إطارٍ أو اثنين (كاش ثم شبكة)، وبارتدادٍ إلى أعلى الصفحة إن تعذّر.
+    const [pendingAnchor, setPendingAnchor] = useState<SetupAnchor | null>(null);
+    const goToSetupStep = useCallback((a: SetupAnchor) => {
+        setView('form');
+        setPendingAnchor(a);
+    }, []);
+    useEffect(() => {
+        if (!pendingAnchor) return;
+        const id = pendingAnchor === 'deal' ? 'setup-dealform' : `setup-${pendingAnchor}`;
+        let cancelled = false;
+        let timer = 0;
+        let tries = 0;
+        const tick = () => {
+            if (cancelled) return;
+            const el = document.getElementById(id);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setPendingAnchor(null);
+                return;
+            }
+            if (++tries < 20) { timer = window.setTimeout(tick, 80); return; }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setPendingAnchor(null);
+        };
+        timer = window.setTimeout(tick, 60);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [pendingAnchor]);
     // v14.17 — هل هذا التاجر مسجَّل ضريبياً؟ حاسبة الضريبة في نموذج العرض وحدها
     // تعتمد عليه: غير المسجَّل لا يجوز له تحصيل ضريبة، فعرضُ حاسبةٍ تَعِده بأنها
     // «تُطبع على فاتورة كل طلب» وعدٌ لا يتحقّق له.
@@ -445,6 +477,11 @@ const SellerDashboard: React.FC = () => {
         try {
             updateStoreProfile(user.id, { workingHours: wh } as any);
             await customAlert(isRTL ? '✅ تم حفظ ساعات العمل' : '✅ Working hours saved');
+            // v14.69 — المسار المرشد يُعيد القراءة من القاعدة. `updateStoreProfile`
+            // لا تُنتظَر (تكتب في الخلفية)، لكن التنبيه أعلاه لا يُغلق إلا بلمسة
+            // المستخدم — فالكتابة قد وصلت. ولو لم تصل بقيت الخطوة «متبقّية»
+            // حتى القراءة التالية: تأخّرٌ يصحّح نفسه، لا ادّعاءُ إنجاز.
+            notifySetupGapsChanged();
         } finally { setHoursSaving(false); }
     }, [user, updateStoreProfile, customAlert, isRTL]);
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
@@ -2789,6 +2826,9 @@ const SellerDashboard: React.FC = () => {
             }
 
             setSubmitted(true);
+            // v14.69 — «انشر عرضك الأول» خطوةٌ في المسار المرشد، فتُحدَّث فور
+            // نجاح الحفظ بدل أن تنتظر إعادة تحميل الصفحة.
+            notifySetupGapsChanged();
             setTimeout(() => {
                 setSubmitted(false);
                 if (!stayOnForm) {
@@ -3144,23 +3184,23 @@ const SellerDashboard: React.FC = () => {
             <div style={{ padding: 16 }}>
                 {/* v14.45 — نواقص الإعداد فوق كل تبويب، لا في تبويب الإضافة وحده:
                     التاجر الذي يعيش في «طلباتي» كان لا يمرّ ببطاقاتها أصلاً. */}
-                {user && <SetupGapsBanner userId={user.id} isRTL={isRTL} onFix={() => { setView('form'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
+                {user && <SetupPath userId={user.id} isRTL={isRTL} onGo={goToSetupStep} />}
                 {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
                 {view === 'form' && user && (
                     <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         {/* v14.08 (بلاغ ناصر: «متجر لم يضع طريقة الحساب وأستطيع الحجز») —
                             الإقرار أولاً وفوق كل شيء: بلا جوابٍ عليه ترفض القاعدة كل حجز
                             على هذا المتجر، فلا معنى لأن يملأ التاجر نموذج منتج قبله. */}
-                        <PaymentDeclarationCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
-                        <WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} />
+                        <div id="setup-pay"><PaymentDeclarationCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /></div>
+                        <div id="setup-hours"><WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} /></div>
                         {/* v14.18 — سياسة الاسترداد والاستبدال وشروط المتجر: تُعرض
                             للمشتري في صفحة المتجر وفي صفحة العرض **قبل الحجز**.
                             صفحة الاسترداد كانت تَعِد المشتري بأن يقرأها هناك، ولم يكن
                             في النظام حقلٌ يكتبها فيه أصلاً. */}
-                        <StorePoliciesCard />
+                        <div id="setup-refund"><StorePoliciesCard /></div>
                         {/* v13.38 — الوضع الضريبي للتاجر: يحدّد شكل فواتير طلباته،
                             ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
-                        <VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
+                        <div id="setup-vat"><VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /></div>
                         {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
                         <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
                         {/* v14.08 — بطاقة التوصيل نزلت إلى **آخر الصفحة** (بلاغ ناصر:
@@ -3172,7 +3212,7 @@ const SellerDashboard: React.FC = () => {
                     </div>
                 )}
                 {view === 'form' && (!isPaymentEnabled || isSubscriptionValid) ? (
-                    <form onSubmit={(e) => { e.preventDefault(); submitAction(false); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: '24px 20px', boxShadow: 'var(--shadow-lg)' }}>
+                    <form id="setup-dealform" onSubmit={(e) => { e.preventDefault(); submitAction(false); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: '24px 20px', boxShadow: 'var(--shadow-lg)' }}>
                         {submitted && <div style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '12px', borderRadius: 16, marginBottom: 20, textAlign: 'center', fontWeight: 700 }}>✅ {isRTL ? 'تم الحفظ بنجاح' : 'Saved Successfully'}</div>}
                         
                         {editingDealId && (
