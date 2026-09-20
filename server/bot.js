@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.49.0';
+const BOT_VERSION              = '14.50.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2415,7 +2415,15 @@ const invoiceText = (v) => {
         L.push(`💰 *${tr('inv_total')}: ${money(v.total)} ${md(tr('inv_sar'))}*`);
         if (v.total_source === 'estimate') L.push(`_${md(tr('inv_estimate'))}_`);
     }
-    L.push(`💳 ${tr('inv_payment')}: ${md(tr(paid ? 'inv_pay_online' : 'inv_pay_cod'))}`);
+    // 🪤 v14.66 — كان ثنائياً: مدفوع ⇐ «إلكترونياً»، وما عداه ⇐ «الدفع عند
+    // الاستلام». فطلبٌ **نيّتُه إلكترونية ولم يُسدَّد بعد** كان يقول للتاجر
+    // «استلم المبلغ عند التسليم» — وهو غلطٌ في المال. ثلاث حالات كما في
+    // فاتورة PDF وفاتورة الموقع حرفياً.
+    const payKey = paid ? 'inv_pay_online'
+        : v.payment_method === 'online' ? 'inv_pay_pending'
+        : (v.fulfillment === 'delivery' || v.delivery_fee > 0) ? 'inv_pay_delivery'
+        : 'inv_pay_cod';
+    L.push(`💳 ${tr('inv_payment')}: ${md(tr(payKey))}`);
     if (v.vat_number) L.push(`🧾 ${tr('inv_vat_no')}: \`${md(String(v.vat_number))}\``);
     if (v.cr_number)  L.push(`📇 ${tr('inv_cr')}: \`${md(String(v.cr_number))}\``);
     if (v.merchant_note) L.push(`\n📌 ${tr('inv_merchant_note')}: _${md(String(v.merchant_note))}_`);

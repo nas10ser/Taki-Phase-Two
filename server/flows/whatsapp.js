@@ -913,7 +913,13 @@ function create(deps) {
             L.push(`💰 *${tr('inv_total')}: ${v.total} ${cur}*`);
             if (v.total_source === 'estimate') L.push(tr('inv_estimate'));
         }
-        L.push(`💳 ${tr('inv_payment')}: ${tr(v.paid ? 'inv_pay_online' : 'inv_pay_cod')}`);
+        // 🪤 v14.66 — نفس تصحيح تيليجرام: «مدفوع أو نقداً» ثنائيةٌ تكذب على
+        // طلبٍ إلكترونيٍّ لم يُسدَّد بعد، فتقول للتاجر «استلم المبلغ».
+        const payKey = v.paid ? 'inv_pay_online'
+            : v.payment_method === 'online' ? 'inv_pay_pending'
+            : (v.fulfillment === 'delivery' || v.delivery_fee > 0) ? 'inv_pay_delivery'
+            : 'inv_pay_cod';
+        L.push(`💳 ${tr('inv_payment')}: ${tr(payKey)}`);
         if (v.vat_number) L.push(`🧾 ${tr('inv_vat_no')}: ${v.vat_number}`);
         if (v.cr_number)  L.push(`📇 ${tr('inv_cr')}: ${v.cr_number}`);
         if (v.merchant_note) L.push(`\n📌 ${tr('inv_merchant_note')}: ${v.merchant_note}`);
