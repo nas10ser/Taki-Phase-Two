@@ -2222,7 +2222,9 @@ function create(deps) {
         const bio = (st && st.bio) ? String(st.bio).slice(0, 300) : tr('wa_none');
         await sendButtons(from, { body: tr('wa_profile_title', (st && st.name) || s.shop || s.name || '', (st && st.rating_avg) || 0, (st && st.rating_count) || 0, bio), buttons: [{ id: 'wa:bio', title: tr('wa_profile_edit_bio') }, { id: `wa:store:${s.userId}`, title: tr('wa_store_btn') }, menuBtn()] });
         // اللغة + تسجيل الخروج للتاجر يعيشان هنا (القائمة الرئيسية بلغت سقف الـ١٠ صفوف). v12.14
-        await sendButtons(from, { body: '—', buttons: [{ id: 'wa:lang', title: tr('wa_row_lang') }, { id: 'wa:logout', title: tr('menu_logout') }] });
+        // v14.70 — «التوصيل» يعيش هنا: القائمة الرئيسية بلغت سقف الـ١٠ صفوف،
+        // فصفٌّ جديد هناك يُقتطع بصمت للأدمن المالك. وهذا الصفّ كان زرّين من ثلاثة.
+        await sendButtons(from, { body: '—', buttons: [{ id: 'wa:s:dlv', title: trunc(plain(tr('wa_dlv_btn')), LIM.btnTitle) }, { id: 'wa:lang', title: tr('wa_row_lang') }, { id: 'wa:logout', title: tr('menu_logout') }] });
     }
     async function promptBio(from, s) { s.step = 'await_bio'; await sendText(from, tr('wa_bio_prompt')); }
     async function saveBio(from, s, text) {
@@ -2230,6 +2232,100 @@ function create(deps) {
         const r = await rpc('bot_update_store_bio', aid(from, { p_bio: text.slice(0, 500) }));
         await sendText(from, (r && r.success) ? tr('wa_bio_saved') : tr('wa_edit_fail'));
         return showStoreProfile(from, s);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  إعدادات التوصيل — v14.70 (نفس شاشة تيليجرام ونفس الدالّتين في القاعدة)
+    // ════════════════════════════════════════════════════════════════════════
+    // 🪤 القائمة الرئيسية بلغت سقف واتساب الصارم (١٠ صفوف: ٨ للمتجر +١ للحساب،
+    //    و+١ للأدمن المالك) — فصفٌّ جديد هناك كان **يُقتطع بصمت** للأدمن. لذلك
+    //    المدخل من «حساب المتجر» ومن كلمة «توصيل» نصّاً، لا من صفٍّ جديد.
+    // 🪤 ونصوص البطاقة هي نصوص تيليجرام نفسها — تُنزع منها هروب MarkdownV2 فقط،
+    //    فلا تنشأ نسخةٌ ثانية من الصياغة تفترق عن الأولى بعد أول تعديل.
+    const plain = t => String(t == null ? '' : t).replace(/\\(.)/g, '$1');
+    const dlvPay = m => tr(m === 'both' ? 'dlv_pay_both' : m === 'card' ? 'dlv_pay_card' : 'dlv_pay_cod');
+
+    async function showDeliveryWA(from, s) {
+        if (!sellerGate(from, s)) return;
+        const d = await rpc('bot_get_delivery', aid(from));
+        if (!d || !d.ok) return sendButtons(from, { body: plain(tr('dlv_err_seller')), buttons: [menuBtn()] });
+
+        const zones = Number(d.zones || 0), priced = Number(d.zones_priced || 0);
+        const lines = [
+            tr('dlv_l_state', tr(d.enabled ? 'dlv_state_on' : 'dlv_state_off')),
+            tr('dlv_l_fee',  Number(d.fee || 0).toFixed(2)),
+            tr('dlv_l_min',  Number(d.min_order || 0).toFixed(2)),
+            tr('dlv_l_eta',  d.eta_min != null ? tr('dlv_eta_min', d.eta_min) : tr('dlv_none')),
+            tr('dlv_l_pay',  dlvPay(d.payment)),
+            tr('dlv_l_note', d.note || tr('dlv_none')),
+            tr('dlv_l_zones', zones, priced > 0 ? tr('dlv_zones_priced', priced) : ''),
+        ];
+        const warns = [];
+        if (d.admin_blocked) warns.push(tr('dlv_warn_blocked', d.block_reason || ''));
+        if (d.platform_on === false) warns.push(tr('dlv_warn_platform'));
+        if (d.enabled && zones === 0) warns.push(tr('dlv_warn_nozone'));
+
+        const body = plain(tr('wa_dlv_title', lines.join('\n') + (warns.length ? '\n\n' + warns.join('\n') : '')));
+        // قائمةٌ لا أزرار: الأزرار ثلاثةٌ فقط في الرسالة، والقائمة تسع عشرة صفاً.
+        const rows = [
+            row(d.enabled ? 'wa:dlv:off' : 'wa:dlv:on', plain(tr(d.enabled ? 'dlv_btn_disable' : 'dlv_btn_enable')), ''),
+            row('wa:dlv:fee',  plain(tr('dlv_btn_fee')),  ''),
+            row('wa:dlv:min',  plain(tr('dlv_btn_min')),  ''),
+            row('wa:dlv:eta',  plain(tr('dlv_btn_eta')),  ''),
+            row('wa:dlv:note', plain(tr('dlv_btn_note')), ''),
+            row('wa:dlv:pay',  plain(tr('dlv_btn_pay')),  ''),
+            row('wa:menu', tr('wa_row_menu'), ''),
+        ];
+        return sendList(from, { header: trunc(plain(tr('menu_delivery')), LIM.header), body,
+                                button: tr('wa_menu_btn'), sections: [{ rows }] });
+    }
+
+    /** كتابةٌ جزئية — ورسالةُ خطأٍ تقول السبب لا «فشل». */
+    async function dlvSaveWA(from, patch) {
+        const r = await rpc('bot_set_delivery', aid(from, patch));
+        if (!r || !r.ok) {
+            const key = (r && r.reason === 'GATEWAY_REQUIRED') ? 'dlv_err_gateway'
+                      : (r && (r.reason === 'not_seller' || r.reason === 'not_linked')) ? 'dlv_err_seller'
+                      : 'dlv_err_save';
+            await sendText(from, plain(tr(key)));
+            return false;
+        }
+        return true;
+    }
+
+    async function dlvAskWA(from, s, field) {
+        s.step = 'await_dlv_' + field;
+        const key = field === 'fee' ? 'dlv_ask_fee' : field === 'min' ? 'dlv_ask_min'
+                  : field === 'eta' ? 'dlv_ask_eta' : 'dlv_ask_note';
+        await sendText(from, plain(tr(key)));
+    }
+
+    async function dlvPickPayWA(from, s) {
+        await sendButtons(from, { body: plain(tr('dlv_pay_pick')), buttons: [
+            { id: 'wa:dlv:pay:cod',  title: trunc(plain(tr('dlv_pay_cod')),  LIM.btnTitle) },
+            { id: 'wa:dlv:pay:card', title: trunc(plain(tr('dlv_pay_card')), LIM.btnTitle) },
+            { id: 'wa:dlv:pay:both', title: trunc(plain(tr('dlv_pay_both')), LIM.btnTitle) },
+        ] });
+    }
+
+    /** خطوةٌ نصّية واحدة لكل حقل — نفس حدود الموقع تفرضها القاعدة. */
+    async function dlvSaveTextWA(from, s, text) {
+        const field = s.step.slice('await_dlv_'.length);
+        if (field === 'note') {
+            s.step = 'idle';
+            const note = text.trim() === '-' ? '' : text.slice(0, 300);
+            if (await dlvSaveWA(from, { p_note: note })) await sendText(from, plain(tr('dlv_saved')));
+            return showDeliveryWA(from, s);
+        }
+        // 🪤 `normalizeDigits` أولاً: «١٥» بأرقام عربية تُعطي NaN بلا تحويل.
+        const raw = normalizeDigits(String(text)).trim();
+        const okNum = field === 'eta' ? /^\d{1,5}$/.test(raw) : /^\d+(\.\d{1,2})?$/.test(raw);
+        if (!okNum) { await sendText(from, plain(tr('dlv_bad_num'))); return; }
+        const n = Number(raw);
+        const patch = field === 'fee' ? { p_fee: n } : field === 'min' ? { p_min_order: n } : { p_eta_min: n };
+        s.step = 'idle';
+        if (await dlvSaveWA(from, patch)) await sendText(from, plain(tr('dlv_saved')));
+        return showDeliveryWA(from, s);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -2245,6 +2341,9 @@ function create(deps) {
         if (linkMatch) return doLink(from, s, linkMatch[1]);
         // قائمة
         if (/^(menu|قائمة|القائمة|البداية|ابدأ|ابدا|start|hi|hello|مرحبا|السلام|اهلا|أهلا)/.test(low)) return mainMenu(from, s);
+        // v14.70 — مدخلٌ بالكتابة لإعدادات التوصيل: القائمة بلغت سقف الـ١٠ صفوف،
+        // والزرّ تحت «حساب المتجر» وحده يصعب إيجاده على من يكتب لا يضغط.
+        if (ownsStore(s) && /^(توصيل|التوصيل|delivery)$/.test(text.trim().toLowerCase())) return showDeliveryWA(from, s);
 
         // خطوات نصّية حسب الحالة
         switch (s.step) {
@@ -2259,6 +2358,11 @@ function create(deps) {
             case 'await_rate_comment': return submitRate(from, s, text.slice(0, 400));
             case 'await_kw': return addKeyword(from, s, text.slice(0, 40));
             case 'await_smart_kw': return smartAddKw(from, s, text);
+            // تاجر — إعدادات التوصيل (v14.70): حقلٌ واحد في كل خطوة
+            case 'await_dlv_fee':
+            case 'await_dlv_min':
+            case 'await_dlv_eta':
+            case 'await_dlv_note': return dlvSaveTextWA(from, s, text);
             // تاجر — تحقّق/إتمام
             case 'await_barcode': return doVerify(from, s, text.trim());
             case 'await_complete_msg': { const bc = s.temp.completeBarcode; s.step = 'idle'; return completeOrder(from, s, bc, text.slice(0, 300)); }
@@ -2462,6 +2566,18 @@ function create(deps) {
         if (id.startsWith('wa:brdel:')) return branchDelAsk(from, s, id.slice(9));
         if (k === 'brsave') return branchSaveDeal(from, s, +p[2] || 0);
         // ساعات / اشتراك / نبذة
+        if (id === 'wa:s:dlv') return showDeliveryWA(from, s);
+        if (id === 'wa:dlv:on')  { if (await dlvSaveWA(from, { p_enabled: true }))  await sendText(from, plain(tr('dlv_saved'))); return showDeliveryWA(from, s); }
+        if (id === 'wa:dlv:off') { if (await dlvSaveWA(from, { p_enabled: false })) await sendText(from, plain(tr('dlv_saved'))); return showDeliveryWA(from, s); }
+        if (id === 'wa:dlv:fee')  return dlvAskWA(from, s, 'fee');
+        if (id === 'wa:dlv:min')  return dlvAskWA(from, s, 'min');
+        if (id === 'wa:dlv:eta')  return dlvAskWA(from, s, 'eta');
+        if (id === 'wa:dlv:note') return dlvAskWA(from, s, 'note');
+        if (id === 'wa:dlv:pay')  return dlvPickPayWA(from, s);
+        if (id.startsWith('wa:dlv:pay:')) {
+            if (await dlvSaveWA(from, { p_payment: id.slice('wa:dlv:pay:'.length) })) await sendText(from, plain(tr('dlv_saved')));
+            return showDeliveryWA(from, s);
+        }
         if (id === 'wa:s:hours') return showHours(from, s);
         if (id === 'wa:hall') return promptHoursAll(from, s);
         if (id === 'wa:hoff') return confirmDisableHours(from, s);

@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.50.0';
+const BOT_VERSION              = '14.70.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -410,6 +410,8 @@ function kbSeller(s) {
         [Markup.button.callback(tr('menu_add_deal'),'seller:addDeal'), Markup.button.callback(tr('menu_my_locations'),'seller:branches')],
         [Markup.button.callback(tr('menu_subscription'),'seller:sub'), Markup.button.callback(tr('menu_store_account'),'seller:profile')],
         [Markup.button.callback(tr('menu_working_hours'),'seller:hours'), Markup.button.callback(tr('menu_preview_buyer'),`store:${s.userId}`)],
+        // v14.70 — إعدادات التوصيل من المحادثة (الرسم يبقى على الخريطة في الموقع)
+        [Markup.button.callback(tr('menu_delivery'),'seller:delivery')],
         // التنبيهات الذكية ميزة للمتسوّق فقط — التاجر تصله إشعارات الحجوزات تلقائياً. v11.76
         [Markup.button.callback(tr('menu_help'),'help'), Markup.button.callback(tr('menu_logout'),'logout')],
         [Markup.button.webApp(tr('menu_seller_dashboard'), W('/seller')), langBtn()]
@@ -3536,6 +3538,83 @@ bot.action('sh:restore', async ctx => {
     return showSellerHours(ctx);
 });
 
+// ── Seller delivery settings (إعدادات التوصيل) — v14.70 ──────────────────────
+// طلب ناصر: التاجر الذي يدير متجره من المحادثة كان يفتح الموقع ليطفئ التوصيل في
+// يوم زحام أو ليرفع رسومه — وهي أكثر الإعدادات تقلّباً في اليوم.
+//
+// **ما لا ينتقل إلى البوت عمداً: رسم النطاق.** النطاق مضلّعٌ على خريطة، ولا
+// تُرسم المضلّعات بلوحة مفاتيح محادثة. الزرّ يفتح لوحة التاجر، والبطاقة تقول
+// كم نطاقاً لديه — لأن «مفعّل بلا نطاق» حالةٌ تبدو سليمة ولا يستطيع أحدٌ الطلب فيها.
+//
+// 🪤 كل كتابة **جزئية**: نرسل الحقل المعدَّل وحده و`NULL` لما عداه، فلا تدهس
+//    خطوةٌ ما لم تُسأل عنه. والقاعدة هي التي تفرض الحدود (نفس حدود الموقع).
+const dlvPayLabel = m => tr(m === 'both' ? 'dlv_pay_both' : m === 'card' ? 'dlv_pay_card' : 'dlv_pay_cod');
+async function showDelivery(ctx) {
+    const s = getSession(tgId(ctx));
+    if (!s.userId || !ownsStore(s)) return ctx.reply(tr('dlv_err_seller'), { parse_mode:'MarkdownV2' });
+    const d = await rpc('bot_get_delivery', { p_telegram_id: tgId(ctx) });
+    if (!d?.ok) return ctx.reply(tr('dlv_err_seller'), { parse_mode:'MarkdownV2' });
+
+    const zones = Number(d.zones || 0), priced = Number(d.zones_priced || 0);
+    const lines = [
+        tr('dlv_l_state', tr(d.enabled ? 'dlv_state_on' : 'dlv_state_off')),
+        tr('dlv_l_fee',  money(d.fee || 0)),
+        tr('dlv_l_min',  money(d.min_order || 0)),
+        tr('dlv_l_eta',  d.eta_min != null ? tr('dlv_eta_min', numEsc(d.eta_min)) : tr('dlv_none')),
+        tr('dlv_l_pay',  dlvPayLabel(d.payment)),
+        tr('dlv_l_note', d.note ? md(d.note) : tr('dlv_none')),
+        tr('dlv_l_zones', numEsc(zones), priced > 0 ? tr('dlv_zones_priced', numEsc(priced)) : ''),
+    ];
+    const warns = [];
+    if (d.admin_blocked) warns.push(tr('dlv_warn_blocked', d.block_reason ? md(d.block_reason) : ''));
+    if (d.platform_on === false) warns.push(tr('dlv_warn_platform'));
+    if (d.enabled && zones === 0) warns.push(tr('dlv_warn_nozone'));
+
+    const body = lines.join('\n') + (warns.length ? '\n\n' + warns.join('\n') : '');
+    const rows = [
+        [Markup.button.callback(tr(d.enabled ? 'dlv_btn_disable' : 'dlv_btn_enable'), d.enabled ? 'dlv:off' : 'dlv:on')],
+        [Markup.button.callback(tr('dlv_btn_fee'),'dlv:fee'), Markup.button.callback(tr('dlv_btn_min'),'dlv:min')],
+        [Markup.button.callback(tr('dlv_btn_eta'),'dlv:eta'), Markup.button.callback(tr('dlv_btn_note'),'dlv:note')],
+        [Markup.button.callback(tr('dlv_btn_pay'),'dlv:pay')],
+        [Markup.button.webApp(tr('dlv_btn_zones'), W('/seller'))],
+        [Markup.button.callback(tr('b2143_back'),'menu:back')],
+    ];
+    await safeReplyMd(ctx, tr('dlv_card', DIV, body), { reply_markup: Markup.inlineKeyboard(rows).reply_markup });
+}
+/** كتابةٌ جزئية ثم إعادة رسم البطاقة — ورسالةُ خطأٍ تقول السبب لا «فشل». */
+async function dlvSave(ctx, patch) {
+    const r = await rpc('bot_set_delivery', { p_telegram_id: tgId(ctx), ...patch });
+    if (!r?.ok) {
+        const key = r?.reason === 'GATEWAY_REQUIRED' ? 'dlv_err_gateway'
+                  : r?.reason === 'not_seller' || r?.reason === 'not_linked' ? 'dlv_err_seller'
+                  : 'dlv_err_save';
+        await ctx.reply(tr(key), { parse_mode:'MarkdownV2' });
+        return false;
+    }
+    return true;
+}
+bot.command('delivery', ctx => showDelivery(ctx));
+bot.action('seller:delivery', async ctx => { await ctx.answerCbQuery(); showDelivery(ctx); });
+bot.action('dlv:on',  async ctx => { await ctx.answerCbQuery(); if (await dlvSave(ctx, { p_enabled: true }))  await ctx.reply(tr('dlv_saved'), { parse_mode:'MarkdownV2' }); return showDelivery(ctx); });
+bot.action('dlv:off', async ctx => { await ctx.answerCbQuery(); if (await dlvSave(ctx, { p_enabled: false })) await ctx.reply(tr('dlv_saved'), { parse_mode:'MarkdownV2' }); return showDelivery(ctx); });
+bot.action('dlv:fee',  async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_dlv_fee');  await ctx.reply(tr('dlv_ask_fee'),  { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2150_cancel'),'seller:delivery')]]).reply_markup }); });
+bot.action('dlv:min',  async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_dlv_min');  await ctx.reply(tr('dlv_ask_min'),  { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2150_cancel'),'seller:delivery')]]).reply_markup }); });
+bot.action('dlv:eta',  async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_dlv_eta');  await ctx.reply(tr('dlv_ask_eta'),  { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2150_cancel'),'seller:delivery')]]).reply_markup }); });
+bot.action('dlv:note', async ctx => { await ctx.answerCbQuery(); setStep(tgId(ctx),'await_dlv_note'); await ctx.reply(tr('dlv_ask_note'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2150_cancel'),'seller:delivery')]]).reply_markup }); });
+bot.action('dlv:pay', async ctx => {
+    await ctx.answerCbQuery();
+    await ctx.reply(tr('dlv_pay_pick'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(tr('dlv_pay_cod'),'dlv:pay:cod')],
+        [Markup.button.callback(tr('dlv_pay_card'),'dlv:pay:card'), Markup.button.callback(tr('dlv_pay_both'),'dlv:pay:both')],
+        [Markup.button.callback(tr('b2150_cancel'),'seller:delivery')],
+    ]).reply_markup });
+});
+bot.action(/^dlv:pay:(cod|card|both)$/, async ctx => {
+    await ctx.answerCbQuery();
+    if (await dlvSave(ctx, { p_payment: ctx.match[1] })) await ctx.reply(tr('dlv_saved'), { parse_mode:'MarkdownV2' });
+    return showDelivery(ctx);
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 bot.action('admin:stats', async ctx => {
     await ctx.answerCbQuery();
@@ -3731,6 +3810,28 @@ bot.on('text', async ctx => {
         if (!ok) return ctx.reply(tr('b2335_save_failed'), { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard([[Markup.button.callback(tr('b2335_working_hours_btn'),'seller:hours')]]).reply_markup });
         await ctx.reply(tr('b2336_hours_saved_day', md(tr('day_'+(s.temp.hoursDay ?? 0)))), { parse_mode:'MarkdownV2' });
         return showSellerHours(ctx);
+    }
+    // v14.70 — إعدادات التوصيل: رقمٌ واحد في كل خطوة، وكتابةٌ جزئية لا تدهس غيره.
+    // 🪤 `normalizeDigits` أولاً: التاجر يكتب «١٥» بأرقام عربية، و`Number('١٥')` = NaN.
+    if (s.step === 'await_dlv_fee' || s.step === 'await_dlv_min' || s.step === 'await_dlv_eta') {
+        const raw = normalizeDigits(String(text)).trim();
+        const isEta = s.step === 'await_dlv_eta';
+        const okNum = isEta ? /^\d{1,5}$/.test(raw) : /^\d+(\.\d{1,2})?$/.test(raw);
+        if (!okNum) return ctx.reply(tr('dlv_bad_num'), { parse_mode:'MarkdownV2' });
+        const n = Number(raw);
+        const patch = s.step === 'await_dlv_fee' ? { p_fee: n }
+                    : s.step === 'await_dlv_min' ? { p_min_order: n }
+                    : { p_eta_min: n };
+        setStep(tgId(ctx),'idle');
+        if (await dlvSave(ctx, patch)) await ctx.reply(tr('dlv_saved'), { parse_mode:'MarkdownV2' });
+        return showDelivery(ctx);
+    }
+    if (s.step === 'await_dlv_note') {
+        setStep(tgId(ctx),'idle');
+        // «-» تمسح الملاحظة: نصٌّ فارغ هو المُحيي الصريح في `bot_set_delivery`.
+        const note = text.trim() === '-' ? '' : text.slice(0, 300);
+        if (await dlvSave(ctx, { p_note: note })) await ctx.reply(tr('dlv_saved'), { parse_mode:'MarkdownV2' });
+        return showDelivery(ctx);
     }
     if (s.step === 'await_search') {                                 // Task 4
         const q = text.trim().slice(0,60);
