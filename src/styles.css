@@ -2749,3 +2749,18 @@ html.light-mode .taki-variant-row:not(.picked) {
     font-size: max(16px, 1em) !important;
   }
 }
+
+/* v14.64 — استثناء لوحة المدير بطلب ناصر: جداولها كثيفة على شاشة مكتبية
+   يستعملها هو وحده، وأرضيةُ ١٢ بكسل وسّعت صفوفها. عشرة بكسل داخل اللوحة،
+   والواجهة العامة (وهي مقصد معيار الوصول) تبقى على ١٢. */
+.taki-admin .text-\[8px\],
+.taki-admin .text-\[9px\],
+.taki-admin .text-\[10px\],
+.taki-admin .text-\[11px\],
+.taki-admin .text-\[0\.6rem\],
+.taki-admin .text-\[0\.65rem\],
+.taki-admin .text-\[0\.68rem\],
+.taki-admin .text-\[0\.7rem\],
+.taki-admin .text-\[0\.72rem\] {
+  font-size: 0.625rem;   /* ١٠ بكسل */
+}

@@ -253,7 +253,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         [isRTL ? 'left' : 'right']: 8,
                         zIndex: 11,                        // فوق رابط البطاقة (z-index:3)
                         background: isSaved ? 'var(--primary)' : 'rgba(255, 255, 255, 0.98)',
-                        color: isSaved ? '#fff' : 'var(--text-primary)',
+                        // 🪤 لا `var(--text-primary)`: في الوضع الليلي قيمتها
+                        // **أبيض**، فتصير الإشارة بيضاء على دائرة بيضاء —
+                        // مختفية تماماً (بلاغ ناصر). لونٌ ثابت داكن يعمل في
+                        // الوضعين لأن الدائرة نفسها بيضاء في الوضعين.
+                        color: isSaved ? '#fff' : '#334155',
                         border: 'none',
                         /* 🪤 `minWidth/minHeight: 0` إلزاميان: قاعدة عامة في
                            `styles.css` تفرض ٤٤×٤٤ على كل `button`، فبدونهما

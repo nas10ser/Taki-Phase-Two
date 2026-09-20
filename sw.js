@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v14.63';
+const CACHE_NAME = 'taki-cache-v14.64';
 // 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
 // manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
 // واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
@@ -46,6 +46,11 @@ const isNavigation = req => req.mode === 'navigate' || (req.headers.get('accept'
 // قادم. ويُستثنى `/storage/v1/object/public` عمداً: الصور غير قابلة للتغيير
 // (اسم فريد لكل ملف) وتخزينها هو المطلوب.
 const API_PATHS = ['/rest/v1', '/auth/v1', '/realtime/v1', '/functions/v1', '/graphql/v1', '/api/'];
+/** خادمنا نحن (القاعدة والتخزين) — يبقى على معالجته القديمة. وما عداه من
+ *  مضيفين (بلاطات الخرائط، الخطوط، تيليجرام) يذهب للمتصفّح مباشرةً. */
+const isOwnBackend = h =>
+  h === 'api.takisa.net' || h === '141-147-142-147.sslip.io' || h.endsWith('supabase.co');
+
 const isApi = url =>
   API_PATHS.some(p => url.pathname.startsWith(p)) ||
   (url.hostname.endsWith('supabase.co') && !url.pathname.startsWith('/storage/v1/object/public'));
@@ -142,6 +147,15 @@ self.addEventListener('fetch', event => {
   let url;
   try { url = new URL(req.url); } catch { return; }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // 🔴 v14.64 — طلبات المضيفين الآخرين تمرّ إلى المتصفّح مباشرةً بلا وساطة.
+  // السبب مقيس: `fetch()` **داخل** الخدمة العاملة يخضع لـ`connect-src` من
+  // سياسة الأمان، لا لـ`img-src`. فلمّا تغيّر مزوّد بلاطات الخريطة صارت كل
+  // بلاطة تُطلب عبر الخدمة العاملة فتُحجب — خريطةٌ رمادية كاملة على جوّال
+  // ناصر بينما `curl` من الجهاز يُرجعها ٢٠٠. (وقياسٌ حاسم: نفس البلاطة تُحمَّل
+  // في صفحةٍ بلا خدمة عاملة وتفشل في صفحتنا.) وفائدةٌ ثانية: لم تعد بلاطات
+  // الخريطة تُكدَّس في مخزون التطبيق.
+  if (url.origin !== self.location.origin && !isOwnBackend(url.hostname)) return;
 
   // Never cache API / Supabase responses (auth, queries, RPCs, realtime)
   if (isApi(url)) {

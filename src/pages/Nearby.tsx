@@ -116,7 +116,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, locationIsFresh, requestLiveLocation } = useApp();
+    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, locationIsFresh, requestLiveLocation, favorites, toggleFavorite } = useApp();
 
     // Deep-link filters (Telegram bot opens /nearby?lat&lng&radius&region&city&mall&cat).
     // The bot's Nearby page + smart-alert radius preview reuse THIS exact map so the
@@ -628,8 +628,37 @@ const Nearby: React.FC = () => {
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(dealHref); } }}
                             style={{ cursor: 'pointer', background: 'var(--card-bg)', borderRadius: 20, padding: 12, display: 'flex', gap: 15, marginBottom: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', WebkitTapHighlightColor: 'transparent', position: 'relative' }}
                         >
-                            <img src={thumbUrl(deal.images[0])} srcSet={thumbSrcSet(deal.images[0]) || undefined} sizes="85px" loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover' }}
-                                onError={imgFallback(deal.images[0], 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300')} />
+                            {/* v14.64 — زرّ الحفظ في «حولي» (طلب ناصر): بطاقات هذه
+                                الصفحة خاصّة بها ولا تمرّ بـ`DealCard`، فكان العرض
+                                يُحفظ من كل مكانٍ إلا هنا. */}
+                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                <img src={thumbUrl(deal.images[0])} srcSet={thumbSrcSet(deal.images[0]) || undefined} sizes="85px" loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover', display: 'block' }}
+                                    onError={imgFallback(deal.images[0], 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300')} />
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleFavorite(deal.id); }}
+                                    onKeyDown={(e) => { e.stopPropagation(); }}
+                                    aria-label={favorites.includes(deal.id)
+                                        ? (isRTL ? 'إزالة من المفضلة' : 'Remove from favorites')
+                                        : (isRTL ? 'حفظ في المفضلة' : 'Save to favorites')}
+                                    aria-pressed={favorites.includes(deal.id)}
+                                    style={{
+                                        position: 'absolute', top: -6,
+                                        [isRTL ? 'left' : 'right']: -6,
+                                        width: 30, height: 30, minWidth: 0, minHeight: 0,
+                                        borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                        background: favorites.includes(deal.id) ? 'var(--primary)' : 'rgba(255,255,255,0.98)',
+                                        color: favorites.includes(deal.id) ? '#fff' : '#334155',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+                                    }}
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"
+                                        fill={favorites.includes(deal.id) ? 'currentColor' : 'none'} stroke="currentColor"
+                                        strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                    </svg>
+                                </button>
+                            </div>
                              <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                                     <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deal.shopName}</span>

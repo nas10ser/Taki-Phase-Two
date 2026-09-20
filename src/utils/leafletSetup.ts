@@ -20,14 +20,32 @@
  */
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// 🪤 `import x from '…png'` أخرج **كائناً فارغاً** مع هذا الإعداد (قِيس في
+// الحزمة: `mergeOptions({iconUrl:{}})`)، فصار العنوان `[object Object]`.
+// `new URL(…, import.meta.url)` هي الصيغة التي يضمنها Parcel لعنوان أصلٍ
+// مبصوم، وتُرجع نصّاً حقيقياً.
+const markerIcon = new URL('../../node_modules/leaflet/dist/images/marker-icon.png', import.meta.url).href;
+const markerIcon2x = new URL('../../node_modules/leaflet/dist/images/marker-icon-2x.png', import.meta.url).href;
+const markerShadow = new URL('../../node_modules/leaflet/dist/images/marker-shadow.png', import.meta.url).href;
+
+/**
+ * 🪤 حارسٌ لا تجميل: لو أعاد المُجمِّع يوماً كائناً بدل نصّ (كما حدث فعلاً قبل
+ * إصلاح `declarations.d.ts`) لصار العنوان `[object Object]` **بصمت** ولاختفت
+ * كل الدبابيس. هنا يُكتشف فوراً في الطرفية بدل أن يُكتشف على جوّال ناصر.
+ */
+const asUrl = (m: unknown, name: string): string => {
+    const v = typeof m === 'string' ? m : (m as { default?: string } | null)?.default;
+    if (typeof v !== 'string' || !v) {
+        console.error(`leafletSetup: ${name} لم يصل كنصّ — الدبّوس سيُكسر`, m);
+        return '';
+    }
+    return v;
+};
 
 L.Icon.Default.mergeOptions({
-    iconUrl: markerIcon,
-    iconRetinaUrl: markerIcon2x,
-    shadowUrl: markerShadow,
+    iconUrl: asUrl(markerIcon, 'marker-icon'),
+    iconRetinaUrl: asUrl(markerIcon2x, 'marker-icon-2x'),
+    shadowUrl: asUrl(markerShadow, 'marker-shadow'),
 });
 
 /**

@@ -314,7 +314,9 @@ const AdminDashboard: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[var(--body-bg)] pb-24" dir="rtl">
+        /* v14.64 — `taki-admin` تُعيد أرضية الخطّ داخل اللوحة إلى ١٠ بكسل
+           (طلب ناصر): جداولها كثيفة وهو مستخدمها الوحيد. */
+        <div className="taki-admin min-h-screen bg-[var(--body-bg)] pb-24" dir="rtl">
             <div className="max-w-7xl mx-auto px-4 pt-3">
                 <TabNav
                     active={activeTab}
