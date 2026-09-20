@@ -459,9 +459,13 @@ const AdminContests: React.FC = () => {
 
 // ---------- entries + draw sub-view ----------
 const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ contestId, onBack }) => {
-    const { customAlert, customConfirm } = useApp();
+    const { customAlert, customConfirm, customPrompt } = useApp();
     const [contest, setContest] = useState<Contest | null>(null);
     const [entries, setEntries] = useState<ContestEntry[]>([]);
+    /** v14.65 — أي فائزٍ يُحفظ الآن تسليمُ جائزته (فلا يُضغط الزرّ مرّتين). */
+    const [deliveringId, setDeliveringId] = useState<string | null>(null);
+    /** عدد من وصلهم إشعار السحب — يُقرأ مرّة عند إغلاق البكرة ثم يُمسح. */
+    const notifiedRef = useRef<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [drawCount, setDrawCount] = useState(1);
     const [showDraw, setShowDraw] = useState(false);
@@ -494,6 +498,22 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
         const safe = Math.min(Math.max(1, drawCount), remaining);
         if (safe !== drawCount) setDrawCount(safe);
         setShowDraw(true);
+    };
+
+    /** v14.65 — تعليم الجائزة مُسلَّمة/غير مُسلَّمة مع ملاحظةٍ اختيارية. */
+    const markDelivered = async (w: ContestEntry) => {
+        const turningOn = !w.prize_delivered;
+        let note: string | null = w.prize_note || null;
+        if (turningOn) {
+            const typed = await customPrompt('كيف سُلّمت الجائزة؟ (اختياري — مثال: سُلّمت باليد في الفرع، أو حُوّلت بنكياً)');
+            if (typed === null) return;              // ألغى
+            note = typed.trim() || null;
+        }
+        setDeliveringId(w.id);
+        const ok = await contestRepository.setPrizeDelivered(w.id, turningOn, note ?? undefined);
+        setDeliveringId(null);
+        if (!ok) { await customAlert('❌ تعذّر حفظ حالة التسليم — أعد المحاولة.'); return; }
+        await load();
     };
 
     const resetWinners = async () => {
@@ -550,8 +570,23 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                         ) : (
                                             <span className="font-mono text-[var(--text-secondary)] tracking-widest" dir="ltr">••••••••</span>
                                         )}
-                                        <button onClick={() => togglePhone(w.id)} className="mr-auto shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <button onClick={() => togglePhone(w.id)} className="ms-auto shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                             {shown ? '🙈 إخفاء' : '🔓 اكشف الرقم'}
+                                        </button>
+                                        {/* v14.65 — توثيق تسليم الجائزة: كانت المسابقة بجوائز
+                                            بلا أي أثرٍ يقول «سُلِّمت» ولا متى. */}
+                                        <button
+                                            onClick={() => markDelivered(w)}
+                                            disabled={deliveringId === w.id}
+                                            title={w.prize_delivered && w.prize_delivered_at
+                                                ? `سُلّمت ${new Date(w.prize_delivered_at).toLocaleDateString('ar-SA-u-ca-gregory')}${w.prize_note ? ' — ' + w.prize_note : ''}`
+                                                : 'علّم الجائزة مُسلَّمة'}
+                                            className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold border disabled:opacity-50 ${
+                                                w.prize_delivered
+                                                    ? 'bg-emerald-600 text-white border-emerald-700'
+                                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border-[var(--border-color)]'}`}
+                                        >
+                                            {deliveringId === w.id ? '...' : (w.prize_delivered ? '✅ سُلِّمت' : '📦 لم تُسلَّم')}
                                         </button>
                                     </div>
                                 );
@@ -588,8 +623,23 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                     count={drawCount}
                     revealName={contest.reveal_name !== false}
                     maskPhone={maskPhone}
-                    drawFn={() => contestRepository.draw(contestId, drawCount)}
-                    onClose={() => { setShowDraw(false); load(); }}
+                    drawFn={async () => {
+                        const r = await contestRepository.draw(contestId, drawCount);
+                        notifiedRef.current = r.notified ?? 0;
+                        return r;
+                    }}
+                    onClose={async () => {
+                        setShowDraw(false);
+                        await load();
+                        // v14.65 — الفائز صار يصله إشعارٌ في التطبيق. ونقول لناصر
+                        // صراحةً كم وصل: صفرٌ يعني «لا حساب لأي فائز» فيُبلغهم يدوياً.
+                        const n = notifiedRef.current;
+                        notifiedRef.current = null;
+                        if (n === null) return;
+                        await customAlert(n > 0
+                            ? `📣 وصل إشعارٌ في التطبيق إلى ${n} فائز${n > 2 ? 'اً' : ''}. تواصل معهم لتسليم الجائزة، ثم علّمها «سُلِّمت».`
+                            : 'ℹ️ لا حساب مرتبط بجوال أيٍّ من الفائزين — أبلغهم بالاتصال، ثم علّم الجائزة «سُلِّمت».');
+                    }}
                 />
             )}
         </div>

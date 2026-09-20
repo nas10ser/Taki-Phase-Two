@@ -69,6 +69,10 @@ export interface ContestEntry {
     max_score: number;
     qualified: boolean;
     is_winner: boolean;
+    /** v14.65 — توثيق تسليم الجائزة (للإدارة وحدها). */
+    prize_delivered?: boolean;
+    prize_delivered_at?: string | null;
+    prize_note?: string | null;
     created_at: string;
 }
 
@@ -255,10 +259,29 @@ export const contestRepository = {
      * winner is never picked again — the returned list is only THIS draw's new
      * winners. (v11.49)
      */
-    async draw(contestId: string, count: number): Promise<{ success: boolean; winners?: { name: string; phone: string }[]; error?: string }> {
+    async draw(contestId: string, count: number): Promise<{ success: boolean; winners?: { name: string; phone: string }[]; notified?: number; error?: string }> {
         const { data, error } = await supabase.rpc('draw_contest_winners', { p_contest_id: contestId, p_count: count });
         if (error) return { success: false, error: error.message };
-        return { success: true, winners: (data as any) || [] };
+        // v14.65 — الدالة صارت تُرجع `{ winners, notified }` بعد أن صارت تُبلّغ
+        // الفائزين. 🪤 ونقبل الشكل القديم (مصفوفة مجرّدة) أيضاً: تغييرُ شكل
+        // ردٍّ بلا تحمّلٍ للشكل السابق يكسر الواجهة في الفجوة بين نشر القاعدة
+        // ونشر الموقع — وفي قاعدة المعاينة حتى تُزامَن.
+        const raw: any = data;
+        const winners = Array.isArray(raw) ? raw : (raw?.winners || []);
+        const notified = Array.isArray(raw) ? 0 : Number(raw?.notified ?? 0);
+        return { success: true, winners, notified };
+    },
+
+    /**
+     * v14.65 — توثيق تسليم الجائزة. كانت المسابقة بجوائز بلا أي حقلٍ يقول
+     * «سُلِّمت» — ثغرةُ توثيق. يُثبَت بالعدد الراجع لا بغياب الخطأ.
+     */
+    async setPrizeDelivered(entryId: string, delivered: boolean, note?: string): Promise<boolean> {
+        const { data, error } = await supabase.rpc('admin_set_prize_delivered', {
+            p_entry_id: entryId, p_delivered: delivered, p_note: note ?? null,
+        });
+        if (error) { console.warn('setPrizeDelivered:', error.message); return false; }
+        return !!(data as any)?.ok;
     },
 
     /** Clear all winners so the owner can redo the draw from scratch. (v11.49) */
