@@ -304,6 +304,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                     <input
                         ref={fileRef}
+                        aria-label={isRTL ? 'إرفاق صورة' : 'Attach an image'}
                         type="file"
                         accept="image/*"
                         style={{ display: 'none' }}

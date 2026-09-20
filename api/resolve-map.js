@@ -117,20 +117,26 @@ function assertAllowed(urlStr) {
 }
 
 /** سياسة الدخول تُسأل من القاعدة بهوية المستخدم نفسه — لا سرّ هنا. */
-async function gate(authHeader) {
+async function gate(authHeader, deadline) {
     if (!authHeader || !/^Bearer\s+\S+/i.test(authHeader)) return { ok: false, error: 'AUTH_REQUIRED' };
     if (!ANON_KEY) return { ok: false, error: 'SERVER_MISCONFIGURED' };
     let r;
+    // 🪤 كان هذا النداء **بلا مهلة**: قاعدةٌ بطيئة تُعلّق الطلب كلّه قبل أن
+    // يبدأ العدّ أصلاً، والعميل يقطع عند الثامنة فيدور الزرّ بلا نهاية.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), Math.max(500, (deadline || Date.now() + 4000) - Date.now()));
     try {
         r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/taki_map_gate`, {
             method: 'POST',
             headers: { apikey: ANON_KEY, Authorization: authHeader, 'Content-Type': 'application/json' },
             body: '{}',
+            signal: ac.signal,
         });
     } catch {
         // تعذّر سؤال القاعدة ⇒ **نمنع**. البوّابة تفشل مغلقةً لا مفتوحة.
         return { ok: false, error: 'GATE_UNAVAILABLE' };
     }
+    finally { clearTimeout(timer); }
     if (!r.ok) return { ok: false, error: 'AUTH_REQUIRED' };
     const d = await r.json().catch(() => null);
     return d && d.ok === true ? { ok: true } : { ok: false, error: (d && d.error) || 'FORBIDDEN' };
@@ -149,7 +155,12 @@ module.exports = async (req, res) => {
     }
     if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
 
-    const g = await gate(req.headers && req.headers.authorization);
+    // 🪤 v14.64 — الميزانية تبدأ **قبل** البوّابة لا بعدها: نداء البوّابة كان
+    // خارج العدّ تماماً، فقاعدةٌ بطيئة تستهلك مهلة العميل كلّها قبل أن يبدأ
+    // الحلّ أصلاً. العميل يقطع عند ٨ ثوانٍ، فنُنهي نحن عند ٦٫٥ ونردّ بجواب.
+    const deadline = Date.now() + 6500;
+
+    const g = await gate(req.headers && req.headers.authorization, deadline);
     if (!g.ok) {
         const code = g.error === 'RATE_LIMIT' ? 429 : (g.error === 'GATE_UNAVAILABLE' ? 503 : 401);
         return res.status(code).json({ error: g.error });
@@ -165,13 +176,8 @@ module.exports = async (req, res) => {
 
     try {
         let current = first.toString();
-        // 🪤 v14.63 — كل جلبٍ خارجي هنا كان **بلا مهلة**: ستّ قفزاتٍ متتالية
-        // إلى مضيفٍ لا يردّ تُبقي الدالة معلّقة حتى تقتلها المنصّة، والتاجر
-        // يرى زرّاً يدور بلا نهاية. المهلة صريحة الآن لكل نداء.
-        // 🪤 مهلةٌ لكل نداءٍ لا تكفي: ستّ قفزاتٍ × ٧ ثوانٍ = ٤٢ ثانية، والعميل
-        // يقطع عند الثامنة — فيبقى الخادم يعمل لعملٍ لن يقرأه أحد. ميزانية
-        // **واحدة** لكل الطلب، وكل نداءٍ يأخذ ما بقي منها فقط.
-        const deadline = Date.now() + 6500;
+        // كل جلبٍ خارجي يأخذ ما بقي من الميزانية المُعلنة أعلاه، لا مهلةً
+        // خاصّة به — وإلا صار مجموعُ المهل أضعافَ ما ينتظره العميل.
         const fetchWithTimeout = async (url, opts = {}) => {
             const left = Math.max(500, deadline - Date.now());
             const ac = new AbortController();

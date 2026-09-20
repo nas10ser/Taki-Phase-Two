@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStoreReviews } from '../hooks/useStoreReviews';
 import { goRegister } from '../utils/returnTo';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 // v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
 // كل من يفتح صفحة عرض. تُحمَّل عند فتح الطبقة فقط.
 const BuyerAddressCardLazy = React.lazy(() => import('../components/BuyerAddressCard'));
@@ -512,6 +513,9 @@ const DealDetails: React.FC = () => {
     // والنسخ والإضافات والفرع وطريقة الدفع — في اللحظة التي يجرّب فيها التوصيل
     // أوّل مرة. (١٣ قيمة حالةٍ محلية كانت تُمحى، والورقة نفسها تُغلق.)
     const [addrSheetOpen, setAddrSheetOpen] = useState(false);
+    /** v14.64 — حبس التركيز: بلا هذا يخرج Tab من الورقة إلى صفحةٍ لا تُرى. */
+    const bookingPanelRef = useRef<HTMLDivElement | null>(null);
+    const addrPanelRef = useRef<HTMLDivElement | null>(null);
     /** عدّاد: كل حفظ/حذف عنوان يُعيد قراءة القائمة بلا إغلاق ورقة الحجز. */
     const [addrReload, setAddrReload] = useState(0);
     // v12.66 — «اختيارات لكل قطعة»: كل قطعة محجوزة لها اختياراتها المستقلة
@@ -1551,6 +1555,11 @@ const DealDetails: React.FC = () => {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [addrSheetOpen]);
+
+    // 🪤 الترتيب مقصود: طبقةُ العناوين تُحبَس **بعد** ورقة الحجز، فحين تكون
+    // مفتوحةً يكون مستمعها هو الأحدث فيمسك Tab قبل الورقة تحتها.
+    useFocusTrap(showBookingModal && !addrSheetOpen, bookingPanelRef);
+    useFocusTrap(addrSheetOpen, addrPanelRef);
 
     // ما زال الجلب جارياً ⇒ لا نحكم بعد.
     if (!deal && !dealFetchDone) {
@@ -3074,7 +3083,12 @@ const DealDetails: React.FC = () => {
                 a thicker home-bar safe area. */}
             {showBookingModal && !isSeller && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn 0.2s ease-out' }}>
-                    <div className="taki-sheet-panel" style={{ background: 'var(--body-bg)', padding: '24px 20px', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', borderTopLeftRadius: 30, borderTopRightRadius: 30, overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                    <div
+                        ref={bookingPanelRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={isRTL ? 'إتمام الحجز' : 'Complete booking'}
+                        className="taki-sheet-panel" style={{ background: 'var(--body-bg)', padding: '24px 20px', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', borderTopLeftRadius: 30, borderTopRightRadius: 30, overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>{isRTL ? 'إتمام الحجز' : 'Complete Booking'}</h2>
                             <button onClick={() => setShowBookingModal(false)} style={{ background: 'var(--gray-200)', color: 'var(--text-primary)', border: 'none', width: 36, height: 36, borderRadius: 18, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -3767,6 +3781,7 @@ const DealDetails: React.FC = () => {
                     }}
                 >
                     <div
+                        ref={addrPanelRef}
                         onClick={e => e.stopPropagation()}
                         className="taki-sheet-panel"
                         style={{

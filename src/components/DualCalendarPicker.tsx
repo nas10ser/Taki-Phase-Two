@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useEscClose } from '../hooks/useEscClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface DualCalendarPickerProps {
     isOpen: boolean;
@@ -256,6 +258,11 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
 
     if (!isOpen) return null;
 
+    // v14.64 — نافذة التاريخ كانت بلا دورٍ ولا Escape ولا حبس تركيز.
+    const panelRef = useRef<HTMLDivElement | null>(null);
+    useEscClose(isOpen, onClose);
+    useFocusTrap(isOpen, panelRef);
+
     const weekDays = isRTL ? WEEK_DAYS_AR : WEEK_DAYS_EN;
 
     // ─── Styles ──────────────────────────────────────────────────────────────
@@ -340,7 +347,14 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                 }
             `}</style>
             <div style={overlay} onClick={onClose}>
-                <div style={container} onClick={e => e.stopPropagation()}>
+                <div
+                    ref={panelRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={isRTL ? 'اختيار التاريخ' : 'Pick a date'}
+                    style={container}
+                    onClick={e => e.stopPropagation()}
+                >
 
                     {/* ── HEADER GRADIENT BAR ── */}
                     <div style={{

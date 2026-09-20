@@ -449,7 +449,7 @@ const Profile: React.FC = () => {
                                     <input type="tel" value={contactPhone} onChange={e => setContactPhone(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} placeholder="05xxxxxxxx" style={{ width: '100%', padding: '14px', borderRadius: 12, border: '1.5px solid var(--gray-200)', fontSize: '0.9rem', outline: 'none', background: 'var(--body-bg)', color: 'var(--text-primary)', fontWeight: 600 }} />
                                     
                                     <label style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.7, marginTop: 10 }}>{isRTL ? 'البريد للإشعارات' : 'Email for Notifications'}</label>
-                                    <input value={contactEmail} type="email" disabled style={{ width: '100%', padding: '14px', borderRadius: 12, border: '1.5px solid var(--gray-200)', fontSize: '0.9rem', outline: 'none', background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 600, cursor: 'not-allowed' }} />
+                                    <input value={contactEmail} type="email" disabled aria-label={isRTL ? 'بريد الحساب' : 'Account email'} style={{ width: '100%', padding: '14px', borderRadius: 12, border: '1.5px solid var(--gray-200)', fontSize: '0.9rem', outline: 'none', background: 'var(--gray-100)', color: 'var(--text-secondary)', fontWeight: 600, cursor: 'not-allowed' }} />
                                     
                                     <button 
                                         onClick={async () => {
@@ -688,13 +688,13 @@ const SmartAlertsCard: React.FC<{
 
             {/* Region & City */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                <select value={filterRegion}
+                <select aria-label={isRTL ? 'المنطقة' : 'Region'} value={filterRegion}
                     onChange={e => { setFilterRegion(e.target.value); setFilterCity(''); setFilterMall(''); }}
                     style={{ flex: 1, minWidth: 130, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem' }}>
                     <option value="">{isRTL ? 'المنطقة (اختياري)' : 'Region (Opt)'}</option>
                     {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, isRTL ? 'ar' : 'en')}</option>)}
                 </select>
-                <select value={filterCity}
+                <select aria-label={isRTL ? 'المدينة' : 'City'} value={filterCity}
                     onChange={e => { setFilterCity(e.target.value); setFilterMall(''); }}
                     style={{ flex: 1, minWidth: 130, padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem' }}>
                     <option value="">{isRTL ? 'المدينة (اختياري)' : 'City (Opt)'}</option>
@@ -705,7 +705,7 @@ const SmartAlertsCard: React.FC<{
 
             {/* Mall (only if a city is set) */}
             {filterCity && (
-                <select value={filterMall} onChange={e => setFilterMall(e.target.value)}
+                <select aria-label={isRTL ? 'المول أو السوق' : 'Mall or market'} value={filterMall} onChange={e => setFilterMall(e.target.value)}
                     style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid var(--border-color)', background: 'var(--card-bg)', fontWeight: 700, fontSize: '0.85rem', marginBottom: 10 }}>
                     <option value="">{isRTL ? 'مول/سوق محدد (اختياري)' : 'Specific mall/market (Opt)'}</option>
                     {LOCATIONS.filter(l => l.cityId === filterCity).map(l =>

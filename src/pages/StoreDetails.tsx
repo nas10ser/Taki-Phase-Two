@@ -739,10 +739,10 @@ const StoreDetails: React.FC = () => {
                     
                     {isEditingStore ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
-                            <textarea value={editBio} onChange={e => setEditBio(e.target.value)} style={{ width: '100%', background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '0.95rem', minHeight: 80, outline: 'none' }} />
+                            <textarea aria-label={isRTL ? 'نبذة المتجر' : 'Store bio'} value={editBio} onChange={e => setEditBio(e.target.value)} style={{ width: '100%', background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '0.95rem', minHeight: 80, outline: 'none' }} />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'رقم التواصل:' : 'Contact Phone:'}</label>
-                                <input value={editPhone} onChange={e => setEditPhone(e.target.value)} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
+                                <input aria-label={isRTL ? 'جوال المتجر' : 'Store phone'} value={editPhone} onChange={e => setEditPhone(e.target.value)} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
                             </div>
                             {/* v13.11 (طلب ناصر): تحديد الموقع من «صفحتي» — عنوان نصّي يظهر
                                 للمشترين، وزر ينقل التاجر لمحرّر الخريطة في لوحته لتثبيت

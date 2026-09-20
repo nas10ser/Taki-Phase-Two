@@ -266,7 +266,7 @@ const Nearby: React.FC = () => {
                     </div>
                     
                     <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-                        <select className="nb-select" 
+                        <select className="nb-select" aria-label={isRTL ? 'المنطقة' : 'Region'} 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedRegion}
                             onChange={e => { 
@@ -291,7 +291,7 @@ const Nearby: React.FC = () => {
                             <option value="">{isRTL ? 'كل المناطق' : 'All Regions'}</option>
                             {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                         </select>
-                        <select className="nb-select" 
+                        <select className="nb-select" aria-label={isRTL ? 'المدينة' : 'City'} 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedCity}
                             onChange={e => { 
@@ -312,7 +312,7 @@ const Nearby: React.FC = () => {
                             <option value="">{isRTL ? 'كل المدن' : 'All Cities'}</option>
                             {CITIES.filter(c => !selectedRegion || c.regionId === selectedRegion).map(c => <option key={c.id} value={c.id}>{geoName(c, language)}</option>)}
                         </select>
-                        <select className="nb-select" 
+                        <select className="nb-select" aria-label={isRTL ? 'التصنيف' : 'Category'} 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedCategory}
                             onChange={e => setSelectedCategory(e.target.value)}
@@ -320,7 +320,7 @@ const Nearby: React.FC = () => {
                             <option value="all">{isRTL ? 'كل التصنيفات' : 'All Categories'}</option>
                             {CATEGORIES.filter(c => c.id !== 'all').map(c => <option key={c.id} value={c.id}>{c.emoji} {isRTL ? c.ar : c.en}</option>)}
                         </select>
-                        <select className="nb-select" 
+                        <select className="nb-select" aria-label={isRTL ? 'نوع المكان' : 'Place type'} 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={locationType}
                             onChange={e => { setLocationType(e.target.value); setSelectedLocationId(''); }}
@@ -330,7 +330,7 @@ const Nearby: React.FC = () => {
                             <option value="market">{isRTL ? 'سوق 🏛️' : 'Market 🏛️'}</option>
                             <option value="store">{isRTL ? 'محل 🏪' : 'Store 🏪'}</option>
                         </select>
-                        <select className="nb-select" 
+                        <select className="nb-select" aria-label={isRTL ? 'المكان' : 'Place'} 
                             style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'var(--body-bg)', outline: 'none', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', height: 30 }}
                             value={selectedLocationId}
                             onChange={e => {
@@ -383,7 +383,7 @@ const Nearby: React.FC = () => {
                     <label style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--primary)', whiteSpace: 'nowrap' }}>
                         🎯 {isRTL ? 'في حدود:' : 'Within:'}
                     </label>
-                    <select className="nb-select" value={radius} onChange={e => setRadius(Number(e.target.value))}
+                    <select className="nb-select" aria-label={isRTL ? 'نطاق البحث' : 'Search radius'} value={radius} onChange={e => setRadius(Number(e.target.value))}
                         style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid var(--primary)', color: 'var(--primary)', padding: '6px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 900, minHeight: 32 }}>
                         <option value={0}>{isRTL ? 'الكل 🌍' : 'All 🌍'}</option>
                         <option value={1}>1 {isRTL ? 'كم' : 'km'}</option>

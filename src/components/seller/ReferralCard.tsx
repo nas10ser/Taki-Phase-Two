@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { clickable } from '../../utils/clickable';
+import { useEscClose } from '../../hooks/useEscClose';
 
 const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }> = ({ isRTL, onAlert }) => {
     const [open, setOpen] = useState(false);
@@ -23,6 +24,7 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     const [showQr, setShowQr] = useState(false);
     // v12.34 — تكبير الباركود بالضغط (شاشة كاملة) + مشاركته كصورة.
     const [qrZoom, setQrZoom] = useState(false);
+    useEscClose(qrZoom, () => setQrZoom(false));   // v14.64 — Escape يُغلق التكبير
     const [sharingQr, setSharingQr] = useState(false);
     const [savingQr, setSavingQr] = useState(false);
 
@@ -264,6 +266,9 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
             {/* v12.34 — تكبير ملء الشاشة: خلفية بيضاء نقية = مسح أسهل للكاميرا */}
             {qrZoom && (
                 <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={isRTL ? 'رمز الدعوة مكبّراً' : 'Referral code enlarged'}
                     onClick={() => setQrZoom(false)}
                     style={{
                         position: 'fixed', inset: 0, zIndex: 99995,

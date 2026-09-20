@@ -1373,6 +1373,7 @@ const Register: React.FC = () => {
                                 <div>
                                     <label style={labelStyle}>{t('من أين سمعت عن تاكي؟', 'How did you hear about TAKI?')} <span style={{ opacity: 0.4, fontSize: '0.75rem' }}>{t('(اختياري)', '(optional)')}</span></label>
                                     <select
+                                        aria-label={t('من أين سمعت عن تاكي؟', 'How did you hear about TAKI?')}
                                         value={heardFrom}
                                         onChange={e => setHeardFrom(e.target.value)}
                                         style={{ ...inputStyle, appearance: 'none' as const, cursor: 'pointer' }}

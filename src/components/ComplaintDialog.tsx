@@ -64,7 +64,6 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
 
     const overlay = (
         <div dir={isRTL ? 'rtl' : 'ltr'} onClick={onClose}
-            aria-hidden="true"
             style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
             <div onClick={(e) => e.stopPropagation()}
                 role="dialog"

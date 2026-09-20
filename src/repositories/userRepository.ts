@@ -60,6 +60,23 @@ export const mapUserRowToProfile = (d: any): UserProfile => ({
     workingHours: d.working_hours,
 } as UserProfile);
 
+/**
+ * طابورٌ لكل عرضٍ على حدة (v14.64).
+ * 🪤 نقرتان سريعتان على زرّ الحفظ (إضافة ثم إزالة خلال جزء من الثانية) كانتا
+ * تنطلقان معاً، فأيّهما يصل الخادم أخيراً يفوز — وقد تكون الأولى. النتيجة
+ * حالةٌ في القاعدة تخالف ما يراه المشتري على الشاشة. الآن تُسلسَل عمليات
+ * **نفس العرض** فلا تتسابقان، وتبقى عمليات العروض الأخرى متوازية.
+ */
+const favQueue = new Map<string, Promise<boolean>>();
+const queueFavorite = (dealId: string, task: () => Promise<boolean>): Promise<boolean> => {
+    const prev = favQueue.get(dealId) || Promise.resolve(true);
+    const next = prev.catch(() => false).then(task);
+    favQueue.set(dealId, next);
+    // تنظيفٌ حين يهدأ هذا العرض، فلا تنمو الخريطة بلا حدّ.
+    next.finally(() => { if (favQueue.get(dealId) === next) favQueue.delete(dealId); });
+    return next;
+};
+
 export const userRepository = {
     getCurrentUser: async (): Promise<UserProfile | null> => {
         const memory = authService.getUser();
@@ -227,7 +244,7 @@ export const userRepository = {
      * وقاعدة المشروع أن كل كتابة تُثبَت بـ`.select()` وعدد صفوف، لأن ما ترفضه
      * RLS يعود بـ`error = null` وصفر صفوف.
      */
-    addFavorite: async (dealId: string): Promise<boolean> => {
+    addFavorite: (dealId: string): Promise<boolean> => queueFavorite(dealId, async () => {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const userId = session?.user?.id;
@@ -247,9 +264,9 @@ export const userRepository = {
             }
             return (data?.length ?? 0) > 0;
         } catch (e) { console.warn('addFavorite failed', e); return false; }
-    },
+    }),
 
-    removeFavorite: async (dealId: string): Promise<boolean> => {
+    removeFavorite: (dealId: string): Promise<boolean> => queueFavorite(dealId, async () => {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const userId = session?.user?.id;
@@ -261,7 +278,7 @@ export const userRepository = {
             if (error) { console.warn('removeFavorite:', error.message); return false; }
             return (data?.length ?? 0) > 0;
         } catch (e) { console.warn('removeFavorite failed', e); return false; }
-    },
+    }),
 
     /** دمج مفضلة الزائر في حسابه عند أول دخول — بلا أن يضيع ما حفظه قبل التسجيل. */
     mergeFavorites: async (ids: string[]): Promise<void> => {

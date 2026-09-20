@@ -278,6 +278,7 @@ const Home: React.FC = () => {
                 <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                         <select
+                            aria-label={isRTL ? 'المنطقة' : 'Region'}
                             value={topLocation.region}
                             onChange={e => setTopLocation({ region: e.target.value, city: '', mall: '' })}
                             className="filter-select-premium"
@@ -287,6 +288,7 @@ const Home: React.FC = () => {
                             {REGIONS.map(r => <option key={r.id} value={r.id}>{geoName(r, language)}</option>)}
                         </select>
                         <select
+                            aria-label={isRTL ? 'المدينة' : 'City'}
                             value={topLocation.city}
                             onChange={e => setTopLocation({ ...topLocation, city: e.target.value, mall: '' })}
                             disabled={!topLocation.region}
@@ -297,6 +299,7 @@ const Home: React.FC = () => {
                         </select>
                     </div>
                     <select
+                        aria-label={isRTL ? 'المول أو السوق' : 'Mall or market'}
                         value={topLocation.mall}
                         onChange={e => setTopLocation({ ...topLocation, mall: e.target.value })}
                         disabled={!topLocation.city}

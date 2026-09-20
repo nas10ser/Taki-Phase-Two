@@ -123,7 +123,6 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
         <div
             dir={isRTL ? 'rtl' : 'ltr'}
             onClick={onClose}
-            aria-hidden="true"
             style={{
                 position: 'fixed', inset: 0, zIndex: 1400,
                 background: 'rgba(0,0,0,0.62)',

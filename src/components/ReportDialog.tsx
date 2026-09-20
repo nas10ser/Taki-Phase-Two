@@ -92,7 +92,6 @@ const ReportDialog: React.FC<Props> = ({ reportedId, reportedRole, reportedName,
         <div
             dir={isRTL ? 'rtl' : 'ltr'}
             onClick={onClose}
-            aria-hidden="true"
             style={{
                 position: 'fixed', inset: 0, zIndex: 100000,
                 background: 'rgba(0,0,0,0.55)',
