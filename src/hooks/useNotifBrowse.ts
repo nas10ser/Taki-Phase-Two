@@ -29,6 +29,11 @@ export function useNotifBrowse(userId: string | undefined, live: AppNotification
     const [removed, setRemoved] = useState<Set<string>>(() => new Set());
     const cursor = useRef<{ at: string; id: string } | null>(null);
     const guard = useRef(0);
+    // مرجعان حيّان يقرؤهما الحذف الجماعي بلا أن يُعاد بناؤه مع كل تغيّر.
+    const pagesRef = useRef<AppNotification[]>([]);
+    const liveRef = useRef<AppNotification[]>([]);
+    pagesRef.current = pages;
+    liveRef.current = live;
     const q = query.trim();
 
     const loadFirst = useCallback(async () => {
@@ -75,7 +80,18 @@ export function useNotifBrowse(userId: string | undefined, live: AppNotification
     const removeRead = useCallback(async (): Promise<number> => {
         if (!userId) return 0;
         const n = await notificationRepository.removeAllRead(userId);
-        if (n > 0) { cursor.current = null; await loadFirst(); setRemoved(new Set()); }
+        if (n > 0) {
+            // 🪤 لا تُمسح شواهد الحذف: مصفوفةُ الحالة العامة ما زالت تحمل الصفوف
+            // المحذوفة حتى يصل حدث الريل-تايم، ولولا الشواهد لعادت للظهور لحظةً.
+            setRemoved(prev => {
+                const next = new Set(prev);
+                for (const n2 of pagesRef.current) if (n2.isRead) next.add(n2.id);
+                for (const n2 of liveRef.current) if (n2.isRead && n2.userId === userId) next.add(n2.id);
+                return next;
+            });
+            cursor.current = null;
+            await loadFirst();
+        }
         return n;
     }, [userId, loadFirst]);
 

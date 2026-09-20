@@ -254,6 +254,10 @@ const Notifications: React.FC = () => {
                                     <button
                                         onClick={async () => {
                                             setBusyId(n.id);
+                                            // 🪤 شارة الجرس تُحسب في السياق العام لا في هذا الخطّاف:
+                                            // حذف إشعارٍ غير مقروء كان يترك العدّاد كما هو. نُعلّمه
+                                            // مقروءاً أولاً (فينقص العدّاد بمسارِه المعتاد) ثم نحذفه.
+                                            if (!n.isRead) markNotifRead(n.id);
                                             const ok = await feed.remove(n);
                                             setBusyId(null);
                                             if (!ok) await customAlert(isRTL ? '❌ تعذّر حذف الإشعار.' : '❌ Could not delete that notification.');

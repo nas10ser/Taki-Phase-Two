@@ -447,7 +447,8 @@ export const dealRepository = {
             for (let i = 0; i < ids.length; i += CHUNK) {
                 const { data, error } = await supabase
                     .from('deals').select(DEAL_SELECT)
-                    .in('id', ids.slice(i, i + CHUNK));
+                    .in('id', ids.slice(i, i + CHUNK))
+                    .neq('status', 'deleted');   // الحذف عندنا «ناعم» — لولا هذا لظهر المحذوف في المفضلة
                 if (error) throw error;
                 out.push(...(data || []).map(dealRepository.mapRowToDeal));
             }

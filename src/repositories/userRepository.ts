@@ -232,11 +232,19 @@ export const userRepository = {
             const { data: { session } } = await supabase.auth.getSession();
             const userId = session?.user?.id;
             if (!userId) return false;
+            // 🪤 لا `upsert` هنا: PostgREST يترجمها إلى `ON CONFLICT DO UPDATE`،
+            // و`public.favorites` **بلا سياسة UPDATE** — فإعادة حفظ صفٍّ قائم
+            // كانت سترفضها RLS. الإدراج المباشر يكفي، و«مكرّر» (23505) معناه
+            // أن المطلوب حاصلٌ أصلاً فهو نجاح لا فشل.
             const { data, error } = await supabase
                 .from('favorites')
-                .upsert({ user_id: userId, deal_id: dealId }, { onConflict: 'user_id,deal_id' })
+                .insert({ user_id: userId, deal_id: dealId })
                 .select('deal_id');
-            if (error) { console.warn('addFavorite:', error.message); return false; }
+            if (error) {
+                if (error.code === '23505') return true;
+                console.warn('addFavorite:', error.message);
+                return false;
+            }
             return (data?.length ?? 0) > 0;
         } catch (e) { console.warn('addFavorite failed', e); return false; }
     },
@@ -262,8 +270,18 @@ export const userRepository = {
             const { data: { session } } = await supabase.auth.getSession();
             const userId = session?.user?.id;
             if (!userId) return;
-            await supabase.from('favorites')
-                .upsert(ids.map(deal_id => ({ user_id: userId, deal_id })), { onConflict: 'user_id,deal_id' });
+            // `ignoreDuplicates` ⇒ `ON CONFLICT DO NOTHING`: لا حاجة لسياسة UPDATE.
+            // وصفٌّ يشير إلى عرضٍ حُذف يُسقط الدفعة كلها بمفتاحٍ أجنبي، فنُدرج
+            // واحداً واحداً: ما ينجح يُحفظ، وما يفشل لا يُسقط الباقي.
+            const rows = ids.map(deal_id => ({ user_id: userId, deal_id }));
+            const { error } = await supabase.from('favorites')
+                .upsert(rows, { onConflict: 'user_id,deal_id', ignoreDuplicates: true });
+            if (error) {
+                for (const r of rows) {
+                    await supabase.from('favorites')
+                        .upsert(r, { onConflict: 'user_id,deal_id', ignoreDuplicates: true });
+                }
+            }
         } catch (e) { console.warn('mergeFavorites failed', e); }
     },
 

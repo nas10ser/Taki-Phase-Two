@@ -2687,17 +2687,21 @@ html.light-mode .taki-variant-row:not(.picked) {
 @media (prefers-color-scheme: dark) { :root:not(.light-mode) { --focus-ring: #7dd3fc; } }
 .dark-mode { --focus-ring: #7dd3fc; }
 
-:where(a, button, summary, input, select, textarea,
+:where(a, button, summary,
        [role="button"], [role="link"], [role="tab"], [role="switch"],
        [tabindex]:not([tabindex="-1"])):focus-visible {
   /* 🪤 `!important` ضرورية لا تجميلية: ٤٦ عنصراً في الواجهة يكتب
      `style={{ outline: 'none' }}` مباشرةً، والنمط المضمّن يهزم أي قاعدة
      عادية مهما كان تحديدها. والمهمّ في ترتيب التتالي أن **المهمّ في ورقة
      الأنماط يعلو على المضمّن غير المهمّ** — فهذه هي الطريقة الوحيدة لضمان
-     ظهور الحلقة على كل عنصر دون تعقّب ٤٦ موضعاً واحداً واحداً. */
+     ظهور الحلقة على كل عنصر دون تعقّب ٤٦ موضعاً واحداً واحداً.
+     🪤 ولا `border-radius: inherit` هنا: العنصر يرث انحناء **أبيه** (صفراً
+     غالباً) فتُسطَّح زواياه المستديرة لحظة التركيز. والمتصفّح يرسم الحلقة على
+     انحناء العنصر نفسه أصلاً.
+     🪤 وحقولُ الإدخال مستثناة عمداً: لها تنسيق تركيزٍ خاص بها (إطار + هالة)،
+     و`:focus-visible` يطابقها حتى بنقرة الفأرة — فكانت تُرسم حلقةٌ ثالثة. */
   outline: 3px solid var(--focus-ring) !important;
   outline-offset: 2px;
-  border-radius: inherit;
 }
 
 /* داخل حاويات `overflow: hidden` تُقصّ الحلقة الخارجية — فتُرسم للداخل. */
@@ -2725,4 +2729,20 @@ html.light-mode .taki-variant-row:not(.picked) {
 .taki-sheet-panel {
   max-height: 92vh;
   max-height: 92dvh;
+}
+
+/* =====================================================================
+ * v14.63 — 🪤 **الوجه الآخر للسماح بالتكبير**: iOS Safari يُكبّر الصفحة
+ * تلقائياً عند لمس أي حقلٍ خطُّه أصغر من ١٦ بكسل، ولا يُعيدها. كان
+ * `maximum-scale=1.0` يكبت ذلك — وهو نفسه ما كان يمنع المستخدم من التكبير.
+ * فالحلّ الصحيح: السماح بالتكبير (رُفع المنع) **و**جعل الحقول ١٦ بكسل على
+ * الأجهزة اللمسية فلا يبقى سببٌ للتكبير التلقائي أصلاً.
+ * (`pointer: coarse` تحصره في اللمس، فتبقى شاشة المدير على المكتب كما هي.)
+ * ===================================================================== */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
 }
