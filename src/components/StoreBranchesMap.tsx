@@ -5,6 +5,7 @@ import { StoreBranch } from '../repositories/branchRepository';
 import { coordsOf, directionsLink } from '../utils/mapLinks';
 import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
 import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
+import { useEscClose } from '../hooks/useEscClose';
 
 /**
  * StoreBranchesMap — «اعرض كل المواقع على الخريطة» (v13.66، تفاعلية في v13.69)
@@ -96,6 +97,7 @@ const pinIcon = (n: number, active: boolean) => L.divIcon({
 });
 
 const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose }) => {
+    useEscClose(true, onClose);   // v14.63 — Escape يُغلق النافذة
     const pins = useMemo(() => branches
         .map(b => ({ b, c: coordsOf({ lat: b.mapLat, lng: b.mapLng }) }))
         .filter((x): x is { b: StoreBranch; c: { lat: number; lng: number } } => x.c !== null),
@@ -121,6 +123,7 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
         <div
             dir={isRTL ? 'rtl' : 'ltr'}
             onClick={onClose}
+            aria-hidden="true"
             style={{
                 position: 'fixed', inset: 0, zIndex: 1400,
                 background: 'rgba(0,0,0,0.62)',
@@ -130,6 +133,9 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
         >
             <div
                 onClick={e => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={isRTL ? 'فروع المتجر' : 'Store branches'}
                 style={{
                     background: 'var(--card-bg)', borderRadius: 20, overflow: 'hidden',
                     width: '100%', maxWidth: 560, maxHeight: '100%',
