@@ -165,13 +165,26 @@ module.exports = async (req, res) => {
 
     try {
         let current = first.toString();
+        // 🪤 v14.63 — كل جلبٍ خارجي هنا كان **بلا مهلة**: ستّ قفزاتٍ متتالية
+        // إلى مضيفٍ لا يردّ تُبقي الدالة معلّقة حتى تقتلها المنصّة، والتاجر
+        // يرى زرّاً يدور بلا نهاية. المهلة صريحة الآن لكل نداء.
+        const fetchWithTimeout = async (url, opts = {}, ms = 7000) => {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), ms);
+            try {
+                return await fetch(url, { ...opts, signal: ac.signal });
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+
         let html = '';
         let coords = tryExtract(current);
 
         for (let i = 0; i < 6 && !coords; i++) {
             // ترويسة واتساب تجعل خرائط جوجل تُعيد وسوم OpenGraph بدل تطبيقٍ
             // جافاسكربتي أو صفحة موافقة — نفس ما يحدث عند لصق الرابط في واتساب.
-            const resp = await fetch(current, {
+            const resp = await fetchWithTimeout(current, {
                 redirect: 'manual',
                 headers: { 'User-Agent': 'WhatsApp/2.21.12.21 A', 'Accept-Language': 'en-US,en;q=0.9' },
             });
@@ -211,7 +224,7 @@ module.exports = async (req, res) => {
                 .trim();
 
             if (placeName && placeName.length > 3 && placeName.length < 200 && placeName !== 'Google Maps') {
-                const geo = await fetch(
+                const geo = await fetchWithTimeout(
                     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&countrycodes=sa&limit=1`,
                     { headers: { 'User-Agent': 'TakiApp/1.0 (+https://www.takisa.net)' } }
                 ).then((r) => r.json()).catch(() => null);

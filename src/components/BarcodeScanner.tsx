@@ -312,7 +312,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 900 }}>
                         {isRTL ? '📷 سكانر الحجز' : '📷 Booking Scanner'}
                     </h2>
-                    <button onClick={onClose} style={{
+                    <button onClick={onClose} aria-label={isRTL ? 'إغلاق الماسح' : 'Close scanner'} style={{
                         background: 'rgba(100, 100, 100, 0.15)', border: 'none', color: 'white',
                         width: 36, height: 36, borderRadius: 12, fontSize: '1rem'
                     }}>✕</button>
@@ -449,7 +449,7 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                             {/* Divider */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
                                 <div style={{ flex: 1, height: 1, background: 'var(--gray-200)' }} />
-                                <span style={{ color: 'var(--gray-400)', fontSize: '0.8rem', fontWeight: 700 }}>{isRTL ? 'أو أدخل الرمز يدوياً' : 'Or enter code manually'}</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>{isRTL ? 'أو أدخل الرمز يدوياً' : 'Or enter code manually'}</span>
                                 <div style={{ flex: 1, height: 1, background: 'var(--gray-200)' }} />
                             </div>
 

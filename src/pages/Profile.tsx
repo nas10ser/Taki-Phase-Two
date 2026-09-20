@@ -261,6 +261,7 @@ const Profile: React.FC = () => {
                 {/* Top Actions Bar — No overlap */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingTop: 8 }}>
                     <button onClick={() => history.push('/')}
+                        aria-label={isRTL ? 'الرئيسية' : 'Home'}
                         style={{ background: 'rgba(100, 100, 100, 0.15)', backdropFilter: 'blur(10px)', border: '1px solid rgba(80, 80, 95, 0.2)', color: 'white', width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', cursor: 'pointer' }}>
                         {isRTL ? '→' : '←'}
                     </button>
@@ -349,12 +350,12 @@ const Profile: React.FC = () => {
                                                 ★ {m.rating || (isRTL ? 'جديد' : 'New')}
                                             </span>
                                         </div>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 700 }}>{isRTL ? 'عرض صفحة المتجر' : 'View Store Profile'}</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{isRTL ? 'عرض صفحة المتجر' : 'View Store Profile'}</div>
                                     </div>
                                     <div style={{ color: 'var(--primary)', fontSize: '1.2rem' }}>{isRTL ? '←' : '→'}</div>
                                 </div>
                             )) : (
-                                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
+                                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '3rem', marginBottom: 15 }}>🏪</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لم تتبع أي متاجر بعد' : 'Not following any stores yet'}</div>
                                     <button onClick={() => history.push('/')} style={{ marginTop: 20, padding: '10px 24px', borderRadius: 12, background: 'var(--accent)', color: 'white', border: 'none', fontWeight: 800 }}>
@@ -511,7 +512,7 @@ const Profile: React.FC = () => {
                                 >
                                     <span style={{ fontSize: '1.1rem', width: 26, textAlign: 'center' }} aria-hidden>{item.icon}</span>
                                     <span style={{ flex: 1 }}>{isRTL ? item.ar : item.en}</span>
-                                    <span aria-hidden style={{ color: 'var(--gray-400)', fontWeight: 900, fontSize: '1rem' }}>{isRTL ? '‹' : '›'}</span>
+                                    <span aria-hidden style={{ color: 'var(--text-muted)', fontWeight: 900, fontSize: '1rem' }}>{isRTL ? '‹' : '›'}</span>
                                 </button>
                             ))}
                         </div>
@@ -530,7 +531,7 @@ const Profile: React.FC = () => {
                                     goRegister(history);
                                 }
                             }}
-                                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--gray-400)', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>
+                                style={{ width: '100%', background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>
                                 {isRTL ? 'حذف الحساب' : 'Delete Account'}
                             </button>
                         </div>
@@ -796,6 +797,7 @@ const SmartAlertsCard: React.FC<{
                     <div key={i} style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', padding: '12px 14px', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>{ruleLabel(rule)}</span>
                         <button onClick={() => handleRemove(i)}
+                            aria-label={isRTL ? 'حذف هذا التنبيه' : 'Remove this alert'}
                             style={{ background: 'rgba(239, 68, 68, 0.15)', border: 'none', color: 'var(--danger)', borderRadius: 8, padding: '6px 10px', fontSize: '0.85rem', fontWeight: 900, cursor: 'pointer' }}>
                             ✕
                         </button>

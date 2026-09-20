@@ -335,21 +335,21 @@ const AdminInvoices: React.FC = () => {
 
             {/* الفلاتر */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>من تاريخ</label>
+                <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>من تاريخ</label>
                     <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={inputStyle} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>إلى تاريخ</label>
+                <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>إلى تاريخ</label>
                     <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={inputStyle} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>التاجر</label>
+                <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>التاجر</label>
                     <select value={merchantFilter} onChange={e => setMerchantFilter(e.target.value)} style={{ ...inputStyle, minWidth: 140 }}>
                         <option value="">الكل</option>
                         {gateways.map(g => <option key={g.merchant_id} value={g.merchant_id}>{g.store_name || g.merchant_id}</option>)}
                     </select></div>
-                <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>البوابة</label>
+                <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>البوابة</label>
                     <select value={providerFilter} onChange={e => setProviderFilter(e.target.value)} style={{ ...inputStyle, minWidth: 120 }}>
                         <option value="">الكل</option>
                         {Object.entries(PROVIDER_AR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select></div>
-                <div><label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>الحالة</label>
+                <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>الحالة</label>
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle, minWidth: 120 }}>
                         <option value="">الكل</option>
                         {Object.entries(STATUS_AR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -389,7 +389,7 @@ const AdminInvoices: React.FC = () => {
                                     <td style={{ padding: '10px', fontWeight: 800, color: 'var(--text-primary)' }}>{PROVIDER_AR[r.provider] || r.provider}</td>
                                     <td style={{ padding: '10px' }}>
                                         <span style={{
-                                            padding: '4px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 900,
+                                            padding: '4px 10px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 900,
                                             background: r.status === 'paid' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
                                             color: r.status === 'paid' ? '#059669' : '#b45309',
                                         }}>{STATUS_AR[r.status] || r.status}</span>
@@ -418,7 +418,7 @@ const AdminInvoices: React.FC = () => {
             {/* v12.82 — مفاتيح المزودين الستة: تفتحهم خدمة خدمة بعد التحقق منهم */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16 }}>
                 <h3 style={{ margin: '0 0 4px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>🧩 مزودو الدفع — افتحهم خدمة خدمة</h3>
-                <p style={{ margin: '0 0 12px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                <p style={{ margin: '0 0 12px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                     لا يظهر للتجار إلا المزودون المفتوحون هنا — فعّل كل خدمة بعد أن تتحقق منها بنفسك، فلا تحصل أي لخبطة.
                     إيقاف مزودٍ لاحقاً يسقط بوابات تجاره تلقائياً لـ«عند الاستلام» دون حجب أي حجز.
                 </p>
@@ -447,7 +447,7 @@ const AdminInvoices: React.FC = () => {
                                 </span>
                                 <span style={{ flex: 1, minWidth: 0 }}>
                                     <span style={{ display: 'block', fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)' }}>{name}</span>
-                                    <span style={{ display: 'block', fontWeight: 700, fontSize: '0.64rem', color: on ? '#059669' : 'var(--text-secondary)', marginTop: 2 }}>
+                                    <span style={{ display: 'block', fontWeight: 700, fontSize: '0.75rem', color: on ? '#059669' : 'var(--text-secondary)', marginTop: 2 }}>
                                         {on ? 'مفتوح للتجار' : 'موقوف'}{linked ? ` · ${linked} بوابة مرتبطة` : ''}
                                     </span>
                                 </span>
@@ -478,18 +478,18 @@ const AdminInvoices: React.FC = () => {
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                                     {g.is_enabled
-                                        ? <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>مفعّلة</span>
-                                        : <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--text-secondary)' }}>غير مفعّلة</span>}
+                                        ? <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>مفعّلة</span>
+                                        : <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--gray-100)', color: 'var(--text-secondary)' }}>غير مفعّلة</span>}
                                     {g.verified_at
-                                        ? <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>✓ مختبرة</span>
-                                        : <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#b45309' }}>لم تُختبر</span>}
+                                        ? <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#059669' }}>✓ مختبرة</span>
+                                        : <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#b45309' }}>لم تُختبر</span>}
                                     {/* v14.44 — المفتاح يُقاس من الخزنة. مؤشِّرٌ معلَّق كان يظهر
                                         «محفوظ» فتبقى البوّابة ميتة بلا أن يظهر سببها في أي شاشة. */}
-                                    {g.secret_ok === false && <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>🔑 لا مفتاح في الخزنة</span>}
-                                    {g.fail_count >= 5 && <span style={{ fontSize: '0.66rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>فشل متكرر</span>}
+                                    {g.secret_ok === false && <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>🔑 لا مفتاح في الخزنة</span>}
+                                    {g.fail_count >= 5 && <span style={{ fontSize: '0.75rem', fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'var(--danger-light)', color: 'var(--danger)' }}>فشل متكرر</span>}
                                     <button onClick={() => toggleGatewayBlock(g)}
                                         style={{
-                                            padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 900, fontSize: '0.72rem',
+                                            padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 900, fontSize: '0.75rem',
                                             background: g.disabled_by_admin ? '#059669' : 'var(--danger)', color: '#fff',
                                         }}>
                                         {g.disabled_by_admin ? '✅ إعادة تفعيل' : '⛔️ إيقاف إداري'}
@@ -531,11 +531,11 @@ const AdminInvoices: React.FC = () => {
                             ['بوابة الدفع', PROVIDER_AR[viewRow.provider] || viewRow.provider],
                         ] as Array<[string, string]>).map(([k, v]) => (
                             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 4px', borderBottom: '1px dashed var(--border-color)' }}>
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', flexShrink: 0 }}>{k}</span>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', flexShrink: 0 }}>{k}</span>
                                 <span style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'left', wordBreak: 'break-all' }}>{v}</span>
                             </div>
                         ))}
-                        <p style={{ margin: '12px 0 14px', fontSize: '0.64rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                        <p style={{ margin: '12px 0 14px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                             سند مرجعي من منصة تاكي بصفتها وسيطاً تقنياً — المبلغ انتقل من العميل لحساب التاجر مباشرة عبر
                             بوابة مرخصة، والفاتورة الضريبية (ZATCA) تصدر من التاجر بصفته البائع.
                         </p>

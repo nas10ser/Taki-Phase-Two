@@ -71,7 +71,7 @@ const UpdateBanner: React.FC = () => {
                 <div style={{ fontSize: '0.88rem', fontWeight: 900 }}>
                     {isRTL ? 'تحديث جديد جاهز' : 'A new version is ready'}
                 </div>
-                <div style={{ fontSize: '0.72rem', fontWeight: 600, opacity: 0.95 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.95 }}>
                     {isRTL ? 'اضغط للتحديث بدون مغادرة التطبيق' : 'Tap to refresh — stay in the app'}
                 </div>
             </div>

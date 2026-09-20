@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import type { BookingMessage } from '../repositories/bookingRepository';
 import { chatAttachments } from '../services/chatAttachments';
+import { clickable } from '../utils/clickable';
 
 /**
  * المرفق داخل الفقاعة. المستودع خاصّ، فالصورة لا تُعرض بعنوان مباشر وإنما
@@ -37,7 +38,7 @@ const Attachment: React.FC<{ path: string; isRTL: boolean }> = ({ path, isRTL })
                     src={url}
                     alt={isRTL ? 'مرفق' : 'attachment'}
                     onError={() => setFailed(true)}
-                    onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                    {...clickable(() => window.open(url, '_blank', 'noopener,noreferrer'), isRTL ? 'فتح المرفق' : 'Open attachment')}
                     style={{ display: 'block', width: '100%', maxHeight: 220, objectFit: 'cover', cursor: 'zoom-in' }}
                 />
             )}
@@ -203,7 +204,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                 <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                     💬 {isRTL ? 'محادثة الطلب' : 'Order Chat'}
                 </div>
-                <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))' }}>
                     {isRTL ? `أنت: ${mineCount}/٣ — الطرف الآخر: ${theirCount}/٣` : `You: ${mineCount}/3 — Other: ${theirCount}/3`}
                 </div>
             </div>
@@ -269,7 +270,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                     color: '#b45309',
                     padding: 10,
                     borderRadius: 10,
-                    fontSize: '0.72rem',
+                    fontSize: '0.75rem',
                     fontWeight: 700,
                     textAlign: 'center',
                 }}>
@@ -286,7 +287,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                         border: '1px solid var(--border-color)',
                     }}>
                         <img src={pending.preview} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover' }} />
-                        <div style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                        <div style={{ flex: 1, minWidth: 0, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
                             {isRTL ? 'صورة مرفقة' : 'Image attached'}
                             <div style={{ fontWeight: 700, opacity: 0.8 }}>
                                 {(pending.file.size / 1048576).toFixed(1)} {isRTL ? 'م.ب' : 'MB'}

@@ -15,6 +15,8 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import { REGIONS, CITIES, geoName } from '../../data/mock';
 import { adminService } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from '../../components/MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 interface LocRow { id: string; name: string; name_en: string | null; type: 'mall' | 'market'; city_id: string; lat: number; lng: number; }
 
@@ -204,12 +206,11 @@ const AdminLocations: React.FC = () => {
                                 <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]" style={{ height: 240 }}>
                                     {form.city_id || (form.lat && form.lng) ? (
                                         <MapContainer center={mapCenter} zoom={form.lat ? 14 : 11} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                            <MapAutoResize />
                                             <TileLayer
-                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        subdomains="abc"
-                                        detectRetina={true}
-                                        maxZoom={19}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                        url={TAKI_TILE_URL}
+                                        maxZoom={TAKI_TILE_MAX_ZOOM}
+                                        attribution={TAKI_TILE_ATTRIBUTION}
                                     />
                                             <Recenter center={mapCenter} />
                                             <ClickMarker pos={[Number(form.lat) || 0, Number(form.lng) || 0]} onMove={(lat, lng) => setForm(f => ({ ...f, lat, lng }))} />

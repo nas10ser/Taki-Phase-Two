@@ -266,7 +266,7 @@ const Home: React.FC = () => {
                             {isRTL ? 'تفعيل' : 'Enable'}
                         </button>
                         <button onClick={dismissLiveBanner}
-                            style={{ background: 'transparent', color: '#fff', border: 'none', padding: '2px', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', opacity: 0.85 }}>
+                            style={{ background: 'transparent', color: '#fff', border: 'none', padding: '2px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', opacity: 0.85 }}>
                             {isRTL ? 'لاحقاً' : 'Later'}
                         </button>
                     </div>
@@ -500,8 +500,31 @@ const Home: React.FC = () => {
                     ))
                 ) : (
                     <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
-                        <div style={{ fontSize: '3rem', marginBottom: 15 }}>🔍</div>
-                        <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>{isRTL ? 'لم نجد عروضاً تطابق هذا البحث' : 'No deals found for this search'}</div>
+                        {/* v14.63 — لماذا الشبكة فارغة؟ ثلاث حالات لا واحدة. الجملة
+                            القديمة كانت تتّهم «بحثاً» لم يحدث أصلاً (اختار قسماً أو
+                            مدينة)، وبلا أي زرٍّ يُعيده إلى حالٍ يرى فيها شيئاً. */}
+                        <div style={{ fontSize: '3rem', marginBottom: 15 }}>{searchQuery.trim() ? '🔍' : '📭'}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
+                            {searchQuery.trim()
+                                ? (isRTL ? 'لم نجد عروضاً تطابق بحثك' : 'No deals match your search')
+                                : (activeCategory !== 'all' || activeGender !== 'all' || explicitLocationFilter)
+                                    ? (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')
+                                    : (isRTL ? 'لا توجد عروض متاحة الآن — عد قريباً' : 'No deals available right now — check back soon')}
+                        </div>
+                        {(searchQuery.trim() || activeCategory !== 'all' || activeGender !== 'all' || explicitLocationFilter) && (
+                            <button
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    setActiveCategory('all');
+                                    setActiveGender('all');
+                                    setTopLocation({ region: '', city: '', mall: '' });
+                                }}
+                                style={{
+                                    marginTop: 16, padding: '12px 24px', background: 'var(--primary)', color: 'white',
+                                    border: 'none', borderRadius: 12, fontWeight: 800, cursor: 'pointer',
+                                }}
+                            >{isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}</button>
+                        )}
                     </div>
                 )}
             </div>

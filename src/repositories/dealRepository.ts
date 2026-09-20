@@ -432,6 +432,32 @@ export const dealRepository = {
         }
     },
 
+    /**
+     * v14.63 — جلب عروضٍ بمعرّفاتها. صفحةُ «المفضلة» تحتاجها لأن `deals` في
+     * السياق **نافذةٌ مرقّمة** (keyset): مفضلةٌ قديمة خارج النافذة لا تظهر
+     * أبداً لو اكتفينا بترشيح المصفوفة — وهو نفس الفخّ الموثّق في
+     * صفحات المتجر والروابط المباشرة. القطع على ١٠٠ لأن `.in()` تذهب في سطر
+     * العنوان وله حدّ طول.
+     */
+    getByIds: async (ids: string[]): Promise<Deal[]> => {
+        if (!ids.length) return [];
+        const CHUNK = 100;
+        const out: Deal[] = [];
+        try {
+            for (let i = 0; i < ids.length; i += CHUNK) {
+                const { data, error } = await supabase
+                    .from('deals').select(DEAL_SELECT)
+                    .in('id', ids.slice(i, i + CHUNK));
+                if (error) throw error;
+                out.push(...(data || []).map(dealRepository.mapRowToDeal));
+            }
+            return out;
+        } catch (e) {
+            console.error('❌ Deals fetch by ids failed:', e);
+            return out;   // ما وصل يُعرض — لا شاشة فارغة بسبب قطعةٍ واحدة
+        }
+    },
+
     save: async (deal: Deal): Promise<void> => {
         // Optimistic local state update should be handled by the caller (AppContext)
         // Persistence is now purely remote.

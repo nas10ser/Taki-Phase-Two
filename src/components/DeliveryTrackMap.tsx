@@ -31,6 +31,8 @@ import L from 'leaflet';
 import { supabase } from '../services/supabaseClient';
 import { useApp } from '../context/AppContext';
 import useEscClose from '../hooks/useEscClose';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 type LatLng = [number, number];
 
@@ -458,7 +460,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                         <div style={{ fontWeight: 900, fontSize: '0.95rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             🚚 {t('أين طلبي؟', 'Where is my order?')}
                         </div>
-                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {storeName
                                 ? t(`من ${storeName} إلى عنوانك`, `From ${storeName} to your address`)
                                 : t('متابعة مباشرة لطلبك', 'Live view of your order')}
@@ -532,11 +534,11 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                         {live && (remainingKm !== null || etaMin !== null) && (
                             <div style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
                                 <div style={{ flex: 1, textAlign: 'center', background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.32)', borderRadius: 14, padding: '9px 8px' }}>
-                                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{t('المسافة المتبقّية', 'Remaining')}</div>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{t('المسافة المتبقّية', 'Remaining')}</div>
                                     <div style={{ fontSize: '1rem', fontWeight: 900, color: tone('blue'), marginTop: 3 }}>{distanceText || '—'}</div>
                                 </div>
                                 <div style={{ flex: 1, textAlign: 'center', background: 'rgba(13,148,136,0.10)', border: '1px solid rgba(13,148,136,0.32)', borderRadius: 14, padding: '9px 8px' }}>
-                                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{t('الوصول المتوقّع', 'Arriving in')}</div>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{t('الوصول المتوقّع', 'Arriving in')}</div>
                                     <div style={{ fontSize: '1rem', fontWeight: 900, color: tone('teal'), marginTop: 3 }}>{etaText || '—'}</div>
                                 </div>
                             </div>
@@ -545,12 +547,11 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                         {/* الخريطة */}
                         <div style={{ height: 'min(52vh, 380px)', width: '100%', position: 'relative', flexShrink: 0 }}>
                             <MapContainer center={center} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                <MapAutoResize />
                                 <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                    subdomains="abc"
-                                    detectRetina={true}
-                                    maxZoom={19}
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    url={TAKI_TILE_URL}
+                                    maxZoom={TAKI_TILE_MAX_ZOOM}
+                                    attribution={TAKI_TILE_ATTRIBUTION}
                                 />
                                 <TrackController
                                     points={points}
@@ -605,7 +606,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                                             {destLabel || t('عنوان التوصيل', 'Delivery address')}
                                         </div>
                                         {destDetails && (
-                                            <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.7 }}>
+                                            <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.7 }}>
                                                 {destDetails}
                                             </div>
                                         )}
@@ -614,7 +615,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                             )}
 
                             {/* آخر تحديث + دقّة الموقع — صدقٌ في وصف ما نعرفه ومتى عرفناه */}
-                            <div style={{ fontSize: '0.71rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                                 {netFail
                                     ? t('⚠️ تعذّر تحديث الموقع الآن — سنحاول تلقائياً بعد ثوانٍ.', '⚠️ Could not refresh right now — retrying automatically in a few seconds.')
                                     : live
@@ -629,7 +630,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                                                 : ''}
                             </div>
 
-                            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', opacity: 0.8, lineHeight: 1.7 }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', opacity: 0.8, lineHeight: 1.7 }}>
                                 {t('🔒 موقع المندوب يظهر لك وحدك، ويتوقّف فور تسليم طلبك.',
                                     "🔒 The courier's location is visible only to you, and stops the moment your order is delivered.")}
                             </div>

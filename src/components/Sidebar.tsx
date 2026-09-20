@@ -47,7 +47,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
     const menuItems = [
         { id: 'home', icon: '🏠', ar: 'الرئيسية', en: 'Home', path: '/' },
-        { id: 'favs', icon: '❤️', ar: 'المفضلة', en: 'Favorites', path: '/profile' },
+        // v14.63 — كان يفتح صفحة الحساب (إعدادات التنبيهات) لا المفضلة، والخاصّية
+        // كلها ميتة. الآن شاشةٌ حقيقية، والرمز إشارةٌ مرجعية فلا يلتبس بقلب المتابعة.
+        { id: 'favs', icon: '🔖', ar: 'المفضلة', en: 'Favorites', path: '/favorites' },
         ...(!isSellerView ? [{ id: 'bookings', icon: '📅', ar: 'حجوزاتي', en: 'My Bookings', path: '/bookings' }] : []),
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
         { id: 'contests', icon: '🎁', ar: 'المسابقات', en: 'Contests', path: '/contests' },
@@ -169,7 +171,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <div style={{ fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {user ? user.name : (isRTL ? 'زائر' : 'Guest')}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--gray-500, #64748b)', fontWeight: 700, marginTop: 2 }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--gray-500, #64748b)', fontWeight: 700, marginTop: 2 }}>
                             {user
                                 // v13.90 — لا تلميح لدور الأدمن في نصّ ظاهر: الأدمن
                                 // يُعرض كبائع إن ملك متجراً، وإلا كمشترٍ. (عرضٌ فقط،
@@ -261,7 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
                     {isRealAdmin && (
                         <div style={{ marginBottom: 16 }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <button onClick={() => { setViewAs('buyer'); onClose(); history.push('/'); }} 
                                     style={{ flex: 1, padding: '8px', borderRadius: 10, border: 'none', background: effectiveUserType === 'buyer' && viewAs ? 'var(--primary)' : 'var(--gray-100)', color: effectiveUserType === 'buyer' && viewAs ? 'white' : 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
@@ -305,7 +307,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                         goRegister(history);
                                     }
                                 }}
-                                style={{ width: '100%', padding: '8px', color: 'var(--text-secondary)', background: 'none', border: 'none', fontSize: '0.72rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '8px', color: 'var(--text-secondary)', background: 'none', border: 'none', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
                             >
                                 {isRTL ? 'حذف الحساب' : 'Delete Account'}
                             </button>

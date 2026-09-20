@@ -41,6 +41,7 @@ const SeasonalOffers  = lazy(() => import('./pages/SeasonalOffers'));
 const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
 const Contests        = lazy(() => import('./pages/Contests'));
+const Favorites       = lazy(() => import('./pages/Favorites'));
 const Terms           = lazy(() => import('./pages/legal/Terms'));
 const Privacy         = lazy(() => import('./pages/legal/Privacy'));
 const Refund          = lazy(() => import('./pages/legal/Refund'));
@@ -375,6 +376,7 @@ const App = () => {
                         <Route path="/admin" component={AdminDashboard} />
                         <Route path="/subscription" component={Subscription} />
                         <Route path="/contests" component={Contests} />
+                        <Route path="/favorites" component={Favorites} />
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />
                         <Route path="/bookings" component={Bookings} />

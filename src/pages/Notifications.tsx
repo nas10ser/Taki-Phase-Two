@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useNotifBrowse } from '../hooks/useNotifBrowse';
 import { useApp } from '../context/AppContext';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
+import SearchInput from '../components/SearchInput';
 
 const Notifications: React.FC = () => {
     const history = useHistory();
@@ -14,12 +15,19 @@ const Notifications: React.FC = () => {
         language,
         user,
         loading,
-        isAuthReady
+        isAuthReady,
+        customConfirm,
+        customAlert,
     } = useApp();
 
     const isRTL = language === 'ar';
     // v14.26 — الصفحات من الخادم. الحالة العامة تبقى مصدر ما يصل لحظياً فقط.
-    const feed = useNotifBrowse(user?.id, notifications);
+    // v14.63 — البحث يُمرَّر إلى الخادم، فيبحث في الجدول كلّه لا في المعروض.
+    // 🪤 كل الخطّافات قبل أي `return` مبكّر — أي خطّافٍ بعده يُسقط الصفحة عند
+    //    أوّل تبديل بين فرعَي «جارٍ التحميل» و«الشاشة».
+    const [q, setQ] = useState('');
+    const [busyId, setBusyId] = useState<string | null>(null);
+    const feed = useNotifBrowse(user?.id, notifications, q);
 
     // Wait for the auth gate before deciding the visitor is a guest.
     // Without this check, a refresh on /notifications briefly shows the
@@ -66,7 +74,9 @@ const Notifications: React.FC = () => {
                         <h1 style={{ fontSize: '1.5rem', fontWeight: 900, margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
                             📬 {isRTL ? 'الإشعارات' : 'Notifications'}
                             <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '4px 12px', borderRadius: 20 }}>
-                                {feed.total || myNotifications.length}
+                                {feed.searching
+                                    ? (isRTL ? `${feed.matched} من ${feed.total}` : `${feed.matched} of ${feed.total}`)
+                                    : feed.total}
                             </span>
                         </h1>
                         {unreadCount > 0 && (
@@ -80,6 +90,42 @@ const Notifications: React.FC = () => {
                                 }}
                             >
                                 ✓✓ {isRTL ? `قراءة الكل (${unreadCount})` : `Mark all read (${unreadCount})`}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* v14.63 — بحثٌ يمرّ بالخادم + حذفٌ لما قُرئ. كان لا بحث ولا حذف. */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                        <SearchInput
+                            value={q}
+                            onChange={setQ}
+                            aria-label={isRTL ? 'ابحث في إشعاراتك' : 'Search your notifications'}
+                            placeholder={isRTL ? '🔍 ابحث في إشعاراتك…' : '🔍 Search your notifications…'}
+                            style={{
+                                flex: 1, minWidth: 180, padding: '11px 14px', borderRadius: 14,
+                                border: '1.5px solid var(--border-color)', background: 'var(--body-bg)',
+                                color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.85rem',
+                            }}
+                        />
+                        {feed.total > 0 && (
+                            <button
+                                onClick={async () => {
+                                    const ok = await customConfirm(isRTL
+                                        ? 'حذف كل الإشعارات المقروءة؟ لا يمكن التراجع.'
+                                        : 'Delete every notification you have already read? This cannot be undone.');
+                                    if (!ok) return;
+                                    const n = await feed.removeRead();
+                                    await customAlert(n > 0
+                                        ? (isRTL ? `🗑 حُذف ${n} إشعاراً.` : `🗑 Deleted ${n} notifications.`)
+                                        : (isRTL ? 'لا يوجد إشعارٌ مقروء ليُحذف.' : 'There is nothing read to delete.'));
+                                }}
+                                style={{
+                                    padding: '11px 14px', borderRadius: 14, cursor: 'pointer',
+                                    border: '1.5px solid var(--border-color)', background: 'var(--card-bg)',
+                                    color: 'var(--text-secondary)', fontWeight: 800, fontSize: '0.8rem',
+                                }}
+                            >
+                                🗑 {isRTL ? 'حذف المقروء' : 'Delete read'}
                             </button>
                         )}
                     </div>
@@ -170,13 +216,13 @@ const Notifications: React.FC = () => {
                                 );
 
                                 return (
+                                    <div key={n.id} style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
                                     <button
-                                        key={n.id}
                                         onClick={() => {
                                             if (!n.isRead) markNotifRead(n.id);
                                             if (dest) history.push(dest);
                                         }}
-                                        style={{
+                                        style={{ flex: 1, minWidth: 0,
                                             textAlign: isRTL ? 'right' : 'left',
                                             background: n.isRead ? 'var(--card-bg)' : isHighPriority ? 'var(--danger-light)' : 'var(--notif-unread-bg)',
                                             border: n.isRead ? '1px solid var(--border-color)' : `1.5px solid ${isHighPriority ? 'var(--danger)' : 'var(--accent)'}`,
@@ -200,10 +246,28 @@ const Notifications: React.FC = () => {
                                         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5, fontWeight: 500 }}>
                                             {isRTL ? n.body.ar : n.body.en}
                                         </div>
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 800, marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}>
-                                            {new Date(n.createdAt).toLocaleString(isRTL ? 'ar-SA' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })}
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800, marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                                            {/* 🪤 `ar-SA` وحدها تُخرج التاريخ هجرياً — `-u-ca-gregory` إلزامية. */}
+                                            {new Date(n.createdAt).toLocaleString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })}
                                         </div>
                                     </button>
+                                    <button
+                                        onClick={async () => {
+                                            setBusyId(n.id);
+                                            const ok = await feed.remove(n);
+                                            setBusyId(null);
+                                            if (!ok) await customAlert(isRTL ? '❌ تعذّر حذف الإشعار.' : '❌ Could not delete that notification.');
+                                        }}
+                                        disabled={busyId === n.id}
+                                        aria-label={isRTL ? 'حذف هذا الإشعار' : 'Delete this notification'}
+                                        style={{
+                                            flexShrink: 0, width: 44, borderRadius: 16, cursor: 'pointer',
+                                            border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+                                            color: 'var(--danger)', fontSize: '0.95rem', fontWeight: 900,
+                                            opacity: busyId === n.id ? 0.5 : 1,
+                                        }}
+                                    >🗑</button>
+                                    </div>
                                 );
                             })}
                             {feed.hasMore && (
@@ -221,25 +285,40 @@ const Notifications: React.FC = () => {
                                     {feed.busy
                                         ? (isRTL ? 'جارٍ التحميل…' : 'Loading…')
                                         : (isRTL
-                                            ? `عرض المزيد — ظهر ${myNotifications.length} من ${feed.total}`
-                                            : `Show more — ${myNotifications.length} of ${feed.total}`)}
+                                            ? `عرض المزيد — ظهر ${myNotifications.length} من ${feed.searching ? feed.matched : feed.total}`
+                                            : `Show more — ${myNotifications.length} of ${feed.searching ? feed.matched : feed.total}`)}
                                 </button>
                             )}
                             {!feed.hasMore && feed.total > 40 && (
-                                <div style={{ textAlign: 'center', padding: '10px 0', fontSize: '0.75rem', fontWeight: 800, color: 'var(--gray-400)' }}>
+                                <div style={{ textAlign: 'center', padding: '10px 0', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)' }}>
                                     {isRTL ? `— هذه كل إشعاراتك (${feed.total}) —` : `— that is all (${feed.total}) —`}
                                 </div>
                             )}
                         </div>
                     ) : feed.busy && !feed.ready ? (
-                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)', fontWeight: 800 }}>
+                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)', fontWeight: 800 }}>
                             {isRTL ? 'جارٍ تحميل إشعاراتك…' : 'Loading your notifications…'}
                         </div>
                     ) : (
-                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
-                            <div style={{ fontSize: '4rem', marginBottom: 20 }}>📭</div>
-                            <h3 style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد إشعارات حالياً' : 'No notifications yet'}</h3>
-                            <p style={{ fontSize: '0.9rem', marginTop: 10 }}>{isRTL ? 'سنقوم بتنبيهك عند توفر عروض جديدة تهمك' : 'We will notify you when relevant new deals arrive'}</p>
+                        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '4rem', marginBottom: 20 }}>{feed.searching ? '🔍' : '📭'}</div>
+                            {feed.searching ? (
+                                <>
+                                    <h3 style={{ fontWeight: 800 }}>{isRTL ? 'لا إشعار يطابق بحثك' : 'No notification matches your search'}</h3>
+                                    <button
+                                        onClick={() => setQ('')}
+                                        style={{
+                                            marginTop: 14, padding: '10px 18px', borderRadius: 14, cursor: 'pointer',
+                                            border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, fontSize: '0.85rem',
+                                        }}
+                                    >{isRTL ? 'مسح البحث' : 'Clear search'}</button>
+                                </>
+                            ) : (
+                                <>
+                                    <h3 style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد إشعارات حالياً' : 'No notifications yet'}</h3>
+                                    <p style={{ fontSize: '0.9rem', marginTop: 10 }}>{isRTL ? 'سنقوم بتنبيهك عند توفر عروض جديدة تهمك' : 'We will notify you when relevant new deals arrive'}</p>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>

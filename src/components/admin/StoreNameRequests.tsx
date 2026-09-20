@@ -62,7 +62,7 @@ export const StoreNameRequests: React.FC = () => {
             <div style={{ fontWeight: 900, fontSize: '0.92rem', marginBottom: 4 }}>
                 🏷 {isRTL ? `طلبات تغيير اسم متجر (${rows.length})` : `Store rename requests (${rows.length})`}
             </div>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.8 }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.8 }}>
                 {isRTL
                     ? 'الاسم يظهر على كل عروض المتجر وفي الفواتير، ولا يغيّره التاجر وحده. تأكّد أنه لا ينتحل علامة قائمة.'
                     : 'The name appears on every deal and on invoices. Check it does not impersonate an existing brand.'}
@@ -76,7 +76,7 @@ export const StoreNameRequests: React.FC = () => {
                         <div style={{ fontWeight: 900, fontSize: '0.86rem' }}>
                             {r.current_name || '—'} <span style={{ opacity: 0.6 }}>←</span> {r.wanted_name}
                         </div>
-                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3 }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3 }}>
                             {r.owner_name || '—'}{r.owner_phone ? ` · ${r.owner_phone}` : ''}
                             {r.reason ? ` · ${r.reason}` : ''}
                         </div>

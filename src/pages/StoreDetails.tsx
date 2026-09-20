@@ -537,7 +537,7 @@ const StoreDetails: React.FC = () => {
         return (
             <div className="empty-state animate-fade-in" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ fontSize: '4rem', marginBottom: 16 }}>🏪</div>
-                <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>{isRTL ? 'المتجر غير موجود' : 'Store Not Found'}</div>
+                <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>{isRTL ? 'المتجر غير موجود' : 'Store Not Found'}</div>
                 <button onClick={() => history.push('/')} style={{ marginTop: 20, padding: '12px 28px', borderRadius: 14, background: 'var(--dark)', color: 'white', fontWeight: 800, border: 'none' }}>
                     {isRTL ? 'العودة' : 'Go Back'}
                 </button>
@@ -643,7 +643,7 @@ const StoreDetails: React.FC = () => {
                     {(() => {
                         const cell: React.CSSProperties = { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '2px 4px', minWidth: 0 };
                         const value: React.CSSProperties = { fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.1, whiteSpace: 'nowrap' };
-                        const label: React.CSSProperties = { fontSize: '0.68rem', fontWeight: 700, opacity: 0.65, whiteSpace: 'nowrap' };
+                        const label: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, whiteSpace: 'nowrap' };
                         const divider = <div aria-hidden style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.12)', margin: '4px 0' }} />;
                         return (
                             <div style={{
@@ -761,7 +761,7 @@ const StoreDetails: React.FC = () => {
                                 <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'الرقم الضريبي (اختياري — بعد التسجيل في الهيئة):' : 'VAT number (optional):'}</label>
                                 <input value={editVat} onChange={e => setEditVat(e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" placeholder="3XXXXXXXXXXXXXX3" style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none', direction: 'ltr' }} />
                                 {editVat && !/^3\d{13}3$/.test(editVat) && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fca5a5' }}>⚠️ {isRTL ? 'يجب أن يكون ١٥ رقماً يبدأ وينتهي بـ3' : 'Must be 15 digits starting and ending with 3'}</span>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fca5a5' }}>⚠️ {isRTL ? 'يجب أن يكون ١٥ رقماً يبدأ وينتهي بـ3' : 'Must be 15 digits starting and ending with 3'}</span>
                                 )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -931,7 +931,7 @@ const StoreDetails: React.FC = () => {
                                                 {b.isPrimary ? '⭐ ' : ''}{(isRTL ? b.nameAr : (b.nameEn || b.nameAr)) || (isRTL ? 'فرع' : 'Branch')}
                                             </div>
                                             {b.address && (
-                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>{b.address}</div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{b.address}</div>
                                             )}
                                         </div>
                                         {href && (
@@ -1052,14 +1052,14 @@ const StoreDetails: React.FC = () => {
                                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                                             {/* v12.72 — minWidth: 0 يمنع الأزرار من تمديد عمود الشبكة
                                                 خارج الشاشة (كانت الصفحة كلها تفيض أفقياً) */}
-                                            <button onClick={() => history.push(`/seller?tab=form&edit=${deal.id}&origin=active&source=store`)} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800 }}>✏️ {isRTL ? 'تعديل' : 'Edit'}</button>
-                                            <button onClick={() => togglePauseDeal(deal)} disabled={busyDealId === deal.id} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--secondary)', fontWeight: 800, opacity: busyDealId === deal.id ? 0.6 : 1 }}>{busyDealId === deal.id ? '⏳' : <>⏸️ {isRTL ? 'إيقاف' : 'Pause'}</>}</button>
-                                            <button onClick={() => handleDeleteDeal(deal.id)} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800 }}>🗑️ {isRTL ? 'حذف' : 'Del'}</button>
+                                            <button onClick={() => history.push(`/seller?tab=form&edit=${deal.id}&origin=active&source=store`)} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800 }}>✏️ {isRTL ? 'تعديل' : 'Edit'}</button>
+                                            <button onClick={() => togglePauseDeal(deal)} disabled={busyDealId === deal.id} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--secondary)', fontWeight: 800, opacity: busyDealId === deal.id ? 0.6 : 1 }}>{busyDealId === deal.id ? '⏳' : <>⏸️ {isRTL ? 'إيقاف' : 'Pause'}</>}</button>
+                                            <button onClick={() => handleDeleteDeal(deal.id)} style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800 }}>🗑️ {isRTL ? 'حذف' : 'Del'}</button>
                                         </div>
                                     )}
                                 </div>
                             )) : (
-                                <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
+                                <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📦</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد عروض حالياً' : 'No active deals'}</div>
                                 </div>
@@ -1085,26 +1085,26 @@ const StoreDetails: React.FC = () => {
                                                 }}
                                                 disabled={busyDealId === deal.id}
                                                 title={deal.status === 'paused' ? (isRTL ? 'استئناف العرض' : 'Resume Deal') : (isRTL ? 'تجديد العرض' : 'Renew Deal')}
-                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', fontWeight: 800, opacity: busyDealId === deal.id ? 0.6 : 1 }}>
+                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: deal.status === 'paused' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(2, 132, 199, 0.3)', background: deal.status === 'paused' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(2, 132, 199, 0.15)', color: deal.status === 'paused' ? 'var(--primary)' : '#0284c7', fontWeight: 800, opacity: busyDealId === deal.id ? 0.6 : 1 }}>
                                                 {busyDealId === deal.id ? '⏳' : (deal.status === 'paused' ? (isRTL ? '▶️ تفعيل' : '▶️ Resume') : (isRTL ? '🔄 تجديد' : '🔄 Renew'))}
                                             </button>
                                             <button
                                                 onClick={() => history.push(`/seller?tab=form&edit=${deal.id}&origin=expired&source=store`)}
                                                 title={isRTL ? 'تعديل العرض' : 'Edit Deal'}
-                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800 }}>
+                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800 }}>
                                                 ✏️ {isRTL ? 'تعديل' : 'Edit'}
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteDeal(deal.id)}
                                                 title={isRTL ? 'حذف العرض' : 'Delete Deal'}
-                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.68rem', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800 }}>
+                                                style={{ flex: 1, minWidth: 0, padding: '6px 2px', fontSize: '0.75rem', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontWeight: 800 }}>
                                                 🗑️ {isRTL ? 'حذف' : 'Del'}
                                             </button>
                                         </div>
                                     )}
                                 </div>
                             )) : (
-                                <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
+                                <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📜</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد عروض سابقة' : 'No past deals'}</div>
                                 </div>
@@ -1130,12 +1130,12 @@ const StoreDetails: React.FC = () => {
                                     </div>
                                     {/* v12.90 — توضيح أنه اسم المنتج المُقيَّم لا اسم شخص (لبس ناصر) */}
                                     {r.itemName && (
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 8 }}>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 8 }}>
                                             🏷️ {isRTL ? 'المنتج: ' : 'Product: '}<span style={{ color: 'var(--primary)', fontWeight: 800 }}>{r.itemName}</span>
                                         </div>
                                     )}
                                     <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', fontWeight: 500 }}>{r.comment}</p>
-                                    <div style={{ marginTop: 8, fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700 }}>{r.date}</div>
+                                    <div style={{ marginTop: 8, fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>{r.date}</div>
 
                                     {/* Existing reply (shown when not actively editing).
                                         Merchant gets Edit + Remove controls inline. */}
@@ -1151,7 +1151,7 @@ const StoreDetails: React.FC = () => {
                                                                 setReplyDrafts(prev => ({ ...prev, [r.id]: r.reply || '' }));
                                                                 setActiveReplyId(r.id);
                                                             }}
-                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}
                                                             aria-label={isRTL ? 'تعديل الرد' : 'Edit reply'}
                                                         >
                                                             ✏️ {isRTL ? 'تعديل' : 'Edit'}
@@ -1162,7 +1162,7 @@ const StoreDetails: React.FC = () => {
                                                                 const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
                                                                 if (ok) await addReply(r.dealId, r.id, '');
                                                             }}
-                                                            style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
                                                             aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
                                                         >
                                                             ✕ {isRTL ? 'حذف' : 'Remove'}
@@ -1228,7 +1228,7 @@ const StoreDetails: React.FC = () => {
                                 </div>
                                 );
                             }) : (
-                                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--gray-400)' }}>
+                                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>💬</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد تقييمات بعد' : 'No reviews yet'}</div>
                                 </div>

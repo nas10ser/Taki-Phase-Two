@@ -119,7 +119,7 @@ const SeasonalOffers: React.FC = () => {
                     <div style={{
                         display: 'inline-block', marginTop: 12, padding: '6px 14px', borderRadius: 999,
                         background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)',
-                        fontSize: '0.72rem', fontWeight: 800,
+                        fontSize: '0.75rem', fontWeight: 800,
                     }}>
                         {isRTL ? `🗓 من ${camp.publicFrom} إلى ${camp.publicTo}` : `🗓 ${camp.publicFrom} → ${camp.publicTo}`}
                     </div>
@@ -127,7 +127,7 @@ const SeasonalOffers: React.FC = () => {
                 {earlyPreview && (
                     <div style={{
                         marginTop: 10, display: 'inline-block', padding: '6px 14px', borderRadius: 999,
-                        background: 'rgba(0,0,0,0.28)', fontSize: '0.72rem', fontWeight: 800,
+                        background: 'rgba(0,0,0,0.28)', fontSize: '0.75rem', fontWeight: 800,
                     }}>
                         {sellerPreviewOwnOnly
                             ? (isRTL ? `👁 معاينة مبكرة — تعرض عروضك أنت فقط (مشاركات بقية التجار سرّية حتى الإطلاق${camp.publicFrom ? ` في ${camp.publicFrom}` : ''})` : '👁 Early preview — your own deals only')

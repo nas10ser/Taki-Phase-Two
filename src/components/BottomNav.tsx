@@ -43,7 +43,9 @@ const BottomNav: React.FC = () => {
     }
 
     return (
-        <div className="bottom-nav">
+        // v14.63 — معلَمٌ حقيقي (`<nav>`) باسم، و`aria-current` تقول لقارئ الشاشة
+        // أيّ تبويب أنت فيه، والشارة تُعلن «٣ غير مقروء» بدل رقمٍ عائم.
+        <nav className="bottom-nav" aria-label={isRTL ? 'التنقّل الرئيسي' : 'Main navigation'}>
             {items.map(item => {
                 const isActive = location.pathname === item.path ||
                     (item.path === '/' && location.pathname === '/');
@@ -53,9 +55,10 @@ const BottomNav: React.FC = () => {
                     <button key={item.id}
                         className={`nav-item ${isActive ? 'active' : ''}`}
                         onClick={() => history.push(item.path)}
+                        aria-current={isActive ? 'page' : undefined}
                         style={{ position: 'relative' }}
                     >
-                        <span style={{ fontSize: '1.3rem', marginBottom: 2 }}>{item.icon}</span>
+                        <span aria-hidden="true" style={{ fontSize: '1.3rem', marginBottom: 2 }}>{item.icon}</span>
                         {count > 0 && (
                             <span style={{
                                 position: 'absolute',
@@ -67,14 +70,16 @@ const BottomNav: React.FC = () => {
                                 background: '#ef4444',
                                 color: '#ffffff',
                                 borderRadius: 9,
-                                fontSize: '0.65rem',
+                                fontSize: '0.75rem',
                                 fontWeight: 900,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 border: '2px solid var(--card-bg)',
                                 boxShadow: '0 0 0 1px rgba(239,68,68,0.55), 0 2px 6px rgba(239,68,68,0.45)'
-                            }}>
+                            }}
+                                aria-label={isRTL ? `${count} غير مقروء` : `${count} unread`}
+                            >
                                 {count > 9 ? '9+' : count}
                             </span>
                         )}
@@ -86,11 +91,13 @@ const BottomNav: React.FC = () => {
                 className="nav-item"
                 onClick={toggleDarkMode}
                 title={isRTL ? 'الوضع الليلي' : 'Dark Mode'}
+                aria-label={darkMode ? (isRTL ? 'الوضع الفاتح' : 'Light mode') : (isRTL ? 'الوضع الليلي' : 'Dark mode')}
+                aria-pressed={darkMode}
             >
-                <span style={{ fontSize: '1.3rem', marginBottom: 2 }}>{darkMode ? '☀️' : '🌙'}</span>
+                <span aria-hidden="true" style={{ fontSize: '1.3rem', marginBottom: 2 }}>{darkMode ? '☀️' : '🌙'}</span>
                 <span style={{ fontWeight: 600 }}>{darkMode ? (isRTL ? 'فاتح' : 'Light') : (isRTL ? 'ليلي' : 'Dark')}</span>
             </button>
-        </div>
+        </nav>
     );
 };
 

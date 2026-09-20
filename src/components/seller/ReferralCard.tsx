@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { clickable } from '../../utils/clickable';
 
 const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }> = ({ isRTL, onAlert }) => {
     const [open, setOpen] = useState(false);
@@ -223,10 +224,10 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                                     <img
                                         src={qrUrl}
                                         alt="Referral QR"
-                                        onClick={() => setQrZoom(true)}
+                                        {...clickable(() => setQrZoom(true), isRTL ? 'تكبير رمز الإحالة' : 'Zoom referral code')}
                                         style={{ width: '100%', maxWidth: 340, height: 'auto', borderRadius: 10, cursor: 'zoom-in', display: 'block', margin: '0 auto' }}
                                     />
-                                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#0369a1', marginTop: 8 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1', marginTop: 8 }}>
                                         {isRTL ? '🔍 اضغط على الباركود لتكبيره ملء الشاشة' : '🔍 Tap the QR to view fullscreen'}
                                     </div>
                                     <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -245,7 +246,7 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                                                     : (isRTL ? '⬇️ حفظ الصورة' : '⬇️ Save image')}
                                         </button>
                                     </div>
-                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155', marginTop: 10, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155', marginTop: 10, lineHeight: 1.6 }}>
                                         {isRTL
                                             ? 'اطبع الباركود وعلّقه في متجرك أو أرسله لعملائك — مسحه يفتح صفحة التسجيل مباشرة في المتصفح (لا يحتاج العميل تحميل أي تطبيق).'
                                             : 'Print this QR in your store or send it to customers — scanning opens the signup page directly in the browser (no app install needed).'}

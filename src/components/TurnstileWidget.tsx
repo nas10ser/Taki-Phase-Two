@@ -158,7 +158,7 @@ const TurnstileWidget: React.FC<Props> = ({ onToken, isRTL = true, resetSignal =
                         onClick={retry}
                         style={{
                             padding: '6px 14px', borderRadius: 9, border: 'none', cursor: 'pointer',
-                            background: '#b45309', color: '#fff', fontWeight: 900, fontSize: '0.72rem',
+                            background: '#b45309', color: '#fff', fontWeight: 900, fontSize: '0.75rem',
                             fontFamily: 'inherit',
                         }}
                     >

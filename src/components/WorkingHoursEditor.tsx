@@ -81,7 +81,7 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                         <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
                             <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.7rem', padding: '2px 9px', borderRadius: 999 }}>{dot} {pill.text}</span>
-                            {enabled && <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700, direction: 'ltr' }}>{todayHoursLabel({ enabled, days }, isRTL)}</span>}
+                            {enabled && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700, direction: 'ltr' }}>{todayHoursLabel({ enabled, days }, isRTL)}</span>}
                         </div>
                     </div>
                 </div>
@@ -129,7 +129,7 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                                                 style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer' }}>📋 {isRTL ? 'للكل' : 'all'}</button>
                                         )}
                                         <button type="button" onClick={() => toggleDay(d, !isOpen)}
-                                            style={{ background: isOpen ? 'rgba(16,185,129,0.12)' : 'var(--gray-100)', color: isOpen ? 'var(--primary)' : 'var(--gray-500)', border: 'none', borderRadius: 8, padding: '4px 10px', fontSize: '0.72rem', fontWeight: 900, cursor: 'pointer', minWidth: 54 }}>
+                                            style={{ background: isOpen ? 'rgba(16,185,129,0.12)' : 'var(--gray-100)', color: isOpen ? 'var(--primary)' : 'var(--gray-500)', border: 'none', borderRadius: 8, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', minWidth: 54 }}>
                                             {isOpen ? (isRTL ? 'مفتوح' : 'Open') : (isRTL ? 'مغلق' : 'Closed')}
                                         </button>
                                     </div>
@@ -138,14 +138,14 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                                         {shifts.map((s, idx) => (
                                             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'من' : 'From'}</span>
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'من' : 'From'}</span>
                                                 <input type="time" value={s[0]} onChange={e => setShift(d, idx, 0, e.target.value)}
                                                     style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }} />
-                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'إلى' : 'to'}</span>
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'إلى' : 'to'}</span>
                                                 <input type="time" value={s[1]} onChange={e => setShift(d, idx, 1, e.target.value)}
                                                     style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.8rem' }} />
                                                 {idx > 0 && (
-                                                    <button type="button" onClick={() => removeShift(d, idx)} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', fontSize: '0.95rem', cursor: 'pointer' }}>🗑</button>
+                                                    <button type="button" onClick={() => removeShift(d, idx)} aria-label={isRTL ? 'حذف هذه الفترة' : 'Delete this shift'} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', fontSize: '0.95rem', cursor: 'pointer' }}>🗑</button>
                                                 )}
                                             </div>
                                         ))}

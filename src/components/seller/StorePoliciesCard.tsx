@@ -98,7 +98,7 @@ export const StorePoliciesCard: React.FC = () => {
                     {/* v14.24 — كهرمانيّ فاتح: الغامق (#b45309) على البطاقة الداكنة
                         تباينُه ٣:١ عند ١٢px — فالسطر الوحيد المقصود أن يلفت النظر كان
                         أصعب ما يُقرأ في الوضع الليلي. */}
-                    <div style={{ fontWeight: 700, fontSize: '0.74rem', color: empty ? 'var(--secondary, #f59e0b)' : 'var(--text-secondary)', marginTop: 3 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.75rem', color: empty ? 'var(--secondary, #f59e0b)' : 'var(--text-secondary)', marginTop: 3 }}>
                         {empty
                             ? (isRTL ? '⚠️ لم تكتبها بعد — صفحاتك تقول للمشتري: «لم يُعلن هذا المتجر سياسة استرداد»' : '⚠️ Not written yet — your pages tell buyers: "this store has not published a refund policy"')
                             : (isRTL ? '✅ معلنة في صفحة متجرك وفي كل عروضك' : '✅ Published on your store page and every deal')}
@@ -112,7 +112,7 @@ export const StorePoliciesCard: React.FC = () => {
                     <div style={{
                         padding: '10px 12px', borderRadius: 12, marginBottom: 14,
                         background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.3)',
-                        fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.9,
+                        fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.9,
                     }}>
                         {isRTL
                             ? 'ما تكتبه هنا يراه المشتري قبل الحجز، وهو مرجعك حين يطلب استرداداً. تاكي وسيطٌ لا تفرض سياسة ولا تبتّ فيها: الاسترداد والاستبدال بينك وبين المشتري.'

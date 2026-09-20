@@ -78,7 +78,7 @@ export const StorePolicies: React.FC<{ storeId?: string | null; compact?: boolea
 
             <div style={{
                 marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border-color)',
-                fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.85, color: 'var(--gray-400)',
+                fontSize: '0.75rem', fontWeight: 700, lineHeight: 1.85, color: 'var(--text-muted)',
             }}>
                 {isRTL
                     ? 'ℹ️ الاسترداد والاستبدال بينك وبين التاجر ووفق سياسته المعلنة. تاكي وسيط حجز: لا تحتفظ بالمال، ولا تفرض سياسة، ولا تبتّ في الخلاف — لكنها تُسجّل طلبك وتُبلّغ التاجر وتُثبت ما جرى.'

@@ -413,7 +413,7 @@ const CameraCapture: React.FC<Props> = ({
                         borderRadius: 14,
                         padding: '10px 6px',
                         fontWeight: 800,
-                        fontSize: '0.74rem',
+                        fontSize: '0.75rem',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',

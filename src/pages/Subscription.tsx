@@ -9,6 +9,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings, InvoiceCustomer } from '../utils/invoice';
 import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
 import { invoiceQrForPayment } from '../utils/zatcaQr';
+import { createT } from '../utils/helpers';
 
 // Gold ring that works on light AND dark themes: interior = theme card colour,
 // the 2px border is the gold gradient. Selected cards get a warm amber tint
@@ -49,7 +50,8 @@ const fetchInvoiceCustomer = async (merchantId: string): Promise<InvoiceCustomer
  * «🧾 فواتيري» (v12.17): فواتير اشتراكات التاجر نفسه — تُنشأ تلقائياً بعد كل
  * دفعة (تريغر يرسل إشعاراً أيضاً)، وتُطبع/تُحفظ PDF بنفس مولّد فواتير الأدمن.
  */
-const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: () => void }> = ({ userId, merchantName, onBlocked }) => {
+const MyInvoices: React.FC<{ userId: string; merchantName: string; isRTL: boolean; onBlocked: () => void }> = ({ userId, merchantName, isRTL, onBlocked }) => {
+    const t = createT(isRTL);
     const [rows, setRows] = useState<InvoicePayment[]>([]);
     const [taxSettings, setTaxSettings] = useState<InvoiceTaxSettings>({ entity_name: 'TAKI — تاكي' });
 
@@ -68,17 +70,21 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
     if (rows.length === 0) return null;
     return (
         <div className="mt-8 bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <h2 className="text-lg font-extrabold text-[var(--text-primary)] mb-1">🧾 فواتيري</h2>
-            <p className="text-[11px] text-[var(--text-secondary)] font-bold mb-3">كل اشتراك تدفعه تصدر فاتورته تلقائياً هنا — اطبعها أو احفظها PDF.</p>
+            <h2 className="text-lg font-extrabold text-[var(--text-primary)] mb-1">🧾 {t('فواتيري', 'My invoices')}</h2>
+            <p className="text-xs text-[var(--text-secondary)] font-bold mb-3">
+                {t('كل اشتراك تدفعه تصدر فاتورته تلقائياً هنا — اطبعها أو احفظها PDF.',
+                   'Every subscription you pay for is invoiced automatically here — print it or save it as a PDF.')}
+            </p>
             <div className="space-y-2">
                 {rows.map(p => (
                     <div key={p.id} className="flex items-center gap-2 border border-[var(--border-color)] rounded-xl px-3 py-2">
                         <div className="flex-1 min-w-0">
                             <div className="text-xs font-extrabold text-[var(--text-primary)]">
-                                {new Date(p.paid_at || p.created_at).toLocaleDateString('ar-SA')} — {(Number(p.amount) || 0).toLocaleString('ar-SA', { maximumFractionDigits: 2 })} ر.س
+                                {new Date(p.paid_at || p.created_at).toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-GB')} — {(Number(p.amount) || 0).toLocaleString(isRTL ? 'ar-SA' : 'en-US', { maximumFractionDigits: 2 })} {t('ر.س', 'SAR')}
                             </div>
-                            <div className="text-[10px] font-bold" style={{ color: invoiceIsPaid(p) ? '#059669' : '#b45309' }}>
-                                {invoiceIsPaid(p) ? '✅ مدفوعة' : (p.status || 'معلّقة')}{p.branches_count ? ` • ${p.branches_count} مواقع` : ''}
+                            <div className="text-xs font-bold" style={{ color: invoiceIsPaid(p) ? '#059669' : '#b45309' }}>
+                                {invoiceIsPaid(p) ? t('✅ مدفوعة', '✅ Paid') : (p.status || t('معلّقة', 'Pending'))}
+                                {p.branches_count ? ` • ${p.branches_count} ${t('مواقع', 'locations')}` : ''}
                             </div>
                         </div>
                         <button
@@ -89,10 +95,10 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
                                     invoiceQrForPayment(p, taxSettings),
                                     fetchInvoiceCustomer(userId),
                                 ]);
-                                if (!openPrintWindow(`فاتورة ${p.id}`, buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr, customer: cust }))) onBlocked();
+                                if (!openPrintWindow(t(`فاتورة ${p.id}`, `Invoice ${p.id}`), buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr, customer: cust }))) onBlocked();
                             }}
-                            className="px-3 py-1.5 rounded-lg text-[11px] font-extrabold bg-teal-50 text-teal-700 border border-teal-200 active:scale-95">
-                            🖨 فاتورة
+                            className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-teal-50 text-teal-700 border border-teal-200 active:scale-95">
+                            🖨 {t('فاتورة', 'Invoice')}
                         </button>
                     </div>
                 ))}
@@ -103,7 +109,12 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; onBlocked: ()
 
 const Subscription: React.FC = () => {
     const history = useHistory();
-    const { user, storeProfiles, customAlert } = useApp();
+    const { user, storeProfiles, customAlert, language } = useApp();
+    const isRTL = language === 'ar';
+    const t = createT(isRTL);
+    // أرقام المبالغ: أرقام عربية-هندية في الواجهة العربية، لاتينية في الإنجليزية.
+    const nf = (n: number) => n.toLocaleString(isRTL ? 'ar-SA' : 'en-US');
+    const pkgName = (p: LocationPackage) => (isRTL ? p.ar : (p.en || p.ar));
     const [packages, setPackages] = useState<LocationPackage[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -182,7 +193,8 @@ const Subscription: React.FC = () => {
                     { p_package_id: selected.id },
                 );
                 if (subErr || !applied?.success) {
-                    await customAlert('❌ تعذّر تفعيل الاشتراك: ' + (subErr?.message || applied?.error || 'خطأ غير معروف'));
+                    await customAlert(t('❌ تعذّر تفعيل الاشتراك: ', '❌ Could not activate the subscription: ')
+                        + (subErr?.message || applied?.error || t('خطأ غير معروف', 'unknown error')));
                     return;
                 }
                 // تسجيل الدفعة → تصدر الفاتورة ويصل الإشعار تلقائياً (تريغر v12.17). best-effort.
@@ -193,31 +205,34 @@ const Subscription: React.FC = () => {
                         p_max: applied.max_branches, p_plan_label: selected.ar,
                     });
                 } catch { /* الفاتورة لا تعطّل الاشتراك */ }
-                await customAlert('✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي. 🧾 فاتورتك جاهزة أسفل هذه الصفحة.');
+                await customAlert(t(
+                    '✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي. 🧾 فاتورتك جاهزة أسفل هذه الصفحة.',
+                    '✅ Subscribed successfully! Thank you for trusting TAKI. 🧾 Your invoice is ready at the bottom of this page.',
+                ));
                 history.push('/seller');
             } else {
-                await customAlert('❌ فشل عملية الدفع: ' + (response.error || 'خطأ غير معروف'));
+                await customAlert(t('❌ فشل عملية الدفع: ', '❌ Payment failed: ') + (response.error || t('خطأ غير معروف', 'unknown error')));
             }
         } catch (err) {
             console.error(err);
-            await customAlert('❌ حدث خطأ أثناء تفعيل الاشتراك.');
+            await customAlert(t('❌ حدث خطأ أثناء تفعيل الاشتراك.', '❌ Something went wrong while activating the subscription.'));
         } finally {
             setIsPaying(false);
         }
     };
 
     if (!user || user.userType !== 'seller') {
-        return <div className="p-8 text-center text-red-500 font-tajawal">غير مصرح لك بالدخول لهذه الصفحة.</div>;
+        return <div className="p-8 text-center text-red-500 font-tajawal">{t('غير مصرح لك بالدخول لهذه الصفحة.', 'You are not allowed to open this page.')}</div>;
     }
 
     if (!isPaymentEnabled) {
         return (
-            <div className="p-8 text-center font-tajawal animate-fade-in" dir="rtl">
-                <h2 className="text-2xl font-bold mb-4 text-[var(--text-primary)]">التطبيق حالياً مجاني بالكامل 🎉</h2>
-                <p className="text-[var(--text-secondary)] mb-6">لا حاجة للاشتراك في الوقت الحالي بناءً على صلاحيات الإدارة.</p>
-                <button onClick={() => history.push('/seller')} className="bg-taki-green text-white px-6 py-2 rounded-lg font-bold">العودة للوحة التحكم</button>
-                <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id}
-                    onBlocked={() => { customAlert('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.'); }} />
+            <div className="p-8 text-center font-tajawal animate-fade-in" dir={isRTL ? 'rtl' : 'ltr'}>
+                <h2 className="text-2xl font-bold mb-4 text-[var(--text-primary)]">{t('التطبيق حالياً مجاني بالكامل 🎉', 'The platform is completely free right now 🎉')}</h2>
+                <p className="text-[var(--text-secondary)] mb-6">{t('لا حاجة للاشتراك في الوقت الحالي بناءً على صلاحيات الإدارة.', 'No subscription is needed at the moment, by the platform’s own settings.')}</p>
+                <button onClick={() => history.push('/seller')} className="bg-taki-green text-white px-6 py-2 rounded-lg font-bold">{t('العودة للوحة التحكم', 'Back to dashboard')}</button>
+                <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id} isRTL={isRTL}
+                    onBlocked={() => { customAlert(t('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.', 'Pop-ups must be allowed to open the invoice.')); }} />
             </div>
         );
     }
@@ -225,28 +240,32 @@ const Subscription: React.FC = () => {
     return (
         <div
             className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in"
-            dir="rtl"
+            dir={isRTL ? 'rtl' : 'ltr'}
             style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}
         >
             <div className="flex justify-between items-center gap-3 mb-3">
-                <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">باقات الاشتراك 🚀</h1>
+                <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">{t('باقات الاشتراك 🚀', 'Subscription plans 🚀')}</h1>
                 <button
                     onClick={() => history.goBack()}
                     className="shrink-0 flex items-center gap-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold text-sm px-4 py-2 rounded-full shadow-sm active:scale-95 transition"
-                    aria-label="رجوع"
+                    aria-label={t('رجوع', 'Back')}
                 >
-                    <span aria-hidden>→</span> رجوع
+                    <span aria-hidden>{isRTL ? '→' : '←'}</span> {t('رجوع', 'Back')}
                 </button>
             </div>
             <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
-                اختر الباقة المناسبة لعدد فروعك (مواقعك الجغرافية المختلفة). <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً، ألغِ متى شئت، <b className="text-emerald-600">بصفر عمولة</b> على الحجوزات.
+                {isRTL ? (
+                    <>اختر الباقة المناسبة لعدد فروعك (مواقعك الجغرافية المختلفة). <b className="text-amber-600">كل الباقات شهرية</b> — ادفع شهرياً، ألغِ متى شئت، <b className="text-emerald-600">بصفر عمولة</b> على الحجوزات.</>
+                ) : (
+                    <>Pick the plan that matches how many locations you cover. <b className="text-amber-600">Every plan is monthly</b> — pay monthly, cancel any time, with <b className="text-emerald-600">zero commission</b> on bookings.</>
+                )}
             </p>
 
             {/* Current subscription status + cancel/resume (v11.38) */}
             <SubscriptionStatusCard />
 
             <h2 className="text-lg font-extrabold text-[var(--text-primary)] mb-3">
-                {currentMax > 0 ? 'الترقية أو تغيير الباقة' : 'اختر باقتك'}
+                {currentMax > 0 ? t('الترقية أو تغيير الباقة', 'Upgrade or change your plan') : t('اختر باقتك', 'Choose your plan')}
             </h2>
 
             {loading ? (
@@ -254,7 +273,7 @@ const Subscription: React.FC = () => {
                     {[0, 1, 2, 3].map((i) => <div key={i} className="h-44 bg-[var(--gray-100)] rounded-2xl animate-pulse" />)}
                 </div>
             ) : packages.length === 0 ? (
-                <div className="text-center text-[var(--text-secondary)] py-12">لا توجد باقات متاحة حالياً.</div>
+                <div className="text-center text-[var(--text-secondary)] py-12">{t('لا توجد باقات متاحة حالياً.', 'No plans are available right now.')}</div>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {packages.map((p) => {
@@ -266,12 +285,12 @@ const Subscription: React.FC = () => {
                                 key={p.id}
                                 onClick={() => setSelectedId(p.id)}
                                 style={goldRing(isSel)}
-                                className="text-right p-5 relative flex flex-col"
+                                className="text-start p-5 relative flex flex-col"
                             >
                                 {/* Badge row — reserves height so all cards align */}
                                 <div className="flex items-start justify-between gap-2 min-h-[28px] mb-1">
                                     {isCurrent ? (
-                                        <span className="text-[10px] font-extrabold bg-emerald-500 text-white px-2.5 py-1 rounded-full shadow-sm">باقتك الحالية</span>
+                                        <span className="text-xs font-extrabold bg-emerald-500 text-white px-2.5 py-1 rounded-full shadow-sm">{t('باقتك الحالية', 'Your current plan')}</span>
                                     ) : <span />}
                                     {isSel ? (
                                         <span
@@ -281,26 +300,32 @@ const Subscription: React.FC = () => {
                                     ) : <span className="w-7 h-7 rounded-full border-2 border-amber-300/50 shrink-0" />}
                                 </div>
 
-                                <div className="text-xl font-black text-[var(--text-primary)]">{p.ar}</div>
+                                <div className="text-xl font-black text-[var(--text-primary)]">{pkgName(p)}</div>
                                 <div className="text-xs font-semibold text-[var(--text-secondary)] mt-1">
-                                    {p.max === 1 ? 'فرع واحد فقط' : `حتى ${branchesShort(p.max, true)}`}
+                                    {p.max === 1
+                                        ? t('فرع واحد فقط', 'One location only')
+                                        : t(`حتى ${branchesShort(p.max, true)}`, `up to ${branchesShort(p.max, false)}`)}
                                 </div>
 
                                 <div className="flex items-end gap-1.5 mt-4">
-                                    <span className="text-[2.6rem] leading-none font-black" style={{ color: '#b45309' }}>{eff.toLocaleString('ar-SA')}</span>
-                                    <span className="text-[var(--text-secondary)] font-bold mb-1 text-sm">ر.س / شهرياً</span>
+                                    <span className="text-[2.6rem] leading-none font-black" style={{ color: '#b45309' }}>{nf(eff)}</span>
+                                    <span className="text-[var(--text-secondary)] font-bold mb-1 text-sm">{t('ر.س / شهرياً', 'SAR / month')}</span>
                                 </div>
                                 {p.discount > 0 && (
                                     <div className="mt-2 flex items-center gap-2">
-                                        <span className="text-xs text-[var(--text-secondary)] line-through">{p.price.toLocaleString('ar-SA')} ر.س</span>
-                                        <span className="text-[10px] font-extrabold bg-red-500 text-white px-2 py-0.5 rounded-full">وفّر {p.discount}%</span>
+                                        <span className="text-xs text-[var(--text-secondary)] line-through">{nf(p.price)} {t('ر.س', 'SAR')}</span>
+                                        <span className="text-xs font-extrabold bg-red-500 text-white px-2 py-0.5 rounded-full">{t(`وفّر ${p.discount}%`, `Save ${p.discount}%`)}</span>
                                     </div>
                                 )}
 
                                 <div className="mt-4 pt-4 border-t border-amber-300/40 space-y-2.5">
-                                    <Feature>عروض وحجوزات غير محدودة</Feature>
-                                    <Feature>صفر عمولة على المبيعات</Feature>
-                                    <Feature>{p.max === 1 ? 'تغطية فرع واحد (موقع جغرافي واحد)' : `تغطية حتى ${branchesDetailed(p.max, true)}`}</Feature>
+                                    <Feature>{t('عروض وحجوزات غير محدودة', 'Unlimited deals and bookings')}</Feature>
+                                    <Feature>{t('صفر عمولة على المبيعات', 'Zero commission on sales')}</Feature>
+                                    <Feature>
+                                        {p.max === 1
+                                            ? t('تغطية فرع واحد (موقع جغرافي واحد)', 'Covers one branch (a single geographic location)')
+                                            : t(`تغطية حتى ${branchesDetailed(p.max, true)}`, `Covers up to ${branchesDetailed(p.max, false)}`)}
+                                    </Feature>
                                 </div>
                             </button>
                         );
@@ -316,15 +341,21 @@ const Subscription: React.FC = () => {
                     style={{ background: 'var(--gold-grad)' }}
                 >
                     {isPaying
-                        ? 'جاري التحويل لبوابة الدفع...'
+                        ? t('جاري التحويل لبوابة الدفع...', 'Redirecting to the payment gateway…')
                         : (() => {
                             // v13.36 — الزر يعرض ما سيُحصَّل فعلاً: مع ضريبة مضافة
                             // فوق السعر يظهر الإجمالي شاملاً (شفافية كاملة قبل الدفع)
                             const net = effectivePrice(selected);
                             const vatDue = chargeVat(net);
                             return vatDue > 0
-                                ? `اشترك في ${selected.ar} — ${fmtSAR(net + vatDue)} ر.س/شهر (شامل الضريبة)`
-                                : `اشترك في ${selected.ar} — ${net.toLocaleString('ar-SA')} ر.س/شهر`;
+                                ? t(
+                                    `اشترك في ${selected.ar} — ${fmtSAR(net + vatDue)} ر.س/شهر (شامل الضريبة)`,
+                                    `Subscribe to ${pkgName(selected)} — ${fmtSAR(net + vatDue)} SAR/month (VAT included)`,
+                                )
+                                : t(
+                                    `اشترك في ${selected.ar} — ${nf(net)} ر.س/شهر`,
+                                    `Subscribe to ${pkgName(selected)} — ${nf(net)} SAR/month`,
+                                );
                         })()}
                     {!isPaying && <span>💳</span>}
                 </button>
@@ -339,16 +370,22 @@ const Subscription: React.FC = () => {
                 const incl = taxSettings?.prices_include_vat !== false;
                 if (!on) {
                     return (
-                        <p className="text-center text-[11px] font-bold text-[var(--text-secondary)] mt-3 leading-relaxed">
-                            🧾 لا تُحصَّل ضريبة قيمة مضافة على الاشتراك حالياً (المنشأة قبل التسجيل الضريبي) — عند التفعيل تُضاف {rate}٪ فوق سعر الباقة وتظهر في فاتورتك تلقائياً.
+                        <p className="text-center text-xs font-bold text-[var(--text-secondary)] mt-3 leading-relaxed">
+                            🧾 {t(
+                                `لا تُحصَّل ضريبة قيمة مضافة على الاشتراك حالياً (المنشأة قبل التسجيل الضريبي) — عند التفعيل تُضاف ${rate}٪ فوق سعر الباقة وتظهر في فاتورتك تلقائياً.`,
+                                `No VAT is charged on subscriptions yet (the entity is not VAT-registered) — once it is, ${rate}% is added on top of the plan price and appears on your invoice automatically.`,
+                            )}
                         </p>
                     );
                 }
                 if (incl) {
                     const s = splitInclusive(price, rate);
                     return (
-                        <p className="text-center text-[11px] font-extrabold mt-3 leading-relaxed" style={{ color: '#0d9488' }}>
-                            🧾 السعر شامل ضريبة القيمة المضافة {rate}٪ — الأساس {fmtSAR(s.base)} ر.س + الضريبة {fmtSAR(s.vat)} ر.س = {fmtSAR(s.total)} ر.س.
+                        <p className="text-center text-xs font-extrabold mt-3 leading-relaxed" style={{ color: '#0d9488' }}>
+                            🧾 {t(
+                                `السعر شامل ضريبة القيمة المضافة ${rate}٪ — الأساس ${fmtSAR(s.base)} ر.س + الضريبة ${fmtSAR(s.vat)} ر.س = ${fmtSAR(s.total)} ر.س.`,
+                                `Price includes ${rate}% VAT — base ${fmtSAR(s.base)} SAR + VAT ${fmtSAR(s.vat)} SAR = ${fmtSAR(s.total)} SAR.`,
+                            )}
                         </p>
                     );
                 }
@@ -357,16 +394,25 @@ const Subscription: React.FC = () => {
                 const vat = vatOnTop(price, rate);
                 return (
                     <div className="text-center mt-3 leading-relaxed rounded-xl py-2 px-3 mx-auto max-w-sm" style={{ background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.3)' }}>
-                        <div className="text-[11px] font-bold text-[var(--text-secondary)]">سعر الباقة {fmtSAR(price)} ر.س + ضريبة القيمة المضافة {rate}٪ ({fmtSAR(vat)} ر.س)</div>
-                        <div className="text-[13px] font-extrabold" style={{ color: '#0d9488' }}>💳 الإجمالي المستحق: {fmtSAR(price + vat)} ر.س</div>
+                        <div className="text-xs font-bold text-[var(--text-secondary)]">
+                            {t(
+                                `سعر الباقة ${fmtSAR(price)} ر.س + ضريبة القيمة المضافة ${rate}٪ (${fmtSAR(vat)} ر.س)`,
+                                `Plan price ${fmtSAR(price)} SAR + ${rate}% VAT (${fmtSAR(vat)} SAR)`,
+                            )}
+                        </div>
+                        <div className="text-[13px] font-extrabold" style={{ color: '#0d9488' }}>
+                            💳 {t(`الإجمالي المستحق: ${fmtSAR(price + vat)} ر.س`, `Total due: ${fmtSAR(price + vat)} SAR`)}
+                        </div>
                     </div>
                 );
             })()}
-            <p className="text-center text-xs text-[var(--text-secondary)] mt-4">بوابة دفع آمنة وموثوقة (PayTabs / Moyasar)</p>
+            <p className="text-center text-xs text-[var(--text-secondary)] mt-4">
+                {t('بوابة دفع آمنة وموثوقة (PayTabs / Moyasar)', 'Secure, trusted payment gateway (PayTabs / Moyasar)')}
+            </p>
 
             {/* فواتير التاجر — تصدر تلقائياً بعد كل اشتراك (v12.17) */}
-            <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id}
-                onBlocked={() => { customAlert('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.'); }} />
+            <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id} isRTL={isRTL}
+                onBlocked={() => { customAlert(t('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.', 'Pop-ups must be allowed to open the invoice.')); }} />
         </div>
     );
 };

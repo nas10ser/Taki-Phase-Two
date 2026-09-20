@@ -52,6 +52,8 @@ import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import NumericField from '../NumericField';
 import { getCurrentPositionSafe, geoErrorMessage } from '../../utils/helpers';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from '../MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 type ZoneKind = 'circle' | 'rect' | 'polygon';
 
@@ -1322,7 +1324,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                         return (
                                             <button key={b.id} type="button" onClick={() => pickBranch(b.id)} style={chip(picked)}>
                                                 {hasGeo ? '🏬' : '⚠️'} {brName(b)}
-                                                <span style={{ fontWeight: 800, opacity: 0.7, fontSize: '0.74rem' }}>
+                                                <span style={{ fontWeight: 800, opacity: 0.7, fontSize: '0.75rem' }}>
                                                     {` · ${count} ${t('نطاق', 'zone')}`}
                                                 </span>
                                             </button>
@@ -1377,12 +1379,11 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
 
                         <div ref={mapBoxRef} style={{ height: 320, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                             <MapContainer center={mapCenter} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                <MapAutoResize />
                                 <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                    subdomains="abc"
-                                    detectRetina={true}
-                                    maxZoom={19}
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    url={TAKI_TILE_URL}
+                                    maxZoom={TAKI_TILE_MAX_ZOOM}
+                                    attribution={TAKI_TILE_ATTRIBUTION}
                                 />
                                 <DrawController onTap={onTap} focus={focus} />
 
@@ -1497,7 +1498,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
 
                         {/* مفتاح الألوان: ما لم يُفسَّر يُخمَّن — والتخمين هنا يعني نطاقاً في المدينة الخطأ. */}
                         {zones.length > 0 && (
-                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
                                 <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: C_SAVED_MINE, marginInlineEnd: 5 }} />
                                     {branches.length > 1 ? t('نطاقات هذا الفرع', 'This branch’s zones') : t('نطاقاتك المحفوظة', 'Your saved zones')}</span>
                                 {branches.length > 1 && (
@@ -1610,7 +1611,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                             <div style={{ ...noteBox('amber'), marginTop: 10 }}>ℹ️ {blockReason}</div>
                         )}
 
-                        <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 10, textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 10, textAlign: 'center' }}>
                             {editingId
                                 // تعديل صفٍّ قائم لا يضيف صفّاً، فلا يُحتسب مرّة ثانية على السقف.
                                 ? t(`النطاقات الفعّالة: ${activeZones} من 10 — تعديل نطاق قائم لا يستهلك خانة جديدة`,
@@ -1701,7 +1702,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                                         <div style={{ fontWeight: 900, fontSize: '0.84rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                             {z.name || kindLabel}
                                                         </div>
-                                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                                                             {kindLabel}
                                                             {z.fee != null ? ` · ${t('رسوم', 'fee')} ${z.fee} ${t('ر.س', 'SAR')}` : ` · ${t('رسوم المتجر', 'store fee')}`}
                                                             {!z.is_active ? ` · ${t('موقوف', 'inactive')}` : ''}

@@ -47,6 +47,8 @@ import L from 'leaflet';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../services/supabaseClient';
 import { getCurrentPositionSafe, geoErrorMessage, normalizeArabicNumerals } from '../utils/helpers';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 /** حدود المملكة تقريباً — نفس أرقام حارس القاعدة، ليُرفض الخطأ قبل الشبكة. */
 const KSA = { latMin: 16, latMax: 33, lngMin: 34, lngMax: 56 };
@@ -226,9 +228,15 @@ interface Props {
      * عدّاد لا قيمة منطقية — ليعمل في المرة الثانية أيضاً.
      */
     focusSignal?: number;
+    /** تُنادى بعد كل تغيير ناجح — تستعملها ورقة الحجز لتُعيد قراءة العناوين بلا إغلاق. (v14.63) */
+    onChanged?: () => void;
+    /** فتحٌ تلقائي لمحرّر «عنوان جديد» حين لا عنوان محفوظ — المشتري ضغط «أضف عنوان» فلا يُعرض له فراغ. */
+    autoOpenNew?: boolean;
+    /** داخل طبقة الحجز: الطبقة تملك الإطار والحشو فتُسقطهما البطاقة ولا يزدوجان. */
+    embedded?: boolean;
 }
 
-const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
+const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0, onChanged, autoOpenNew = false, embedded = false }) => {
     const { user, language, updateProfile, customAlert, customConfirm, liveLocation } = useApp();
     const isRTL = language === 'ar';
     const t = (ar: string, en: string) => (isRTL ? ar : en);
@@ -300,6 +308,10 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
     }, [userId]);
 
     useEffect(() => { void load(); }, [load]);
+
+    /** إعادة قراءة **بعد تغيير** — وتُبلّغ المالك. القراءة الأولى وزرّ إعادة
+     *  المحاولة يبقيان على `load` المجرّدة: لا تغيير فيهما يُبلَّغ عنه. (v14.63) */
+    const reload = useCallback(async () => { await load(); onChanged?.(); }, [load, onChanged]);
 
     // وصولٌ فوري من شاشة الحجز: مرّر الصفحة إلى البطاقة وأبرِزها لحظةً.
     // التأخير القصير يترك المتصفح يُنهي تخطيط التبويب قبل قياس الموضع.
@@ -531,6 +543,17 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
         setFocusSeq(s => s + 1);
     };
 
+
+    // v14.63 — قادمٌ من ورقة الحجز بلا عنوان محفوظ: يُفتح المحرّر فوراً مرّةً
+    // واحدة. `autoOpenedRef` يمنع إعادة الفتح بعد أن يُغلقه المستخدم بيده.
+    const autoOpenedRef = useRef(false);
+    useEffect(() => {
+        if (!autoOpenNew || autoOpenedRef.current || loading || list.length > 0) return;
+        autoOpenedRef.current = true;
+        openEditor(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoOpenNew, loading, list.length]);
+
     const closeEditor = () => { cancelLookup(); setEditing(null); setAccuracy(null); };
 
     const center = useMemo<[number, number]>(() => {
@@ -616,7 +639,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                 // RLS ترفض بصمت: صفر صفوف مع `error === null`. ونُغلق المحرّر
                 // ونُحدّث القائمة لأن الصفّ الذي نُعدّله لم يعد موجوداً أصلاً.
                 if (!data || data.length === 0) {
-                    await load();
+                    await reload();
                     closeEditor();
                     customAlert(t('⚠️ لم يُحدَّث أي عنوان — يبدو أنه حُذف من جهاز آخر. حدّثنا القائمة.',
                                   '⚠️ No address was updated — it seems it was deleted on another device. The list has been refreshed.'));
@@ -631,7 +654,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                     throw new Error(t('لم يُحفظ العنوان.', 'The address was not saved.'));
                 }
             }
-            await load();
+            await reload();
             closeEditor();
             customAlert(editing
                 ? t('✅ تم تحديث العنوان.', '✅ Address updated.')
@@ -653,12 +676,12 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
             if (error) throw error;
             // صفر صفوف = رفضٌ صامت من RLS أو صفٌّ اختفى: نُحدّث القائمة لا نكتفي برسالة.
             if (!data || data.length === 0) {
-                await load();
+                await reload();
                 customAlert(t('⚠️ لم يتغيّر شيء — قد يكون العنوان حُذف من جهاز آخر. حدّثنا القائمة.',
                               '⚠️ Nothing changed — the address may have been deleted on another device. The list has been refreshed.'));
                 return;
             }
-            await load();
+            await reload();
             customAlert(t('⭐ صار هذا عنوانك الافتراضي — عليه يُقاس التوصيل في حجوزاتك القادمة.',
                           '⭐ This is now your default address — delivery is measured from it.'));
         } catch (e: any) {
@@ -685,7 +708,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
             // وصفر صفوف يعني أن قائمتنا متأخّرة عن القاعدة، فنُحدّثها قبل الرسالة
             // وإلا بقي الصفّ الشبح معروضاً ويعيد المشتري المحاولة بلا نتيجة.
             if (!data || data.length === 0) {
-                await load();
+                await reload();
                 customAlert(t('⚠️ لم يُحذف أي عنوان — يبدو أنه حُذف من جهاز آخر. حدّثنا القائمة.',
                               '⚠️ Nothing was deleted — it seems it is already gone. The list has been refreshed.'));
                 return;
@@ -718,7 +741,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                     }
                 }
             }
-            await load();
+            await reload();
             customAlert(warn || t('🗑️ تم حذف العنوان.', '🗑️ Address deleted.'));
         } catch (e: any) {
             customAlert(addrErrorText(e));
@@ -751,7 +774,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
         <div
             ref={rootRef}
             id="delivery-address"
-            style={{
+            style={embedded ? { background: 'transparent', padding: 0 } : {
                 background: 'var(--card-bg)',
                 border: highlight ? '2px solid var(--primary)' : '1px solid var(--border-color)',
                 padding: 20, borderRadius: 20,
@@ -844,7 +867,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                                             {t('⚠️ بلا تفاصيل — أضِفها ليصل التاجر', '⚠️ No details — add them so the merchant arrives')}
                                         </span>
                                         <button type="button" onClick={() => openEditor(a)} disabled={!!busyId}
-                                            style={{ ...smallBtn, padding: '5px 10px', fontSize: '0.72rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}>
+                                            style={{ ...smallBtn, padding: '5px 10px', fontSize: '0.75rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}>
                                             ✏️ {t('أضِف التفاصيل', 'Add details')}
                                         </button>
                                     </div>
@@ -855,12 +878,12 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                                     </div>
                                 )}
                                 {a.lat !== null && a.lng !== null ? (
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 6, direction: 'ltr', textAlign: isRTL ? 'right' : 'left', opacity: 0.75 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 6, direction: 'ltr', textAlign: isRTL ? 'right' : 'left', opacity: 0.75 }}>
                                         {a.lat.toFixed(5)}, {a.lng.toFixed(5)}
                                     </div>
                                 ) : (
                                     // صفٌّ بلا إحداثيّ سليم لا يصلح للتوصيل — نقولها بدل أن نطبع «0.00000».
-                                    <div style={{ fontSize: '0.74rem', color: 'var(--danger)', fontWeight: 800, marginTop: 6, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 800, marginTop: 6, lineHeight: 1.6 }}>
                                         {t('⚠️ بلا موقع على الخريطة — عدّله وحدّد النقطة ليصلح للتوصيل.',
                                            '⚠️ No map point — edit it and drop the pin so delivery can use it.')}
                                     </div>
@@ -900,12 +923,11 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                     </div>
                     <div style={{ height: 260, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative' }}>
                         <MapContainer center={center} zoom={point ? 16 : 13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                            <MapAutoResize />
                             <TileLayer
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                subdomains="abc"
-                                detectRetina={true}
-                                maxZoom={19}
-                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                url={TAKI_TILE_URL}
+                                maxZoom={TAKI_TILE_MAX_ZOOM}
+                                attribution={TAKI_TILE_ATTRIBUTION}
                             />
                             <PinController point={point} focusSeq={focusSeq} focusZoom={focusZoom} onPick={pick} />
                             {/* دائرة الدقّة: تُظهر للمستخدم كم هامش خطأ جهازه فعلاً،
@@ -982,14 +1004,14 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                                 {t('تفاصيل العنوان', 'Address details')}
                             </span>
                             {revLoading ? (
-                                <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>
                                     {t('⏳ جارٍ قراءة العنوان…', '⏳ Reading the address…')}
                                 </span>
                             ) : revFromMap && details.trim() ? (
                                 // نُخبر صاحب العنوان صراحةً أن هذا ليس ما كتبه، ليراجعه
                                 // ويصحّحه — لا ليظنّه نصّاً مقفلاً لا يُعدَّل.
                                 <span style={{
-                                    fontSize: '0.72rem', fontWeight: 900, borderRadius: 999, padding: '3px 9px',
+                                    fontSize: '0.75rem', fontWeight: 900, borderRadius: 999, padding: '3px 9px',
                                     background: 'var(--notif-unread-bg)', color: 'var(--primary)',
                                     border: '1px solid var(--primary)',
                                 }}>
@@ -1020,7 +1042,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                             style={{ ...inputStyle, minHeight: 78, resize: 'none' }}
                         />
                         {!details.trim() && !revLoading && (
-                            <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--danger)', marginTop: 6, lineHeight: 1.6 }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--danger)', marginTop: 6, lineHeight: 1.6 }}>
                                 {t('⚠️ بلا تفاصيل قد لا يجدك التاجر — أضِف الحي والشارع ورقم المبنى.',
                                    '⚠️ Without details the merchant may not find you — add the district, street and building number.')}
                             </div>
@@ -1043,7 +1065,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0 }) => {
                             style={{ ...inputStyle, flex: '1 1 130px', direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }}
                         />
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6 }}>
                         {t('الدبّوس يحدّد إن كان المتجر يصلك، أمّا التفاصيل والجوال فهما ما يستعمله التاجر ليصل إلى بابك — نقرأ الحي والشارع من الخريطة تلقائياً، وراجِعهما وأضِف رقم المبنى والدور.',
                            'The pin decides whether the store reaches you; the details and phone are what gets the merchant to your door — we read the district and street from the map automatically, so review them and add the building and floor.')}
                     </div>

@@ -188,7 +188,7 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
                 <Kpi emoji="✅" value={`${nf(totals.completed)}/${nf(totals.bookings)}`} label={t('مكتملة', 'Completed')} accent={C.primary} small
                     hint={t('حجوزات استلمها العميل فعلاً من المجموع', 'Bookings actually picked up, of total')} />
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8, background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: 14, padding: '10px 14px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8, background: 'var(--card-bg)', border: '1px dashed var(--border-color)', borderRadius: 14, padding: '10px 14px' }}>
                 💡 {t(
                     '«المبيعات» = قيمة كل الحجوزات غير الملغاة بسعرك المخفَّض (تشمل ما لم يُستلم بعد). «وفّرته للعملاء» = فرق التخفيض الذي قدّمته — رقم تسويقي قوي يبيّن قيمة متجرك للمتسوقين.',
                     '"Revenue" = value of all non-cancelled bookings at your discounted price (includes not-yet-picked-up). "Savings given" = the discount value you handed customers — a strong marketing number.'
@@ -201,7 +201,7 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
                     {([7, 30, 90] as RangeDays[]).map(r => (
                         <button key={r} onClick={() => setRange(r)}
                             style={{
-                                flex: 1, padding: '7px 0', borderRadius: 10, fontSize: '0.72rem', fontWeight: 800,
+                                flex: 1, padding: '7px 0', borderRadius: 10, fontSize: '0.75rem', fontWeight: 800,
                                 border: '1px solid var(--border-color)', cursor: 'pointer',
                                 background: range === r ? 'var(--primary)' : 'transparent',
                                 color: range === r ? '#fff' : 'var(--text-secondary)',
@@ -242,7 +242,7 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
                                     </div>
                                     <div style={{ textAlign: isRTL ? 'left' : 'right', flexShrink: 0 }}>
                                         <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)' }}>{nf(d.bookings)} 🎟️</div>
-                                        <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{nf(d.views)} 👁️ · {d.conv.toFixed(0)}%</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{nf(d.views)} 👁️ · {d.conv.toFixed(0)}%</div>
                                     </div>
                                 </div>
                             );
@@ -285,7 +285,7 @@ const Kpi: React.FC<{ emoji: string; value: string; label: string; accent: strin
     <div style={{ background: 'var(--card-bg)', padding: '14px 10px', borderRadius: 18, border: '1px solid var(--border-color)', textAlign: 'center', boxShadow: 'var(--shadow-sm)', borderTop: `3px solid ${accent}` }}>
         <div style={{ fontSize: '1.25rem', marginBottom: 3 }}>{emoji}</div>
         <div style={{ fontSize: small ? '0.82rem' : '1.15rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.15 }}>{value}</div>
-        <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 3 }}>{label}</div>
+        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 3 }}>{label}</div>
         {hint && <div style={{ fontSize: '0.56rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
     </div>
 );
@@ -301,7 +301,7 @@ const Section: React.FC<{ title: string; subtitle?: string; children: React.Reac
 const MiniStat: React.FC<{ value: string; label: string }> = ({ value, label }) => (
     <div>
         <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)' }}>{value}</div>
-        <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{label}</div>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{label}</div>
     </div>
 );
 
@@ -383,7 +383,7 @@ const HBars: React.FC<{ data: { label: string; value: number }[]; color: string;
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {data.map((d, i) => (
                 <div key={i}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.label}</span>
                         <span style={{ color: 'var(--text-secondary)', flexShrink: 0, marginInlineStart: 8 }}>{fmt(d.value)}</span>
                     </div>

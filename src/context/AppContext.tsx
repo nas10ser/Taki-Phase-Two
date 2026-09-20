@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation, findNearestCity } from '../data/mock';
 import { readRememberedFix, rememberFix, forgetFix, isFreshFix } from '../utils/geoMemory';
@@ -20,6 +20,7 @@ import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
+import { guestFavorites } from '../utils/favoritesStore';
 
 interface StoreProfile {
     phone?: string;
@@ -326,8 +327,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // behind "الموقع ثقيل"). Cleared on sign-out so a re-login re-hydrates.
     const lastSignInHydratedIdRef = useRef<string | null>(null);
     useEffect(() => { userRef.current = user; }, [user]);
-    const [favorites, setFavorites] = useState<string[]>([]);
-    const favoritesRef = useRef<string[]>([]);
+    // v14.63 — الزائر يحفظ محلياً، فتظهر مفضلته من أول رسم بلا وميض.
+    const [favorites, setFavorites] = useState<string[]>(() => guestFavorites.read());
+    // يبدأ بنفس القيمة الأولى للحالة (مفضلة الزائر) لا بمصفوفة فارغة.
+    const favoritesRef = useRef<string[]>(favorites);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
     const [followedMerchants, setFollowedMerchants] = useState<string[]>([]);
     const [blockedMerchants, setBlockedMerchants] = useState<string[]>([]);
@@ -426,6 +429,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     useEffect(() => { ratingPromptRef.current = ratingPrompt; }, [ratingPrompt]);
     useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
     useEffect(() => { languageRef.current = language; }, [language]);
+
+    // v14.63 — وسم لغة الصفحة واتجاهها: **مصدر واحد**. قبلها كان `document.dir`
+    // يُكتب في ثلاثة مواضع متفرّقة (تبديل يدوي + مساري ترطيب)، و`<html lang>`
+    // **لا يُكتب أبداً** — فيبقى النظام يظنّ الصفحة عربية مهما اختار المستخدم:
+    // قارئ الشاشة ينطق الإنجليزية بمحرّك عربي، والمتصفّح يعرض ترجمةً في غير
+    // محلّها، ومحرّكات البحث تُصنّف الصفحة لغةً خاطئة. الأثر الآن يعمل عند أول
+    // رسم وعند كل تبديل وبعد أي ترطيب من تفضيل الخادم — لا يمكن أن يُنسى أحدها.
+    // 🪤 `useLayoutEffect` لا `useEffect`: الأخير يعمل **بعد** رسم المتصفّح،
+    // فكان التبديل يرسم إطاراً واحداً بالاتجاه القديم — وهذا ارتدادٌ عن الكتابة
+    // المتزامنة التي كانت داخل `setLanguage`. الآن يُضبط قبل أول رسم.
+    useLayoutEffect(() => {
+        try {
+            const el = document.documentElement;
+            el.lang = language;
+            el.dir = language === 'ar' ? 'rtl' : 'ltr';
+        } catch { /* بيئة بلا DOM */ }
+    }, [language]);
     const customAlertRef = useRef(customAlert);
     const customConfirmRef = useRef(customConfirm);
     useEffect(() => { customAlertRef.current = customAlert; }, [customAlert]);
@@ -875,7 +895,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             const cuLang = (currentUser as any).preferredLang;
                             if (cuLang === 'ar' || cuLang === 'en') {
                                 setLanguageState(cuLang);
-                                document.dir = cuLang === 'ar' ? 'rtl' : 'ltr';
                             }
                             // Mark this id as hydrated so a SIGNED_IN that
                             // Supabase re-fires on focus doesn't re-pull.
@@ -896,7 +915,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             // Background hydration of user-specific data — does
                             // not gate isAuthReady; pages render immediately.
                             Promise.allSettled([
-                                userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + uid, f); }),
+                                // v14.63 — ما حفظه الزائر قبل التسجيل يُدمج في حسابه
+                                // ثم يُمسح محلياً، فلا يضيع ولا يتكرّر.
+                                (async () => {
+                                    const pending = guestFavorites.read();
+                                    if (pending.length) { await userRepository.mergeFavorites(pending); guestFavorites.clear(); }
+                                    const f = await userRepository.getFavorites();
+                                    setFavorites(f); writeSnapshot('fav_' + uid, f);
+                                })(),
                                 notificationRepository.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + uid, p.rows); }),
                                 import('../repositories/bookingRepository').then(({ bookingRepository }) =>
                                     // Pass the deals we already have so getByUser
@@ -1125,7 +1151,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             const pref = (profile as any).preferredLang;
                             if (pref === 'ar' || pref === 'en') {
                                 setLanguageState(pref);
-                                document.dir = pref === 'ar' ? 'rtl' : 'ltr';
                             }
 
                             // Targeted cleanup — keep global-sync alive so
@@ -1301,26 +1326,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [blockedMerchants, followedMerchants, user]);
 
+    /**
+     * v14.63 — «المفضلة» صارت خاصّية حقيقية. ثلاثة فروق جوهرية عن القديم:
+     *  ١) **نداءٌ واحد لكل نقرة** بدل قراءة-مفارقة-كتابة (أربع جولات شبكة)،
+     *     فلا تضيع إحدى نقرتين سريعتين بسباق «آخر كاتبٍ يفوز».
+     *  ٢) **تراجعٌ عند الفشل**: لا يبقى القلب ممتلئاً وقد رفضت القاعدة الحفظ.
+     *  ٣) 🔴 **لا متابعة تلقائية للتاجر**: كان حفظ عرضٍ واحد يشترك المشتري
+     *     صامتاً في كل إشعارات ذلك المتجر — بلا إفصاح ولا زرّ. الحفظ للعرض،
+     *     والمتابعة لها زرّها المستقلّ.
+     *  والزائر (غير المسجَّل) يحفظ في جهازه، وتُدمج مفضلته في حسابه عند الدخول.
+     */
     const toggleFavorite = useCallback(async (id: string) => {
-        const isAdding = !favorites.includes(id);
-        const newFavs = isAdding
-            ? [...favorites, id]
-            : favorites.filter(f => f !== id);
-        
-        // 1. Update State (Optimistic)
-        setFavorites(newFavs);
+        const prev = favoritesRef.current;
+        const isAdding = !prev.includes(id);
+        const next = isAdding ? [...prev, id] : prev.filter(f => f !== id);
 
-        // 2. Update Remote (Final Truth)
-        await userRepository.setFavorites(newFavs);
+        setFavorites(next);
+        favoritesRef.current = next;          // فوراً: نقرتان متتاليتان لا تتصادمان
 
-        // If favoriting, also follow the merchant for notifications
-        if (isAdding) {
-            const deal = deals.find(d => d.id === id);
-            if (deal && !followedMerchants.includes(deal.storeId)) {
-                await toggleFollowMerchant(deal.storeId);
-            }
+        const uid = userRef.current?.id;
+        if (!uid) { guestFavorites.write(next); return; }   // زائر: جهازه فقط
+
+        writeSnapshot('fav_' + uid, next);
+        const ok = isAdding
+            ? await userRepository.addFavorite(id)
+            : await userRepository.removeFavorite(id);
+        if (!ok) {                                           // تراجع صريح
+            setFavorites(prev);
+            favoritesRef.current = prev;
+            writeSnapshot('fav_' + uid, prev);
         }
-    }, [favorites, deals, followedMerchants, toggleFollowMerchant]);
+    }, []);
 
     const updateStoreProfile = useCallback((storeId: string, profile: StoreProfile) => {
         // Optimistic local update — UI reacts immediately.
@@ -2914,7 +2950,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const setLanguage = useCallback((lang: 'ar' | 'en') => {
         setLanguageState(lang);
-        document.dir = lang === 'ar' ? 'rtl' : 'ltr';
         // Persist preference on the server when signed in. Local
         // storage is no longer the source of truth — see migration v8.13.
         if (user) {

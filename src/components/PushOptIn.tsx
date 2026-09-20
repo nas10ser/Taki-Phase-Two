@@ -112,7 +112,7 @@ export const PushOptIn: React.FC<{ compact?: boolean }> = ({ compact = false }) 
                 aria-label={isRTL ? 'إخفاء' : 'Dismiss'}
                 style={{
                     background: 'none', border: 'none', cursor: 'pointer', padding: 4,
-                    color: 'var(--gray-400)', fontSize: '1rem', fontWeight: 900, lineHeight: 1,
+                    color: 'var(--text-muted)', fontSize: '1rem', fontWeight: 900, lineHeight: 1,
                 }}
             >✕</button>
         </div>
@@ -176,7 +176,7 @@ export const PushToggleRow: React.FC = () => {
                 <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
                     {isRTL ? 'إشعارات الجوّال' : 'Push notifications'}
                 </div>
-                <div style={{ fontWeight: 600, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
+                <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
                     {why}
                 </div>
             </div>

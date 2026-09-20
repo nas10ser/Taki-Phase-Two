@@ -195,7 +195,11 @@ export const userRepository = {
                         .select('deal_id')
                         .eq('user_id', sUser.id);
 
-                    if (!error && favRows && favRows.length > 0) {
+                    // 🪤 v14.63 — كان الشرط `favRows.length > 0`: من أزال **آخر**
+                    // مفضلة له يسقط إلى نسخة `user_metadata` القديمة فتعود
+                    // مفضلاته المحذوفة عند أول تحديث. الجدول هو الحقيقة،
+                    // والمصفوفة الفارغة **جوابٌ صحيح** لا غيابُ جواب.
+                    if (!error && favRows) {
                         return favRows.map(r => r.deal_id);
                     }
                 } catch (tableError) {
@@ -214,53 +218,53 @@ export const userRepository = {
     },
 
     /**
-     * Sync favorites to Supabase `favorites` table
-     * Uses upsert/delete to keep in sync
+     * v14.63 — مفضلة حقيقية: **صفٌّ واحد لكل نقرة**.
+     * ═══════════════════════════════════════════════════════════════════
+     * كانت `setFavorites` تقرأ كل الصفوف ثم تفارق ثم تكتب ثم تنادي
+     * `auth.updateUser` — أربع جولات شبكة لكل نقرة، و«آخر كاتبٍ يفوز» فنقرتان
+     * سريعتان تضيّع إحداهما، ونداءُ `updateUser` يُطلق حدث `USER_UPDATED`
+     * فيُعاد ترطيب الحساب كلّه. والأهمّ: كانت **صامتة** — لا تتحقّق من شيء،
+     * وقاعدة المشروع أن كل كتابة تُثبَت بـ`.select()` وعدد صفوف، لأن ما ترفضه
+     * RLS يعود بـ`error = null` وصفر صفوف.
      */
-    setFavorites: async (favorites: string[]): Promise<void> => {
-        // Direct remote sync
+    addFavorite: async (dealId: string): Promise<boolean> => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id;
+            if (!userId) return false;
+            const { data, error } = await supabase
+                .from('favorites')
+                .upsert({ user_id: userId, deal_id: dealId }, { onConflict: 'user_id,deal_id' })
+                .select('deal_id');
+            if (error) { console.warn('addFavorite:', error.message); return false; }
+            return (data?.length ?? 0) > 0;
+        } catch (e) { console.warn('addFavorite failed', e); return false; }
+    },
 
+    removeFavorite: async (dealId: string): Promise<boolean> => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id;
+            if (!userId) return false;
+            const { data, error } = await supabase
+                .from('favorites').delete()
+                .eq('user_id', userId).eq('deal_id', dealId)
+                .select('deal_id');
+            if (error) { console.warn('removeFavorite:', error.message); return false; }
+            return (data?.length ?? 0) > 0;
+        } catch (e) { console.warn('removeFavorite failed', e); return false; }
+    },
+
+    /** دمج مفضلة الزائر في حسابه عند أول دخول — بلا أن يضيع ما حفظه قبل التسجيل. */
+    mergeFavorites: async (ids: string[]): Promise<void> => {
+        if (!ids.length) return;
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const userId = session?.user?.id;
             if (!userId) return;
-
-            // Get current remote favorites
-            try {
-                const { data: currentRemote } = await supabase
-                    .from('favorites')
-                    .select('deal_id')
-                    .eq('user_id', userId);
-
-                const remoteFavIds = (currentRemote || []).map(r => r.deal_id);
-
-                // Determine additions and removals
-                const toAdd = favorites.filter(f => !remoteFavIds.includes(f));
-                const toRemove = remoteFavIds.filter(f => !favorites.includes(f));
-
-                // Add new favorites
-                if (toAdd.length > 0) {
-                    const insertRows = toAdd.map(dealId => ({ user_id: userId, deal_id: dealId }));
-                    await supabase.from('favorites').insert(insertRows);
-                }
-
-                // Remove unfavorited
-                if (toRemove.length > 0) {
-                    for (const dealId of toRemove) {
-                        await supabase.from('favorites').delete().eq('user_id', userId).eq('deal_id', dealId);
-                    }
-                }
-
-                // Also keep user_metadata in sync as fallback
-                await supabase.auth.updateUser({ data: { favorites } });
-
-                logger.log('✅ Favorites synced to remote');
-            } catch (tableError) {
-                console.warn('Favorites table not available, skipping remote sync');
-            }
-        } catch (error) {
-            console.error('Failed to sync favorites to remote', error);
-        }
+            await supabase.from('favorites')
+                .upsert(ids.map(deal_id => ({ user_id: userId, deal_id })), { onConflict: 'user_id,deal_id' });
+        } catch (e) { console.warn('mergeFavorites failed', e); }
     },
 
     /**

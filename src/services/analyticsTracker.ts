@@ -22,7 +22,8 @@ import { supabase } from './supabaseClient';
 export type AnalyticsEvent =
     | 'deal_view'          // فُتحت صفحة المنتج
     | 'deal_click'         // نُقرت بطاقة المنتج
-    | 'click_favorite'     // أُضيف للمفضلة
+    | 'click_favorite'     // حُفظ العرض في المفضلة
+    | 'click_follow'       // تُوبع المتجر (v14.63 — كان يُسجَّل خطأً كـclick_favorite)
     | 'click_share'        // شُورك
     | 'booking_started'    // فُتحت ورقة الحجز
     | 'booking_completed'  // اكتمل الحجز

@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { subscriptionRepository, SubscriptionStatus } from '../repositories/subscriptionRepository';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, packageLabel, branchesShort } from '../data/packages';
+import { createT } from '../utils/helpers';
 
 /**
  * SubscriptionStatusCard (v11.38) — a professional, world-class subscription
@@ -13,11 +14,12 @@ import { LocationPackage, effectivePrice, packageLabel, branchesShort } from '..
  * the full card is used on the /subscription manage page.
  */
 
-const fmtDate = (iso: string | null): string => {
+const fmtDate = (iso: string | null, isRTL = false): string => {
     if (!iso) return '—';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    // 🪤 `ar-SA` وحدها تُخرج التاريخ هجرياً — `-u-ca-gregory` إلزامية.
+    return d.toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 interface Props {
@@ -29,7 +31,11 @@ interface Props {
 
 const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey = 0, onChanged }) => {
     const history = useHistory();
-    const { user, customConfirm, customAlert } = useApp();
+    const { user, customConfirm, customAlert, language } = useApp();
+    const isRTL = language === 'ar';
+    const t = createT(isRTL);
+    const fd = (iso: string | null) => fmtDate(iso, isRTL);
+    const nf = (n: number) => n.toLocaleString(isRTL ? 'ar-SA' : 'en-US');
     const [sub, setSub] = useState<SubscriptionStatus | null>(null);
     const [pkgs, setPkgs] = useState<LocationPackage[]>([]);
     const [loading, setLoading] = useState(true);
@@ -62,7 +68,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
     const isTrial = sub.plan === 'trial';
 
     const matched = pkgs.find(p => p.max === sub.maxBranches);
-    const planName = matched?.ar || packageLabel(sub.maxBranches, true);
+    const planName = (isRTL ? matched?.ar : (matched?.en || matched?.ar)) || packageLabel(sub.maxBranches, isRTL);
     const price = sub.amount > 0 ? sub.amount : (matched ? effectivePrice(matched) : 0);
 
     // Colour for the days-remaining counter / accent.
@@ -71,10 +77,10 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
         : (daysLeft !== null && daysLeft <= 7) ? '#f59e0b'
         : '#10b981';
 
-    const statusText = expired ? 'منتهٍ'
-        : canceled ? `سيتوقّف — فعّال حتى ${fmtDate(sub.expiresAt)}`
-        : isTrial ? 'تجريبي'
-        : 'نشط';
+    const statusText = expired ? t('منتهٍ', 'Expired')
+        : canceled ? t(`سيتوقّف — فعّال حتى ${fd(sub.expiresAt)}`, `Ending — active until ${fd(sub.expiresAt)}`)
+        : isTrial ? t('تجريبي', 'Trial')
+        : t('نشط', 'Active');
 
     const goManage = () => history.push('/subscription');
     // On the manage page the packages grid is right below the card, so the
@@ -82,15 +88,19 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
     const scrollToPackages = () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
     const doCancel = async () => {
-        const ok = await customConfirm(
-            `سيتوقّف التجديد التلقائي، ويبقى اشتراكك فعّالاً حتى ${fmtDate(sub.expiresAt)} (تستطيع التراجع في أي وقت). متابعة؟`,
-        );
+        const ok = await customConfirm(t(
+            `سيتوقّف التجديد التلقائي، ويبقى اشتراكك فعّالاً حتى ${fd(sub.expiresAt)} (تستطيع التراجع في أي وقت). متابعة؟`,
+            `Auto-renewal will stop, and your subscription stays active until ${fd(sub.expiresAt)} (you can undo this any time). Continue?`,
+        ));
         if (!ok) return;
         setBusy(true);
         const r = await subscriptionRepository.setAutoRenew(false);
         setBusy(false);
-        if (!r.success) { await customAlert('❌ ' + (r.error || 'تعذّر الإلغاء')); return; }
-        await customAlert(`✅ تم إيقاف التجديد التلقائي. اشتراكك فعّال حتى ${fmtDate(sub.expiresAt)}.`);
+        if (!r.success) { await customAlert('❌ ' + (r.error || t('تعذّر الإلغاء', 'Could not cancel'))); return; }
+        await customAlert(t(
+            `✅ تم إيقاف التجديد التلقائي. اشتراكك فعّال حتى ${fd(sub.expiresAt)}.`,
+            `✅ Auto-renewal stopped. Your subscription stays active until ${fd(sub.expiresAt)}.`,
+        ));
         await load();
         onChanged?.();
     };
@@ -99,8 +109,8 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
         setBusy(true);
         const r = await subscriptionRepository.setAutoRenew(true);
         setBusy(false);
-        if (!r.success) { await customAlert('❌ ' + (r.error || 'تعذّر التفعيل')); return; }
-        await customAlert('✅ تم إعادة تفعيل التجديد التلقائي.');
+        if (!r.success) { await customAlert('❌ ' + (r.error || t('تعذّر التفعيل', 'Could not resume'))); return; }
+        await customAlert(t('✅ تم إعادة تفعيل التجديد التلقائي.', '✅ Auto-renewal is back on.'));
         await load();
         onChanged?.();
     };
@@ -116,7 +126,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                     margin: '12px 16px 0', width: 'calc(100% - 32px)',
                     padding: '12px 14px', borderRadius: 16, cursor: 'pointer',
                     background: 'var(--card-bg)', border: `1.5px solid ${accent}40`,
-                    boxShadow: 'var(--shadow)', textAlign: 'right',
+                    boxShadow: 'var(--shadow)', textAlign: isRTL ? 'right' : 'left',
                 }}
             >
                 <span style={{ fontSize: '1.4rem' }}>{expired ? '🔴' : canceled ? '⏸️' : '💳'}</span>
@@ -126,17 +136,17 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                     </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
                         {expired
-                            ? 'جدّد الآن لاستعادة عروضك'
+                            ? t('جدّد الآن لاستعادة عروضك', 'Renew now to bring your deals back')
                             : daysLeft !== null
-                                ? `يتبقّى ${daysLeft} يوم · ينتهي ${fmtDate(sub.expiresAt)}`
-                                : `${price.toLocaleString('ar-SA')} ر.س/شهر`}
+                                ? t(`يتبقّى ${daysLeft} يوم · ينتهي ${fd(sub.expiresAt)}`, `${daysLeft} days left · ends ${fd(sub.expiresAt)}`)
+                                : t(`${nf(price)} ر.س/شهر`, `${nf(price)} SAR/month`)}
                     </div>
                 </div>
                 <span style={{
                     fontSize: '0.75rem', fontWeight: 900, color: 'white', background: accent,
                     padding: '6px 12px', borderRadius: 10, whiteSpace: 'nowrap',
                 }}>
-                    {expired ? 'تجديد' : 'إدارة'}
+                    {expired ? t('تجديد', 'Renew') : t('إدارة', 'Manage')}
                 </span>
             </button>
         );
@@ -148,10 +158,10 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
             background: 'var(--card-bg)', borderRadius: 22, padding: 18,
             border: `2px solid ${accent}55`, boxShadow: '0 8px 26px rgba(0,0,0,0.08)',
             marginBottom: 18,
-        }} dir="rtl">
+        }} dir={isRTL ? 'rtl' : 'ltr'}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 <div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>باقتك الحالية</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{t('باقتك الحالية', 'Your current plan')}</div>
                     <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: 2 }}>{planName}</div>
                 </div>
                 <span style={{
@@ -167,7 +177,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                     padding: '12px 14px', borderRadius: 14, background: `${accent}14`,
                 }}>
                     <span style={{ fontSize: '2.2rem', fontWeight: 900, color: accent, lineHeight: 1 }}>{daysLeft}</span>
-                    <span style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>يوم متبقٍّ على الانتهاء</span>
+                    <span style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{t('يوم متبقٍّ على الانتهاء', 'days left before it ends')}</span>
                 </div>
             )}
             {expired && (
@@ -175,19 +185,25 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                     marginBottom: 14, padding: '12px 14px', borderRadius: 14, background: '#ef444414',
                     color: '#ef4444', fontWeight: 800, fontSize: '0.9rem',
                 }}>
-                    انتهى اشتراكك — عروضك متوقّفة عن الظهور. جدّد الآن لاستعادتها فوراً.
+                    {t('انتهى اشتراكك — عروضك متوقّفة عن الظهور. جدّد الآن لاستعادتها فوراً.',
+                       'Your subscription has expired — your deals are hidden. Renew now to bring them back instantly.')}
                 </div>
             )}
 
             {/* Details grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                <Detail label="السعر الشهري" value={`${price.toLocaleString('ar-SA')} ر.س`} />
-                <Detail label="عدد الفروع (المواقع)" value={sub.maxBranches === 1 ? 'فرع واحد' : `حتى ${branchesShort(sub.maxBranches, true)}`} />
-                <Detail label="تاريخ البداية" value={fmtDate(sub.startedAt)} />
-                <Detail label="تاريخ الانتهاء" value={fmtDate(sub.expiresAt)} />
+                <Detail label={t('السعر الشهري', 'Monthly price')} value={t(`${nf(price)} ر.س`, `${nf(price)} SAR`)} />
                 <Detail
-                    label="التجديد التلقائي"
-                    value={expired ? 'متوقّف' : (canceled ? 'متوقّف' : 'مُفعّل ✓')}
+                    label={t('عدد الفروع (المواقع)', 'Locations included')}
+                    value={sub.maxBranches === 1
+                        ? t('فرع واحد', 'One branch')
+                        : t(`حتى ${branchesShort(sub.maxBranches, true)}`, `up to ${branchesShort(sub.maxBranches, false)}`)}
+                />
+                <Detail label={t('تاريخ البداية', 'Start date')} value={fd(sub.startedAt)} />
+                <Detail label={t('تاريخ الانتهاء', 'End date')} value={fd(sub.expiresAt)} />
+                <Detail
+                    label={t('التجديد التلقائي', 'Auto-renewal')}
+                    value={expired ? t('متوقّف', 'Off') : (canceled ? t('متوقّف', 'Off') : t('مُفعّل ✓', 'On ✓'))}
                     valueColor={!expired && !canceled ? '#10b981' : '#ef4444'}
                 />
             </div>
@@ -201,7 +217,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                     background: 'linear-gradient(135deg,#f59e0b 0%,#d97706 55%,#b45309 100%)',
                 }}
             >
-                {expired ? '🔄 تجديد الاشتراك الآن ↓' : '⬆️ ترقية / تغيير الباقة ↓'}
+                {expired ? t('🔄 تجديد الاشتراك الآن ↓', '🔄 Renew your subscription now ↓') : t('⬆️ ترقية / تغيير الباقة ↓', '⬆️ Upgrade / change plan ↓')}
             </button>
 
             {!expired && (canceled ? (
@@ -214,7 +230,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                         color: '#10b981', fontWeight: 900, fontSize: '0.9rem', opacity: busy ? 0.6 : 1,
                     }}
                 >
-                    ▶️ إعادة تفعيل التجديد التلقائي
+                    ▶️ {t('إعادة تفعيل التجديد التلقائي', 'Turn auto-renewal back on')}
                 </button>
             ) : (
                 <button
@@ -226,7 +242,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                         color: 'var(--text-secondary)', fontWeight: 800, fontSize: '0.9rem', opacity: busy ? 0.6 : 1,
                     }}
                 >
-                    إلغاء الاشتراك (يبقى فعّالاً حتى نهاية المدة)
+                    {t('إلغاء الاشتراك (يبقى فعّالاً حتى نهاية المدة)', 'Cancel subscription (stays active until the period ends)')}
                 </button>
             ))}
         </div>
@@ -235,7 +251,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
 
 const Detail: React.FC<{ label: string; value: string; valueColor?: string }> = ({ label, value, valueColor }) => (
     <div style={{ background: 'var(--body-bg)', borderRadius: 12, padding: '10px 12px' }}>
-        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 3 }}>{label}</div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 3 }}>{label}</div>
         <div style={{ fontSize: '0.92rem', fontWeight: 900, color: valueColor || 'var(--text-primary)' }}>{value}</div>
     </div>
 );

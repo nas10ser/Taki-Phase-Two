@@ -31,7 +31,7 @@ const GENDER_EMOJI: { [key: string]: string } = {
 };
 
 const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
-    const { toggleFollowMerchant, followedMerchants, language, storeProfiles, incrementDealClick } = useApp();
+    const { toggleFollowMerchant, followedMerchants, language, storeProfiles, incrementDealClick, favorites, toggleFavorite } = useApp();
     const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
     // v13.24 — العدّاد المثبَّت على الصف (trigger في القاعدة) هو المصدر متى وُجد،
     // فتسقط عن كل صفحة عروض جولةُ جلب صفوف التقييمات لحساب المتوسط. المسارات
@@ -42,9 +42,16 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     const authBadge = getAuthenticityBadge(deal.authReal, deal.authFake, language === 'ar');
     const loc = getLocation(deal.locationId);
     const isFollowed = followedMerchants.includes(deal.storeId);
+    // v14.63 — «حفظ العرض» شيءٌ و«متابعة المتجر» شيءٌ آخر. القلب كان (ولا يزال)
+    // متابعةَ التاجر، والمفضلة كانت خاصّيةً ميتة بلا زرٍّ واحد في المنصّة كلّها.
+    const isSaved = favorites.includes(deal.id);
 
     const imageUrl = Array.isArray(deal.images) ? deal.images[0] : (deal as unknown as { image?: string }).image || '';
     const isRTL = language === 'ar';
+    // 🪤 بعد `isRTL` لا قبله: أي قراءةٍ لمتغيّر `const` قبل تعريفه = TDZ
+    // وسقوطٌ إلى ErrorBoundary عند أول رسم (فخّ موثَّق في CLAUDE.md).
+    // الشريط الذهبي يحتلّ أعلى الصورة عند الإعلان (v11.27)، فيهبط الزرّان معاً.
+    const actionTop = (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 8;
 
     // v11.20 — Coming Soon overrides the live-countdown. We show the time
     // remaining UNTIL the deal opens instead of UNTIL it expires, with a
@@ -58,6 +65,18 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     const handleFollowClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         toggleFollowMerchant(deal.storeId);
+        import('../services/analyticsTracker')
+            // 🪤 كان يُسجَّل `click_favorite` وهو في الحقيقة متابعةُ متجر —
+            // فكل متابعةٍ كانت تلوّث قياسَ المفضلة. القيمتان مسموحتان في قيد
+            // الجدول أصلاً، فالتصحيح سطرٌ واحد.
+            .then(({ trackEvent }) => trackEvent('click_follow', deal.storeId, deal.id))
+            .catch(() => { /* صامت */ });
+    };
+
+    const handleSaveClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();      // جذر البطاقة رابطٌ حقيقي منذ v14.63
+        toggleFavorite(deal.id);
         import('../services/analyticsTracker')
             .then(({ trackEvent }) => trackEvent('click_favorite', deal.storeId, deal.id))
             .catch(() => { /* صامت */ });
@@ -78,9 +97,14 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
     };
 
     return (
+        // v14.63 — جذر البطاقة كان `<div onClick>` بلا `role` ولا `tabIndex`:
+        // لا يصله متصفّحٌ بلوحة مفاتيح، ولا يُعلنه قارئ الشاشة قابلاً للنقر —
+        // وهي حركة التصفّح الأساسية في التطبيق كلّه. الحلّ رابطٌ حقيقي يغطّي
+        // البطاقة (`.deal-card-link::after`) لا `role="button"` على الجذر:
+        // دور الزرّ يُلغي إعلان الأبناء التفاعليين فيبتلع زرّ المتابعة.
+        // وبالرابط تعمل أيضاً «فتح في تبويب جديد» والنقر الأوسط كأي موقع.
         <div
             className={`deal-card animate-fade-in ${isSponsored ? 'taki-sponsored' : ''}`}
-            onClick={handleCardClick}
             style={isSponsored ? {
                 position: 'relative',
                 // Premium double gold ring + warm glow. Works on both light and
@@ -106,6 +130,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     top: 0,
                     left: 0,
                     right: 0,
+                    pointerEvents: 'none',   // v14.63 — فوق رابط البطاقة، فلا يبتلع نقرته
                     background: 'var(--gold-grad)',
                     color: '#fff',
                     padding: '6px 10px',
@@ -192,7 +217,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         // When the gold sponsor ribbon is shown it occupies the
                         // top strip — drop the heart below it so neither is
                         // covered (v11.27).
-                        top: (isSponsored && sponsorLabelText(sponsorLabel, isRTL) !== '') ? 42 : 8,
+                        top: actionTop,
                         [isRTL ? 'left' : 'right']: 8,
                         zIndex: 11,
                         background: 'rgba(255, 255, 255, 0.98)',
@@ -215,6 +240,33 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                 >
                     {isFollowed ? '❤️' : '🤍'}
                 </button>
+                {/* حفظ العرض في «المفضلة» — إشارةٌ مرجعية لا قلب، فلا يلتبس بالمتابعة. */}
+                <button
+                    onClick={handleSaveClick}
+                    aria-label={isSaved
+                        ? (isRTL ? 'إزالة من المفضلة' : 'Remove from favorites')
+                        : (isRTL ? 'حفظ في المفضلة' : 'Save to favorites')}
+                    aria-pressed={isSaved}
+                    style={{
+                        position: 'absolute',
+                        top: actionTop + 44,               // تحت زرّ المتابعة مباشرة
+                        [isRTL ? 'left' : 'right']: 8,
+                        zIndex: 11,                        // فوق رابط البطاقة (z-index:3)
+                        background: isSaved ? 'var(--primary)' : 'rgba(255, 255, 255, 0.98)',
+                        color: isSaved ? '#fff' : 'var(--text-primary)',
+                        border: 'none',
+                        width: 36, height: 36, borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                        transition: 'all 0.2s ease',
+                    }}
+                >
+                    <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"
+                        fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor"
+                        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                </button>
                 {/* 'star' sponsor label: a small ⭐ at the gold frame's leading-top
                     corner (NOT a full ribbon) — sits opposite the heart. v11.34 */}
                 {isSponsored && sponsorLabel === 'star' && (
@@ -225,6 +277,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                             top: 8,
                             [isRTL ? 'right' : 'left']: 8,
                             zIndex: 11,
+                            pointerEvents: 'none',   // v14.63 — فوق رابط البطاقة، فلا يبتلع نقرته
                             width: 30, height: 30, borderRadius: '50%',
                             background: 'var(--gold-grad)',
                             border: '1.5px solid rgba(255,255,255,0.85)',
@@ -286,12 +339,22 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                             marginInlineStart: 'auto', flexShrink: 0,
                             background: shopStatus.open ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)',
                             color: shopStatus.open ? '#10b981' : '#ef4444',
-                            fontSize: '0.62rem', fontWeight: 900, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap'
+                            fontSize: '0.75rem', fontWeight: 900, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap'
                         }}>{shopStatus.open ? (isRTL ? '🟢 مفتوح' : '🟢 Open') : (isRTL ? '🔴 مغلق' : '🔴 Closed')}</span>
                     )}
                 </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
-                    {deal.itemName}
+                    <a
+                        href={`/deal/${deal.id}`}
+                        className="deal-card-link"
+                        aria-label={`${deal.itemName} — ${deal.shopName}`}
+                        onClick={(e) => {
+                            // فتحٌ في تبويب جديد (Cmd/Ctrl/Shift أو زرّ أوسط) يبقى كما هو
+                            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                            e.preventDefault();
+                            handleCardClick();
+                        }}
+                    >{deal.itemName}</a>
                 </div>
 
                 {/* v12.61 — عرض له نسخ بأسعار مختلفة: «يبدأ من أقل سعر» + شارة
@@ -304,10 +367,10 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                             <span style={{ fontSize: '1.2rem', fontWeight: 950, color: 'var(--danger)' }}>
                                 {vs.length ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`) : `${deal.discountedPrice} ر.س`}
                             </span>
-                            <span style={{ fontSize: '0.85rem', color: 'var(--gray-400)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textDecoration: 'line-through', fontWeight: 700 }}>{deal.originalPrice}</span>
                             {vs.length > 0 && (
                                 <span style={{
-                                    fontSize: '0.62rem', fontWeight: 900, color: 'var(--primary)',
+                                    fontSize: '0.75rem', fontWeight: 900, color: 'var(--primary)',
                                     background: 'var(--primary-light)', borderRadius: 999, padding: '3px 8px',
                                 }}>
                                     🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
@@ -316,7 +379,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                             {/* v12.91 — عرض متوفر في عدة مواقع */}
                             {deal.locations && deal.locations.length > 1 && (
                                 <span style={{
-                                    fontSize: '0.62rem', fontWeight: 900, color: 'var(--secondary)',
+                                    fontSize: '0.75rem', fontWeight: 900, color: 'var(--secondary)',
                                     background: 'var(--secondary-light)', borderRadius: 999, padding: '3px 8px',
                                 }}>
                                     📍 {isRTL ? `${deal.locations.length} مواقع` : `${deal.locations.length} locations`}

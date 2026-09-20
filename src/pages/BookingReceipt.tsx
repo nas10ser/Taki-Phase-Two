@@ -187,7 +187,7 @@ const BookingReceipt: React.FC = () => {
         display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 900,
     } as React.CSSProperties);
     const bar = (active: boolean, color: string) => ({ flex: 1, height: 3, background: active ? color : 'var(--gray-200)', borderRadius: 2 } as React.CSSProperties);
-    const stepLbl = { fontSize: '0.66rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 5 } as React.CSSProperties;
+    const stepLbl = { fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 5 } as React.CSSProperties;
 
     const chatTo = data.viewer_is_buyer
         ? `/bookings?barcode=${data.barcode}`
@@ -242,7 +242,7 @@ const BookingReceipt: React.FC = () => {
                         <div style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: '0.85rem', marginTop: 4 }}>
                             🏪 {data.shop_name || '—'}{(data.city || data.region) ? `  •  📍 ${data.city || data.region}` : ''}
                         </div>
-                        {cat && <div style={{ display: 'inline-block', marginTop: 8, fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{cat.emoji} {isRTL ? cat.ar : cat.en}</div>}
+                        {cat && <div style={{ display: 'inline-block', marginTop: 8, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{cat.emoji} {isRTL ? cat.ar : cat.en}</div>}
                     </div>
                 </div>
 

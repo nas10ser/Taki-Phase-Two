@@ -13,6 +13,8 @@ import { dealService } from '../services/dealService';
 import { CATEGORIES } from '../data/mock';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 import SearchInput from '../components/SearchInput';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from '../components/MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 /**
  * Live-follow controller. The old version called `map.flyTo(center, 12)` on
@@ -458,14 +460,13 @@ const Nearby: React.FC = () => {
                 }}
             >
                 <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                    <MapAutoResize />
                     <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
                     <FlyController target={flyTarget} />
                     <TileLayer
-                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        subdomains="abc"
-                                        detectRetina={true}
-                                        maxZoom={19}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                        url={TAKI_TILE_URL}
+                                        maxZoom={TAKI_TILE_MAX_ZOOM}
+                                        attribution={TAKI_TILE_ATTRIBUTION}
                                     />
                     
                     {/* Visual Mask for Selection */}
@@ -655,7 +656,7 @@ const Nearby: React.FC = () => {
                                                 <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>
                                                     {vs.length ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`) : `${deal.discountedPrice} ر.س`}
                                                 </span>
-                                                <span style={{ color: 'var(--gray-400)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
+                                                <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
                                                 {vs.length > 0 && (
                                                     <span style={{ fontSize: '0.6rem', fontWeight: 900, color: 'var(--primary)', background: 'var(--primary-light)', borderRadius: 999, padding: '2px 7px' }}>
                                                         🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
@@ -670,7 +671,7 @@ const Nearby: React.FC = () => {
                                         background: 'var(--body-bg)',
                                         color: 'var(--text-primary)',
                                         border: '1px solid var(--border-color)',
-                                        fontSize: '0.68rem',
+                                        fontSize: '0.75rem',
                                         fontWeight: 800,
                                         padding: '2px 7px',
                                         borderRadius: 999,
@@ -681,7 +682,7 @@ const Nearby: React.FC = () => {
                                             background: 'var(--body-bg)',
                                             color: 'var(--text-primary)',
                                             border: '1px solid var(--border-color)',
-                                            fontSize: '0.68rem',
+                                            fontSize: '0.75rem',
                                             fontWeight: 800,
                                             padding: '2px 7px',
                                             borderRadius: 999,
@@ -690,7 +691,7 @@ const Nearby: React.FC = () => {
                                     )}
                                 </div>
                                 {locName && (
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         🏷️ {locName}
                                     </div>
                                 )}
@@ -699,8 +700,38 @@ const Nearby: React.FC = () => {
                     );
                 }) : (
                     <div className="empty-state animate-fade-in" style={{ textAlign: 'center', padding: '60px 20px' }}>
+                        {/* v14.63 — كانت تتّهم «النطاق» دائماً، حتى حين يكون السبب
+                            فئةً أو مدينةً اختارها المستخدم. و«المفتوحة الآن» مفعّل
+                            افتراضياً، فبعد إغلاق المحلات تفرغ القائمة والنطاق بريء. */}
                         <div style={{ fontSize: '4rem', marginBottom: 16 }}>📍</div>
-                        <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>{isRTL ? 'لا توجد عروض في هذا النطاق' : 'No deals in this radius'}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
+                            {(searchQuery.trim() || selectedCategory !== 'all' || selectedRegion || selectedCity || selectedLocationId || locationType)
+                                ? (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')
+                                : (isRTL ? 'لا توجد عروض في هذا النطاق' : 'No deals in this radius')}
+                        </div>
+                        {openNow && (
+                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.7 }}>
+                                {isRTL
+                                    ? '🟢 المعروض الآن هو «المحلات المفتوحة» فقط — جرّب «جميع المحلات».'
+                                    : '🟢 Showing “Open now” only — try “All shops”.'}
+                            </div>
+                        )}
+                        <button
+                            onClick={() => {
+                                setSearchQuery('');
+                                setSelectedCategory('all');
+                                setSelectedRegion('');
+                                setSelectedCity('');
+                                setSelectedLocationId('');
+                                setLocationType('');
+                                setOpenNow(false);
+                                setRadius(30);
+                            }}
+                            style={{
+                                marginTop: 16, padding: '12px 24px', background: 'var(--primary)', color: 'white',
+                                border: 'none', borderRadius: 12, fontWeight: 800, cursor: 'pointer',
+                            }}
+                        >{isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}</button>
                     </div>
                 )}
             </div>

@@ -425,7 +425,7 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
                         الصفحة يوقف `watchPosition`. قولُه للتاجر صراحةً خيرٌ من أن
                         يكتشفه من شكوى مشترٍ توقّفت خريطته — ومعه البديل الذي يعمل
                         والشاشة مقفلة: «الموقع الحيّ» في بوت تيليجرام (v14.07). */}
-                    <div style={{ fontWeight: 700, fontSize: '0.73rem', color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.7, borderTop: '1px dashed var(--border-color)', paddingTop: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.7, borderTop: '1px dashed var(--border-color)', paddingTop: 6 }}>
                         {isRTL
                             ? '⚠️ أبقِ هذه الصفحة مفتوحة أثناء التوصيل: قفل الشاشة يوقف البثّ من المتصفّح. وللبثّ والشاشة مقفلة استعمل «الموقع الحيّ» من بوت تيليجرام.'
                             : '⚠️ Keep this page open while delivering: locking the screen stops browser sharing. To keep sharing with the screen locked, use Telegram’s live location in the bot.'}
@@ -525,7 +525,7 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
 
             {/* تنبيه لا غنى عنه: «تم التسليم» يُنهي التتبّع لا الطلب. */}
             {!closed && (
-                <div style={{ marginTop: 9, fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.75 }}>
+                <div style={{ marginTop: 9, fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.75 }}>
                     ℹ️ {isRTL
                         ? '«تم التسليم» يُنهي التتبّع فقط ولا يُتمّ الطلب — إتمام الطلب يبقى بمسح رمز المشتري كالمعتاد.'
                         : '“Delivered” only ends tracking — completing the order still requires scanning the buyer’s code as usual.'}

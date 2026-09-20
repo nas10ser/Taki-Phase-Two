@@ -19,6 +19,8 @@ export interface NotifPage {
     hasMore: boolean;
     unreadTotal: number;
     total: number;
+    /** عدد المطابق للبحث في **الجدول كلّه** — يساوي `total` حين لا بحث. (v14.63) */
+    matched: number;
     cursor: { at: string; id: string } | null;
 }
 
@@ -49,13 +51,16 @@ export const notificationRepository = {
     browsePage: async (
         cursor?: { at: string; id: string } | null,
         limit = 40,
+        q?: string,
     ): Promise<NotifPage> => {
-        const empty: NotifPage = { rows: [], hasMore: false, unreadTotal: 0, total: 0, cursor: null };
+        const empty: NotifPage = { rows: [], hasMore: false, unreadTotal: 0, total: 0, matched: 0, cursor: null };
         try {
             const { data, error } = await supabase.rpc('browse_notifications', {
                 p_cursor_at: cursor?.at ?? null,
                 p_cursor_id: cursor?.id ?? null,
                 p_limit: limit,
+                // v14.63 — البحث من الخادم: من له ٧٥٠ إشعاراً لا يبحث في آخر ٤٠.
+                p_q: q && q.trim() ? q.trim() : null,
             });
             if (error) { console.warn('browse_notifications:', error.message); return empty; }
             const d: any = data || {};
@@ -67,11 +72,33 @@ export const notificationRepository = {
                 hasMore: !!d.has_more,
                 unreadTotal: Number(d.unread_total) || 0,
                 total: Number(d.total) || 0,
+                matched: d.matched != null ? Number(d.matched) : (Number(d.total) || 0),
                 cursor: last ? { at: last.created_at, id: last.id } : null,
             };
         } catch { return empty; }
     },
 
+
+    /**
+     * حذف إشعار واحد (v14.63).
+     * 🪤 حذفٌ ترفضه RLS يعود بـ`error = null` وصفر صفوف — فلا يكفي فحص الخطأ.
+     * نطلب `.select('id')` ونعدّ الصفوف فعلاً، وإلا كان الزرّ صامتاً يكذب.
+     */
+    remove: async (id: string): Promise<boolean> => {
+        const { data, error } = await supabase
+            .from('notifications').delete().eq('id', id).select('id');
+        if (error) { console.warn('notif delete:', error.message); return false; }
+        return (data?.length || 0) > 0;
+    },
+
+    /** حذف كل ما قُرئ. يُرجع العدد المحذوف فعلاً (لا المتوقَّع). */
+    removeAllRead: async (userId: string): Promise<number> => {
+        const { data, error } = await supabase
+            .from('notifications').delete()
+            .eq('user_id', userId).eq('is_read', true).select('id');
+        if (error) { console.warn('notif bulk delete:', error.message); return 0; }
+        return data?.length || 0;
+    },
 
     fetchByUserId: async (userId: string): Promise<AppNotification[]> => {
         try {

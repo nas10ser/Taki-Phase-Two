@@ -386,7 +386,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                             {selectedLabel ? (
                                 <>
                                     <div style={{
-                                        fontSize: '0.72rem', opacity: 0.75, fontWeight: 700,
+                                        fontSize: '0.75rem', opacity: 0.75, fontWeight: 700,
                                         marginBottom: 2, letterSpacing: 0.3,
                                         textTransform: 'uppercase',
                                     }}>
@@ -416,7 +416,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                             justifyContent: 'space-between',
                             marginBottom: 14,
                         }}>
-                            <button className="dcal-nav-btn" onClick={() => mode === 'hijri' ? changeHijriMonth(-1) : changeGregMonth(-1)}>
+                            <button className="dcal-nav-btn" aria-label={isRTL ? 'الشهر السابق' : 'Previous month'} onClick={() => mode === 'hijri' ? changeHijriMonth(-1) : changeGregMonth(-1)}>
                                 {isRTL ? '›' : '‹'}
                             </button>
 
@@ -430,7 +430,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                         </div>
                                         {/* Corresponding Gregorian range */}
                                         {hijriDays.length > 0 && (
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
                                                 {(() => {
                                                     const firstG = hijriDays[0].greg;
                                                     const lastG = hijriDays[hijriDays.length-1].greg;
@@ -451,7 +451,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                         </div>
                                         {/* Corresponding Hijri range */}
                                         {gregorianDays.length > 0 && (
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
                                                 {(() => {
                                                     const h1 = gregorianToHijri(gregorianDays[0]);
                                                     const h2 = gregorianToHijri(gregorianDays[gregorianDays.length-1]);
@@ -467,7 +467,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                                 )}
                             </div>
 
-                            <button className="dcal-nav-btn" onClick={() => mode === 'hijri' ? changeHijriMonth(1) : changeGregMonth(1)}>
+                            <button className="dcal-nav-btn" aria-label={isRTL ? 'الشهر التالي' : 'Next month'} onClick={() => mode === 'hijri' ? changeHijriMonth(1) : changeGregMonth(1)}>
                                 {isRTL ? '‹' : '›'}
                             </button>
                         </div>
@@ -480,7 +480,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                             {weekDays.map((d, i) => (
                                 <div key={i} style={{
                                     textAlign: 'center',
-                                    fontSize: '0.72rem', fontWeight: 800,
+                                    fontSize: '0.75rem', fontWeight: 800,
                                     color: 'var(--text-secondary)',
                                     padding: '4px 0',
                                 }}>

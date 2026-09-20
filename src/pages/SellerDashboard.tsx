@@ -41,11 +41,15 @@ import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from '../components/MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
-const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number) => void }) => {
+const LocationMarker = ({ position, autoUpdate }: { position: [number, number], autoUpdate: (lat: number, lng: number, fromMap?: boolean) => void }) => {
     useMapEvents({
+        // `fromMap: true` — انظر MapCenterUpdater: نقرةٌ على الخريطة يجب ألّا
+        // تُعيد ضبط الكاميرا، وإلا قاومت الخريطةُ التاجرَ في كل لمسة.
         click(e) {
-            autoUpdate(e.latlng.lat, e.latlng.lng);
+            autoUpdate(e.latlng.lat, e.latlng.lng, true);
         },
     });
     return position ? (
@@ -55,16 +59,29 @@ const LocationMarker = ({ position, autoUpdate }: { position: [number, number], 
             eventHandlers={{
                 dragend: (e) => {
                     const markerOrigin = e.target.getLatLng();
-                    autoUpdate(markerOrigin.lat, markerOrigin.lng);
+                    autoUpdate(markerOrigin.lat, markerOrigin.lng, true);
                 }
             }} 
         />
     ) : null;
 };
 
-const MapCenterUpdater = ({ center }: { center: [number, number] }) => {
+/**
+ * v14.63 — 🔴 كانت تعيد ضبط التكبير إلى ١٥ وتعيد التوسيط **في كل نقرة وكل
+ * سحبٍ للدبّوس**، لأن `mapPos` تتغيّر من داخل الخريطة نفسها. فالتاجر الذي
+ * يُكبّر إلى ١٨ ليضع الدبّوس بدقّة يُقذف إلى ١٥ فور لمسه، ثم تُعاد الكرّة بعد
+ * ٣٠٠ms. هذا هو «الخريطة معلّقة» في شاشة إضافة المنتج.
+ *
+ * الآن: الكاميرا تتحرّك **فقط** حين يأتي الموقع من خارج الخريطة (رابط ملصوق،
+ * اختيار مدينة، زرّ «موقعي») — عبر `nonce` يزيد هناك وحده — وتُحترم درجة
+ * تكبير المستخدم إن كان أقرب من ١٥.
+ */
+const MapCenterUpdater = ({ center, nonce }: { center: [number, number]; nonce: number }) => {
     const map = useMap();
+    const centerRef = React.useRef(center);
+    centerRef.current = center;
     React.useEffect(() => {
+        const center = centerRef.current;
         if (!center[0] || !center[1]) return;
         // Three-phase pan. Earlier versions did a single setTimeout(0)
         // pan-with-animation which silently failed on iOS Safari when the
@@ -83,18 +100,21 @@ const MapCenterUpdater = ({ center }: { center: [number, number] }) => {
         //      correct tile grid.
         //   3. Use try/catch — Leaflet throws if the map was just torn
         //      down (rare, but happens during fast view switches).
+        let z = 15;
+        try { z = Math.max(map.getZoom() || 15, 15); } catch { /* mid-teardown */ }
         try {
-            map.setView(center, 15, { animate: false });
+            map.setView(center, z, { animate: false });
         } catch { /* map may be mid-teardown; phase 2 covers it */ }
 
         const t = setTimeout(() => {
             try {
                 map.invalidateSize();
-                map.setView(center, 15, { animate: false });
+                map.setView(centerRef.current, map.getZoom(), { animate: false });
             } catch { /* swallow — best-effort */ }
         }, 300);
         return () => clearTimeout(t);
-    }, [center[0], center[1], map]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nonce, map]);
     return null;
 };
 
@@ -261,7 +281,7 @@ const SellerPaymentBanner: React.FC<{ order: any; isRTL: boolean; darkMode: bool
             <span style={{ fontSize: '1.35rem', lineHeight: 1 }}>{tone.icon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 900, fontSize: '0.95rem', color: tone.fg }}>{title}</div>
-                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>{detail}</div>
+                <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{detail}</div>
             </div>
         </div>
     );
@@ -348,7 +368,7 @@ const SellerOrderProgress: React.FC<{
                                 {isActive && mark}
                             </div>
                             <div style={{
-                                marginTop: 10, fontSize: '0.66rem', fontWeight: 900, textAlign: 'center',
+                                marginTop: 10, fontSize: '0.75rem', fontWeight: 900, textAlign: 'center',
                                 color: isActive ? 'var(--text-primary)' : 'var(--gray-400)',
                                 transition: 'color 0.4s ease',
                             }}>
@@ -359,7 +379,7 @@ const SellerOrderProgress: React.FC<{
                 })}
             </div>
             {isCancelled && (
-                <div style={{ marginTop: 10, textAlign: 'center', fontSize: '0.74rem', fontWeight: 900, color: '#ef4444' }}>
+                <div style={{ marginTop: 10, textAlign: 'center', fontSize: '0.75rem', fontWeight: 900, color: '#ef4444' }}>
                     {isRTL ? 'تم الإلغاء' : 'Cancelled'}
                 </div>
             )}
@@ -935,6 +955,8 @@ const SellerDashboard: React.FC = () => {
     // state so it's immediately visible to the concurrent caller.
     const resolutionInFlightRef = useRef(false);
     const [mapPos, setMapPos] = useState<[number, number]>([24.7136, 46.6753]);
+    /** يزيد فقط حين يأتي الموقع من خارج الخريطة، فتتحرّك الكاميرا عندها وحدها (v14.63). */
+    const [mapNonce, setMapNonce] = useState(0);
     const [submitted, setSubmitted] = useState(false);
 
     // Auto-resolve link with debounce
@@ -1034,10 +1056,16 @@ const SellerDashboard: React.FC = () => {
                     const { supabase } = await import('../services/supabaseClient');
                     const { data: sess } = await supabase.auth.getSession();
                     const jwt = sess?.session?.access_token;
+                    // 🪤 v14.63 — كان `AbortSignal.timeout ? … : undefined`:
+                    // على iOS Safari قبل 16.4 لا وجود لها، فيرتدّ إلى **بلا
+                    // مهلة إطلاقاً** — الزرّ يدور إلى الأبد والحقل يبقى مقفلاً.
+                    // AbortController مدعوم في كل متصفّح نستهدفه.
+                    const ownAc = new AbortController();
+                    const ownTimer = setTimeout(() => ownAc.abort(), 8000);
                     const ownRes = await fetch(`/api/resolve-map?url=${encodeURIComponent(target)}`, {
                         headers: jwt ? { Authorization: `Bearer ${jwt}` } : undefined,
-                        signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
-                    });
+                        signal: ownAc.signal,
+                    }).finally(() => clearTimeout(ownTimer));
                     if (ownRes.ok) {
                         const data = await ownRes.json();
                         if (typeof data?.lat === 'number' && typeof data?.lng === 'number') {
@@ -1129,9 +1157,13 @@ const SellerDashboard: React.FC = () => {
                             
                         if (placeName && placeName.length > 3 && placeName !== 'Google Maps') {
                             try {
+                                // v14.63 — كان بلا مهلة ولا مقاطع: خادمٌ بطيء يُعلّق الزرّ.
+                                const geoAc = new AbortController();
+                                const geoTimer = setTimeout(() => geoAc.abort(), 7000);
                                 const geoRes = await fetch(
-                                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&countrycodes=sa&limit=1`
-                                ).then(res => res.json()).catch(() => null);
+                                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&countrycodes=sa&limit=1`,
+                                    { signal: geoAc.signal }
+                                ).then(res => res.json()).catch(() => null).finally(() => clearTimeout(geoTimer));
                                 if (geoRes && geoRes[0]) {
                                     const lat = parseFloat(geoRes[0].lat);
                                     const lng = parseFloat(geoRes[0].lon);
@@ -1850,8 +1882,10 @@ const SellerDashboard: React.FC = () => {
         return () => document.removeEventListener('paste', onPaste);
     }, [view, uploadingImages]);
 
-    const autoUpdateLocation = (lat: number, lng: number) => {
+    const autoUpdateLocation = (lat: number, lng: number, fromMap = false) => {
         setMapPos([lat, lng]);
+        // تحريك الكاميرا مقصورٌ على ما يأتي من خارج الخريطة.
+        if (!fromMap) setMapNonce(n => n + 1);
         
         // 1. Check if near a known Mall/Market
         const nearestLoc = findNearestLocation(lat, lng);
@@ -3169,7 +3203,7 @@ const SellerDashboard: React.FC = () => {
                                             ? `${livePackageLabel(MAX_LOCATIONS, true)} — ${MAX_LOCATIONS === 1 ? 'موقع واحد فقط' : `حتى ${MAX_LOCATIONS} مواقع`} • المستخدم حالياً ${activeLocationKeys.size} / ${MAX_LOCATIONS}`
                                             : `${livePackageLabel(MAX_LOCATIONS, false)} — ${MAX_LOCATIONS === 1 ? '1 location only' : `up to ${MAX_LOCATIONS} locations`} • using ${activeLocationKeys.size} / ${MAX_LOCATIONS}`}
                                         {wouldExceedLimit && (
-                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3 }}>
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.75rem', marginTop: 3 }}>
                                                 {isRTL
                                                     ? (editingDealId
                                                         ? '⚠️ نقل المنتج لموقع جديد ممنوع — وصلت للحد. اختر أحد مواقعك الحالية، أو احذف كل منتجات أحد المواقع لتفريغ خانة.'
@@ -3180,7 +3214,7 @@ const SellerDashboard: React.FC = () => {
                                             </span>
                                         )}
                                         {!wouldExceedLimit && locationIsExisting && activeLocationKeys.size > 0 && (
-                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.72rem', marginTop: 3, color: 'var(--primary)' }}>
+                                            <span style={{ display: 'block', fontWeight: 700, fontSize: '0.75rem', marginTop: 3, color: 'var(--primary)' }}>
                                                 {isRTL ? '✓ موقع مستخدم من قبل — لن يُحسب كخانة جديدة.' : '✓ Existing location — no new slot used.'}
                                             </span>
                                         )}
@@ -3339,7 +3373,7 @@ const SellerDashboard: React.FC = () => {
                                                     background: full ? 'rgba(245,158,11,0.15)' : 'var(--body-bg)',
                                                     border: `1px solid ${full ? '#f59e0b' : 'var(--border-color)'}`,
                                                     color: full ? '#b45309' : 'var(--text-secondary)',
-                                                    borderRadius: 999, padding: '3px 9px', fontSize: '0.68rem', fontWeight: 800
+                                                    borderRadius: 999, padding: '3px 9px', fontSize: '0.75rem', fontWeight: 800
                                                 }}>
                                                     {isRTL ? `${used} / ${MAX_LOCATIONS} من باقتك` : `${used} / ${MAX_LOCATIONS} of your plan`}
                                                 </span>
@@ -3347,7 +3381,7 @@ const SellerDashboard: React.FC = () => {
                                         })()}
                                     </div>
                                     {/* v13.16 — تلميح التسمية (طلب ناصر) */}
-                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
                                         ✏️ {isRTL
                                             ? 'اضغط قلم التسمية على أي موقع لتسميه باسمك (مثال: «فرع حي الريان») — يظهر لك وللمشترين، ولا يستهلك خانة من باقتك.'
                                             : 'Tap the pencil on any location to name it (e.g. “Al-Rayyan branch”) — shown to you and buyers, and it never uses a package slot.'}
@@ -3357,7 +3391,7 @@ const SellerDashboard: React.FC = () => {
                                         slot the seller can delete to make room. */}
                                     <div style={{
                                         display: 'flex', flexWrap: 'wrap', gap: 12,
-                                        fontSize: '0.68rem', fontWeight: 700,
+                                        fontSize: '0.75rem', fontWeight: 700,
                                         color: 'var(--text-secondary)', marginBottom: 9, lineHeight: 1.5
                                     }}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -3428,7 +3462,7 @@ const SellerDashboard: React.FC = () => {
                                                     >
                                                         {isLocked ? '🔒' : '📍'} {chip.label}
                                                         {isVacant && (
-                                                            <span style={{ fontSize: '0.62rem', fontWeight: 800, opacity: 0.85 }}>
+                                                            <span style={{ fontSize: '0.75rem', fontWeight: 800, opacity: 0.85 }}>
                                                                 {isRTL ? '• شاغر' : '• vacant'}
                                                             </span>
                                                         )}
@@ -3530,14 +3564,13 @@ const SellerDashboard: React.FC = () => {
                                     the badge here — the map is a picker, not a
                                     publishing surface. */}
                                 <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                    <MapAutoResize />
                                     <TileLayer
-                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        subdomains="abc"
-                                        detectRetina={true}
-                                        maxZoom={19}
-                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                        url={TAKI_TILE_URL}
+                                        maxZoom={TAKI_TILE_MAX_ZOOM}
+                                        attribution={TAKI_TILE_ATTRIBUTION}
                                     />
-                                    <MapCenterUpdater center={mapPos} />
+                                    <MapCenterUpdater center={mapPos} nonce={mapNonce} />
                                     <LocationMarker position={mapPos} autoUpdate={autoUpdateLocation} />
                                 </MapContainer>
                             </div>
@@ -3596,7 +3629,7 @@ const SellerDashboard: React.FC = () => {
                                     )}
                                 </button>
                             </div>
-                            <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--gray-400)', textAlign: 'center', fontWeight: 600 }}>
+                            <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', fontWeight: 600 }}>
                                 {isRTL ? 'سيتم تحديث المنطقة والمدينة ونوع الموقع تلقائياً' : 'Region, City, and Venue Type will update automatically'}
                             </div>
                         </div>
@@ -3616,16 +3649,16 @@ const SellerDashboard: React.FC = () => {
                             return (
                                 <div style={{ marginTop: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
                                     <label style={labelStyle}>{isRTL ? '📍 انشر نفس العرض في عدة مواقع (اختياري)' : '📍 Publish this deal at multiple locations (optional)'}</label>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10, lineHeight: 1.6 }}>
                                         {isRTL
                                             ? 'اختر فقط المواقع التي تريد نشر العرض فيها (بحدود باقتك). الكميات تُحدَّد بالأسفل: كمية واحدة للمنتج، أو كمية لكل نوع وموقع من قسم «أنواع المنتج». يظهر العرض مرة في الرئيسية، وفي «حولي» عند كل فرع اخترته.'
                                             : 'Pick only the branches to publish at (within your plan). Quantities are set below — one product quantity, or per variant & branch under “Product variants”. One card on Home; per-branch pins on Nearby.'}
                                     </div>
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--notif-unread-bg)', border: '1.5px solid var(--primary)', color: 'var(--text-primary)', borderRadius: 999, padding: '7px 13px', fontSize: '0.8rem', fontWeight: 800, marginBottom: 6 }}>
-                                        ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.68rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
+                                        ✅ {primaryLabel} <span style={{ opacity: 0.7, fontSize: '0.75rem' }}>{isRTL ? '• الأساسي' : '• primary'}</span>
                                     </div>
                                     {/* v12.94 — توضيح «الأساسي» (لبس ناصر: من أين جاءت «الرياض»؟) */}
-                                    <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
                                         ℹ️ {isRTL
                                             ? '«الأساسي» = موقع العرض الرئيسي الذي حددته بالخريطة/المول أعلى. لو ظهر باسم مدينة (مثل «الرياض») فهذا موقع الدبوس الافتراضي — حرّك الدبوس أو اختر مولك أعلى ليصبح فرعاً حقيقياً.'
                                             : '“Primary” = the deal’s main location from the map/mall above. A bare city name means the default pin — move it or pick your mall above.'}
@@ -3639,7 +3672,7 @@ const SellerDashboard: React.FC = () => {
                                         const full = usedNow >= MAX_LOCATIONS;
                                         return (
                                             <>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: '0.72rem', fontWeight: 800, marginBottom: 8, color: full ? '#b45309' : 'var(--text-secondary)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: '0.75rem', fontWeight: 800, marginBottom: 8, color: full ? '#b45309' : 'var(--text-secondary)' }}>
                                                     <span style={{ background: full ? 'rgba(245,158,11,0.15)' : 'var(--body-bg)', border: `1px solid ${full ? '#f59e0b' : 'var(--border-color)'}`, borderRadius: 999, padding: '4px 10px' }}>
                                                         {isRTL ? `مواقع هذا العرض: ${usedNow} / ${MAX_LOCATIONS}` : `Deal locations: ${usedNow} / ${MAX_LOCATIONS}`}
                                                     </span>
@@ -3700,7 +3733,7 @@ const SellerDashboard: React.FC = () => {
                                               opacity: 0.75, cursor: 'not-allowed' }}>
                                     {user?.shop || user?.name || (isRTL ? 'متجرك' : 'Your store')}
                                 </div>
-                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.7 }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.7 }}>
                                     {isRTL
                                         ? 'يُؤخذ من ملف متجرك تلقائياً ويظهر على كل عروضك. لتغييره: «حسابي ← بيانات الحساب» — ويمرّ بموافقة الإدارة.'
                                         : 'Taken from your store profile and shown on every deal. To change it, use Account settings — it needs admin approval.'}
@@ -3735,7 +3768,7 @@ const SellerDashboard: React.FC = () => {
                                     placeholder={isRTL ? 'مثال: 1002 أو FLAT-01' : 'e.g. 1002 or FLAT-01'}
                                     dir="ltr"
                                 />
-                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4, lineHeight: 1.6 }}>
                                     {isRTL
                                         ? '📷 رمز منتجك في نظام الكاشير — يُطبع باركوداً في فاتورة الطلب فيمسحه الكاشير ويُضاف المنتج فوراً لسلّته. اتركه فارغاً إن لم تربط بكاشير.'
                                         : 'Your product code in your POS — printed as a scannable barcode on the order receipt. Leave empty if not using a POS.'}
@@ -3887,7 +3920,7 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{
                                         marginBottom: 10, padding: '10px 12px', borderRadius: 10,
                                         background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
-                                        fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                        fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
                                     }}>
                                         {isRTL
                                             ? '🕒 أي موعد بعد اللحظة الحالية يجعل العرض تلقائياً «عرضاً قادماً»: لا يظهر للعامة في الموقع إلا عندما يتبقى أسبوع أو أقل على موعده، ولا يستطيع المشتري الحجز قبل الموعد.'
@@ -3926,7 +3959,7 @@ const SellerDashboard: React.FC = () => {
                                                     </span>
                                                 </>
                                             ) : (
-                                                <span style={{ color: 'var(--gray-400)', fontWeight: 600, fontSize: '0.88rem' }}>
+                                                <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.88rem' }}>
                                                     {isRTL ? 'اضغط لاختيار التاريخ...' : 'Tap to select date...'}
                                                 </span>
                                             )}
@@ -3957,7 +3990,7 @@ const SellerDashboard: React.FC = () => {
                                                 position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 pointerEvents: 'none',
-                                                color: 'var(--gray-400)', fontWeight: 600, fontSize: '0.88rem',
+                                                color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.88rem',
                                             }}>
                                                 {isRTL ? '⏰ اضغط لاختيار الوقت...' : '⏰ Tap to select time...'}
                                             </span>
@@ -4079,7 +4112,7 @@ const SellerDashboard: React.FC = () => {
                                                     )}
                                                 </>
                                             ) : (
-                                                <span style={{ color: 'var(--gray-400)', fontWeight: 600, fontSize: '0.88rem' }}>
+                                                <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.88rem' }}>
                                                     {isRTL ? 'اضغط لاختيار التاريخ...' : 'Tap to select date...'}
                                                 </span>
                                             )}
@@ -4129,7 +4162,7 @@ const SellerDashboard: React.FC = () => {
                                     setQuantity(val === '' ? '' : Number(val));
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
-                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
                                     💡 {isRTL ? 'منتج بشكل واحد؟ اكتب كميته هنا فقط وتجاهل «أنواع المنتج» بالأسفل. الكمية إلزامية فقط لو اخترت الانتهاء «بالكمية»، وإلا العرض ينتهي بالوقت.' : 'One-form product? Just enter its quantity here. Required only if you pick “by stock” expiry.'}
                                 </div>
                             </div>
@@ -4144,7 +4177,7 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                                         📦 {isRTL ? 'الكمية لكل موقع' : 'Quantity per branch'}
                                     </div>
-                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
                                         💡 {isRTL ? 'اخترت عدة مواقع. أضف كمية واختر المواقع التي تشترك فيها، واضغط «➕ أضف كمية» لكمية مختلفة لمواقع أخرى. المواقع غير المحدّدة تبقى مفتوحة. (لكمية موحّدة: أضف كمية واحدة واختر كل المواقع.)' : 'Add a quantity and pick which branches share it. “➕ Add quantity” for a different amount at other branches. Unpicked branches stay open.'}
                                     </div>
                                     {groups.map((g, gi) => {
@@ -4166,7 +4199,7 @@ const SellerDashboard: React.FC = () => {
                                                             <button key={b.key} type="button" disabled={blocked}
                                                                 onClick={() => toggleVarGroupLoc(bkey, gi, b.key)}
                                                                 title={blocked ? (isRTL ? 'مستخدم في مجموعة أخرى' : 'used in another group') : undefined}
-                                                                style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.74rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
+                                                                style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.75rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
                                                                 {on ? '✅' : '➕'} {b.label}
                                                             </button>
                                                         );
@@ -4179,7 +4212,7 @@ const SellerDashboard: React.FC = () => {
                                         style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
                                         {isRTL ? '➕ أضف كمية' : '➕ Add quantity'}
                                     </button>
-                                    <div style={{ fontSize: '0.66rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
                                         {openBranches.length
                                             ? `🔓 ${isRTL ? 'مواقع مفتوحة (بلا حد)' : 'Open branches'}: ${openBranches.map(b => b.label).join('، ')}`
                                             : `✅ ${isRTL ? 'كل المواقع محدّدة بكمية' : 'All branches have a quantity'}`}
@@ -4195,11 +4228,11 @@ const SellerDashboard: React.FC = () => {
                             <summary style={{ cursor: 'pointer' }}>
                                 <span style={{ ...labelStyle, display: 'inline' }}>{isRTL ? '🧬 أنواع المنتج — لكل نوع سعره (اختياري — إذا كان منتجك بشكل واحد فقط فلا تحتاج هذا الخيار)' : '🧬 Product variants — each with its own price (optional — skip it if your product has one form only)'}</span>
                                 {variants.length > 0 && (
-                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.66rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
+                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.75rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
                                         ✅ {isRTL ? `${variants.length} نوع مضاف` : `${variants.length} added`}
                                     </span>
                                 )}
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
                                         ? '💡 عندك المنتج نفسه بأكثر من شكل — أحجام أو ألوان أو نكهات أو موديلات — وكل شكل له سعره وخصمه الخاص؟ أضف «نوعاً» لكل شكل: اسمه + سعره + كميته + صورته. المشتري يضغط على النوع الذي يريده فيتغير السعر والصورة أمامه فوراً. مثال: برجر صغير كان بـ١٥ ريالاً وصار بـ١٠ / وسط كان بـ١٨ وصار بـ١٥ / كبير كان بـ٢٥ وصار بـ٢٠. أو عبايات بلونين: سوداء وسط كانت بـ٩٠ وبعد الخصم ٨٠ / بنية كبيرة كانت بـ١٢٠ وبعد الخصم ١٠٠. أما إذا كان السعر واحداً لكل الأشكال (مثل ألوان بنفس السعر) فاستخدم خاصية «إضافات المنتج» بالأسفل.'
                                         : '💡 Each size has its own price? Add a version per size (name + price + qty + photo) — e.g. small 10 / medium 15 / large 20. The buyer switches versions and the price & photo follow. If all sizes share one price, use “Product options” below instead.'}
@@ -4224,7 +4257,7 @@ const SellerDashboard: React.FC = () => {
                                     {/* v12.62 — لكل نسخة سعرها الأصلي وخصمها وكميتها */}
                                     <div style={{ display: 'grid', gridTemplateColumns: multiLocPerLocActive ? '1fr 1fr' : '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
                                         <div>
-                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'السعر الأصلي' : 'Original'}</div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'السعر الأصلي' : 'Original'}</div>
                                             <NumericField
                                                 value={v.originalPrice}
                                                 onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, originalPrice: n } : x))}
@@ -4233,7 +4266,7 @@ const SellerDashboard: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'بعد الخصم' : 'Discounted'}</div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 3 }}>{isRTL ? 'بعد الخصم' : 'Discounted'}</div>
                                             <NumericField
                                                 value={v.price || undefined}
                                                 onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, price: n ?? 0 } : x))}
@@ -4246,7 +4279,7 @@ const SellerDashboard: React.FC = () => {
                                         {!multiLocPerLocActive && (
                                         <div>
                                             {/* v12.63 — انتهاء «بالكمية» يجعل كمية كل نسخة إلزامية */}
-                                            <div style={{ fontSize: '0.64rem', fontWeight: 800, color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 3 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 3 }}>
                                                 {isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : `Qty${expiryType === 'stock' ? ' *' : ''}`}
                                             </div>
                                             <NumericField
@@ -4268,10 +4301,10 @@ const SellerDashboard: React.FC = () => {
                                         const openBranches = selectedBranches.filter(b => !coveredKeys.has(b.key));
                                         return (
                                         <div style={{ marginBottom: 8, background: 'var(--card-bg)', border: '1px dashed var(--primary)', borderRadius: 12, padding: 10 }}>
-                                            <div style={{ fontSize: '0.72rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
                                                 📍 {isRTL ? `كميات المواقع لنوع «${v.label || `النوع ${vi + 1}`}»` : `Per-location quantities for "${v.label || `Variant ${vi + 1}`}"`}
                                             </div>
-                                            <div style={{ fontSize: '0.64rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
                                                 {isRTL ? 'أضف كمية واختر المواقع التي تشترك فيها. اضغط «➕ أضف كمية» لكمية أخرى لمواقع أخرى (نفس النوع). المواقع غير المحدّدة تبقى مفتوحة.' : 'Add a quantity and pick which branches share it. “➕ Add quantity” for another set. Unpicked branches stay open.'}
                                             </div>
                                             {groups.map((g, gi) => {
@@ -4293,7 +4326,7 @@ const SellerDashboard: React.FC = () => {
                                                                     <button key={b.key} type="button" disabled={blocked}
                                                                         onClick={() => toggleVarGroupLoc(v.id, gi, b.key)}
                                                                         title={blocked ? (isRTL ? 'مستخدم في مجموعة أخرى لهذا النوع' : 'used in another group') : undefined}
-                                                                        style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.74rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
+                                                                        style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.75rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
                                                                         {on ? '✅' : '➕'} {b.label}
                                                                     </button>
                                                                 );
@@ -4306,7 +4339,7 @@ const SellerDashboard: React.FC = () => {
                                                 style={{ width: '100%', padding: '9px', borderRadius: 10, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 900, cursor: 'pointer' }}>
                                                 {isRTL ? '➕ أضف كمية' : '➕ Add quantity'}
                                             </button>
-                                            <div style={{ fontSize: '0.66rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
                                                 {openBranches.length
                                                     ? `🔓 ${isRTL ? 'مواقع مفتوحة (بلا حد)' : 'Open branches'}: ${openBranches.map(b => b.label).join('، ')}`
                                                     : `✅ ${isRTL ? 'كل المواقع محدّدة بكمية' : 'All branches have a quantity'}`}
@@ -4315,7 +4348,7 @@ const SellerDashboard: React.FC = () => {
                                         );
                                     })()}
                                     {Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) > Number(v.price) && (
-                                        <div style={{ fontSize: '0.66rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
                                             {isRTL
                                                 ? `🔥 خصم ${Math.round(((Number(v.originalPrice) - Number(v.price)) / Number(v.originalPrice)) * 100)}٪ على «${v.label || `النسخة ${vi + 1}`}»`
                                                 : `🔥 ${Math.round(((Number(v.originalPrice) - Number(v.price)) / Number(v.originalPrice)) * 100)}% off "${v.label || `Version ${vi + 1}`}"`}
@@ -4326,12 +4359,12 @@ const SellerDashboard: React.FC = () => {
                                             value={v.gender || 'all'}
                                             onChange={e => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, gender: e.target.value === 'all' ? undefined : e.target.value as GenderTarget } : x))}
                                             title={isRTL ? 'الفئة المستهدفة لهذا النوع' : 'Audience for this variant'}
-                                            style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.74rem', fontWeight: 800 }}>
+                                            style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800 }}>
                                             {GENDERS.map(g => <option key={g.id} value={g.id}>{g.emoji} {isRTL ? g.ar : g.en}</option>)}
                                         </select>
                                         {images.length > 0 && (
                                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'صورتها:' : 'Photo:'}</span>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'صورتها:' : 'Photo:'}</span>
                                                 {images.map((img, ii) => (
                                                     <img key={ii} src={img} alt=""
                                                         onClick={() => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, imageIndex: x.imageIndex === ii ? undefined : ii } : x))}
@@ -4362,7 +4395,7 @@ const SellerDashboard: React.FC = () => {
                                 {isRTL ? '➕ إضافة نوع (صغير / وسط / أحمر / أزرق…)' : '➕ Add a variant (Small / Medium / Red / Blue…)'}
                             </button>
                             {variants.length > 0 && (
-                                <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
                                     {isRTL
                                         ? '📌 بطاقة العرض في الصفحات العامة ستعرض «يبدأ من أقل سعر» مع شارة «عدة خيارات» — وداخل صفحة المنتج يختار المشتري النوع قبل الحجز ويتغير السعر والصورة مباشرة.'
                                         : '📌 Public cards show “From <lowest price>” with a small versions badge — inside the product page the buyer picks a version and price & photo follow.'}
@@ -4396,11 +4429,11 @@ const SellerDashboard: React.FC = () => {
                             <summary style={{ cursor: 'pointer' }}>
                                 <span style={{ ...labelStyle, display: 'inline' }}>{isRTL ? '🧩 إضافات المنتج (اختياري)' : '🧩 Product add-ons (optional)'}</span>
                                 {optionGroups.length > 0 && (
-                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.66rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
+                                    <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.75rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
                                         ✅ {isRTL ? `${optionGroups.length} قسم مضاف` : `${optionGroups.length} added`}
                                     </span>
                                 )}
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
                                     {isRTL
                                         ? '💡 تفضيلات يختارها المشتري على نفس المنتج وقت الحجز — مجانية (بدون بصل، تغليف هدية) أو بسعر إضافي (جبنة +٣ ر.س). اكتب السؤال (نوع التغليف؟ الإضافات؟) وتحته الخيارات. أمثلة: برجر → خس/طماطم أو جبن +٣، قهوة → كوب ورقي/سيراميك ونوع الحليب، تيشيرت → اللون المفضل.'
                                         : '💡 Add-ons and preferences on the product itself — free or with an extra price that joins the total. e.g. “No cheese” / “Cheese +3 SAR”. The buyer picks them per item at booking. In short: versions above = different prices, options = add-ons on top.'}
@@ -4426,7 +4459,7 @@ const SellerDashboard: React.FC = () => {
                                         الغامضة — التاجر يرى كل البدائل المتاحة قبل الاختيار. */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                                         <div>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'طريقة الاختيار' : 'Selection mode'}</div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'طريقة الاختيار' : 'Selection mode'}</div>
                                             <select
                                                 value={g.mode}
                                                 onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, mode: e.target.value as 'single' | 'multi' } : x))}
@@ -4436,7 +4469,7 @@ const SellerDashboard: React.FC = () => {
                                             </select>
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'الإلزام' : 'Requirement'}</div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 4 }}>{isRTL ? 'الإلزام' : 'Requirement'}</div>
                                             <select
                                                 value={g.required ? 'req' : 'opt'}
                                                 onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, required: e.target.value === 'req' } : x))}
@@ -4481,7 +4514,7 @@ const SellerDashboard: React.FC = () => {
                                                 <button type="button"
                                                     onClick={() => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.filter((_, j) => j !== ci) } : x))}
                                                     aria-label={isRTL ? 'حذف الخيار' : 'Delete choice'}
-                                                    style={{ background: 'transparent', color: 'var(--gray-400)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
+                                                    style={{ background: 'transparent', color: 'var(--text-muted)', border: 'none', fontWeight: 900, cursor: 'pointer', padding: 4 }}>✕</button>
                                             </div>
                                             {/* v12.88 — رمز الكاشير (SKU) لهذه الإضافة — باركود مستقل في الفاتورة */}
                                             <input
@@ -4491,7 +4524,7 @@ const SellerDashboard: React.FC = () => {
                                                 onChange={e => setOptionGroups(prev => prev.map((x, i) => i === gi ? { ...x, choices: x.choices.map((y, j) => j === ci ? { ...y, posSku: normalizeArabicNumerals(e.target.value) } : y) } : x))}
                                                 placeholder={isRTL ? '🏷 رمز الكاشير لهذه الإضافة (اختياري)' : '🏷 POS SKU for this add-on (optional)'}
                                                 title={isRTL ? 'رمز الكاشير لهذه الإضافة — يُطبع باركوداً في الفاتورة' : 'POS SKU for this add-on'}
-                                                style={{ width: '100%', padding: '7px 10px', borderRadius: 10, border: '1px dashed var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.74rem', fontWeight: 700 }}
+                                                style={{ width: '100%', padding: '7px 10px', borderRadius: 10, border: '1px dashed var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 700 }}
                                             />
                                         </div>
                                     ))}
@@ -4500,7 +4533,7 @@ const SellerDashboard: React.FC = () => {
                                         style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1px dashed var(--gray-300)', background: 'transparent', color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer' }}>
                                         {isRTL ? '+ خيار جديد' : '+ Add choice'}
                                     </button>
-                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 6, lineHeight: 1.6 }}>
                                         {isRTL
                                             ? '📌 «+ سعر ر.س» = مبلغ إضافي يُضاف تلقائياً لمبلغ الحجز النهائي عند اختيار هذا الخيار (مثال: جبنة +٣ ر.س → حجز بـ١٠ يصبح ١٣). اتركه فارغاً إذا كان الخيار بدون تكلفة إضافية — ويرى المشتري السعر بجانب الخيار قبل تأكيد الحجز.'
                                             : '📌 “+ SAR” = an add-on amount joined automatically to the final booking total when this choice is picked (e.g. cheese +3 → a 10 SAR booking becomes 13). Leave empty for no extra cost — the buyer sees the price next to the choice before confirming.'}
@@ -4547,15 +4580,15 @@ const SellerDashboard: React.FC = () => {
                                     <span style={{ fontSize: '1.25rem' }}>🛡</span>
                                     {isRTL ? 'حدود الحجز للمشتري' : 'Buyer booking limits'}
                                     {/* v12.38 — رجعت «اختياري» بطلب ناصر (كانت «مهم — لا تتجاوزه» في v12.34) */}
-                                    <span style={{ background: 'var(--gray-100)', color: 'var(--text-secondary)', fontSize: '0.62rem', fontWeight: 900, padding: '3px 9px', borderRadius: 999, border: '1px solid var(--border-color)' }}>
+                                    <span style={{ background: 'var(--gray-100)', color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 900, padding: '3px 9px', borderRadius: 999, border: '1px solid var(--border-color)' }}>
                                         {isRTL ? 'اختياري' : 'Optional'}
                                     </span>
                                 </span>
-                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.6 }}>
+                                <span style={{ display: 'block', fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.6 }}>
                                     {isRTL ? 'حدّد كم قطعة يحجز العميل في المرة الواحدة، وكم مرة يحق له الحجز — يحميك من الاحتكار وإعادة البيع' : 'Cap units per booking and how often one buyer can book — protects you from resellers'}
                                 </span>
                                 <span style={{
-                                    display: 'inline-block', marginTop: 8, fontWeight: 900, fontSize: '0.72rem',
+                                    display: 'inline-block', marginTop: 8, fontWeight: 900, fontSize: '0.75rem',
                                     padding: '5px 12px', borderRadius: 999,
                                     background: limitsOn ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.12)',
                                     border: `1.5px solid ${limitsOn ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.45)'}`,
@@ -4644,7 +4677,7 @@ const SellerDashboard: React.FC = () => {
                                             <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
                                                 {isRTL ? `شارك في عروض ${campSeason.ar}` : `Join ${campSeason.en} deals`}
                                             </div>
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>
                                                 {isRTL
                                                     ? (windowOpen
                                                         ? `يظهر عرضك في صفحة عروض ${campSeason.ar} الحصرية. باب الإضافة مفتوح حتى ${camp?.sellerTo || '؟'}.`
@@ -4711,7 +4744,7 @@ const SellerDashboard: React.FC = () => {
                                                 position: 'absolute', bottom: 6,
                                                 [isRTL ? 'right' : 'left']: 6,
                                                 background: 'var(--accent)', color: 'white',
-                                                fontSize: '0.65rem', fontWeight: 900, padding: '3px 8px', borderRadius: 8
+                                                fontSize: '0.75rem', fontWeight: 900, padding: '3px 8px', borderRadius: 8
                                             } as React.CSSProperties}>{isRTL ? 'الرئيسية' : 'Main'}</span>
                                         )}
                                     </div>
@@ -4920,8 +4953,8 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{ padding: 16 }}>
                                         <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                             <span>{deal.itemName}</span>
-                                            {isOutOfStock && <span style={{ fontSize: '0.65rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '2px 6px', borderRadius: 8, fontWeight: 900, whiteSpace: 'nowrap' }}>{isRTL ? 'نفدت الكمية 🚫' : 'Out of stock 🚫'}</span>}
-                                            {!isOutOfStock && !isActiveDeal && <span style={{ fontSize: '0.65rem', background: 'var(--body-bg)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: 8, fontWeight: 900, whiteSpace: 'nowrap' }}>{isRTL ? 'منتهي ⏳' : 'Expired ⏳'}</span>}
+                                            {isOutOfStock && <span style={{ fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '2px 6px', borderRadius: 8, fontWeight: 900, whiteSpace: 'nowrap' }}>{isRTL ? 'نفدت الكمية 🚫' : 'Out of stock 🚫'}</span>}
+                                            {!isOutOfStock && !isActiveDeal && <span style={{ fontSize: '0.75rem', background: 'var(--body-bg)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: 8, fontWeight: 900, whiteSpace: 'nowrap' }}>{isRTL ? 'منتهي ⏳' : 'Expired ⏳'}</span>}
                                         </div>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{isRTL ? 'الكمية:' : 'Qty:'} <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>{deal.quantity}</span></div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
@@ -4998,7 +5031,7 @@ const SellerDashboard: React.FC = () => {
                                         <span style={{
                                             background: selected ? 'rgba(255,255,255,0.25)' : 'var(--gray-100)',
                                             color: selected ? 'white' : 'var(--text-primary)',
-                                            padding: '2px 8px', borderRadius: 10, fontSize: '0.72rem', fontWeight: 900
+                                            padding: '2px 8px', borderRadius: 10, fontSize: '0.75rem', fontWeight: 900
                                         }}>{count}</span>
                                     </button>
                                 );
@@ -5425,14 +5458,14 @@ const SellerDashboard: React.FC = () => {
 
                                     {/* Which deal this is on */}
                                     {r.dealName && (
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.dealName}</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.dealName}</div>
                                     )}
 
                                     {/* The review text */}
                                     <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.6, fontWeight: 500, margin: '6px 0' }}>{r.comment}</p>
 
                                     {/* Date */}
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 600, marginBottom: 8 }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>
                                         {(r.createdAt || r.date) ? new Date(r.createdAt || r.date).toLocaleString(isRTL ? 'ar-SA' : 'en-US') : ''}
                                     </div>
 
@@ -5456,7 +5489,7 @@ const SellerDashboard: React.FC = () => {
                                                             setReplyDrafts(prev => ({ ...prev, [r.id]: r.reply || '' }));
                                                             setActiveReplyId(r.id);
                                                         }}
-                                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}
                                                     >
                                                         ✏️ {isRTL ? 'تعديل' : 'Edit'}
                                                     </button>
@@ -5466,7 +5499,7 @@ const SellerDashboard: React.FC = () => {
                                                             const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
                                                             if (ok) await addReply(r.dealId, r.id, '');
                                                         }}
-                                                        style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                                                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
                                                     >
                                                         ✕ {isRTL ? 'حذف الردّ' : 'Remove'}
                                                     </button>

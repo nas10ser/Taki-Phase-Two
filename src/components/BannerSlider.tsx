@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Banner } from '../repositories/bannerRepository';
 import { openExternalUrl } from '../utils/helpers';
+import { clickable } from '../utils/clickable';
 
 interface BannerSliderProps {
     banners: Banner[];
@@ -207,7 +208,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                     return (
                     <div
                         key={`${banner.id}-${idx}`}
-                        onClick={() => handleBannerClick(banner)}
+                        {...clickable(() => handleBannerClick(banner), isRTL ? (banner.title_ar || 'إعلان') : (banner.title_en || 'Banner'))}
                         style={{
                             width: `${step}%`, height: '100%', position: 'relative', cursor: 'pointer',
                             // Branded gradient fallback + the banner image itself as a stable
@@ -229,7 +230,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                                         «يختفي ويرجع» — بلاغ ناصر). العدد صغير فلا كلفة. */}
                                     <img
                                         src={banner.contest.banner_image}
-                                        alt={banner.contest?.title || 'مسابقة'}
+                                        alt={banner.contest?.title || (isRTL ? 'مسابقة' : 'Contest')}
                                         width={1200}
                                         height={480}
                                         loading="eager"
@@ -244,8 +245,8 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                                         padding: '34px 16px 14px', color: 'white', pointerEvents: 'none',
                                         display: 'flex', alignItems: 'center', gap: 8,
                                     }}>
-                                        <span style={{ fontSize: '1.05rem', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🎁 {banner.contest?.title || 'مسابقة بجوائز'}</span>
-                                        <span style={{ marginInlineStart: 'auto', background: 'rgba(255,255,255,0.22)', borderRadius: 999, padding: '5px 13px', fontSize: '0.75rem', fontWeight: 800, whiteSpace: 'nowrap' }}>✍️ شارك الآن</span>
+                                        <span style={{ fontSize: '1.05rem', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🎁 {banner.contest?.title || (isRTL ? 'مسابقة بجوائز' : 'Prize contest')}</span>
+                                        <span style={{ marginInlineStart: 'auto', background: 'rgba(255,255,255,0.22)', borderRadius: 999, padding: '5px 13px', fontSize: '0.75rem', fontWeight: 800, whiteSpace: 'nowrap' }}>✍️ {isRTL ? 'شارك الآن' : 'Enter now'}</span>
                                     </div>
                                 </>
                             ) : (
@@ -257,14 +258,14 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                                 pointerEvents: 'none',
                             }}>
                                 <div style={{ fontSize: '1.9rem', lineHeight: 1 }}>🎁</div>
-                                <div style={{ fontSize: '0.68rem', fontWeight: 800, letterSpacing: 1, opacity: 0.9, marginTop: 5 }}>مسابقة بجوائز</div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: 1, opacity: 0.9, marginTop: 5 }}>{isRTL ? 'مسابقة بجوائز' : 'Prize contest'}</div>
                                 <div style={{ fontSize: '1.15rem', fontWeight: 900, marginTop: 3, maxWidth: '96%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {banner.contest?.title || 'شارك واربح'}
+                                    {banner.contest?.title || (isRTL ? 'شارك واربح' : 'Take part and win')}
                                 </div>
                                 {banner.contest?.prize && (
                                     <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: 4 }}>🏆 {banner.contest.prize}</div>
                                 )}
-                                <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 999, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 800 }}>✍️ شارك الآن</div>
+                                <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 999, padding: '6px 16px', fontSize: '0.8rem', fontWeight: 800 }}>✍️ {isRTL ? 'شارك الآن' : 'Enter now'}</div>
                             </div>
                             )
                         ) : (
@@ -308,7 +309,8 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
                     {banners.map((_, idx) => (
                         <div
                             key={idx}
-                            onClick={(e) => { e.stopPropagation(); goToReal(idx); }}
+                            {...clickable((e) => { e.stopPropagation(); goToReal(idx); }, isRTL ? `الشريحة ${idx + 1}` : `Slide ${idx + 1}`)}
+                            aria-current={idx === realIndex ? 'true' : undefined}
                             style={{
                                 width: idx === realIndex ? 24 : 8,
                                 height: 8, borderRadius: 4,

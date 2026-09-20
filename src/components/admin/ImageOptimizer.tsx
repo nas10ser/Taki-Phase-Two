@@ -163,7 +163,7 @@ const ImageOptimizer: React.FC = () => {
                     <div style={{ height: 8, borderRadius: 4, background: 'var(--gray-100)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${prog.total ? (prog.done / prog.total) * 100 : 0}%`, background: 'linear-gradient(90deg,#f59e0b,#d97706)', transition: 'width .3s' }} />
                     </div>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 4 }}>
                         {prog.done}/{prog.total} {prog.current ? `— ${prog.current}` : ''} {prog.failed ? `• فشل ${prog.failed}` : ''}
                     </div>
                 </div>

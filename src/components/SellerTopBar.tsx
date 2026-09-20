@@ -52,7 +52,7 @@ const SellerTopBarImpl: React.FC<{ storeId?: string }> = ({ storeId }) => {
                                 right: -2,
                                 background: '#ef4444',
                                 color: 'white',
-                                fontSize: '0.65rem',
+                                fontSize: '0.75rem',
                                 padding: '2px 6px',
                                 borderRadius: '10px',
                                 minWidth: '18px',

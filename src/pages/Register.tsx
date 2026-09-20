@@ -1014,6 +1014,7 @@ const Register: React.FC = () => {
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 'calc(env(safe-area-inset-top, 12px) + 14px) 20px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50, direction: isRTL ? 'rtl' : 'ltr' }}>
             {mode !== 'landing' ? (
                 <button onClick={() => setMode(mode === 'login' || mode === 'form' ? (mode === 'login' ? 'landing' : 'type') : 'landing')}
+                    aria-label={isRTL ? 'رجوع' : 'Back'}
                     style={{ color: 'rgba(200, 200, 200, 1)', border: 'none', background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(20px)', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, borderRadius: '50%', transition: 'all 0.3s' }}>
                     {isRTL ? '→' : '←'}
                 </button>
@@ -1090,7 +1091,7 @@ const Register: React.FC = () => {
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M9.04 15.47 8.7 19.9c.46 0 .66-.2.9-.43l2.17-2.06 4.5 3.28c.82.45 1.42.21 1.63-.76l2.96-13.9c.27-1.24-.45-1.73-1.26-1.43L2.2 9.86c-1.2.47-1.18 1.14-.2 1.44l4.5 1.4 10.45-6.58c.49-.32.94-.14.57.18z"/></svg>
                                 {t('متابعة سريعة كمتسوّق عبر تيليجرام', 'Quick start as a shopper via Telegram')}
                             </button>
-                            <div style={{ textAlign: 'center', opacity: 0.4, fontSize: '0.72rem' }}>
+                            <div style={{ textAlign: 'center', opacity: 0.4, fontSize: '0.75rem' }}>
                                 {t(`يُنشئ حساب متسوّق جديداً فوراً — اختر «تسجيل الدخول» فوق إن كان لديك حساب. وبالمتابعة تُقرّ بأنك أتممتَ ${MIN_AGE} عاماً وتوافق على الشروط وسياستَي الخصوصية والاسترداد.`, `Creates a new shopper account instantly — pick "Sign In" above if you already have one. By continuing you confirm you are at least ${MIN_AGE} years old and agree to the Terms, Privacy and Refund policies.`)}
                             </div>
                         </>
@@ -1301,7 +1302,10 @@ const Register: React.FC = () => {
                                 <input value={password} onChange={e => setPassword(e.target.value)} type={showPassword ? 'text' : 'password'} placeholder="******" style={{ ...inputStyle, paddingRight: isRTL ? 14 : 45, paddingLeft: isRTL ? 45 : 14 }}
                                     onKeyDown={e => { if (e.key === 'Enter') isLogin ? handleLoginSubmit() : handleProceedToVerify(); }}
                                 />
-                                <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 10, background: 'none', border: 'none', color: 'var(--gray-400)', fontSize: '1.2rem', cursor: 'pointer', padding: 5, zIndex: 5 }}>
+                                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                                    aria-label={showPassword ? (isRTL ? 'إخفاء كلمة المرور' : 'Hide password') : (isRTL ? 'إظهار كلمة المرور' : 'Show password')}
+                                    aria-pressed={showPassword}
+                                    style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', [isRTL ? 'left' : 'right']: 10, background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer', padding: 5, zIndex: 5 }}>
                                     {showPassword ? '👁️' : '👁️‍🗨️'}
                                 </button>
                             </div>
@@ -1500,7 +1504,7 @@ const Register: React.FC = () => {
                         {!isLogin && !acceptedLegal && (
                             <div style={{
                                 marginTop: 8,
-                                fontSize: '0.72rem',
+                                fontSize: '0.75rem',
                                 color: 'rgba(251, 191, 36, 0.95)',
                                 textAlign: 'center',
                                 fontWeight: 700,

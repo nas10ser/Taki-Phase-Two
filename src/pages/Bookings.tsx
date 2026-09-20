@@ -15,6 +15,7 @@ import DeliveryTrackMap from '../components/DeliveryTrackMap';
 import { supabase } from '../services/supabaseClient';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
+import { clickable } from '../utils/clickable';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -62,7 +63,7 @@ const FulfillmentStrip: React.FC<{ booking: any; isRTL: boolean }> = ({ booking,
                     {delivery ? (isRTL ? 'توصيل إلى عنوانك' : 'Delivery to your address')
                               : (isRTL ? 'استلام من المتجر' : 'Pickup at store')}
                 </div>
-                <div style={{ fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
                     {delivery
                         ? [
                             addr?.label,
@@ -133,7 +134,7 @@ const OrderStages: React.FC<{ booking: any; isRTL: boolean; deliveryStage?: stri
         // أربع مراحل على شاشة جوال ضيّقة: عمود أنحف حتى لا يخرج الشريط عن العرض
         minWidth: steps.length > 3 ? 52 : 60,
     };
-    const lbl: React.CSSProperties = { fontSize: '0.65rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' };
+    const lbl: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center' };
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {steps.map((s, i) => (
@@ -402,7 +403,7 @@ const Bookings: React.FC = () => {
                 boxShadow: '0 4px 20px rgba(var(--primary-rgb), 0.2)'
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <button onClick={() => setSidebarOpen(true)} style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', color: 'white', fontSize: '1.4rem', padding: 8, borderRadius: 12, cursor: 'pointer' }}>☰</button>
+                    <button onClick={() => setSidebarOpen(true)} aria-label={isRTL ? 'القائمة' : 'Menu'} style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', color: 'white', fontSize: '1.4rem', padding: 8, borderRadius: 12, cursor: 'pointer' }}>☰</button>
                     <h1 style={{ color: 'white', fontSize: '1.25rem', fontWeight: 900, margin: 0 }}>{isRTL ? 'حجوزاتي 🎟️' : 'My Bookings 🎟️'}</h1>
                     <div style={{ width: 40 }} />
                 </div>
@@ -529,7 +530,11 @@ const Bookings: React.FC = () => {
                                 return (
                                     <div key={booking.barcode}
                                         id={`booking-${booking.barcode}`}
-                                        onClick={() => setExpandedId(isExpanded ? null : booking.barcode)}
+                                        {...clickable(
+                                            () => setExpandedId(isExpanded ? null : booking.barcode),
+                                            isRTL ? `حجز ${booking.deal?.itemName || ''}` : `Booking ${booking.deal?.itemName || ''}`,
+                                        )}
+                                        aria-expanded={isExpanded}
                                         style={{
                                             background: 'var(--card-bg)',
                                             borderRadius: 24,
@@ -562,7 +567,7 @@ const Bookings: React.FC = () => {
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setReportStore({ id: booking.deal.storeId, name: booking.deal.shopName }); }}
                                                         title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
-                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}
+                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
                                                     >
                                                         🚩 {isRTL ? 'إبلاغ' : 'Report'}
                                                     </button>
@@ -582,7 +587,7 @@ const Bookings: React.FC = () => {
                                                 </div>
                                                 {/* v12.81 — شارة الدفع الإلكتروني المباشر لحساب التاجر */}
                                                 {booking.paidAt && (
-                                                    <div style={{ fontSize: '0.72rem', fontWeight: 900, padding: '5px 10px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#059669', marginBottom: 6 }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 900, padding: '5px 10px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#059669', marginBottom: 6 }}>
                                                         💳 {isRTL ? 'مدفوع' : 'Paid'}
                                                     </div>
                                                 )}
@@ -799,7 +804,7 @@ const Bookings: React.FC = () => {
                                                         <div style={{ background: 'var(--body-bg)', padding: '10px 24px', borderRadius: 12, letterSpacing: 4, fontWeight: 900, fontSize: '1.2rem', fontFamily: 'monospace' }}>
                                                             {booking.barcode}
                                                         </div>
-                                                        <button onClick={() => copyCode(booking.barcode)} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 12, padding: '10px', cursor: 'pointer' }}>📋</button>
+                                                        <button onClick={() => copyCode(booking.barcode)} aria-label={isRTL ? 'نسخ رمز الحجز' : 'Copy booking code'} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 12, padding: '10px', cursor: 'pointer' }}>📋</button>
                                                     </div>
                                                     <div style={{ padding: 12, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
                                                         <img src={qrUrl} width={120} height={120} alt="QR" />
@@ -851,7 +856,11 @@ const Bookings: React.FC = () => {
                                 return (
                                     <div key={booking.barcode}
                                         id={`booking-${booking.barcode}`}
-                                        onClick={() => setExpandedId(isExpanded ? null : booking.barcode)}
+                                        {...clickable(
+                                            () => setExpandedId(isExpanded ? null : booking.barcode),
+                                            isRTL ? `حجز ${booking.deal?.itemName || ''}` : `Booking ${booking.deal?.itemName || ''}`,
+                                        )}
+                                        aria-expanded={isExpanded}
                                         style={{
                                             background: 'var(--card-bg)',
                                             borderRadius: 24,
@@ -883,7 +892,7 @@ const Bookings: React.FC = () => {
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setReportStore({ id: booking.deal.storeId, name: booking.deal.shopName }); }}
                                                         title={isRTL ? 'إبلاغ عن المتجر للإدارة' : 'Report this store to admin'}
-                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}
+                                                        style={{ marginTop: 8, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 10, padding: '5px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
                                                     >
                                                         🚩 {isRTL ? 'إبلاغ' : 'Report'}
                                                     </button>
@@ -958,13 +967,13 @@ const Bookings: React.FC = () => {
                 {(activeLoading || pastLoading) && filteredActive.length === 0 && filteredPast.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '100px 20px' }}>
                         <div className="spinner" style={{ width: 36, height: 36, border: '3px solid var(--gray-200)', borderTopColor: 'var(--primary)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-                        <div style={{ fontWeight: 800, color: 'var(--gray-400)', fontSize: '0.95rem' }}>{isRTL ? 'جاري تحميل حجوزاتك…' : 'Loading your bookings…'}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)', fontSize: '0.95rem' }}>{isRTL ? 'جاري تحميل حجوزاتك…' : 'Loading your bookings…'}</div>
                     </div>
                 )}
                 {!activeLoading && !pastLoading && filteredActive.length === 0 && filteredPast.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '100px 20px' }}>
                         <div style={{ fontSize: '4rem', marginBottom: 20 }}>🎟️</div>
-                        <div style={{ fontWeight: 800, color: 'var(--gray-400)', fontSize: '1.1rem' }}>{isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found'}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)', fontSize: '1.1rem' }}>{isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found'}</div>
                         <button onClick={() => history.push('/')} style={{ marginTop: 24, padding: '14px 36px', borderRadius: 16, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900 }}>
                             {isRTL ? 'تصفح العروض' : 'Browse Deals'}
                         </button>

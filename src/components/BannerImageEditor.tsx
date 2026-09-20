@@ -274,7 +274,7 @@ export const BannerImageEditor: React.FC<Props> = ({
                             <div style={{
                                 position: 'absolute', top: 8, [isRTL ? 'right' : 'left']: 8,
                                 background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
-                                padding: '3px 8px', borderRadius: 8, fontSize: '0.65rem', fontWeight: 800,
+                                padding: '3px 8px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800,
                             }}>
                                 {outWidth}×{Math.round(outWidth / aspect)} — {aspect}:1
                             </div>
@@ -321,7 +321,7 @@ export const BannerImageEditor: React.FC<Props> = ({
                         style={{
                             background: 'rgba(255,255,255,0.08)', color: 'white',
                             border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10,
-                            padding: '6px 10px', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer',
+                            padding: '6px 10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer',
                         }}
                     >
                         {isRTL ? 'إعادة ضبط' : 'Reset'}
@@ -329,7 +329,7 @@ export const BannerImageEditor: React.FC<Props> = ({
                 </div>
 
                 {exportErr && (
-                    <div style={{ fontSize: '0.72rem', color: '#fca5a5', fontWeight: 700, textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#fca5a5', fontWeight: 700, textAlign: 'center' }}>
                         {isRTL ? 'تعذّر قص هذه الصورة. جرّب رفعها من جهازك.' : 'Could not crop this image.'}
                     </div>
                 )}

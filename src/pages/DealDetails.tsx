@@ -2,6 +2,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStoreReviews } from '../hooks/useStoreReviews';
 import { goRegister } from '../utils/returnTo';
 import { createPortal } from 'react-dom';
+// v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
+// كل من يفتح صفحة عرض. تُحمَّل عند فتح الطبقة فقط.
+const BuyerAddressCardLazy = React.lazy(() => import('../components/BuyerAddressCard'));
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { realtimeService } from '../services/realtimeService';
@@ -474,6 +477,7 @@ const DealDetails: React.FC = () => {
     const history = useHistory();
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
+        favorites, toggleFavorite,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
         storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode, platformSettings
     } = useApp();
@@ -503,6 +507,13 @@ const DealDetails: React.FC = () => {
     // سبب الرفض داخل ورقة الحجز بدل صفحةٍ أخرى بعد فوات الأوان.
     const [bookingSubmitting, setBookingSubmitting] = useState(false);
     const [bookingError, setBookingError] = useState<string | null>(null);
+    // v14.63 — 🔴 دفتر العناوين يُفتح **فوق** ورقة الحجز لا بدلها. كان الزرّ
+    // يدفع المشتري إلى «حسابي»، فتُفكّ صفحةُ العرض ويضيع كل ما اختاره — الكمية
+    // والنسخ والإضافات والفرع وطريقة الدفع — في اللحظة التي يجرّب فيها التوصيل
+    // أوّل مرة. (١٣ قيمة حالةٍ محلية كانت تُمحى، والورقة نفسها تُغلق.)
+    const [addrSheetOpen, setAddrSheetOpen] = useState(false);
+    /** عدّاد: كل حفظ/حذف عنوان يُعيد قراءة القائمة بلا إغلاق ورقة الحجز. */
+    const [addrReload, setAddrReload] = useState(0);
     // v12.66 — «اختيارات لكل قطعة»: كل قطعة محجوزة لها اختياراتها المستقلة
     // (برغر ١ بدون جبنة، برغر ٢ بجبنة — علم كبير ١ أحمر، علم كبير ٢ أزرق).
     // البنية: {مفتاح القطعة → {قسم → {خيار → 1}}}. مفتاح القطعة يشتق من
@@ -547,12 +558,20 @@ const DealDetails: React.FC = () => {
     // داخل النتيجة مباشرة.
     useEffect(() => {
         if (!deal) return;
-        const price = `${deal.discountedPrice} ريال`;
-        const off = deal.discountPercentage ? ` — خصم ${deal.discountPercentage}%` : '';
-        const where = deal.city ? ` في ${deal.city}` : '';
+        // v14.63 — عنوان الصفحة ووصفها كانا عربيّين دائماً مهما كانت لغة
+        // المستخدم — وهما ما يظهر في تبويب المتصفّح وفي كل مشاركة للرابط.
+        const price = isRTL ? `${deal.discountedPrice} ريال` : `SAR ${deal.discountedPrice}`;
+        const off = deal.discountPercentage
+            ? (isRTL ? ` — خصم ${deal.discountPercentage}%` : ` — ${deal.discountPercentage}% off`)
+            : '';
+        const where = deal.city ? (isRTL ? ` في ${deal.city}` : ` in ${deal.city}`) : '';
         const cleanupSeo = applyPageSeo({
-            title: `${deal.itemName} بـ${price}${off} | ${deal.shopName} — TAKI`,
-            description: (deal.description || `احجز ${deal.itemName} من ${deal.shopName}${where} بسعر ${price}${off} عبر تاكي. احجز الآن واستلم من المتجر وادفع عند الاستلام.`).slice(0, 300),
+            title: isRTL
+                ? `${deal.itemName} بـ${price}${off} | ${deal.shopName} — TAKI`
+                : `${deal.itemName} for ${price}${off} | ${deal.shopName} — TAKI`,
+            description: (deal.description || (isRTL
+                ? `احجز ${deal.itemName} من ${deal.shopName}${where} بسعر ${price}${off} عبر تاكي. احجز الآن واستلم من المتجر وادفع عند الاستلام.`
+                : `Book ${deal.itemName} from ${deal.shopName}${where} for ${price}${off} on TAKI. Reserve now, collect in store, pay on pickup.`)).slice(0, 300),
             path: `/deal/${deal.id}`,
             image: deal.images?.[0],
         });
@@ -571,12 +590,12 @@ const DealDetails: React.FC = () => {
             expiryDate: deal.expiryDate,
         }));
         const cleanupCrumbs = applyJsonLd('deal-crumbs', breadcrumbJsonLd([
-            { name: 'الرئيسية', path: '/' },
-            { name: 'العروض', path: '/deals' },
+            { name: isRTL ? 'الرئيسية' : 'Home', path: '/' },
+            { name: isRTL ? 'العروض' : 'Deals', path: '/deals' },
             { name: deal.itemName, path: `/deal/${deal.id}` },
         ]));
         return () => { cleanupSeo(); cleanupProduct(); cleanupCrumbs(); };
-    }, [deal]);
+    }, [deal, isRTL]);
 
     // v13.22 — بعد ترقيم الواجهة قد لا يكون العرض ضمن النافذة المُحمّلة (رابط
     // مباشر من بوت/إشعار/مشاركة، أو عرض قديم لم يصل إليه التمرير). نجلبه
@@ -952,7 +971,7 @@ const DealDetails: React.FC = () => {
             } catch { if (alive) { setAddresses([]); setAddrId(null); } }
         })();
         return () => { alive = false; };
-    }, [showBookingModal, user?.id]);
+    }, [showBookingModal, user?.id, addrReload]);
 
     const selectedAddr = useMemo(
         () => addresses.find(a => a.id === addrId) || null,
@@ -1154,7 +1173,7 @@ const DealDetails: React.FC = () => {
                         ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
                                  : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
                         : dlvBelowMin
-                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
+                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} {isRTL ? 'ر.س' : 'SAR'} — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} {isRTL ? 'ر.س' : 'SAR'} ليصبح التوصيل متاحاً.`
                                      : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
                             : null;
     // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى، أو فرعٌ جديد لا
@@ -1282,7 +1301,7 @@ const DealDetails: React.FC = () => {
         <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)', lineHeight: 1.7 }}>
             📍 {isRTL ? 'موقعك الآن' : 'Your location now'}
             {pickupDistanceKm !== null && (
-                <span style={{ fontWeight: 800, fontSize: '0.74rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
+                <span style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
                     {isRTL
                         ? `— يبعد ${fmtKm(pickupDistanceKm)} عن ${activeLoc?.name || 'موقع الاستلام'}`
                         : `— ${fmtKm(pickupDistanceKm)} from ${activeLoc?.name || 'the pickup point'}`}
@@ -1409,6 +1428,8 @@ const DealDetails: React.FC = () => {
     const isSeller = user?.userType === 'seller';
     const isOwner = isSeller && user?.id === deal?.storeId;
     const isFollowed = deal ? followedMerchants.includes(deal.storeId) : false;
+    /** حفظ العرض في «المفضلة» — مفهومٌ مستقلّ عن متابعة المتجر. (v14.63) */
+    const isSaved = deal ? favorites.includes(deal.id) : false;
 
     // Find the user's CURRENT booking for this deal (or the one linked
     // from a notification). Uses the SAME "still live" rule as
@@ -1512,6 +1533,24 @@ const DealDetails: React.FC = () => {
     // خطأٌ قديم يبقى معلّقاً بعد أن يصحّح المشتري اختياره يجعله يظنّ أن
     // المحاولة الجديدة فشلت أيضاً. يُمسح مع كل فتح للورقة.
     useEffect(() => { if (showBookingModal) setBookingError(null); }, [showBookingModal]);
+
+    // 🪤 هذان الخطّافان **فوق** كل `return` مبكّر: سطرٌ واحد تحتهما يجعل عدد
+    // الخطّافات مختلفاً بين فرع «جارٍ التحميل» وفرع الصفحة، فتسقط الشجرة كلها.
+    // قفل تمرير الصفحة خلف الطبقتين معاً: لو قُسم على كلٍّ حدة لأعاد إغلاقُ
+    // طبقة العناوين التمريرَ بينما ورقة الحجز ما زالت مفتوحة فوق الصفحة.
+    useEffect(() => {
+        if (!showBookingModal && !addrSheetOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prev; };
+    }, [showBookingModal, addrSheetOpen]);
+
+    useEffect(() => {
+        if (!addrSheetOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAddrSheetOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [addrSheetOpen]);
 
     // ما زال الجلب جارياً ⇒ لا نحكم بعد.
     if (!deal && !dealFetchDone) {
@@ -1827,7 +1866,7 @@ const DealDetails: React.FC = () => {
             if (optAddOnTotal > 0) parts.push(isRTL ? `${baseTotal} + ${optAddOnTotal} إضافات` : `${baseTotal} + ${optAddOnTotal} extras`);
             if (isDelivery && dlvFee > 0) parts.push(isRTL ? `${dlvFee} توصيل` : `${dlvFee} delivery`);
             const detail = parts.length ? ` (${parts.join(' + ')})` : '';
-            const tLine = `💰 ${isRTL ? `الإجمالي: ${grandTotal} ر.س` : `Total: ${grandTotal} SAR`}${detail}`;
+            const tLine = `💰 ${isRTL ? `الإجمالي: ${grandTotal} {isRTL ? 'ر.س' : 'SAR'}` : `Total: ${grandTotal} SAR`}${detail}`;
             notesWithOptions = notesWithOptions.trim() ? `${notesWithOptions}\n${tLine}` : tLine;
         }
 
@@ -2006,22 +2045,45 @@ const DealDetails: React.FC = () => {
             : (isRTL ? '✅ تم إرسال تقييمك — شكراً لمشاركتك!' : '✅ Review submitted — thanks for sharing!'));
     };
 
-    // isFavorite, isSeller, isOwner already defined above
+    // isSaved (حفظ العرض) و isFollowed (متابعة المتجر) معرّفان أعلاه — مفهومان مختلفان.
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', direction: isRTL ? 'rtl' : 'ltr', minHeight: '100vh' }}>
             <div className="premium-bar" style={{ paddingBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: user?.userType === 'seller' && user?.id === deal.storeId ? 16 : 0 }}>
-                    <button onClick={() => history.goBack()} style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', color: 'white', width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>
+                    <button onClick={() => history.goBack()} aria-label={isRTL ? 'رجوع' : 'Back'} style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', color: 'white', width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>
                         {isRTL ? '➡️' : '⬅️'}
                     </button>
                     <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: '1rem', color: 'white' }}>
                         {deal.shopName}
                     </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                        onClick={() => { if (deal) toggleFavorite(deal.id); }}
+                        aria-label={isSaved
+                            ? (isRTL ? 'إزالة من المفضلة' : 'Remove from favorites')
+                            : (isRTL ? 'حفظ في المفضلة' : 'Save to favorites')}
+                        aria-pressed={isSaved}
+                        style={{
+                            background: isSaved ? 'var(--primary)' : 'rgba(80, 80, 95, 0.2)',
+                            border: 'none', width: 40, height: 40, borderRadius: 12,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'white', cursor: 'pointer', transition: 'all 0.3s ease',
+                        }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"
+                            fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor"
+                            strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                        </svg>
+                    </button>
                     <button onClick={() => { 
                         if(user && deal) toggleFollowMerchant(deal.storeId); 
                         else if(!user) goRegister(history); 
-                    }} style={{ 
+                    }}
+                    aria-label={isFollowed ? (isRTL ? 'إلغاء متابعة المتجر' : 'Unfollow store') : (isRTL ? 'متابعة المتجر' : 'Follow store')}
+                    aria-pressed={isFollowed}
+                    style={{ 
                         background: isFollowed ? '#ef4444' : 'rgba(80, 80, 95, 0.2)', 
                         border: 'none', width: 40, height: 40, borderRadius: 12, fontSize: '1.2rem', 
                         display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
@@ -2029,6 +2091,7 @@ const DealDetails: React.FC = () => {
                     }}>
                         {isFollowed ? '❤️' : '🤍'}
                     </button>
+                    </div>
                 </div>
                 <SellerTopBar storeId={deal.storeId} />
             </div>
@@ -2201,7 +2264,7 @@ const DealDetails: React.FC = () => {
                                             ? (isRTL ? 'استلمه التاجر — قيد التجهيز' : 'Seller Received — Preparing')
                                             : (isRTL ? 'حجز مؤكد' : 'Booking Confirmed')}
                                 </span>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontWeight: 800 }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontWeight: 800 }}>
                                     {activeBooking.barcode}
                                 </span>
                             </div>
@@ -2245,7 +2308,7 @@ const DealDetails: React.FC = () => {
                                 borderRight: isRTL ? '4px solid var(--secondary)' : '1px solid rgba(245, 158, 11, 0.35)',
                                 borderLeft: !isRTL ? '4px solid var(--secondary)' : '1px solid rgba(245, 158, 11, 0.35)',
                             }}>
-                                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
                                     💬 {isRTL ? 'رسالة من التاجر:' : 'Note from merchant:'}
                                 </div>
                                 <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
@@ -2337,11 +2400,11 @@ const DealDetails: React.FC = () => {
                     <h1 style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12 }}>{deal.itemName}</h1>
 
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: variants.length ? 10 : 16 }}>
-                        <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--danger)', transition: 'all 0.2s ease' }}>{unitPrice} ر.س</span>
-                        <span style={{ fontSize: '1rem', color: 'var(--gray-400)', textDecoration: 'line-through' }}>{unitOriginal} ر.س</span>
+                        <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--danger)', transition: 'all 0.2s ease' }}>{unitPrice} {isRTL ? 'ر.س' : 'SAR'}</span>
+                        <span style={{ fontSize: '1rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{unitOriginal} {isRTL ? 'ر.س' : 'SAR'}</span>
                         {unitOriginal - unitPrice > 0 && (
                             <span style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
-                                {isRTL ? `وفّر ${Math.round((unitOriginal - unitPrice) * 100) / 100} ر.س` : `Save ${Math.round((unitOriginal - unitPrice) * 100) / 100} SAR`}
+                                {isRTL ? `وفّر ${Math.round((unitOriginal - unitPrice) * 100) / 100} {isRTL ? 'ر.س' : 'SAR'}` : `Save ${Math.round((unitOriginal - unitPrice) * 100) / 100} SAR`}
                             </span>
                         )}
                     </div>
@@ -2425,7 +2488,7 @@ const DealDetails: React.FC = () => {
                                                     {l.name || (isRTL ? 'فرع' : 'Branch')}
                                                     {isNearest && <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
                                                 </div>
-                                                <div style={{ fontSize: '0.72rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                                     {distStr && <span style={{ color: 'var(--primary)' }}>🚗 {distStr}</span>}
                                                     <span style={{ color: out ? 'var(--danger)' : capped ? 'var(--text-secondary)' : 'var(--success)' }}>
                                                         {out ? (isRTL ? 'نفذت الكمية' : 'Sold out')
@@ -2475,9 +2538,9 @@ const DealDetails: React.FC = () => {
                                         className={`taki-variant-row${picked ? ' picked' : ''}`}>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <span style={{ fontWeight: 900, fontSize: '1.02rem', color: 'var(--text-primary)' }}>{v.label}</span>
-                                            <span style={{ fontWeight: 900, fontSize: '0.92rem', color: picked ? 'var(--primary)' : 'var(--text-secondary)', marginInlineStart: 10 }}>{v.price} ر.س</span>
+                                            <span style={{ fontWeight: 900, fontSize: '0.92rem', color: picked ? 'var(--primary)' : 'var(--text-secondary)', marginInlineStart: 10 }}>{v.price} {isRTL ? 'ر.س' : 'SAR'}</span>
                                             {vOriginal > v.price && (
-                                                <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--gray-400)', textDecoration: 'line-through', marginInlineStart: 7 }}>{vOriginal} ر.س</span>
+                                                <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-muted)', textDecoration: 'line-through', marginInlineStart: 7 }}>{vOriginal} {isRTL ? 'ر.س' : 'SAR'}</span>
                                             )}
                                             {soldHere ? (
                                                 <div style={{ fontSize: '0.76rem', fontWeight: 900, color: 'var(--danger)', marginTop: 4 }}>
@@ -2514,7 +2577,7 @@ const DealDetails: React.FC = () => {
                             })}
                             {/* ملخص حي للمختار — يطمئن المشتري قبل زر الحجز */}
                             {variantPiecesTotal > 0 && (
-                                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary)', marginTop: 2, lineHeight: 1.6 }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginTop: 2, lineHeight: 1.6 }}>
                                     🧺 {variants.filter(v => (varSel[v.id] || 0) > 0).map(v => `${v.label} ×${varSel[v.id]}`).join(' + ')}
                                     {' = '}{variantMoneyTotal} {isRTL ? 'ر.س' : 'SAR'}
                                 </div>
@@ -2596,7 +2659,7 @@ const DealDetails: React.FC = () => {
                             <span style={{ fontSize: '1.5rem' }}>📍</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{dispName}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)', fontWeight: 600, marginTop: 2 }}>{dispType?.type === 'mall' ? '🛍️' : '🏛️'} {dispType?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginTop: 2 }}>{dispType?.type === 'mall' ? '🛍️' : '🏛️'} {dispType?.type === 'mall' ? (isRTL ? 'مول' : 'Mall') : (isRTL ? 'سوق / محل' : 'Market / Store')}</div>
                                 {(regionName || cityName) && (
                                     <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 800, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                         <span>🗺️</span>
@@ -2654,8 +2717,10 @@ const DealDetails: React.FC = () => {
                             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                                 {[1, 2, 3, 4, 5].map(star => (
                                     <button key={star} onClick={() => setReviewScore(star)}
+                                        aria-label={isRTL ? `${star} من ٥` : `${star} of 5`}
+                                        aria-pressed={star <= reviewScore}
                                         style={{ fontSize: '1.5rem', background: 'none', border: 'none', opacity: star <= reviewScore ? 1 : 0.3 }}>
-                                        ⭐
+                                        <span aria-hidden="true">⭐</span>
                                     </button>
                                 ))}
                             </div>
@@ -2685,10 +2750,10 @@ const DealDetails: React.FC = () => {
                                 <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{r.userName}</span>
                                 <span style={{ color: '#f59e0b', fontSize: '0.8rem' }}>{'★'.repeat(r.score)}{'☆'.repeat(5 - r.score)}</span>
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.itemName}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.itemName}</div>
                             <p style={{ color: 'var(--text-primary)', fontSize: '0.85rem', lineHeight: 1.6, fontWeight: 500 }}>{r.comment}</p>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--gray-400)', fontWeight: 600 }}>{r.date}</div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>{r.date}</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     {user && r.id && (
                                         <button
@@ -2767,7 +2832,7 @@ const DealDetails: React.FC = () => {
                                                                 const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
                                                                 if (ok) await addReply(r.dealId, r.id!, '');
                                                             }}
-                                                            style={{ background: 'none', border: 'none', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
                                                             aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
                                                         >
                                                             ✕ {isRTL ? 'حذف الرد' : 'Remove'}
@@ -2818,7 +2883,7 @@ const DealDetails: React.FC = () => {
                         </div>
                         );
                     }) : (
-                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--gray-400)', fontWeight: 700, fontSize: '0.85rem' }}>
+                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>
                             {isRTL ? 'لا توجد تقييمات بعد - كن أول من يقيّم!' : 'No reviews yet - be the first!'}
                         </div>
                     )}
@@ -2877,7 +2942,7 @@ const DealDetails: React.FC = () => {
                                 <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
                                     <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>{isRTL ? 'الكمية:' : 'Quantity:'}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', background: 'var(--gray-100)', borderRadius: 12, overflow: 'hidden' }}>
-                                        <button onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>-</button>
+                                        <button onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))} aria-label={isRTL ? 'تقليل الكمية' : 'Decrease quantity'} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>-</button>
                                         <span style={{ padding: '0 12px', fontWeight: 900 }}>{selectedQuantity}</span>
                                         <button onClick={() => {
                                             // v12.28 — سقف التاجر للحجز الواحد يعلو أي زيادة
@@ -2887,12 +2952,12 @@ const DealDetails: React.FC = () => {
                                             } else {
                                                 setSelectedQuantity(Math.min(capPer, Math.min(deal.quantity as number, selectedQuantity + 1)));
                                             }
-                                        }} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>+</button>
+                                        }} aria-label={isRTL ? 'زيادة الكمية' : 'Increase quantity'} style={{ padding: '6px 16px', border: 'none', background: 'none', fontSize: '1.2rem', fontWeight: 800 }}>+</button>
                                     </div>
                                 </div>
                             )}
                             {!booked && canBook && !!deal.maxPerBooking && (
-                                <div style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: -6, marginBottom: 10 }}>
+                                <div style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: -6, marginBottom: 10 }}>
                                     {isRTL ? `🛡 الحد الأقصى للحجز الواحد: ${deal.maxPerBooking}` : `🛡 Max per booking: ${deal.maxPerBooking}`}
                                 </div>
                             )}
@@ -2928,7 +2993,7 @@ const DealDetails: React.FC = () => {
                                                 <div style={{ fontSize: '1.9rem', fontWeight: 950, letterSpacing: 1, lineHeight: 1 }}>
                                                     {cs.text}
                                                 </div>
-                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>
                                                     {urgent
                                                         ? (isRTL ? '⚡ آخر ٤ ساعات — جهّز نفسك' : '⚡ Last 4 hours — get ready')
                                                         : (isRTL ? 'تابع الصفحة وحضّر طلبك من الآن' : 'Browse the page and prep ahead')}
@@ -2942,7 +3007,7 @@ const DealDetails: React.FC = () => {
                                         style={{ opacity: 0.55, cursor: 'not-allowed' }}
                                     >
                                         {isRTL
-                                            ? `🔒 احجز الآن — ${bookingTotal} ر.س`
+                                            ? `🔒 احجز الآن — ${bookingTotal} {isRTL ? 'ر.س' : 'SAR'}`
                                             : `🔒 Book Now — ${bookingTotal} SAR`}
                                     </button>
                                 </div>
@@ -2953,7 +3018,7 @@ const DealDetails: React.FC = () => {
                                         <div style={{ fontSize: '1.5rem', fontWeight: 950, lineHeight: 1.1 }}>
                                             {shopStatus.opensInMin != null ? (isRTL ? `يفتح بعد ${fmtDuration(shopStatus.opensInMin, true)}` : `Opens in ${fmtDuration(shopStatus.opensInMin, false)}`) : (isRTL ? 'مغلق' : 'Closed')}
                                         </div>
-                                        <div style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>{isRTL ? 'يفتح الحجز فور فتح المحل' : 'Booking opens when the shop opens'}</div>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.85, marginTop: 8 }}>{isRTL ? 'يفتح الحجز فور فتح المحل' : 'Booking opens when the shop opens'}</div>
                                     </div>
                                     <button disabled className="book-btn" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
                                         {isRTL ? '🔒 المحل مغلق' : '🔒 Shop Closed'}
@@ -2991,7 +3056,7 @@ const DealDetails: React.FC = () => {
                                             ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
                                             : isSoldOut
                                                 ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                                : (isRTL ? `🎟️ احجز الآن — ${bookingTotal} ر.س` : `🎟️ Book Now — ${bookingTotal} SAR`)}
+                                                : (isRTL ? `🎟️ احجز الآن — ${bookingTotal} {isRTL ? 'ر.س' : 'SAR'}` : `🎟️ Book Now — ${bookingTotal} SAR`)}
                                     </button>
                                 </>
                             )}
@@ -3009,7 +3074,7 @@ const DealDetails: React.FC = () => {
                 a thicker home-bar safe area. */}
             {showBookingModal && !isSeller && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', animation: 'fadeIn 0.2s ease-out' }}>
-                    <div style={{ background: 'var(--body-bg)', padding: '24px 20px', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                    <div className="taki-sheet-panel" style={{ background: 'var(--body-bg)', padding: '24px 20px', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', borderTopLeftRadius: 30, borderTopRightRadius: 30, overflowY: 'auto', boxShadow: '0 -10px 40px rgba(0,0,0,0.1)', animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900 }}>{isRTL ? 'إتمام الحجز' : 'Complete Booking'}</h2>
                             <button onClick={() => setShowBookingModal(false)} style={{ background: 'var(--gray-200)', color: 'var(--text-primary)', border: 'none', width: 36, height: 36, borderRadius: 18, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -3028,7 +3093,7 @@ const DealDetails: React.FC = () => {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 900 }}>★ {average > 0 ? average : (isRTL ? 'جديد' : 'New')}</span>
-                                    <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 900 }}>{bookingTotal} ر.س</span>
+                                    <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 900 }}>{bookingTotal} {isRTL ? 'ر.س' : 'SAR'}</span>
                                 </div>
                             </div>
                             {/* Merchant Avatar for Trust */}
@@ -3061,10 +3126,10 @@ const DealDetails: React.FC = () => {
                                         <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 0', borderBottom: '1px dashed var(--border-color)', ...(soldHere ? { opacity: 0.55, filter: 'grayscale(1)' } : {}) }}>
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <span style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{v.label}</span>
-                                                <span style={{ fontWeight: 800, fontSize: '0.78rem', color: 'var(--primary)', marginInlineStart: 8 }}>{v.price} ر.س</span>
+                                                <span style={{ fontWeight: 800, fontSize: '0.78rem', color: 'var(--primary)', marginInlineStart: 8 }}>{v.price} {isRTL ? 'ر.س' : 'SAR'}</span>
                                                 {soldHere
-                                                    ? <span style={{ fontSize: '0.68rem', fontWeight: 900, color: 'var(--danger)', marginInlineStart: 6 }}>({isRTL ? 'غير متوفر بهذا الفرع' : 'unavailable here'})</span>
-                                                    : (cap !== undefined && cap > 0 && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginInlineStart: 6 }}>({isRTL ? `المتاح ${cap}` : `${cap} left`})</span>)}
+                                                    ? <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--danger)', marginInlineStart: 6 }}>({isRTL ? 'غير متوفر بهذا الفرع' : 'unavailable here'})</span>
+                                                    : (cap !== undefined && cap > 0 && <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginInlineStart: 6 }}>({isRTL ? `المتاح ${cap}` : `${cap} left`})</span>)}
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                                                 <button type="button" onClick={() => setQ(q - 1)} disabled={soldHere || q <= 0}
@@ -3079,7 +3144,7 @@ const DealDetails: React.FC = () => {
                                     );
                                 })}
                                 {variantPiecesTotal > 0 && (
-                                    <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary)', marginTop: 8 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginTop: 8 }}>
                                         🧺 {variants.filter(v => (varSel[v.id] || 0) > 0).map(v => `${v.label} ×${varSel[v.id]}`).join(' + ')} = {variantMoneyTotal} {isRTL ? 'ر.س' : 'SAR'}
                                     </div>
                                 )}
@@ -3131,7 +3196,7 @@ const DealDetails: React.FC = () => {
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                                                     <h3 style={{ fontWeight: 800, fontSize: '0.95rem', margin: 0 }}>🧩 {grp.title}</h3>
                                                     <span style={{
-                                                        fontSize: '0.66rem', fontWeight: 800, padding: '4px 10px', borderRadius: 999,
+                                                        fontSize: '0.75rem', fontWeight: 800, padding: '4px 10px', borderRadius: 999,
                                                         background: grp.required ? 'var(--danger-light)' : 'var(--gray-100)',
                                                         color: grp.required ? 'var(--danger)' : 'var(--text-secondary)',
                                                     }}>
@@ -3198,7 +3263,7 @@ const DealDetails: React.FC = () => {
                                                     );
                                                 })}
                                                 {grp.mode === 'multi' && (
-                                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
                                                         {isRTL
                                                             ? (multiPiece ? '💡 يمكنك اختيار أكثر من إضافة لهذه القطعة — ولكل قطعة اختياراتها الخاصة.' : '💡 يمكنك اختيار أكثر من إضافة.')
                                                             : (multiPiece ? '💡 Pick as many add-ons as you like — each item has its own choices.' : '💡 Pick as many add-ons as you like.')}
@@ -3274,7 +3339,7 @@ const DealDetails: React.FC = () => {
                                                 ? [
                                                     buyerAddress?.label || (isRTL ? 'عنواني المحفوظ' : 'my saved address'),
                                                     dlvFee > 0
-                                                        ? (isRTL ? `الرسوم ${dlvFee} ر.س` : `fee ${dlvFee} SAR`)
+                                                        ? (isRTL ? `الرسوم ${dlvFee} {isRTL ? 'ر.س' : 'SAR'}` : `fee ${dlvFee} SAR`)
                                                         : (isRTL ? 'مجاناً' : 'free'),
                                                     dlvQuote?.eta_min ? (isRTL ? `≈ ${dlvQuote.eta_min} دقيقة` : `≈ ${dlvQuote.eta_min} min`) : '',
                                                 ].filter(Boolean).join(' · ')
@@ -3332,7 +3397,7 @@ const DealDetails: React.FC = () => {
                                     )}
                                     {/* ملاحظة هادئة لا تحذير أحمر: بعده عن عنوانه ليس خطأً — فقط يجب ألّا يُفاجأ. */}
                                     {fulfillment === 'delivery' && dlvCanChoose && !livePicked && liveToDestKm !== null && liveToDestKm > 1 && (
-                                        <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                        <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                                             ℹ️ {isRTL
                                                 ? `أنت الآن بعيد عن عنوان التوصيل بنحو ${fmtKm(liveToDestKm)} — الطلب سيصل إلى العنوان المختار.`
                                                 : `You are about ${fmtKm(liveToDestKm)} away from the delivery address — the order goes to the selected address.`}
@@ -3347,7 +3412,7 @@ const DealDetails: React.FC = () => {
                                                 style={{ width: '100%', padding: '11px', borderRadius: 12, border: '1.5px solid var(--primary)', background: 'var(--card-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
                                                 🚚 {isRTL ? 'استعمل موقعي الحالي وجهةً لهذا الطلب' : 'Use my current location for this order'}
                                                 {liveFee > 0
-                                                    ? (isRTL ? ` — الرسوم ${liveFee} ر.س` : ` — fee ${liveFee} SAR`)
+                                                    ? (isRTL ? ` — الرسوم ${liveFee} {isRTL ? 'ر.س' : 'SAR'}` : ` — fee ${liveFee} SAR`)
                                                     : (isRTL ? ' — توصيل مجاني' : ' — free delivery')}
                                             </button>
                                             <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
@@ -3361,13 +3426,13 @@ const DealDetails: React.FC = () => {
                                                 ✅ {isRTL ? 'الوجهة الآن: موقعك الحالي' : 'Destination: your current location'}
                                             </span>
                                             <button type="button" onClick={clearLivePoint}
-                                                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.74rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                                 {isRTL ? 'العودة إلى عنوان محفوظ' : 'Back to a saved address'}
                                             </button>
                                         </div>
                                     )}
                                     {liveKnown && !livePicked && !liveDeliverable && dlvOn && (
-                                        <div style={{ marginTop: 8, fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                                        <div style={{ marginTop: 8, fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                                             {!liveQuoteReady
                                                 ? (isRTL ? '⏳ نتحقّق هل يمكن التوصيل إلى موقعك الحالي…' : '⏳ Checking whether we can deliver to your current location…')
                                                 : liveQuote?.reason === 'no_zones'
@@ -3412,7 +3477,7 @@ const DealDetails: React.FC = () => {
                                                     : serviceable
                                                         ? [
                                                             rowFee > 0
-                                                                ? (isRTL ? `الرسوم ${rowFee} ر.س` : `fee ${rowFee} SAR`)
+                                                                ? (isRTL ? `الرسوم ${rowFee} {isRTL ? 'ر.س' : 'SAR'}` : `fee ${rowFee} SAR`)
                                                                 : (isRTL ? 'توصيل مجاني' : 'free delivery'),
                                                             q?.eta_min ? (isRTL ? `≈ ${q.eta_min} دقيقة` : `≈ ${q.eta_min} min`) : '',
                                                         ].filter(Boolean).join(' · ')
@@ -3440,13 +3505,13 @@ const DealDetails: React.FC = () => {
                                                             <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
                                                                 {a.label || (isRTL ? 'عنواني' : 'My address')}
                                                                 {a.is_default && (
-                                                                    <span style={{ fontWeight: 800, fontSize: '0.62rem', color: 'var(--primary)', marginInlineStart: 6 }}>
+                                                                    <span style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--primary)', marginInlineStart: 6 }}>
                                                                         {isRTL ? '(الافتراضي)' : '(default)'}
                                                                     </span>
                                                                 )}
                                                             </div>
                                                             {(a.details || a.city) ? (
-                                                                <div style={{ fontWeight: 700, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
+                                                                <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
                                                                     {[a.details, a.city].filter(Boolean).join(' — ')}
                                                                 </div>
                                                             ) : (
@@ -3455,14 +3520,14 @@ const DealDetails: React.FC = () => {
                                                                 <div style={{ fontWeight: 800, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
                                                                     ⚠️ {isRTL ? 'بلا تفاصيل — قد لا يجدك التاجر.' : 'No details — the merchant may not find you.'}
                                                                     <button type="button"
-                                                                        onClick={(e) => { e.stopPropagation(); history.push('/profile?tab=settings&focus=address'); }}
+                                                                        onClick={(e) => { e.stopPropagation(); setAddrSheetOpen(true); }}
                                                                         style={{ background: 'none', border: 'none', padding: 0, marginInlineStart: 6, color: 'var(--primary)', fontWeight: 900, fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                                                         {isRTL ? 'أضِف التفاصيل' : 'Add details'}
                                                                     </button>
                                                                 </div>
                                                             )}
                                                             {/* الأخضر يَعِد بتوصيلٍ مؤكَّد — فلا يُلوَّن به سطرٌ ما زال «قيد التحقق». */}
-                                                            <div style={{ fontWeight: 800, fontSize: '0.68rem', marginTop: 3, color: (!dlvLoading && serviceable) ? (darkMode ? '#4ade80' : '#15803d') : 'var(--text-secondary)' }}>
+                                                            <div style={{ fontWeight: 800, fontSize: '0.75rem', marginTop: 3, color: (!dlvLoading && serviceable) ? (darkMode ? '#4ade80' : '#15803d') : 'var(--text-secondary)' }}>
                                                                 {meta}
                                                             </div>
                                                         </div>
@@ -3473,7 +3538,7 @@ const DealDetails: React.FC = () => {
                                         {/* رابط واحد: الزرّان السابقان كانا يقودان إلى نفس المكان،
                                             وخيارٌ مكرَّر بصيغتين يُوهم المشتري أن بينهما فرقاً. */}
                                         <div style={{ marginTop: 10 }}>
-                                            <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
+                                            <button type="button" onClick={() => setAddrSheetOpen(true)}
                                                 style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                                 ➕ {isRTL ? 'إضافة عنوان أو تعديل عناويني' : 'Add or edit my addresses'}
                                             </button>
@@ -3486,7 +3551,7 @@ const DealDetails: React.FC = () => {
                                 )}
                                 {/* حسابٌ لم يُسجَّل له عنوان بعد (ولا مرآة قديمة صالحة) */}
                                 {addresses.length === 0 && !buyerAddress && (
-                                    <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
+                                    <button type="button" onClick={() => setAddrSheetOpen(true)}
                                         style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: '1.5px solid var(--primary)', background: 'var(--body-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>
                                         📍 {isRTL ? 'أضف عنوان التوصيل' : 'Add delivery address'}
                                     </button>
@@ -3504,7 +3569,7 @@ const DealDetails: React.FC = () => {
                                                 {buyerAddress.details}{buyerAddress.city ? ` — ${buyerAddress.city}` : ''}
                                             </div>
                                         )}
-                                        <button type="button" onClick={() => history.push('/profile?tab=settings&focus=address')}
+                                        <button type="button" onClick={() => setAddrSheetOpen(true)}
                                             style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                             {isRTL ? 'تغيير العنوان' : 'Change address'}
                                         </button>
@@ -3515,7 +3580,7 @@ const DealDetails: React.FC = () => {
                                     </div>
                                 )}
                                 {dlvStore?.note && dlvCanChoose && (
-                                    <div style={{ marginTop: 10, fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                    <div style={{ marginTop: 10, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                         ℹ️ {dlvStore.note}
                                     </div>
                                 )}
@@ -3559,7 +3624,7 @@ const DealDetails: React.FC = () => {
                                                     <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
                                                     <div style={{ flex: 1, minWidth: 0 }}>
                                                         <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{opt.icon} {opt.title}</div>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{opt.sub}</div>
                                                     </div>
                                                 </div>
                                             );
@@ -3575,7 +3640,7 @@ const DealDetails: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                                <p style={{ margin: '10px 0 0', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                <p style={{ margin: '10px 0 0', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                     🔒 {isRTL
                                         ? 'الدفع يتم على صفحة بوابة الدفع المرخصة الخاصة بالتاجر — تاكي لا تستلم أموالك.'
                                         : 'Payment happens on the merchant’s licensed gateway page — TAKI never receives your money.'}
@@ -3586,17 +3651,17 @@ const DealDetails: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, padding: 16, background: 'var(--card-bg)', borderRadius: 16, border: '2px solid var(--gray-200)' }}>
                                 <span style={{ fontWeight: 800 }}>{isRTL ? 'الإجمالي:' : 'Total:'}</span>
                                 <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--danger)' }}>
-                                    {grandTotal} ر.س
+                                    {grandTotal} {isRTL ? 'ر.س' : 'SAR'}
                                     {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}
                                     {optAddOnTotal > 0 && (
-                                        <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
-                                            {isRTL ? `منها إضافات: +${optAddOnTotal} ر.س` : `incl. add-ons: +${optAddOnTotal} SAR`}
+                                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
+                                            {isRTL ? `منها إضافات: +${optAddOnTotal} {isRTL ? 'ر.س' : 'SAR'}` : `incl. add-ons: +${optAddOnTotal} SAR`}
                                         </span>
                                     )}
                                     {/* v14.06 — رسوم التوصيل تُعلَن في الإجمالي لا تُفاجئ المشتري عند الباب */}
                                     {isDelivery && dlvFee > 0 && (
-                                        <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
-                                            {isRTL ? `منها توصيل: +${dlvFee} ر.س` : `incl. delivery: +${dlvFee} SAR`}
+                                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
+                                            {isRTL ? `منها توصيل: +${dlvFee} {isRTL ? 'ر.س' : 'SAR'}` : `incl. delivery: +${dlvFee} SAR`}
                                         </span>
                                     )}
                                 </span>
@@ -3658,7 +3723,7 @@ const DealDetails: React.FC = () => {
                                 lineHeight: 1.75, whiteSpace: 'pre-line',
                             }}>
                                 {bookingError}
-                                <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                     {isRTL ? 'لم يُسجَّل أي طلب، ولم يُخصم شيء. عدّل اختيارك وأعد المحاولة.'
                                            : 'No order was created and nothing was charged. Adjust and try again.'}
                                 </div>
@@ -3680,6 +3745,79 @@ const DealDetails: React.FC = () => {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* v14.63 — دفتر العناوين طبقةً فوق ورقة الحجز. عبر `createPortal`
+                إلى `document.body` فيتجاوز صندوقَي التمرير معاً، وبـz-index
+                1400 فوق الورقة (1200) والشريط السفلي (1100) وتحت طبقة
+                التنبيهات. النقر على الخلفية أو Escape يغلقها، وما يُحفظ فيها
+                يصل فوراً إلى قائمة العناوين في الورقة بلا إغلاقها. */}
+            {addrSheetOpen && createPortal(
+                <div
+                    dir={isRTL ? 'rtl' : 'ltr'}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={isRTL ? 'عناوين التوصيل' : 'Delivery addresses'}
+                    onClick={() => setAddrSheetOpen(false)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 1400,
+                        background: 'rgba(0,0,0,0.62)',
+                        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                        animation: 'fadeIn 0.2s ease-out',
+                    }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        className="taki-sheet-panel"
+                        style={{
+                            background: 'var(--body-bg)',
+                            borderTopLeftRadius: 30, borderTopRightRadius: 30,
+                            padding: '18px 16px',
+                            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+                            overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+                            boxShadow: '0 -10px 40px rgba(0,0,0,0.35)',
+                            animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                                📍 {isRTL ? 'عناوين التوصيل' : 'Delivery addresses'}
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setAddrSheetOpen(false)}
+                                aria-label={isRTL ? 'إغلاق' : 'Close'}
+                                style={{ background: 'var(--gray-200)', color: 'var(--text-primary)', border: 'none', width: 36, height: 36, borderRadius: 18, fontWeight: 900, cursor: 'pointer' }}
+                            >✕</button>
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.7 }}>
+                            {isRTL
+                                ? 'احفظ عنوانك هنا وسيعود بك إلى طلبك كما تركته تماماً.'
+                                : 'Save your address here and you come straight back to your order, exactly as you left it.'}
+                        </div>
+                        <React.Suspense fallback={
+                            <div style={{ textAlign: 'center', padding: '40px 0', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                {isRTL ? 'جارٍ التحميل…' : 'Loading…'}
+                            </div>
+                        }>
+                            <BuyerAddressCardLazy
+                                embedded
+                                autoOpenNew={addresses.length === 0}
+                                onChanged={() => setAddrReload(n => n + 1)}
+                            />
+                        </React.Suspense>
+                        <button
+                            type="button"
+                            onClick={() => setAddrSheetOpen(false)}
+                            style={{
+                                width: '100%', marginTop: 16, padding: '14px 0', borderRadius: 16,
+                                border: 'none', background: 'var(--primary)', color: '#fff',
+                                fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer',
+                            }}
+                        >{isRTL ? '✓ العودة إلى الطلب' : '✓ Back to my order'}</button>
+                    </div>
+                </div>,
+                document.body,
             )}
             <BottomNav />
         </div>

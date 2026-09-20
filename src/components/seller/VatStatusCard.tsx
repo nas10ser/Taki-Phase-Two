@@ -167,7 +167,7 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
                         <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3, direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }}>
                             {vatNumber}
                         </div>
-                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.7 }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.7 }}>
                             {isRTL
                                 ? '✅ فواتير طلباتك تصدر «فاتورة ضريبية مبسطة» برمز QR.'
                                 : '✅ Your order invoices are issued as simplified tax invoices with QR.'}
@@ -229,7 +229,7 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
                 }}
             />
             {draft && !isValidSaudiVat(draft) && (
-                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--danger)', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--danger)', marginBottom: 8 }}>
                     ⚠️ {isRTL ? '١٥ رقماً يبدأ وينتهي بـ٣' : '15 digits, starts and ends with 3'}
                 </div>
             )}

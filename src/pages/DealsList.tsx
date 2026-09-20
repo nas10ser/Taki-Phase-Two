@@ -41,7 +41,7 @@ const TITLES: Record<DealsType, { ar: string; en: string; emoji: string }> = {
 const DealsList: React.FC = () => {
     const history = useHistory();
     const query = useQuery();
-    const { language, storeProfiles, sponsors, topLocation, followedMerchants, toggleFollowMerchant, platformSettings } = useApp();
+    const { language, storeProfiles, sponsors, topLocation, setTopLocation, followedMerchants, toggleFollowMerchant, platformSettings } = useApp();
     const isRTL = language === 'ar';
 
     const type = (query.get('type') || 'all') as DealsType;
@@ -151,7 +151,7 @@ const DealsList: React.FC = () => {
                     </div>
                     {/* v13.24 — العدّاد يقرأ عدد المطابقات في **القاعدة** لا عدد
                         المُحمّل على الشاشة. «+» تعني أن المطابقات تجاوزت سقف العدّ. */}
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
                         {loading ? '…' : `${total.toLocaleString('en-US')}${totalCapped ? '+' : ''}`} {isRTL ? 'منتج' : 'items'}
                     </div>
                 </div>
@@ -319,11 +319,26 @@ const DealsList: React.FC = () => {
                 ) : (
                     <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px' }}>
                         <div style={{ fontSize: '3rem', marginBottom: 12 }}>📭</div>
-                        <div style={{ fontWeight: 800, color: 'var(--gray-400)' }}>
-                            {isRTL ? 'لا توجد عروض في هذه الفئة' : 'No deals in this category'}
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
+                            {searchQuery.trim()
+                                ? (isRTL ? 'لم نجد عروضاً تطابق بحثك' : 'No deals match your search')
+                                : (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')}
                         </div>
+                        {openNow && (
+                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.7 }}>
+                                {isRTL
+                                    ? '🟢 المعروض الآن هو «المحلات المفتوحة» فقط — جرّب «جميع المحلات».'
+                                    : '🟢 Showing “Open now” only — try “All shops”.'}
+                            </div>
+                        )}
                         <button
-                            onClick={() => { setActiveCategory('all'); setActiveGender('all'); setSearchQuery(''); }}
+                            /* v14.63 — كان الزرّ يترك ثلاثة مرشِّحات حيّة (الموقع،
+                               «المفتوحة الآن»، «الموثّقة»)، فيُضغط ويبقى الفراغ. */
+                            onClick={() => {
+                                setActiveCategory('all'); setActiveGender('all'); setSearchQuery('');
+                                setOpenNow(false); setVerifiedOnly(false);
+                                setTopLocation({ region: '', city: '', mall: '' });
+                            }}
                             style={{
                                 marginTop: 16, padding: '12px 24px',
                                 background: 'var(--primary)', color: 'white',

@@ -3,6 +3,8 @@ import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { StoreBranch } from '../repositories/branchRepository';
 import { coordsOf, directionsLink } from '../utils/mapLinks';
+import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
+import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
 /**
  * StoreBranchesMap — «اعرض كل المواقع على الخريطة» (v13.66، تفاعلية في v13.69)
@@ -140,7 +142,7 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
                         <div style={{ fontWeight: 900, fontSize: '0.95rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             📍 {isRTL ? `مواقع ${storeName}` : `${storeName} locations`}
                         </div>
-                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
                             {focus
                                 ? (isRTL ? `${nameOf(pins[focus.index].b)} — اضغط الدبّوس للخيارات` : `${nameOf(pins[focus.index].b)} — tap the pin for options`)
                                 : (isRTL ? `${pins.length} موقع — اضغط أي اسم للانتقال إليه` : `${pins.length} locations — tap a name to fly there`)}
@@ -154,12 +156,11 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
 
                 <div style={{ height: 'min(58vh, 420px)', width: '100%', position: 'relative' }}>
                     <MapContainer center={points[0] || [24.7136, 46.6753]} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                        <MapAutoResize />
                         <TileLayer
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            subdomains="abc"
-                            detectRetina={true}
-                            maxZoom={19}
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url={TAKI_TILE_URL}
+                            maxZoom={TAKI_TILE_MAX_ZOOM}
+                            attribution={TAKI_TILE_ATTRIBUTION}
                         />
                         <MapController points={points} focus={focus} fitSeq={fitSeq} />
                         {pins.map((p, i) => (
@@ -194,7 +195,7 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
                                     {nameOf(pins[focus.index].b)}
                                 </div>
                                 {pins[focus.index].b.address && (
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {pins[focus.index].b.address}
                                     </div>
                                 )}
@@ -252,7 +253,7 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
                                 <span style={{
                                     flexShrink: 0, width: 24, height: 24, borderRadius: '50%',
                                     background: active ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'linear-gradient(135deg,#0d9488,#0f766e)',
-                                    color: '#fff', fontWeight: 900, fontSize: '0.74rem',
+                                    color: '#fff', fontWeight: 900, fontSize: '0.75rem',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 }}>{i + 1}</span>
                                 <span style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

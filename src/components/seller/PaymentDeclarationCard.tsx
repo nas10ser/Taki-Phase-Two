@@ -262,7 +262,7 @@ const PaymentDeclarationCard: React.FC<{ userId: string; isRTL: boolean; onAlert
                         {snap.acceptsCod ? '💵' : '💳'} {isRTL ? 'طريقة الحساب:' : 'Payment method:'}{' '}
                         <span style={{ color: good }}>{current}</span>
                     </div>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3 }}>
                         {isRTL ? '✅ متجرك يستقبل الحجوزات.' : '✅ Your store is accepting bookings.'}
                     </div>
                 </div>
