@@ -10,7 +10,8 @@
  * لأي خدمة خارجية، والناتج Data URL يُدمج في HTML الفاتورة المطبوعة مباشرة.
  */
 import QRCode from 'qrcode';
-import { zatcaTlvBase64, invoiceAmounts, InvoicePayment, InvoiceTaxSettings } from './invoice';
+import { invoiceAmounts, InvoicePayment, InvoiceTaxSettings } from './invoice';
+import { zatcaTlvBase64 } from '../../shared/zatcaTlv';
 
 export interface ZatcaFields {
     sellerName: string;
@@ -19,6 +20,22 @@ export interface ZatcaFields {
     totalWithVat: string;   // "115.00"
     vatAmount: string;      // "15.00"
 }
+
+/**
+ * v14.68 — رمزٌ من نصٍّ **مُرمَّزٍ في القاعدة**: فاتورة الطلب لم تعد تُرمَّز هنا.
+ * `get_order_invoice` و`bot_get_booking_invoice` يُرجعان `zatca_tlv` من نفس
+ * اللقطة المجمّدة، فيخرج الموقع والبوتان بنفس النصّ حرفاً بحرف.
+ * 🪤 لا يُرسم رمزٌ لنصٍّ فارغ: صورةٌ تُمسح إلى لا شيء أسوأ من غياب الصورة.
+ */
+export const qrFromTlv = async (tlv?: string | null): Promise<string> => {
+    const s = String(tlv || '').trim();
+    if (!s) return '';
+    try {
+        return await QRCode.toDataURL(s, { errorCorrectionLevel: 'M', margin: 2, width: 220 });
+    } catch {
+        return '';
+    }
+};
 
 /** Data URL لصورة QR مطابقة للمرحلة الأولى — ترجع '' عند أي فشل (لا تكسر الطباعة أبداً). */
 export const zatcaQrDataUrl = async (f: ZatcaFields): Promise<string> => {

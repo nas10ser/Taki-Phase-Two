@@ -36,19 +36,13 @@ export interface InvoicePayment {
 export const invoiceIsPaid = (p: InvoicePayment): boolean =>
     !!p.paid_at || ['paid', 'succeeded', 'success', 'completed'].includes(String(p.status || '').toLowerCase());
 
-// ZATCA TLV (المرحلة الأولى من الفوترة الإلكترونية): Tag1 اسم البائع، Tag2 الرقم
-// الضريبي، Tag3 التاريخ ISO، Tag4 الإجمالي شامل الضريبة، Tag5 الضريبة — ثم base64.
-export function zatcaTlvBase64(seller: string, vat: string, iso: string, total: string, vatAmt: string): string {
-    const enc = new TextEncoder();
-    const parts: number[] = [];
-    [seller, vat, iso, total, vatAmt].forEach((v, i) => {
-        const bytes = enc.encode(v);
-        parts.push(i + 1, bytes.length, ...Array.from(bytes));
-    });
-    let bin = '';
-    for (const b of parts) bin += String.fromCharCode(b);
-    try { return btoa(bin); } catch { return ''; }
-}
+// v14.68 — الترميز انتقل إلى `shared/zatcaTlv.js`: **نسخةٌ واحدة**.
+// كان مكتوباً هنا ومرّةً أخرى في `server/lib/invoicePdf.js`، و**اختلف
+// المخرجان فعلاً** حين يتجاوز اسم البائع ٢٥٥ بايتاً — أي رمزان لمستندٍ ضريبيّ
+// واحد. وفاتورة **الطلب** لم تعد تمرّ من هنا إطلاقاً: ترميزها في القاعدة
+// (`taki_zatca_tlv`) والطرفان يقرآن `zatca_tlv` جاهزاً. يبقى هذا المسار
+// لفاتورة **اشتراك تاكي** وحدها.
+import { zatcaTlvBase64 } from '../../shared/zatcaTlv';
 
 const PRINT_CSS = `
  body{font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:32px;color:#111;background:#fff}

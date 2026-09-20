@@ -39,6 +39,11 @@ const cases = {
   F_vat_registered_paid: {
     ...base, vat_number: '310122393500003', vat_rate: 15, vat_base: 8.7, vat_amount: 1.3,
     paid: true, paid_amount: 10, payment_method: 'online', status: 'completed',
+    // v14.68 — الرمز يأتي مُرمَّزاً من القاعدة (`bot_get_booking_invoice`)، فلا
+    // يُرمَّز في هذا الملفّ بعد اليوم. بدون هذا الحقل يُطبع السند بلا رمز
+    // فيسقط تغطية تخطيط الرمز من اختبار الإجهاد صامتةً.
+    zatca_tlv: require('../shared/zatcaTlv.js').zatcaTlvBase64(
+      'متجر', '310122393500003', '2026-09-20T10:15:00.000Z', '10.00', '1.30'),
   },
   G_injection_like: {
     ...base, shop_name: '<script>alert(1)</script>', item_name: '"; DROP TABLE bookings; --',

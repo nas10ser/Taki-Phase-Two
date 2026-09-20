@@ -12,7 +12,7 @@
 
 import { code128SVG } from './barcode128';
 import { KSA_VAT_RATE, fmtSAR } from './vat';
-import { zatcaQrDataUrl, isValidSaudiVat } from './zatcaQr';
+import { qrFromTlv, isValidSaudiVat } from './zatcaQr';
 import { supabase } from '../services/supabaseClient';
 
 export interface InvoiceLineItem {
@@ -86,6 +86,8 @@ export interface InvoiceData {
     vatRate?: number | null;
     vatBase?: number | null;
     vatAmount?: number | null;
+    /** v14.68 — رمز زاتكا **مُرمَّزاً في القاعدة** (لا يُحسب هنا). */
+    zatcaTlv?: string | null;
     sellerAddress?: string | null;
     /** v14.18 — إشعار دائن: طلبٌ رُدّ مبلغه. يُطبع على نفس الورقة فلا تبقى
      *  فاتورةٌ تقول «مدفوع» عن مالٍ عاد لصاحبه. */
@@ -476,6 +478,10 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
                 data.vatRate = v.vat_rate != null ? Number(v.vat_rate) : null;
                 data.vatBase = v.vat_base != null ? Number(v.vat_base) : null;
                 data.vatAmount = v.vat_amount != null ? Number(v.vat_amount) : null;
+                // v14.68 — الإجمالي المطبوع من اللقطة نفسها التي بُني منها الرمز.
+                // بدونها يُطبع رقمٌ من الحجز ويُرمَّز رقمٌ من الفاتورة على ورقة واحدة.
+                if (Number(v.total) > 0) data.totalAmount = Number(v.total);
+                data.zatcaTlv = v.zatca_tlv ?? null;
                 data.sellerVatNumber = v.seller?.vat_number ?? null;
                 data.sellerAddress = v.seller?.address ?? null;
                 if (v.seller?.name) data.shopName = String(v.seller.name);
@@ -496,15 +502,12 @@ export const printOrderInvoice = async (data: InvoiceData): Promise<void> => {
         }
         // رمز الفوترة الإلكترونية يُبنى من أرقام اللقطة نفسها — لا من حسابٍ محلّي،
         // وإلا حمل الرمزُ مبلغاً غير الذي تقرؤه العين على نفس الورقة.
-        if (data.invoiceNo && data.vatAmount != null && isValidSaudiVat(data.sellerVatNumber)
-            && Number(data.totalAmount) > 0 && !data.qrDataUrl) {
-            data.qrDataUrl = await zatcaQrDataUrl({
-                sellerName: data.shopName,
-                vatNumber: String(data.sellerVatNumber),
-                isoDateTime: new Date(data.issuedAt || data.createdAt || Date.now()).toISOString(),
-                totalWithVat: fmtSAR(Number(data.totalAmount)),
-                vatAmount: fmtSAR(Number(data.vatAmount)),
-            });
+        // v14.68 — الرمز **يأتي مُرمَّزاً من القاعدة**. كان يُرمَّز هنا وفي ملفّ
+        // البوت معاً، و**اختلف المخرجان فعلاً** لاسم بائعٍ أطول من ٢٥٥ بايتاً —
+        // أي رمزان على مستندٍ ضريبيّ واحد. صار `taki_zatca_tlv` مصدراً واحداً،
+        // ويبقى فحص صيغة الرقم الضريبي هنا فلا يُطبع رمزٌ لرقمٍ مشوّه.
+        if (data.zatcaTlv && isValidSaudiVat(data.sellerVatNumber) && !data.qrDataUrl) {
+            data.qrDataUrl = await qrFromTlv(data.zatcaTlv);
         }
     } catch { /* السند يُطبع بلا QR عند أي فشل */ }
 

@@ -59,47 +59,15 @@ const F = {
     dMain: 12, dSub: 11, dGeo: 10, qrCap: 9,
 };
 
-// ── Code 128B — نفس جدول src/utils/barcode128.ts ─────────────────────────
-const PATTERNS = [
-    '212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213',
-    '221312', '231212', '112232', '122132', '122231', '113222', '123122', '123221', '223211', '221132',
-    '221231', '213212', '223112', '312131', '311222', '321122', '321221', '312212', '322112', '322211',
-    '212123', '212321', '232121', '111323', '131123', '131321', '112313', '132113', '132311', '211313',
-    '231113', '231311', '112133', '112331', '132131', '113123', '113321', '133121', '313121', '211331',
-    '231131', '213113', '213311', '213131', '311123', '311321', '331121', '312113', '312311', '332111',
-    '314111', '221411', '431111', '111224', '111422', '121124', '121421', '141122', '141221', '112214',
-    '112412', '122114', '122411', '142112', '142211', '241211', '221114', '413111', '241112', '134111',
-    '111242', '121142', '121241', '114212', '124112', '124211', '411212', '421112', '421211', '212141',
-    '214121', '412121', '111143', '111341', '131141', '114113', '114311', '411113', '411311', '113141',
-    '114131', '311141', '411131', '211412', '211214', '211232', '2331112',
-];
-const START_B = 104, STOP = 106;
+// ── Code 128B و رمز زاتكا — **نسخةٌ واحدة** يقرؤها الموقع والبوتان ────────
+// كان جدول الأنماط (١٠٧) وخوارزمية مجموع التحقّق منسوخَين هنا وفي
+// `src/utils/barcode128.ts`، وكان ترميز TLV منسوخاً هنا وفي
+// `src/utils/invoice.ts` — و**اختلف مخرجا الترميز فعلاً** لاسم بائعٍ أطول من
+// ٢٥٥ بايتاً، أي رمزان على مستندٍ ضريبيّ واحد. اليوم:
+//   • الباركود من `shared/code128.js`
+//   • ورمز زاتكا **يأتي جاهزاً من القاعدة** في `v.zatca_tlv` (لا يُرمَّز هنا)
+const { encode128B, modulesCount } = require('../../shared/code128');
 
-/** سلسلة عروض العناصر (قضبان/فراغات بالتناوب، تبدأ بقضيب) أو null. */
-function encode128B(text) {
-    // نرفض ما ليس فيه محرف مقروء واحد (مسافات فقط) — نفس حارس الموقع حرفاً بحرف:
-    // باركود مسافةٍ واحدة يُمسح إلى فراغ فيوهم التاجر أنه يعمل.
-    const src = String(text == null ? '' : text).replace(/[^\x20-\x7E]/g, '');
-    if (!src.trim()) return null;
-    const values = [START_B];
-    for (let i = 0; i < src.length; i++) values.push(src.charCodeAt(i) - 32);
-    let sum = START_B;
-    for (let i = 1; i < values.length; i++) sum += values[i] * i;
-    values.push(sum % 103);
-    values.push(STOP);
-    return values.map(v => PATTERNS[v]).join('');
-}
-const modulesCount = (m) => [...m].reduce((s, d) => s + parseInt(d, 10), 0);
-
-// ── ZATCA TLV (المرحلة الأولى) — نفس src/utils/invoice.ts ─────────────────
-function zatcaTlvBase64(seller, vat, iso, total, vatAmt) {
-    const parts = [];
-    [seller, vat, iso, total, vatAmt].forEach((v, i) => {
-        const bytes = Buffer.from(String(v == null ? '' : v), 'utf8');
-        parts.push(Buffer.from([i + 1, Math.min(255, bytes.length)]), bytes.subarray(0, 255));
-    });
-    return Buffer.concat(parts).toString('base64');
-}
 /** صيغة الرقم الضريبي السعودي: ١٥ رقماً يبدأ وينتهي بـ«3» — نفس zatcaQr.ts. */
 const isValidSaudiVat = (v) => /^3\d{13}3$/.test(String(v == null ? '' : v).trim());
 
@@ -536,16 +504,12 @@ async function planInvoice(v, lang, maxItemBarcodes, maxItemLines) {
 
     // ── رمز زاتكا QR — للتاجر المسجّل ضريبياً فقط ───────────────────────
     let qrBuf = null;
-    if (vatOk && totalAmount != null && v.vat_amount != null) {
+    // v14.68 — الشرط صار وجود النصّ نفسه: القاعدة لا تُصدره إلا للقطةٍ بضريبةٍ
+    // ورقمٍ ضريبيّ وإجماليٍّ موجب، وهي نفس اللقطة التي تُطبع أرقامها أعلاه —
+    // فلا يحمل الرمزُ مبلغاً غير الذي تقرؤه العين على نفس الورقة.
+    if (vatOk && v.zatca_tlv) {
         try {
-            // الرمز يحمل أرقام الفاتورة نفسها — لا حساباً محلّياً، وإلا حمل الرمزُ
-            // مبلغاً غير الذي تقرؤه العين على نفس الورقة.
-            const tlv = zatcaTlvBase64(shop, String(v.vat_number),
-                // 🪤 `Number()` على نصّ ISO يُعطي NaN فيسقط إلى صفر، فيحمل الرمز
-                // تاريخ ١٩٧٠-٠١-٠١ على فاتورة ضريبية. `Date.parse` يقرأ الاثنين.
-                new Date(v.issued_at || v.booked_at || Date.now()).toISOString(),
-                fmtSAR(totalAmount), fmtSAR(v.vat_amount));
-            qrBuf = await QRCode.toBuffer(tlv, { errorCorrectionLevel: 'M', margin: 2, width: 260 });
+            qrBuf = await QRCode.toBuffer(String(v.zatca_tlv), { errorCorrectionLevel: 'M', margin: 2, width: 260 });
         } catch { qrBuf = null; }
         if (qrBuf) {
             const qw = 130;   // = width="130" في القالب
@@ -699,4 +663,4 @@ const invoiceFileName = (v) => `TAKI-${String((v && v.barcode) || 'invoice').rep
 /** الخطوط موجودة؟ يُفحص عند الإقلاع فيُسجَّل تحذير مبكّر بدل فشل صامت. */
 const fontsAvailable = () => fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD);
 
-module.exports = { buildInvoicePdf, planFinal, invoiceFileName, fontsAvailable, encode128B, zatcaTlvBase64, bidiRuns, splitInclusive, MAX_PAGE_H };
+module.exports = { buildInvoicePdf, planFinal, invoiceFileName, fontsAvailable, encode128B, bidiRuns, splitInclusive, MAX_PAGE_H };
