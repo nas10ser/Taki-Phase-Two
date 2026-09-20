@@ -349,17 +349,17 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                     <div style={{ fontWeight: 900, color: 'var(--dark)', marginBottom: 4 }}>{scanResult.deal.itemName}</div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{scanResult.deal.shopName}</div>
                                     <div style={{ color: 'var(--primary)', fontWeight: 900, marginTop: 4 }}>{isRTL ? 'الكمية:' : 'Qty:'} {scanResult.bookedQuantity || 1}</div>
-                                    <div style={{ color: 'var(--danger)', fontWeight: 900, marginTop: 4 }}>{scanResult.deal.discountedPrice} ر.س</div>
+                                    <div style={{ color: 'var(--danger)', fontWeight: 900, marginTop: 4 }}>{scanResult.deal.discountedPrice} {isRTL ? 'ر.س' : 'SAR'}</div>
                                 </div>
                             </div>
 
                             <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
                                 <div style={{ flex: 1, background: 'var(--gray-100)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{isRTL ? 'الرمز' : 'Code'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{isRTL ? 'الرمز' : 'Code'}</div>
                                     <div style={{ fontWeight: 900, fontFamily: 'monospace' }}>{scanResult.barcode}</div>
                                 </div>
                                 <div style={{ flex: 1, background: holdStopped ? '#dcfce7' : (remaining > 0 ? '#fef3c7' : '#fee2e2'), borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
                                         {holdStopped ? (isRTL ? 'الحالة' : 'Status') : (isRTL ? 'الوقت المتبقي' : 'Time Left')}
                                     </div>
                                     <div style={{ fontWeight: 900, color: holdStopped ? '#166534' : (remaining > 0 ? '#92400e' : '#b91c1c') }}>

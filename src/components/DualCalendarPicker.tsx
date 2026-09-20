@@ -373,7 +373,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
                             <div style={{
                                 marginBottom: 10, padding: '6px 10px', borderRadius: 10,
                                 background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.25)',
-                                color: 'white', fontSize: '0.7rem', fontWeight: 800, textAlign: 'center',
+                                color: 'white', fontSize: '0.75rem', fontWeight: 800, textAlign: 'center',
                             }}>
                                 {isRTL
                                     ? `🌟 المسموح داخل الموسم: ${minDate ? `من ${minDate}` : ''} ${maxDate ? `إلى ${maxDate}` : ''}`

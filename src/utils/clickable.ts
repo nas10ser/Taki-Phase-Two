@@ -22,10 +22,14 @@ export function clickable(
         ...(label ? { 'aria-label': label } : {}),
         onClick: onActivate,
         onKeyDown: (e: React.KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();   // بدونها تُمرّر المسافةُ الصفحةَ لأسفل
-                onActivate(e);
-            }
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            // 🔴 الحدث يصعد من الأبناء: بطاقة الحجز تحتوي صندوق محادثة، فلولا
+            // هذا الشرط لابتلعت البطاقةُ كل مسافةٍ يكتبها المشتري في رسالته
+            // ولطوَت نفسها بدل أن تُكتب المسافة. نتصرّف فقط حين يقع الحدث على
+            // العنصر نفسه لا على شيءٍ تفاعليٍّ بداخله.
+            if (e.target !== e.currentTarget) return;
+            e.preventDefault();       // بدونها تُمرّر المسافةُ الصفحةَ لأسفل
+            onActivate(e);
         },
     };
 }

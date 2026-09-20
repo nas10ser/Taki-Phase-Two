@@ -104,7 +104,7 @@ const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) =>
                             </div>
                             <div style={{
                                 marginTop: 12,
-                                fontSize: '0.7rem',
+                                fontSize: '0.75rem',
                                 fontWeight: 900,
                                 color: isActive ? 'var(--text-primary)' : 'var(--gray-400)',
                                 whiteSpace: 'nowrap',
@@ -1173,7 +1173,7 @@ const DealDetails: React.FC = () => {
                         ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
                                  : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
                         : dlvBelowMin
-                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} {isRTL ? 'ر.س' : 'SAR'} — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} {isRTL ? 'ر.س' : 'SAR'} ليصبح التوصيل متاحاً.`
+                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
                                      : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
                             : null;
     // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى، أو فرعٌ جديد لا
@@ -1866,7 +1866,7 @@ const DealDetails: React.FC = () => {
             if (optAddOnTotal > 0) parts.push(isRTL ? `${baseTotal} + ${optAddOnTotal} إضافات` : `${baseTotal} + ${optAddOnTotal} extras`);
             if (isDelivery && dlvFee > 0) parts.push(isRTL ? `${dlvFee} توصيل` : `${dlvFee} delivery`);
             const detail = parts.length ? ` (${parts.join(' + ')})` : '';
-            const tLine = `💰 ${isRTL ? `الإجمالي: ${grandTotal} {isRTL ? 'ر.س' : 'SAR'}` : `Total: ${grandTotal} SAR`}${detail}`;
+            const tLine = `💰 ${isRTL ? `الإجمالي: ${grandTotal} ر.س` : `Total: ${grandTotal} SAR`}${detail}`;
             notesWithOptions = notesWithOptions.trim() ? `${notesWithOptions}\n${tLine}` : tLine;
         }
 
@@ -2285,7 +2285,7 @@ const DealDetails: React.FC = () => {
                                 position: 'absolute', top: 12,
                                 [isRTL ? 'left' : 'right']: 12,
                                 background: 'var(--body-bg)', border: '1px solid var(--gray-200)',
-                                borderRadius: 10, padding: '4px 10px', fontSize: '0.7rem',
+                                borderRadius: 10, padding: '4px 10px', fontSize: '0.75rem',
                                 fontWeight: 900, color: 'var(--text-secondary)', cursor: 'pointer', zIndex: 2
                             } as React.CSSProperties}
                         >
@@ -2404,7 +2404,7 @@ const DealDetails: React.FC = () => {
                         <span style={{ fontSize: '1rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{unitOriginal} {isRTL ? 'ر.س' : 'SAR'}</span>
                         {unitOriginal - unitPrice > 0 && (
                             <span style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 800 }}>
-                                {isRTL ? `وفّر ${Math.round((unitOriginal - unitPrice) * 100) / 100} {isRTL ? 'ر.س' : 'SAR'}` : `Save ${Math.round((unitOriginal - unitPrice) * 100) / 100} SAR`}
+                                {isRTL ? `وفّر ${Math.round((unitOriginal - unitPrice) * 100) / 100} ر.س` : `Save ${Math.round((unitOriginal - unitPrice) * 100) / 100} SAR`}
                             </span>
                         )}
                     </div>
@@ -2486,7 +2486,7 @@ const DealDetails: React.FC = () => {
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                                     {l.name || (isRTL ? 'فرع' : 'Branch')}
-                                                    {isNearest && <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
+                                                    {isNearest && <span style={{ fontSize: '0.75rem', fontWeight: 900, color: '#fff', background: 'var(--primary)', padding: '2px 8px', borderRadius: 999 }}>{isRTL ? '📍 الأقرب' : '📍 Nearest'}</span>}
                                                 </div>
                                                 <div style={{ fontSize: '0.75rem', fontWeight: 800, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                                     {distStr && <span style={{ color: 'var(--primary)' }}>🚗 {distStr}</span>}
@@ -2753,7 +2753,7 @@ const DealDetails: React.FC = () => {
                             <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, marginBottom: 6 }}>🏷️ {r.itemName}</div>
                             <p style={{ color: 'var(--text-primary)', fontSize: '0.85rem', lineHeight: 1.6, fontWeight: 500 }}>{r.comment}</p>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>{r.date}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{r.date}</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     {user && r.id && (
                                         <button
@@ -2821,7 +2821,7 @@ const DealDetails: React.FC = () => {
                                                                 setReplyDrafts(prev => ({ ...prev, [r.id!]: r.reply || '' }));
                                                                 setActiveReplyId(r.id!);
                                                             }}
-                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}
                                                             aria-label={isRTL ? 'تعديل الرد' : 'Edit reply'}
                                                         >
                                                             ✏️ {isRTL ? 'تعديل' : 'Edit'}
@@ -2832,7 +2832,7 @@ const DealDetails: React.FC = () => {
                                                                 const ok = await customConfirm(isRTL ? 'حذف هذا الردّ؟' : 'Remove this reply?');
                                                                 if (ok) await addReply(r.dealId, r.id!, '');
                                                             }}
-                                                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' }}
+                                                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
                                                             aria-label={isRTL ? 'حذف الرد' : 'Remove reply'}
                                                         >
                                                             ✕ {isRTL ? 'حذف الرد' : 'Remove'}
@@ -3007,7 +3007,7 @@ const DealDetails: React.FC = () => {
                                         style={{ opacity: 0.55, cursor: 'not-allowed' }}
                                     >
                                         {isRTL
-                                            ? `🔒 احجز الآن — ${bookingTotal} {isRTL ? 'ر.س' : 'SAR'}`
+                                            ? `🔒 احجز الآن — ${bookingTotal} ر.س`
                                             : `🔒 Book Now — ${bookingTotal} SAR`}
                                     </button>
                                 </div>
@@ -3056,7 +3056,7 @@ const DealDetails: React.FC = () => {
                                             ? (isRTL ? '✅ تم الحجز — انتقل لحجوزاتي' : '✅ Booked — Go to Bookings')
                                             : isSoldOut
                                                 ? (isRTL ? 'نفذت الكمية' : 'Sold Out')
-                                                : (isRTL ? `🎟️ احجز الآن — ${bookingTotal} {isRTL ? 'ر.س' : 'SAR'}` : `🎟️ Book Now — ${bookingTotal} SAR`)}
+                                                : (isRTL ? `🎟️ احجز الآن — ${bookingTotal} ر.س` : `🎟️ Book Now — ${bookingTotal} SAR`)}
                                     </button>
                                 </>
                             )}
@@ -3183,7 +3183,7 @@ const DealDetails: React.FC = () => {
                                             {prevHasSel && (
                                                 <button type="button"
                                                     onClick={() => setPieceOpt(prev => ({ ...prev, [piece.key]: JSON.parse(JSON.stringify(prev[prevKey!] || {})) }))}
-                                                    style={{ border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', borderRadius: 999, padding: '5px 12px', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}>
+                                                    style={{ border: '1px solid var(--border-color)', background: 'var(--gray-100)', color: 'var(--text-primary)', borderRadius: 999, padding: '5px 12px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}>
                                                     📋 {isRTL ? 'مثل السابقة' : 'Same as previous'}
                                                 </button>
                                             )}
@@ -3243,7 +3243,7 @@ const DealDetails: React.FC = () => {
                                                                 border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)',
                                                                 background: picked && grp.mode === 'multi' ? 'var(--primary)' : 'var(--card-bg)',
                                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                color: '#fff', fontSize: '0.7rem', fontWeight: 900, transition: 'all 0.15s ease',
+                                                                color: '#fff', fontSize: '0.75rem', fontWeight: 900, transition: 'all 0.15s ease',
                                                             }}>{picked && grp.mode === 'multi' ? '✓' : ''}</div>
                                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                                 <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{choice.label}</div>
@@ -3295,7 +3295,7 @@ const DealDetails: React.FC = () => {
                             </div>
                             <div style={{ background: 'rgba(239, 68, 68, 0.15)', padding: '12px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.3)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                                 <span style={{ fontSize: '1.2rem' }}>⚠️</span>
-                                <p style={{ margin: 0, fontSize: '0.7rem', color: '#991b1b', fontWeight: 700, lineHeight: 1.5 }}>
+                                <p style={{ margin: 0, fontSize: '0.75rem', color: '#991b1b', fontWeight: 700, lineHeight: 1.5 }}>
                                     {isRTL 
                                         ? 'تنبيه: أنت مسؤول عن الحضور بالوقت المحدد. عدم الحضور قد يعرض حجزك للإلغاء.' 
                                         : 'Notice: You are responsible for arriving on time. No-shows may be canceled.'}
@@ -3339,7 +3339,7 @@ const DealDetails: React.FC = () => {
                                                 ? [
                                                     buyerAddress?.label || (isRTL ? 'عنواني المحفوظ' : 'my saved address'),
                                                     dlvFee > 0
-                                                        ? (isRTL ? `الرسوم ${dlvFee} {isRTL ? 'ر.س' : 'SAR'}` : `fee ${dlvFee} SAR`)
+                                                        ? (isRTL ? `الرسوم ${dlvFee} ر.س` : `fee ${dlvFee} SAR`)
                                                         : (isRTL ? 'مجاناً' : 'free'),
                                                     dlvQuote?.eta_min ? (isRTL ? `≈ ${dlvQuote.eta_min} دقيقة` : `≈ ${dlvQuote.eta_min} min`) : '',
                                                 ].filter(Boolean).join(' · ')
@@ -3366,7 +3366,7 @@ const DealDetails: React.FC = () => {
                                                 <div style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{opt.icon} {opt.title}</div>
-                                                    <div style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>{opt.sub}</div>
+                                                    <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>{opt.sub}</div>
                                                 </div>
                                             </div>
                                         );
@@ -3412,10 +3412,10 @@ const DealDetails: React.FC = () => {
                                                 style={{ width: '100%', padding: '11px', borderRadius: 12, border: '1.5px solid var(--primary)', background: 'var(--card-bg)', color: 'var(--primary)', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer' }}>
                                                 🚚 {isRTL ? 'استعمل موقعي الحالي وجهةً لهذا الطلب' : 'Use my current location for this order'}
                                                 {liveFee > 0
-                                                    ? (isRTL ? ` — الرسوم ${liveFee} {isRTL ? 'ر.س' : 'SAR'}` : ` — fee ${liveFee} SAR`)
+                                                    ? (isRTL ? ` — الرسوم ${liveFee} ر.س` : ` — fee ${liveFee} SAR`)
                                                     : (isRTL ? ' — توصيل مجاني' : ' — free delivery')}
                                             </button>
-                                            <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            <div style={{ marginTop: 6, fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                                 {isRTL ? 'لهذا الطلب فقط — لن يُحفظ في عناويني.' : 'For this order only — it will not be saved to my addresses.'}
                                             </div>
                                         </div>
@@ -3454,7 +3454,7 @@ const DealDetails: React.FC = () => {
                                         <div style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)', marginBottom: 8 }}>
                                             📍 {isRTL ? 'عنوان التوصيل' : 'Delivery address'}
                                             {dlvLoading && (
-                                                <span style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
+                                                <span style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginInlineStart: 6 }}>
                                                     {isRTL ? '— جاري التحقق…' : '— checking…'}
                                                 </span>
                                             )}
@@ -3477,7 +3477,7 @@ const DealDetails: React.FC = () => {
                                                     : serviceable
                                                         ? [
                                                             rowFee > 0
-                                                                ? (isRTL ? `الرسوم ${rowFee} {isRTL ? 'ر.س' : 'SAR'}` : `fee ${rowFee} SAR`)
+                                                                ? (isRTL ? `الرسوم ${rowFee} ر.س` : `fee ${rowFee} SAR`)
                                                                 : (isRTL ? 'توصيل مجاني' : 'free delivery'),
                                                             q?.eta_min ? (isRTL ? `≈ ${q.eta_min} دقيقة` : `≈ ${q.eta_min} min`) : '',
                                                         ].filter(Boolean).join(' · ')
@@ -3517,11 +3517,11 @@ const DealDetails: React.FC = () => {
                                                             ) : (
                                                                 /* v14.09 — دبّوسٌ بلا وصف يوصل المندوب إلى الشارع لا إلى الباب:
                                                                    نقولها هنا حيث يختار، لا بعد أن يضيع الطلب. */
-                                                                <div style={{ fontWeight: 800, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
+                                                                <div style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.6 }}>
                                                                     ⚠️ {isRTL ? 'بلا تفاصيل — قد لا يجدك التاجر.' : 'No details — the merchant may not find you.'}
                                                                     <button type="button"
                                                                         onClick={(e) => { e.stopPropagation(); setAddrSheetOpen(true); }}
-                                                                        style={{ background: 'none', border: 'none', padding: 0, marginInlineStart: 6, color: 'var(--primary)', fontWeight: 900, fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                                        style={{ background: 'none', border: 'none', padding: 0, marginInlineStart: 6, color: 'var(--primary)', fontWeight: 900, fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                                                         {isRTL ? 'أضِف التفاصيل' : 'Add details'}
                                                                     </button>
                                                                 </div>
@@ -3543,7 +3543,7 @@ const DealDetails: React.FC = () => {
                                                 ➕ {isRTL ? 'إضافة عنوان أو تعديل عناويني' : 'Add or edit my addresses'}
                                             </button>
                                         </div>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
                                             {isRTL ? '🔒 يُشارَك عنوانك مع تاجر هذا الطلب وحده لتنفيذ التوصيل.'
                                                    : '🔒 Your address is shared only with this order’s merchant to deliver it.'}
                                         </div>
@@ -3573,7 +3573,7 @@ const DealDetails: React.FC = () => {
                                             style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--primary)', fontWeight: 900, fontSize: '0.76rem', cursor: 'pointer', textDecoration: 'underline' }}>
                                             {isRTL ? 'تغيير العنوان' : 'Change address'}
                                         </button>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
                                             {isRTL ? '🔒 يُشارَك عنوانك مع تاجر هذا الطلب وحده لتنفيذ التوصيل.'
                                                    : '🔒 Your address is shared only with this order’s merchant to deliver it.'}
                                         </div>
@@ -3655,13 +3655,13 @@ const DealDetails: React.FC = () => {
                                     {/* v12.60 — تفصيل الإضافات حتى لا يستغرب المشتري الزيادة */}
                                     {optAddOnTotal > 0 && (
                                         <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
-                                            {isRTL ? `منها إضافات: +${optAddOnTotal} {isRTL ? 'ر.س' : 'SAR'}` : `incl. add-ons: +${optAddOnTotal} SAR`}
+                                            {isRTL ? `منها إضافات: +${optAddOnTotal} ر.س` : `incl. add-ons: +${optAddOnTotal} SAR`}
                                         </span>
                                     )}
                                     {/* v14.06 — رسوم التوصيل تُعلَن في الإجمالي لا تُفاجئ المشتري عند الباب */}
                                     {isDelivery && dlvFee > 0 && (
                                         <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textAlign: isRTL ? 'left' : 'right' }}>
-                                            {isRTL ? `منها توصيل: +${dlvFee} {isRTL ? 'ر.س' : 'SAR'}` : `incl. delivery: +${dlvFee} SAR`}
+                                            {isRTL ? `منها توصيل: +${dlvFee} ر.س` : `incl. delivery: +${dlvFee} SAR`}
                                         </span>
                                     )}
                                 </span>

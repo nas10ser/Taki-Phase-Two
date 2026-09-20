@@ -191,11 +191,11 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                                 <div style={{ display: 'flex', gap: 10 }}>
                                     <div style={{ flex: 1, textAlign: 'center', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 14, padding: '10px 8px' }}>
                                         <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#10b981' }}>{stats.total.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}</div>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{isRTL ? 'سجّلوا عبر رابطك' : 'joined via your link'}</div>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{isRTL ? 'سجّلوا عبر رابطك' : 'joined via your link'}</div>
                                     </div>
                                     <div style={{ flex: 1, textAlign: 'center', background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 14, padding: '10px 8px' }}>
                                         <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-primary)' }}>{stats.last30.toLocaleString(isRTL ? 'ar-SA' : 'en-US')}</div>
-                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{isRTL ? 'آخر ٣٠ يوماً' : 'last 30 days'}</div>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{isRTL ? 'آخر ٣٠ يوماً' : 'last 30 days'}</div>
                                     </div>
                                 </div>
                             )}
@@ -251,7 +251,7 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                                             ? 'اطبع الباركود وعلّقه في متجرك أو أرسله لعملائك — مسحه يفتح صفحة التسجيل مباشرة في المتصفح (لا يحتاج العميل تحميل أي تطبيق).'
                                             : 'Print this QR in your store or send it to customers — scanning opens the signup page directly in the browser (no app install needed).'}
                                     </div>
-                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', marginTop: 6, fontFamily: 'monospace', direction: 'ltr' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b', marginTop: 6, fontFamily: 'monospace', direction: 'ltr' }}>
                                         {isRTL ? 'رمزك:' : 'Your code:'} {code}
                                     </div>
                                 </div>

@@ -80,7 +80,7 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                     <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.9rem' }}>{isRTL ? 'ساعات عمل المحل' : 'Working Hours'}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-                            <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.7rem', padding: '2px 9px', borderRadius: 999 }}>{dot} {pill.text}</span>
+                            <span style={{ background: bg, color: col, fontWeight: 900, fontSize: '0.75rem', padding: '2px 9px', borderRadius: 999 }}>{dot} {pill.text}</span>
                             {enabled && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700, direction: 'ltr' }}>{todayHoursLabel({ enabled, days }, isRTL)}</span>}
                         </div>
                     </div>
@@ -100,7 +100,7 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                     <span style={{ fontSize: '1.3rem' }}>🕐</span>
                     <div>
                         <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.95rem' }}>{isRTL ? 'ساعات عمل المحل' : 'Shop Working Hours'}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'اختياري — تظهر للعملاء وتمنع الحجز خارج الدوام' : 'Optional — shown to customers; blocks booking when closed'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, var(--gray-400))', fontWeight: 700 }}>{isRTL ? 'اختياري — تظهر للعملاء وتمنع الحجز خارج الدوام' : 'Optional — shown to customers; blocks booking when closed'}</div>
                     </div>
                 </div>
                 {/* master switch */}
@@ -122,11 +122,11 @@ const WorkingHoursEditor: React.FC<Props> = ({ value, isRTL, saving, onSave }) =
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                         {isOpen && shifts.length < 2 && (
                                             <button type="button" onClick={() => addShift(d)} title={isRTL ? 'فترة ثانية' : 'Second shift'}
-                                                style={{ background: 'transparent', border: '1px dashed var(--primary)', color: 'var(--primary)', borderRadius: 8, padding: '3px 8px', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer' }}>+ {isRTL ? 'فترة' : 'shift'}</button>
+                                                style={{ background: 'transparent', border: '1px dashed var(--primary)', color: 'var(--primary)', borderRadius: 8, padding: '3px 8px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>+ {isRTL ? 'فترة' : 'shift'}</button>
                                         )}
                                         {isOpen && (
                                             <button type="button" onClick={() => copyToAll(d)} title={isRTL ? 'انسخ لكل الأيام' : 'Copy to all days'}
-                                                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer' }}>📋 {isRTL ? 'للكل' : 'all'}</button>
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>📋 {isRTL ? 'للكل' : 'all'}</button>
                                         )}
                                         <button type="button" onClick={() => toggleDay(d, !isOpen)}
                                             style={{ background: isOpen ? 'rgba(16,185,129,0.12)' : 'var(--gray-100)', color: isOpen ? 'var(--primary)' : 'var(--gray-500)', border: 'none', borderRadius: 8, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', minWidth: 54 }}>

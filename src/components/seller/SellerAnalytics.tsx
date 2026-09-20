@@ -286,14 +286,14 @@ const Kpi: React.FC<{ emoji: string; value: string; label: string; accent: strin
         <div style={{ fontSize: '1.25rem', marginBottom: 3 }}>{emoji}</div>
         <div style={{ fontSize: small ? '0.82rem' : '1.15rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.15 }}>{value}</div>
         <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: 3 }}>{label}</div>
-        {hint && <div style={{ fontSize: '0.56rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
+        {hint && <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.85, marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
     </div>
 );
 
 const Section: React.FC<{ title: string; subtitle?: string; children: React.ReactNode }> = ({ title, subtitle, children }) => (
     <div style={{ background: 'var(--card-bg)', borderRadius: 22, padding: 18, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 900, margin: 0, color: 'var(--text-primary)' }}>{title}</h3>
-        {subtitle && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 3 }}>{subtitle}</div>}
+        {subtitle && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 3 }}>{subtitle}</div>}
         <div style={{ marginTop: 14 }}>{children}</div>
     </div>
 );
@@ -339,7 +339,7 @@ const AreaChart: React.FC<{ values: number[]; labels: string[]; isRTL: boolean }
                     <circle key={i} cx={x(i)} cy={y(v)} r={3} fill="var(--primary)" />
                 ) : null)}
             </svg>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.58rem', color: 'var(--text-secondary)', fontWeight: 600, direction: isRTL ? 'rtl' : 'ltr' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, direction: isRTL ? 'rtl' : 'ltr' }}>
                 <span>{labels[0]}</span>
                 {labels.length > 2 && <span>{labels[Math.floor(labels.length / 2)]}</span>}
                 <span>{labels[labels.length - 1]}</span>
@@ -359,7 +359,7 @@ const VBars: React.FC<{ values: number[]; color: string; isRTL: boolean; labelEv
                     const v = values[i];
                     return (
                         <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }} title={`${fmtLabel(i)} — ${v}`}>
-                            {showValues && v > 0 && <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 2 }}>{v}</span>}
+                            {showValues && v > 0 && <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 2 }}>{v}</span>}
                             <div style={{ width: '100%', maxWidth: 26, height: `${(v / max) * 100}%`, minHeight: v > 0 ? 3 : 0, background: color, borderRadius: '4px 4px 0 0', opacity: v > 0 ? 1 : 0.15, transition: 'height 0.3s ease' }} />
                         </div>
                     );
@@ -367,7 +367,7 @@ const VBars: React.FC<{ values: number[]; color: string; isRTL: boolean; labelEv
             </div>
             <div style={{ display: 'flex', gap: 2, marginTop: 5 }}>
                 {arr.map((i) => (
-                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: '0.55rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                         {i % labelEvery === 0 ? fmtLabel(i) : ''}
                     </div>
                 ))}

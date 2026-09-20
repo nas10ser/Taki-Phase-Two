@@ -332,6 +332,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // يبدأ بنفس القيمة الأولى للحالة (مفضلة الزائر) لا بمصفوفة فارغة.
     const favoritesRef = useRef<string[]>(favorites);
     useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
+
+    /**
+     * v14.63 — ترطيب المفضلة **بمسارٍ واحد** لكل طرق الدخول الثلاث (استعادة
+     * جلسة · حدث تسجيل دخول · إعادة مزامنة). ما حفظه الزائر قبل التسجيل يُدمج
+     * في حسابه ثم يُمسح محلياً — وإلا ضاع في اللحظة التي يسجّل فيها.
+     * 🪤 كان الدمج مكتوباً في مسارٍ واحد من الثلاثة، فالدخول من المسارين
+     * الآخرين يمسح ما حفظه الزائر بلا أثر.
+     */
+    const hydrateFavorites = useCallback(async (uid: string) => {
+        const pending = guestFavorites.read();
+        if (pending.length) {
+            await userRepository.mergeFavorites(pending);
+            guestFavorites.clear();
+        }
+        const f = await userRepository.getFavorites();
+        setFavorites(f);
+        favoritesRef.current = f;
+        writeSnapshot('fav_' + uid, f);
+    }, []);
     const [followedMerchants, setFollowedMerchants] = useState<string[]>([]);
     const [blockedMerchants, setBlockedMerchants] = useState<string[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -917,12 +936,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             Promise.allSettled([
                                 // v14.63 — ما حفظه الزائر قبل التسجيل يُدمج في حسابه
                                 // ثم يُمسح محلياً، فلا يضيع ولا يتكرّر.
-                                (async () => {
-                                    const pending = guestFavorites.read();
-                                    if (pending.length) { await userRepository.mergeFavorites(pending); guestFavorites.clear(); }
-                                    const f = await userRepository.getFavorites();
-                                    setFavorites(f); writeSnapshot('fav_' + uid, f);
-                                })(),
+                                hydrateFavorites(uid),
                                 notificationRepository.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + uid, p.rows); }),
                                 import('../repositories/bookingRepository').then(({ bookingRepository }) =>
                                     // Pass the deals we already have so getByUser
@@ -1136,7 +1150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             import('../repositories/notificationRepository').then(({ notificationRepository: nr }) =>
                                 nr.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + spUser.id, p.rows); }).catch(() => {})
                             );
-                            userRepository.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + spUser.id, f); }).catch(() => {});
+                            hydrateFavorites(spUser.id).catch(() => {});
                             userRepository.getFollowedMerchants().then(setFollowedMerchants).catch(() => {});
                             // Branches feed the "📍 لوكيشن سابق" chip picker;
                             // only sellers/admins need them.
@@ -1351,10 +1365,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const ok = isAdding
             ? await userRepository.addFavorite(id)
             : await userRepository.removeFavorite(id);
-        if (!ok) {                                           // تراجع صريح
-            setFavorites(prev);
-            favoritesRef.current = prev;
-            writeSnapshot('fav_' + uid, prev);
+        if (!ok) {
+            // 🪤 التراجع يُطبَّق على **هذا المعرّف وحده** لا بإعادة اللقطة
+            // القديمة كاملة: نقرةٌ ثانية ناجحة أثناء انتظار الأولى كانت
+            // ستُمحى معها. (كشفته المراجعة الخصمية قبل النشر.)
+            const now = favoritesRef.current;
+            const reverted = isAdding ? now.filter(f => f !== id) : (now.includes(id) ? now : [...now, id]);
+            setFavorites(reverted);
+            favoritesRef.current = reverted;
+            writeSnapshot('fav_' + uid, reverted);
         }
     }, []);
 
@@ -3302,7 +3321,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         });
                     })) : Promise.resolve(),
                     ruid ? import('../repositories/notificationRepository').then(({ notificationRepository: nr }) => nr.browsePage(null, 100).then(p => { setNotifications(p.rows); setNotifUnread(p.unreadTotal); writeSnapshot('notif_' + ruid, p.rows); })) : Promise.resolve(),
-                    ruid ? import('../repositories/userRepository').then(({ userRepository: ur }) => ur.getFavorites().then(f => { setFavorites(f); writeSnapshot('fav_' + ruid, f); })) : Promise.resolve(),
+                    ruid ? hydrateFavorites(ruid) : Promise.resolve(),
                     // v13.80 — دمج لا استبدال: الاستبدال كان يمسح ملفات المتاجر
                     // التي جُلبت بالمعرّف (متجر خارج الصفحة المسقوفة) فتفقد
                     // بطاقاته اسمه وشعاره حتى تُجلب من جديد.

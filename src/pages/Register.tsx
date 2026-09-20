@@ -1477,7 +1477,7 @@ const Register: React.FC = () => {
                                     marginTop: 10,
                                     paddingTop: 10,
                                     borderTop: '1px solid rgba(148, 163, 184, 0.15)',
-                                    fontSize: '0.7rem',
+                                    fontSize: '0.75rem',
                                     color: 'rgba(180, 195, 220, 0.7)',
                                     lineHeight: 1.5,
                                     fontWeight: 500,

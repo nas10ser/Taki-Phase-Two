@@ -213,7 +213,7 @@ export const BannerImageEditor: React.FC<Props> = ({
                     <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
                         {isRTL ? 'حدّد جزء البانر' : 'Position banner'}
                     </div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: 2 }}>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: 2 }}>
                         {isRTL ? 'حرّك الصورة لاختيار الجزء الظاهر' : 'Drag to choose the visible part'}
                     </div>
                 </div>

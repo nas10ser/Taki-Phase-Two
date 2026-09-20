@@ -470,7 +470,7 @@ const AdminInvoices: React.FC = () => {
                             <div key={g.merchant_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid var(--border-color)', background: 'var(--body-bg)', flexWrap: 'wrap' }}>
                                 <div style={{ flex: 1, minWidth: 180 }}>
                                     <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{g.store_name || g.merchant_id}</div>
-                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>
                                         {PROVIDER_AR[g.provider] || g.provider} · طرق الدفع: {g.payment_modes === 'both' ? 'الاثنان' : g.payment_modes === 'online' ? 'إلكتروني فقط' : 'عند الاستلام'}
                                         {g.key_last4 ? ` · سر ••••${g.key_last4}` : ''}
                                         {g.effective_mode ? ` · يراه المشتري: ${g.effective_mode === 'both' ? 'الاثنان' : g.effective_mode === 'online' ? 'إلكتروني فقط' : 'عند الاستلام'}` : ''}
@@ -513,10 +513,10 @@ const AdminInvoices: React.FC = () => {
                                 style={{ width: 34, height: 34, borderRadius: 17, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 900, cursor: 'pointer' }}>✕</button>
                         </div>
                         <div style={{ textAlign: 'center', background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 16, marginBottom: 14 }}>
-                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>المبلغ المدفوع لحساب التاجر مباشرة</div>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>المبلغ المدفوع لحساب التاجر مباشرة</div>
                             <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary)' }}>{Number(viewRow.amount).toFixed(2)} <span style={{ fontSize: '1rem' }}>ر.س</span></div>
                             <span style={{
-                                display: 'inline-block', marginTop: 6, padding: '4px 12px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 900,
+                                display: 'inline-block', marginTop: 6, padding: '4px 12px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 900,
                                 background: viewRow.status === 'paid' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
                                 color: viewRow.status === 'paid' ? '#059669' : '#b45309',
                             }}>{STATUS_AR[viewRow.status] || viewRow.status}</span>

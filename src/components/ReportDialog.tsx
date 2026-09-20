@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { reportRepository, ReportType, Role } from '../repositories/reportRepository';
+import { useEscClose } from '../hooks/useEscClose';
 
 /**
  * Reusable report dialog (buyer↔merchant only — enforced server-side by
@@ -28,6 +29,8 @@ const TYPES: { key: ReportType; ar: string; en: string }[] = [
 ];
 
 const ReportDialog: React.FC<Props> = ({ reportedId, reportedRole, reportedName, isRTL, onClose }) => {
+    // v14.63 — Escape يُغلق الحوار (الخطّاف موجود في المشروع ولم يكن يُستعمل هنا)
+    useEscClose(true, onClose);
     const { user, customAlert } = useApp();
     const [type, setType] = useState<ReportType>('scam');
     const [reason, setReason] = useState('');
@@ -89,6 +92,7 @@ const ReportDialog: React.FC<Props> = ({ reportedId, reportedRole, reportedName,
         <div
             dir={isRTL ? 'rtl' : 'ltr'}
             onClick={onClose}
+            aria-hidden="true"
             style={{
                 position: 'fixed', inset: 0, zIndex: 100000,
                 background: 'rgba(0,0,0,0.55)',
@@ -98,6 +102,9 @@ const ReportDialog: React.FC<Props> = ({ reportedId, reportedRole, reportedName,
         >
             <div
                 onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={isRTL ? 'إبلاغ عن مخالفة' : 'Report a violation'}
                 style={{
                     background: 'var(--card-bg, #fff)', color: 'var(--text-primary, #111)',
                     width: '100%', maxWidth: 520,

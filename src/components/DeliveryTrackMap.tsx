@@ -546,7 +546,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
 
                         {/* الخريطة */}
                         <div style={{ height: 'min(52vh, 380px)', width: '100%', position: 'relative', flexShrink: 0 }}>
-                            <MapContainer center={center} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                            <MapContainer center={center} zoom={13}  style={{ height: '100%', width: '100%' }}>
                                 <MapAutoResize />
                                 <TileLayer
                                     url={TAKI_TILE_URL}

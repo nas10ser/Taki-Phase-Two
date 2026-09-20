@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { complaintRepository, ComplaintCategory } from '../repositories/complaintRepository';
+import { useEscClose } from '../hooks/useEscClose';
 
 /**
  * User-facing complaint form (#3). Opened from the side menu. Writes to
@@ -20,6 +21,8 @@ const CATS: { key: ComplaintCategory; ar: string; en: string }[] = [
 ];
 
 const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
+    // v14.63 — Escape يُغلق الحوار
+    useEscClose(true, onClose);
     const { user, customAlert } = useApp();
     const [cat, setCat] = useState<ComplaintCategory>('app_issue');
     const [subject, setSubject] = useState('');
@@ -61,8 +64,12 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
 
     const overlay = (
         <div dir={isRTL ? 'rtl' : 'ltr'} onClick={onClose}
+            aria-hidden="true"
             style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
             <div onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={isRTL ? 'شكوى' : 'Complaint'}
                 style={{
                     background: 'var(--card-bg, #fff)', color: 'var(--text-primary, #111)',
                     width: '100%', maxWidth: 520, borderTopLeftRadius: 24, borderTopRightRadius: 24,

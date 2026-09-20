@@ -364,7 +364,7 @@ const AccountSettingsCard: React.FC = () => {
         fontWeight: 800, border: 'none', fontSize: '0.9rem', cursor: 'pointer'
     };
     const noteStyle: React.CSSProperties = {
-        fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6
+        fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, lineHeight: 1.6
     };
 
     /**

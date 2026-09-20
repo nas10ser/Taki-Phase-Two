@@ -1271,7 +1271,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                         <div style={{ width: 20, height: 20, flexShrink: 0, borderRadius: '50%', border: picked ? '6px solid var(--primary)' : '2px solid var(--gray-300)', background: 'var(--card-bg)' }} />
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>{isRTL ? mo.ar : mo.en}</div>
-                                            <div style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>{isRTL ? mo.hintAr : mo.hintEn}</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{isRTL ? mo.hintAr : mo.hintEn}</div>
                                         </div>
                                     </div>
                                 );
@@ -1378,7 +1378,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                         )}
 
                         <div ref={mapBoxRef} style={{ height: 320, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                            <MapContainer center={mapCenter} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                            <MapContainer center={mapCenter} zoom={13}  style={{ height: '100%', width: '100%' }}>
                                 <MapAutoResize />
                                 <TileLayer
                                     url={TAKI_TILE_URL}

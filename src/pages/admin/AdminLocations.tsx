@@ -205,7 +205,7 @@ const AdminLocations: React.FC = () => {
                                 <div className="text-[11px] text-[var(--text-secondary)] mb-1.5">اضغط على الخريطة أو اسحب الدبّوس لتحديد مكان المول بدقّة.</div>
                                 <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]" style={{ height: 240 }}>
                                     {form.city_id || (form.lat && form.lng) ? (
-                                        <MapContainer center={mapCenter} zoom={form.lat ? 14 : 11} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                        <MapContainer center={mapCenter} zoom={form.lat ? 14 : 11}  style={{ height: '100%', width: '100%' }}>
                                             <MapAutoResize />
                                             <TileLayer
                                         url={TAKI_TILE_URL}

@@ -253,7 +253,7 @@ const Nearby: React.FC = () => {
                 <div style={{ background: 'rgba(80, 80, 90, 0.2)', backdropFilter: 'blur(10px)', border: '1px solid rgba(100, 100, 100, 0.15)', padding: '12px 16px', borderRadius: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontSize: '1.2rem' }}>📍</span>
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.7rem', color: 'rgba(150, 150, 150, 0.8)', fontWeight: 800, marginBottom: 2 }}>{isRTL ? 'تصفح العروض في:' : 'Browsing deals in:'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'rgba(150, 150, 150, 0.8)', fontWeight: 800, marginBottom: 2 }}>{isRTL ? 'تصفح العروض في:' : 'Browsing deals in:'}</div>
                         <div style={{ fontSize: '1rem', fontWeight: 900, color: 'white' }}>{locName}</div>
                     </div>
                 </div>
@@ -459,7 +459,7 @@ const Nearby: React.FC = () => {
                     position: 'relative',
                 }}
             >
-                <MapContainer center={[userLat, userLng]} zoom={15} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                <MapContainer center={[userLat, userLng]} zoom={15}  style={{ height: '100%', width: '100%' }}>
                     <MapAutoResize />
                     <FollowController lat={userLat} lng={userLng} follow={followMode} onUserDrag={() => setFollowMode(false)} initZoom={initZoom} />
                     <FlyController target={flyTarget} />
@@ -637,7 +637,7 @@ const Nearby: React.FC = () => {
                                         marginInlineStart: 'auto',
                                         background: isVeryClose ? '#10b981' : 'var(--primary)',
                                         color: '#ffffff',
-                                        fontSize: '0.7rem',
+                                        fontSize: '0.75rem',
                                         fontWeight: 900,
                                         padding: '3px 9px',
                                         borderRadius: 999,
@@ -654,11 +654,13 @@ const Nearby: React.FC = () => {
                                         return (
                                             <>
                                                 <span style={{ color: 'var(--danger)', fontWeight: 900, fontSize: '1rem' }}>
-                                                    {vs.length ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`) : `${deal.discountedPrice} ر.س`}
+                                                    {vs.length
+                                                        ? (isRTL ? `يبدأ من ${fromPrice} ر.س` : `From ${fromPrice} SAR`)
+                                                        : `${deal.discountedPrice} ${isRTL ? 'ر.س' : 'SAR'}`}
                                                 </span>
                                                 <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through', fontSize: '0.75rem' }}>{deal.originalPrice}</span>
                                                 {vs.length > 0 && (
-                                                    <span style={{ fontSize: '0.6rem', fontWeight: 900, color: 'var(--primary)', background: 'var(--primary-light)', borderRadius: 999, padding: '2px 7px' }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--primary)', background: 'var(--primary-light)', borderRadius: 999, padding: '2px 7px' }}>
                                                         🧬 {isRTL ? `${vs.length} خيارات` : `${vs.length} versions`}
                                                     </span>
                                                 )}
@@ -691,7 +693,7 @@ const Nearby: React.FC = () => {
                                     )}
                                 </div>
                                 {locName && (
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         🏷️ {locName}
                                     </div>
                                 )}

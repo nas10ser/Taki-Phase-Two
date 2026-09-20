@@ -954,9 +954,19 @@ const SellerDashboard: React.FC = () => {
     // window, kicking off two parallel proxy cascades. Ref instead of
     // state so it's immediately visible to the concurrent caller.
     const resolutionInFlightRef = useRef(false);
-    const [mapPos, setMapPos] = useState<[number, number]>([24.7136, 46.6753]);
-    /** يزيد فقط حين يأتي الموقع من خارج الخريطة، فتتحرّك الكاميرا عندها وحدها (v14.63). */
+    const [mapPos, setMapPosRaw] = useState<[number, number]>([24.7136, 46.6753]);
+    /** يزيد مع كل كتابةٍ من **خارج** الخريطة، فتتحرّك الكاميرا عندها وحدها (v14.63). */
     const [mapNonce, setMapNonce] = useState(0);
+    /**
+     * 🪤 الافتراض هنا مقصود: **كل** كتابةٍ تُحرّك الكاميرا إلا ما يُعلَن صراحةً
+     * أنه من داخل الخريطة. عشرة مواضع تكتب `mapPos` (رابط مُحلَّل، مزامنة ملف
+     * المتجر، اختيار مدينة أو مول، تحرير عرضٍ قائم، إعادة ضبط…) وكلها يجب أن
+     * تُحرّكها — ولو جعلنا الأصل «لا تتحرّك» لسقط أكثرها بصمت.
+     */
+    const setMapPos = useCallback((pos: [number, number], fromMap = false) => {
+        setMapPosRaw(pos);
+        if (!fromMap) setMapNonce(n => n + 1);
+    }, []);
     const [submitted, setSubmitted] = useState(false);
 
     // Auto-resolve link with debounce
@@ -1883,9 +1893,8 @@ const SellerDashboard: React.FC = () => {
     }, [view, uploadingImages]);
 
     const autoUpdateLocation = (lat: number, lng: number, fromMap = false) => {
-        setMapPos([lat, lng]);
-        // تحريك الكاميرا مقصورٌ على ما يأتي من خارج الخريطة.
-        if (!fromMap) setMapNonce(n => n + 1);
+        // النقرة والسحب داخل الخريطة لا يحرّكان الكاميرا، وكل ما عداهما يحرّكها.
+        setMapPos([lat, lng], fromMap);
         
         // 1. Check if near a known Mall/Market
         const nearestLoc = findNearestLocation(lat, lng);
@@ -3016,7 +3025,7 @@ const SellerDashboard: React.FC = () => {
                                         position: 'absolute', top: -5, right: -5,
                                         background: '#ef4444', color: 'white',
                                         width: 20, height: 20, borderRadius: '50%',
-                                        fontSize: '0.7rem', fontWeight: 900,
+                                        fontSize: '0.75rem', fontWeight: 900,
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         border: '2px solid white', boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
                                     }}>
@@ -3294,7 +3303,7 @@ const SellerDashboard: React.FC = () => {
                             {locationId === 'other' && (
                                 <input style={{ ...fieldInputStyle, marginBottom: 8 }} placeholder={isRTL ? 'اسم الموقع المخصص' : 'Custom Location Name'} value={customLocationName} onChange={e => setCustomLocationName(e.target.value)} />
                             )}
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 6 }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 6 }}>
                                 {isRTL
                                     ? '💡 يمكنك لصق رابط قوقل ماب (مختصر أو طويل) أو الإحداثيات مباشرة بصيغة: 24.7136, 46.6753'
                                     : '💡 Paste a Google Maps link (short or long) — or coordinates as: 24.7136, 46.6753'}
@@ -3545,7 +3554,7 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                             )}
                             <div style={{
-                                fontSize: '0.7rem',
+                                fontSize: '0.75rem',
                                 color: 'var(--text-secondary)',
                                 background: 'var(--notif-unread-bg)',
                                 padding: '8px 12px',
@@ -3563,7 +3572,7 @@ const SellerDashboard: React.FC = () => {
                                     into the library's prefix string. We don't need
                                     the badge here — the map is a picker, not a
                                     publishing surface. */}
-                                <MapContainer center={mapPos} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                                <MapContainer center={mapPos} zoom={13}  style={{ height: '100%', width: '100%' }}>
                                     <MapAutoResize />
                                     <TileLayer
                                         url={TAKI_TILE_URL}
@@ -4187,7 +4196,7 @@ const SellerDashboard: React.FC = () => {
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                                     <NumericField integer value={g.qty} onChange={n => setVarGroupQty(bkey, gi, n)} placeholder={isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : 'qty'}
                                                         style={{ width: 92, padding: '8px 9px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(g.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--body-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }} />
-                                                    <span style={{ flex: 1, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
+                                                    <span style={{ flex: 1, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
                                                     <button type="button" onClick={() => removeVarGroup(bkey, gi)} aria-label={isRTL ? 'حذف المجموعة' : 'Remove group'}
                                                         style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 9, padding: '5px 9px', fontWeight: 900, cursor: 'pointer', flexShrink: 0 }}>✕</button>
                                                 </div>
@@ -4314,7 +4323,7 @@ const SellerDashboard: React.FC = () => {
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                                             <NumericField integer value={g.qty} onChange={n => setVarGroupQty(v.id, gi, n)} placeholder={isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : 'qty'}
                                                                 style={{ width: 92, padding: '8px 9px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(g.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }} />
-                                                            <span style={{ flex: 1, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
+                                                            <span style={{ flex: 1, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
                                                             <button type="button" onClick={() => removeVarGroup(v.id, gi)} aria-label={isRTL ? 'حذف المجموعة' : 'Remove group'}
                                                                 style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 9, padding: '5px 9px', fontWeight: 900, cursor: 'pointer', flexShrink: 0 }}>✕</button>
                                                         </div>
@@ -4405,7 +4414,7 @@ const SellerDashboard: React.FC = () => {
                             {variants.length > 0 && (
                                 <div style={{
                                     marginTop: 8, padding: '8px 12px', borderRadius: 10, lineHeight: 1.6,
-                                    fontSize: '0.7rem', fontWeight: 700,
+                                    fontSize: '0.75rem', fontWeight: 700,
                                     background: expiryType === 'stock' ? 'var(--danger-light)' : 'var(--gray-50)',
                                     color: expiryType === 'stock' ? 'var(--danger)' : 'var(--text-secondary)',
                                     border: `1px solid ${expiryType === 'stock' ? 'var(--danger)' : 'var(--border-color)'}`,
@@ -4484,7 +4493,7 @@ const SellerDashboard: React.FC = () => {
                                     <div style={{
                                         marginBottom: 10, padding: '8px 12px', borderRadius: 10,
                                         background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
-                                        fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
+                                        fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.6,
                                     }}>
                                         {isRTL
                                             ? (g.mode === 'single'
@@ -4686,7 +4695,7 @@ const SellerDashboard: React.FC = () => {
                                             </div>
                                             {/* v12.50 — عند التفعيل: تذكير بحدَّي الموسم اللذين يُحصر بينهما انتهاء العرض */}
                                             {seasonTag && camp?.publicFrom && camp?.publicTo && (
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, marginTop: 4 }}>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, marginTop: 4 }}>
                                                     {isRTL
                                                         ? `⏳ ينتهي عرضك حصراً بين ${camp.publicFrom} و ${camp.publicTo} — والمدة داخلها حرة (يوم، أسبوع…).`
                                                         : `⏳ Deal must end between ${camp.publicFrom} and ${camp.publicTo}.`}
@@ -4808,7 +4817,7 @@ const SellerDashboard: React.FC = () => {
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', textAlign: 'center', padding: '0 8px' }}>
                                                 <span style={{ fontSize: '1.6rem', marginBottom: 4 }}>📸</span>
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>{isRTL ? 'إضافة صور' : 'Add Photos'}</span>
-                                                <span style={{ fontSize: '0.6rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.9, marginTop: 4 }}>
                                                     {isRTL ? 'كاميرا • قص • المزيد' : 'Camera • crop • more'}
                                                 </span>
                                             </div>
@@ -4823,7 +4832,7 @@ const SellerDashboard: React.FC = () => {
                             <textarea style={{ ...fieldInputStyle, minHeight: 120 }} value={description}
                                 onChange={e => setDescription(e.target.value)}
                                 placeholder={isRTL ? 'اكتب تفاصيل منتجك هنا بحرية...' : 'Write your product details here...'} />
-                            <div style={{ fontSize: '0.7rem', textAlign: 'left', opacity: 0.6, marginTop: 4 }}>{description.split(/\s+/).filter(w => w.length > 0).length} {isRTL ? 'كلمة' : 'words'}</div>
+                            <div style={{ fontSize: '0.75rem', textAlign: 'left', opacity: 0.6, marginTop: 4 }}>{description.split(/\s+/).filter(w => w.length > 0).length} {isRTL ? 'كلمة' : 'words'}</div>
                         </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
@@ -5465,7 +5474,7 @@ const SellerDashboard: React.FC = () => {
                                     <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.6, fontWeight: 500, margin: '6px 0' }}>{r.comment}</p>
 
                                     {/* Date */}
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>
                                         {(r.createdAt || r.date) ? new Date(r.createdAt || r.date).toLocaleString(isRTL ? 'ar-SA' : 'en-US') : ''}
                                     </div>
 

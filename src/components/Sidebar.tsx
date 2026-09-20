@@ -229,7 +229,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
                 {/* Footer: settings + auth — pinned (never scrolls) */}
                 <div style={{ borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: 16, marginTop: 16, flexShrink: 0 }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--gray-400, #94a3b8)', fontWeight: 800, marginBottom: 10, textAlign: isRTL ? 'right' : 'left', letterSpacing: 0.5 }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: 10, textAlign: isRTL ? 'right' : 'left', letterSpacing: 0.5 }}>
                         {isRTL ? 'الإعدادات' : 'SETTINGS'}
                     </div>
 
@@ -263,7 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
                     {isRealAdmin && (
                         <div style={{ marginBottom: 16 }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: 8, letterSpacing: 0.5 }}>{isRTL ? 'وضع المعاينة (للإدارة)' : 'PREVIEW MODE'}</div>
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <button onClick={() => { setViewAs('buyer'); onClose(); history.push('/'); }} 
                                     style={{ flex: 1, padding: '8px', borderRadius: 10, border: 'none', background: effectiveUserType === 'buyer' && viewAs ? 'var(--primary)' : 'var(--gray-100)', color: effectiveUserType === 'buyer' && viewAs ? 'white' : 'var(--text-primary)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>

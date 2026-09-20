@@ -74,7 +74,7 @@ export const StorePoliciesCard: React.FC = () => {
         color: 'var(--text-primary)', marginBottom: 6,
     };
     const hint: React.CSSProperties = {
-        fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)',
+        fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)',
         marginTop: 4, lineHeight: 1.7,
     };
 
@@ -145,7 +145,7 @@ export const StorePoliciesCard: React.FC = () => {
                             }}
                             style={{
                                 background: 'none', border: '1px solid var(--border-color)', borderRadius: 10,
-                                padding: '5px 10px', fontSize: '0.7rem', fontWeight: 900,
+                                padding: '5px 10px', fontSize: '0.75rem', fontWeight: 900,
                                 color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap',
                             }}
                         >

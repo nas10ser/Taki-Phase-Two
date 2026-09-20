@@ -255,7 +255,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         background: isSaved ? 'var(--primary)' : 'rgba(255, 255, 255, 0.98)',
                         color: isSaved ? '#fff' : 'var(--text-primary)',
                         border: 'none',
-                        width: 36, height: 36, borderRadius: '50%',
+                        /* 🪤 `minWidth/minHeight: 0` إلزاميان: قاعدة عامة في
+                           `styles.css` تفرض ٤٤×٤٤ على كل `button`، فبدونهما
+                           يخرج هذا الزرّ ٤٤ بينما زرّ المتابعة فوقه ٣٦ —
+                           دائرتان غير متساويتين على كل بطاقة. */
+                        width: 36, height: 36, minWidth: 0, minHeight: 0, borderRadius: '50%',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
                         transition: 'all 0.2s ease',
@@ -295,7 +299,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     color: 'white',
                     padding: '4px 10px',
                     borderRadius: 8,
-                    fontSize: '0.7rem',
+                    fontSize: '0.75rem',
                     fontWeight: 900,
                     boxShadow: '0 2px 8px rgba(239,68,68,0.3)'
                 }}>
@@ -319,7 +323,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                         color: 'white',
                         padding: '2px 8px',
                         borderRadius: 8,
-                        fontSize: '0.6rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         maxWidth: 100,
                         overflow: 'hidden',
@@ -395,7 +399,7 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     <div style={{
                         marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5,
                         background: authBadge.bg, color: authBadge.color,
-                        padding: '3px 9px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 900,
+                        padding: '3px 9px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 900,
                     }}>
                         {authBadge.label}
                         <span style={{ opacity: 0.7, fontWeight: 700 }}>

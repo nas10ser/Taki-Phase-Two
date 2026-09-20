@@ -23,7 +23,7 @@ const Attachment: React.FC<{ path: string; isRTL: boolean }> = ({ path, isRTL })
 
     if (failed) {
         return (
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, opacity: 0.8, marginBottom: 6 }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.8, marginBottom: 6 }}>
                 {isRTL ? '📎 تعذّر تحميل الصورة — حدّث الصفحة' : '📎 Could not load the image'}
             </div>
         );
@@ -248,7 +248,7 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                                 {m.attachmentPath && <Attachment path={m.attachmentPath} isRTL={isRTL} />}
                                 {m.body === '📎' && m.attachmentPath ? null : m.body}
                                 <div style={{
-                                    fontSize: '0.6rem',
+                                    fontSize: '0.75rem',
                                     fontWeight: 700,
                                     opacity: 0.75,
                                     marginTop: 4,

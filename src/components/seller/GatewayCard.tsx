@@ -448,7 +448,7 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                                         display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 12,
                                                         border: active ? '1.5px solid var(--primary)' : '1.5px solid var(--border-color)',
                                                         background: active ? 'var(--notif-unread-bg)' : 'var(--body-bg)',
-                                                        cursor: 'pointer', textAlign: 'right', fontFamily: 'inherit', width: '100%',
+                                                        cursor: 'pointer', textAlign: isRTL ? 'right' : 'left', fontFamily: 'inherit', width: '100%',
                                                     }}>
                                                     <span style={{
                                                         width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
@@ -476,13 +476,13 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                             {/* رابط الإشعارات للصقه في لوحة المزود (لا webhooks في المحاكاة) */}
                             {gw?.has_secret && provider !== 'sim' && (
                                 <div style={{ background: 'var(--body-bg)', border: '1px dashed var(--border-color)', borderRadius: 12, padding: '10px 12px' }}>
-                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', marginBottom: 6 }}>
                                         🔔 {t('رابط إشعارات الدفع (Webhook) — الصقه في إعدادات حسابك لدى', 'Payment webhook URL — paste it into your account settings at')} {L(def.name)}:
                                     </div>
                                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                                         <code style={{ flex: 1, fontSize: '0.75rem', direction: 'ltr', textAlign: 'left', color: 'var(--text-primary)', wordBreak: 'break-all', fontWeight: 600 }}>{webhookUrl}</code>
                                         <button type="button" onClick={copyWebhook}
-                                            style={{ flexShrink: 0, padding: '8px 12px', borderRadius: 10, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer' }}>
+                                            style={{ flexShrink: 0, padding: '8px 12px', borderRadius: 10, border: 'none', background: 'var(--gray-100)', color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}>
                                             📋 {t('نسخ', 'Copy')}
                                         </button>
                                     </div>
@@ -506,7 +506,17 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
                     <div style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 22, maxWidth: 520, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}>
                         <h3 style={{ margin: '0 0 12px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>📜 {t('اتفاقية استخدام التاجر — بوابة الدفع', 'Merchant agreement — payment gateway')}</h3>
-                        <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.9, background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '12px 14px' }}>
+                        {/* v14.63 — نصّ الاتفاقية عربيّ وهو **النسخة المُلزِمة**؛
+                            فمن يتصفّح بالإنجليزية يُخبَر بذلك صراحةً قبل أن يُقرّ،
+                            بدل أن يوقّع على نصٍّ لا يقرؤه. (لا تُترجَم الاتفاقية
+                            آلياً — ترجمةٌ قانونية غير مراجَعة أسوأ من لا ترجمة.) */}
+                        {!isRTL && (
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#b45309', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 12, padding: '10px 12px', marginBottom: 10, lineHeight: 1.7 }}>
+                                ⚠️ This agreement is provided in Arabic, and the Arabic text is the binding version.
+                                If you need it reviewed in English, contact TAKI before you accept.
+                            </div>
+                        )}
+                        <p dir="rtl" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.9, background: 'var(--body-bg)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '12px 14px', textAlign: 'right' }}>
                             {MERCHANT_GATEWAY_AGREEMENT}
                         </p>
                         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', margin: '12px 0' }}>

@@ -2710,7 +2710,7 @@ html.light-mode .taki-variant-row:not(.picked) {
 .deal-card-link::after {
   content: ''; position: absolute; inset: 0;
   z-index: 3;            /* فوق العدّاد (z-index:2) وتحت زرّ المتابعة (z-index:11) */
-  border-radius: 24px;
+  border-radius: var(--radius-lg);   /* نفس انحناء البطاقة تماماً — لا ٢٤ ثابتة */
 }
 .deal-card-link:focus-visible { outline: none !important; }
 .deal-card-link:focus-visible::after {

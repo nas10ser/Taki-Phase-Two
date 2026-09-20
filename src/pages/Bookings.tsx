@@ -591,7 +591,7 @@ const Bookings: React.FC = () => {
                                                         💳 {isRTL ? 'مدفوع' : 'Paid'}
                                                     </div>
                                                 )}
-                                                <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--primary)' }}>{booking.deal?.discountedPrice} ر.س</div>
+                                                <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--primary)' }}>{booking.deal?.discountedPrice} {isRTL ? 'ر.س' : 'SAR'}</div>
                                             </div>
                                         </div>
 
@@ -680,7 +680,7 @@ const Bookings: React.FC = () => {
                                                         const isAuto = !realNote;
                                                         return (
                                                             <div style={{ marginTop: 16, padding: 12, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 12, borderRight: isRTL ? '3px solid #f59e0b' : 'none', borderLeft: !isRTL ? '3px solid #f59e0b' : 'none' }}>
-                                                                <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+                                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
                                                                     💬 {isRTL ? 'رسالة التاجر:' : 'Seller Message:'}
                                                                 </div>
                                                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, fontStyle: isAuto ? 'italic' : 'normal', opacity: isAuto ? 0.85 : 1 }}>
@@ -691,7 +691,7 @@ const Bookings: React.FC = () => {
                                                     })()}
                                                     {booking.notes && (
                                                         <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.08)', borderRadius: 12, borderRight: isRTL ? '3px solid #3b82f6' : 'none', borderLeft: !isRTL ? '3px solid #3b82f6' : 'none' }}>
-                                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>📝 {isRTL ? 'ملاحظتك:' : 'Your note:'}</div>
+                                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#1e40af', marginBottom: 4 }}>📝 {isRTL ? 'ملاحظتك:' : 'Your note:'}</div>
                                                             <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'pre-line', lineHeight: 1.7 }}>{booking.notes}</div>
                                                         </div>
                                                     )}

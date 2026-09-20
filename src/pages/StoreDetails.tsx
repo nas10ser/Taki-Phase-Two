@@ -1135,13 +1135,13 @@ const StoreDetails: React.FC = () => {
                                         </div>
                                     )}
                                     <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', fontWeight: 500 }}>{r.comment}</p>
-                                    <div style={{ marginTop: 8, fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>{r.date}</div>
+                                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{r.date}</div>
 
                                     {/* Existing reply (shown when not actively editing).
                                         Merchant gets Edit + Remove controls inline. */}
                                     {r.reply && !isEditing && (
                                         <div style={{ marginTop: 12, padding: 12, background: 'var(--body-bg)', borderRadius: 12, borderRight: isRTL ? '3px solid var(--primary)' : 'none', borderLeft: !isRTL ? '3px solid var(--primary)' : 'none' }}>
-                                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                                 <span>💬 {canManage ? (isRTL ? 'ردك:' : 'Your reply:') : (isRTL ? 'رد المتجر:' : 'Store Reply:')}</span>
                                                 {canManage && (
                                                     <div style={{ display: 'flex', gap: 6 }}>

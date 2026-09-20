@@ -258,7 +258,7 @@ const SeasonalOffers: React.FC = () => {
                                 {isRTL ? '🔒 عروض قادمة' : '🔒 Coming soon'}
                             </h2>
                             <span style={{
-                                fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)',
+                                fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)',
                                 background: 'var(--card-bg)', border: '1px solid var(--border-color)',
                                 borderRadius: 999, padding: '4px 10px',
                             }}>

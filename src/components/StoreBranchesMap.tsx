@@ -155,7 +155,7 @@ const StoreBranchesMap: React.FC<Props> = ({ branches, storeName, isRTL, onClose
                 </div>
 
                 <div style={{ height: 'min(58vh, 420px)', width: '100%', position: 'relative' }}>
-                    <MapContainer center={points[0] || [24.7136, 46.6753]} zoom={13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                    <MapContainer center={points[0] || [24.7136, 46.6753]} zoom={13}  style={{ height: '100%', width: '100%' }}>
                         <MapAutoResize />
                         <TileLayer
                             url={TAKI_TILE_URL}

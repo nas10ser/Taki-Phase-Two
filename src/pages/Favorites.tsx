@@ -19,12 +19,24 @@ import BottomNav from '../components/BottomNav';
  */
 const Favorites: React.FC = () => {
     const history = useHistory();
-    const { favorites, deals, language, ingestDeals, user } = useApp();
+    const { favorites, deals, language, ingestDeals, user, isAuthReady } = useApp();
     const isRTL = language === 'ar';
     const t = createT(isRTL);
 
     // ⚠️ كل الخطّافات قبل أي `return` مبكّر — فخٌّ موثَّق أسقط الشجرة من قبل.
     const [hydrating, setHydrating] = useState(favorites.length > 0);
+    /**
+     * 🪤 مفضلة المستخدم المسجَّل تصل **بعد** أول رسم (جولة إلى جدة). بدون هذه
+     * المهلة القصيرة تومض الشاشة: «لم تحفظ أي عرض» ⇐ هيكل ⇐ الشبكة. فنمنح
+     * الجلب فرصةً قبل أن ننفي وجود شيء. (كشفته المراجعة الخصمية.)
+     */
+    const [favSettled, setFavSettled] = useState(false);
+    useEffect(() => {
+        if (!isAuthReady) return;
+        if (!user || favorites.length > 0) { setFavSettled(true); return; }
+        const timer = setTimeout(() => setFavSettled(true), 900);   // لا تُسمَّ `t` — تُظلّل دالة الترجمة
+        return () => clearTimeout(timer);
+    }, [isAuthReady, user, favorites.length]);
 
     useEffect(() => {
         if (!favorites.length) { setHydrating(false); return; }
@@ -50,7 +62,7 @@ const Favorites: React.FC = () => {
         return { live, gone };
     }, [favorites, deals]);
 
-    const empty = !hydrating && live.length === 0 && gone.length === 0;
+    const empty = favSettled && !hydrating && live.length === 0 && gone.length === 0;
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -77,7 +89,7 @@ const Favorites: React.FC = () => {
             </div>
 
             <div style={{ padding: '18px 16px 120px' }}>
-                {hydrating ? (
+                {(hydrating || !favSettled) ? (
                     <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
                         {[0, 1, 2, 3].map(i => (
                             <div key={i} style={{ height: 250, borderRadius: 24, background: 'var(--gray-100)' }} className="animate-pulse" />

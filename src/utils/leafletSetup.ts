@@ -41,7 +41,12 @@ L.Icon.Default.mergeOptions({
  */
 export const TAKI_TILE_URL =
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
-export const TAKI_TILE_ATTRIBUTION = '&copy; Esri';
+/**
+ * نصّ الإسناد كما تطلبه رخصة الخدمة. وكانت كل الخرائط تُعطّل شريط الإسناد
+ * (`attributionControl={false}`) فلا يظهر إسنادٌ لأي مزوّد — أُعيد تشغيله.
+ */
+export const TAKI_TILE_ATTRIBUTION =
+    '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> — Esri, HERE, Garmin, USGS, NGA';
 export const TAKI_TILE_MAX_ZOOM = 19;
 
 export default L;

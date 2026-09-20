@@ -63,7 +63,7 @@ const DealCountdown: React.FC<Props> = ({ deal, isRTL, comingSoon }) => {
             color: 'white',
             padding: '4px 10px',
             borderRadius: 8,
-            fontSize: '0.7rem',
+            fontSize: '0.75rem',
             fontWeight: 900,
             boxShadow: (remaining.urgent || comingSoon) ? '0 2px 10px rgba(99,102,241,0.45)' : '0 2px 6px rgba(0,0,0,0.25)',
             animation: remaining.urgent && !remaining.expired ? 'pulse 1.4s ease-in-out infinite' : 'none',

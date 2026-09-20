@@ -136,7 +136,7 @@ class ErrorBoundary extends Component<Props, State> {
               {err?.toString() ?? '(no error)'}
             </pre>
             {this.state.componentStack && (
-              <pre style={{ marginTop: 8, fontSize: '0.7rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)', maxHeight: 200, overflow: 'auto' }}>
+              <pre style={{ marginTop: 8, fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-secondary)', maxHeight: 200, overflow: 'auto' }}>
                 {this.state.componentStack}
               </pre>
             )}

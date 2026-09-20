@@ -848,7 +848,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0, onChanged, autoOpe
                                         📍 {a.label || t('عنواني', 'My address')}
                                     </span>
                                     {a.is_default && (
-                                        <span style={{ background: 'var(--primary)', color: '#fff', borderRadius: 999, padding: '3px 10px', fontSize: '0.7rem', fontWeight: 900 }}>
+                                        <span style={{ background: 'var(--primary)', color: '#fff', borderRadius: 999, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 900 }}>
                                             ⭐ {t('الافتراضي', 'Default')}
                                         </span>
                                     )}
@@ -922,7 +922,7 @@ const BuyerAddressCard: React.FC<Props> = ({ focusSignal = 0, onChanged, autoOpe
                         {editing ? t('تعديل العنوان', 'Edit address') : t('عنوان جديد', 'New address')}
                     </div>
                     <div style={{ height: 260, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative' }}>
-                        <MapContainer center={center} zoom={point ? 16 : 13} attributionControl={false} style={{ height: '100%', width: '100%' }}>
+                        <MapContainer center={center} zoom={point ? 16 : 13}  style={{ height: '100%', width: '100%' }}>
                             <MapAutoResize />
                             <TileLayer
                                 url={TAKI_TILE_URL}

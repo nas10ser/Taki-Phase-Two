@@ -289,22 +289,22 @@ const Profile: React.FC = () => {
                         <>
                             <div style={{ background: 'rgba(80, 80, 90, 0.3)', padding: '12px 20px', borderRadius: 16, minWidth: 100, textAlign: 'center' }}>
                                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>{sellerStats.soldQty}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'كمية مباعة' : 'Units Sold'}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'كمية مباعة' : 'Units Sold'}</div>
                             </div>
                             <div style={{ background: 'rgba(80, 80, 90, 0.3)', padding: '12px 20px', borderRadius: 16, minWidth: 100, textAlign: 'center' }}>
                                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>{sellerStats.completedCount}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'حجز مكتمل' : 'Completed'}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'حجز مكتمل' : 'Completed'}</div>
                             </div>
                         </>
                     ) : (
                         <>
                             <div style={{ background: 'rgba(80, 80, 90, 0.3)', padding: '12px 20px', borderRadius: 16, minWidth: 100, textAlign: 'center' }}>
                                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>{buyerStats.savings}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'توفيرك (ر.س)' : 'Total Savings'}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'توفيرك (ر.س)' : 'Total Savings'}</div>
                             </div>
                             <div style={{ background: 'rgba(80, 80, 90, 0.3)', padding: '12px 20px', borderRadius: 16, minWidth: 100, textAlign: 'center' }}>
                                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>{buyerStats.completedCount}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'حجز مكتمل' : 'Completed'}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(220, 220, 230, 0.85)', fontWeight: 800 }}>{isRTL ? 'حجز مكتمل' : 'Completed'}</div>
                             </div>
                         </>
                     )}
