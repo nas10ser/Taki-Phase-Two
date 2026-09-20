@@ -2126,7 +2126,7 @@ const AdminTools: React.FC = () => {
                                                 <>
                                                     <span>•</span>
                                                     <span className={ended ? 'text-red-600 font-bold' : ''}>
-                                                        {ended ? 'منتهية' : `حتى ${ends.toLocaleDateString('ar-SA')}`}
+                                                        {ended ? 'منتهية' : `حتى ${ends.toLocaleDateString('ar-SA-u-ca-gregory')}`}
                                                     </span>
                                                 </>
                                             )}

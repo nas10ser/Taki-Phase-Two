@@ -1221,7 +1221,7 @@ const PaymentAttemptsTable: React.FC = () => {
                         <div key={a.id} className={`border rounded-lg p-2.5 flex items-center gap-2 ${tone}`}>
                             <div className="flex-1 min-w-0">
                                 <div className="font-bold text-sm truncate">{a.merchant_shop ?? a.merchant_name ?? '—'}</div>
-                                <div className="text-[10px] opacity-80">{a.gateway} · {new Date(a.created_at).toLocaleString('ar-SA')}</div>
+                                <div className="text-[10px] opacity-80">{a.gateway} · {new Date(a.created_at).toLocaleString('ar-SA-u-ca-gregory')}</div>
                             </div>
                             <div className="text-left">
                                 <div className="text-sm font-extrabold tabular-nums">{a.amount.toLocaleString('ar-SA')} ر.س</div>

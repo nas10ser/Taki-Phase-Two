@@ -168,9 +168,14 @@ module.exports = async (req, res) => {
         // 🪤 v14.63 — كل جلبٍ خارجي هنا كان **بلا مهلة**: ستّ قفزاتٍ متتالية
         // إلى مضيفٍ لا يردّ تُبقي الدالة معلّقة حتى تقتلها المنصّة، والتاجر
         // يرى زرّاً يدور بلا نهاية. المهلة صريحة الآن لكل نداء.
-        const fetchWithTimeout = async (url, opts = {}, ms = 7000) => {
+        // 🪤 مهلةٌ لكل نداءٍ لا تكفي: ستّ قفزاتٍ × ٧ ثوانٍ = ٤٢ ثانية، والعميل
+        // يقطع عند الثامنة — فيبقى الخادم يعمل لعملٍ لن يقرأه أحد. ميزانية
+        // **واحدة** لكل الطلب، وكل نداءٍ يأخذ ما بقي منها فقط.
+        const deadline = Date.now() + 6500;
+        const fetchWithTimeout = async (url, opts = {}) => {
+            const left = Math.max(500, deadline - Date.now());
             const ac = new AbortController();
-            const timer = setTimeout(() => ac.abort(), ms);
+            const timer = setTimeout(() => ac.abort(), left);
             try {
                 return await fetch(url, { ...opts, signal: ac.signal });
             } finally {
@@ -181,7 +186,7 @@ module.exports = async (req, res) => {
         let html = '';
         let coords = tryExtract(current);
 
-        for (let i = 0; i < 6 && !coords; i++) {
+        for (let i = 0; i < 6 && !coords && Date.now() < deadline; i++) {
             // ترويسة واتساب تجعل خرائط جوجل تُعيد وسوم OpenGraph بدل تطبيقٍ
             // جافاسكربتي أو صفحة موافقة — نفس ما يحدث عند لصق الرابط في واتساب.
             const resp = await fetchWithTimeout(current, {

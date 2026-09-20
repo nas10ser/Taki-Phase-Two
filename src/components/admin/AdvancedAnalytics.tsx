@@ -47,7 +47,7 @@ const fmtMoney = (v: number) => `${Math.round(v).toLocaleString('ar-SA')} ر.س`
 const fmtNum = (v: number) => v.toLocaleString('ar-SA');
 const fmtDate = (iso: string | null) => {
     if (!iso) return '—';
-    try { return new Date(iso).toLocaleDateString('ar-SA'); } catch { return iso; }
+    try { return new Date(iso).toLocaleDateString('ar-SA-u-ca-gregory'); } catch { return iso; }
 };
 const daysAgo = (iso: string) => {
     const ms = Date.now() - new Date(iso).getTime();

@@ -810,7 +810,7 @@ const SellerRow = memo<{
                             }`}
                         >
                             {daysLeft > 0 ? `ينتهي خلال ${daysLeft} يوم` : 'منتهي'} ·{' '}
-                            {expiresAt.toLocaleDateString('ar-SA')}
+                            {expiresAt.toLocaleDateString('ar-SA-u-ca-gregory')}
                         </div>
                     )}
                 </div>
@@ -1396,7 +1396,7 @@ const BulkSubscriptionPanel = memo<{
             return;
         }
         const expiresLabel = expiresAt
-            ? `حتى ${new Date(expiresAt).toLocaleDateString('ar-SA')}`
+            ? `حتى ${new Date(expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}`
             : 'بلا انتهاء';
         const planLabel = plan === 'free' ? 'مجانية' : plan === 'trial' ? 'تجريبية' : 'مميزة';
         const ok = await customConfirm(
@@ -1702,7 +1702,7 @@ const BulkSubscriptionPanel = memo<{
                         {' '}بمبلغ صافي <strong className="text-emerald-700 tabular-nums">{finalAmount.toLocaleString('ar-SA')} ر.س/شهر</strong>
                         {discount > 0 && <> (بعد خصم {discount}%)</>}
                         {' '}على <strong className="text-amber-700">{targetIds.length}</strong> متجر
-                        {expiresAt ? <>، ينتهي <strong>{new Date(expiresAt).toLocaleDateString('ar-SA')}</strong>.</> : <>، <strong>بلا انتهاء</strong>.</>}
+                        {expiresAt ? <>، ينتهي <strong>{new Date(expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}</strong>.</> : <>، <strong>بلا انتهاء</strong>.</>}
                     </div>
                 </div>
 
@@ -1822,7 +1822,7 @@ const SponsorsBox: React.FC<{
                                             <span>{SPONSOR_LABEL_BADGE[r.labelType || 'ad']}</span>
                                             <span>•</span>
                                             <span>{r.isActive ? 'نشط' : 'متوقف'}</span>
-                                            {r.expiresAt && (<><span>•</span><span>حتى {new Date(r.expiresAt).toLocaleDateString('ar-SA')}</span></>)}
+                                            {r.expiresAt && (<><span>•</span><span>حتى {new Date(r.expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}</span></>)}
                                         </div>
                                     </div>
                                     <button

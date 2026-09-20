@@ -885,7 +885,7 @@ const Bookings: React.FC = () => {
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 2 }}>{booking.deal?.itemName}</div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
-                                                    <span>{new Date(booking.bookedAt).toLocaleDateString(isRTL ? 'ar-SA' : 'en-US')}</span>
+                                                    <span>{new Date(booking.bookedAt).toLocaleDateString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US')}</span>
                                                     <span style={{ color: '#f59e0b' }}>★ {(booking.deal as any).rating || (isRTL ? 'جديد' : 'New')}</span>
                                                 </div>
                                                 {booking.deal?.storeId && (

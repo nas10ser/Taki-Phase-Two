@@ -428,7 +428,7 @@ const AdminMessaging: React.FC = () => {
                                     <div className="flex-1 min-w-0">
                                         <div className="text-xs font-bold text-[var(--text-primary)] truncate">{m.subject}</div>
                                         <div className="text-[10px] text-[var(--gray-400)] truncate" dir="ltr">
-                                            {m.to_email} — {new Date(m.created_at).toLocaleString('ar-SA')}
+                                            {m.to_email} — {new Date(m.created_at).toLocaleString('ar-SA-u-ca-gregory')}
                                         </div>
                                         {m.status === 'failed' && m.last_error && (
                                             <div className="text-[10px] text-red-600 truncate mt-0.5" dir="ltr">{m.last_error}</div>

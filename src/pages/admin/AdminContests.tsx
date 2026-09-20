@@ -979,7 +979,7 @@ const CustomDrawBox: React.FC = () => {
                                             <span className="text-[var(--text-primary)] font-extrabold">{h.title || DRAW_SOURCES.find(s => s.key === h.source)?.label || h.source}</span>
                                             <span>👥 {h.pool_size} مؤهّل</span>
                                             <span>🏆 {h.winners.length} فائز</span>
-                                            <span>{new Date(h.created_at).toLocaleDateString('ar-SA')}</span>
+                                            <span>{new Date(h.created_at).toLocaleDateString('ar-SA-u-ca-gregory')}</span>
                                         </div>
                                         {h.winners.map((w, i) => winnerRow(w, `${h.id}_${i}`))}
                                     </div>

@@ -326,7 +326,7 @@ const DateLookupCard: React.FC = () => {
                             >
                                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                                     <option key={m} value={m}>
-                                        {new Date(2000, m - 1, 1).toLocaleString('ar-SA', { month: 'long' })}
+                                        {new Date(2000, m - 1, 1).toLocaleString('ar-SA-u-ca-gregory', { month: 'long' })}
                                     </option>
                                 ))}
                             </select>
@@ -371,7 +371,7 @@ const DateLookupCard: React.FC = () => {
                     <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">
                         أرقام يوم{' '}
                         <span className="text-[var(--text-primary)] font-extrabold">
-                            {new Date(day.target_date).toLocaleDateString('ar-SA')}
+                            {new Date(day.target_date).toLocaleDateString('ar-SA-u-ca-gregory')}
                         </span>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

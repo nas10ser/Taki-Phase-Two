@@ -2743,6 +2743,9 @@ html.light-mode .taki-variant-row:not(.picked) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select,
   textarea {
-    font-size: max(16px, 1em);
+    /* 🪤 `!important` لازمة: عشرات الحقول تكتب `style={{ fontSize: '0.85rem' }}`
+       مضمّناً، والمضمّن يهزم أي قاعدة عادية — فتبقى ١٣٫٦ بكسل ويُكبّر آيفون.
+       و`max()` لا تُصغّر شيئاً أبداً: ما كان أكبر من ١٦ يبقى كما صمّمه. */
+    font-size: max(16px, 1em) !important;
   }
 }

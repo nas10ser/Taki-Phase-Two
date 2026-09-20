@@ -237,7 +237,16 @@ const mergeDealPages = (primary: Deal[], secondary: Deal[]): Deal[] => {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [language, setLanguageState] = useState<'ar' | 'en'>('ar');
+    /**
+     * v14.63 — تُقرأ من الجهاز أولاً ثم يصحّحها تفضيل الخادم عند الترطيب.
+     * قبلها كانت تبدأ عربية دائماً، فمن اختار الإنجليزية يرى وميضاً عربياً في
+     * كل فتح — و`ErrorBoundary` (مكوّن صنف لا يصل إلى السياق) يقرأ وسم اللغة
+     * من المستند، فكان يعرض جدارَ خطأٍ عربياً لمستخدمٍ إنجليزي.
+     * الخادم يبقى المرجع: `preferred_lang` يدهس هذه القيمة متى وصل.
+     */
+    const [language, setLanguageState] = useState<'ar' | 'en'>(() => {
+        try { return localStorage.getItem('taki_lang') === 'en' ? 'en' : 'ar'; } catch { return 'ar'; }
+    });
 
     // Hydrate the public deal feed synchronously from the last snapshot so
     // the home screen paints real content on the FIRST frame — before the
@@ -463,7 +472,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const el = document.documentElement;
             el.lang = language;
             el.dir = language === 'ar' ? 'rtl' : 'ltr';
-        } catch { /* بيئة بلا DOM */ }
+            localStorage.setItem('taki_lang', language);   // لأول رسمٍ في الزيارة القادمة
+        } catch { /* بيئة بلا DOM أو تخزينٌ محجوب */ }
     }, [language]);
     const customAlertRef = useRef(customAlert);
     const customConfirmRef = useRef(customConfirm);

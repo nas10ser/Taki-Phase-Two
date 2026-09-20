@@ -154,7 +154,7 @@ function formatTimeAgo(date: Date): string {
     if (sec < 60) return `قبل ${sec}ث`;
     if (sec < 3600) return `قبل ${Math.floor(sec / 60)}د`;
     if (sec < 86400) return `قبل ${Math.floor(sec / 3600)}س`;
-    return date.toLocaleDateString('ar-SA');
+    return date.toLocaleDateString('ar-SA-u-ca-gregory');
 }
 
 // ============================================================

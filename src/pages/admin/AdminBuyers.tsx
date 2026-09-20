@@ -240,7 +240,7 @@ const UserEditModal = memo<{
                     <div className="text-center">
                         <div className="text-xs font-bold text-[var(--text-primary)] mt-1">
                             {user.last_active_at
-                                ? new Date(user.last_active_at).toLocaleDateString('ar-SA')
+                                ? new Date(user.last_active_at).toLocaleDateString('ar-SA-u-ca-gregory')
                                 : '—'}
                         </div>
                         <div className="text-[10px] text-[var(--text-secondary)] font-medium">آخر نشاط</div>

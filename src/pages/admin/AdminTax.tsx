@@ -755,7 +755,7 @@ const AdminTax: React.FC = () => {
                                 <div className="flex-1 min-w-0">
                                     <div className="text-xs font-extrabold text-[var(--text-primary)] truncate">{names[p.merchant_id] || p.merchant_id}</div>
                                     <div className="text-[10px] text-[var(--text-secondary)] font-bold">
-                                        {new Date(p.paid_at || p.created_at).toLocaleDateString('ar-SA')} • {fmt(Number(p.amount) || 0)} ر.س •
+                                        {new Date(p.paid_at || p.created_at).toLocaleDateString('ar-SA-u-ca-gregory')} • {fmt(Number(p.amount) || 0)} ر.س •
                                         <span className={isPaid(p) ? 'text-emerald-600' : 'text-amber-600'}> {isPaid(p) ? 'مدفوعة' : (p.status || 'معلّقة')}</span>
                                     </div>
                                 </div>

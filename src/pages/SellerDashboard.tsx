@@ -5057,7 +5057,7 @@ const SellerDashboard: React.FC = () => {
                                     const statusBg = isCompleted ? 'rgba(5, 150, 105, 0.12)' : 'rgba(220, 38, 38, 0.12)';
                                     const statusIcon = isCompleted ? '✅' : '❌';
                                     const when = order.bookedAt
-                                        ? new Date(order.bookedAt).toLocaleString(isRTL ? 'ar-SA' : 'en-US', {
+                                        ? new Date(order.bookedAt).toLocaleString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US', {
                                             year: 'numeric', month: 'short', day: 'numeric',
                                             hour: '2-digit', minute: '2-digit'
                                           })
@@ -5475,7 +5475,7 @@ const SellerDashboard: React.FC = () => {
 
                                     {/* Date */}
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>
-                                        {(r.createdAt || r.date) ? new Date(r.createdAt || r.date).toLocaleString(isRTL ? 'ar-SA' : 'en-US') : ''}
+                                        {(r.createdAt || r.date) ? new Date(r.createdAt || r.date).toLocaleString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-US') : ''}
                                     </div>
 
                                     {/* Existing reply — hidden while editing so the textarea
