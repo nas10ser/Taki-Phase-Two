@@ -74,6 +74,8 @@ const readCache = (userId: string): Steps | null => {
         // وتُرسم بطاقةٌ ناقصة قبل وصول الشبكة. الشرط أدناه يرفضه فيُعاد بناؤه
         // من القاعدة في أوّل قراءة — إطارٌ بلا رسم خيرٌ من إطارٍ بخبرٍ خاطئ.
         if (p && KEYS.every(([f]) => typeof p[f] === 'boolean')) { memCache.set(userId, p); return p; }
+        // شكلٌ قديم: يُزال بدل أن يبقى يُرفض في كل زيارة إلى الأبد.
+        localStorage.removeItem(lsKey(userId));
     } catch { /* وضع خاص أو تخزين ممتلئ — نكمل بلا كاش */ }
     return null;
 };
