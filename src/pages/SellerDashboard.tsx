@@ -1371,11 +1371,14 @@ const SellerDashboard: React.FC = () => {
                         // الصفّ الهدف: الموقع نفسه إن كان محفوظاً، وإلا الفرع
                         // الرئيسي (يُنقل)، وإلا صفّ جديد.
                         const target = sameKey || existingPrimary;
-                        // لا يبقى رئيسيان: نُنزل القديم قبل ترقية الجديد.
-                        if (sameKey && existingPrimary && existingPrimary.id !== sameKey.id) {
-                            await saveBranch({ ...existingPrimary, isPrimary: false });
-                        }
-                        await saveBranch({
+                        // 🔴 v14.75 — كان هنا **إنزالٌ ثم ترقية** في كتابتين
+                        // منفصلتين: إن فشلت الثانية بقي المتجر **بلا رئيسيّ**
+                        // إلى الأبد. وهي الحالة التي قِيست في متجر «تاكي»:
+                        // خمسة مواقع نشطة وصفر رئيسي. الآن تُحفظ بيانات الموقع
+                        // أولاً **بلا لمس `isPrimary`**، ثم تُرقّى بدالّة
+                        // قاعدةٍ واحدة تُنزل وترقّي في معاملةٍ واحدة — فلا توجد
+                        // لحظةٌ بلا رئيسيّ أصلاً.
+                        const saved = await saveBranch({
                             ...(target ? { id: target.id } : {}),
                             nameAr: primaryLabel,
                             locationId: persistedLocationId,
@@ -1384,8 +1387,15 @@ const SellerDashboard: React.FC = () => {
                             mapLat: lat,
                             mapLng: lng,
                             googleMapsLink: googleMapsLink || null,
-                            isPrimary: true,
                         });
+                        const primaryId = saved?.id || target?.id;
+                        if (primaryId && primaryId !== existingPrimary?.id) {
+                            const { supabase } = await import('../services/supabaseClient');
+                            const { error: pErr } = await supabase.rpc('merchant_set_primary_branch', { p_branch_id: primaryId });
+                            // فشلُ الترقية لا يُفشل حفظ الموقع — الموقع محفوظ
+                            // فعلاً، والرئيسيّ القديم باقٍ كما هو (لا فراغ).
+                            if (pErr) console.warn('set primary branch failed:', pErr.message);
+                        }
                         branchOutcome = sameKey ? 'updated' : 'added';
                     }
                 } catch (branchErr: any) {
