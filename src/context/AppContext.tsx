@@ -198,6 +198,7 @@ interface AppContextType {
      *  seller adopt that branch's region/city/pin in one tap. */
     branches: StoreBranch[];
     saveBranch: (input: Partial<StoreBranch> & { nameAr: string }) => Promise<StoreBranch | null>;
+    updateBranchCard: (id: string, patch: { nameAr?: string; address?: string | null }) => Promise<{ ok: boolean; error?: string }>;
     removeBranch: (id: string) => Promise<void>;
 }
 
@@ -3411,6 +3412,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [user?.id]);
 
+    /**
+     * v14.75c — تحرير بطاقة الموقع (الاسم/العنوان) **بتحديثٍ خالص**.
+     *
+     * 🔴 لماذا لا `saveBranch`: تلك `upsert` = `INSERT … ON CONFLICT DO UPDATE`،
+     *    فتُطلق مسار **BEFORE INSERT** في حارس السقف، والإعفاء «المفتاح لم
+     *    يتغيّر» محبوسٌ داخل فرع `TG_OP='UPDATE'` وحده — فكانت إعادةُ تسمية
+     *    فرعٍ لمتجرٍ بلغ سقفه مستحيلة. قِيس على جدة: `UPDATE` نجح على نفس
+     *    الصفّ الذي ردّ فيه `upsert` بـ`LOCATION_LIMIT_EXCEEDED`.
+     */
+    const updateBranchCard = useCallback(async (
+        id: string,
+        patch: { nameAr?: string; address?: string | null },
+    ): Promise<{ ok: boolean; error?: string }> => {
+        const res = await branchRepository.setCard(id, patch);
+        if (res.ok) {
+            setBranches(prev => prev.map(b => b.id === id ? {
+                ...b,
+                ...(patch.nameAr !== undefined ? { nameAr: patch.nameAr.trim().slice(0, 80) } : {}),
+                ...(patch.address !== undefined ? { address: String(patch.address ?? '').trim().slice(0, 200) || null } : {}),
+            } : b));
+        }
+        return res;
+    }, []);
+
     const removeBranch = useCallback(async (id: string): Promise<void> => {
         const prevList = branches;
         // Optimistic — drop locally first so the chip vanishes instantly.
@@ -3483,7 +3508,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         incrementDealView, incrementDealClick,
         platformSettings,
         platformSettingsReady,
-        branches, saveBranch, removeBranch,
+        branches, saveBranch, updateBranchCard, removeBranch,
     }), [
         language, setLanguage,
         geoVersion, reloadGeo,
@@ -3512,7 +3537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         incrementDealView, incrementDealClick,
         platformSettings,
         platformSettingsReady,
-        branches, saveBranch, removeBranch,
+        branches, saveBranch, updateBranchCard, removeBranch,
     ]);
 
     return (

@@ -390,7 +390,7 @@ const SellerOrderProgress: React.FC<{
 const SellerDashboard: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, removeBranch, platformSettings, ingestDeals, darkMode } = useApp();
+    const { addDeal, deleteDeal, updateDeal, deals, language, user, loading, notifications, markNotifRead, storeProfiles, addNotification, bookings, customAlert, customConfirm, customPrompt, addReply, acknowledgeBooking, updateProfile, updateStoreProfile, branches, saveBranch, updateBranchCard, removeBranch, platformSettings, ingestDeals, darkMode } = useApp();
     const { completeBooking, cancelBooking } = useBooking();
     const isRTL = language === 'ar';
 
@@ -1757,11 +1757,20 @@ const SellerDashboard: React.FC = () => {
         if (name === currentLabel) return;
         const b = branches.find(x => x.id === branchId);
         if (!b) return;
-        try {
-            await saveBranch({ ...b, id: branchId, nameAr: name });
+        // 🔴 v14.75c — كان هنا `saveBranch` وهي **upsert**، أي
+        // `INSERT … ON CONFLICT DO UPDATE`، فتُطلق مسار **BEFORE INSERT** في
+        // حارس السقف — والإعفاء «المفتاح لم يتغيّر» محبوسٌ داخل فرع
+        // `TG_OP = 'UPDATE'` وحده. فكانت إعادةُ تسميةِ فرعٍ لمتجرٍ بلغ سقفه
+        // **مستحيلة**، ويُقال له «تعذّرت إعادة التسمية» بلا سبب.
+        // قِيس على جدة داخل كتلةٍ أُلغيت: نفس الصفّ — `UPDATE` عادي **نجح**،
+        // و`upsert` رُدّ بـ`LOCATION_LIMIT_EXCEEDED: Plan allows 1 locations`.
+        // و`setCard` تحديثٌ خالص لا يلمس أعمدة الموقع، فلا يُطلق الحارس أصلاً
+        // (`UPDATE OF location_id, map_lat, map_lng, is_active` وحدها تُطلقه).
+        const res = await updateBranchCard(branchId, { nameAr: name });
+        if (res.ok) {
             await customAlert(isRTL ? `✅ صار اسم الفرع: «${name}»` : `✅ Branch renamed: “${name}”`);
-        } catch {
-            await customAlert(isRTL ? '❌ تعذّرت إعادة التسمية. حاول مرة أخرى.' : '❌ Rename failed. Try again.');
+        } else {
+            await customAlert(`❌ ${res.error || (isRTL ? 'تعذّرت إعادة التسمية. حاول مرة أخرى.' : 'Rename failed. Try again.')}`);
         }
     };
 
