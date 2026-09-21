@@ -149,7 +149,10 @@ const StoreDetails: React.FC = () => {
         openedFromPath.current = true;
         setEditBio(profile.bio || '');
         setEditPhone(profile.contactPhone || profile.phone || '');
-        setEditAddress(profile.address || '');
+        // 🪤 نفس مصادر الفتح اليدوي حرفاً بحرف: أسقطتُ `store.address` سهواً في
+        // v14.72c، فكان الحقل يخرج فارغاً في مسار `?edit=1` وحده — مسارانِ
+        // يفتحان الشاشة نفسها بحقلين مختلفين.
+        setEditAddress(profile.address || store.address || '');
         setIsEditingStore(true);
         import('../services/supabaseClient').then(({ supabase }) =>
             supabase.from('store_profiles').select('vat_number, cr_number').eq('store_id', id).maybeSingle()
