@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { useParams, useHistory } from 'react-router-dom';
+import { useParams, useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import StorePolicies from '../components/StorePolicies';
 import DealCard from '../components/DealCard';
@@ -136,6 +136,28 @@ const StoreDetails: React.FC = () => {
     // v13.35 — الرقم الضريبي للتاجر (توافق الهيئة): وجوده يحوّل سند طلباته
     // المطبوع إلى «فاتورة ضريبية مبسطة» بQR. يُخزَّن في store_profiles.vat_number.
     const [editVat, setEditVat] = useState('');
+    // v14.72c — القدوم من خطوة «بطاقة المتجر» في مسار الإعداد: يُفتح المحرّر
+    // فوراً ويُمرَّر إليه ما هو محفوظ فعلاً. 🪤 يُنتظر وصول ملفّ المتجر أوّلاً
+    // (`profile.id`) وإلا فُتح المحرّر على حقولٍ فارغة ثم حفظها التاجر فوقها.
+    const search = useLocation().search;
+    const openedFromPath = useRef(false);
+    useEffect(() => {
+        if (openedFromPath.current) return;
+        if (!user?.id || user.id !== id) return;
+        if (new URLSearchParams(search).get('edit') !== '1') return;
+        if (!profile || !(profile as any).id) return;   // الملفّ لم يصل بعد
+        openedFromPath.current = true;
+        setEditBio(profile.bio || '');
+        setEditPhone(profile.contactPhone || profile.phone || '');
+        setEditAddress(profile.address || '');
+        setIsEditingStore(true);
+        import('../services/supabaseClient').then(({ supabase }) =>
+            supabase.from('store_profiles').select('vat_number, cr_number').eq('store_id', id).maybeSingle()
+                .then(({ data }) => {
+                    setEditVat((data as any)?.vat_number || '');
+                    setEditCr((data as any)?.cr_number || '');
+                }));
+    }, [search, user?.id, id, profile]);
     // v13.37 — السجل التجاري: يظهر على الفاتورة القياسية التي يستلمها التاجر منّا
     const [editCr, setEditCr] = useState('');
     const [vatSaving, setVatSaving] = useState(false);

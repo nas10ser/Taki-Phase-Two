@@ -10,8 +10,23 @@ import { markThumbed } from '../utils/thumb';
  * فاشلة ويقول السبب بدل خطأٍ عامّ من القاعدة. والصيغ هي ما تقبله سياسة
  * الكتابة فعلاً (فُحصت على جدة) — لا ما يقبله المستودع وحده.
  */
+/** سقف مستودع `deals` على الخادم — يُقاس على الملف **بعد** الضغط. */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const OK_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+/**
+ * سقفٌ خام سخيّ قبل الضغط: صورة الجوال اليوم ٦–١٢ ميجابايت وتخرج من الضاغط
+ * بمئات الكيلوبايتات. 🔴 v14.72c — قياسُ الخام بسقف المستودع كان **انحداراً**
+ * يرفض صورة هاتفٍ عادية في **كل** مسارات الرفع (منتجات · بنرات · مسابقات ·
+ * شعار)، لا في الشعار وحده. السقف الخام يمنع الملفّ السخيف وحده.
+ */
+const MAX_RAW_BYTES = 25 * 1024 * 1024;
+/**
+ * ما يقبله المستودع فعلاً على الخادم: `{image/jpeg,image/png,image/webp,image/gif}`
+ * — **بلا heic/heif**. ولذلك يُفحص النوع **بعد** الضغط: الضاغط يُخرج JPEG دائماً
+ * حين ينجح، فصورة آيفون تمرّ؛ وحين يفشل فكّ الترميز يرتدّ إلى الملفّ الخام
+ * (fail-open بالتصميم) فيبقى HEIC — وهذه هي الحالة التي يجب أن تُرفض هنا
+ * برسالةٍ مفهومة بدل خطأ سياسةٍ مبهم من القاعدة.
+ */
+const OK_UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 export const storageService = {
     /**
@@ -80,14 +95,9 @@ export const storageService = {
             // المتصفّح تُرفع **خاماً**، فيرفضها سقف المستودع (٤ ميجابايت) بخطأ
             // عامّ ⇒ `null` ⇒ ورسالةُ فشلٍ لا تقول السبب. (`chatAttachments`
             // كانت تفعل الصواب منذ v14.27 — هذا هو نفس النمط، لا نمطٌ ثانٍ.)
-            if (rawFile.size > MAX_UPLOAD_BYTES) {
+            if (rawFile.size > MAX_RAW_BYTES) {
                 storageService.lastBlockReason = 'too_big';
-                logger.warn(`🚫 upload rejected: ${Math.round(rawFile.size / 1024 / 1024)}MB > 4MB`);
-                return null;
-            }
-            if (rawFile.type && !OK_IMAGE_TYPES.includes(rawFile.type)) {
-                storageService.lastBlockReason = 'bad_type';
-                logger.warn(`🚫 upload rejected: نوع غير مدعوم ${rawFile.type}`);
+                logger.warn(`🚫 upload rejected (raw): ${Math.round(rawFile.size / 1024 / 1024)}MB > 25MB`);
                 return null;
             }
             // v12.31 — فحص الصور الإباحية قبل الرفع (NSFWJS داخل المتصفح).
@@ -113,6 +123,18 @@ export const storageService = {
             // `<الاسم>_t.jpg` بجوار الأصل، وتقرؤها الواجهة عبر thumbUrl()
             // التي ترتدّ للأصل تلقائياً لو لم توجد (صور ما قبل هذا الإصدار).
             // البنرات والشعارات لا تحتاجها (تُعرض بمقاس واحد) فتُخطّى.
+            // 🪤 الفحص الحاسم هنا لا قبل الضغط: المستودع يقيس الملفّ المرسَل،
+            // والضاغط قد يرتدّ إلى الخام عند فشل فكّ الترميز (HEIC مثلاً).
+            if (file.size > MAX_UPLOAD_BYTES) {
+                storageService.lastBlockReason = 'too_big';
+                logger.warn(`🚫 upload rejected: ${Math.round(file.size / 1024 / 1024)}MB بعد الضغط > 4MB`);
+                return null;
+            }
+            if (file.type && !OK_UPLOAD_TYPES.includes(file.type)) {
+                storageService.lastBlockReason = 'bad_type';
+                logger.warn(`🚫 upload rejected: نوع غير مقبول في المستودع ${file.type}`);
+                return null;
+            }
             const wantThumb = opts?.thumb !== false;
             const thumb = wantThumb ? await compressImage(rawFile, THUMB) : null;
             // v14.57 — 🔴 كانت الصور تُرفع في **جذر المستودع** بلا مجلّد، وسياسة

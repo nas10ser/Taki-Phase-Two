@@ -150,8 +150,16 @@ export const userRepository = {
             set('shop', p.shop ?? null);
             set('contact_phone', p.contactPhone ?? p.phone ?? null);
             set('address', p.address ?? null);
-            set('avatar_url', p.avatar_url ?? null);
-            set('bio', p.bio ?? null);
+            // 🔴 v14.72c — `avatar_url` و`bio` **لا تُكتبان من هنا بعد اليوم**.
+            // هذا الكاتب يمسّ `users` وحده، والبوتان يقرآن `store_profiles`
+            // أيضاً — فكلّ كتابةٍ من هنا كانت تُعيد فتح الانفصال الذي أغلقته
+            // v14.71 (نبذةٌ من الموقع لا يراها أحدٌ في البوت). الكاتب الوحيد
+            // للعمودين صار `merchant_set_store_card` على القاعدة.
+            // 🪤 وتُحذَفان من مجموعة الأعمدة **صراحةً** لا بالإهمال: إسقاطُ
+            //    الحقل بصمت وهو مُمرَّر فخٌّ في نفسه، فالتعليق هنا هو العقد.
+            if (p.avatar_url !== undefined || p.bio !== undefined) {
+                logger.info('saveProfile: تجاوُز avatar_url/bio — كاتبهما merchant_set_store_card');
+            }
             if (p.savings !== undefined) dbData.savings = p.savings;
             if (p.bookingsCount !== undefined) dbData.bookings_count = p.bookingsCount;
             // Array fields — only write when the caller really intends to
