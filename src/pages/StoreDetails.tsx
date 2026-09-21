@@ -266,30 +266,37 @@ const StoreDetails: React.FC = () => {
     const loadingStore = !store && !storeFetchDone;
 
     const handleSaveProfile = async () => {
+        // 🪤 v14.73d — `address` و`bio` **لا تُمرَّران** إلى `updateStoreProfile`:
+        // تلك تكتب `users` مباشرةً بلا انتظار، فكان في نفس المُعالِج كاتبان
+        // متنافسان على العمود نفسه بتطبيعين مختلفين (`''` مقابل `NULL`)، وبلا
+        // ترتيبٍ مضمون بينهما. الكاتب الوحيد لهما هو `merchant_set_store_card`.
+        // وما يبقى هنا هو الحالة المحلّية وحقولٌ لا يكتبها الـRPC.
         updateStoreProfile(id, {
             phone: editPhone,
             contactPhone: editPhone,
             email: profile.email,
-            avatar_url: profile.avatar_url,
-            bio: editBio,
-            address: editAddress,
         });
-        // v14.71 — النبذة تمرّ بالكاتب الموحَّد أيضاً. قِيس على جدة: نبذةٌ
+        // v14.71 — النبذة والعنوان يمرّان بالكاتب الموحَّد. قِيس على جدة: نبذةٌ
         // تُحفظ من الموقع كان البوت يُرجع «∅ لا شيء» مكانها، لأن الموقع يكتب
         // `users.bio` والبوتان يقرآن `store_profiles.bio`.
+        let ok = true;
         try {
             const { supabase } = await import('../services/supabaseClient');
-            await supabase.rpc('merchant_set_store_card', {
+            const { error } = await supabase.rpc('merchant_set_store_card', {
                 p_bio: editBio ?? '',
-                // v14.73b — العنوان معه: `invoice_customer_details` تفضّل
-                // `store_profiles.address` والموقع كان يكتب `users.address`
-                // وحده — نفس انفصال v14.71، أُغلق قبل أن يكتب أوّل تاجر عنوانه.
                 p_address: editAddress ?? '',
             });
-            notifySetupGapsChanged();
-        } catch { /* الحفظ المحلّي تمّ؛ المزامنة تُعاد عند الحفظ التالي */ }
+            // 🔴 فخّ «الأزرار الصامتة» في CLAUDE.md: كان النداء ملفوفاً بـcatch
+            // فارغ وبلا فحص `error` — فلو فشل لرأى التاجر «✅ تم حفظ التعديلات»
+            // ولم يُحفظ شيء. كل كتابةٍ تُرجع `error` يجب فحصه.
+            if (error) ok = false;
+        } catch { ok = false; }
+        if (ok) notifySetupGapsChanged();
         setIsEditingStore(false);
-        customAlert(isRTL ? '✅ تم حفظ التعديلات' : '✅ Changes saved');
+        customAlert(ok
+            ? (isRTL ? '✅ تم حفظ التعديلات' : '✅ Changes saved')
+            : (isRTL ? '⚠️ تعذّر حفظ النبذة والعنوان — تحقّق من اتصالك وأعد المحاولة.'
+                     : '⚠️ Could not save the blurb and address — check your connection and try again.'));
     };
 
     // v12.73 (تصويب طلب ناصر): نافذة التأكيد تبقى — وبعد «موافق» التنفيذ
