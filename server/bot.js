@@ -3940,7 +3940,16 @@ async function deliverNotification(n) {
     // v14.33 — المفتاحان معاً: القاعدة كانت تكتب `actionUrl` بالسنام والبوت
     // يقرأ `action_url` وحدها، فزرّ الحملة لم يظهر في تيليجرام ولا واتساب قطّ.
     // الهجرة صارت تكتب الاثنين، وهذا يُصلح الإشعارات **القديمة** أيضاً.
-    else if (n.meta_data?.action_url || n.meta_data?.actionUrl) url = n.meta_data.action_url || n.meta_data.actionUrl;
+    else if (n.meta_data?.action_url || n.meta_data?.actionUrl) {
+        // 🔴 v14.72c — الفروع الثلاثة أعلاه تلفّ المسار بـ`W(...)`، وهذا الفرع
+        // كان يأخذ القيمة كما هي. وقاعدةُ البيانات تكتب مساراتٍ **نسبية**
+        // (`/seller` من تذكير الإعداد، و`/bookings?barcode=…` من تذكير التقييم).
+        // وتيليجرام يرفض زرّاً برابطٍ نسبيّ بـBUTTON_URL_INVALID — فيسقط النداء
+        // كلّه في `catch`، أي أن **الإشعار لا يصل إطلاقاً**، لا الزرّ وحده.
+        // ولا أثر له إلا سطر تحذيرٍ واحد في سجلّ Render.
+        const raw = String(n.meta_data.action_url || n.meta_data.actionUrl);
+        url = /^https?:\/\//i.test(raw) ? raw : W(raw.startsWith('/') ? raw : `/${raw}`);
+    }
 
     // ── Telegram ── (gated by the admin kill-switch for parity with WhatsApp:
     //    a disabled bot stops OUTBOUND notifications too, not just inbound. v11.97b)

@@ -2653,7 +2653,17 @@ function create(deps) {
             const custom = en ? (n.meta_data && n.meta_data.bot_message_en) : (n.meta_data && n.meta_data.bot_message_ar);
             const aud = n.meta_data && n.meta_data.audience; const ev = n.meta_data && n.meta_data.event; const bc = n.meta_data && n.meta_data.barcode;
             const isMsg = !!(n.meta_data && n.meta_data.isMessage);
-            const text = custom ? `${icon} ${custom}` : `${icon} *${title}*\n${body}`;
+            // v14.72c — وجهةُ الإشعار في واتساب: أزرار واتساب التفاعلية لا تحمل
+            // روابط، فالرابط يُلحق بالنصّ (وهو قابلٌ للنقر في واتساب). وقبل
+            // اليوم كان `action_url` يُتجاهَل في هذا الملفّ **إطلاقاً**، فتاجرٌ
+            // على واتساب يصله إرشادٌ بلا طريق.
+            const rawUrl = n.meta_data && (n.meta_data.action_url || n.meta_data.actionUrl);
+            const absUrl = rawUrl
+                ? (/^https?:\/\//i.test(String(rawUrl)) ? String(rawUrl)
+                   : `${APP_URL}${String(rawUrl).startsWith('/') ? '' : '/'}${rawUrl}`)
+                : null;
+            const base = custom ? `${icon} ${custom}` : `${icon} *${title}*\n${body}`;
+            const text = absUrl ? `${base}\n\n${absUrl}` : base;
             const btns = [];
             if (n.type === 'booking' && bc) {
                 if (isMsg) btns.push({ id: `wa:chat:${bc}`, title: tr('wa_chat_btn') });

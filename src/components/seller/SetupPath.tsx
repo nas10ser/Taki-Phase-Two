@@ -51,6 +51,19 @@ const KEYS: Array<[keyof Steps, string]> = [
     ['deal', 'has_live_deal'],
 ];
 
+/**
+ * نصفا «بطاقة المتجر» (شعار · نبذة) — **تفصيلٌ اختياري**: يُقرأ إن وُجد،
+ * ولا يُشترط وجوده. 🪤 لو أُضيف إلى `KEYS` لصار خادمٌ لم تصله هجرة v14.72d
+ * يُخفي المسار بالكامل (الفحص كلٌّ-أو-لا-شيء) — بلا خطأ ولا سطرٍ في أي سجلّ.
+ */
+interface CardHalves { bio: boolean; avatar: boolean }
+const halvesOf = (raw: unknown): CardHalves | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const d = raw as Record<string, unknown>;
+    if (typeof d.bio_set !== 'boolean' || typeof d.avatar_set !== 'boolean') return null;
+    return { bio: d.bio_set === true, avatar: d.avatar_set === true };
+};
+
 const parse = (raw: unknown): Steps | null => {
     if (!raw || typeof raw !== 'object') return null;
     const d = raw as Record<string, unknown>;
@@ -99,11 +112,24 @@ const SetupPath: React.FC<{
     onGo: (anchor: SetupAnchor) => void;
 }> = ({ userId, isRTL, onGo }) => {
     const [steps, setSteps] = useState<Steps | null>(() => readCache(userId));
+    const [halves, setHalves] = useState<CardHalves | null>(null);
+    // v14.72d — الطيّ مسموح **فقط** بعد إنجاز الخطوتين المكلفتين (إقرار الحساب
+    // وسياسة الاسترداد). قرار ناصر «لا إلزام» يعني ألّا يُخفى ما يكلّف تركُه؛
+    // أمّا من أنجزهما وبقيت عليه خطواتٌ اختيارية (شعار مثلاً) فحبسُه تحت لافتة
+    // كهرمانية إلى الأبد إزعاجٌ لا إرشاد — وهو ما رفضناه للتذكير الأسبوعي.
+    const [collapsed, setCollapsed] = useState<boolean>(() => {
+        try { return localStorage.getItem(`taki_setuppath_fold_${userId}`) === '1'; } catch { return false; }
+    });
+    const fold = (v: boolean) => {
+        setCollapsed(v);
+        try { localStorage.setItem(`taki_setuppath_fold_${userId}`, v ? '1' : '0'); } catch { /* تجاهل */ }
+    };
 
     const load = useCallback(async () => {
         const { data, error } = await supabase.rpc('my_setup_gaps');
         if (error) return;                 // فشلٌ عابر ⇐ نُبقي آخر حالة معروفة
         const next = parse(data);
+        setHalves(halvesOf(data));
         if (!next) return;
         writeCache(userId, next);
         setSteps(prev => (prev && same(prev, next)) ? prev : next);
@@ -132,8 +158,18 @@ const SetupPath: React.FC<{
             // تعرض **اسم** المتجر لا شعاره (قِيس: `DealCard` لا تقرأ الشعار
             // إطلاقاً). الشعار يظهر في صفحة المتجر وقائمة المتابَعات وبطاقة
             // تيليجرام. وعدٌ بأكثر من ذلك يجعل التاجر يرفع شعاراً ثم لا يراه.
-            why: t('شعارك ونبذتك هما وجه متجرك في صفحته وفي قائمة متابَعات عملائك وفي بطاقته داخل تيليجرام — وبدونهما تظهر صفحتك بحرفٍ في دائرة رمادية ونصٍّ جاهز لم تكتبه.',
-                   'Your logo and blurb are your store’s face on its page, in your followers’ list and on its Telegram card — without them your page shows a grey initial and boilerplate text you never wrote.'),
+            // 🪤 ويقول **أيّ نصفٍ** ينقص: الخطوة تشترط الاثنين، وصفحة المتجر
+            // تعرض نصّاً جاهزاً مكان النبذة الغائبة — فتاجرٌ رفع شعاره وحده يرى
+            // صفحةً تبدو مكتملة والشريطُ يصرّ أنه لم يُنجز. تناقضٌ يُفقد الشريط
+            // مصداقيته كلَّها، وسطرٌ واحد يحسمه.
+            why: (halves && !halves.avatar && halves.bio)
+                ? t('ينقصك الشعار وحده — ونبذتك ظاهرة. بدون شعارٍ تظهر صفحتك بحرفٍ في دائرة رمادية.',
+                    'Only the logo is missing — your blurb is live. Without a logo your page shows a grey initial.')
+                : (halves && halves.avatar && !halves.bio)
+                ? t('ينقصك النصّ وحده — وما يظهر اليوم على صفحتك نصٌّ جاهز لم تكتبه أنت.',
+                    'Only the blurb is missing — what shows on your page today is boilerplate you never wrote.')
+                : t('شعارك ونبذتك هما وجه متجرك في صفحته وفي قائمة متابَعات عملائك وفي بطاقته داخل تيليجرام.',
+                    'Your logo and blurb are your store’s face on its page, in your followers’ list and on its Telegram card.'),
         },
         {
             key: 'hours' as SetupAnchor,
@@ -167,6 +203,9 @@ const SetupPath: React.FC<{
 
     const pct = Math.round((done / rows.length) * 100);
     const align = isRTL ? 'right' : 'left';
+    // الطيّ لا يُعرض ولا يسري ما دامت خطوةٌ مكلفة مفتوحة.
+    const mayFold = steps.pay && steps.refund;
+    const folded = mayFold && collapsed;
 
     return (
         <section
@@ -192,6 +231,20 @@ const SetupPath: React.FC<{
                 >
                     {t(`أنجزتَ ${done} من ${rows.length}`, `${done} of ${rows.length} done`)}
                 </span>
+                {mayFold && (
+                    <button
+                        type="button"
+                        onClick={() => fold(!folded)}
+                        aria-expanded={!folded}
+                        style={{
+                            background: 'transparent', border: 'none', cursor: 'pointer',
+                            color: '#b45309', fontWeight: 900, fontSize: '0.78rem',
+                            fontFamily: 'inherit', padding: '4px 8px', minHeight: 32,
+                        }}
+                    >
+                        {folded ? t('عرض الخطوات ▾', 'Show steps ▾') : t('طيّ ▴', 'Collapse ▴')}
+                    </button>
+                )}
             </div>
 
             {/* شريط تقدّم — يحمل قيمته لقارئ الشاشة أيضاً، لا لوناً فقط */}
@@ -206,6 +259,7 @@ const SetupPath: React.FC<{
                 <div style={{ width: `${pct}%`, height: '100%', background: '#b45309', borderRadius: 999, transition: 'width .3s ease' }} />
             </div>
 
+            {!folded && (
             <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {rows.map((r, i) => {
                     const ok = steps[r.key as keyof Steps];
@@ -264,6 +318,7 @@ const SetupPath: React.FC<{
                     );
                 })}
             </ol>
+            )}
         </section>
     );
 };
