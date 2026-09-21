@@ -81,9 +81,12 @@ BEGIN
   RETURN v;
 END $function$;
 
+-- 🪤 لا مِنحة لأحد: الحارس يُنادى من داخل دوالّ SECURITY DEFINER وحدها، فهي
+--    تنفّذه بصلاحية مالكها. ومنحُه لـ`authenticated` كان سطحاً زائداً بلا داعٍ
+--    (وREVOKE من PUBLIC لا يُلغي منح `anon` المباشر — فالاثنان معاً).
 REVOKE ALL ON FUNCTION public.taki_notification_type_guard(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taki_notification_type_guard(text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.taki_notification_type_guard(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.taki_notification_type_guard(text) FROM authenticated;
 
 -- ٢ب) البثّ يستعمل الحارس بدل تمرير ما يصله كما هو ─────────────────────────
 -- 🪤 أُعيدت الدالّة **كاملةً** لا بترقيعٍ نصّيّ على جسمها الحيّ (درس v14.63)،
