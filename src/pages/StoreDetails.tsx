@@ -279,7 +279,13 @@ const StoreDetails: React.FC = () => {
         // `users.bio` والبوتان يقرآن `store_profiles.bio`.
         try {
             const { supabase } = await import('../services/supabaseClient');
-            await supabase.rpc('merchant_set_store_card', { p_bio: editBio ?? '' });
+            await supabase.rpc('merchant_set_store_card', {
+                p_bio: editBio ?? '',
+                // v14.73b — العنوان معه: `invoice_customer_details` تفضّل
+                // `store_profiles.address` والموقع كان يكتب `users.address`
+                // وحده — نفس انفصال v14.71، أُغلق قبل أن يكتب أوّل تاجر عنوانه.
+                p_address: editAddress ?? '',
+            });
             notifySetupGapsChanged();
         } catch { /* الحفظ المحلّي تمّ؛ المزامنة تُعاد عند الحفظ التالي */ }
         setIsEditingStore(false);
@@ -811,15 +817,27 @@ const StoreDetails: React.FC = () => {
                                 <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'رقم التواصل:' : 'Contact Phone:'}</label>
                                 <input aria-label={isRTL ? 'جوال المتجر' : 'Store phone'} value={editPhone} onChange={e => setEditPhone(e.target.value)} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
                             </div>
-                            {/* v13.11 (طلب ناصر): تحديد الموقع من «صفحتي» — عنوان نصّي يظهر
-                                للمشترين، وزر ينقل التاجر لمحرّر الخريطة في لوحته لتثبيت
-                                الدبوس/الإحداثيات بدقّة. */}
+                            {/* 🔴 v14.73b (بلاغ ناصر: «يظهر اختيار الموقع رغم أنها موجودة
+                                بالأسفل») — الحقل لم يكن تكراراً لمواقع المتجر، بل شيئاً
+                                آخر يحمل اسماً مضلّلاً. قِيس:
+                                  • `users.address` ليس ضمن `PUBLIC_SELLER_COLUMNS`، فلا
+                                    يصل المتصفّح ولا يراه مشترٍ **أبداً** — رغم أن تعليق
+                                    v13.11 كان يَعِد بأنه «عنوان نصّي يظهر للمشترين».
+                                  • وقارئه الحقيقي واحد: `invoice_customer_details`، أي
+                                    عنوان المنشأة على **فاتورة اشتراكك** (مستند ضريبي).
+                                  • ومواقع المتجر التي يراها المشتري مصدرها
+                                    `store_branches` وحده — وv13.74 حسمت أن إضافتها
+                                    مكانها لوحة التاجر لا واجهة المتجر.
+                                فصار الاسم يقول ما هو، وزرّ الخريطة حُذف من هنا لأنه كان
+                                يوحي بأن هذا هو موقع المحل. */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'موقع المتجر (المدينة / الحي / الوصف):' : 'Store location (city / district):'}</label>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.7 }}>{isRTL ? 'عنوان المنشأة (يظهر على فاتورة اشتراكك — اختياري):' : 'Business address (appears on your subscription invoice — optional):'}</label>
                                 <input value={editAddress} onChange={e => setEditAddress(e.target.value)} placeholder={isRTL ? 'مثال: الخبر — حي العليا' : 'e.g. Khobar — Olaya'} style={{ background: 'rgba(80, 80, 90, 0.2)', border: '1px solid rgba(80, 80, 90, 0.3)', color: 'white', padding: '12px', borderRadius: 14, fontSize: '1rem', outline: 'none' }} />
-                                <button type="button" onClick={() => history.push('/seller?loc=1')} style={{ background: 'rgba(255,255,255,0.14)', color: 'white', border: '1px dashed rgba(255,255,255,0.5)', borderRadius: 14, padding: '12px', fontSize: '0.9rem', fontWeight: 900, cursor: 'pointer' }}>
-                                    📍 {isRTL ? 'تحديد الموقع على الخريطة (دبوس دقيق)' : 'Pin location on map'}
-                                </button>
+                                <div style={{ fontSize: '0.78rem', opacity: 0.75, lineHeight: 1.7 }}>
+                                    {isRTL
+                                        ? '📍 مواقع متجرك التي يراها المشتري ليست هنا — هي في بطاقة «مواقع المتجر» أسفل هذه الصفحة، وتُضاف من لوحة التاجر ← «مواقعي».'
+                                        : '📍 The store locations buyers see are not here — they are in the “Store locations” card below, and are added from the seller dashboard → “My locations”.'}
+                                </div>
                             </div>
                             {/* v13.35 — الرقم الضريبي (توافق الهيئة): وجوده يجعل سند
                                 طلباتك «فاتورة ضريبية مبسطة» بQR. اتركه فارغاً إن لم
