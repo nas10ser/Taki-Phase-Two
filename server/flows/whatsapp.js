@@ -1843,7 +1843,7 @@ function create(deps) {
         const gateNew = full && s.temp.flow !== 'branch';
         const pickable = chips.map((b, i) => ({ b, i })).filter(x => !gateNew || x.b.locked);
         const rows = [];
-        pickable.slice(0, 6).forEach(({ b, i }) => rows.push(row(`wa:lsaved:${i}`, `📍 ${b.name || tr('cm_location')}${b.locked ? ' 🔒' : ''}`, [b.city, b.region].filter(Boolean).join(' • '))));
+        pickable.slice(0, 6).forEach(({ b, i }) => rows.push(row(`wa:lsaved:${i}`, `📍 ${b.name || tr('cm_location')}${b.locked ? ' 🔒' : ''}`, b.address || [b.city, b.region].filter(Boolean).join(' • '))));
         if (!gateNew) {
             rows.push(row('wa:lregion', tr('wa_loc_region'), ''));
             rows.push(row('wa:llink', tr('wa_loc_link'), ''));
@@ -2094,7 +2094,9 @@ function create(deps) {
         if (!branches.length) body += tr('wa_branches_none');
         const rows = [row('wa:bradd', tr('wa_branch_add'), '')];
         branches.slice(0, 7).forEach((b, i) => {
-            const where = [b.city, b.region].filter(Boolean).join(' • ') || tr('wa_custom_location');
+            // v14.75d — العنوان أولاً إن وُجد: هو ما يفرّق فرعين في نفس المدينة
+            // (الاسم مُولَّد من اسم المدينة/المول، ولذلك خرج فرعان باسم «الدمام»).
+            const where = b.address || [b.city, b.region].filter(Boolean).join(' • ') || tr('wa_custom_location');
             const tag = b.locked ? ' 🔒' : '';
             if (b.kind === 'deal') rows.push(row(`wa:brsave:${i}`, `📍 ${b.name || tr('cm_location')}${tag}`, where));
             else rows.push(row(`wa:brdel:${b.id}`, `🗑 ${b.name || tr('cm_location')}${tag}`, where));

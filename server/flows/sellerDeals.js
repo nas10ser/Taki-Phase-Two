@@ -1157,7 +1157,11 @@ async function showBranches(ctx) {
     for (let i = 0; i < branches.length; i++) {
         const b = branches[i]; const pl = branchPlace(b);
         const tag = b.locked ? tr('sd890_tag_locked') : tr('sd890_tag_unlinked');
-        const m = `📍 *${md(b.name || tr('cm_location'))}*${b.is_primary ? tr('sd891_primary') : ''}${b.is_active === false ? tr('sd891_inactive') : ''}\n${branchWhere(b)}${pl ? '\n' + pl : ''}\n${tag}`;
+        // v14.75d — العنوان النصّي للموقع: صار يُحرَّر من «صفحتي» (v14.74)،
+        // وبه وحده يفرّق المشتري بين فرعين في نفس المدينة — فالاسم مُولَّد من
+        // اسم المدينة/المول، ولذلك خرج في الإنتاج فرعان باسم «الدمام».
+        const addr = b.address ? `\n📫 ${md(b.address)}` : '';
+        const m = `📍 *${md(b.name || tr('cm_location'))}*${b.is_primary ? tr('sd891_primary') : ''}${b.is_active === false ? tr('sd891_inactive') : ''}${addr}\n${branchWhere(b)}${pl ? '\n' + pl : ''}\n${tag}`;
         let kb;
         if (b.kind === 'deal') {
             // موقع عرض نشط غير محفوظ كفرع → اعرضه واسمح بحفظه (تعديله/حذفه عبر العرض نفسه).
