@@ -506,6 +506,15 @@ function create(deps) {
         const btns = [];
         if (s.userId) btns.push({ id: `wa:fol:${storeId}`, title: st.following ? tr('wa_unfollow') : tr('wa_follow') });
         btns.push(menuBtn());
+        // v14.72d — شعار المتجر: كان واتساب **لا يعرضه إطلاقاً** رغم أن
+        // `sendImage` قائمة وتُستعمل لصور العروض والمرفقات. ومسار الإعداد صار
+        // يطلب من التاجر شعاراً — فوعدٌ بأنه «وجه متجرك» يجب أن يصدق هنا أيضاً.
+        // 🪤 يُرسل قبل البطاقة لا بدلها: فشلُ الصورة (رابطٌ يرفضه واتساب) لا
+        //    يجوز أن يمنع البطاقة نفسها، ولذلك بلا `await` حاجب وبـcatch صامت.
+        if (st.avatar) {
+            try { await sendImage(from, String(st.avatar), st.name || ''); }
+            catch (e) { console.warn('WA store logo:', e.message); }
+        }
         await sendButtons(from, { body, buttons: btns });
         if (polMsg) await sendText(from, trunc(polMsg.trim(), LIM.text));
         const deals = Array.isArray(st.deals) ? st.deals : [];

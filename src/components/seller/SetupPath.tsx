@@ -168,8 +168,8 @@ const SetupPath: React.FC<{
                 : (halves && halves.avatar && !halves.bio)
                 ? t('ينقصك النصّ وحده — وما يظهر اليوم على صفحتك نصٌّ جاهز لم تكتبه أنت.',
                     'Only the blurb is missing — what shows on your page today is boilerplate you never wrote.')
-                : t('شعارك ونبذتك هما وجه متجرك في صفحته وفي قائمة متابَعات عملائك وفي بطاقته داخل تيليجرام.',
-                    'Your logo and blurb are your store’s face on its page, in your followers’ list and on its Telegram card.'),
+                : t('شعارك ونبذتك هما وجه متجرك في صفحته وفي قائمة متابَعات عملائك وفي بطاقته داخل تيليجرام وواتساب.',
+                    'Your logo and blurb are your store’s face on its page, in your followers’ list and on its Telegram and WhatsApp cards.'),
         },
         {
             key: 'hours' as SetupAnchor,
