@@ -173,6 +173,17 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
             if (!error && data?.success) {
                 const n = Number(data.stores_updated) || 0;
                 if (n > 0) syncedMsg = `\n🔄 حُدّث عدد المواقع لـ${n} ${n === 1 ? 'متجر' : 'متاجر'} مشترك في الباقات المعدّلة.`;
+                // v14.76 — متجرٌ بلا باقة لا تصله تعديلاتك **أبداً**: المزامنة
+                // تُطابق على `subscription_package_id`، فالفارغُ خارجها. كان
+                // ذلك صامتاً تماماً (وهو ما جعل سقف متجر «تاكي» رقماً حرّاً لا
+                // يتبع اللوحة). الآن يُقال العدد والأسماء.
+                const ub = Number(data.stores_unbound) || 0;
+                if (ub > 0) {
+                    const names = Array.isArray(data.unbound)
+                        ? data.unbound.slice(0, 5).map((x: any) => `«${x?.name || '—'}» (${x?.max_branches ?? '?'})`).join('، ')
+                        : '';
+                    syncedMsg += `\n\n⚠️ ${ub} ${ub === 1 ? 'متجر غير مرتبط' : 'متاجر غير مرتبطة'} بأي باقة — تعديلاتك هنا **لا تصلها**، وسقف مواقعها رقمٌ ثابت:\n${names}\nاربطها بباقةٍ من «التجّار ← الاشتراك» ليتبع سقفُها ما تحدّده هنا.`;
+                }
             }
         } catch { /* المزامنة لا تُفشل حفظ الباقات */ }
         setDirty(false);
