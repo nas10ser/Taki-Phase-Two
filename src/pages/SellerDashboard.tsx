@@ -418,9 +418,16 @@ const SellerDashboard: React.FC = () => {
     //    بعد إطارٍ أو اثنين (كاش ثم شبكة)، وبارتدادٍ إلى أعلى الصفحة إن تعذّر.
     const [pendingAnchor, setPendingAnchor] = useState<SetupAnchor | null>(null);
     const goToSetupStep = useCallback((a: SetupAnchor) => {
+        // v14.71 — «بطاقة المتجر» ليست بطاقةً في هذه اللوحة: محرّرها (رافع
+        // الشعار ومربّع النبذة) يعيش في صفحة «صفحتي» خلف زرّ «تعديل البروفايل».
+        // فالخطوة تنقله إلى هناك بدل أن تمرّر إلى مِرساةٍ لا وجود لها.
+        if (a === 'card') {
+            history.push(`/store/${user?.id || ''}`);
+            return;
+        }
         setView('form');
         setPendingAnchor(a);
-    }, []);
+    }, [history, user?.id]);
     useEffect(() => {
         if (!pendingAnchor) return;
         const id = pendingAnchor === 'deal' ? 'setup-dealform' : `setup-${pendingAnchor}`;

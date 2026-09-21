@@ -4,13 +4,22 @@ import { logger } from '../utils/logger';
 import { compressImage, THUMB } from '../utils/imageCompression';
 import { markThumbed } from '../utils/thumb';
 
+/**
+ * سقف الرفع وصيغه — v14.71.
+ * ٤ ميجابايت هو سقف مستودع `deals` على الخادم نفسه، فالفحص هنا يمنع رحلةً
+ * فاشلة ويقول السبب بدل خطأٍ عامّ من القاعدة. والصيغ هي ما تقبله سياسة
+ * الكتابة فعلاً (فُحصت على جدة) — لا ما يقبله المستودع وحده.
+ */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const OK_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+
 export const storageService = {
     /**
      * v12.31 — سبب رفض آخر رفع (null = لا رفض). تقرؤه نقاط الاستدعاء لعرض
      * رسالة «محتوى غير لائق» بدل «فشل الرفع» العامة عندما يحجب فلتر الصور
      * الإباحية (moderationService) الصورة.
      */
-    lastBlockReason: null as 'nsfw' | null,
+    lastBlockReason: null as 'nsfw' | 'too_big' | 'bad_type' | null,
 
     get: <T>(key: keyof typeof CONFIG.STORAGE_KEYS): T | null => {
         const stored = localStorage.getItem(CONFIG.STORAGE_KEYS[key]);
@@ -64,10 +73,26 @@ export const storageService = {
         opts?: { compress?: Partial<{ maxDim: number; quality: number; skipUnderBytes: number }>; thumb?: boolean },
     ): Promise<string | null> => {
         try {
+            storageService.lastBlockReason = null;
+            // 🪤 v14.71 — فحصُ الحجم والصيغة **قبل** كل شيء. لم يكن هنا أيّ فحص:
+            // `accept="image/*"` على حقل الملف تلميحٌ للمتصفّح لا قيد، والضاغط
+            // fail-open بالتصميم (`catch { return file }`) فصورة HEIC لا يفكّها
+            // المتصفّح تُرفع **خاماً**، فيرفضها سقف المستودع (٤ ميجابايت) بخطأ
+            // عامّ ⇒ `null` ⇒ ورسالةُ فشلٍ لا تقول السبب. (`chatAttachments`
+            // كانت تفعل الصواب منذ v14.27 — هذا هو نفس النمط، لا نمطٌ ثانٍ.)
+            if (rawFile.size > MAX_UPLOAD_BYTES) {
+                storageService.lastBlockReason = 'too_big';
+                logger.warn(`🚫 upload rejected: ${Math.round(rawFile.size / 1024 / 1024)}MB > 4MB`);
+                return null;
+            }
+            if (rawFile.type && !OK_IMAGE_TYPES.includes(rawFile.type)) {
+                storageService.lastBlockReason = 'bad_type';
+                logger.warn(`🚫 upload rejected: نوع غير مدعوم ${rawFile.type}`);
+                return null;
+            }
             // v12.31 — فحص الصور الإباحية قبل الرفع (NSFWJS داخل المتصفح).
             // نقطة اختناق واحدة = كل مسارات الرفع (منتجات/بنرات/مسابقات)
             // مفحوصة تلقائياً. الفحص fail-open فلا يعطّل الرفع أبداً.
-            storageService.lastBlockReason = null;
             try {
                 const { moderationService } = await import('./moderationService');
                 const verdict = await moderationService.checkImage(rawFile);

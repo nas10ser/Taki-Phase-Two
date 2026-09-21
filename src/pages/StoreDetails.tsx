@@ -10,6 +10,7 @@ import { userRepository } from '../repositories/userRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
+import { notifySetupGapsChanged } from '../components/seller/SetupPath';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 import { getAuthenticityBadge } from '../utils/helpers';
 import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
@@ -231,7 +232,7 @@ const StoreDetails: React.FC = () => {
     const store = (fetchedStore && fetchedStore.id === id) ? fetchedStore : localStore;
     const loadingStore = !store && !storeFetchDone;
 
-    const handleSaveProfile = () => {
+    const handleSaveProfile = async () => {
         updateStoreProfile(id, {
             phone: editPhone,
             contactPhone: editPhone,
@@ -240,6 +241,14 @@ const StoreDetails: React.FC = () => {
             bio: editBio,
             address: editAddress,
         });
+        // v14.71 — النبذة تمرّ بالكاتب الموحَّد أيضاً. قِيس على جدة: نبذةٌ
+        // تُحفظ من الموقع كان البوت يُرجع «∅ لا شيء» مكانها، لأن الموقع يكتب
+        // `users.bio` والبوتان يقرآن `store_profiles.bio`.
+        try {
+            const { supabase } = await import('../services/supabaseClient');
+            await supabase.rpc('merchant_set_store_card', { p_bio: editBio ?? '' });
+            notifySetupGapsChanged();
+        } catch { /* الحفظ المحلّي تمّ؛ المزامنة تُعاد عند الحفظ التالي */ }
         setIsEditingStore(false);
         customAlert(isRTL ? '✅ تم حفظ التعديلات' : '✅ Changes saved');
     };
@@ -418,19 +427,40 @@ const StoreDetails: React.FC = () => {
             // v13.33 — شعار المتجر يُعرض في دائرة ٦٤ نقطة: ٤٠٠ بكسل تكفيه
             const url = await storageService.uploadImage(file, { compress: AVATAR, thumb: false });
             if (url) {
+                // v14.71 — الحفظ عبر `merchant_set_store_card`: كان الموقع يكتب
+                // `users.avatar_url` وحده والبوتان يقرآن `store_profiles` —
+                // فشعارٌ يُرفع هنا لا يراه أحدٌ في البوت. الآن كاتبٌ واحد
+                // للعمودين. والحالة المحلّية تُحدَّث كما كانت فلا تومض الصورة.
+                const { supabase } = await import('../services/supabaseClient');
+                const { error } = await supabase.rpc('merchant_set_store_card', { p_avatar_url: url });
+                if (error) {
+                    customAlert(isRTL ? '⚠️ تعذّر حفظ الشعار. حاول مرّة أخرى.' : '⚠️ Could not save the logo. Please try again.');
+                    return;
+                }
                 updateStoreProfile(id, { ...profile, avatar_url: url });
+                notifySetupGapsChanged();
             } else if (storageService.lastBlockReason === 'nsfw') {
                 // v12.31 — الصورة مرفوضة من فلتر المحتوى: لا fallback محلي.
                 customAlert(isRTL
                     ? '🚫 تم رفض هذه الصورة — رصد نظام الحماية محتوى غير لائق فيها. المحاولة مسجّلة لدى الإدارة.'
                     : '🚫 This image was rejected — the safety filter detected inappropriate content. The attempt was logged.');
             } else {
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const newAvatar = ev.target?.result as string;
-                    updateStoreProfile(id, { ...profile, avatar_url: newAvatar });
-                };
-                reader.readAsDataURL(file);
+                // 🔴 v14.71 — كان هنا ارتدادٌ يقرأ الصورة **الخام** كـdata URL
+                // ويكتبها في `users.avatar_url`. صورة ٨ ميجابايت تصير نحو
+                // ١٠٫٧ ميجابايت نصّاً داخل عمودٍ تقرؤه **كل** بطاقة عرضٍ لهذا
+                // المتجر، وتُعاد في كل استعلام. لم يقع العطب بعد لسببٍ واحد:
+                // صفر متاجر رفعت شعاراً — أي أن أوّل تاجرٍ يستجيب لخطوة
+                // «بطاقة المتجر» على شبكةٍ متعثّرة كان سيكون أوّل ضحية.
+                // الصواب: يبقى الشعار القديم، ويُقال السبب صراحةً.
+                const why = storageService.lastBlockReason === 'too_big'
+                    ? (isRTL ? 'الصورة أكبر من ٤ ميجابايت — اختر صورة أصغر.'
+                             : 'The image is larger than 4 MB — pick a smaller one.')
+                    : storageService.lastBlockReason === 'bad_type'
+                    ? (isRTL ? 'صيغة الصورة غير مدعومة — استعمل JPG أو PNG أو WebP.'
+                             : 'Unsupported image format — use JPG, PNG or WebP.')
+                    : (isRTL ? 'تحقّق من اتصالك ثم أعد المحاولة.'
+                             : 'Check your connection and try again.');
+                customAlert(`⚠️ ${isRTL ? 'تعذّر رفع الشعار' : 'Could not upload the logo'} — ${why} ${isRTL ? 'شعارك الحالي لم يتغيّر.' : 'Your current logo is unchanged.'}`);
             }
         } finally {
             setIsUploading(false);

@@ -21,7 +21,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 /** مِرساة البطاقة التي تُصلح الخطوة داخل لوحة التاجر. */
-export type SetupAnchor = 'pay' | 'hours' | 'refund' | 'vat' | 'deal';
+export type SetupAnchor = 'pay' | 'hours' | 'refund' | 'vat' | 'deal' | 'card';
 
 interface Steps {
     pay: boolean;
@@ -29,6 +29,8 @@ interface Steps {
     refund: boolean;
     vat: boolean;
     deal: boolean;
+    /** v14.71 — شعار المتجر ونبذته (بطاقته التي يراها المشتري أولاً). */
+    card: boolean;
 }
 
 /** تُطلقه البطاقة التي تسدّ النقص بعد حفظٍ ناجح. */
@@ -42,6 +44,7 @@ const memCache = new Map<string, Steps>();
 
 const KEYS: Array<[keyof Steps, string]> = [
     ['pay', 'pay_declared'],
+    ['card', 'profile_set'],
     ['hours', 'hours_set'],
     ['refund', 'refund_set'],
     ['vat', 'vat_answered'],
@@ -66,6 +69,10 @@ const readCache = (userId: string): Steps | null => {
         const raw = localStorage.getItem(lsKey(userId));
         if (!raw) return null;
         const p = JSON.parse(raw) as Steps;
+        // 🪤 v14.71 — الكاش المحفوظ قبل الخطوة السادسة يحمل خمسة حقول. لو
+        // قُرئ كما هو لصار `steps.card` = undefined فتُحسب «متبقّية» أبداً
+        // وتُرسم بطاقةٌ ناقصة قبل وصول الشبكة. الشرط أدناه يرفضه فيُعاد بناؤه
+        // من القاعدة في أوّل قراءة — إطارٌ بلا رسم خيرٌ من إطارٍ بخبرٍ خاطئ.
         if (p && KEYS.every(([f]) => typeof p[f] === 'boolean')) { memCache.set(userId, p); return p; }
     } catch { /* وضع خاص أو تخزين ممتلئ — نكمل بلا كاش */ }
     return null;
@@ -115,6 +122,12 @@ const SetupPath: React.FC<{
             title: t('أقرّ طريقة حسابك', 'Declare how you get paid'),
             why: t('بدون هذا الإقرار ترفض المنصّة كل حجزٍ على متجرك، وتبقى عروضك مسوّدات لا يراها أحد.',
                    'Until you declare it, every booking on your store is refused and your deals stay drafts.'),
+        },
+        {
+            key: 'card' as SetupAnchor,
+            title: t('أكمِل بطاقة متجرك', 'Complete your store card'),
+            why: t('شعارك ونبذتك أوّل ما يراه المشتري في الرئيسية وعلى كل بطاقة عرض — ومتجرٌ بلا شعار يظهر بحرفٍ في دائرة رمادية.',
+                   'Your logo and blurb are the first thing buyers see on the home feed and on every deal card — a store with no logo shows as a grey initial.'),
         },
         {
             key: 'hours' as SetupAnchor,
