@@ -1327,7 +1327,13 @@ const SellerDashboard: React.FC = () => {
                 // writes past 15s on flaky 4G. 30s preserves the "don't hang
                 // forever" guarantee without firing spurious timeouts on slow
                 // connections that would have completed successfully.
-                await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 30000);
+                // 🔴 v14.74 (بلاغ ناصر) — **الترتيب انقلب عمداً.** كانت نقطة المتجر
+                // تُكتب هنا أولاً ثم تُحاول مرآةُ الفرع، فإذا رفضها حارس السقف
+                // بقيت النقطة **متحرّكة بلا موقعٍ يمثّلها**. وهذه النقطة ليست
+                // زينة: تُنشر لجوجل في JSON-LD على صفحة المتجر.
+                // قِيس على الإنتاج: متجر «تاكي» نقطته 26.338729/50.143177 لا
+                // تطابق أيّ فرع من فروعه الخمسة — أقربها على بُعد ~٥ كم.
+                // الآن: يُكتب الموقع أولاً، ولا تتحرّك النقطة إلا إن نجح.
 
                 // ── مرآة الموقع في «مواقعي المحفوظة» (store_branches) ──
                 //
@@ -1342,7 +1348,7 @@ const SellerDashboard: React.FC = () => {
                 // فعلاً، (٢) سبب الرفض يُقال صراحةً مع طريق الترقية، (٣) لو
                 // كان الموقع محفوظاً سلفاً بنفس المفتاح نُحدّث صفّه بدل إنشاء
                 // صفّ مكرر تبتلعه إزالة التكرار في الشرائح فلا يظهر شيء.
-                let branchOutcome: 'added' | 'updated' | 'cap' | 'failed' = 'added';
+                let branchOutcome: 'added' | 'updated' | 'cap' | 'dup' | 'failed' = 'failed';
                 try {
                     if (user?.id) {
                         const primaryLabel = (shopName && shopName.trim().length > 0)
@@ -1387,20 +1393,34 @@ const SellerDashboard: React.FC = () => {
                     console.warn('Primary branch upsert error:', msg);
                     if (/LOCATION_LIMIT_EXCEEDED/i.test(msg)) {
                         branchOutcome = 'cap';
+                    } else if (/BRANCH_NAME_DUP/i.test(msg)) {
+                        // v14.74 — اسمٌ يطابق موقعاً نشطاً آخر. يُقال صراحةً
+                        // لأن الاسم هنا **مُولَّد** من اسم المدينة/المول، فقد
+                        // يصطدم بموقعٍ سابق في نفس المدينة بلا أن يكتبه التاجر.
+                        branchOutcome = 'dup';
                     } else {
                         branchOutcome = 'failed';
                     }
                 }
 
+                // النقطة تتبع الموقع: لا تتحرّك إلا إذا استقرّ الموقع في القاعدة.
+                if (branchOutcome === 'added' || branchOutcome === 'updated') {
+                    await withTimeout(updateProfile({ lat, lng, googleMapsLink }), 30000);
+                }
+
                 if (branchOutcome === 'cap') {
                     const goUpgrade = await customConfirm(isRTL
-                        ? `📍 حُفظ موقع متجرك على الخريطة.\n\nلكنه **لم يُضف** إلى «مواقعي المحفوظة» لأن باقتك تسمح بـ${maxLocations === 1 ? 'موقع واحد' : `${maxLocations} مواقع`} وقد اكتملت.\n\n• «موافق» = ترقية الباقة الآن.\n• «إلغاء» = أحذف موقعاً من القائمة أعلاه ثم أعيد الحفظ.`
-                        : `📍 Your shop pin was saved.\n\nBut it was NOT added to your saved locations: your plan allows ${maxLocations} location(s) and they are all used.\n\n• OK = upgrade now.\n• Cancel = delete one of the saved locations above and save again.`);
+                        ? `📍 **لم يُحفظ الموقع** — باقتك تسمح بـ${maxLocations === 1 ? 'موقع واحد' : `${maxLocations} مواقع`} وقد اكتملت.\n\nودبّوس متجرك على الخريطة **لم يتحرّك** أيضاً: لا نُحرّك النقطة التي تُنشر للعالم إلى مكانٍ لا يقابله موقعٌ محفوظ.\n\n• «موافق» = ترقية الباقة الآن.\n• «إلغاء» = أحذف موقعاً من القائمة أعلاه ثم أعيد الحفظ.`
+                        : `📍 **Location not saved** — your plan allows ${maxLocations} location(s) and they are all used.\n\nYour map pin did NOT move either: we never move the pin we publish to a place with no saved location behind it.\n\n• OK = upgrade now.\n• Cancel = delete one of the saved locations above and save again.`);
                     if (goUpgrade) history.push('/subscription');
+                } else if (branchOutcome === 'dup') {
+                    await customAlert(isRTL
+                        ? '📍 لديك موقعٌ نشطٌ بنفس الاسم، فلم يُحفظ هذا ولم يتحرّك دبّوس متجرك.\n\nافتح «صفحتي ← مواقع المتجر ← تغيير المواقع الظاهرة» وسمِّ الموقعين باسمين مختلفين واكتب عنوان كلٍّ منهما — فالمشتري يفرّق بين فرعين في نفس المدينة بالعنوان.'
+                        : '📍 You already have an active location with this name, so this one was not saved and your pin did not move.\n\nOpen “My page → Store locations → Change shown locations” and give the two different names and addresses.');
                 } else if (branchOutcome === 'failed') {
                     await customAlert(isRTL
-                        ? '📍 حُفظ موقع متجرك على الخريطة، لكن تعذّرت إضافته إلى «مواقعي المحفوظة». تحقّق من الإنترنت وأعد المحاولة.'
-                        : '📍 Shop pin saved, but adding it to your saved locations failed. Check your connection and try again.');
+                        ? '📍 تعذّر حفظ الموقع في «مواقعي المحفوظة»، فلم يتحرّك دبّوس متجرك أيضاً. تحقّق من الإنترنت وأعد المحاولة.'
+                        : '📍 Could not save the location, so your map pin did not move either. Check your connection and try again.');
                 } else {
                     await customAlert(isRTL
                         ? (branchOutcome === 'updated'

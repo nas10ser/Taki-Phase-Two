@@ -88,6 +88,12 @@ const StoreDetails: React.FC = () => {
     // v13.74 — وضع «تغيير المواقع الظاهرة» لصاحب المتجر: مطويّ افتراضياً فلا
     // تظهر المواقع خارج الباقة على صفحته إلا حين يطلب تبديلها بنفسه.
     const [managingBranches, setManagingBranches] = useState(false);
+    // v14.74 — تحرير بطاقة الموقع (الاسم + العنوان) داخل وضع الإدارة.
+    // 🪤 المسوّدة تُفتح **من الصفّ لحظة الضغط** لا عند التحميل: قائمة الفروع
+    //    تُعاد جلبها، فمسوّدةٌ مُهيّأة مبكراً تدهس ما وصل بعدها (نفس درس
+    //    `useState(defaultBio)` في v14.72).
+    const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
+    const [branchDraft, setBranchDraft] = useState<{ nameAr: string; address: string }>({ nameAr: '', address: '' });
     // v13.66 — خريطة «اعرض كل المواقع» داخل التطبيق (بدل بحث قوقل بالاسم).
     const [showBranchMap, setShowBranchMap] = useState(false);
     const [followerCount, setFollowerCount] = useState<number | null>(null);
@@ -351,6 +357,24 @@ const StoreDetails: React.FC = () => {
     // v13.66 — الفروع التي تدخل الخريطة = عين ما تعرضه بطاقة «مواقع المتجر»
     // (مصدر واحد للاثنين حتى لا تختلف الخريطة عن القائمة أبداً).
     const mapBranches = displayedBranches;
+
+    /** v14.74 — حفظ اسم الموقع وعنوانه. */
+    const saveBranchCard = async (b: StoreBranch) => {
+        setBranchBusy(b.id); setBranchMsg('');
+        const res = await branchRepository.setCard(b.id, {
+            nameAr: branchDraft.nameAr,
+            address: branchDraft.address,
+        });
+        if (res.ok) {
+            setBranches(prev => prev.map(x => x.id === b.id
+                ? { ...x, nameAr: branchDraft.nameAr.trim().slice(0, 80), address: branchDraft.address.trim().slice(0, 200) || null }
+                : x));
+            setEditingBranchId(null);
+        } else {
+            setBranchMsg(res.error || (isRTL ? 'تعذّر الحفظ' : 'Could not save'));
+        }
+        setBranchBusy(null);
+    };
 
     const toggleBranchDisplay = async (b: StoreBranch) => {
         setBranchBusy(b.id); setBranchMsg('');
@@ -989,8 +1013,8 @@ const StoreDetails: React.FC = () => {
                         {isOwner && managingBranches && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.7 }}>
                                 {isRTL
-                                    ? 'اختر المواقع التي تريد أن يراها الزبائن على صفحتك. عددها محدود بباقتك.'
-                                    : 'Pick which locations customers see on your page. The number is limited by your package.'}
+                                    ? 'اختر المواقع التي تريد أن يراها الزبائن على صفحتك (عددها محدود بباقتك)، واضغط «✏️ الاسم والعنوان» لتسمية كل موقع وكتابة عنوانه — فالمشتري يفرّق بين فرعين في نفس المدينة بالعنوان لا بالاسم وحده.'
+                                    : 'Pick which locations customers see on your page (limited by your package), and tap “✏️ Name & address” to name each one and write its address — two branches in the same city are told apart by the address, not the name alone.'}
                             </div>
                         )}
                         {branchMsg && (
@@ -1019,11 +1043,49 @@ const StoreDetails: React.FC = () => {
                                         opacity: manage && !on ? 0.55 : 1
                                     }}>
                                         <div style={{ flex: 1, minWidth: 140 }}>
-                                            <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-                                                {b.isPrimary ? '⭐ ' : ''}{(isRTL ? b.nameAr : (b.nameEn || b.nameAr)) || (isRTL ? 'فرع' : 'Branch')}
-                                            </div>
-                                            {b.address && (
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{b.address}</div>
+                                            {editingBranchId === b.id ? (
+                                                // v14.74 — تحرير بطاقة الموقع: الاسم والعنوان.
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                    <input
+                                                        value={branchDraft.nameAr}
+                                                        onChange={e => setBranchDraft(d => ({ ...d, nameAr: e.target.value }))}
+                                                        maxLength={80}
+                                                        aria-label={isRTL ? 'اسم الموقع' : 'Location name'}
+                                                        placeholder={isRTL ? 'اسم الموقع — مثال: فرع الدمام الشمالي' : 'Location name'}
+                                                        style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: '0.85rem', fontWeight: 800, fontFamily: 'inherit' }}
+                                                    />
+                                                    <input
+                                                        value={branchDraft.address}
+                                                        onChange={e => setBranchDraft(d => ({ ...d, address: e.target.value }))}
+                                                        maxLength={200}
+                                                        aria-label={isRTL ? 'عنوان الموقع' : 'Location address'}
+                                                        placeholder={isRTL ? 'العنوان — مثال: طريق الملك فهد، حي الشاطئ' : 'Address'}
+                                                        style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}
+                                                    />
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <button type="button" onClick={() => saveBranchCard(b)} disabled={branchBusy === b.id}
+                                                            style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 10, padding: '7px 14px', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                                            {branchBusy === b.id ? '…' : (isRTL ? 'حفظ' : 'Save')}
+                                                        </button>
+                                                        <button type="button" onClick={() => setEditingBranchId(null)}
+                                                            style={{ background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '7px 14px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                                            {isRTL ? 'إلغاء' : 'Cancel'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div style={{ fontWeight: 900, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                                                        {b.isPrimary ? '⭐ ' : ''}{(isRTL ? b.nameAr : (b.nameEn || b.nameAr)) || (isRTL ? 'فرع' : 'Branch')}
+                                                    </div>
+                                                    {b.address ? (
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>{b.address}</div>
+                                                    ) : manage ? (
+                                                        <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: 2, fontWeight: 700 }}>
+                                                            {isRTL ? 'بلا عنوان — المشتري يرى الاسم وحده' : 'No address — buyers see the name only'}
+                                                        </div>
+                                                    ) : null}
+                                                </>
                                             )}
                                         </div>
                                         {href && (
@@ -1032,7 +1094,14 @@ const StoreDetails: React.FC = () => {
                                                 🗺️ {isRTL ? 'الاتجاهات' : 'Directions'}
                                             </a>
                                         )}
-                                        {manage && (
+                                        {manage && editingBranchId !== b.id && (
+                                            <button type="button"
+                                                onClick={() => { setBranchDraft({ nameAr: b.nameAr || '', address: b.address || '' }); setEditingBranchId(b.id); setBranchMsg(''); }}
+                                                style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: 10, padding: '7px 12px', fontSize: '0.75rem', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                                                ✏️ {isRTL ? 'الاسم والعنوان' : 'Name & address'}
+                                            </button>
+                                        )}
+                                        {manage && editingBranchId !== b.id && (
                                             <button onClick={() => toggleBranchDisplay(b)} disabled={branchBusy === b.id}
                                                 style={{
                                                     background: on ? 'rgba(16,185,129,0.15)' : 'var(--card-bg)',

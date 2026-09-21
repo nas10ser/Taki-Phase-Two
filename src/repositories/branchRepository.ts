@@ -42,24 +42,44 @@ const fromRow = (r: any): StoreBranch => ({
     updatedAt: r.updated_at,
 });
 
-const toRow = (b: Partial<StoreBranch> & { merchantId: string; nameAr: string }) => ({
-    ...(b.id ? { id: b.id } : {}),
-    merchant_id: b.merchantId,
-    name_ar: b.nameAr,
-    name_en: b.nameEn ?? null,
-    region_id: b.regionId ?? null,
-    city_id: b.cityId ?? null,
-    location_id: b.locationId ?? null,
-    address: b.address ?? null,
-    map_lat: b.mapLat ?? null,
-    map_lng: b.mapLng ?? null,
-    google_maps_link: b.googleMapsLink ?? null,
-    phone: b.phone ?? null,
-    is_primary: b.isPrimary ?? false,
-    is_active: b.isActive ?? true,
-    ...(b.showOnStorePage === undefined ? {} : { show_on_store_page: b.showOnStorePage }),
-    updated_at: new Date().toISOString(),
-});
+/**
+ * صفّ القاعدة من كائن الفرع — **جزئيّ بالقصد** (v14.74).
+ *
+ * 🔴 ما كان قبله: كل حقلٍ يُكتب بـ`?? null` أو `?? false`، أي أن أي نداءٍ لا
+ *    يذكر حقلاً **يمحوه**. وهو نفس العيب الذي كلّفنا `saveProfile` من قبل
+ *    («اختفت المتابَعات بعد تعديل»). أثره هنا مباشر على ما شُحن اليوم:
+ *      • `saveShopLocation` يبني كائناً بلا `address` — فكلّ ضغطة «حفظ الموقع»
+ *        كانت ستمحو العنوان الذي كتبه التاجر للتوّ في الموقع الرئيسي.
+ *      • ويبني بلا `isPrimary` في مسارٍ آخر — فيُصفَّر الموقع الرئيسي بلا أن
+ *        يطلب أحد ذلك (وهو سببٌ مرشّح لـ«صفر رئيسي» في متجر تاكي).
+ *
+ * القاعدة الآن: عمودٌ يُكتب **فقط** إذا مُرِّر حقله صراحةً (`!== undefined`).
+ * و`null` تبقى محواً مقصوداً. وللصفّ الجديد تكفي افتراضيّات القاعدة نفسها
+ * (`is_active` = true · `is_primary` = false · `show_on_store_page` = false —
+ * فُحصت على جدة)، فلا حاجة لكتابتها من هنا.
+ */
+const toRow = (b: Partial<StoreBranch> & { merchantId: string; nameAr: string }) => {
+    const row: Record<string, any> = {
+        ...(b.id ? { id: b.id } : {}),
+        merchant_id: b.merchantId,
+        name_ar: b.nameAr,
+        updated_at: new Date().toISOString(),
+    };
+    const put = (col: string, v: any) => { if (v !== undefined) row[col] = v; };
+    put('name_en', b.nameEn);
+    put('region_id', b.regionId);
+    put('city_id', b.cityId);
+    put('location_id', b.locationId);
+    put('address', b.address);
+    put('map_lat', b.mapLat);
+    put('map_lng', b.mapLng);
+    put('google_maps_link', b.googleMapsLink);
+    put('phone', b.phone);
+    put('is_primary', b.isPrimary);
+    put('is_active', b.isActive);
+    put('show_on_store_page', b.showOnStorePage);
+    return row;
+};
 
 export const branchRepository = {
     async listByMerchant(merchantId: string): Promise<StoreBranch[]> {
@@ -148,6 +168,50 @@ export const branchRepository = {
      * فيتراجع السياق ويرى التاجر رسالة صريحة. (بلاغ ناصر: «تأكد أن الإضافة
      * والحذف مربوطان بالداتابيس».)
      */
+    /**
+     * v14.74 — تحرير بطاقة الموقع: الاسم والعنوان.
+     *
+     * لماذا هذان الحقلان تحديداً: قِيس على الإنتاج (٢١ سبتمبر ٢٠٢٦) أن **صفراً
+     * من عشرة** مواقع يحمل عنواناً نصّياً — لأن العمود موجود وصفحة المتجر
+     * تعرضه، ولم يكن في النظام **حقل إدخالٍ واحد** له. وأن متجراً له فرعان
+     * نشطان اسمهما «الدمام» على بُعد ٤ كيلومترات — ولا سبيل للتاجر أن يميّزهما
+     * لأن الاسم يُولَّد من اسم المدينة/المول ولا يُحرَّر.
+     *
+     * 🪤 `.select()` إلزامي: تحديثٌ ترفضه RLS يعود بـ`error=null` وصفر صفوف،
+     *    فتقول الشاشة «حُفظ» ولا شيء في القاعدة (فخّ «الأزرار الصامتة»).
+     * 🪤 ولا يمسّ هذا التحديث حارس السقف: `tr_enforce_branch_cap` يعمل على
+     *    `UPDATE OF location_id, map_lat, map_lng, is_active` وحدها، فتحرير
+     *    الاسم والعنوان لا يُرفض بسبب باقةٍ ممتلئة (فُحص على جدة).
+     */
+    async setCard(id: string, patch: { nameAr?: string; address?: string | null }): Promise<{ ok: boolean; error?: string }> {
+        const row: Record<string, any> = {};
+        if (patch.nameAr !== undefined) {
+            const n = String(patch.nameAr).trim().slice(0, 80);
+            if (!n) return { ok: false, error: 'اسم الموقع لا يصحّ أن يكون فارغاً.' };
+            row.name_ar = n;
+        }
+        if (patch.address !== undefined) {
+            row.address = String(patch.address ?? '').trim().slice(0, 200) || null;
+        }
+        if (Object.keys(row).length === 0) return { ok: true };
+
+        const { data, error } = await supabase.from('store_branches')
+            .update(row).eq('id', id).select('id');
+        if (error) {
+            console.error('branches setCard error', error);
+            // v14.74 — حارس القاعدة يمنع اسمين متطابقين بين المواقع النشطة.
+            // رسالته تُترجَم هنا: نصّ خطأ PostgREST الخام لا يقول للتاجر ما يفعل.
+            if (/BRANCH_NAME_DUP/i.test(error.message || '')) {
+                return { ok: false, error: 'لديك موقعٌ آخر بهذا الاسم. اختر اسماً يميّزه (واكتب عنوانه) ليفرّق المشتري بينهما.' };
+            }
+            return { ok: false, error: error.message };
+        }
+        if (!data || data.length === 0) {
+            return { ok: false, error: 'لم يُحفَظ التغيير في القاعدة (لا صلاحية على هذا الموقع). حدّث الصفحة وحاول مجدداً.' };
+        }
+        return { ok: true };
+    },
+
     async remove(id: string): Promise<void> {
         const { data, error } = await supabase
             .from('store_branches')
