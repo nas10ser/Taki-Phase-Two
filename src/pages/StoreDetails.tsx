@@ -123,7 +123,15 @@ const StoreDetails: React.FC = () => {
     const defaultBio = profile.bio ? profile.bio : (isRTL 
         ? `متخصصون في تقديم أفضل المنتجات والعروض الحصرية. نفخر بخدمتكم وتوفير تجربة تسوق استثنائية وبأسعار مجنونة وحصرية في تاكي.\n\nللتواصل الجوال: ${profile.phone || ''}` 
         : `Specialized in providing the best products and exclusive deals. We take pride in serving you with an exceptional shopping experience.\n\nContact: ${profile.phone || ''}`);
-    const [editBio, setEditBio] = useState(defaultBio);
+    // 🔴 v14.72 — كان `useState(defaultBio)`: أي أن مربّع التحرير يُولَد محشوّاً
+    // بالنصّ التسويقي الجاهز حين لا نبذةَ للمتجر — أو حين لم يصل ملفُّ المتجر
+    // بعد (وهو الشائع: `ensureStoreProfiles` غير متزامنة). فالنتيجتان:
+    //   • تاجرٌ بلا نبذة يفتح التحرير ويحفظ ⇒ تُكتب له نبذةٌ لم يكتبها.
+    //   • وتاجرٌ **له** نبذة يفتح التحرير قبل وصول ملفّه ⇒ الحفظ **يدهس
+    //     نبذته** بالنصّ الجاهز. فقدُ بيانات، لا تجميل.
+    // الآن: المربّع يبدأ بما كتبه هو فعلاً (أو فارغاً)، ويُزامَن عند كل فتح؛
+    // و`defaultBio` تبقى للعرض وحده.
+    const [editBio, setEditBio] = useState(profile.bio || '');
     const [editAddress, setEditAddress] = useState(profile.address || '');
     // v13.35 — الرقم الضريبي للتاجر (توافق الهيئة): وجوده يحوّل سند طلباته
     // المطبوع إلى «فاتورة ضريبية مبسطة» بQR. يُخزَّن في store_profiles.vat_number.
@@ -599,6 +607,10 @@ const StoreDetails: React.FC = () => {
                             // v13.11 — عند فتح التعديل، عبّئ حقل العنوان بالمحفوظ فعلاً
                             if (!isEditingStore) {
                                 setEditAddress(profile.address || store.address || '');
+                                // v14.72 — تُزامَن عند الفتح لا عند أول رسم:
+                                // الملفّ قد يصل بعد التركيب بلحظات.
+                                setEditBio(profile.bio || '');
+                                setEditPhone(profile.contactPhone || profile.phone || '');
                                 // v13.35 — عبّئ الرقم الضريبي من القاعدة عند فتح التعديل
                                 import('../services/supabaseClient').then(({ supabase }) =>
                                     supabase.from('store_profiles').select('vat_number, cr_number').eq('store_id', id).maybeSingle()

@@ -128,8 +128,12 @@ const SetupPath: React.FC<{
         {
             key: 'card' as SetupAnchor,
             title: t('أكمِل بطاقة متجرك', 'Complete your store card'),
-            why: t('شعارك ونبذتك أوّل ما يراه المشتري في الرئيسية وعلى كل بطاقة عرض — ومتجرٌ بلا شعار يظهر بحرفٍ في دائرة رمادية.',
-                   'Your logo and blurb are the first thing buyers see on the home feed and on every deal card — a store with no logo shows as a grey initial.'),
+            // 🪤 النصّ يقول ما يحدث فعلاً لا ما نتمنّاه: بطاقة العرض في الرئيسية
+            // تعرض **اسم** المتجر لا شعاره (قِيس: `DealCard` لا تقرأ الشعار
+            // إطلاقاً). الشعار يظهر في صفحة المتجر وقائمة المتابَعات وبطاقة
+            // تيليجرام. وعدٌ بأكثر من ذلك يجعل التاجر يرفع شعاراً ثم لا يراه.
+            why: t('شعارك ونبذتك هما وجه متجرك في صفحته وفي قائمة متابَعات عملائك وفي بطاقته داخل تيليجرام — وبدونهما تظهر صفحتك بحرفٍ في دائرة رمادية ونصٍّ جاهز لم تكتبه.',
+                   'Your logo and blurb are your store’s face on its page, in your followers’ list and on its Telegram card — without them your page shows a grey initial and boilerplate text you never wrote.'),
         },
         {
             key: 'hours' as SetupAnchor,
