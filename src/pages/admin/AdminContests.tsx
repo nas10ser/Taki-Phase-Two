@@ -601,14 +601,19 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                             {winners.map((w) => {
                                 const shown = revealedPhones.has(w.id);
                                 return (
-                                    <div key={w.id} className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
-                                        <span className="shrink-0">🎉 {w.name}</span>
+                                    /* v14.78 — 🪤 صفٌّ واحد بخمسة عناصر و`shrink-0` على الاسم
+                                       كان يفيض على شاشة الجوال فيتداخل الرقمُ مع الاسم (بلاغ ناصر
+                                       بصورة). الآن `flex-wrap`: ما لا يتّسع ينزل سطراً، والاسم
+                                       `min-w-0` فيلتفّ بدل أن يدهس جاره. */
+                                    <div key={w.id} className="flex items-center flex-wrap gap-x-2 gap-y-1.5 text-sm font-bold text-[var(--text-primary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl px-2.5 py-2">
+                                        <span className="min-w-0 break-words">🎉 {w.name}</span>
                                         {shown ? (
                                             <WinnerContact phone={w.phone} name={w.name} />
                                         ) : (
                                             <span className="font-mono text-[var(--text-secondary)] tracking-widest" dir="ltr">••••••••</span>
                                         )}
-                                        <button onClick={() => togglePhone(w.id)} className="ms-auto shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <div className="flex items-center gap-1.5 ms-auto shrink-0">
+                                        <button onClick={() => togglePhone(w.id)} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                             {shown ? '🙈 إخفاء' : '🔓 اكشف الرقم'}
                                         </button>
                                         {/* v14.65 — توثيق تسليم الجائزة: كانت المسابقة بجوائز
@@ -626,6 +631,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                         >
                                             {deliveringId === w.id ? '...' : (w.prize_delivered ? '✅ سُلِّمت' : '📦 لم تُسلَّم')}
                                         </button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -949,16 +955,17 @@ const CustomDrawBox: React.FC = () => {
     const winnerRow = (w: DrawWinner, key: string) => {
         const shown = revealed.has(key);
         return (
-            <div key={key} className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl px-3 py-2">
+            /* v14.78 — نفس علاج صفّ الفائزين: يلتفّ بدل أن يفيض على الجوال. */
+            <div key={key} className="flex items-center flex-wrap gap-x-2 gap-y-1.5 text-sm font-bold text-[var(--text-primary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl px-3 py-2">
                 <span className="shrink-0">🏆</span>
-                <span className="truncate">{w.shop ? `${w.shop}` : (w.name || 'مشارك')}</span>
-                {w.shop && w.name && <span className="text-[11px] text-[var(--text-secondary)] truncate">({w.name})</span>}
+                <span className="min-w-0 break-words">{w.shop ? `${w.shop}` : (w.name || 'مشارك')}</span>
+                {w.shop && w.name && <span className="text-[11px] text-[var(--text-secondary)] min-w-0 break-words">({w.name})</span>}
                 {shown ? (
-                    <span className="mr-auto shrink-0"><WinnerContact phone={w.phone} name={w.name} /></span>
+                    <WinnerContact phone={w.phone} name={w.name} />
                 ) : (
-                    <span className="font-mono text-[var(--text-secondary)] tracking-widest mr-auto shrink-0" dir="ltr">••••••••</span>
+                    <span className="font-mono text-[var(--text-secondary)] tracking-widest" dir="ltr">••••••••</span>
                 )}
-                <button onClick={() => togglePhone(key)} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <button onClick={() => togglePhone(key)} className="ms-auto shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     {shown ? '🙈' : '🔓 الرقم'}
                 </button>
             </div>
