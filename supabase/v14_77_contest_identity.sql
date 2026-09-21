@@ -51,8 +51,13 @@ BEGIN
   END IF;
 END $fk$;
 
-CREATE INDEX IF NOT EXISTS idx_contest_entries_user
-  ON public.contest_entries (contest_id, user_id);
+-- 🪤 وفريدٌ لا عاديّ: «مشاركة واحدة لكل مستخدم» كانت **فحصاً داخل دالّة**
+--    (`if exists … then raise`) — وفحصُ ثمّ إدراجٍ ليس قيداً: نداءان متزامنان
+--    يمرّان معاً فيُدرَج صفّان. والقاعدة تفرضها الآن بقيدٍ لا يُلتفّ عليه.
+--    (جزئيّ: الصفوف التي تسبق العمود تحمل NULL، والـNULL لا يتصادم.)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contest_entries_user
+  ON public.contest_entries (contest_id, user_id)
+  WHERE user_id IS NOT NULL;
 
 -- ردم الصفوف القائمة من الجوال (مرّةً واحدة). جوالٌ يطابق أكثر من حساب يُترك
 -- فارغاً عمداً — تخمين الهوية أسوأ من تركها للمسار الاحتياطي.
@@ -148,8 +153,15 @@ begin
               else v_score >= v_max
             end;
 
-  insert into contest_entries (contest_id, user_id, name, phone, answers, social_answers, score, max_score, qualified)
-  values (p_contest_id, v_uid, v_name, v_phone, coalesce(p_answers,'{}'::jsonb), coalesce(p_social,'{}'::jsonb), v_score, v_max, v_qual);
+  -- 🪤 القيد الفريد يمسك السباق الذي يفلت من `if exists` أعلاه (نداءان
+  --    متزامنان يمرّان معاً). ولولا هذا الالتقاط لرأى المشارك خطأ قاعدةٍ خاماً
+  --    بالإنجليزية بدل الرسالة التي كُتبت له.
+  begin
+    insert into contest_entries (contest_id, user_id, name, phone, answers, social_answers, score, max_score, qualified)
+    values (p_contest_id, v_uid, v_name, v_phone, coalesce(p_answers,'{}'::jsonb), coalesce(p_social,'{}'::jsonb), v_score, v_max, v_qual);
+  exception when unique_violation then
+    raise exception 'لقد شاركت في هذه المسابقة من قبل — لكل مشارك محاولة واحدة فقط';
+  end;
 
   return jsonb_build_object('success', true, 'qualified', v_qual, 'score', v_score, 'max_score', v_max);
 end; $function$;
@@ -355,6 +367,11 @@ BEGIN
   SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p JOIN pg_namespace n2 ON n2.oid=p.pronamespace
    WHERE n2.nspname='public' AND p.proname='submit_contest_entry';
   IF d NOT LIKE '%e.user_id = v_uid%' THEN RAISE EXCEPTION 'حارس المشاركة الواحدة ما زال بالجوال وحده'; END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
+                  WHERE c.relname='idx_contest_entries_user' AND i.indisunique) THEN
+    RAISE EXCEPTION 'قيد المشاركة الواحدة ليس فريداً — فحصٌ في دالّة ليس قيداً';
+  END IF;
 
   SELECT count(*) INTO n FROM pg_proc p JOIN pg_namespace n2 ON n2.oid=p.pronamespace
    WHERE n2.nspname='public' AND p.proname='submit_contest_entry';
