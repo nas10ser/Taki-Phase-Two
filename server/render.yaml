@@ -9,8 +9,12 @@
 #   3) Create / Deploy. On boot the bot auto-registers its Telegram webhook
 #      using Render's public URL (RENDER_EXTERNAL_URL) — no extra steps.
 #
-# IMPORTANT: the bot token can run in ONE place at a time. Once Render is live,
-# stop the local PM2 bot (`pm2 stop taki-bot`) so they don't fight over Telegram.
+# IMPORTANT: the bot token can run in ONE place at a time — only ONE process may
+# hold the Telegram webhook. Render is that place today.
+#
+# ملاحظة (v14.77): كان هنا سطرٌ يقول «أوقف بوت PM2 المحلّي». وpm2 هُجر فعلاً —
+# حُذفت حزمته وإعداده في v14.65، والبوت يعمل على Render بـ`node bot.js` وحده.
+# تركُ الإرشاد القديم كان يوجّه القارئ إلى أمرٍ لا محلّ له.
 #
 # Plan: `free`. Render free sleeps after ~15 min idle, so the bot runs a built-in
 # self-ping keep-alive (hits its own /health every 10 min via RENDER_EXTERNAL_URL)

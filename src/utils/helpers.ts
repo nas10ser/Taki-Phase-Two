@@ -411,6 +411,16 @@ export const normalizeArabicNumerals = (input: string): string => {
 };
 
 /**
+ * رابط واتساب من رقم جوال — **مصدر واحد** في `shared/phone.js` (v14.77).
+ *
+ * يُعاد تصديرها هنا وحدها ليبقى للشاشات مسارُ استيرادٍ واحد (`utils/helpers`)،
+ * والمنطق في `shared/` ليقرأه البوتان أيضاً ويحرسه `npm test` بمتّجهاتٍ سالبة.
+ * وتُرجع `''` حين لا يمكن اشتقاق رقمٍ سليم — فيُخفي المكوّن الزرّ بدل أن يفتح
+ * واتساب على «الرقم غير صالح».
+ */
+export { waLink } from '../../shared/phone';
+
+/**
  * Calculates the Haversine distance between two geographic coordinates.
  * @returns Distance in kilometers
  */

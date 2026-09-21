@@ -12,7 +12,7 @@ import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { notifySetupGapsChanged } from '../components/seller/SetupPath';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
-import { getAuthenticityBadge } from '../utils/helpers';
+import { getAuthenticityBadge, waLink } from '../utils/helpers';
 import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 import { AVATAR } from '../utils/imageCompression';
@@ -925,7 +925,10 @@ const StoreDetails: React.FC = () => {
                                     }}>
                                         📞 {isRTL ? 'اتصال' : 'Call'}
                                     </a>
-                                    <a href={`https://wa.me/966${(profile.contactPhone || profile.phone)?.replace(/^0/, '')}`} target="_blank" rel="noopener noreferrer" style={{
+                                    {/* v14.77 — يظهر فقط حين يُشتقّ رقمٌ سليم: رابطٌ فارغ يُعيد
+                                        تحميل الصفحة، ورابطٌ معطوب يفتح «الرقم غير صالح». */}
+                                    {waLink(profile.contactPhone || profile.phone) && (
+                                    <a href={waLink(profile.contactPhone || profile.phone)} target="_blank" rel="noopener noreferrer" style={{
                                         flex: 1,
                                         background: '#25d366',
                                         color: '#fff',
@@ -938,6 +941,7 @@ const StoreDetails: React.FC = () => {
                                     }}>
                                         WhatsApp 💬
                                     </a>
+                                    )}
                                 </div>
                             )}
                         </>

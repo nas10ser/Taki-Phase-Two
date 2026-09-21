@@ -7,6 +7,44 @@ import {
     ContestStatus, QuestionType, DrawSource, DrawRole, DrawWinner, CustomDraw,
 } from '../../repositories/contestRepository';
 import { BANNER } from '../../utils/imageCompression';
+import { waLink } from '../../utils/helpers';
+
+/**
+ * رقم الفائز + وسيلتا التواصل (v14.77).
+ *
+ * طلب ناصر: «أستطيع أنا كأدمن التواصل معه — يظهر لي رقمه لو احتجت الاتصال أو
+ * الواتس». كان الظاهر رابط اتصالٍ وحده، والاتصال لا يصلح لتسليم جائزة: الرسالة
+ * تبقى مكتوبةً ويردّ عليها صاحبها وقت فراغه.
+ *
+ * 🪤 وزرّ واتساب يظهر **فقط** حين يمكن اشتقاق رقمٍ سليم (`waLink` تُرجع فراغاً
+ *    وإلا). رابطٌ معطوب يفتح واتساب على «الرقم غير صالح» فيُستنتج أن الفائز ليس
+ *    على واتساب — وهو استنتاجٌ خاطئ يمنع تسليم الجائزة.
+ * 🪤 ولونا الزرّ ثابتان لا متغيّرا ثيم: النصّ أبيض على أخضر واتساب، و
+ *    `--text-primary` ليلاً أبيض فكان سيختفي.
+ */
+const WinnerContact: React.FC<{ phone?: string | null; name?: string | null }> = ({ phone, name }) => {
+    const p = String(phone || '').trim();
+    if (!p) return <span className="font-mono text-[var(--text-secondary)]" dir="ltr">—</span>;
+    const wa = waLink(p);
+    return (
+        <span className="inline-flex items-center gap-1.5 min-w-0">
+            <a href={`tel:${p}`} className="font-mono text-emerald-600 underline" dir="ltr" title="اتصال">{p}</a>
+            {wa && (
+                <a
+                    href={wa}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`مراسلة ${name || p} على واتساب`}
+                    aria-label={`مراسلة ${name || p} على واتساب`}
+                    className="shrink-0 px-2 py-0.5 rounded-lg text-[11px] font-extrabold border"
+                    style={{ background: '#25D366', color: '#ffffff', borderColor: '#1da851' }}
+                >
+                    💬 واتساب
+                </a>
+            )}
+        </span>
+    );
+};
 
 /**
  * AdminContests (v11.44) — create surveys/quizzes with prizes, auto-grade
@@ -566,7 +604,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                     <div key={w.id} className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
                                         <span className="shrink-0">🎉 {w.name}</span>
                                         {shown ? (
-                                            <a href={`tel:${w.phone}`} className="font-mono text-emerald-600 underline" dir="ltr">{w.phone}</a>
+                                            <WinnerContact phone={w.phone} name={w.name} />
                                         ) : (
                                             <span className="font-mono text-[var(--text-secondary)] tracking-widest" dir="ltr">••••••••</span>
                                         )}
@@ -916,7 +954,7 @@ const CustomDrawBox: React.FC = () => {
                 <span className="truncate">{w.shop ? `${w.shop}` : (w.name || 'مشارك')}</span>
                 {w.shop && w.name && <span className="text-[11px] text-[var(--text-secondary)] truncate">({w.name})</span>}
                 {shown ? (
-                    <a href={`tel:${w.phone || ''}`} className="font-mono text-emerald-600 underline mr-auto shrink-0" dir="ltr">{w.phone || '—'}</a>
+                    <span className="mr-auto shrink-0"><WinnerContact phone={w.phone} name={w.name} /></span>
                 ) : (
                     <span className="font-mono text-[var(--text-secondary)] tracking-widest mr-auto shrink-0" dir="ltr">••••••••</span>
                 )}

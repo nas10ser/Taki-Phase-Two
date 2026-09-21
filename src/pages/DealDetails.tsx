@@ -16,7 +16,7 @@ import { getLocation, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
-import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar } from '../utils/helpers';
+import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar, waLink } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
 import { holdLabel } from '../utils/bookingHold';
@@ -2601,11 +2601,14 @@ const DealDetails: React.FC = () => {
                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--body-bg)', padding: '12px', borderRadius: 14, color: 'var(--text-primary)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 800, border: '1.5px solid var(--gray-200)' }}>
                             📞 {isRTL ? 'اتصال' : 'Call'}
                         </a>
-                        <a href={`https://wa.me/966${(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone)?.replace(/^0/, '')}`} 
+                        {/* v14.77 — يظهر فقط حين يُشتقّ رقمٌ سليم. */}
+                        {waLink(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone) && (
+                        <a href={waLink(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone)} 
                            target="_blank" rel="noopener noreferrer"
                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#25d366', padding: '12px', borderRadius: 14, color: 'white', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 800 }}>
                             💬 WhatsApp
                         </a>
+                        )}
                     </div>
                 )}
 
