@@ -4,6 +4,7 @@ import { isPasswordRecovery } from './utils/passwordRecovery';
 import { returnTo } from './utils/returnTo';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Switch, Route, Redirect, useHistory, useLocation } from 'react-router-dom';
+import { trackVisit } from './services/siteVisit';
 import { useApp } from './context/AppContext';
 import { validationService } from './services/validationService';
 import { normalizeArabicNumerals } from './utils/helpers';
@@ -311,6 +312,18 @@ const restoreScroll = (y: number) => {
     attempt(); // محاولة أولى فورية (متزامنة داخل layout-effect)
 };
 
+/**
+ * VisitTracker — يسجّل الزيارة ومصدرها (v14.80).
+ *
+ * مكوّنٌ مستقلّ لا حشوٌ في `ScrollManager`: مسؤوليّتان مختلفتان، وخلطهما يجعل
+ * أي تعديلٍ على إحداهما يمسّ الأخرى. لا يُصيّر شيئاً، ويصمت عند أي فشل.
+ */
+const VisitTracker: React.FC = () => {
+    const location = useLocation();
+    useEffect(() => { trackVisit(location.pathname); }, [location.pathname]);
+    return null;
+};
+
 const ScrollManager: React.FC = () => {
     const location = useLocation();
     const history = useHistory();
@@ -357,6 +370,7 @@ const App = () => {
     return (
         <Router>
             <ScrollManager />
+            <VisitTracker />
             <AuthRedirector />
             <InAppBanner />
             {/* v12.45 — عمق الموسم: عناصر متحركة عبر كامل الصفحة في كل صفحات

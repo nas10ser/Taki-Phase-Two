@@ -2619,6 +2619,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         bookingRepository.save(booking as any).then(() => {
             settle({ ok: true });
+            // v14.80 — تُوسَم الجلسة «حجزت» فيصير التحويل قابلاً للقياس:
+            // «كم زائراً من انستقرام حجز فعلاً» لا «كم زائراً جاء».
+            import('../services/siteVisit')
+                .then(({ markVisitBooked }) => markVisitBooked())
+                .catch(() => { /* صامت */ });
             import('../services/analyticsTracker')
                 .then(({ trackEvent }) => trackEvent('booking_completed', deal.storeId, deal.id, {
                     metadata: { qty: quantity },

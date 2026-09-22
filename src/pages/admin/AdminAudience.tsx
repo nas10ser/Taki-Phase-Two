@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { adminService } from '../../services/adminService';
 import { REGIONS, CITIES, LOCATIONS, CATEGORIES } from '../../data/mock';
+import SiteTrafficPanel from '../../components/admin/SiteTrafficPanel';
 
 /**
  * v12.52 — «👥 جمهور المدن» ج٢ (طلب ناصر): أرقام واضحة بلا خرائط —
@@ -169,6 +170,13 @@ const AdminAudience: React.FC = () => {
                     أرقام فقط <b>بلا خرائط تتبّع</b> احتراماً للخصوصية. (تحليل التجار والسوق في «المحلل الذكي»).
                 </p>
             </div>
+
+            {/* v14.80 — زوّار الموقع ومصادرهم. مكانُه هنا مقصود: هذا تبويب
+                «الجمهور»، وكان يقيس **المسجّلين وحدهم** — والزائر الذي يفتح
+                الصفحة ثم يخرج كان غائباً عنه تماماً. */}
+            <SiteTrafficPanel />
+
+            <div style={{ height: 1, background: 'var(--border-color)', margin: '4px 0' }} />
 
             {/* التحكم الكامل: الفترة/اليوم + الساعات + المكان */}
             <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] space-y-2">
