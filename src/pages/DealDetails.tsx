@@ -1021,7 +1021,7 @@ const DealDetails: React.FC = () => {
         addresses.length
             ? addresses.map(a => ({ key: a.id, lat: finiteOrNull(a.lat), lng: finiteOrNull(a.lng) }))
             : [{ key: '', lat: finiteOrNull(legacyAddress?.lat), lng: finiteOrNull(legacyAddress?.lng) }]
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     ), [addresses, legacyAddress?.lat, legacyAddress?.lng]);
 
     /**

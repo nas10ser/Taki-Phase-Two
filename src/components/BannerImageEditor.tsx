@@ -107,7 +107,7 @@ export const BannerImageEditor: React.FC<Props> = ({
     // Re-clamp the pan whenever zoom/frame changes so the frame stays filled.
     useEffect(() => {
         setOffset(o => ({ x: clamp(o.x, maxOffX), y: clamp(o.y, maxOffY) }));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [maxOffX, maxOffY]);
 
     // ===== Drag to pan =====

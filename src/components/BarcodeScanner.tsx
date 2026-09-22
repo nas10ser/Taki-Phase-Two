@@ -249,9 +249,13 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
         }
     };
 
-    const handleVerify = () => {
+    const handleVerify = async () => {
         if (!scanResult) return;
-        completeBooking(scanResult.barcode);
+        // 🔴 v14.79 — كان النداء بلا `await` وشاشةُ «تم التحقّق» تظهر فوراً:
+        //    القاعدة قد ترفض (حارس حالة · RLS · شبكة) فيرى التاجر نجاحاً
+        //    ثم تحذيرَ فشلٍ خلفه، وقد سلّم البضاعة على الأوّل.
+        const ok = await completeBooking(scanResult.barcode);
+        if (!ok) return;   // الدالّة نفسها أبلغت بالسبب
         setVerified(true);
         setTimeout(() => {
             setVerified(false);
@@ -270,7 +274,10 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
             : '⚠️ This will permanently cancel the order, restore the stock and notify the buyer. Are you sure?');
         if (!ok) return;
         // cancelBooking centrally handles status sync, quantity restore, and notifying the buyer.
-        cancelBooking(scanResult.barcode);
+        // 🔴 v14.79 — «تم الإلغاء بنجاح» كانت تُقال **قبل** أن تردّ القاعدة،
+        //    فيظهر تأكيدُ نجاحٍ ثم تحذيرُ فشلٍ يناقضه.
+        const done = await cancelBooking(scanResult.barcode);
+        if (!done) return;   // الدالّة نفسها أبلغت بالسبب
         customAlert(isRTL ? 'تم إلغاء الطلب بنجاح' : 'Order Cancelled Successfully');
         setScanResult(null);
         setManualCode('');

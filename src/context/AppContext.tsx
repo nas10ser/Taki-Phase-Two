@@ -85,8 +85,8 @@ interface AppContextType {
     updateDealStock: (dealId: string, newQuantity: number | 'unlimited') => Promise<void>;
     deleteDeal: (id: string) => Promise<void>;
     user: any;
-    logout: () => void;
-    deleteAccount: () => void;
+    logout: () => Promise<void>;
+    deleteAccount: () => Promise<void>;
     favorites: string[];
     toggleFavorite: (dealId: string) => Promise<void>;
     followedMerchants: string[];
@@ -116,9 +116,10 @@ interface AppContextType {
     removeSmartAlert: (idx: number) => Promise<boolean>;
     bookings: any[];
     bookDeal: (deal: Deal, quantity?: number, userId?: string, prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null) => any;
-    cancelBooking: (barcode: string) => void;
-    completeBooking: (barcode: string) => void;
-    acknowledgeBooking: (barcode: string, note?: string) => void;
+    /** v14.79 — تُرجع نجاحاً صريحاً: `false` يعني أن القاعدة رفضت أو أن الحالة لم تتغيّر. */
+    cancelBooking: (barcode: string) => Promise<boolean>;
+    completeBooking: (barcode: string) => Promise<boolean>;
+    acknowledgeBooking: (barcode: string, note?: string) => Promise<boolean>;
     sendBookingMessage: (barcode: string, body: string, attachmentPath?: string | null) => Promise<void>;
     fetchBookingMessages: (barcode: string) => Promise<void>;
     markBookingMessagesRead: (barcode: string) => Promise<void>;
@@ -146,7 +147,7 @@ interface AppContextType {
     /** v13.80 — اجلب ملفات المتاجر الناقصة بمعرّفاتها (دفعة واحدة، بلا تكرار). */
     ensureStoreProfiles: (ids: (string | undefined | null)[]) => void;
     updateProfile: (data: Partial<UserProfile>) => Promise<void>;
-    checkMarketingAlerts: (lat?: number, lng?: number) => void;
+    checkMarketingAlerts: (lat?: number, lng?: number) => Promise<void>;
     liveLocation: { lat: number; lng: number } | null;
     locationPermission: 'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported';
     /** true = تثبيت حيّ وصل في هذه الجلسة. false = آخر موقع معروف من ذاكرة الجهاز. */
@@ -2743,10 +2744,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // is cleared as soon as the RPC settles (success or failure).
     const bookingsInFlightRef = useRef<Set<string>>(new Set());
 
-    const cancelBooking = useCallback(async (barcode: string) => {
+    const cancelBooking = useCallback(async (barcode: string): Promise<boolean> => {
         const target = bookings.find(b => b.barcode === barcode);
-        if (!target || target.status === 'cancelled' || target.status === 'completed') return;
-        if (bookingsInFlightRef.current.has(barcode)) return;
+        if (!target || target.status === 'cancelled' || target.status === 'completed') return false;
+        if (bookingsInFlightRef.current.has(barcode)) return false;
 
         bookingsInFlightRef.current.add(barcode);
         const previousStatus = target.status;
@@ -2774,15 +2775,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customAlert(language === 'ar'
                 ? `⚠️ فشل إلغاء الحجز: ${e?.message || 'خطأ غير معروف'}`
                 : `⚠️ Cancel failed: ${e?.message || 'Unknown error'}`);
+            return false;
         } finally {
             bookingsInFlightRef.current.delete(barcode);
         }
+        return true;
     }, [bookings, language, customAlert]);
 
-    const completeBooking = useCallback(async (barcode: string) => {
+    const completeBooking = useCallback(async (barcode: string): Promise<boolean> => {
         const target = bookings.find(b => b.barcode === barcode);
-        if (!target || target.status === 'completed' || target.status === 'cancelled') return;
-        if (bookingsInFlightRef.current.has(barcode)) return;
+        if (!target || target.status === 'completed' || target.status === 'cancelled') return false;
+        if (bookingsInFlightRef.current.has(barcode)) return false;
 
         bookingsInFlightRef.current.add(barcode);
         const previousStatus = target.status;
@@ -2801,15 +2804,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customAlert(language === 'ar'
                 ? `⚠️ فشل تأكيد التسليم: ${e?.message || 'خطأ غير معروف'}. حاول مرة أخرى.`
                 : `⚠️ Completion failed: ${e?.message || 'Unknown error'}. Please retry.`);
+            return false;
         } finally {
             bookingsInFlightRef.current.delete(barcode);
         }
+        return true;
     }, [bookings, language, customAlert]);
 
-    const acknowledgeBooking = useCallback(async (barcode: string, merchantNote?: string) => {
+    const acknowledgeBooking = useCallback(async (barcode: string, merchantNote?: string): Promise<boolean> => {
         const target = bookings.find(b => b.barcode === barcode);
-        if (!target || target.status !== 'pending') return;
-        if (bookingsInFlightRef.current.has(barcode)) return;
+        if (!target || target.status !== 'pending') return false;
+        if (bookingsInFlightRef.current.has(barcode)) return false;
 
         bookingsInFlightRef.current.add(barcode);
         const previousStatus = target.status;
@@ -2827,9 +2832,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customAlert(language === 'ar'
                 ? `⚠️ فشل تأكيد استلام الطلب: ${e?.message || 'خطأ غير معروف'}. حاول مرة أخرى.`
                 : `⚠️ Acknowledge failed: ${e?.message || 'Unknown error'}. Please retry.`);
+            return false;
         } finally {
             bookingsInFlightRef.current.delete(barcode);
         }
+        return true;
     }, [bookings, language, customAlert]);
 
     // Public refresh — for pages that mount after a booking event and want to

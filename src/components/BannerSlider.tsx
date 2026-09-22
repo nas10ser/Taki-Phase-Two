@@ -57,7 +57,7 @@ const BannerSlider: React.FC<BannerSliderProps> = ({ banners, isRTL, autoplayMs 
     const realIndex = loop ? (((pos - 1) % count) + count) % count : pos;
 
     // Reset when the banner set changes (e.g. admin toggles one).
-    useEffect(() => { setPos(loop ? 1 : 0); setDragPx(0); /* eslint-disable-next-line */ }, [count]);
+    useEffect(() => { setPos(loop ? 1 : 0); setDragPx(0);   }, [count]);
 
     // v12.92 — أُزيل حاجز decode() في v12.90: كان img.decode() يبقى «معلّقاً» أحياناً
     // (خاصة والتبويب غير مرئي) فلا يبدأ الدوران أبداً = بانر متجمّد (تراجع). وحتى مع

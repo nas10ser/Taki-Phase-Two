@@ -151,7 +151,7 @@ const Subscription: React.FC = () => {
             setLoading(false);
         });
         return () => { alive = false; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [currentMax]);
 
     const selected = packages.find((p) => p.id === selectedId) || null;

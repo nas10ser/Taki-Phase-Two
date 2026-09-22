@@ -256,12 +256,19 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
         return { gDay: day, hDay: h.d };
     };
 
-    if (!isOpen) return null;
-
     // v14.64 — نافذة التاريخ كانت بلا دورٍ ولا Escape ولا حبس تركيز.
+    // 🔴 v14.79 — وكانت الخطّافات الثلاثة **بعد** `if (!isOpen) return null;`:
+    //    المكوّن مركَّبٌ دائماً في لوحة التاجر (`<DualCalendarPicker isOpen={…}>`
+    //    لا `{open && <…>}`)، فالتصيير المغلق يُسجّل خمسة خطّافات والمفتوح
+    //    ثمانية ⇒ «Rendered more hooks than during the previous render» وتسقط
+    //    الشجرة عند **أوّل فتحٍ للتقويم**. وهو حرفياً الفخّ المكتوب في CLAUDE.md.
+    //    الخطّافات الثلاثة تقبل `isOpen` وسيطاً وتعطّل نفسها وهي مغلقة
+    //    (`useEscClose` يبدأ بـ`if (!active) return;`) — فالنقل بلا أثر سلوكي.
     const panelRef = useRef<HTMLDivElement | null>(null);
     useEscClose(isOpen, onClose);
     useFocusTrap(isOpen, panelRef);
+
+    if (!isOpen) return null;
 
     const weekDays = isRTL ? WEEK_DAYS_AR : WEEK_DAYS_EN;
 

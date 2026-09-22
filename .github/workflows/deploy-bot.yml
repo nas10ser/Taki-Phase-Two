@@ -46,6 +46,24 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # v14.79 — 🔴 كان هذا السير ينادي رابط النشر **بلا أي فحص إطلاقاً**: أي
+      # دفعةٍ تمسّ `server/**` أو `shared/**` تُشحن إلى الإنتاج مباشرةً، ولو كان
+      # فيها خطأٌ نحويّ لسقط البوت وبقي ساقطاً. والموقع محميّ بسلسلة `&&` في
+      # `npm run build` — والبوت لم يكن محميّاً بشيء.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: فحص ما يُنشر (نحوٌ + تكافؤ البوتين + اختبارات المنطق المشترك)
+        run: |
+          set -e
+          node --check server/bot.js
+          node --check server/flows/whatsapp.js
+          node --check server/flows/sellerDeals.js
+          for f in server/lib/*.js shared/*.js; do node --check "$f"; done
+          npm ci
+          npm test
+
       - name: استدعاء رابط النشر
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}

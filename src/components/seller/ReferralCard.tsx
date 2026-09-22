@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { clickable } from '../../utils/clickable';
 import { useEscClose } from '../../hooks/useEscClose';
+import QrImage, { dataUrlToFile } from '../QrImage';
 
 const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }> = ({ isRTL, onAlert }) => {
     const [open, setOpen] = useState(false);
@@ -48,17 +49,18 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     useEffect(() => { if (open) load(); }, [open, load]);
 
     const link = code ? `${window.location.origin}/register?ref=${code}` : '';
-    // v12.34 — دقة أعلى (700px) للطباعة والمشاركة كصورة بجودة ممتازة.
-    const qrUrl = link ? `https://api.qrserver.com/v1/create-qr-code/?size=700x700&margin=12&data=${encodeURIComponent(link)}` : '';
+    // v14.79 — الرمز يُولَّد **على الجهاز**: كان رابط الإحالة يُرسَل إلى
+    // `api.qrserver.com` في عنوانٍ يُسجَّل عنده، والبطاقة تختفي إن سقطت خدمته.
+    // `qrDataUrl` يُملأ من `QrImage` عبر `onReady`، ومنه تُبنى صورة المشاركة
+    // والتنزيل بلا أي طلب شبكة. (v12.34 — دقة ٧٠٠ للطباعة، محفوظة كما هي.)
+    const [qrDataUrl, setQrDataUrl] = useState('');
+    const qrUrl = qrDataUrl;
 
-    // v12.34 — مشاركة الباركود نفسه كصورة PNG (وليس الرابط فقط): نجلب صورة
-    // QR ثم نمررها لقائمة المشاركة (واتساب/الصور/…). إن لم يدعم الجهاز مشاركة
-    // الملفات نحفظها كملف تنزيل، وأسوأ حالة نرشد للطريقة اليدوية.
+    // مشاركة الباركود نفسه كصورة PNG (وليس الرابط فقط): كان يُجلب بالشبكة،
+    // والآن يُحوَّل من عنوان البيانات مباشرةً — أسرع، ويعمل بلا إنترنت.
     const fetchQrFile = async (): Promise<File> => {
-        const resp = await fetch(qrUrl, { mode: 'cors' });
-        if (!resp.ok) throw new Error('qr fetch failed');
-        const blob = await resp.blob();
-        return new File([blob], `taki-qr-${code || 'store'}.png`, { type: 'image/png' });
+        if (!qrDataUrl) throw new Error('qr not ready');
+        return dataUrlToFile(qrDataUrl, `taki-qr-${code || 'store'}.png`);
     };
 
     // iOS لا يسمح لمواقع الويب بالكتابة في الاستديو (الصور) مباشرة — رابط
@@ -223,12 +225,17 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                             {showQr && (
                                 <div style={{ textAlign: 'center', background: '#ffffff', borderRadius: 16, padding: 18, border: '1px solid var(--border-color)' }}>
                                     {/* v12.34 — الباركود أكبر (يملأ عرض البطاقة حتى 340px) + اضغط للتكبير */}
-                                    <img
-                                        src={qrUrl}
-                                        alt="Referral QR"
-                                        {...clickable(() => setQrZoom(true), isRTL ? 'تكبير رمز الإحالة' : 'Zoom referral code')}
-                                        style={{ width: '100%', maxWidth: 340, height: 'auto', borderRadius: 10, cursor: 'zoom-in', display: 'block', margin: '0 auto' }}
-                                    />
+                                    <div {...clickable(() => setQrZoom(true), isRTL ? 'تكبير رمز الإحالة' : 'Zoom referral code')}
+                                         style={{ cursor: 'zoom-in' }}>
+                                        <QrImage
+                                            value={link}
+                                            size={700}
+                                            margin={3}
+                                            onReady={setQrDataUrl}
+                                            alt="Referral QR"
+                                            style={{ width: '100%', maxWidth: 340, height: 'auto', aspectRatio: '1 / 1', borderRadius: 10, display: 'block', margin: '0 auto' }}
+                                        />
+                                    </div>
                                     <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1', marginTop: 8 }}>
                                         {isRTL ? '🔍 اضغط على الباركود لتكبيره ملء الشاشة' : '🔍 Tap the QR to view fullscreen'}
                                     </div>
@@ -278,7 +285,7 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
                     }}
                 >
                     <div style={{ background: '#ffffff', borderRadius: 24, padding: 22, maxWidth: '92vw' }}>
-                        <img src={qrUrl} alt="Referral QR" style={{ width: 'min(80vw, 460px)', height: 'auto', display: 'block', borderRadius: 12 }} />
+                        <img src={qrDataUrl} alt="Referral QR" style={{ width: 'min(80vw, 460px)', height: 'auto', display: 'block', borderRadius: 12 }} />
                         <div style={{ textAlign: 'center', fontSize: '0.85rem', fontWeight: 900, color: '#0f172a', marginTop: 10, fontFamily: 'monospace', direction: 'ltr' }}>{code}</div>
                     </div>
                     <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.85rem', marginTop: 16 }}>

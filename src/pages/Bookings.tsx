@@ -16,6 +16,7 @@ import { supabase } from '../services/supabaseClient';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 import { clickable } from '../utils/clickable';
+import QrImage from '../components/QrImage';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -525,7 +526,6 @@ const Bookings: React.FC = () => {
                             {filteredActive.map((booking: any) => {
                                 const isExpanded = expandedId === booking.barcode;
                                 const isHighlighted = highlightedBarcode === booking.barcode;
-                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${booking.barcode}`;
 
                                 return (
                                     <div key={booking.barcode}
@@ -807,7 +807,9 @@ const Bookings: React.FC = () => {
                                                         <button onClick={() => copyCode(booking.barcode)} aria-label={isRTL ? 'نسخ رمز الحجز' : 'Copy booking code'} style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: 12, padding: '10px', cursor: 'pointer' }}>📋</button>
                                                     </div>
                                                     <div style={{ padding: 12, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
-                                                        <img src={qrUrl} width={120} height={120} alt="QR" />
+                                                        {/* v14.79 — يُولَّد على الجهاز: كان باركود الحجز يُرسَل
+                                                            إلى api.qrserver.com، وتختفي التذكرة إن سقطت الخدمة. */}
+                                                        <QrImage value={booking.barcode} size={240} alt={isRTL ? 'رمز الحجز' : 'Booking QR'} style={{ width: 120, height: 120 }} />
                                                     </div>
                                                     <div style={{ textAlign: 'center', marginTop: 8 }}>
                                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 800 }}>
@@ -851,7 +853,6 @@ const Bookings: React.FC = () => {
                             {filteredPast.map((booking: any) => {
                                 const isExpanded = expandedId === booking.barcode;
                                 const isHighlighted = highlightedBarcode === booking.barcode;
-                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${booking.barcode}`;
 
                                 return (
                                     <div key={booking.barcode}

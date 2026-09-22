@@ -214,7 +214,7 @@ const AdminDashboard: React.FC = () => {
         if (t && visibleTabs.some(vt => vt.value === t)) {
             setActiveTab(t as Tab);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [location.search, visibleTabs]);
 
     const handleBack = useCallback(() => {

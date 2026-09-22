@@ -39,17 +39,18 @@ export const useBooking = () => {
         return bookings.find((b) => b.deal.id === dealId && b.userId === user?.id && b.status !== 'completed' && b.status !== 'cancelled' && effectiveExpiry(b) > Date.now());
     }, [bookings, user?.id]);
 
-    const cancelBooking = useCallback((barcode: string) => {
-        contextCancelBooking(barcode);
-    }, [contextCancelBooking]);
+    // 🔴 v14.79 — الأغلفة الثلاثة كانت **تبتلع الوعد**: `(barcode) => { ctx(barcode); }`
+    //    تُرجع `void`، فكل `await cancelBooking(...)` عند المنادين كان ينتظر
+    //    `undefined` ويمضي فوراً. وهذا هو الموضع الذي مُحي فيه الوعد من نظام
+    //    الأنواع — لا الواجهة وحدها. الآن يُعاد الوعد كما هو بنتيجته.
+    const cancelBooking = useCallback((barcode: string): Promise<boolean> =>
+        contextCancelBooking(barcode), [contextCancelBooking]);
 
-    const completeBooking = useCallback((barcode: string) => {
-        contextCompleteBooking(barcode);
-    }, [contextCompleteBooking]);
+    const completeBooking = useCallback((barcode: string): Promise<boolean> =>
+        contextCompleteBooking(barcode), [contextCompleteBooking]);
 
-    const acknowledgeBooking = useCallback((barcode: string) => {
-        contextAcknowledgeBooking(barcode);
-    }, [contextAcknowledgeBooking]);
+    const acknowledgeBooking = useCallback((barcode: string, note?: string): Promise<boolean> =>
+        contextAcknowledgeBooking(barcode, note), [contextAcknowledgeBooking]);
 
     return { bookings, bookDeal, isBooked, getBooking, cancelBooking, completeBooking, acknowledgeBooking };
 };

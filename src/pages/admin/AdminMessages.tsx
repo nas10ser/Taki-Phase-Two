@@ -62,7 +62,7 @@ const AdminMessages: React.FC = () => {
             })
             .subscribe();
         return () => { supabase.removeChannel(channel); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [active, loadThreads]);
 
     const openThread = async (t: AdminThread, silent = false) => {

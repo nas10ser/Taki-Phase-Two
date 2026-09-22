@@ -113,7 +113,7 @@ const MapCenterUpdater = ({ center, nonce }: { center: [number, number]; nonce: 
             } catch { /* swallow — best-effort */ }
         }, 300);
         return () => clearTimeout(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [nonce, map]);
     return null;
 };
@@ -1107,7 +1107,7 @@ const SellerDashboard: React.FC = () => {
                 // First try our own serverless function — same-origin, no CSP
                 // friction, follows redirects server-side. This is the only
                 // reliable path for `maps.app.goo.gl` short links pasted from
-                // mobile when public proxies are blocked by CSP or throttled.
+                // mobile — وهو المسار **الوحيد** منذ v14.79.
                 try {
                     // v14.54 — البوّابة صارت تشترط هوية: كانت مفتوحة للإنترنت
                     // كلّه بلا توثيق ولا حدّ معدّل. نمرّر جلسة التاجر نفسها
@@ -1135,107 +1135,23 @@ const SellerDashboard: React.FC = () => {
                             if (m) match = m;
                         }
                     }
-                } catch { /* fall through to public proxies */ }
+                } catch { /* تعذّر فكّ الرابط — يُقال للتاجر ويختار من الخريطة */ }
 
-                // Race multiple proxies in PARALLEL — whichever returns
-                // resolvable content first wins. Sequential probing was the
-                // root cause of `maps.app.goo.gl` failures: when allorigins
-                // was throttled, the user waited 8s for it before we tried
-                // the next one. Now we wait for the fastest responder.
-                const probe = async (url: string): Promise<{ url?: string; html?: string } | null> => {
-                    try {
-                        const ac = new AbortController();
-                        const timeoutId = setTimeout(() => ac.abort(), 7000);
-                        const res = await fetch(url, { signal: ac.signal, redirect: 'follow' });
-                        clearTimeout(timeoutId);
-                        if (!res.ok) return null;
-                        const text = await res.text();
-                        try {
-                            const data = JSON.parse(text);
-                            return {
-                                html: data.contents || text,
-                                url: data?.status?.url || data?.url
-                            };
-                        } catch {
-                            return { html: text };
-                        }
-                    } catch {
-                        return null;
-                    }
-                };
-
-                // OpenGraph API unfurlers (Microlink, Dub.co) act exactly like
-                // WhatsApp or Twitter bots. Google Maps whitelists them and
-                // immediately returns a lightweight HTML with `og:image` and
-                // `al:android:url` containing coordinates, bypassing all the
-                // complex JS/consent redirects that break standard proxies.
-                const proxies = [
-                    `https://api.microlink.io/?url=${encodeURIComponent(target)}`,
-                    `https://api.dub.co/metatags?url=${encodeURIComponent(target)}`,
-                    `https://r.jina.ai/${target}`,
-                    `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`,
-                    `https://corsproxy.io/?${encodeURIComponent(target)}`,
-                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`,
-                    `https://thingproxy.freeboard.io/fetch/${target}`
-                ];
-
-                const results = match ? [] : await Promise.allSettled(proxies.map(probe));
-
-                for (const r of results) {
-                    if (r.status !== 'fulfilled' || !r.value) continue;
-                    const { url: resolvedUrl, html } = r.value;
-                    if (resolvedUrl) {
-                        const m = tryExtract(resolvedUrl);
-                        if (m) { match = m; break; }
-                    }
-                    if (html) {
-                        const m = tryExtract(html);
-                        if (m) { match = m; break; }
-                    }
-                }
-
-                // Last resort: geocode the page <title> via Nominatim
-                if (!match) {
-                    for (const r of results) {
-                        if (r.status !== 'fulfilled' || !r.value?.html) continue;
-                        const html = r.value.html;
-                        
-                        // Try to extract title from JSON (Microlink/Dub) or HTML (<title>)
-                        let placeName = '';
-                        try {
-                            const data = JSON.parse(html);
-                            placeName = data?.data?.title || data?.title || '';
-                        } catch {
-                            const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
-                            placeName = titleMatch ? titleMatch[1] : '';
-                        }
-
-                        placeName = placeName
-                            .replace(/\s*[-|·]\s*Google Maps.*$/i, '')
-                            .replace(/^Google Maps[:\s-]*/i, '')
-                            .trim();
-                            
-                        if (placeName && placeName.length > 3 && placeName !== 'Google Maps') {
-                            try {
-                                // v14.63 — كان بلا مهلة ولا مقاطع: خادمٌ بطيء يُعلّق الزرّ.
-                                const geoAc = new AbortController();
-                                const geoTimer = setTimeout(() => geoAc.abort(), 7000);
-                                const geoRes = await fetch(
-                                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&countrycodes=sa&limit=1`,
-                                    { signal: geoAc.signal }
-                                ).then(res => res.json()).catch(() => null).finally(() => clearTimeout(geoTimer));
-                                if (geoRes && geoRes[0]) {
-                                    const lat = parseFloat(geoRes[0].lat);
-                                    const lng = parseFloat(geoRes[0].lon);
-                                    if (lat > 15 && lat < 33 && lng > 33 && lng < 56) {
-                                        match = [null, lat.toString(), lng.toString()] as any;
-                                        break;
-                                    }
-                                }
-                            } catch {}
-                        }
-                    }
-                }
+                // v14.79 — 🔴 حُذف سباقُ **سبعة وسطاء عامّين** كان يُرسل رابط
+                // موقع محلّ التاجر إلى `api.microlink.io` و`api.dub.co` و
+                // `r.jina.ai` و`api.allorigins.win` و`corsproxy.io` و
+                // `api.codetabs.com` و`thingproxy.freeboard.io` **دفعةً واحدة**
+                // ومن متصفّح التاجر مباشرةً — سبع جهاتٍ مجهولة تُسجّل الرابط
+                // وعنوان التاجر في سجلّاتها، مقابل خدمةٍ نملكها.
+                //
+                // و`/api/resolve-map` أعلاه تفعل كل ما كانت تفعله وأكثر: تتبع
+                // كل قفزة بفحص نطاقٍ لكل واحدة، وتستخرج الإحداثيات بنفس
+                // الأنماط، **وتُرمّز اسم المكان عبر Nominatim على الخادم** —
+                // فالمحاولة الأخيرة التي كانت هنا مكرّرة لا مفقودة.
+                // وهي موثَّقة ومحدودة بعشرين نداءً/ساعة، والوسطاء كانوا بلا حدّ.
+                //
+                // وإن عجزت: يبقى اختيار الموقع من الخريطة يدوياً — وهو المسار
+                // الذي يستعمله أكثر التجار أصلاً.
             }
 
             if (match) {
@@ -1253,7 +1169,7 @@ const SellerDashboard: React.FC = () => {
             }
 
             // Mark this link as attempted (even on failure) so we don't
-            // hammer the proxies on every subsequent submit / save click.
+            // re-resolve on every subsequent submit / save click.
             // Without this, the user pastes a link that can't be resolved,
             // then every "Save" button waits another 3s on the same failed
             // resolution. Now: try once, remember the attempt, move on.
