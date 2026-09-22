@@ -1,0 +1,12 @@
+{
+  "src/components/seller/DeliveryCard.tsx": 1761,
+  "src/context/AppContext.tsx": 4049,
+  "src/pages/DealDetails.tsx": 3846,
+  "src/pages/Register.tsx": 1706,
+  "src/pages/SellerDashboard.tsx": 5675,
+  "src/pages/admin/AdminAnalyst.tsx": 1605,
+  "src/pages/admin/AdminSellers.tsx": 2219,
+  "src/pages/admin/AdminTools.tsx": 2184,
+  "server/bot.js": 4174,
+  "server/flows/whatsapp.js": 2695
+}
