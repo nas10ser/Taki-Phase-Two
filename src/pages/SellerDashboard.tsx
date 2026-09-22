@@ -1,25 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import BarcodeScanner from '../components/BarcodeScanner';
+const BarcodeScanner = React.lazy(() => import('../components/BarcodeScanner'));
 import BookingThread from '../components/BookingThread';
-import DualCalendarPicker from '../components/DualCalendarPicker';
-import ImageCropEditor from '../components/ImageCropEditor';
-import CameraCapture from '../components/CameraCapture';
-import ReportDialog from '../components/ReportDialog';
+const DualCalendarPicker = React.lazy(() => import('../components/DualCalendarPicker'));
+const ImageCropEditor = React.lazy(() => import('../components/ImageCropEditor'));
+const CameraCapture = React.lazy(() => import('../components/CameraCapture'));
+const ReportDialog = React.lazy(() => import('../components/ReportDialog'));
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-import WorkingHoursEditor from '../components/WorkingHoursEditor';
-import ReferralCard from '../components/seller/ReferralCard';
-import GatewayCard from '../components/seller/GatewayCard';
-import DeliveryCard from '../components/seller/DeliveryCard';
+const WorkingHoursEditor = React.lazy(() => import('../components/WorkingHoursEditor'));
+const ReferralCard = React.lazy(() => import('../components/seller/ReferralCard'));
+const GatewayCard = React.lazy(() => import('../components/seller/GatewayCard'));
+const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard'));
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
 import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SetupPath';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
-import DeliveryTrackerCard from '../components/seller/DeliveryTrackerCard';
+const DeliveryTrackerCard = React.lazy(() => import('../components/seller/DeliveryTrackerCard'));
 import VatStatusCard from '../components/seller/VatStatusCard';
-import SellerAnalytics from '../components/seller/SellerAnalytics';
+const SellerAnalytics = React.lazy(() => import('../components/seller/SellerAnalytics'));
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
@@ -2969,6 +2969,11 @@ const SellerDashboard: React.FC = () => {
     };
 
     return (
+        // v14.83 — حدٌّ واحد لكل المكوّنات الكسولة. الثقيلُ منها مشروطُ التصيير
+        // أصلاً (محرّر القصّ · الكاميرا · السكانر · التقويم · التحليلات)، فلا
+        // يُعلَّق شيءٌ إلا في اللحظة التي يفتحه فيها التاجر — وحينها تكون
+        // الشاشة مرسومةً كاملةً خلف الطبقة، فلا وميض.
+        <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 800 }}>…</div>}>
         <div className="page-content" style={{ background: 'var(--body-bg)', paddingBottom: 80, direction: isRTL ? 'rtl' : 'ltr' }}>
             <div className="premium-bar" style={{ paddingBottom: 24, background: 'var(--header-gradient)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -5643,8 +5648,10 @@ const SellerDashboard: React.FC = () => {
                 )}
             </div>
 
-            <BarcodeScanner isOpen={scannerOpen} onClose={() => setScannerOpen(false)} />
-            <DualCalendarPicker
+            {/* v14.83 — بوّابة تصيير: كان مركَّباً دائماً، فحزمتُه الكسولة
+                كانت تُطلب عند فتح اللوحة لا عند فتح السكانر. */}
+            {scannerOpen && <BarcodeScanner isOpen={scannerOpen} onClose={() => setScannerOpen(false)} />}
+            {showDualPicker && <DualCalendarPicker
                 isOpen={showDualPicker}
                 onClose={() => setShowDualPicker(false)}
                 onSelect={({ hijri, gregorian }) => {
@@ -5673,7 +5680,7 @@ const SellerDashboard: React.FC = () => {
                     if (!seasonTag || !c?.publicFrom || !c?.publicTo) return { minDate: todayStr };
                     return { minDate: c.publicFrom > todayStr ? c.publicFrom : todayStr, maxDate: c.publicTo };
                 })()}
-            />
+            />}
             {cropQueue.length > 0 && (
                 <ImageCropEditor
                     file={cropQueue[0].file}
@@ -5744,6 +5751,7 @@ const SellerDashboard: React.FC = () => {
             )}
             <BottomNav />
         </div>
+        </Suspense>
     );
 };
 
