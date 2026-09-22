@@ -78,20 +78,33 @@ const QrImage: React.FC<QrImageProps> = ({
     }, [value, size, margin]);
 
     if (failed || !src) {
-        // مربّع محجوز بنفس المقاس فلا تقفز الصفحة، ونصٌّ صغير حين يفشل التوليد.
+        // مربّع محجوز بنفس المقاس فلا تقفز الصفحة.
+        // 🔴 وعند الفشل **يُعرض النصّ المُرمَّز نفسه**، لا مربّعٌ فارغ: التوليد
+        //    يحمّل حزمةً كسولة، وحزمةٌ تفشل على آيفون بقشرةٍ قديمة كانت ستترك
+        //    المشتري أمام الكاشير بمربّعٍ أبيض بلا كلمة تقول لماذا. الرقم وحده
+        //    يُتمّ الاستلام — فهو ما يجب أن يبقى ظاهراً حين يسقط كل شيء آخر.
         return (
             <div
                 className={className}
                 style={{
-                    display: 'grid', placeItems: 'center',
+                    display: 'grid', placeItems: 'center', gap: 2,
                     background: 'var(--body-bg)', borderRadius: 8,
-                    color: 'var(--text-secondary)', fontSize: '0.65rem',
-                    fontWeight: 700, textAlign: 'center', padding: 4,
+                    color: 'var(--text-secondary)', fontSize: '0.6rem',
+                    fontWeight: 800, textAlign: 'center', padding: 6,
+                    overflowWrap: 'anywhere', lineHeight: 1.5,
                     ...style,
                 }}
+                role={failed ? 'img' : undefined}
+                aria-label={failed ? `${alt}: ${value}` : undefined}
                 aria-hidden={!failed}
             >
-                {failed ? '⚠️' : ''}
+                {failed && (
+                    <>
+                        <span style={{ fontSize: '0.9rem' }}>⚠️</span>
+                        <span dir="ltr" style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--text-primary)' }}>{value}</span>
+                        <span>تعذّر رسم الرمز — استعمل هذا الرقم</span>
+                    </>
+                )}
             </div>
         );
     }
