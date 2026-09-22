@@ -178,6 +178,39 @@ const VatStatusCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (m: str
                                 ? ' ورقمك يظهر على فاتورة اشتراكك — فتخصم ضريبتها من إقرارك.'
                                 : ' Your number also appears on your subscription invoice for input-VAT deduction.')}
                         </div>
+                        {/* v14.86 — 🔴 إفصاحٌ لازم لا تنبيهٌ مجامل.
+                            ما تُصدره تاكي هو **المرحلة الأولى** من الفوترة
+                            الإلكترونية (فاتورة مبسطة برمز QR). والمرحلة الثانية
+                            (الربط والتكامل مع بوّابة «فاتورة» — الختم المشفَّر
+                            والإرسال اللحظي للهيئة) **غير منفَّذة إطلاقاً**.
+                            والتاجر الملزَم بالثانية يظنّ أن فاتورتنا تكفيه وهي
+                            لا تكفيه — وهو يُسأل عنها لا نحن. فيُقال له صراحةً
+                            عند اللحظة التي يبدأ فيها التعرّض: لحظة تسجيل رقمه. */}
+                        <div style={{
+                            marginTop: 10, padding: '10px 12px', borderRadius: 12,
+                            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+                            fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.8, color: 'var(--text-primary)',
+                        }}>
+                            {isRTL ? (
+                                <>
+                                    ⚠️ <strong>المرحلة الأولى فقط.</strong> فاتورة تاكي «مبسطة برمز QR»
+                                    وهي المرحلة الأولى من الفوترة الإلكترونية. أمّا <strong>المرحلة
+                                    الثانية</strong> (الربط مع بوّابة «فاتورة» والختم المشفَّر) فغير
+                                    منفّذة لدينا. فإن كانت منشأتك ضمن مجموعةٍ ألزمتها الهيئة بالمرحلة
+                                    الثانية، أصدِر فاتورتك الضريبية من نظامك المعتمد — وفاتورتنا تبقى
+                                    سنداً للمشتري لا بديلاً عنها.
+                                </>
+                            ) : (
+                                <>
+                                    ⚠️ <strong>Phase 1 only.</strong> TAKI issues a simplified tax invoice
+                                    with a ZATCA QR — that is e-invoicing Phase 1. <strong>Phase 2</strong>
+                                    {' '}(Fatoora integration and cryptographic stamping) is <strong>not</strong>
+                                    {' '}implemented. If ZATCA has placed your business in a Phase-2 wave, issue
+                                    your tax invoice from your compliant system; ours remains a receipt for the
+                                    buyer, not a substitute.
+                                </>
+                            )}
+                        </div>
                     </div>
                     <button onClick={() => { setDraft(vatNumber); setEditing(true); }}
                         style={{ background: 'var(--gray-100)', color: 'var(--text-primary)', border: 'none', borderRadius: 10, padding: '8px 14px', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 }}>
