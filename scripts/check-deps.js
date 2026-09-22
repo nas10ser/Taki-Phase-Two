@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { walk } = require('./lib/walk');
 
 const root = path.resolve(__dirname, '..');
 
@@ -27,9 +27,8 @@ const root = path.resolve(__dirname, '..');
 const INDIRECT = {};
 
 function scan(dirs) {
-    const files = execFileSync('git', ['ls-files', ...dirs], { cwd: root, encoding: 'utf8' })
-        .trim().split('\n').filter(Boolean)
-        .filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs|css|html)$/.test(f));
+    // 🪤 بلا git: بيئة بناء Vercel أرشيفٌ بلا مستودع (أسقطت نشرَتين).
+    const files = walk(root, dirs, /\.(ts|tsx|js|jsx|mjs|cjs|css|html)$/);
     let out = '';
     for (const f of files) {
         try { out += '\n' + fs.readFileSync(path.join(root, f), 'utf8'); } catch { /* ignore */ }

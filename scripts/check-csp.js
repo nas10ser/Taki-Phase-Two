@@ -25,7 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { walk } = require('./lib/walk');
 
 const root = path.resolve(__dirname, '..');
 const problems = [];
@@ -76,13 +76,14 @@ const INDIRECT = {
 
 /** ملفّات المصدر التي قد تحمل مضيفاً، بلا تعليقات. */
 function sourceTextWithoutComments() {
-    const files = execFileSync('git', ['ls-files',
+    // 🪤 كان `git ls-files` — وهي تنفجر على Vercel (تبني بلا .git) فأسقطت
+    //    نشرَتين. لا فحصَ في سلسلة البناء يفترض وجود git.
+    const files = walk(root, [
         'src', 'api', 'shared', 'sw.js', 'index.html', 'manifest.webmanifest', 'public',
-    ], { cwd: root, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+    ], /\.(ts|tsx|js|jsx|css|html|json|webmanifest)$/);
 
     let out = '';
     for (const f of files) {
-        if (!/\.(ts|tsx|js|jsx|css|html|json|webmanifest)$/.test(f)) continue;
         let t;
         try { t = fs.readFileSync(path.join(root, f), 'utf8'); } catch { continue; }
         // تُزال التعليقات: /* … */ و // … و <!-- … -->
