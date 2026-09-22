@@ -31,9 +31,32 @@ if (!fs.existsSync(dist)) {
 
 const files = fs.readdirSync(dist).filter((f) => f.endsWith('.js'));
 
-/** أكبر ملفٍّ يطابق النمط (Parcel يُخرج أكثر من ملفٍّ بنفس البادئة). */
+/**
+ * حزم **الدخول** كما يحمّلها المتصفّح فعلاً — تُقرأ من `dist/index.html`.
+ *
+ * 🔴 كان هذا الحارس يخمّن الاسم (`^TAKI\.<hash>\.js$`) فمرّ محلياً و**أسقط
+ *    ثلاث نشرات على Vercel** برسالة «لم أجد حزمة TAKI في dist». والتخمين خطأ
+ *    من أصله: اسمُ حزمة الدخول تفصيلٌ داخليّ في Parcel قد يتغيّر بتغيّر
+ *    الإعداد أو البيئة، ولا عقد يضمنه.
+ * 🪤 وكشف التصحيحُ أمراً ثانياً: الصفحة تحمّل **حزمتَي دخول لا واحدة**
+ *    (`<script type=module src=…>` مرّتين) — فقياسُ أكبرهما كان يُبلّغ رقماً
+ *    أصغر من الحقيقة. الميزانية على **مجموعهما**، فهو ما يدفعه الزائر.
+ */
+function entryBundles() {
+    const html = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+    const out = [];
+    for (const m of html.matchAll(/<script[^>]*\bsrc=["']?\/([^"'\s>]+\.js)/gi)) {
+        const f = m[1];
+        if (f.startsWith('http')) continue;
+        const abs = path.join(dist, f);
+        if (fs.existsSync(abs)) out.push({ file: f, size: fs.statSync(abs).size });
+    }
+    return out;
+}
+
+/** أكبر ملفٍّ يطابق البادئة (لحزم المسارات). */
 function biggest(prefix) {
-    const re = new RegExp(`^${prefix}\\.[a-z0-9]+\\.js$`);
+    const re = new RegExp(`^${prefix}\\.[A-Za-z0-9]+\\.js$`);
     let best = null;
     for (const f of files) {
         if (!re.test(f)) continue;
@@ -49,9 +72,9 @@ function biggest(prefix) {
  */
 const BUDGETS = [
     {
-        prefix: 'TAKI',
-        label: 'حزمة الدخول (يحمّلها كل زائر)',
-        maxKB: 700,          // قِيست ٦٢٩ بعد إخراج Sentry (كانت ٨١٣)
+        entry: true,         // تُقرأ من dist/index.html لا بتخمين الاسم
+        label: 'حزم الدخول (يحمّلها كل زائر)',
+        maxKB: 760,          // مجموع حزمتَي الدخول — قِيس بعد إخراج Sentry
         mustNotContain: [
             // عودة استيرادٍ ساكن لأيٍّ من هذه = ثِقلٌ على كل زائر.
             // 🪤 العلامة تُختار من **حرفيّات الحزمة** لا من ندائنا نحن: أوّل
@@ -76,28 +99,48 @@ const problems = [];
 const report = [];
 
 for (const b of BUDGETS) {
-    const hit = biggest(b.prefix);
-    if (!hit) {
-        problems.push(`لم أجد حزمة «${b.prefix}» في dist — هل تغيّر اسم المسار؟ الحارس يحرس عدماً.`);
-        continue;
+    let hits;
+    if (b.entry) {
+        hits = entryBundles();
+        if (!hits.length) {
+            problems.push(
+                'لم أجد أي حزمة دخول مشار إليها في dist/index.html.\n' +
+                `     الموجود في dist: ${files.slice(0, 8).join(' · ') || '(لا شيء)'}`
+            );
+            continue;
+        }
+    } else {
+        const one = biggest(b.prefix);
+        if (!one) {
+            problems.push(
+                `لم أجد حزمة «${b.prefix}» في dist — الحارس يحرس عدماً.\n` +
+                `     الموجود: ${files.filter((f) => !/^TAKI\./.test(f)).slice(0, 10).join(' · ')}`
+            );
+            continue;
+        }
+        hits = [one];
     }
-    const kb = hit.size / 1024;
-    report.push(`   ${b.label}: ${kb.toFixed(0)}KB / ${b.maxKB}KB`);
+
+    const kb = hits.reduce((a, h) => a + h.size, 0) / 1024;
+    const names = hits.map((h) => h.file).join(' + ');
+    report.push(`   ${b.label}: ${kb.toFixed(0)}KB / ${b.maxKB}KB${hits.length > 1 ? ` (${hits.length} حزم)` : ''}`);
     if (kb > b.maxKB) {
         problems.push(
-            `${b.label} = ${kb.toFixed(0)}KB وتجاوزت الميزانية ${b.maxKB}KB (${hit.file}).\n` +
+            `${b.label} = ${kb.toFixed(0)}KB وتجاوزت الميزانية ${b.maxKB}KB (${names}).\n` +
             '     إمّا يُقسَّم الثقيل بـReact.lazy، أو تُرفع الميزانية في هذا الملفّ **بسببٍ مكتوب**.'
         );
     }
     if (b.mustNotContain.length) {
-        const src = fs.readFileSync(path.join(dist, hit.file), 'utf8');
-        for (const m of b.mustNotContain) {
-            if (src.includes(m.needle)) {
-                problems.push(
-                    `«${m.needle}» عاد إلى ${b.label} (${hit.file}).\n` +
-                    `     ${m.why}\n` +
-                    '     غالباً أُعيد استيرادٌ ساكن — يُحوَّل إلى import() ديناميكي.'
-                );
+        for (const h of hits) {
+            const src = fs.readFileSync(path.join(dist, h.file), 'utf8');
+            for (const m of b.mustNotContain) {
+                if (src.includes(m.needle)) {
+                    problems.push(
+                        `«${m.needle}» عاد إلى ${b.label} (${h.file}).\n` +
+                        `     ${m.why}\n` +
+                        '     غالباً أُعيد استيرادٌ ساكن — يُحوَّل إلى import() ديناميكي.'
+                    );
+                }
             }
         }
     }
