@@ -1,6 +1,6 @@
 {
   "name": "TAKI",
-  "version": "14.87.0",
+  "version": "14.88.0",
   "description": "TAKI — discount booking platform (React 18 + Parcel 2 + Supabase, Node 24)",
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
