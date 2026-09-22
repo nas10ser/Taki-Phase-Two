@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { analyticsAllowed } from './analyticsConsent';
 
 /**
  * v12.40 — «المحلل الذكي»: تتبع عمليات البحث (نص + نطاق) لتغذية قسم
@@ -11,6 +12,7 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let lastSent = '';
 
 export const trackSearch = (query: string, scope: 'home' | 'deals' | 'nearby'): void => {
+    if (!analyticsAllowed()) return;   // v14.82 — مفتاح «حسابي ← الخصوصية»
     const q = (query || '').trim();
     if (timer) clearTimeout(timer);
     if (q.length < 2 || q.length > 80) return;

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { analyticsAllowed } from './analyticsConsent';
 
 /**
  * siteVisit — قياس الزائر ومصدره (v14.80).
@@ -84,6 +85,7 @@ let inFlight = false;
  * وما بعده تحديثٌ خفيف (الخادم لا يُنشئ صفّاً ثانياً).
  */
 export const trackVisit = (path: string): void => {
+    if (!analyticsAllowed()) return;   // v14.82 — مفتاح «حسابي ← الخصوصية»
     const sid = sessionId();
     if (!sid) return;
 
@@ -117,6 +119,7 @@ export const trackVisit = (path: string): void => {
 
 /** يُنادى بعد حجزٍ ناجح — فيصير التحويل قابلاً للقياس لا الزيارات وحدها. */
 export const markVisitBooked = (): void => {
+    if (!analyticsAllowed()) return;   // v14.82
     const sid = sessionId();
     if (!sid) return;
     Promise.resolve(supabase.rpc('taki_mark_session_booked', { p_session: sid }))

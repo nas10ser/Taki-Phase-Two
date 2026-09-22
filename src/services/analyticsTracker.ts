@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { analyticsAllowed } from './analyticsConsent';
 
 /**
  * v13.29 — ناقل أحداث التحليلات.
@@ -117,6 +118,9 @@ export const trackEvent = (
     opts?: { durationMs?: number; metadata?: Record<string, unknown>; dedupeKey?: string },
 ): void => {
     try {
+        // v14.82 — بوّابة الموافقة **أوّل سطر**: لا يُبنى حدثٌ ولا يُكدَّس في
+        // الطابور ولا تُلمس الذاكرة حين يكون القياس موقوفاً.
+        if (!analyticsAllowed()) return;
         if (!storeId) return;
         // التاجر لا يُضخّم أرقام نفسه بتصفّح منتجاته
         if (selfStoreId && selfStoreId === storeId) return;

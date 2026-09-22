@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import AnalyticsToggleRow from '../../components/AnalyticsToggleRow';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
@@ -214,14 +215,14 @@ const Privacy: React.FC = () => {
                     'الاطّلاع على البيانات التي نَجمعها عنك والغرض من جمعها.',
                     'طلب تصحيح أيّ بيانات غير دقيقة.',
                     'طلب إتلاف بياناتك إلى الحدّ الذي تَسمح به الأنظمة، مع احتفاظنا بما تَقتضيه التزاماتنا النظامية والمالية والأمنية.',
-                    'سحب موافقتك على المعالجة في الأغراض التي تَستند إليها (كالتسويق المباشر أو الموقع الجغرافي).',
+                    'سحب موافقتك على المعالجة في الأغراض التي تَستند إليها (كالتسويق المباشر أو الموقع الجغرافي). ولقياس الاستخدام مفتاحُ إيقافٍ مباشر في القسم ٩ أدناه وفي «حسابي ← الإشعارات» — يعمل فوراً بلا طلبٍ منّا.',
                     'الاعتراض على معالجة معيّنة لا تَستند إلى عقد أو نظام.',
                     'تقديم شكوى إلى الجهة المختصّة بحماية البيانات الشخصية في المملكة العربية السعودية.',
                 ] : [
                     'Access to the data we collect about you and the purpose of collecting it.',
                     'Request correction of any inaccurate data.',
                     'Request destruction of your data to the extent permitted by law, while we retain what is required by our regulatory, financial and security obligations.',
-                    'Withdraw your consent to processing for the purposes that rely on it (such as direct marketing or geolocation).',
+                    'Withdraw your consent to processing for the purposes that rely on it (such as direct marketing or geolocation). Usage analytics has a direct off switch in section 9 below and in Profile → Notifications — it takes effect immediately, with no request to us.',
                     'Object to a specific processing activity not based on contract or law.',
                     'File a complaint with the competent personal-data-protection authority in the Kingdom of Saudi Arabia.',
                 ]} />
@@ -341,23 +342,39 @@ const Privacy: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            نَستخدم ملفّات تعريف الارتباط والتقنيات المماثلة لتشغيل الجلسة،
-                            وحفظ تَفضيلاتك، وتحسين تجربتك، وحماية المنصّة. يُمكنك تَعديل
-                            إعدادات متصفّحك لرفض هذه الملفّات أو حذفها، علماً بأنّ ذلك قد
-                            يُؤثّر على بعض وظائف المنصّة. وفي حال عدم رغبتك في قبولها،
-                            يُمكنك التوقّف عن استخدام المنصّة.
+                            نَستخدم تخزيناً محلّياً في متصفّحك لتشغيل الجلسة وحفظ تَفضيلاتك
+                            وحماية المنصّة. ويُمكنك تَعديل إعدادات متصفّحك لرفضه أو حذفه،
+                            علماً بأنّ ذلك قد يُؤثّر على بعض وظائف المنصّة.
+                            {' '}
+                            <strong>
+                                أمّا قياس الاستخدام فلا يمرّ بملفّات تعريف الارتباط، فلا
+                                تُوقفه إعدادات المتصفّح — ولذلك له مفتاحُ إيقافٍ صريح
+                                بالأسفل، يعمل فوراً ولمن لا حساب له أيضاً.
+                            </strong>
                         </>
                     ) : (
                         <>
-                            We use cookies and similar technologies to run the session,
-                            save your preferences, improve your experience and protect the
-                            platform. You can adjust your browser settings to reject or
-                            delete these files, but this may affect some platform
-                            functionality. If you do not wish to accept them, you may
-                            choose to stop using the platform.
+                            We use local browser storage to run the session, save your
+                            preferences and protect the platform. You can adjust your
+                            browser settings to reject or delete it, but this may affect
+                            some platform functionality.
+                            {' '}
+                            <strong>
+                                Usage analytics, however, does not go through cookies, so
+                                browser settings do not stop it — which is why it has an
+                                explicit off switch below that works immediately, including
+                                for visitors without an account.
+                            </strong>
                         </>
                     )}
                 </Paragraph>
+                {/* v14.82 — المفتاح **داخل الوثيقة نفسها**: من يقرأ حقّه في سحب
+                    الموافقة يجده هنا بلا بحث، والزائر بلا حساب يُحجب عن «حسابي»
+                    فلو وُضع هناك وحده لبقي أكثرُ المتتبَّعين بلا مخرج. نفس الحالة
+                    ونفس المكوّن — لا مفتاحان يتناقضان. */}
+                <div style={{ marginTop: 14 }}>
+                    <AnalyticsToggleRow compact />
+                </div>
             </Section>
 
             <Section n={10} title={isRTL ? 'أمن البيانات' : 'Data security'}>

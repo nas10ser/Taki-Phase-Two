@@ -19,6 +19,7 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
 
@@ -912,6 +913,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             } catch {}
                             logger.info(`👤 Session found: ${currentUser.name}`);
                             setUser(currentUser);
+                            // v14.82 — اختيارُ الحساب في القياس يسود على هذا
+                            // الجهاز، فمن أوقفه من جوّاله يجده موقوفاً على
+                            // حاسبه. قراءةٌ فقط — لا يُكتب من هنا شيء، وإلا
+                            // دهس جهازٌ لم يُضبط قطّ اختيارَ جهازٍ ضُبط عمداً.
+                            void syncAnalyticsConsentFromAccount();
                             // initData is now the single owner of cold-load
                             // hydration. The profile is already in hand, so
                             // populate the follow/keyword/smart-alert/language
@@ -1719,6 +1725,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const OPEN_KEY = 'TAKI_APPOPEN_AT';
         const timer = setTimeout(() => {
             try {
+                // v14.82 — بوّابة الموافقة: «فتح التطبيق» قياسٌ سلوكي أيضاً.
+                if (!analyticsAllowed()) return;
                 const uid = user?.id || 'anon';
                 let last: { at: number; uid: string } | null = null;
                 try { last = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null'); } catch { /* ignore */ }

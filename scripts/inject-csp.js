@@ -52,9 +52,20 @@ if (!fs.existsSync(distFile)) {
 
 let html = fs.readFileSync(distFile, 'utf8');
 
-if (/http-equiv=["']?Content-Security-Policy/i.test(html)) {
-    console.error('✗ dist/index.html يحمل سياسةً أصلاً — نسختان مرّةً أخرى. أُوقف البناء.');
-    process.exit(1);
+// 🔴 v14.82 — كان هنا `process.exit(1)` إن وُجد وسمُ سياسةٍ في `dist`، وهو
+//    **عيبٌ أدخلتُه أنا**: Parcel يُبقي `dist/index.html` من بناءٍ سابق حين
+//    يضرب كاشُه، فيجد الوسمَ الذي حقنتُه أنا بالأمس ويُعلنه «نسخةً ثانية»
+//    فيُفشل البناء. (قِيس: `npm run build` مرّتين متتاليتين ⇒ الثانية حمراء.)
+//    وVercel تبني نظيفاً فالإنتاج لم يتأثّر — أي أن العيب كان يضرب التحقّق
+//    المحلّي وحده، وهو أسوأ موضعٍ له.
+//
+//    والتمييز الصحيح: نسخةٌ **مكتوبة يدوياً في المصدر** يمسكها `check-csp.js`
+//    على `index.html` قبل البناء. وما يوجد في `dist` أثرُ حقنةٍ سابقة لا أكثر،
+//    فيُزال ويُعاد بناؤه — الحقن عمليةٌ **خاملة التكرار** (idempotent).
+const before = html;
+html = html.replace(/\s*<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '');
+if (html !== before) {
+    console.log('  ↳ أُزيلت حقنةٌ سابقة من dist (بناءٌ متكرّر بكاش Parcel) قبل إعادة الحقن.');
 }
 
 // النسخة المحقونة بلا `frame-ancestors` (يتجاهله meta) — والترويسة تحمله.

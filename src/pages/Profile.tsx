@@ -3,6 +3,7 @@ import { goRegister } from '../utils/returnTo';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { PushToggleRow } from '../components/PushOptIn';
+import AnalyticsToggleRow from '../components/AnalyticsToggleRow';
 import { useApp } from '../context/AppContext';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
@@ -372,6 +373,12 @@ const Profile: React.FC = () => {
                         {/* v14.13 — المفتاح الدائم لإشعارات الجوّال على هذا الجهاز.
                             البانر في «حجوزاتي» يُخفى بضغطة ولا يعود؛ هذا يبقى. */}
                         <PushToggleRow />
+                        {/* v14.82 — مفتاح إيقاف القياس السلوكي. موضعه هنا لأن
+                            سياسة الخصوصية تَعِد بحقّ سحب الموافقة، وكانت تُحيل
+                            إلى «إعدادات المتصفّح» — وهي لا توقف قياسنا لأنه
+                            لا يمرّ بالكوكيز. النسخة الثانية داخل صفحة السياسة
+                            نفسها، بحالةٍ واحدة، ليصلها الزائر بلا حساب. */}
+                        <AnalyticsToggleRow />
                         {/* Smart Alerts builder — comes FIRST so the user sees the
                             engine that drives the inbox entries, not after them. */}
                         <SmartAlertsCard
