@@ -31,19 +31,19 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminDashboard.visibleTabs' },
     { key: 'tab_buyers',    label: '🛒 المشترون',          description: 'تبويب المشترين وقراءة بياناتهم', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS users(SELECT)' },
-    { key: 'tab_sellers',   label: '🏪 البائعون',          description: 'تبويب البائعين والمتاجر والفروع والاشتراكات', group: 'tabs',
+    { key: 'tab_sellers',   label: '🏪 التجّار',          description: 'تبويب البائعين والمتاجر والفروع والاشتراكات', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS store_profiles/branches/subscriptions' },
     { key: 'tab_reports',   label: '🚩 البلاغات والشكاوى', description: 'مراجعة البلاغات والشكاوى والإنذارات', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS reports/complaints/warnings' },
     { key: 'tab_analytics', label: '📊 التحليلات',          description: 'مؤشرات لحظية ورسوم (بلا أرقام مالية)', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
-    { key: 'tab_tools',     label: '🛠️ الأدوات',           description: 'الإعدادات والسجلّات وأدوات التشغيل', group: 'tabs',
+    { key: 'tab_tools',     label: '🛠️ البانرات والحملات',           description: 'الإعدادات والسجلّات وأدوات التشغيل', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS activity_log/sessions/settings' },
-    { key: 'tab_messages',  label: '💬 مراقبة الرسائل',    description: 'متابعة المحادثات (القراءة فقط)', group: 'tabs',
+    { key: 'tab_messages',  label: '💬 مراقبة المحادثات',    description: 'متابعة المحادثات (القراءة فقط)', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
     { key: 'tab_contests',  label: '🎁 المسابقات',          description: 'الاستبيانات والجوائز والسحب', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS contests/entries/draws' },
-    { key: 'tab_launch',    label: '🚀 الإطلاق',            description: 'الفحص الشامل وقائمة ما قبل الإطلاق', group: 'tabs',
+    { key: 'tab_launch',    label: '🚀 جاهزية الإطلاق',            description: 'الفحص الشامل وقائمة ما قبل الإطلاق', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
     { key: 'tab_delivery',  label: '🚚 التوصيل',            description: 'طلبات التوصيل والمتاجر المفعّلة ومفاتيح الإيقاف', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions(admin_delivery_*)' },
@@ -58,7 +58,7 @@ export const ADMIN_PERMS: PermDef[] = [
     { key: 'action_manage_users',      label: '✏️ تعديل حسابات المستخدمين', description: 'تعديل بيانات حساب أو إيقافه أو حذفه', group: 'actions',
       enforcedAt: 'AdminBuyers/AdminSellers + RLS users(UPDATE) + admin_update_user' },
     { key: 'action_delete_deals',      label: '🗑️ إخفاء/حذف العروض',        description: 'إخفاء منشور تاجر أو حذفه', group: 'actions',
-      enforcedAt: '⏳ لم يُبنَ بعد — إجراءات الإخفاء والحذف في الرقابة قيد التنفيذ' },
+      enforcedAt: 'AdminModeration (canAct) + admin_hide_deal / admin_delete_rating' },
     { key: 'action_manage_seasonal',   label: '🌟 عروض الموسم',             description: 'تثبيت متجر أو عرض في الموسم', group: 'actions',
       enforcedAt: 'RLS pinned_stores فقط — لا واجهة له اليوم (لا شاشة تثبّت متجراً)' },
     { key: 'action_manage_campaigns',  label: '📣 الحملات الترويجية',       description: 'إنشاء الحملات وبثّها وإيقافها', group: 'actions',
@@ -71,6 +71,17 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminMessages + admin_rpc_permissions' },
 ];
 
+/**
+ * 🪤 v14.89 — **مفتاحٌ واحد يفتح أكثر من شاشة**، وهذا مقيسٌ لا مُقدَّر:
+ *   • `tab_tools`  يفتح: البانرات والحملات · الإشعارات والبريد · المولات والأسواق.
+ *   • `tab_launch` يفتح: جاهزية الإطلاق · **المدفوعات** · **الزكاة والضريبة**.
+ * أي أن منحَ «الأدوات» يعطي ضبطَ نصّ كل رسالةٍ ترسلها المنصّة، ومنحَ «الإطلاق»
+ * يعطي قراءةَ سجلّ الدفع والملفّ الضريبي.
+ * لم يُفصَل اليوم عمداً: فصلُه يحتاج مفاتيح جديدة **وإعادةَ بناء سياسات RLS**
+ * التي تستعمل `tab_launch`/`tab_tools` على قاعدةٍ حيّة — وذلك خطرٌ غير متناسب
+ * ما دام عدد المسؤولين الفرعيّين **صفراً** (قِيس على جدّة). يُفصَل قبل منح
+ * أوّل صلاحيةٍ جزئية لشخص.
+ */
 export const PERM_TABS    = ADMIN_PERMS.filter(p => p.group === 'tabs');
 export const PERM_ACTIONS = ADMIN_PERMS.filter(p => p.group === 'actions');
 export default ADMIN_PERMS;
