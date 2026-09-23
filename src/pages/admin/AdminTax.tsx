@@ -19,6 +19,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AdmSection } from '../../components/admin/ui';
 import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
@@ -498,10 +499,10 @@ const AdminTax: React.FC = () => {
 
     return (
         <div className="space-y-4" dir="rtl">
-            {/* Header */}
-            <section className={card} style={{ borderTop: '3px solid #0d9488' }}>
-                <h2 className="font-extrabold text-lg text-[var(--text-primary)]">🧾 الزكاة والضريبة — نظام متكامل</h2>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed mt-1">
+            {/* 🪤 v14.89 — حُذف العنوان المحلّي: قشرة اللوحة تطبع اسم الشاشة
+                ووصفها من `src/data/adminNav.ts`، فكان يظهر مرّتين. */}
+            <section className={card}>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--adm-fg-2)' }}>
                     مبيعاتك تُحتسب تلقائياً من الاشتراكات، وأنت تضيف <b>فواتير مشترياتك</b> فقط — والنظام يجهّز
                     <b> الإقرار الضريبي بزر واحد</b> (ويحسب <b>الاسترداد</b> إذا كانت ضريبة مشترياتك أعلى)، ويطبع
                     <b> كل فواتير العملاء دفعة واحدة</b>. الربط الآلي API مع بوابة «فاتورة» يتطلب تسجيلاً ضريبياً سارياً —
@@ -510,7 +511,8 @@ const AdminTax: React.FC = () => {
             </section>
 
             {/* متى أسجل؟ */}
-            <section className={card}>
+            <AdmSection title="متى أسجّل في هيئة الزكاة والضريبة؟" icon="📏" desc="مرجعٌ يُقرأ مرّةً: حدّ التسجيل الإلزامي والاختياري وما يترتّب عليه." collapsible defaultOpen={false}>
+                <section className={card}>
                 <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-2">📏 متى أسجل في هيئة الزكاة والضريبة والجمارك؟</h3>
                 <div className="text-xs text-[var(--text-secondary)] leading-loose">
                     <b>الزكاة:</b> بمجرد إصدار السجل التجاري تُسجَّل منشأتك وتقدّم إقراراً زكوياً سنوياً (خلال ١٢٠ يوماً من نهاية السنة المالية).<br />
@@ -532,6 +534,7 @@ const AdminTax: React.FC = () => {
                     </div>
                 </div>
             </section>
+            </AdmSection>
 
             {/* ⚖️ الإقرار بزر واحد */}
             <section className={card} style={{ borderTop: '3px solid #6366f1' }}>
@@ -722,7 +725,8 @@ const AdminTax: React.FC = () => {
             </section>
 
             {/* الزكاة */}
-            <section className={card} style={{ borderTop: '3px solid #f59e0b' }}>
+            <AdmSection title="حاسبة الوعاء الزكوي" icon="🕌" desc="رأس المال والأرباح ناقص الأصول الثابتة — تُحفظ في الإعدادات." collapsible defaultOpen={false}>
+                <section className={card} style={{ borderTop: '3px solid #f59e0b' }}>
                 <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-2">🕌 الزكاة — حاسبة الوعاء الزكوي</h3>
                 <div className="grid grid-cols-3 gap-2 mb-2">
                     <label className="block"><span className={lbl}>رأس المال (ر.س)</span>
@@ -742,6 +746,7 @@ const AdminTax: React.FC = () => {
                     الوعاء النظامي الدقيق يعتمده محاسبك من قائمة المركز المالي في الإقرار السنوي.
                 </p>
             </section>
+            </AdmSection>
 
             {/* الفواتير */}
             <section className={card}>

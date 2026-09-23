@@ -1,174 +1,111 @@
 /**
- * AdminOverview — الصفحة الرئيسية للأدمن
+ * AdminOverview — الشاشة الأولى: حالة المنصّة الآن (v14.89)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🪤 ما حُذف، وقد قِيس تكرارُه:
+ *   • **الأزرار الثلاثة الكبيرة** («المشترون» · «البائعون» · «الأدوات»):
+ *     كانت تكرّر وجهاتٍ موجودةً في شريط التنقّل على بُعد سنتيمترٍ واحد فوقها.
+ *   • **اللافتة الترحيبية** بتدرّجٍ ثلاثيّ وكرتَي ضبابٍ ونبضة: تشغل أعلى
+ *     الشاشة كاملاً ولا تحمل رقماً واحداً. حلّ محلّها سطرٌ واحد.
+ *   • **بطاقات التدرّجات**: أربع بطاقاتٍ بأربعة تدرّجات تتنافس على الانتباه.
+ *     الأرقام الآن على سطحٍ واحدٍ هادئ، واللون للدلالة وحدها.
  *
- * تحتوي على:
- *  - ترحيب + معلومات الأدمن
- *  - 3 أزرار كبيرة: المشترون | البائعون | أدوات الإدارة
- *  - بطاقات KPI لحظية (مستخدمين نشطين، حجوزات اليوم، MRR، إلخ)
- *  - Activity feed لحظي
+ * 🪤 وما أُضيف لأن غيابه كان العيب الحقيقي: **«يحتاج قراراً منك»**. كانت
+ *    الشاشة الأولى تقول «كل شيء تحت سيطرتك» ولا تقول ما الذي ينتظر قراراً —
+ *    فالبلاغ المفتوح لا يُرى إلا بفتح تبويبه.
+ *
+ * 🪤 وكل رقمٍ هنا يقول **نطاقه** صراحةً: قِيس أن بطاقاتٍ بنفس الاسم تعني في
+ *    شاشةٍ «كل المنصّة» وفي أخرى «الصفحة المعروضة» — والقارئ لا يملك ما يفرّق.
  */
 
 import React, { useEffect, useState, useCallback, memo } from 'react';
-import { useHistory } from 'react-router-dom';
 import { adminService, LiveStats, ActivityRow } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
-import { useKpiSnapshot, KpiDelta } from '../../hooks/useKpiSnapshot';
-import { TrendChip } from '../../components/admin/TrendChip';
+import { useKpiSnapshot } from '../../hooks/useKpiSnapshot';
+import { AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty, AdmSkeleton, AdmButton, admNum, admMoney } from '../../components/admin/ui';
+import { AdminTabId } from '../../data/adminNav';
 
-// ============================================================
-// KPI Card — مكوّن صغير معاد استخدامه
-// ============================================================
-const KpiCard = memo<{
-    icon: string;
-    label: string;
-    value: string | number;
-    subtitle?: string;
-    gradient: string;
-    pulse?: boolean;
-    trend?: KpiDelta;
-    trendHigherIsBetter?: boolean;
-}>(({ icon, label, value, subtitle, gradient, pulse, trend, trendHigherIsBetter }) => (
-    <div
-        className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 ${gradient}`}
-    >
-        {pulse && (
-            <span className="absolute top-3 right-3 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-            </span>
-        )}
-        <div className="text-3xl mb-2 opacity-90">{icon}</div>
-        <div className="text-3xl font-extrabold tabular-nums">{value}</div>
-        <div className="text-sm opacity-90 mt-1 font-medium">{label}</div>
-        {subtitle && <div className="text-xs opacity-70 mt-0.5">{subtitle}</div>}
-        {trend && (
-            <div className="mt-2">
-                <TrendChip delta={trend} higherIsBetter={trendHigherIsBetter} />
-            </div>
-        )}
-    </div>
-));
-KpiCard.displayName = 'KpiCard';
+// ═══════════════════════════════════════════════════════════════════════════
+// سجلّ النشاط
+// ═══════════════════════════════════════════════════════════════════════════
 
-// ============================================================
-// Big Section Button — الأزرار الكبيرة الـ 3
-// ============================================================
-const SectionButton = memo<{
-    icon: string;
-    title: string;
-    subtitle: string;
-    count?: number | string;
-    gradient: string;
-    onClick: () => void;
-}>(({ icon, title, subtitle, count, gradient, onClick }) => (
-    <button
-        onClick={onClick}
-        className={`group relative overflow-hidden rounded-3xl p-6 text-white shadow-xl transition-all hover:shadow-2xl hover:-translate-y-1 active:translate-y-0 ${gradient} text-right w-full`}
-    >
-        <div className="absolute -left-8 -bottom-8 w-32 h-32 rounded-full bg-white/10 blur-2xl group-hover:bg-white/20 transition-all"></div>
-        <div className="relative">
-            <div className="flex items-center justify-between mb-3">
-                <div className="text-5xl drop-shadow-md">{icon}</div>
-                {count !== undefined && (
-                    <div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-1.5 text-sm font-bold">
-                        {count}
-                    </div>
-                )}
-            </div>
-            <div className="text-2xl font-extrabold mb-1">{title}</div>
-            <div className="text-sm opacity-90 leading-relaxed">{subtitle}</div>
-            <div className="mt-4 flex items-center gap-2 text-sm font-bold opacity-90 group-hover:opacity-100">
-                <span>دخول الآن</span>
-                <span className="group-hover:-translate-x-1 transition-transform">←</span>
-            </div>
-        </div>
-    </button>
-));
-SectionButton.displayName = 'SectionButton';
-
-// ============================================================
-// Activity Feed Item
-// ============================================================
-const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
-    login: { icon: '🔓', color: 'bg-blue-50 text-blue-600' },
-    register: { icon: '✨', color: 'bg-green-50 text-green-600' },
-    book: { icon: '🎟️', color: 'bg-emerald-50 text-emerald-600' },
-    cancel_booking: { icon: '❌', color: 'bg-red-50 text-red-600' },
-    view_deal: { icon: '👀', color: 'bg-[var(--gray-100)] text-[var(--text-secondary)]' },
-    add_deal: { icon: '➕', color: 'bg-purple-50 text-purple-600' },
-    edit_deal: { icon: '✏️', color: 'bg-amber-50 text-amber-600' },
-    delete_deal: { icon: '🗑️', color: 'bg-red-50 text-red-600' },
-    follow: { icon: '⭐', color: 'bg-yellow-50 text-yellow-600' },
-    rate: { icon: '💬', color: 'bg-pink-50 text-pink-600' },
-    admin_apply_subscription: { icon: '👑', color: 'bg-indigo-50 text-indigo-600' },
-    admin_update_user: { icon: '🛠️', color: 'bg-sky-50 text-sky-600' },
+const ACTION_META: Record<string, { icon: string; label: string }> = {
+    login: { icon: '🔓', label: 'سجّل دخول' },
+    register: { icon: '✨', label: 'سجّل حساباً جديداً' },
+    book: { icon: '🎟️', label: 'حجز عرضاً' },
+    cancel_booking: { icon: '❌', label: 'ألغى حجزاً' },
+    view_deal: { icon: '👀', label: 'شاهد عرضاً' },
+    add_deal: { icon: '➕', label: 'أضاف عرضاً' },
+    edit_deal: { icon: '✏️', label: 'عدّل عرضاً' },
+    delete_deal: { icon: '🗑️', label: 'حذف عرضاً' },
+    follow: { icon: '⭐', label: 'تابع متجراً' },
+    rate: { icon: '💬', label: 'قيّم عرضاً' },
+    admin_apply_subscription: { icon: '👑', label: 'طبّق اشتراكاً' },
+    admin_update_user: { icon: '🛠️', label: 'عدّل مستخدماً' },
 };
 
-const ACTION_LABELS: Record<string, string> = {
-    login: 'سجّل دخول',
-    register: 'سجّل حساب جديد',
-    book: 'حجز عرض',
-    cancel_booking: 'ألغى حجزاً',
-    view_deal: 'شاهد عرض',
-    add_deal: 'أضاف عرضاً',
-    edit_deal: 'عدّل عرضاً',
-    delete_deal: 'حذف عرضاً',
-    follow: 'تابع متجراً',
-    rate: 'قيّم عرضاً',
-    admin_apply_subscription: 'طبّق اشتراكاً',
-    admin_update_user: 'عدّل مستخدماً',
-};
+function timeAgo(iso: string, now: number): string {
+    const sec = Math.floor((now - new Date(iso).getTime()) / 1000);
+    if (sec < 60) return `قبل ${sec} ثانية`;
+    if (sec < 3600) return `قبل ${Math.floor(sec / 60)} دقيقة`;
+    if (sec < 86400) return `قبل ${Math.floor(sec / 3600)} ساعة`;
+    return new Date(iso).toLocaleDateString('ar-SA-u-ca-gregory');
+}
 
-const ActivityItem = memo<{ row: ActivityRow }>(({ row }) => {
-    const meta = ACTION_ICONS[row.action] ?? { icon: '•', color: 'bg-[var(--gray-100)] text-[var(--text-secondary)]' };
-    const label = ACTION_LABELS[row.action] ?? row.action;
-    const time = new Date(row.created_at);
-    const ago = formatTimeAgo(time);
 
+/**
+ * دلتا «مقابل أمس» → شارةٌ نصّية. تعود `undefined` حين لا خطَّ أساس بعد
+ * (أوّل يومٍ يفتح فيه ناصر اللوحة) — فلا تُعرض شارةٌ تقول «٠٪» كأنها قياس.
+ */
+function deltaChip(d: { pct: number | null; diff: number | null } | undefined): { text: string; good?: boolean } | undefined {
+    if (!d || d.pct === null || d.diff === null) return undefined;
+    const sign = d.diff > 0 ? '▲' : d.diff < 0 ? '▼' : '—';
+    return { text: `${sign} ${Math.abs(Math.round(d.pct))}٪ عن أمس`, good: d.diff === 0 ? undefined : d.diff > 0 };
+}
+
+const ActivityRowView = memo<{ row: ActivityRow; now: number }>(({ row, now }) => {
+    const meta = ACTION_META[row.action] ?? { icon: '•', label: row.action };
     return (
-        <div className="flex gap-3 p-3 rounded-xl hover:bg-[var(--gray-100)] transition-colors">
-            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg ${meta.color}`}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '9px 2px', borderBottom: '1px solid var(--adm-border)' }}>
+            <span
+                aria-hidden="true"
+                style={{
+                    flexShrink: 0, width: 30, height: 30, borderRadius: 999,
+                    background: 'var(--adm-surface-3)', display: 'inline-flex',
+                    alignItems: 'center', justifyContent: 'center', fontSize: '.85rem',
+                }}
+            >
                 {meta.icon}
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
-                    <span className="font-bold text-sm text-[var(--text-primary)] truncate">
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '.83rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '16ch' }}>
                         {row.user_name ?? 'زائر'}
                     </span>
-                    <span className="text-xs text-[var(--text-secondary)]">{label}</span>
-                </div>
-                {row.entity_id && (
-                    <div className="text-xs text-[var(--gray-400)] truncate mt-0.5">
-                        {row.entity_type} · {row.entity_id.slice(0, 24)}
-                    </div>
-                )}
-            </div>
-            <div className="text-xs text-[var(--gray-400)] flex-shrink-0 self-center tabular-nums">{ago}</div>
+                    <span style={{ fontSize: '.78rem', color: 'var(--adm-fg-2)' }}>{meta.label}</span>
+                </span>
+            </span>
+            <span style={{ flexShrink: 0, fontSize: '.7rem', color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums' }}>
+                {timeAgo(row.created_at, now)}
+            </span>
         </div>
     );
 });
-ActivityItem.displayName = 'ActivityItem';
+ActivityRowView.displayName = 'ActivityRowView';
 
-function formatTimeAgo(date: Date): string {
-    const sec = Math.floor((Date.now() - date.getTime()) / 1000);
-    if (sec < 60) return `قبل ${sec}ث`;
-    if (sec < 3600) return `قبل ${Math.floor(sec / 60)}د`;
-    if (sec < 86400) return `قبل ${Math.floor(sec / 3600)}س`;
-    return date.toLocaleDateString('ar-SA-u-ca-gregory');
-}
+// ═══════════════════════════════════════════════════════════════════════════
 
-// ============================================================
-// Main Overview Component
-// ============================================================
-const AdminOverview: React.FC<{
-    onNavigate: (tab: 'buyers' | 'sellers' | 'tools' | 'analytics') => void;
-}> = ({ onNavigate }) => {
+const AdminOverview: React.FC<{ onNavigate: (tab: AdminTabId) => void }> = ({ onNavigate }) => {
     const { user, hasPermission } = useApp();
-    const history = useHistory();
     const [stats, setStats] = useState<LiveStats | null>(null);
     const [activity, setActivity] = useState<ActivityRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [openReports, setOpenReports] = useState<number | null>(null);
+    const [openComplaints, setOpenComplaints] = useState<number | null>(null);
+    const [now, setNow] = useState(() => Date.now());
     const { deltas } = useKpiSnapshot(stats);
+
+    const canSeeFinance = hasPermission('action_view_finance');
+    const canSeeReports = hasPermission('tab_reports');
 
     const refresh = useCallback(async () => {
         const [s, a] = await Promise.all([
@@ -177,149 +114,190 @@ const AdminOverview: React.FC<{
         ]);
         if (s) setStats(s);
         setActivity(a);
+        setNow(Date.now());
         setLoading(false);
     }, []);
 
     useEffect(() => {
         refresh();
-        const id = setInterval(refresh, 5000); // كل 5 ثوانٍ
+        const id = setInterval(refresh, 5000);
         return () => clearInterval(id);
     }, [refresh]);
 
+    // «يحتاج قراراً»: يُقرأ مرّةً عند الفتح وكل دقيقة — لا كل خمس ثوانٍ، فهو
+    // ليس عدّاداً لحظياً بل طابور عمل.
+    useEffect(() => {
+        if (!canSeeReports) return;
+        let alive = true;
+        const load = async () => {
+            try {
+                const [r, c] = await Promise.all([
+                    adminService.listReports({ status: 'open', limit: 100 }),
+                    adminService.listComplaints({ status: 'open', limit: 100 }),
+                ]);
+                if (!alive) return;
+                setOpenReports(Array.isArray(r) ? r.length : 0);
+                setOpenComplaints(Array.isArray(c) ? c.length : 0);
+            } catch { /* طابورٌ لا يُفشل الشاشة */ }
+        };
+        load();
+        const id = setInterval(load, 60000);
+        return () => { alive = false; clearInterval(id); };
+    }, [canSeeReports]);
+
+    const pending = (openReports ?? 0) + (openComplaints ?? 0);
+
     return (
-        <div className="space-y-6 animate-fade-in" dir="rtl">
-            {/* Hero */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 p-6 text-white shadow-2xl">
-                <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10 blur-3xl"></div>
-                <div className="absolute -left-16 -bottom-16 w-64 h-64 rounded-full bg-white/5 blur-3xl"></div>
-                <div className="relative">
-                    <div className="flex items-center gap-2 mb-2">
-                        <span className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold">
-                            👑 وضع الأدمن
+        <div style={{ display: 'grid', gap: 14 }} dir="rtl">
+
+            {/* ── ما يحتاج قراراً ─────────────────────────────────────────── */}
+            {canSeeReports && (
+                <AdmCard>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: pending ? 12 : 0 }}>
+                        <span style={{ fontSize: '1rem', fontWeight: 900, color: 'var(--adm-fg)' }}>
+                            يحتاج قراراً منك
                         </span>
-                        <span className="bg-green-400/30 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-300 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                            </span>
-                            مباشر
-                        </span>
+                        {openReports === null ? (
+                            <AdmPill>جارٍ الفحص</AdmPill>
+                        ) : pending === 0 ? (
+                            <AdmPill tone="ok">لا شيء ينتظرك الآن</AdmPill>
+                        ) : (
+                            <AdmPill tone="warn">{pending} بنداً</AdmPill>
+                        )}
                     </div>
-                    <h1 className="text-3xl font-extrabold mb-1">مرحباً، {user?.name ?? 'الأدمن'} 👋</h1>
-                    <p className="text-sm opacity-90">
-                        كل شيء تحت سيطرتك الآن. هذه نبضات منصة TAKI اللحظية.
-                    </p>
-                </div>
-            </div>
 
-            {/* الـ 3 أزرار الكبيرة */}
-            <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                    🎯 الأقسام الرئيسية
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <SectionButton
-                        icon="🛒"
-                        title="إدارة المشترين"
-                        subtitle="ادخل لأي مشتري، عدّل بياناته، تابع نشاطه"
-                        count={stats ? `${stats.total_buyers}` : '...'}
-                        gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
-                        onClick={() => onNavigate('buyers')}
-                    />
-                    <SectionButton
-                        icon="🏪"
-                        title="إدارة البائعين"
-                        subtitle="تحكم بالاشتراكات، الباقات، الخصومات بضغطة"
-                        count={stats ? `${stats.total_sellers}` : '...'}
-                        gradient="bg-gradient-to-br from-purple-500 to-fuchsia-600"
-                        onClick={() => onNavigate('sellers')}
-                    />
-                    <SectionButton
-                        icon="🛠️"
-                        title="أدوات الإدارة"
-                        subtitle="البانرات، الحملات، بوابة الدفع، الإعدادات"
-                        gradient="bg-gradient-to-br from-orange-500 to-red-600"
-                        onClick={() => onNavigate('tools')}
-                    />
-                </div>
-            </div>
-
-            {/* KPIs اللحظية */}
-            <div>
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
-                        📊 المؤشرات اللحظية
-                    </h2>
-                    <button
-                        onClick={() => onNavigate('analytics')}
-                        className="text-sm text-emerald-600 font-bold hover:text-emerald-700"
-                    >
-                        التحليلات الكاملة ←
-                    </button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <KpiCard
-                        icon="🟢"
-                        label="مستخدمين نشطين الآن"
-                        value={stats?.active_users ?? '...'}
-                        subtitle={`آخر 5 دقائق`}
-                        gradient="bg-gradient-to-br from-emerald-500 to-green-600"
-                        pulse
-                    />
-                    <KpiCard
-                        icon="🎟️"
-                        label="حجوزات اليوم"
-                        value={stats?.bookings_today ?? '...'}
-                        subtitle={`${stats?.bookings_hour ?? 0} في آخر ساعة`}
-                        gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
-                        trend={deltas.bookings}
-                    />
-                    <KpiCard
-                        icon="✨"
-                        label="مستخدمين جدد اليوم"
-                        value={stats?.new_users_today ?? '...'}
-                        subtitle={`من ${stats?.total_users ?? 0} إجمالاً`}
-                        gradient="bg-gradient-to-br from-purple-500 to-fuchsia-600"
-                        trend={deltas.new_users}
-                    />
-                    {/* v14.38 — «💰 الأمور المالية» كانت مربّع اختيار بلا قارئ:
-                        ناصر يمنعها عن أدمن فرعي فيقرأ الإيراد كاملاً. الإخفاء لا
-                        التعطيل، كما في التبويبات. */}
-                    {hasPermission('action_view_finance') && (
-                        <KpiCard
-                            icon="💰"
-                            label="إيراد شهري متوقّع"
-                            value={`${(stats?.mrr ?? 0).toLocaleString('ar-SA')} ر.س`}
-                            subtitle={`${stats?.paying_sellers ?? 0} مشترك مدفوع`}
-                            gradient="bg-gradient-to-br from-amber-500 to-orange-600"
-                            trend={deltas.mrr}
-                        />
-                    )}
-                </div>
-            </div>
-
-            {/* Activity Feed */}
-            <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                    ⚡ النشاط اللحظي
-                    <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                        Live
-                    </span>
-                </h2>
-                <div className="bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)] shadow-sm divide-y divide-[var(--border-color)]">
-                    {loading ? (
-                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">جاري التحميل...</div>
-                    ) : activity.length === 0 ? (
-                        <div className="p-8 text-center text-[var(--gray-400)] text-sm">
-                            لا توجد نشاطات حديثة بعد. ستظهر هنا مباشرةً.
+                    {pending > 0 && (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {!!openReports && (
+                                <QueueRow
+                                    icon="🚩"
+                                    title={`${openReports} بلاغاً مفتوحاً`}
+                                    desc="بلاغات المستخدمين على بعضهم — لم تُراجَع بعد."
+                                    onOpen={() => onNavigate('reports')}
+                                />
+                            )}
+                            {!!openComplaints && (
+                                <QueueRow
+                                    icon="📣"
+                                    title={`${openComplaints} شكوى مفتوحة`}
+                                    desc="شكاوى وصلت الإدارة مباشرةً من المستخدمين."
+                                    onOpen={() => onNavigate('reports')}
+                                />
+                            )}
                         </div>
-                    ) : (
-                        activity.map((row) => <ActivityItem key={row.id} row={row} />)
                     )}
-                </div>
+                </AdmCard>
+            )}
+
+            {/* ── الأرقام اللحظية ─────────────────────────────────────────── */}
+            <AdmSection
+                title="الآن على المنصّة"
+                desc="تُحدَّث كل خمس ثوانٍ. كل رقمٍ هنا عن المنصّة كلّها."
+                icon="⚡"
+                action={<AdmButton size="sm" onClick={() => onNavigate('analytics')}>التحليلات الكاملة ←</AdmButton>}
+            >
+                {loading && !stats ? (
+                    <AdmSkeleton rows={2} height={84} />
+                ) : (
+                    <AdmStatGrid cols={4}>
+                        <AdmStat
+                            icon="🟢"
+                            label="مستخدم نشط"
+                            value={admNum(stats?.active_users)}
+                            scope="آخر ٥ دقائق"
+                            tone="ok"
+                        />
+                        <AdmStat
+                            icon="🎟️"
+                            label="حجوزات اليوم"
+                            value={admNum(stats?.bookings_today)}
+                            scope={`${admNum(stats?.bookings_hour)} في آخر ساعة`}
+                            delta={deltaChip(deltas.bookings)}
+                        />
+                        <AdmStat
+                            icon="✨"
+                            label="مستخدم جديد اليوم"
+                            value={admNum(stats?.new_users_today)}
+                            scope={`من ${admNum(stats?.total_users)} إجمالاً`}
+                            delta={deltaChip(deltas.new_users)}
+                        />
+                        {/* 🪤 «الأمور المالية» تُخفى لا تُعطَّل — أدمنٌ مُنعت عنه
+                            لا يقرأ الإيراد أصلاً (درس v14.38). */}
+                        {canSeeFinance && (
+                            <AdmStat
+                                icon="💰"
+                                label="اشتراكات شهرية"
+                                value={admMoney(stats?.mrr)}
+                                scope={`${admNum(stats?.paying_sellers)} مشترك · قبل الخصومات`}
+                                delta={deltaChip(deltas.mrr)}
+                                title="مجموع مبالغ الاشتراكات النشطة كما هي مسجّلة، قبل طرح أي خصم. الرقم بعد الخصومات في شاشة التجّار."
+                            />
+                        )}
+                    </AdmStatGrid>
+                )}
+            </AdmSection>
+
+            {/* ── حجم المنصّة ─────────────────────────────────────────────── */}
+            <AdmSection
+                title="حجم المنصّة"
+                desc="الأعداد الإجمالية منذ الإطلاق."
+                icon="📦"
+                collapsible
+                defaultOpen={false}
+            >
+                <AdmStatGrid cols={3}>
+                    <AdmStat label="مشترٍ" value={admNum(stats?.total_buyers)} scope="كل المنصّة" icon="🛒"
+                        onClick={hasPermission('tab_buyers') ? () => onNavigate('buyers') : undefined} />
+                    <AdmStat label="تاجر" value={admNum(stats?.total_sellers)} scope="كل المنصّة" icon="🏪"
+                        onClick={hasPermission('tab_sellers') ? () => onNavigate('sellers') : undefined} />
+                    <AdmStat label="حساب" value={admNum(stats?.total_users)} scope="مشترون وتجّار" icon="👥" />
+                </AdmStatGrid>
+            </AdmSection>
+
+            {/* ── النشاط اللحظي ───────────────────────────────────────────── */}
+            <AdmSection
+                title="النشاط اللحظي"
+                desc="آخر عشرين حدثاً على المنصّة."
+                icon="📡"
+                badge={{ text: 'مباشر', tone: 'ok' }}
+            >
+                {loading ? (
+                    <AdmSkeleton rows={4} height={44} />
+                ) : activity.length === 0 ? (
+                    <AdmEmpty
+                        icon="📡"
+                        title="لا نشاط بعد"
+                        hint="أول دخولٍ أو حجزٍ على المنصّة سيظهر هنا مباشرةً."
+                    />
+                ) : (
+                    <div>
+                        {activity.map((row) => <ActivityRowView key={row.id} row={row} now={now} />)}
+                    </div>
+                )}
+            </AdmSection>
+
+            <div style={{ fontSize: '.72rem', color: 'var(--adm-fg-3)', textAlign: 'center', paddingTop: 4 }}>
+                مرحباً {user?.name ?? 'بك'} — هذه شاشة الإدارة.
             </div>
         </div>
     );
 };
+
+const QueueRow: React.FC<{ icon: string; title: string; desc: string; onOpen: () => void }> = ({ icon, title, desc, onOpen }) => (
+    <div
+        style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            padding: '11px 12px', borderRadius: 'var(--adm-r-sm)',
+            background: 'var(--adm-warn-bg)',
+        }}
+    >
+        <span aria-hidden="true" style={{ fontSize: '1rem' }}>{icon}</span>
+        <span style={{ flex: 1, minWidth: 140 }}>
+            <span style={{ display: 'block', fontSize: '.85rem', fontWeight: 900, color: 'var(--adm-warn-fg)' }}>{title}</span>
+            <span style={{ display: 'block', fontSize: '.75rem', color: 'var(--adm-fg-2)', marginTop: 2, lineHeight: 1.7 }}>{desc}</span>
+        </span>
+        <AdmButton size="sm" onClick={onOpen}>افتحها ←</AdmButton>
+    </div>
+);
 
 export default memo(AdminOverview);

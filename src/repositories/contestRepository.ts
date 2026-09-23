@@ -233,12 +233,21 @@ export const contestRepository = {
      * إطلاقاً: الفائزون يُختارون داخل القاعدة عبر `draw_contest_winners` على
      * كل المشاركات لا على هذه القائمة — فهذه للعرض والإدارة فقط.
      */
-    async entries(contestId: string): Promise<ContestEntry[]> {
-        const { data } = await supabase.from('contest_entries').select('*')
+    /** سقف العرض — مُعلَنٌ للشاشة كي تقول للقارئ كم صفّاً يرى من كم. */
+    ENTRIES_CAP: 1000 as const,
+
+    async entries(contestId: string): Promise<{ rows: ContestEntry[]; total: number; capped: boolean }> {
+        // 🪤 v14.89 — كان السقف **صامتاً**: تُعاد ألف مشاركةٍ وتُرسم كلّها،
+        //    ويقرأ ناصر قائمةً ناقصةً ظانّاً أنها كاملة. الآن يُقرأ العدد
+        //    الحقيقي معها (`count: 'exact'`) فتقول الشاشة الحقيقة.
+        const { data, count } = await supabase.from('contest_entries')
+            .select('*', { count: 'exact' })
             .eq('contest_id', contestId)
             .order('created_at', { ascending: false })
             .limit(1000);
-        return (data || []) as ContestEntry[];
+        const rows = (data || []) as ContestEntry[];
+        const total = typeof count === 'number' ? count : rows.length;
+        return { rows, total, capped: total > rows.length };
     },
 
     /** Public submit + server-side auto-grade. */

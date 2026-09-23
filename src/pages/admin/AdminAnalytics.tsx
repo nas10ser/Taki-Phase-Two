@@ -12,9 +12,8 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
-import { adminService, LiveStats, TimelinePoint, ActivityRow } from '../../services/adminService';
+import { adminService, TimelinePoint, ActivityRow } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
-import { Tooltip } from '../../components/admin/Tooltip';
 import { CsvColumn } from '../../utils/csvExport';
 import { AdvancedAnalytics } from '../../components/admin/AdvancedAnalytics';
 import { InvestorPack } from '../../components/admin/InvestorPack';
@@ -94,23 +93,6 @@ SparkChart.displayName = 'SparkChart';
 // ============================================================
 // Live Counter (مع animation)
 // ============================================================
-const LiveCounter = memo<{ value: number; label: string; gradient: string }>(({ value, label, gradient }) => (
-    <div
-        className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg ${gradient}`}
-    >
-        <div className="absolute top-2 right-2 flex items-center gap-1.5 text-[10px] font-bold bg-white/20 backdrop-blur-sm px-2 py-1 rounded-full">
-            <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--card-bg)] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--card-bg)]"></span>
-            </span>
-            LIVE
-        </div>
-        <div className="text-4xl font-extrabold tabular-nums mb-1">{value}</div>
-        <div className="text-sm opacity-90 font-medium">{label}</div>
-    </div>
-));
-LiveCounter.displayName = 'LiveCounter';
-
 // Activity is an admin action when its name starts with `admin_`. That's
 // the convention the DB triggers + RPCs use when logging actions taken
 // from this panel.
@@ -124,15 +106,6 @@ const ACTIVITY_CSV_COLUMNS: CsvColumn<ActivityRow>[] = [
     { header: 'النوع',         accessor: (r) => r.entity_type ?? '' },
     { header: 'معرّف العنصر',  accessor: (r) => r.entity_id ?? '' },
     { header: 'بيانات إضافية', accessor: (r) => r.metadata ? JSON.stringify(r.metadata) : '' },
-];
-
-const TOP_PERF_CSV_COLUMNS: CsvColumn<any>[] = [
-    { header: 'الترتيب',       accessor: (_r: any) => '' }, // filled by caller
-    { header: 'الاسم',         accessor: (r: any) => r.shop ?? r.name ?? '' },
-    { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
-    { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
-    { header: 'عدد العروض',    accessor: (r: any) => r.deals_count ?? '' },
-    { header: 'المعرّف',        accessor: (r: any) => r.id },
 ];
 
 // Local calendar date → YYYY-MM-DD (offset-safe so the picker shows the day
@@ -177,22 +150,13 @@ const RangePreset: React.FC<{ label: string; onClick: () => void }> = ({ label, 
 // Main Component
 // ============================================================
 const AdminAnalytics: React.FC = () => {
-    const [stats, setStats] = useState<LiveStats | null>(null);
     const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
     const [activity, setActivity] = useState<ActivityRow[]>([]);
-    const [topSellers, setTopSellers] = useState<any[]>([]);
-    const [topBuyers, setTopBuyers] = useState<any[]>([]);
     const [range, setRange] = useState<TimeRange>('24hour');
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
-    const [auditOnly, setAuditOnly] = useState(false);
 
     // Top-lists controls — owner-chosen count + optional calendar window. (v11.46)
-    const [topLimit, setTopLimit] = useState(10);
-    const [topMode, setTopMode] = useState<'all' | 'day' | 'range'>('all');
-    const [topDay, setTopDay] = useState('');
-    const [topFrom, setTopFrom] = useState('');
-    const [topTo, setTopTo] = useState('');
 
     // Custom-period summary report (calendar from → to).
     const [rangeFrom, setRangeFrom] = useState(() => isoDate(new Date(Date.now() - 29 * 864e5)));
@@ -217,11 +181,6 @@ const AdminAnalytics: React.FC = () => {
         };
     }, [range, customFrom, customTo]);
 
-    const refreshLive = useCallback(async () => {
-        const s = await adminService.getLiveStats(5, false);
-        if (s) setStats(s);
-    }, []);
-
     const refreshTimeline = useCallback(async () => {
         const data = await adminService.getBookingsTimeline(from, to, bucket);
         setTimeline(data);
@@ -234,28 +193,6 @@ const AdminAnalytics: React.FC = () => {
 
     // [from, to) booking window for the top lists, derived from the calendar
     // controls. null = all-time (matches the previous behaviour).
-    const topWindow = useMemo<{ from: Date | null; to: Date | null }>(() => {
-        if (topMode === 'day' && topDay) {
-            const f = new Date(topDay + 'T00:00:00');
-            const t = new Date(f); t.setDate(t.getDate() + 1);
-            return { from: f, to: t };
-        }
-        if (topMode === 'range' && topFrom && topTo) {
-            const f = new Date(topFrom + 'T00:00:00');
-            const t = new Date(topTo + 'T00:00:00'); t.setDate(t.getDate() + 1);
-            return { from: f, to: t };
-        }
-        return { from: null, to: null };
-    }, [topMode, topDay, topFrom, topTo]);
-
-    const refreshTops = useCallback(async () => {
-        const [s, b] = await Promise.all([
-            adminService.getTopSellers(topLimit, topWindow.from, topWindow.to),
-            adminService.getTopBuyers(topLimit, topWindow.from, topWindow.to),
-        ]);
-        setTopSellers(s);
-        setTopBuyers(b);
-    }, [topLimit, topWindow]);
 
     const loadRange = useCallback(async () => {
         if (!rangeFrom || !rangeTo) return;
@@ -266,26 +203,21 @@ const AdminAnalytics: React.FC = () => {
         setRangeLoading(false);
     }, [rangeFrom, rangeTo]);
 
-    // Initial load (live + activity)
-    useEffect(() => {
-        refreshLive();
-        refreshActivity();
-    }, [refreshLive, refreshActivity]);
+    // أوّل تحميل لسجلّ التدقيق
+    useEffect(() => { refreshActivity(); }, [refreshActivity]);
 
-    // Top lists re-fetch whenever the count or calendar window changes.
-    useEffect(() => { refreshTops(); }, [refreshTops]);
 
     // Custom-period report re-fetches whenever the calendar changes.
     useEffect(() => { loadRange(); }, [loadRange]);
 
-    // Live polling (3 ثوانٍ)
+    // 🪤 v14.89 — كان النداءان (`get_live_stats` و`get_recent_activity`)
+    // يتكرّران **كل ثلاث ثوانٍ** هنا، بينما «الرئيسية» تناديهما كل خمس:
+    // أي ألفٌ ومئتا نداءٍ في الساعة من شاشةٍ لا تعرض رقماً لحظياً أصلاً.
+    // وسجلّ تعديلات المسؤولين ليس عدّاداً حيّاً — دقيقةٌ تكفيه.
     useEffect(() => {
-        const id = setInterval(() => {
-            refreshLive();
-            refreshActivity();
-        }, 3000);
+        const id = setInterval(() => { refreshActivity(); }, 60000);
         return () => clearInterval(id);
-    }, [refreshLive, refreshActivity]);
+    }, [refreshActivity]);
 
     // Timeline updates when range changes
     useEffect(() => {
@@ -361,31 +293,21 @@ const AdminAnalytics: React.FC = () => {
                 <FirstMembersPanel />
             </div>
 
-            {/* Live Counters */}
-            <div className="border-t border-[var(--border-color)] pt-5">
-                <h2 className="text-xl font-extrabold text-[var(--text-primary)] mb-3">⚡ المؤشرات اللحظية</h2>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <LiveCounter
-                    value={stats?.active_users ?? 0}
-                    label="مستخدم نشط الآن"
-                    gradient="bg-gradient-to-br from-emerald-500 to-green-600"
-                />
-                <LiveCounter
-                    value={stats?.active_buyers ?? 0}
-                    label="مشتري متصل"
-                    gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
-                />
-                <LiveCounter
-                    value={stats?.active_sellers ?? 0}
-                    label="بائع متصل"
-                    gradient="bg-gradient-to-br from-purple-500 to-fuchsia-600"
-                />
-                <LiveCounter
-                    value={stats?.bookings_5min ?? 0}
-                    label="حجز في آخر 5 دقائق"
-                    gradient="bg-gradient-to-br from-amber-500 to-orange-600"
-                />
+            {/* 🪤 v14.89 — حُذف «⚡ المؤشرات اللحظية» من هنا: كان أربع بطاقاتٍ
+                تنادي نفس `get_live_stats(5)` التي تناديها «الرئيسية» وتعرض
+                منها حقولاً أخرى — فبطاقة «مستخدم نشط الآن» كانت مكرّرةً
+                حرفياً في شاشتين بنفس الرقم. «الآن» مكانه الرئيسية، وهذه
+                الشاشة **عن فترةٍ تختارها**. */}
+            <div
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
+                    padding: '11px 13px', borderRadius: 'var(--adm-r-sm)',
+                    background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+                }}
+            >
+                <span style={{ fontSize: '.82rem', fontWeight: 700, color: 'var(--adm-fg-2)', flex: 1, minWidth: 180 }}>
+                    الأرقام اللحظية (من على المنصّة الآن) في شاشة «الرئيسية». هذه الشاشة عن فترةٍ تختارها.
+                </span>
             </div>
 
             {/* Time Range Filter */}
@@ -396,11 +318,10 @@ const AdminAnalytics: React.FC = () => {
                         <button
                             key={r}
                             onClick={() => setRange(r)}
-                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                                range === r
-                                    ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-md'
-                                    : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-purple-300'
-                            }`}
+                            className="adm-focusable px-4 py-2 text-sm font-bold transition-all"
+                            style={range === r
+                                ? { background: 'var(--adm-fg)', color: 'var(--adm-surface)', border: '1px solid transparent', borderRadius: 'var(--adm-r-sm)' }
+                                : { background: 'var(--adm-surface)', color: 'var(--adm-fg-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
                         >
                             {TIME_RANGES[r].label}
                         </button>
@@ -491,222 +412,65 @@ const AdminAnalytics: React.FC = () => {
                 )}
             </div>
 
-            {/* Top-lists controls — owner-chosen count + optional calendar window */}
-            <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🏆 أعلى القوائم</h2>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[var(--text-secondary)]">كم عدد تريد؟</span>
-                        <input type="number" min={1} max={500} value={topLimit} onChange={(e) => setTopLimit(Math.min(500, Math.max(1, Number(e.target.value) || 1)))} className="w-20 px-2 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-center font-bold text-[var(--text-primary)] outline-none" />
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                    {([['all', 'كل الفترات'], ['day', 'يوم محدّد'], ['range', 'من–إلى']] as const).map(([m, label]) => (
-                        <button key={m} onClick={() => setTopMode(m)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${topMode === m ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow' : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)]'}`}>{label}</button>
-                    ))}
-                </div>
-                {topMode === 'day' && (
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">اليوم</label>
-                        <input type="date" value={topDay} max={isoDate(new Date())} onChange={(e) => setTopDay(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
-                    </div>
-                )}
-                {topMode === 'range' && (
-                    <div className="grid grid-cols-2 gap-3">
-                        <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">من</label><input type="date" value={topFrom} max={topTo || isoDate(new Date())} onChange={(e) => setTopFrom(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" /></div>
-                        <div><label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">إلى</label><input type="date" value={topTo} min={topFrom} max={isoDate(new Date())} onChange={(e) => setTopTo(e.target.value)} className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" /></div>
-                    </div>
-                )}
-                <div className="text-[11px] text-[var(--text-secondary)]">
-                    {topMode === 'all' ? 'يشمل كل الفترات' : topMode === 'day' ? (topDay ? `ليوم ${topDay}` : 'اختر يوماً') : (topFrom && topTo ? `من ${topFrom} إلى ${topTo}` : 'اختر بداية ونهاية')}
-                    {` · يعرض ${topLimit} لكل قائمة`}
-                </div>
-            </div>
+            {/* 🪤 v14.89 — حُذفت من هنا قائمتا «🏆 أعلى البائعين» و«💎 أعلى
+                المشترين» ومنتقي فترتهما. السبب: لوحة «الأعلى مبيعاً»
+                (TopActivityPanel) أعلى هذه الصفحة تجيب السؤال نفسه — بدالّةٍ
+                أخرى (`admin_top_activity` تعدّ من جدول الحجوزات حيّاً) وبفترةٍ
+                وعددٍ حرّين. أي أن الصفحة كانت تعرض **ترتيبين للتجار قد
+                يتناقضان** على شاشةٍ واحدة. وتصدير CSV انتقل إلى تلك اللوحة
+                فلم تُفقد قدرة. */}
 
-            {/* Two columns: Top Sellers + Top Buyers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                    <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                        🏆 أعلى البائعين
-                    </h3>
-                    {topSellers.length === 0 ? (
-                        <div className="text-sm text-[var(--gray-400)] text-center py-6">لا بيانات</div>
-                    ) : (
-                        <div className="space-y-2">
-                            {topSellers.map((s, i) => (
-                                <div
-                                    key={s.id}
-                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--body-bg)]"
-                                >
-                                    <div
-                                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                                            i === 0
-                                                ? 'bg-yellow-100 text-yellow-700'
-                                                : i === 1
-                                                ? 'bg-[var(--gray-100)] text-[var(--text-primary)]'
-                                                : i === 2
-                                                ? 'bg-orange-100 text-orange-700'
-                                                : 'bg-[var(--body-bg)] text-[var(--text-secondary)]'
-                                        }`}
-                                    >
-                                        {i + 1}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-sm truncate">{s.shop ?? s.name}</div>
-                                        <div className="text-xs text-[var(--text-secondary)]">{s.deals_count} عرض</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-sm font-bold text-emerald-600">
-                                            {s.bookings_count}
-                                        </div>
-                                        <div className="text-[10px] text-[var(--text-secondary)]">حجز</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+            {/* 🪤 v14.89 — كان هنا «⚡ النشاط اللحظي» نفسه المعروض في
+                «الرئيسية» (نفس `get_recent_activity`، ٣٠ صفّاً بدل ٢٠)
+                ومعه مفتاحٌ يحوّله إلى سجلّ تعديلات الأدمن. النشاط العام
+                يبقى في مكانٍ واحد (الرئيسية)، وما يبقى هنا هو **سجلّ
+                التدقيق**: ما عدّله المسؤولون — وهو سؤالٌ آخر تماماً. */}
+            <AdminAuditLog activity={activity} />
 
-                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                    <h3 className="font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                        💎 أعلى المشترين
-                    </h3>
-                    {topBuyers.length === 0 ? (
-                        <div className="text-sm text-[var(--gray-400)] text-center py-6">لا بيانات</div>
-                    ) : (
-                        <div className="space-y-2">
-                            {topBuyers.map((b, i) => (
-                                <div
-                                    key={b.id}
-                                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--body-bg)]"
-                                >
-                                    <div
-                                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                                            i === 0
-                                                ? 'bg-yellow-100 text-yellow-700'
-                                                : i === 1
-                                                ? 'bg-[var(--gray-100)] text-[var(--text-primary)]'
-                                                : i === 2
-                                                ? 'bg-orange-100 text-orange-700'
-                                                : 'bg-[var(--body-bg)] text-[var(--text-secondary)]'
-                                        }`}
-                                    >
-                                        {i + 1}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-sm truncate">{b.name}</div>
-                                        <div className="text-xs text-[var(--text-secondary)]" dir="ltr">{b.phone}</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-sm font-bold text-blue-600">
-                                            {b.bookings_count}
-                                        </div>
-                                        <div className="text-[10px] text-[var(--text-secondary)]">حجز</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Activity Feed + Audit Log toggle */}
-            <ActivityFeed
-                activity={activity}
-                auditOnly={auditOnly}
-                onToggleAuditOnly={() => setAuditOnly((v) => !v)}
-            />
-
-            {/* Top performers — exportable */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 -mt-2">
-                <ExportButton
-                    rows={topSellers.map((s: any, i: number) => ({ ...s, rank: i + 1 }))}
-                    columns={[
-                        { header: 'الترتيب',       accessor: (r: any) => r.rank },
-                        { header: 'اسم المتجر',    accessor: (r: any) => r.shop ?? r.name ?? '' },
-                        { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
-                        { header: 'عدد العروض',    accessor: (r: any) => r.deals_count ?? 0 },
-                        { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
-                        { header: 'المعرّف',        accessor: (r: any) => r.id },
-                    ]}
-                    filenameStem="taki-top-sellers"
-                    label="🏆 تصدير أعلى البائعين"
-                    accent="purple"
-                    tooltip={`تنزيل القائمة الظاهرة (${topSellers.length}) كـCSV — حسب العدد والفترة المختارة`}
-                />
-                <ExportButton
-                    rows={topBuyers.map((b: any, i: number) => ({ ...b, rank: i + 1 }))}
-                    columns={[
-                        { header: 'الترتيب',       accessor: (r: any) => r.rank },
-                        { header: 'الاسم',         accessor: (r: any) => r.name ?? '' },
-                        { header: 'الجوال',        accessor: (r: any) => r.phone ?? '' },
-                        { header: 'عدد الحجوزات',  accessor: (r: any) => r.bookings_count ?? 0 },
-                        { header: 'المعرّف',        accessor: (r: any) => r.id },
-                    ]}
-                    filenameStem="taki-top-buyers"
-                    label="💎 تصدير أعلى المشترين"
-                    accent="blue"
-                    tooltip={`تنزيل القائمة الظاهرة (${topBuyers.length}) كـCSV — حسب العدد والفترة المختارة`}
-                />
-            </div>
         </div>
     );
 };
 
 // ============================================================
-// ActivityFeed — shows all activity OR admin-only "audit log"
+// AdminAuditLog — ما عدّله المسؤولون وحدهم (v14.89)
+// النشاط العام للمستخدمين معروضٌ في «الرئيسية»، فلا يُكرَّر هنا.
 // ============================================================
-const ActivityFeed = memo<{
+const AdminAuditLog = memo<{
     activity: ActivityRow[];
-    auditOnly: boolean;
-    onToggleAuditOnly: () => void;
-}>(({ activity, auditOnly, onToggleAuditOnly }) => {
+}>(({ activity }) => {
     const filtered = useMemo(
-        () => (auditOnly ? activity.filter((r) => isAdminAction(r.action)) : activity),
-        [activity, auditOnly],
+        () => activity.filter((r) => isAdminAction(r.action)),
+        [activity],
     );
     return (
         <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <h3 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
-                    {auditOnly ? '👑 سجل تعديلات الأدمن' : '⚡ النشاط اللحظي'}
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        auditOnly ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
-                        {auditOnly ? `${filtered.length} عملية` : 'Live'}
+                    👑 سجلّ تعديلات المسؤولين
+                    <span
+                        style={{
+                            fontSize: '.7rem', fontWeight: 800, padding: '2px 9px', borderRadius: 999,
+                            background: 'var(--adm-info-bg)', color: 'var(--adm-info-fg)',
+                        }}
+                    >
+                        {filtered.length} عملية
                     </span>
                 </h3>
                 <div className="flex items-center gap-2">
-                    <Tooltip text={auditOnly ? 'اعرض كل نشاطات المستخدمين' : 'اعرض فقط ما عدّله الأدمن (اشتراكات، حسابات، إعدادات)'}>
-                        <button
-                            onClick={onToggleAuditOnly}
-                            className={`px-3 h-9 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                                auditOnly
-                                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow'
-                                    : 'bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)]'
-                            }`}
-                        >
-                            {auditOnly ? '✓ أدمن فقط' : '👑 تعديلات الأدمن فقط'}
-                        </button>
-                    </Tooltip>
                     <ExportButton
                         rows={filtered}
                         columns={ACTIVITY_CSV_COLUMNS}
-                        filenameStem={auditOnly ? 'taki-admin-audit' : 'taki-activity'}
+                        filenameStem="taki-admin-audit"
                         label="📥 CSV"
                         accent="emerald"
-                        tooltip={auditOnly
-                            ? 'تنزيل سجل تعديلات الأدمن كملف CSV — مفيد للأرشيف والمراجعات'
-                            : 'تنزيل سجل النشاط الكامل كملف CSV'}
+                        tooltip="تنزيل سجلّ تعديلات المسؤولين كملف CSV — للأرشيف والمراجعات"
                     />
                 </div>
             </div>
             <div className="divide-y divide-[var(--border-color)] max-h-96 overflow-y-auto">
                 {filtered.length === 0 ? (
                     <div className="p-8 text-center text-[var(--gray-400)] text-sm font-bold">
-                        {auditOnly
-                            ? 'لا توجد تعديلات أدمن في الفترة الحالية'
-                            : 'في انتظار النشاطات...'}
+                        لا تعديلات من المسؤولين في هذه الفترة.
                     </div>
                 ) : (
                     filtered.map((row) => (
@@ -740,7 +504,7 @@ const ActivityFeed = memo<{
         </div>
     );
 });
-ActivityFeed.displayName = 'ActivityFeed';
+AdminAuditLog.displayName = 'AdminAuditLog';
 
 function actionIcon(a: string): string {
     const map: Record<string, string> = {

@@ -18,7 +18,6 @@
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { StoreNameRequests } from '../../components/admin/StoreNameRequests';
 import { adminService, AdminUserRow, ApplySubscriptionParams } from '../../services/adminService';
-import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { LOCATION_PACKAGES, packageForMax, effectivePrice, branchesShort, LocationPackage } from '../../data/packages';
 import { packageRepository } from '../../repositories/packageRepository';
@@ -32,6 +31,14 @@ import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
+import { SmartChip } from '../../components/admin/SmartChip';
+import { admNum, toDateInput } from '../../components/admin/ui';
+import { fieldCss, labelCss, pickCss } from '../../components/admin/sellerStyles';
+import {
+    AdmSection, AdmPageHeader, AdmStat, AdmStatGrid, AdmPill,
+    AdmEmpty, AdmSkeleton, AdmButton, toneFg,
+} from '../../components/admin/ui';
+import type { Tone } from '../../components/admin/ui';
 import PackagePricingPanel from '../../components/admin/PackagePricingPanel';
 import SponsorLayoutPanel from '../../components/admin/SponsorLayoutPanel';
 import { CsvColumn } from '../../utils/csvExport';
@@ -53,704 +60,18 @@ const SELLER_CSV_COLUMNS: CsvColumn<AdminUserRow>[] = [
 
 type FilterTab = 'all' | 'premium' | 'trial' | 'free' | 'suspended';
 
-// ============================================================
-// Subscription Control Modal — أهم مكوّن في اللوحة
-// ============================================================
-const SubscriptionModal = memo<{
-    seller: AdminUserRow;
-    onClose: () => void;
-    onSaved: () => void;
-}>(({ seller, onClose, onSaved }) => {
-    const { customAlert, startImpersonating, hasPermission, isSuperAdmin } = useApp();
-    // v11.19 — both admin powers (impersonate + promote) are
-    // permission-gated. The super admin gets both automatically.
-    const canImpersonate = hasPermission('action_impersonate');
-    const canPromote = isSuperAdmin && seller.user_type !== 'admin';
-    const canManageSponsors = hasPermission('action_manage_sponsors');
-    // v14.38 — الأرقام المالية والتعديل على الحسابات صارا محروسين فعلاً.
-    const canSeeFinance = hasPermission('action_view_finance');
-    const canManageUsers = hasPermission('action_manage_users');
-    // Loading flag for the "act as seller" button — see AdminBuyers comment.
-    const [opening, setOpening] = useState(false);
-    const [promoting, setPromoting] = useState(false);
-    const handleOpenAsUser = useCallback(async () => {
-        if (opening) return;
-        setOpening(true);
-        try { await startImpersonating(seller.id); }
-        finally { setOpening(false); }
-    }, [opening, startImpersonating, seller.id]);
+/**
+ * سقف ما تحمّله هذه الشاشة دفعةً واحدة. مذكورٌ هنا مرّةً واحدة لأن كل بطاقة
+ * رقمٍ في الأعلى تُعلنه في `scope` — الرقم المحسوب في المتصفّح لا يصف المنصّة.
+ */
+const LOADED_CAP = 200;
 
-    const handlePromote = useCallback(async () => {
-        if (promoting || !canPromote) return;
-        const { default: openPromoteDialog } = await import('../../components/admin/PromoteToAdminDialog');
-        const perms = await openPromoteDialog(seller.shop || seller.name || seller.email || seller.id);
-        if (!perms) return;
-        setPromoting(true);
-        try {
-            const { supabase } = await import('../../services/supabaseClient');
-            const { error } = await supabase.rpc('admin_promote_user', { target_id: seller.id, perms });
-            if (error) throw error;
-            await customAlert('✅ تمت الترقية لمسؤول. الصلاحيات نشطة فوراً.');
-            onSaved();
-            onClose();
-        } catch (e: any) {
-            await customAlert('❌ ' + (e?.message || 'فشلت الترقية'));
-        } finally {
-            setPromoting(false);
-        }
-    }, [promoting, canPromote, seller.id, seller.name, seller.shop, seller.email, customAlert, onSaved, onClose]);
-    const today = new Date();
-    // Defensive: subscription_expires_at can be a malformed string from
-    // legacy rows. Fall back to "today + 30 days" instead of letting an
-    // Invalid Date crash the modal (was a white-screen culprit).
-    const defaultExpiry = (() => {
-        if (seller.subscription_expires_at) {
-            const d = new Date(seller.subscription_expires_at);
-            if (!isNaN(d.getTime())) return d;
-        }
-        return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    })();
+// 🪤 v14.89 — نافذة اشتراك التاجر استُخرجت إلى
+//    `src/components/admin/SellerSubscriptionModal.tsx` (٧٣٥ سطراً):
+//    هذا الملفّ كان ٢٢٢٨ سطراً، فوق حدّ ما يُقرأ في جلسة واحدة.
+import { SubscriptionModal } from '../../components/admin/SellerSubscriptionModal';
 
-    const [plan, setPlan] = useState<'free' | 'trial' | 'premium'>(
-        (seller.subscription_plan as any) ?? 'premium'
-    );
-    const [startedAt, setStartedAt] = useState(toDateInput(today));
-    const [expiresAt, setExpiresAt] = useState(toDateInput(defaultExpiry));
-    const [discount, setDiscount] = useState(Number(seller.discount_percentage) || 0);
-    const [amount, setAmount] = useState(Number(seller.subscription_amount) || 199);
-    const [notes, setNotes] = useState('');
-    const [sendNotif, setSendNotif] = useState(true);
-    const [saving, setSaving] = useState(false);
-    // Location package (1/3/6/10). max_branches isn't on AdminUserRow, so we
-    // pull the store's current value once and default the picker to it.
-    const [maxBranches, setMaxBranches] = useState<number>(3);
-    useEffect(() => {
-        let alive = true;
-        subscriptionRepository.getStoreSubscription(seller.id)
-            .then(s => { if (alive && s?.maxBranches) setMaxBranches(s.maxBranches); })
-            .catch(() => {});
-        return () => { alive = false; };
-    }, [seller.id]);
-    // v11.37 — the location-package grid reads the LIVE catalogue (the same one
-    // the owner edits in "💎 باقات المواقع والأسعار"), not the static defaults,
-    // so every package the owner adds/edits (incl. 7, 8, …) shows up here too.
-    const [pkgCatalog, setPkgCatalog] = useState<LocationPackage[]>(LOCATION_PACKAGES);
-    useEffect(() => {
-        let alive = true;
-        packageRepository.get()
-            .then(list => { if (alive && list.length) setPkgCatalog(list); })
-            .catch(() => {});
-        return () => { alive = false; };
-    }, []);
-    const activePkgs = pkgCatalog.filter(p => p.active);
-    const currentPkg = pkgCatalog.find(p => p.max === maxBranches) || packageForMax(maxBranches);
 
-    // ── v11.23 Sponsor (راعٍ رسمي) state ──────────────────────────────
-    const [sponsorOn, setSponsorOn] = useState(false);
-    const [spLabel, setSpLabel] = useState<'ad' | 'sponsor' | 'none' | 'star'>('ad'); // v11.25 badge text
-    const [spCategory, setSpCategory] = useState('');   // '' = كل التصنيفات
-    const [spRegion, setSpRegion] = useState('');        // '' = كل المناطق
-    const [spCity, setSpCity] = useState('');            // '' = كل المدن
-    const [spRadius, setSpRadius] = useState('');        // كم (اختياري) — يتطلب موقع المتجر
-    const [spPriority, setSpPriority] = useState(0);
-    const [spStarts, setSpStarts] = useState(toDateInput(new Date()));
-    const [spExpires, setSpExpires] = useState(toDateInput(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
-    const [savingSponsor, setSavingSponsor] = useState(false);
-    // Load current sponsor state for this seller so the toggle reflects reality.
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            const all = await sponsorRepository.listAll();
-            if (!alive) return;
-            const mine = all.find(s => s.storeId === seller.id);
-            if (mine) {
-                setSponsorOn(!!mine.isActive);
-                setSpCategory(mine.targetCategory || '');
-                setSpRegion(mine.targetRegion || '');
-                setSpCity(mine.targetCity || '');
-                setSpRadius(mine.targetRadiusKm != null ? String(mine.targetRadiusKm) : '');
-                setSpLabel((mine.labelType as any) || 'ad');
-                setSpPriority(mine.priority || 0);
-                if (mine.startsAt) {
-                    const d = new Date(mine.startsAt);
-                    if (!isNaN(d.getTime())) setSpStarts(toDateInput(d));
-                }
-                if (mine.expiresAt) {
-                    const d = new Date(mine.expiresAt);
-                    if (!isNaN(d.getTime())) setSpExpires(toDateInput(d));
-                }
-            }
-        })();
-        return () => { alive = false; };
-    }, [seller.id]);
-
-    const handleSaveSponsor = async () => {
-        if (savingSponsor) return;
-        const startMs = spStarts ? new Date(spStarts).getTime() : null;
-        const expMs = spExpires ? new Date(spExpires).getTime() : null;
-        if (sponsorOn && startMs !== null && Number.isNaN(startMs)) {
-            await customAlert('❌ تاريخ ابتداء غير صالح.');
-            return;
-        }
-        if (sponsorOn && expMs !== null && Number.isNaN(expMs)) {
-            await customAlert('❌ تاريخ انتهاء غير صالح.');
-            return;
-        }
-        if (sponsorOn && startMs !== null && expMs !== null && expMs <= startMs) {
-            await customAlert('❌ تاريخ الانتهاء يجب أن يكون بعد تاريخ الابتداء.');
-            return;
-        }
-        setSavingSponsor(true);
-        let res: { success: boolean; error?: string } = { success: false };
-        try {
-            if (sponsorOn) {
-                res = await sponsorRepository.set({
-                    storeId: seller.id,
-                    isActive: true,
-                    targetCategory: spCategory || null,
-                    targetRegion: spRegion || null,
-                    targetCity: spCity || null,
-                    targetRadiusKm: spRadius ? Number(spRadius) || null : null,
-                    priority: Number(spPriority) || 0,
-                    startsAt: spStarts ? new Date(spStarts).toISOString() : null,
-                    expiresAt: spExpires ? new Date(spExpires).toISOString() : null,
-                    labelType: spLabel,
-                });
-            } else {
-                res = await sponsorRepository.remove(seller.id);
-            }
-        } catch (e: any) {
-            res = { success: false, error: e?.message || 'فشل الحفظ' };
-        } finally {
-            setSavingSponsor(false);
-        }
-        if (res.success) {
-            await customAlert(sponsorOn ? '🌟 تم تفعيل الراعي الرسمي — تظهر منتجاته كإعلان ذهبي.' : '✅ تم إلغاء الرعاية.');
-            onSaved();
-        } else {
-            await customAlert('❌ ' + (res.error ?? 'فشل حفظ الرعاية'));
-        }
-    };
-
-    // أزرار سريعة لتغيير المدة
-    const quickDurations = [
-        { label: 'أسبوع', days: 7 },
-        { label: 'شهر', days: 30 },
-        { label: '3 أشهر', days: 90 },
-        { label: '6 أشهر', days: 180 },
-        { label: 'سنة', days: 365 },
-    ];
-
-    const setQuickDuration = (days: number) => {
-        const start = new Date(startedAt);
-        const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
-        setExpiresAt(toDateInput(end));
-    };
-
-    const finalAmount = useMemo(() => {
-        return Math.max(0, amount - (amount * discount) / 100);
-    }, [amount, discount]);
-
-    const handleApply = async () => {
-        if (saving) return;
-        // Validate dates up front — a bad value must show a clear error, never a
-        // silent hang on the button (v11.22).
-        const startMs = new Date(startedAt).getTime();
-        const expMs = expiresAt ? new Date(expiresAt).getTime() : null;
-        if (Number.isNaN(startMs) || (expMs !== null && Number.isNaN(expMs))) {
-            await customAlert('❌ تاريخ غير صالح. تحقّق من تاريخ البداية والنهاية.');
-            return;
-        }
-        if (expMs !== null && expMs <= startMs) {
-            await customAlert('❌ تاريخ النهاية يجب أن يكون بعد تاريخ البداية.');
-            return;
-        }
-        setSaving(true);
-        // Resolve outside the try so the alert/navigation runs AFTER the button
-        // is re-enabled in finally — no eternal spinner on any path (v11.22).
-        let res: { success: boolean; error?: string } = { success: false };
-        try {
-            const params: ApplySubscriptionParams = {
-                storeId: seller.id,
-                plan,
-                startedAt: new Date(startedAt),
-                expiresAt: expiresAt ? new Date(expiresAt) : null,
-                discount,
-                amount,
-                notes: notes || undefined,
-                sendNotification: sendNotif,
-                maxBranches,
-                // v13.16 — نربط المتجر بالباقة نفسها (لا بعدد مواقعها فقط)، فتصله
-                // تعديلات عدد المواقع لاحقاً عبر admin_sync_package_limits.
-                packageId: pkgCatalog.find(p => p.max === maxBranches)?.id,
-            };
-            res = await adminService.applySubscription(params);
-        } catch (e: any) {
-            res = { success: false, error: e?.message || 'فشل التطبيق' };
-        } finally {
-            setSaving(false);
-        }
-        if (res.success) {
-            await customAlert(`✅ تم تطبيق الاشتراك على متجر "${seller.shop ?? seller.name}"`);
-            onSaved();
-            onClose();
-        } else {
-            await customAlert('❌ ' + (res.error ?? 'فشل التطبيق'));
-        }
-    };
-
-    // Esc closes the modal. The subscription form is intentionally
-    // close-on-Esc without an unsaved-changes prompt — applying the
-    // subscription is an explicit action (the "تطبيق" button), so
-    // Esc is just "cancel" and that matches the seller's mental model.
-    useEscClose(true, onClose);
-
-    return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-[var(--card-bg)] rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
-                {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-purple-500 via-fuchsia-600 to-pink-600 text-white p-5 rounded-t-3xl flex items-center justify-between z-10">
-                    <div className="min-w-0">
-                        <div className="text-xs opacity-80 mb-1">إدارة الاشتراك</div>
-                        <div className="text-xl font-extrabold truncate">{seller.shop ?? seller.name}</div>
-                        <div className="text-xs opacity-80 mt-0.5 flex items-center gap-1.5" dir="ltr">
-                            <span>{seller.phone ?? '—'}</span>
-                            {seller.phone && (
-                                <CopyButton value={seller.phone} label="الجوال" size="xs" />
-                            )}
-                        </div>
-                    </div>
-                    <Tooltip text="إغلاق (Esc)">
-                        <button
-                            onClick={onClose}
-                            aria-label="إغلاق"
-                            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl flex-shrink-0"
-                        >
-                            ✕
-                        </button>
-                    </Tooltip>
-                </div>
-
-                <div className="p-5 space-y-5">
-                    {/* Act-as-user action — full session swap. After clicking,
-                        the admin's Supabase session becomes this seller's:
-                        every deal, message, deletion is attributed to them.
-                        v11.19 — gated on `action_impersonate` permission. */}
-                    {(canImpersonate || canPromote) && (
-                        <div className="space-y-2">
-                            {canImpersonate && (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={handleOpenAsUser}
-                                        disabled={opening}
-                                        className="w-full p-3 bg-gradient-to-r from-rose-500 via-red-500 to-red-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait"
-                                    >
-                                        {opening ? (
-                                            <>
-                                                <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                                                <span>جاري فَتح الجَلسة...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span className="text-base">🔓</span>
-                                                <span>دخول كَهذا التاجِر (جَلسة كاملة)</span>
-                                            </>
-                                        )}
-                                    </button>
-                                    <div className="text-[10px] text-[var(--text-secondary)] text-center">
-                                        كأنّك سَجَّلت دخول بِحسابه — تَنشر عُروض، تَحذف، تُراسِل، تُعدِّل بَيانات المتجر. كل إجراء مُسجَّل في سِجل التَّدقيق.
-                                    </div>
-                                </>
-                            )}
-                            {canPromote && (
-                                <button
-                                    type="button"
-                                    onClick={handlePromote}
-                                    disabled={promoting}
-                                    className="w-full p-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold rounded-2xl text-sm hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                                >
-                                    {promoting ? (
-                                        <>
-                                            <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                                            <span>جاري الترقية...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="text-base">👑</span>
-                                            <span>ترقية لمسؤول (مع اختيار الصلاحيات)</span>
-                                        </>
-                                    )}
-                                </button>
-                            )}
-                        </div>
-                    )}
-
-                    {/* اختيار الباقة */}
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">
-                            🎯 الباقة
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {([
-                                { value: 'free', label: 'مجانية', icon: '🆓', color: 'gray' },
-                                { value: 'trial', label: 'تجريبية', icon: '🎁', color: 'amber' },
-                                { value: 'premium', label: 'مميزة', icon: '⭐', color: 'emerald' },
-                            ] as const).map((p) => (
-                                <button
-                                    key={p.value}
-                                    onClick={() => setPlan(p.value)}
-                                    className={`p-3 rounded-xl border-2 transition-all font-bold text-sm ${
-                                        plan === p.value
-                                            ? p.color === 'emerald'
-                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                                                : p.color === 'amber'
-                                                ? 'bg-amber-50 border-amber-500 text-amber-700'
-                                                : 'bg-[var(--gray-100)] border-[var(--gray-400)] text-[var(--text-primary)]'
-                                            : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                    }`}
-                                >
-                                    <div className="text-2xl mb-1">{p.icon}</div>
-                                    {p.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* باقة المواقع — كم لوكيشن مسموح للتاجر */}
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">
-                            📍 باقة المواقع (عدد اللوكيشنات المسموحة)
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {activePkgs.map((pkg) => {
-                                const selected = maxBranches === pkg.max;
-                                const eff = effectivePrice(pkg);
-                                return (
-                                    <button
-                                        key={pkg.id}
-                                        onClick={() => setMaxBranches(pkg.max)}
-                                        className={`p-3 rounded-xl border-2 transition-all text-sm text-right ${
-                                            selected
-                                                ? 'bg-purple-50 border-purple-500 text-purple-700'
-                                                : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                        }`}
-                                    >
-                                        <div className="font-extrabold">{pkg.ar}</div>
-                                        <div className="text-xs opacity-80 mt-0.5">{pkg.descAr}</div>
-                                        <div className="text-[11px] font-bold mt-1" style={{ color: '#b45309' }}>
-                                            {eff.toLocaleString('ar-SA')} ر.س/شهر
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <div className="text-[11px] text-[var(--text-secondary)] mt-2">
-                            الباقة الحالية: <span className="font-bold">{currentPkg.ar}</span> — {currentPkg.descAr}
-                        </div>
-                    </div>
-
-                    {/* تاريخ البداية والنهاية */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
-                                📅 تاريخ البداية
-                            </label>
-                            <input
-                                type="date"
-                                value={startedAt}
-                                onChange={(e) => setStartedAt(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-purple-500 focus:bg-[var(--card-bg)] outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
-                                📅 تاريخ الانتهاء
-                            </label>
-                            <input
-                                type="date"
-                                value={expiresAt}
-                                onChange={(e) => setExpiresAt(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-purple-500 focus:bg-[var(--card-bg)] outline-none"
-                            />
-                        </div>
-                    </div>
-
-                    {/* أزرار سريعة للمدة */}
-                    <div>
-                        <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">⚡ مدد سريعة:</div>
-                        <div className="flex flex-wrap gap-2">
-                            {quickDurations.map((d) => (
-                                <button
-                                    key={d.days}
-                                    onClick={() => setQuickDuration(d.days)}
-                                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold transition-all"
-                                >
-                                    {d.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* المبلغ الشهري */}
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
-                            💰 المبلغ الشهري (ر.س)
-                        </label>
-                        <input
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={amount}
-                            onChange={(e) => setAmount(Number(e.target.value))}
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-purple-500 focus:bg-[var(--card-bg)] outline-none"
-                        />
-                    </div>
-
-                    {/* نسبة الخصم — slider */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-bold text-[var(--text-secondary)]">
-                                🎉 نسبة الخصم
-                            </label>
-                            <span className="text-lg font-extrabold text-purple-600 tabular-nums">
-                                {discount}%
-                            </span>
-                        </div>
-                        <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={5}
-                            value={discount}
-                            onChange={(e) => setDiscount(Number(e.target.value))}
-                            className="w-full accent-purple-600"
-                        />
-                        <div className="flex justify-between text-[10px] text-[var(--gray-400)] mt-1">
-                            <span>0%</span>
-                            <span>50%</span>
-                            <span>100% (مجاني)</span>
-                        </div>
-                    </div>
-
-                    {/* ملخّص — بصري */}
-                    <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
-                        <div className="text-xs font-bold text-purple-700 mb-2">💡 ملخّص الاشتراك</div>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                                <div className="text-xs text-[var(--text-secondary)]">السعر الأصلي</div>
-                                <div className="font-bold text-[var(--text-primary)]">
-                                    {amount.toLocaleString('ar-SA')} ر.س
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-xs text-[var(--text-secondary)]">بعد الخصم</div>
-                                <div className="text-xl font-extrabold text-emerald-600 tabular-nums">
-                                    {finalAmount.toLocaleString('ar-SA')} ر.س
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ملاحظات */}
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">
-                            📝 ملاحظات (اختياري)
-                        </label>
-                        <textarea
-                            rows={2}
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            placeholder="مثال: عميل VIP، ممنوح من إدارة المنصة..."
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-purple-500 focus:bg-[var(--card-bg)] outline-none"
-                        />
-                    </div>
-
-                    {/* إرسال إشعار */}
-                    <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                        <div>
-                            <div className="font-bold text-sm text-emerald-800">
-                                إرسال إشعار للبائع
-                            </div>
-                            <div className="text-xs text-emerald-600 mt-0.5">
-                                سيتم إخباره بالاشتراك الجديد فوراً
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setSendNotif(!sendNotif)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                sendNotif ? 'bg-emerald-500' : 'bg-[var(--gray-300)]'
-                            }`}
-                        >
-                            <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-[var(--card-bg)] transition-transform ${
-                                    sendNotif ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                            />
-                        </button>
-                    </div>
-                </div>
-
-                {/* ── v11.23 Sponsor (راعٍ رسمي) ───────────────────────────
-                    A separate, self-contained block with its own save button —
-                    sponsorship is independent of the subscription above. Gold
-                    theme to match the on-card ad styling. Gated on the
-                    action_manage_sponsors permission (v11.24). */}
-                {canManageSponsors && (
-                <div className="px-5 pb-5">
-                    <div className="rounded-2xl border-2 p-4" style={{ borderColor: '#fbbf24', background: 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(245,158,11,0.06))' }}>
-                        <div className="flex items-center justify-between mb-3">
-                            <div>
-                                <div className="font-extrabold text-sm flex items-center gap-2" style={{ color: '#b45309' }}>
-                                    <span>⭐</span> راعٍ رسمي (إعلان ذهبي)
-                                </div>
-                                <div className="text-[11px] mt-0.5" style={{ color: '#92400e' }}>
-                                    منتجاته تظهر كإعلان بإطار ذهبي بعد كل ٥ عروض، بالمداورة مع باقي الرعاة.
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setSponsorOn(v => !v)}
-                                aria-pressed={sponsorOn}
-                                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors flex-shrink-0 ${sponsorOn ? 'bg-amber-500' : 'bg-[var(--gray-300)]'}`}
-                            >
-                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${sponsorOn ? 'translate-x-6' : 'translate-x-1'}`} />
-                            </button>
-                        </div>
-
-                        {sponsorOn && (
-                            <div className="space-y-3">
-                                {/* v11.25 — badge text on the gold frame */}
-                                <div>
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">النص على الإطار الذهبي</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {([
-                                            { v: 'ad', label: '📢 إعلان' },
-                                            { v: 'sponsor', label: '⭐ راعٍ رسمي' },
-                                            { v: 'none', label: '⬜ بدون (إطار فقط)' },
-                                            { v: 'star', label: '✨ نجمة بالزاوية' },
-                                        ] as const).map(o => (
-                                            <button
-                                                key={o.v}
-                                                type="button"
-                                                onClick={() => setSpLabel(o.v)}
-                                                className={`px-2 py-2 rounded-xl text-xs font-bold border transition-all ${
-                                                    spLabel === o.v
-                                                        ? 'border-amber-500 bg-amber-500/15 text-amber-800'
-                                                        : 'border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-secondary)]'
-                                                }`}
-                                            >
-                                                {o.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="text-[10px] text-[var(--text-secondary)] mt-1">
-                                        💡 «راعٍ رسمي» يظهر دائماً قبل «إعلان» في كل الصفحات. «بدون» = إطار ذهبي بلا كلمة. «نجمة بالزاوية» = إطار ذهبي + ⭐ صغيرة في الزاوية العلوية بدون شريط نص.
-                                    </div>
-                                </div>
-                                {/* Targeting */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">التصنيف المستهدف</label>
-                                        <select value={spCategory} onChange={(e) => setSpCategory(e.target.value)}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
-                                            <option value="">كل التصنيفات</option>
-                                            {CATEGORIES.filter(c => c.id !== 'all').map(c => (
-                                                <option key={c.id} value={c.id}>{c.emoji} {c.ar}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">المنطقة المستهدفة</label>
-                                        <select value={spRegion} onChange={(e) => { setSpRegion(e.target.value); setSpCity(''); }}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
-                                            <option value="">كل المناطق</option>
-                                            {REGIONS.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">المدينة المستهدفة</label>
-                                        <select value={spCity} onChange={(e) => setSpCity(e.target.value)}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm">
-                                            <option value="">كل المدن</option>
-                                            {CITIES.filter(c => !spRegion || c.regionId === spRegion).map(c => (
-                                                <option key={c.id} value={c.id}>{c.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">نطاق كيلومتري (اختياري)</label>
-                                        <input type="tel" inputMode="numeric" value={spRadius}
-                                            onChange={(e) => setSpRadius(e.target.value.replace(/\D/g, ''))}
-                                            placeholder="مثال: 10 كم"
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
-                                    </div>
-                                </div>
-                                {/* v11.28 — explicit start + end dates, each in its own box. */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">يبدأ في</label>
-                                        <input type="date" value={spStarts} onChange={(e) => setSpStarts(e.target.value)}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" style={{ colorScheme: 'light' }} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">ينتهي في (فارغ = بلا انتهاء)</label>
-                                        <input type="date" value={spExpires} onChange={(e) => setSpExpires(e.target.value)}
-                                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" style={{ colorScheme: 'light' }} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الأولوية (الأعلى يظهر أولاً)</label>
-                                    <input type="tel" inputMode="numeric" value={String(spPriority)}
-                                        onChange={(e) => setSpPriority(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm" />
-                                </div>
-                                <div className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                                    💡 النطاق الكيلومتري يتطلب وجود موقع محدد للمتجر على الخريطة. اترك كل الحقول فارغة ليظهر الإعلان في كل مكان.
-                                </div>
-                            </div>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={handleSaveSponsor}
-                            disabled={savingSponsor}
-                            className="w-full mt-3 py-2.5 rounded-xl text-white font-extrabold text-sm shadow-md disabled:opacity-50"
-                            style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
-                        >
-                            {savingSponsor ? 'جاري الحفظ...' : (sponsorOn ? '⭐ حفظ إعدادات الراعي' : '🚫 إلغاء الرعاية')}
-                        </button>
-                    </div>
-                </div>
-                )}
-
-                {/* Footer */}
-                <div className="sticky bottom-0 p-4 bg-[var(--body-bg)] rounded-b-3xl flex gap-3 border-t border-[var(--border-color)]">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-3 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl hover:bg-[var(--gray-100)]"
-                    >
-                        إلغاء
-                    </button>
-                    <button
-                        onClick={handleApply}
-                        disabled={saving}
-                        className="flex-[2] py-3 bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white font-bold rounded-xl hover:shadow-lg disabled:opacity-50"
-                    >
-                        {saving ? 'جاري التطبيق...' : '⚡ تطبيق فوري'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-});
-SubscriptionModal.displayName = 'SubscriptionModal';
-
-function toDateInput(d: Date): string {
-    // Guard against Invalid Date (legacy rows with malformed timestamps).
-    if (!d || isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
-    return d.toISOString().split('T')[0];
-}
 
 // ============================================================
 // Seller Row
@@ -768,47 +89,48 @@ const SellerRow = memo<{
         ? Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
         : null;
 
-    const planMeta: Record<string, { label: string; color: string; icon: string }> = {
-        premium: { label: 'مميزة', color: 'bg-emerald-100 text-emerald-700', icon: '⭐' },
-        trial: { label: 'تجريبية', color: 'bg-amber-100 text-amber-700', icon: '🎁' },
-        free: { label: 'مجانية', color: 'bg-[var(--gray-100)] text-[var(--text-primary)]', icon: '🆓' },
+    const planMeta: Record<string, { label: string; tone: Tone; icon: string }> = {
+        premium: { label: 'مميزة', tone: 'ok', icon: '⭐' },
+        trial: { label: 'تجريبية', tone: 'warn', icon: '🎁' },
+        free: { label: 'مجانية', tone: 'neutral', icon: '🆓' },
     };
     const meta = planMeta[seller.subscription_plan ?? 'free'] ?? planMeta.free;
+    // نغمة الانتهاء: أحمرُ في الأسبوع الأخير، وكهرمانيّ في الشهر الأخير.
+    const expiryTone: Tone = daysLeft === null ? 'neutral' : daysLeft < 7 ? 'bad' : daysLeft < 30 ? 'warn' : 'neutral';
 
     return (
         <button
             onClick={() => onEdit(seller)}
-            className={`w-full text-right p-4 rounded-2xl border transition-all hover:shadow-md hover:-translate-y-0.5 ${
-                seller.is_suspended
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-[var(--card-bg)] border-[var(--border-color)] hover:border-purple-200'
-            }`}
+            className="adm-focusable w-full text-right p-3.5"
+            style={{
+                background: 'var(--adm-surface)',
+                border: '1px solid var(--adm-border)',
+                borderRadius: 'var(--adm-r)',
+                borderInlineStartWidth: seller.is_suspended ? 4 : 1,
+                borderInlineStartColor: seller.is_suspended ? 'var(--adm-bad-fg)' : 'var(--adm-border)',
+                cursor: 'pointer',
+            }}
         >
             <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-fuchsia-100 flex items-center justify-center text-xl font-bold text-purple-600 flex-shrink-0">
+                <div
+                    className="w-11 h-11 flex items-center justify-center text-lg font-bold flex-shrink-0"
+                    style={{ borderRadius: 'var(--adm-r-sm)', background: 'var(--adm-surface-3)', color: 'var(--adm-fg-2)' }}
+                    aria-hidden="true"
+                >
                     {seller.shop?.[0] ?? seller.name?.[0] ?? '?'}
                 </div>
                 <div className="flex-1 min-w-0 text-right">
-                    <div className="font-bold text-sm text-[var(--text-primary)] truncate flex items-center gap-2">
+                    <div className="font-bold text-sm truncate flex items-center gap-2" style={{ color: 'var(--adm-fg)' }}>
                         {seller.shop ?? seller.name}
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${meta.color}`}>
-                            {meta.icon} {meta.label}
-                        </span>
+                        <AdmPill tone={meta.tone}>{meta.icon} {meta.label}</AdmPill>
+                        {seller.is_suspended && <AdmPill tone="bad">🚫 معلّق</AdmPill>}
                     </div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5 truncate flex items-center gap-1.5" dir="ltr">
+                    <div className="text-xs mt-1 truncate flex items-center gap-1.5" dir="ltr" style={{ color: 'var(--adm-fg-2)' }}>
                         <span>{seller.phone ?? '—'}</span>
                         {seller.phone && <CopyButton value={seller.phone} label="الجوال" size="xs" />}
                     </div>
                     {expiresAt && daysLeft !== null && (
-                        <div
-                            className={`text-[10px] mt-1 font-bold ${
-                                daysLeft < 7
-                                    ? 'text-red-600'
-                                    : daysLeft < 30
-                                    ? 'text-amber-600'
-                                    : 'text-[var(--text-secondary)]'
-                            }`}
-                        >
+                        <div className="text-[10px] mt-1 font-bold" style={{ color: toneFg(expiryTone) }}>
                             {daysLeft > 0 ? `ينتهي خلال ${daysLeft} يوم` : 'منتهي'} ·{' '}
                             {expiresAt.toLocaleDateString('ar-SA-u-ca-gregory')}
                         </div>
@@ -816,14 +138,12 @@ const SellerRow = memo<{
                 </div>
                 <div className="flex-shrink-0 text-left flex items-center gap-2">
                     <div>
-                        <div className="text-base font-extrabold text-emerald-600 tabular-nums">
-                            {(seller.subscription_amount ?? 0).toLocaleString('ar-SA')}
+                        <div className="text-base font-extrabold tabular-nums" style={{ color: 'var(--adm-fg)' }}>
+                            {admNum((seller.subscription_amount ?? 0))}
                         </div>
-                        <div className="text-[10px] text-[var(--text-secondary)] font-medium">ر.س/شهر</div>
+                        <div className="text-[10px] font-medium" style={{ color: 'var(--adm-fg-3)' }}>ر.س/شهر</div>
                         {(seller.discount_percentage ?? 0) > 0 && (
-                            <div className="text-[10px] mt-0.5 bg-orange-100 text-orange-700 rounded px-1.5 py-0.5 font-bold">
-                                خصم {seller.discount_percentage}%
-                            </div>
+                            <div className="mt-1"><AdmPill tone="warn">خصم {seller.discount_percentage}%</AdmPill></div>
                         )}
                     </div>
                     <PinButton pinned={pinned} onToggle={() => onTogglePin(seller.id)} />
@@ -833,35 +153,6 @@ const SellerRow = memo<{
     );
 });
 SellerRow.displayName = 'SellerRow';
-
-// ============================================================
-// Smart filter chip — second-tier filter (composes with the plan tabs)
-// ============================================================
-const SellerSmartChip: React.FC<{
-    active: boolean;
-    onClick: () => void;
-    icon: string;
-    label: string;
-    count?: number;
-}> = ({ active, onClick, icon, label, count }) => (
-    <button
-        onClick={onClick}
-        className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-            active
-                ? 'bg-purple-100 border border-purple-400 text-purple-800 shadow-sm'
-                : 'bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-purple-300'
-        }`}
-    >
-        <span>{icon}</span>
-        <span>{label}</span>
-        {count !== undefined && count > 0 && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full tabular-nums ${
-                active ? 'bg-purple-200' : 'bg-[var(--gray-100)]'
-            }`}>{count}</span>
-        )}
-    </button>
-);
-SellerSmartChip.displayName = 'SellerSmartChip';
 
 // ============================================================
 // Global Subscription Mode — platform-wide controls.
@@ -961,8 +252,8 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             });
             if (!r.success) return '\n⚠️ تعذّر إرسال التبليغ للتجار: ' + (r.error ?? '');
             const parts: string[] = [];
-            if (notifInapp) parts.push(`إشعار داخل الموقع لـ${r.notified.toLocaleString('ar-SA')}`);
-            if (notifEmail) parts.push(`بريد إلكتروني لـ${r.emailed.toLocaleString('ar-SA')}`);
+            if (notifInapp) parts.push(`إشعار داخل الموقع لـ${admNum(r.notified)}`);
+            if (notifEmail) parts.push(`بريد إلكتروني لـ${admNum(r.emailed)}`);
             return parts.length ? `\n📣 تم التبليغ: ${parts.join(' + ')}.` : '';
         } catch (e: any) {
             return '\n⚠️ تعذّر إرسال التبليغ للتجار: ' + (e?.message ?? '');
@@ -1017,7 +308,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• تحويل كل البائعين النشطين إلى «${selPkg?.ar ?? 'الباقة الافتراضية'}» بمبلغ ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر بلا خصم\n` +
+            `• تحويل كل البائعين النشطين إلى «${selPkg?.ar ?? 'الباقة الافتراضية'}» بمبلغ ${admNum(globalAmount)} ر.س/شهر بلا خصم\n` +
             '• إلغاء أي خصومات أو فترات مجانية حالية\n\n' +
             'متابعة؟'
         );
@@ -1048,13 +339,13 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         }
         const announced = await announceModeChange(
             '💳 أصبح الاشتراك مطلوباً لنشر العروض',
-            `تم تفعيل الاشتراك الإلزامي على المنصة: ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر` +
+            `تم تفعيل الاشتراك الإلزامي على المنصة: ${admNum(globalAmount)} ر.س/شهر` +
             (selPkg ? ` («${selPkg.ar}» — ${branchesShort(selPkg.max, true)})` : '') +
             '. فعّل اشتراكك من لوحة التاجر → الاشتراك.'
         );
         await customAlert(
             (r.failed === 0
-                ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
+                ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${admNum(globalAmount)} ر.س/شهر.`
                 : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
@@ -1065,7 +356,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
             `• كل تاجر يسجّل حساب جديد من الآن يحصل على ${trialDays} يوم تجريبي مجاناً\n` +
-            `• بعد انتهاء التجربة → اشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n` +
+            `• بعد انتهاء التجربة → اشتراك ${admNum(globalAmount)} ر.س/شهر\n` +
             '• التجار الحاليون لن يتأثروا (يبقون على باقتهم الحالية)\n\n' +
             'متابعة؟'
         );
@@ -1093,7 +384,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             setBusyMode(null);
         }
         await customAlert(
-            `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${trialDays} يوم تجربة، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
+            `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${trialDays} يوم تجربة، ثم ${admNum(globalAmount)} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
         );
         onApplied();
     };
@@ -1104,7 +395,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
             `• منح كل التجار (الحاليين والجدد) ${trialDays} يوم تجربة مجانية تبدأ الآن\n` +
-            `• بعد انتهاء التجربة → اشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر\n\n` +
+            `• بعد انتهاء التجربة → اشتراك ${admNum(globalAmount)} ر.س/شهر\n\n` +
             'متابعة؟'
         );
         if (!ok) return;
@@ -1138,142 +429,147 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         }
         const announced = await announceModeChange(
             '🎁 حصل متجرك على فترة تجربة مجانية',
-            `منحناك ${trialDays} يوم تجربة مجانية تبدأ الآن — انشر عروضك بلا رسوم، وبعد انتهائها يصبح الاشتراك ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.`
+            `منحناك ${trialDays} يوم تجربة مجانية تبدأ الآن — انشر عروضك بلا رسوم، وبعد انتهائها يصبح الاشتراك ${admNum(globalAmount)} ر.س/شهر.`
         );
         await customAlert(
             (r.failed === 0
-                ? `🎉 تم منح ${r.ok} متجراً ${trialDays} يوم تجربة مجانية، ثم ${globalAmount.toLocaleString('ar-SA')} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
+                ? `🎉 تم منح ${r.ok} متجراً ${trialDays} يوم تجربة مجانية، ثم ${admNum(globalAmount)} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
                 : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
     };
 
     return (
-        <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-                <div className="text-2xl">💼</div>
-                <div className="flex-1">
-                    <div className="font-bold text-base text-emerald-900">وضع الاشتراك العام للموقع</div>
-                    <div className="text-xs text-emerald-700 mt-0.5">
-                        {loaded
-                            ? gatewayEnabled
-                                ? '🟢 بوابة الدفع مُفعّلة — التجار يحتاجون اشتراك'
-                                : '🟡 بوابة الدفع مُعطّلة — التطبيق مجاني للجميع'
-                            : 'جاري التحميل...'}
-                    </div>
-                </div>
+        <AdmSection
+            icon="💼"
+            title="وضع الاشتراك العام للموقع"
+            desc="يضبط الباقة الافتراضية للتجار الجدد، ويطبّق وضعاً واحداً على كل المتاجر النشطة دفعةً واحدة. للاستثناء الفردي (إعفاء متجر، خصم مؤقّت) افتح بطاقة المتجر نفسه أو «التحكّم الجماعي» بالأسفل."
+            collapsible
+            defaultOpen={false}
+        >
+            {/* 🪤 v14.89 — مفتاح بوّابة الدفع إعدادُ منصّةٍ واحد، ومكانُ ضبطه شاشةٌ
+                أخرى. هنا يُقرأ للعرض فقط بلا أي زرّ، فلا يصير لهذا المفتاح مكانان
+                يُقلَب منهما ويختلفان. */}
+            <div
+                className="flex items-center gap-2 flex-wrap mb-4 text-[.8rem] font-bold"
+                style={{
+                    padding: '9px 12px', borderRadius: 'var(--adm-r-sm)',
+                    background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+                    color: 'var(--adm-fg-2)',
+                }}
+            >
+                <span>بوّابة الدفع:</span>
+                {loaded
+                    ? <AdmPill tone={gatewayEnabled ? 'ok' : 'warn'}>{gatewayEnabled ? 'مفعّلة' : 'مطفأة'}</AdmPill>
+                    : <span style={{ color: 'var(--adm-fg-3)' }}>جارٍ القراءة…</span>}
+                <span style={{ color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                    — مفتاحها المباشر في «البانرات والحملات». وأزرار الوضع أدناه تغيّرها
+                    ضمن تغيير الوضع كلّه (فـ«مجاني للجميع» يطفئها و«إلزامي فوراً» يفعّلها).
+                </span>
             </div>
 
             {/* v12.35 — unified default package picker (one price source: الباقات) */}
-            <div className="bg-[var(--card-bg)] rounded-xl p-3 mb-3 border border-emerald-100">
-                <div className="text-xs font-bold text-[var(--text-secondary)] mb-1.5">
+            <div
+                className="p-3 mb-3"
+                style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
+            >
+                <div className="text-xs font-bold mb-1.5" style={{ color: 'var(--adm-fg-2)' }}>
                     💎 الباقة الافتراضية للاشتراك (تُطبَّق على التجار الجدد وأزرار الوضع)
                 </div>
                 <select
                     value={selPkg?.id ?? ''}
                     onChange={(e) => changePackage(Number(e.target.value))}
                     disabled={!loaded || activePkgs.length === 0}
-                    className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm font-bold text-[var(--text-primary)] focus:border-emerald-500 outline-none"
+                    aria-label="الباقة الافتراضية للاشتراك"
+                    className="adm-focusable"
+                    style={{ ...fieldCss, background: 'var(--adm-surface)', fontWeight: 700 }}
                 >
                     {activePkgs.map((p) => (
                         <option key={p.id} value={p.id}>
-                            {p.ar} — {branchesShort(p.max, true)} — {effectivePrice(p).toLocaleString('ar-SA')} ر.س/شهر
+                            {p.ar} — {branchesShort(p.max, true)} — {admNum(effectivePrice(p))} ر.س/شهر
                         </option>
                     ))}
                 </select>
                 <div className="text-[10px] mt-1.5 leading-relaxed">
-                    {pkgSaveState === 'saving' && <span className="text-amber-700">⏳ جاري الحفظ...</span>}
-                    {pkgSaveState === 'saved' && <span className="text-emerald-700 font-bold">✓ محفوظ — السعر موحّد مع «💎 باقات المواقع والأسعار»</span>}
-                    {pkgSaveState === 'error' && <span className="text-red-600 font-bold">❌ تعذّر الحفظ — حاول مجدداً</span>}
+                    {pkgSaveState === 'saving' && <span style={{ color: 'var(--adm-warn-fg)' }}>⏳ جاري الحفظ...</span>}
+                    {pkgSaveState === 'saved' && <span className="font-bold" style={{ color: 'var(--adm-ok-fg)' }}>✓ محفوظ — السعر موحّد مع «💎 باقات المواقع والأسعار»</span>}
+                    {pkgSaveState === 'error' && <span className="font-bold" style={{ color: 'var(--adm-bad-fg)' }}>❌ تعذّر الحفظ — حاول مجدداً</span>}
                     {pkgSaveState === '' && (
-                        <span className="text-[var(--text-secondary)]">
+                        <span style={{ color: 'var(--adm-fg-3)' }}>
                             السعر يأتي مباشرة من لوحة «💎 باقات المواقع والأسعار» بالأسفل — عدّل السعر هناك وسيتحدّث هنا تلقائياً (لا يوجد مبلغ منفصل).
                         </span>
                     )}
                 </div>
             </div>
 
-            {/* Platform-mode buttons */}
+            {/* أزرار الوضع — كلٌّ منها إجراءٌ جماعيّ يسأل تأكيداً قبل التنفيذ.
+                اللون للدلالة وحدها: الأخضر يوسّع، والأحمر يُلزم. */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <button
-                    onClick={handleFreeForAll}
-                    disabled={busyMode !== null}
-                    className="p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
-                >
-                    <div className="text-2xl mb-1">🆓</div>
-                    <div className="text-sm font-extrabold">مجاني للجميع</div>
-                    <div className="text-[11px] opacity-90 mt-0.5">إيقاف البوابة + تحويل كل التجار للباقة المجانية</div>
-                    {busyMode === 'free' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
-                </button>
-                <button
-                    onClick={handleTrialThenPaid}
-                    disabled={busyMode !== null}
-                    className="p-4 bg-gradient-to-br from-amber-500 to-orange-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
-                >
-                    <div className="text-2xl mb-1">🎁</div>
-                    <div className="text-sm font-extrabold">{trialDays} يوم تجريبي للجدد فقط</div>
-                    <div className="text-[11px] opacity-90 mt-0.5">
-                        التجار الجدد يجرّبون مجاناً ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر
-                    </div>
-                    {busyMode === 'trial-paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
-                </button>
-                <button
-                    onClick={handleTrialForAll}
-                    disabled={busyMode !== null}
-                    className="p-4 bg-gradient-to-br from-rose-500 to-pink-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
-                >
-                    <div className="text-2xl mb-1">🎉</div>
-                    <div className="text-sm font-extrabold">{trialDays} يوم تجربة للجميع</div>
-                    <div className="text-[11px] opacity-90 mt-0.5">
-                        منح الجدد <b>والحاليين</b> تجربة تبدأ الآن، ثم {globalAmount.toLocaleString('ar-SA')} ر.س/شهر
-                    </div>
-                    {busyMode === 'trial-all' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
-                </button>
-                <button
-                    onClick={handlePaidForAll}
-                    disabled={busyMode !== null}
-                    className="p-4 bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-right transition-all"
-                >
-                    <div className="text-2xl mb-1">💰</div>
-                    <div className="text-sm font-extrabold">إلزامي فوراً</div>
-                    <div className="text-[11px] opacity-90 mt-0.5">
-                        تفعيل البوابة + الزام الكل بـ {globalAmount.toLocaleString('ar-SA')} ر.س/شهر بدون تجربة
-                    </div>
-                    {busyMode === 'paid' && <div className="text-[11px] mt-1">⏳ جاري التطبيق...</div>}
-                </button>
+                {([
+                    { key: 'free', icon: '🆓', tone: 'ok', title: 'مجاني للجميع', desc: 'إيقاف البوابة + تحويل كل التجار للباقة المجانية', run: handleFreeForAll },
+                    { key: 'trial-paid', icon: '🎁', tone: 'warn', title: `${trialDays} يوم تجريبي للجدد فقط`, desc: `التجار الجدد يجرّبون مجاناً ثم ${admNum(globalAmount)} ر.س/شهر`, run: handleTrialThenPaid },
+                    { key: 'trial-all', icon: '🎉', tone: 'info', title: `${trialDays} يوم تجربة للجميع`, desc: <>منح الجدد <b>والحاليين</b> تجربة تبدأ الآن، ثم {admNum(globalAmount)} ر.س/شهر</>, run: handleTrialForAll },
+                    { key: 'paid', icon: '💰', tone: 'bad', title: 'إلزامي فوراً', desc: `تفعيل البوابة + إلزام الكل بـ ${admNum(globalAmount)} ر.س/شهر بدون تجربة`, run: handlePaidForAll },
+                ] as const).map((m) => (
+                    <button
+                        key={m.key}
+                        onClick={m.run}
+                        disabled={busyMode !== null}
+                        className="adm-focusable p-3.5 text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{
+                            background: 'var(--adm-surface-2)', borderRadius: 'var(--adm-r-sm)',
+                            border: '1px solid var(--adm-border)', cursor: 'pointer',
+                            borderInlineStartWidth: 4, borderInlineStartColor: toneFg(m.tone),
+                        }}
+                    >
+                        <div className="text-sm font-extrabold flex items-center gap-2" style={{ color: 'var(--adm-fg)' }}>
+                            <span aria-hidden="true">{m.icon}</span>{m.title}
+                        </div>
+                        <div className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--adm-fg-2)' }}>{m.desc}</div>
+                        {busyMode === m.key && <div className="text-[11px] mt-1.5 font-bold" style={{ color: 'var(--adm-fg-3)' }}>⏳ جاري التطبيق…</div>}
+                    </button>
+                ))}
             </div>
 
             {/* v12.35 — tell-the-sellers channels when a mode button is applied */}
-            <div className="mt-3 bg-[var(--card-bg)] rounded-lg p-2.5 text-[11px]">
-                <div className="font-bold text-[var(--text-primary)] mb-1.5">📣 عند تغيير الوضع، بلّغ التجار عبر:</div>
+            <div
+                className="mt-3 p-2.5 text-[11px]"
+                style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
+            >
+                <div className="font-bold mb-1.5" style={{ color: 'var(--adm-fg)' }}>📣 عند تغيير الوضع، بلّغ التجار عبر:</div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[var(--text-primary)]">
+                    <label className="flex items-center gap-1.5 cursor-pointer" style={{ color: 'var(--adm-fg)' }}>
                         <input
                             type="checkbox"
-                            className="w-4 h-4 accent-emerald-600"
+                            className="w-4 h-4"
+                            style={{ accentColor: 'var(--adm-accent)' }}
                             checked={notifInapp}
                             onChange={(e) => saveNotifyPrefs(e.target.checked, notifEmail)}
                         />
                         🔔 إشعار داخل الموقع
                     </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[var(--text-primary)]">
+                    <label className="flex items-center gap-1.5 cursor-pointer" style={{ color: 'var(--adm-fg)' }}>
                         <input
                             type="checkbox"
-                            className="w-4 h-4 accent-emerald-600"
+                            className="w-4 h-4"
+                            style={{ accentColor: 'var(--adm-accent)' }}
                             checked={notifEmail}
                             onChange={(e) => saveNotifyPrefs(notifInapp, e.target.checked)}
                         />
                         📧 بريد إلكتروني
                     </label>
-                    <span className="text-[var(--text-secondary)]">
+                    <span style={{ color: 'var(--adm-fg-2)' }}>
                         — يُحفظ تلقائياً. زر «تجريبي للجدد فقط» لا يُبلّغ الحاليين لأنهم لا يتأثرون.
                     </span>
                 </div>
             </div>
 
             {/* Editable trial duration — affects the trial-then-paid button label & action */}
-            <div className="flex items-center gap-2 mt-3 bg-[var(--card-bg)] rounded-lg p-2 text-[11px]">
-                <span className="text-amber-800 font-bold">⏱ مدة التجربة:</span>
+            <div
+                className="flex items-center gap-2 flex-wrap mt-3 p-2 text-[11px]"
+                style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
+            >
+                <span className="font-bold" style={{ color: 'var(--adm-fg)' }}>⏱ مدة التجربة:</span>
                 <input
                     type="number"
                     min={1}
@@ -1281,15 +577,13 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                     value={trialDays}
                     onChange={(e) => setTrialDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
                     onBlur={() => adminService.setPlatformSetting('trial_days', trialDays).catch(() => {})}
-                    className="w-14 px-2 py-1 bg-[var(--card-bg)] border border-amber-200 rounded text-center font-bold text-amber-900 outline-none focus:border-amber-500"
+                    aria-label="مدة التجربة بالأيام"
+                    className="adm-focusable w-14 px-2 py-1 text-center font-bold outline-none"
+                    style={{ background: 'var(--adm-surface)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)', color: 'var(--adm-fg)' }}
                 />
-                <span className="text-amber-800">يوم — تطبَّق على زر "تجريبي ثم إلزامي". تُحفظ تلقائياً.</span>
+                <span style={{ color: 'var(--adm-fg-2)' }}>يوم — تطبَّق على زرَّي التجربة. تُحفظ تلقائياً.</span>
             </div>
-
-            <div className="text-[11px] text-emerald-700 mt-3 leading-relaxed bg-[var(--card-bg)] rounded-lg p-2">
-                💡 <strong>للاستثناءات</strong> (إعفاء متجر معين، خصم لمدة محدودة، متاجر VIP) استخدم لوحة "تحكم جماعي قوي" بالأسفل أو اضغط على بطاقة المتجر مباشرة.
-            </div>
-        </div>
+        </AdmSection>
     );
 });
 GlobalSubscriptionMode.displayName = 'GlobalSubscriptionMode';
@@ -1402,7 +696,7 @@ const BulkSubscriptionPanel = memo<{
         const ok = await customConfirm(
             `سيتم تطبيق:\n` +
             `• الباقة: ${planLabel}\n` +
-            `• المبلغ: ${finalAmount.toLocaleString('ar-SA')} ر.س/شهر${discount > 0 ? ` (خصم ${discount}%)` : ''}\n` +
+            `• المبلغ: ${admNum(finalAmount)} ر.س/شهر${discount > 0 ? ` (خصم ${discount}%)` : ''}\n` +
             `• الانتهاء: ${expiresLabel}\n` +
             `على ${targetIds.length} متجر. متابعة؟`
         );
@@ -1460,120 +754,129 @@ const BulkSubscriptionPanel = memo<{
     };
 
     if (!isOpen) {
+        // 🪤 مطويّاً يبقى الجسم غير مُصيَّر أصلاً (لا `hidden`) — فقائمة الاختيار
+        //    على كل المتاجر لا تُبنى إلا عند الفتح.
         return (
             <button
                 onClick={onToggle}
-                className="w-full bg-amber-50 border border-amber-200 rounded-2xl p-4 text-right hover:shadow-md transition-all"
+                aria-expanded={false}
+                className="adm-focusable w-full p-4 text-right"
+                style={{ background: 'var(--adm-surface)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r)', boxShadow: 'var(--adm-shadow)', cursor: 'pointer' }}
             >
                 <div className="flex items-center gap-3">
-                    <div className="text-3xl">⚡</div>
+                    <div className="text-xl" aria-hidden="true">⚡</div>
                     <div className="flex-1">
-                        <div className="font-bold text-sm text-amber-900">تحكم جماعي قوي بالاشتراكات</div>
-                        <div className="text-xs text-amber-700 mt-0.5">
-                            اختر متاجر معينة (بحث بالاسم) أو الكل، حدد الباقة والمبلغ والتاريخ والخصم بحرية، ثم طبّق بضغطة. اضغط للفتح →
+                        <div className="font-extrabold text-sm" style={{ color: 'var(--adm-fg)' }}>تحكّم جماعي بالاشتراكات</div>
+                        <div className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--adm-fg-2)' }}>
+                            اختر متاجر معيّنة (بحثاً بالاسم) أو كلّ النشطين، وحدّد الباقة والمبلغ والتاريخ والخصم، ثم طبّق دفعةً واحدة.
                         </div>
                     </div>
+                    <span className="text-sm flex-shrink-0" style={{ color: 'var(--adm-fg-3)' }} aria-hidden="true">▼</span>
                 </div>
             </button>
         );
     }
 
     return (
-        <div className="bg-[var(--card-bg)] border-2 border-amber-300 rounded-2xl shadow-xl overflow-hidden">
-            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 text-white p-4 flex items-center justify-between">
+        <div style={{ background: 'var(--adm-surface)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r)', boxShadow: 'var(--adm-shadow)', overflow: 'hidden' }}>
+            <div
+                className="p-4 flex items-center justify-between gap-3"
+                style={{ background: 'var(--adm-surface-2)', borderBottom: '1px solid var(--adm-border)' }}
+            >
                 <div>
-                    <div className="font-bold text-base flex items-center gap-2">⚡ تحكم جماعي بالاشتراكات</div>
-                    <div className="text-xs opacity-90 mt-0.5">حدّد كل التفاصيل بحرية — بدون قيود.</div>
+                    <div className="font-extrabold text-sm flex items-center gap-2" style={{ color: 'var(--adm-fg)' }}>⚡ تحكّم جماعي بالاشتراكات</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--adm-fg-2)' }}>يطبّق نفس الإعداد على كل متجرٍ تختاره — يسأل تأكيداً قبل التنفيذ.</div>
                 </div>
-                <button onClick={onToggle} className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-lg">✕</button>
+                <button
+                    onClick={onToggle}
+                    aria-label="طيّ اللوحة"
+                    aria-expanded={true}
+                    className="adm-focusable w-8 h-8 flex items-center justify-center text-base flex-shrink-0"
+                    style={{ background: 'var(--adm-surface-3)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)', color: 'var(--adm-fg-2)', cursor: 'pointer' }}
+                >
+                    ✕
+                </button>
             </div>
 
             <div className="p-4 space-y-5">
                 {/* --- 1) Scope -------------------------------------------------- */}
                 <section>
-                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">👥 على من تُطبَّق؟</div>
+                    <div className="text-xs font-bold mb-2" style={labelCss}>👥 على من تُطبَّق؟</div>
                     <div className="grid grid-cols-2 gap-2 mb-2">
                         <button
                             onClick={() => setScope('all-active')}
-                            className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${
-                                scope === 'all-active'
-                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                            }`}
+                            aria-pressed={scope === 'all-active'}
+                            className="adm-focusable text-sm"
+                            style={pickCss(scope === 'all-active')}
                         >
                             🌐 كل النشطين
-                            <div className="text-[10px] font-normal mt-0.5 opacity-80">
+                            <div className="text-[10px] font-normal mt-0.5 tabular-nums">
                                 {sellers.filter((s) => !s.is_suspended).length} متجر
                             </div>
                         </button>
                         <button
                             onClick={() => setScope('pick')}
-                            className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${
-                                scope === 'pick'
-                                    ? 'bg-purple-50 border-purple-500 text-purple-700'
-                                    : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                            }`}
+                            aria-pressed={scope === 'pick'}
+                            className="adm-focusable text-sm"
+                            style={pickCss(scope === 'pick')}
                         >
                             🎯 متاجر محددة
-                            <div className="text-[10px] font-normal mt-0.5 opacity-80">
+                            <div className="text-[10px] font-normal mt-0.5 tabular-nums">
                                 {pickedIds.size} مختار
                             </div>
                         </button>
                     </div>
 
                     {scope === 'pick' && (
-                        <div className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] overflow-hidden">
-                            <div className="p-2 border-b border-[var(--border-color)]">
+                        <div style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)', overflow: 'hidden' }}>
+                            <div className="p-2" style={{ borderBottom: '1px solid var(--adm-border)' }}>
                                 <input
-                                    type="text"
+                                    type="search"
                                     value={searchQ}
                                     onChange={(e) => setSearchQ(e.target.value)}
                                     placeholder="🔍 ابحث باسم المتجر، الاسم، الجوال أو الإيميل..."
-                                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-purple-500 outline-none"
+                                    aria-label="بحث في المتاجر لاختيارها"
+                                    className="adm-focusable"
+                                    style={{ ...fieldCss, background: 'var(--adm-surface)' }}
                                 />
-                                <div className="flex gap-2 mt-2 text-[11px]">
-                                    <button onClick={selectAllVisible} className="px-2 py-1 bg-purple-100 text-purple-700 rounded font-bold">
-                                        ✓ اختر كل المعروض ({visibleSellers.length})
-                                    </button>
-                                    <button onClick={clearPicks} className="px-2 py-1 bg-[var(--gray-100)] text-[var(--text-secondary)] rounded font-bold">
-                                        مسح الاختيار
-                                    </button>
+                                <div className="flex gap-2 mt-2">
+                                    <AdmButton size="sm" onClick={selectAllVisible}>✓ اختر كل المعروض ({visibleSellers.length})</AdmButton>
+                                    <AdmButton size="sm" variant="ghost" onClick={clearPicks}>مسح الاختيار</AdmButton>
                                 </div>
                             </div>
-                            <div className="max-h-56 overflow-y-auto divide-y divide-[var(--border-color)]">
+                            <div className="max-h-56 overflow-y-auto">
                                 {visibleSellers.length === 0 ? (
-                                    <div className="p-4 text-center text-xs text-[var(--gray-400)]">لا نتائج لهذا البحث.</div>
+                                    <AdmEmpty icon="🔍" title="لا متجر بهذا البحث" hint="البحث هنا على المتاجر المحمّلة في الشاشة فقط." />
                                 ) : visibleSellers.map((s) => {
                                     const checked = pickedIds.has(s.id);
-                                    const planMeta: Record<string, string> = {
-                                        premium: '⭐',
-                                        trial: '🎁',
-                                        free: '🆓',
-                                    };
+                                    const planIcon: Record<string, string> = { premium: '⭐', trial: '🎁', free: '🆓' };
                                     return (
                                         <label
                                             key={s.id}
-                                            className={`flex items-center gap-3 p-2.5 cursor-pointer transition-colors ${
-                                                checked ? 'bg-purple-50' : 'hover:bg-[var(--gray-100)]'
-                                            }`}
+                                            className="flex items-center gap-3 p-2.5 cursor-pointer"
+                                            style={{
+                                                background: checked ? 'var(--adm-accent-weak)' : 'transparent',
+                                                borderBottom: '1px solid var(--adm-border)',
+                                            }}
                                         >
                                             <input
                                                 type="checkbox"
                                                 checked={checked}
                                                 onChange={() => togglePick(s.id)}
-                                                className="w-4 h-4 accent-purple-600"
+                                                className="adm-focusable w-4 h-4"
+                                                style={{ accentColor: 'var(--adm-accent)' }}
                                             />
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-bold text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                                                    {planMeta[s.subscription_plan ?? 'free'] ?? '🆓'} {s.shop ?? s.name ?? '(بدون اسم)'}
+                                                <div className="text-sm font-bold truncate flex items-center gap-1.5" style={{ color: 'var(--adm-fg)' }}>
+                                                    {planIcon[s.subscription_plan ?? 'free'] ?? '🆓'} {s.shop ?? s.name ?? '(بدون اسم)'}
                                                 </div>
-                                                <div className="text-[10px] text-[var(--text-secondary)] truncate" dir="ltr">
+                                                <div className="text-[10px] truncate" dir="ltr" style={{ color: 'var(--adm-fg-3)' }}>
                                                     {s.phone ?? s.email ?? '—'}
                                                 </div>
                                             </div>
                                             {(s.subscription_amount ?? 0) > 0 && (
-                                                <span className="text-[10px] text-emerald-600 font-bold flex-shrink-0">
-                                                    {(s.subscription_amount ?? 0).toLocaleString('ar-SA')} ر.س
+                                                <span className="text-[10px] font-bold flex-shrink-0 tabular-nums" style={{ color: 'var(--adm-ok-fg)' }}>
+                                                    {admNum((s.subscription_amount ?? 0))} ر.س
                                                 </span>
                                             )}
                                         </label>
@@ -1586,19 +889,23 @@ const BulkSubscriptionPanel = memo<{
 
                 {/* --- 2) Quick presets --------------------------------------- */}
                 <section>
-                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">⚡ قوالب سريعة (تعبّي الحقول لك):</div>
+                    <div className="text-xs font-bold mb-2" style={labelCss}>⚡ قوالب سريعة (تعبّي الحقول لك):</div>
                     <div className="flex flex-wrap gap-2">
-                        <button onClick={() => applyPreset('free-perpetual')} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">🆓 مجاني دائم</button>
-                        <button onClick={() => applyPreset('free-30d')} className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-xs font-bold">🆓 مجاني 30 يوم</button>
-                        <button onClick={() => applyPreset('trial-30d')} className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-bold">🎁 تجريبي 30 يوم</button>
-                        <button onClick={() => applyPreset('premium-half')} className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold">⭐ مميز -50%</button>
-                        <button onClick={() => applyPreset('premium-full')} className="px-3 py-1.5 bg-fuchsia-50 hover:bg-fuchsia-100 text-fuchsia-700 rounded-lg text-xs font-bold">⭐ مميز سنة كاملة</button>
+                        {([
+                            { p: 'free-perpetual', label: '🆓 مجاني دائم' },
+                            { p: 'free-30d', label: '🆓 مجاني 30 يوم' },
+                            { p: 'trial-30d', label: '🎁 تجريبي 30 يوم' },
+                            { p: 'premium-half', label: '⭐ مميز -50%' },
+                            { p: 'premium-full', label: '⭐ مميز سنة كاملة' },
+                        ] as const).map((o) => (
+                            <AdmButton key={o.p} size="sm" onClick={() => applyPreset(o.p)}>{o.label}</AdmButton>
+                        ))}
                     </div>
                 </section>
 
                 {/* --- 3) Plan ------------------------------------------------- */}
                 <section>
-                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">📦 الباقة</div>
+                    <div className="text-xs font-bold mb-2" style={labelCss}>📦 الباقة</div>
                     <div className="grid grid-cols-3 gap-2">
                         {([
                             { v: 'free', label: 'مجانية', icon: '🆓' },
@@ -1608,13 +915,11 @@ const BulkSubscriptionPanel = memo<{
                             <button
                                 key={o.v}
                                 onClick={() => setPlan(o.v)}
-                                className={`p-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
-                                    plan === o.v
-                                        ? 'bg-amber-50 border-amber-500 text-amber-800'
-                                        : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                }`}
+                                aria-pressed={plan === o.v}
+                                className="adm-focusable text-sm"
+                                style={{ ...pickCss(plan === o.v), padding: '9px' }}
                             >
-                                <div className="text-xl mb-0.5">{o.icon}</div>
+                                <div className="text-xl mb-0.5" aria-hidden="true">{o.icon}</div>
                                 {o.label}
                             </button>
                         ))}
@@ -1623,24 +928,28 @@ const BulkSubscriptionPanel = memo<{
 
                 {/* --- 4) Dates ------------------------------------------------ */}
                 <section>
-                    <div className="text-xs font-bold text-[var(--text-secondary)] mb-2">📅 الفترة</div>
+                    <div className="text-xs font-bold mb-2" style={labelCss}>📅 الفترة</div>
                     <div className="grid grid-cols-2 gap-3 mb-2">
                         <div>
-                            <div className="text-[10px] text-[var(--gray-400)] mb-1">يبدأ</div>
+                            <div className="text-[10px] mb-1" style={{ color: 'var(--adm-fg-3)' }}>يبدأ</div>
                             <input
                                 type="date"
                                 value={startedAt}
                                 onChange={(e) => setStartedAt(e.target.value)}
-                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                                aria-label="تاريخ البداية"
+                                className="adm-focusable"
+                                style={fieldCss}
                             />
                         </div>
                         <div>
-                            <div className="text-[10px] text-[var(--gray-400)] mb-1">ينتهي (فارغ = بلا انتهاء)</div>
+                            <div className="text-[10px] mb-1" style={{ color: 'var(--adm-fg-3)' }}>ينتهي (فارغ = بلا انتهاء)</div>
                             <input
                                 type="date"
                                 value={expiresAt}
                                 onChange={(e) => setExpiresAt(e.target.value)}
-                                className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                                aria-label="تاريخ الانتهاء"
+                                className="adm-focusable"
+                                style={fieldCss}
                             />
                         </div>
                     </div>
@@ -1653,13 +962,9 @@ const BulkSubscriptionPanel = memo<{
                             { label: 'سنة', d: 365 },
                             { label: 'بلا انتهاء', d: null as null | number },
                         ].map((q) => (
-                            <button
-                                key={q.label}
-                                onClick={() => setQuickDuration(q.d as any)}
-                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-[11px] font-bold"
-                            >
+                            <AdmButton key={q.label} size="sm" onClick={() => setQuickDuration(q.d)}>
                                 {q.label}
-                            </button>
+                            </AdmButton>
                         ))}
                     </div>
                 </section>
@@ -1667,20 +972,22 @@ const BulkSubscriptionPanel = memo<{
                 {/* --- 5) Amount + Discount ----------------------------------- */}
                 <section className="grid grid-cols-2 gap-3">
                     <div>
-                        <div className="text-xs font-bold text-[var(--text-secondary)] mb-1.5">💰 المبلغ الشهري (ر.س)</div>
+                        <div className="text-xs font-bold mb-1.5" style={labelCss}>💰 المبلغ الشهري (ر.س)</div>
                         <input
                             type="number"
                             min={0}
                             step={1}
                             value={amount}
                             onChange={(e) => setAmount(Number(e.target.value) || 0)}
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-sm focus:border-amber-500 outline-none"
+                            aria-label="المبلغ الشهري"
+                            className="adm-focusable"
+                            style={fieldCss}
                         />
                     </div>
                     <div>
                         <div className="flex justify-between items-center mb-1.5">
-                            <div className="text-xs font-bold text-[var(--text-secondary)]">🎉 الخصم</div>
-                            <span className="text-sm font-extrabold text-amber-700 tabular-nums">{discount}%</span>
+                            <div className="text-xs font-bold" style={labelCss}>🎉 الخصم</div>
+                            <span className="text-sm font-extrabold tabular-nums" style={{ color: 'var(--adm-accent)' }}>{discount}%</span>
                         </div>
                         <input
                             type="range"
@@ -1689,57 +996,65 @@ const BulkSubscriptionPanel = memo<{
                             step={5}
                             value={discount}
                             onChange={(e) => setDiscount(Number(e.target.value))}
-                            className="w-full accent-amber-600"
+                            aria-label="نسبة الخصم"
+                            className="adm-focusable w-full"
+                            style={{ accentColor: 'var(--adm-accent)' }}
                         />
                     </div>
                 </section>
 
                 {/* --- 6) Summary --------------------------------------------- */}
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                    <div className="text-xs text-emerald-700 mb-1">💡 الخلاصة:</div>
-                    <div className="text-sm text-[var(--text-primary)]">
+                <div className="p-3" style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}>
+                    <div className="text-xs font-bold mb-1" style={labelCss}>💡 الخلاصة:</div>
+                    <div className="text-sm leading-relaxed" style={{ color: 'var(--adm-fg)' }}>
                         سيتم تطبيق <strong>{plan === 'free' ? 'باقة مجانية' : plan === 'trial' ? 'باقة تجريبية' : 'باقة مميزة'}</strong>
-                        {' '}بمبلغ صافي <strong className="text-emerald-700 tabular-nums">{finalAmount.toLocaleString('ar-SA')} ر.س/شهر</strong>
+                        {' '}بمبلغ صافي <strong className="tabular-nums" style={{ color: 'var(--adm-ok-fg)' }}>{admNum(finalAmount)} ر.س/شهر</strong>
                         {discount > 0 && <> (بعد خصم {discount}%)</>}
-                        {' '}على <strong className="text-amber-700">{targetIds.length}</strong> متجر
+                        {' '}على <strong className="tabular-nums" style={{ color: 'var(--adm-accent)' }}>{targetIds.length}</strong> متجر
                         {expiresAt ? <>، ينتهي <strong>{new Date(expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}</strong>.</> : <>، <strong>بلا انتهاء</strong>.</>}
                     </div>
                 </div>
 
                 {/* --- 7) Notify toggle --------------------------------------- */}
-                <label className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100 cursor-pointer">
+                <label
+                    className="flex items-center justify-between gap-3 p-3 cursor-pointer"
+                    style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
+                >
                     <div>
-                        <div className="font-bold text-sm text-blue-800">إرسال إشعار للبائعين</div>
-                        <div className="text-xs text-blue-600 mt-0.5">قد تحتاج إيقافه لو الإجراء كبير لتجنّب إزعاج الجميع.</div>
+                        <div className="font-bold text-sm" style={{ color: 'var(--adm-fg)' }}>إرسال إشعار للبائعين</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--adm-fg-2)' }}>قد تحتاج إيقافه لو الإجراء كبير لتجنّب إزعاج الجميع.</div>
                     </div>
                     <input
                         type="checkbox"
                         checked={sendNotif}
                         onChange={(e) => setSendNotif(e.target.checked)}
-                        className="w-5 h-5 accent-blue-600"
+                        className="adm-focusable w-5 h-5 flex-shrink-0"
+                        style={{ accentColor: 'var(--adm-accent)' }}
                     />
                 </label>
 
                 {/* --- 8) Apply button ---------------------------------------- */}
                 {progress && (
-                    <div className="bg-[var(--gray-100)] rounded-xl overflow-hidden h-2">
+                    <div
+                        className="overflow-hidden h-2"
+                        role="progressbar"
+                        aria-valuenow={progress.done}
+                        aria-valuemax={progress.total}
+                        style={{ background: 'var(--adm-surface-3)', borderRadius: 999 }}
+                    >
                         <div
-                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
-                            style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                            className="h-full transition-all"
+                            style={{ width: `${(progress.done / progress.total) * 100}%`, background: 'var(--adm-accent)' }}
                         />
                     </div>
                 )}
-                <button
-                    onClick={handleApply}
-                    disabled={busy || targetIds.length === 0}
-                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-50 text-sm"
-                >
+                <AdmButton full variant="primary" onClick={handleApply} disabled={busy || targetIds.length === 0}>
                     {busy
                         ? `... جاري التطبيق ${progress ? `(${progress.done}/${progress.total})` : ''}`
                         : targetIds.length === 0
                         ? 'اختر متاجر أولاً'
                         : `⚡ تطبيق على ${targetIds.length} متجر`}
-                </button>
+                </AdmButton>
             </div>
         </div>
     );
@@ -1770,7 +1085,6 @@ const SponsorsBox: React.FC<{
     const [rows, setRows] = useState<AdminSponsorRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [q, setQ] = useState('');
-    const [open, setOpen] = useState(true);
 
     useEffect(() => {
         let alive = true;
@@ -1789,130 +1103,62 @@ const SponsorsBox: React.FC<{
     const activeCount = rows.filter((r) => r.isActive).length;
 
     return (
-        <section className="bg-[var(--card-bg)] border border-amber-300 rounded-2xl overflow-hidden">
-            <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
-                <span className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                    🌟 الرعاة والمعلنون
-                    <span className="text-[11px] bg-amber-500 text-white rounded-full px-2 py-0.5">{activeCount} نشط</span>
-                </span>
-                <span className="text-[var(--text-secondary)] text-sm">{open ? '▲' : '▼'}</span>
-            </button>
-            {open && (
-                <div className="px-4 pb-4 space-y-2">
-                    <input
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        placeholder="🔍 ابحث باسم المتجر الراعي..."
-                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-amber-500"
+        <AdmSection
+            icon="🌟"
+            title="الرعاة والمعلنون"
+            desc="المتاجر التي تظهر عروضها بإطار ذهبي. «إدارة» تفتح بطاقة اشتراك المتجر نفسه، فالرعاية تُضبط من هناك."
+            collapsible
+            defaultOpen={false}
+            badge={{ text: `${admNum(activeCount)} نشط`, tone: activeCount > 0 ? 'ok' : 'neutral' }}
+        >
+            <div className="space-y-2">
+                <input
+                    type="search"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="🔍 ابحث باسم المتجر الراعي..."
+                    aria-label="بحث في الرعاة"
+                    className="adm-focusable w-full px-3 py-2.5 text-sm outline-none"
+                    style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)', color: 'var(--adm-fg)' }}
+                />
+                {loading ? (
+                    <AdmSkeleton rows={3} height={58} />
+                ) : filtered.length === 0 ? (
+                    <AdmEmpty
+                        icon="🌟"
+                        title={rows.length === 0 ? 'لا رعاة بعد' : 'لا نتيجة مطابقة'}
+                        hint={rows.length === 0
+                            ? 'الرعاية تُفعَّل من بطاقة التاجر نفسه: افتح متجره من «قائمة المتاجر» بالأسفل ثم بدّل مفتاح «راعٍ رسمي».'
+                            : 'جرّب اسماً أقصر — البحث هنا على الرعاة المحمّلين فقط.'}
                     />
-                    {loading ? (
-                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">جاري التحميل...</div>
-                    ) : filtered.length === 0 ? (
-                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">
-                            {rows.length === 0 ? 'لا يوجد رعاة بعد. فعّل راعياً من بطاقة أي تاجر بالأسفل.' : 'لا نتيجة مطابقة.'}
-                        </div>
-                    ) : (
-                        <div className="space-y-2 max-h-80 overflow-y-auto">
-                            {filtered.map((r) => (
-                                <div key={r.storeId} className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] p-3 flex items-center gap-3">
-                                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${r.isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-sm text-[var(--text-primary)] truncate">{r.storeName || r.shop || r.storeId}</div>
-                                        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                                            <span>{SPONSOR_LABEL_BADGE[r.labelType || 'ad']}</span>
-                                            <span>•</span>
-                                            <span>{r.isActive ? 'نشط' : 'متوقف'}</span>
-                                            {r.expiresAt && (<><span>•</span><span>حتى {new Date(r.expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}</span></>)}
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => onManage(r.storeId, r.storeName || r.shop || '')}
-                                        className="px-3 py-1.5 text-xs font-bold bg-amber-500 text-white rounded-lg flex-shrink-0 active:scale-95"
-                                    >
-                                        ⚙️ إدارة
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-        </section>
-    );
-};
-
-// ============================================================
-// Admins box — lists every staff/admin account (super-admin only) so the owner
-// can instantly tell admin accounts apart from ordinary users. Permission
-// editing stays in the dedicated "👑 إدارة المسؤولين" tab.
-// ============================================================
-const AdminsBox: React.FC = () => {
-    const [rows, setRows] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [q, setQ] = useState('');
-    const [open, setOpen] = useState(false);
-
-    useEffect(() => {
-        let alive = true;
-        setLoading(true);
-        supabase.rpc('admin_list_staff').then((res) => { if (alive) { setRows((res.data as any[]) || []); setLoading(false); } });
-        return () => { alive = false; };
-    }, []);
-
-    const filtered = useMemo(() => {
-        const term = q.trim().toLowerCase();
-        if (!term) return rows;
-        return rows.filter((r: any) =>
-            (r.name || '').toLowerCase().includes(term) ||
-            (r.phone || '').includes(term) ||
-            (r.email || '').toLowerCase().includes(term));
-    }, [rows, q]);
-
-    return (
-        <section className="bg-[var(--card-bg)] border border-indigo-300 rounded-2xl overflow-hidden">
-            <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3">
-                <span className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                    🛡️ حسابات الأدمن
-                    <span className="text-[11px] bg-indigo-500 text-white rounded-full px-2 py-0.5">{rows.length}</span>
-                </span>
-                <span className="text-[var(--text-secondary)] text-sm">{open ? '▲' : '▼'}</span>
-            </button>
-            {open && (
-                <div className="px-4 pb-4 space-y-2">
-                    <input
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        placeholder="🔍 ابحث عن مسؤول..."
-                        className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-indigo-500"
-                    />
-                    {loading ? (
-                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">جاري التحميل...</div>
-                    ) : filtered.length === 0 ? (
-                        <div className="text-center text-sm text-[var(--text-secondary)] py-4">لا نتيجة.</div>
-                    ) : (
-                        <div className="space-y-2 max-h-80 overflow-y-auto">
-                            {filtered.map((r: any) => (
-                                <div key={r.id} className="bg-[var(--body-bg)] rounded-xl border border-[var(--border-color)] p-3 flex items-center gap-3">
-                                    <span className="text-lg flex-shrink-0">{r.is_super_admin ? '👑' : '🛡️'}</span>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-sm text-[var(--text-primary)] truncate">
-                                            {r.name || 'مسؤول'}
-                                            {r.is_super_admin && <span className="text-[10px] text-amber-600 font-extrabold mr-1">(المالك)</span>}
-                                        </div>
-                                        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 flex flex-wrap gap-x-2">
-                                            {r.phone && <span dir="ltr">{r.phone}</span>}
-                                            {r.phone && <span>•</span>}
-                                            <span>{r.is_super_admin ? 'كل الصلاحيات' : `${(r.admin_permissions || []).length} صلاحية`}</span>
-                                        </div>
+                ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                        {filtered.map((r) => (
+                            <div
+                                key={r.storeId}
+                                className="p-3 flex items-center gap-3"
+                                style={{ background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)' }}
+                            >
+                                <span
+                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                    style={{ background: r.isActive ? 'var(--adm-ok-fg)' : 'var(--adm-fg-3)' }}
+                                    aria-hidden="true"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm truncate" style={{ color: 'var(--adm-fg)' }}>{r.storeName || r.shop || r.storeId}</div>
+                                    <div className="text-[11px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: 'var(--adm-fg-2)' }}>
+                                        <AdmPill tone="warn">{SPONSOR_LABEL_BADGE[r.labelType || 'ad']}</AdmPill>
+                                        <AdmPill tone={r.isActive ? 'ok' : 'neutral'}>{r.isActive ? 'نشط' : 'متوقف'}</AdmPill>
+                                        {r.expiresAt && <span>حتى {new Date(r.expiresAt).toLocaleDateString('ar-SA-u-ca-gregory')}</span>}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                    <div className="text-[11px] text-[var(--text-secondary)] pt-1">لإدارة الصلاحيات افتح تبويب «👑 إدارة المسؤولين».</div>
-                </div>
-            )}
-        </section>
+                                <AdmButton size="sm" onClick={() => onManage(r.storeId, r.storeName || r.shop || '')}>⚙️ إدارة</AdmButton>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </AdmSection>
     );
 };
 
@@ -1920,7 +1166,7 @@ const AdminSellers: React.FC = () => {
     // v14.38 — الأرقام المالية تُخفى عمّن لا يملك «💰 الأمور المالية».
     const { hasPermission: hasPerm } = useApp();
     const canSeeFinanceMain = hasPerm('action_view_finance');
-    const { isSuperAdmin, customAlert } = useApp();
+    const { customAlert } = useApp();
     const [query, setQuery] = useState('');
     const [boxesRefresh, setBoxesRefresh] = useState(0);
     const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -1953,7 +1199,7 @@ const AdminSellers: React.FC = () => {
 
     const fetchSellers = useCallback(async () => {
         setLoading(true);
-        const data = await adminService.searchUsers(debouncedQuery, 'seller', 200, 0);
+        const data = await adminService.searchUsers(debouncedQuery, 'seller', LOADED_CAP, 0);
         setSellers(data);
         setLoading(false);
     }, [debouncedQuery]);
@@ -2032,51 +1278,63 @@ const AdminSellers: React.FC = () => {
             {/* v14.36 — طلبات تغيير اسم المتجر أولاً: طلبٌ معلّق يجب أن يُرى قبل
                 أي شيء آخر، والبطاقة تُخفي نفسها حين لا يوجد طلب. */}
             <StoreNameRequests />
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🏪 إدارة البائعين</h1>
-                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                        تحكم كامل بالاشتراكات والخصومات بضغطة زر واحدة
-                    </p>
-                </div>
-                <ExportButton
-                    rows={filtered}
-                    columns={SELLER_CSV_COLUMNS}
-                    filenameStem="taki-sellers"
-                    accent="purple"
-                    tooltip="تنزيل القائمة المعروضة حالياً كملف CSV — يحتوي على الباقة، تاريخ الانتهاء، الخصم، MRR لكل تاجر"
-                />
-            </div>
+            <AdmPageHeader
+                icon="🏪"
+                title="إدارة البائعين"
+                desc="اشتراكات المتاجر وخصوماتها ورعاتها. البحث يسأل الخادم، والأرقام أدناه تُحسب من الصفحة المحمّلة وحدها — لذلك يقول كلٌّ منها نطاقه."
+                actions={
+                    <ExportButton
+                        rows={filtered}
+                        columns={SELLER_CSV_COLUMNS}
+                        filenameStem="taki-sellers"
+                        accent="purple"
+                        tooltip="تنزيل القائمة المعروضة حالياً كملف CSV — يحتوي على الباقة، تاريخ الانتهاء، الخصم، والمبلغ لكل تاجر"
+                    />
+                }
+            />
 
-            {/* Stats strip */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* 🪤 v14.89 — هذه الأرقام تُحسب في المتصفّح من الصفحة المحمّلة (٢٠٠ صفّاً
+                كحدٍّ أقصى) لا من المنصّة كلّها، وشاشة «الرئيسية» تحسب اشتراكاتها بطريقةٍ
+                أخرى. لذلك `scope` هنا إلزامي، واسم بطاقة المال يقول «هذه القائمة» صراحةً
+                حتى لا تُقرأ كإيراد المنصّة. */}
+            <AdmStatGrid cols={canSeeFinanceMain ? 4 : 3}>
                 {canSeeFinanceMain && (
-                    <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg">
-                        <div className="text-3xl font-extrabold tabular-nums">
-                            {stats.mrr.toLocaleString('ar-SA')}
-                        </div>
-                        <div className="text-xs opacity-90 mt-0.5">
-                            MRR (ر.س/شهر)
-                            {/* v14.34 — يُطرح خصم التاجر هنا ولا يُطرح في «الرئيسية»،
-                                فالرقمان اختلفا بلا تفسير. النصّ يوضّح أيّهما هذا. */}
-                            <span className="opacity-70"> · بعد الخصومات</span>
-                        </div>
-                    </div>
+                    <AdmStat
+                        icon="💰"
+                        label="اشتراكات هذه القائمة (بعد الخصم)"
+                        value={`${admNum(stats.mrr)} ر.س`}
+                        tone="ok"
+                        scope={`مجموع الباقات المميزة ضمن ${admNum(LOADED_CAP)} متجرٍ محمّلة`}
+                        title="مجموع المبالغ الشهرية للباقات المميزة في هذه القائمة بعد طرح خصم كل تاجر. ليس إيراد المنصّة كاملاً."
+                    />
                 )}
-                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                    <div className="text-2xl font-extrabold text-emerald-600">{stats.premium}</div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">⭐ مميز</div>
-                </div>
-                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                    <div className="text-2xl font-extrabold text-amber-500">{stats.trial}</div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">🎁 تجريبي</div>
-                </div>
-                <div className="bg-[var(--card-bg)] rounded-2xl p-4 border border-[var(--border-color)] shadow-sm">
-                    <div className="text-2xl font-extrabold text-[var(--text-secondary)]">{stats.free}</div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">🆓 مجاني</div>
-                </div>
-            </div>
+                <AdmStat
+                    icon="⭐"
+                    label="مميز"
+                    value={stats.premium}
+                    tone="ok"
+                    scope={`ضمن ${admNum(LOADED_CAP)} متجرٍ محمّلة`}
+                    onClick={() => setFilter('premium')}
+                    title="اعرض المتاجر المميزة وحدها"
+                />
+                <AdmStat
+                    icon="🎁"
+                    label="تجريبي"
+                    value={stats.trial}
+                    tone="warn"
+                    scope={`ضمن ${admNum(LOADED_CAP)} متجرٍ محمّلة`}
+                    onClick={() => setFilter('trial')}
+                    title="اعرض المتاجر التجريبية وحدها"
+                />
+                <AdmStat
+                    icon="🆓"
+                    label="مجاني"
+                    value={stats.free}
+                    scope={`ضمن ${admNum(LOADED_CAP)} متجرٍ محمّلة`}
+                    onClick={() => setFilter('free')}
+                    title="اعرض المتاجر المجانية وحدها"
+                />
+            </AdmStatGrid>
 
             {/* Dedicated boxes so sponsors & admins are distinguishable among
                 thousands of ordinary accounts (each with its own search). */}
@@ -2085,7 +1343,6 @@ const AdminSellers: React.FC = () => {
                 نفس شرط ظهور تبويب البائعين (tab_sellers) يكفي هنا — الحفظ نفسه
                 محمي في القاعدة بصلاحية الأدمن على platform_settings. */}
             <SponsorLayoutPanel />
-            {isSuperAdmin && <AdminsBox />}
 
             {/* Platform-wide subscription mode — set the default amount + flip
                 the entire site to free / paid in one click. This is the
@@ -2105,103 +1362,121 @@ const AdminSellers: React.FC = () => {
                 onApplied={fetchSellers}
             />
 
-            {/* Filters + Search */}
-            <div className="space-y-3">
-                <input
-                    type="text"
-                    placeholder="🔍 ابحث باسم المتجر، الجوال، الإيميل..."
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    className="w-full px-5 py-4 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-sm text-sm focus:border-purple-500 focus:shadow-md outline-none transition-all"
-                />
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                    {([
-                        { value: 'all', label: 'الكل', icon: '👥' },
-                        { value: 'premium', label: 'مميز', icon: '⭐' },
-                        { value: 'trial', label: 'تجريبي', icon: '🎁' },
-                        { value: 'free', label: 'مجاني', icon: '🆓' },
-                        { value: 'suspended', label: 'معلّق', icon: '🚫' },
-                    ] as const).map((f) => (
-                        <button
-                            key={f.value}
-                            onClick={() => setFilter(f.value)}
-                            className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                                filter === f.value
-                                    ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-md'
-                                    : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-purple-300'
-                            }`}
-                        >
-                            {f.icon} {f.label}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Smart filters (compose on top of the plan filter above) */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-                    <SellerSmartChip active={smartFilter === null}             onClick={() => setSmartFilter(null)}             icon="✓" label="بلا فلتر ذكي" />
-                    <SellerSmartChip active={smartFilter === 'pinned'}         onClick={() => setSmartFilter('pinned')}         icon="★" label="المفضّلة" count={pins.list.length} />
-                    <SellerSmartChip active={smartFilter === 'expiring_7d'}    onClick={() => setSmartFilter('expiring_7d')}    icon="⏰" label="ينتهي خلال 7 أيام" />
-                    <SellerSmartChip active={smartFilter === 'expiring_30d'}   onClick={() => setSmartFilter('expiring_30d')}   icon="📅" label="ينتهي خلال 30 يوم" />
-                    <SellerSmartChip active={smartFilter === 'no_plan'}        onClick={() => setSmartFilter('no_plan')}        icon="🆓" label="بدون اشتراك" />
-                    <SellerSmartChip active={smartFilter === 'high_discount'}  onClick={() => setSmartFilter('high_discount')}  icon="🏷️" label="خصم ≥ 30%" />
-                </div>
-            </div>
-
-            {/* List */}
-            {loading ? (
-                <div className="space-y-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                        <div key={i} className="h-20 bg-[var(--gray-100)] rounded-2xl animate-pulse" />
-                    ))}
-                </div>
-            ) : filtered.length === 0 ? (
-                <div className="bg-[var(--card-bg)] rounded-2xl p-12 border border-dashed border-[var(--border-color)] text-center text-[var(--gray-400)]">
-                    {smartFilter === 'pinned'
-                        ? 'لا يوجد تجار في مفضّلتك بعد. اضغط ★ بجانب أي تاجر لإضافته.'
-                        : 'لا توجد نتائج لهذا الفلتر.'}
-                </div>
-            ) : (
+            {/* القائمة — عمل هذه الشاشة الأساسي، فهي وحدها المفتوحة دائماً. */}
+            <AdmSection
+                icon="🏪"
+                title="قائمة المتاجر"
+                desc="البحث يسأل الخادم فيصل إلى ما هو خارج الصفحة؛ والمرشّحان أدناه يعملان على المحمّل. اضغط أي متجر لفتح اشتراكه."
+                badge={{ text: `${admNum(filtered.length)} معروض`, tone: 'info' }}
+            >
                 <div className="space-y-3">
-                    {pinnedSellers.length > 0 && smartFilter !== 'pinned' && (
-                        <div>
-                            <div className="text-xs font-extrabold text-amber-700 mb-2 flex items-center gap-1.5 px-1">
-                                ★ المفضّلة ({pinnedSellers.length})
-                            </div>
-                            <div className="space-y-2">
-                                {pinnedSellers.map((s) => (
-                                    <SellerRow
-                                        key={s.id}
-                                        seller={s}
-                                        onEdit={setEditing}
-                                        pinned={true}
-                                        onTogglePin={pins.toggle}
-                                    />
-                                ))}
-                            </div>
+                    <input
+                        type="search"
+                        placeholder="🔍 ابحث باسم المتجر، الجوال، الإيميل..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        aria-label="بحث في المتاجر"
+                        className="adm-focusable w-full text-sm font-semibold outline-none"
+                        style={{
+                            padding: '10px 14px', borderRadius: 'var(--adm-r-sm)',
+                            border: '1px solid var(--adm-border)',
+                            background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+                        }}
+                    />
+                    <div>
+                        <div className="text-[11px] font-extrabold mb-1.5" style={{ color: 'var(--adm-fg-3)' }}>الباقة أو الحالة</div>
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                            {([
+                                { value: 'all', label: 'الكل', icon: '👥' },
+                                { value: 'premium', label: 'مميز', icon: '⭐' },
+                                { value: 'trial', label: 'تجريبي', icon: '🎁' },
+                                { value: 'free', label: 'مجاني', icon: '🆓' },
+                                { value: 'suspended', label: 'معلّق', icon: '🚫' },
+                            ] as const).map((f) => (
+                                <SmartChip
+                                    key={f.value}
+                                    active={filter === f.value}
+                                    onClick={() => setFilter(f.value)}
+                                    icon={f.icon}
+                                    label={f.label}
+                                />
+                            ))}
                         </div>
-                    )}
-                    {restSellers.length > 0 && (
-                        <div>
+                    </div>
+                    {/* مرشّحٌ ثانٍ يُركَّب فوق الأوّل لا يستبدله. */}
+                    <div>
+                        <div className="text-[11px] font-extrabold mb-1.5" style={{ color: 'var(--adm-fg-3)' }}>مرشّح ذكي (يُركَّب فوق ما سبق)</div>
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                            <SmartChip active={smartFilter === null}             onClick={() => setSmartFilter(null)}             icon="✓" label="بلا فلتر ذكي" />
+                            <SmartChip active={smartFilter === 'pinned'}         onClick={() => setSmartFilter('pinned')}         icon="★" label="المفضّلة" count={pins.list.length} />
+                            <SmartChip active={smartFilter === 'expiring_7d'}    onClick={() => setSmartFilter('expiring_7d')}    icon="⏰" label="ينتهي خلال 7 أيام" />
+                            <SmartChip active={smartFilter === 'expiring_30d'}   onClick={() => setSmartFilter('expiring_30d')}   icon="📅" label="ينتهي خلال 30 يوم" />
+                            <SmartChip active={smartFilter === 'no_plan'}        onClick={() => setSmartFilter('no_plan')}        icon="🆓" label="بدون اشتراك" />
+                            <SmartChip active={smartFilter === 'high_discount'}  onClick={() => setSmartFilter('high_discount')}  icon="🏷️" label="خصم ≥ 30%" />
+                        </div>
+                    </div>
+
+                    {loading ? (
+                        <AdmSkeleton rows={5} height={76} />
+                    ) : filtered.length === 0 ? (
+                        <AdmEmpty
+                            icon={smartFilter === 'pinned' ? '★' : '🔍'}
+                            title={smartFilter === 'pinned' ? 'لا متاجر في مفضّلتك بعد' : 'لا متجر يطابق هذا المرشّح'}
+                            hint={
+                                smartFilter === 'pinned'
+                                    ? 'اضغط ★ بجانب أي متجر في القائمة ليصعد إلى أعلى الشاشة في كل زيارة.'
+                                    : 'جرّب «الكل» مع «بلا فلتر ذكي»، أو ابحث بالاسم — البحث يسأل الخادم فيصل إلى ما هو خارج الصفحة المحمّلة.'
+                            }
+                            action={
+                                (filter !== 'all' || smartFilter !== null) ? (
+                                    <AdmButton size="sm" onClick={() => { setFilter('all'); setSmartFilter(null); }}>مسح المرشّحات</AdmButton>
+                                ) : undefined
+                            }
+                        />
+                    ) : (
+                        <div className="space-y-3">
                             {pinnedSellers.length > 0 && smartFilter !== 'pinned' && (
-                                <div className="text-xs font-extrabold text-[var(--text-secondary)] mb-2 px-1">
-                                    باقي المتاجر ({restSellers.length})
+                                <div>
+                                    <div className="text-xs font-extrabold mb-2 px-1" style={{ color: 'var(--adm-warn-fg)' }}>
+                                        ★ المفضّلة ({pinnedSellers.length})
+                                    </div>
+                                    <div className="space-y-2">
+                                        {pinnedSellers.map((s) => (
+                                            <SellerRow
+                                                key={s.id}
+                                                seller={s}
+                                                onEdit={setEditing}
+                                                pinned={true}
+                                                onTogglePin={pins.toggle}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
                             )}
-                            <div className="space-y-2">
-                                {restSellers.map((s) => (
-                                    <SellerRow
-                                        key={s.id}
-                                        seller={s}
-                                        onEdit={setEditing}
-                                        pinned={false}
-                                        onTogglePin={pins.toggle}
-                                    />
-                                ))}
-                            </div>
+                            {restSellers.length > 0 && (
+                                <div>
+                                    {pinnedSellers.length > 0 && smartFilter !== 'pinned' && (
+                                        <div className="text-xs font-extrabold mb-2 px-1" style={{ color: 'var(--adm-fg-3)' }}>
+                                            باقي المتاجر ({restSellers.length})
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        {restSellers.map((s) => (
+                                            <SellerRow
+                                                key={s.id}
+                                                seller={s}
+                                                onEdit={setEditing}
+                                                pinned={false}
+                                                onTogglePin={pins.toggle}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
-            )}
+            </AdmSection>
 
             {/* Subscription Modal */}
             {editing && (

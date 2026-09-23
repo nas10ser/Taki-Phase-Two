@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { storageService } from '../../services/storageService';
 import BannerImageEditor from '../../components/BannerImageEditor';
@@ -8,6 +8,12 @@ import {
 } from '../../repositories/contestRepository';
 import { BANNER } from '../../utils/imageCompression';
 import { waLink } from '../../utils/helpers';
+import {
+    AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
+    AdmToolbar, AdmSearch, AdmSelect, admNum,
+} from '../../components/admin/ui';
+import { ExportButton } from '../../components/admin/ExportButton';
+import type { CsvColumn } from '../../utils/csvExport';
 
 /**
  * رقم الفائز + وسيلتا التواصل (v14.77).
@@ -291,7 +297,15 @@ const AdminContests: React.FC = () => {
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 <button onClick={() => openEdit(c)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)]">✏️ تعديل</button>
-                                {c.status !== 'active' && <button onClick={() => changeStatus(c, 'active')} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500 text-white">▶️ تفعيل</button>}
+                                {/* 🪤 v14.89 — كان الشرط `status !== 'active'` وحده، فيبقى «تفعيل» ظاهراً
+                                    **بعد السحب**: ضغطةٌ واحدة تُخفي صفحة الفائزين عن الجمهور
+                                    وتعيد فتح باب المشاركة، بلا تحذير. لا تفعيل بعد سحب. */}
+                                {c.status !== 'active' && c.status !== 'drawn' && (
+                                    <button onClick={() => changeStatus(c, 'active')} className="px-3 py-1.5 text-xs font-bold rounded-lg"
+                                        style={{ background: 'var(--adm-ok-bg)', color: 'var(--adm-ok-fg)', border: '1px solid transparent' }}>
+                                        ▶️ تفعيل
+                                    </button>
+                                )}
                                 {c.status === 'active' && <button onClick={() => changeStatus(c, 'closed')} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-white">⏸️ إغلاق</button>}
                                 {c.status === 'active' && (
                                     <button
@@ -328,8 +342,18 @@ const AdminContests: React.FC = () => {
                     <div><label className={labelCls}>وصف مختصر</label><textarea className={inputCls} rows={2} value={draft.description || ''} onChange={(e) => setField({ description: e.target.value })} /></div>
                     <div><label className={labelCls}>الجائزة</label><input className={inputCls} value={draft.prize || ''} onChange={(e) => setField({ prize: e.target.value })} placeholder="مثال: بطاقة هدية 500 ر.س" /></div>
                     <div className="grid grid-cols-2 gap-3">
-                        <div><label className={labelCls}>يبدأ في</label><input type="datetime-local" className={inputCls} value={draft.starts_at ? draft.starts_at.slice(0, 16) : ''} onChange={(e) => setField({ starts_at: e.target.value ? new Date(e.target.value).toISOString() : null })} /></div>
-                        <div><label className={labelCls}>ينتهي في</label><input type="datetime-local" className={inputCls} value={draft.ends_at ? draft.ends_at.slice(0, 16) : ''} onChange={(e) => setField({ ends_at: e.target.value ? new Date(e.target.value).toISOString() : null })} /></div>
+                        <div>
+                            <label className={labelCls}>يبدأ في <span style={{ fontWeight: 600, color: 'var(--adm-fg-3)' }}>(بتوقيتك)</span></label>
+                            <input type="datetime-local" className={inputCls}
+                                value={isoToLocalInput(draft.starts_at)}
+                                onChange={(e) => setField({ starts_at: localInputToIso(e.target.value) })} />
+                        </div>
+                        <div>
+                            <label className={labelCls}>ينتهي في <span style={{ fontWeight: 600, color: 'var(--adm-fg-3)' }}>(بتوقيتك)</span></label>
+                            <input type="datetime-local" className={inputCls}
+                                value={isoToLocalInput(draft.ends_at)}
+                                onChange={(e) => setField({ ends_at: localInputToIso(e.target.value) })} />
+                        </div>
                     </div>
                     <div>
                         <label className={labelCls}>لمن هذه المسابقة؟</label>
@@ -495,11 +519,138 @@ const AdminContests: React.FC = () => {
     return <ManageContest contestId={manageId!} onBack={() => { setView('list'); load(); }} />;
 };
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// إجابات المشاركة — سؤالاً سؤالاً (v14.89)
+// 🪤 كانت تُنزَّل مع كل مشاركة ولا تُعرض في أي مكان.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** إجابةٌ صحيحة؟ — `undefined` تعني «لا تصحيح لهذا السؤال». */
+function isAnswerRight(q: ContestQuestion, given: string | undefined): boolean | undefined {
+    const right = (q.correctAnswers && q.correctAnswers.length)
+        ? q.correctAnswers
+        : (q.correctAnswer ? [q.correctAnswer] : []);
+    if (!right.length) return undefined;
+    if (given === undefined || given === '') return false;
+    return right.some((r) => String(r).trim() === String(given).trim());
+}
+
+const EntryAnswers: React.FC<{ entry: ContestEntry; contest: Contest | null }> = ({ entry, contest }) => {
+    const questions = contest?.questions ?? [];
+    const social = contest?.social_tasks ?? [];
+    if (!questions.length && !social.length) {
+        return (
+            <div style={{ fontSize: '.78rem', color: 'var(--adm-fg-3)', padding: '8px 0' }}>
+                هذه المسابقة بلا أسئلة — المشاركة اسمٌ وجوالٌ فقط.
+            </div>
+        );
+    }
+    return (
+        <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+            {questions.map((q, i) => {
+                const given = entry.answers?.[q.id];
+                const right = isAnswerRight(q, given);
+                return (
+                    <div key={q.id} style={{ display: 'grid', gap: 3 }}>
+                        <div style={{ fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
+                            {i + 1}. {q.prompt}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                            <span
+                                style={{
+                                    fontSize: '.82rem', fontWeight: 700, color: 'var(--adm-fg)',
+                                    background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+                                    borderRadius: 'var(--adm-r-sm)', padding: '4px 10px',
+                                }}
+                            >
+                                {given && String(given).trim() ? given : '— لم يُجب'}
+                            </span>
+                            {right === true && <AdmPill tone="ok">صحيحة</AdmPill>}
+                            {right === false && <AdmPill tone="bad">خاطئة</AdmPill>}
+                            {right === undefined && <AdmPill tone="neutral">إجابة حرّة</AdmPill>}
+                        </div>
+                    </div>
+                );
+            })}
+            {social.map((t) => (
+                <div key={t.id} style={{ display: 'grid', gap: 3 }}>
+                    <div style={{ fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>🔗 {t.prompt}</div>
+                    <span
+                        style={{
+                            fontSize: '.82rem', fontWeight: 700, color: 'var(--adm-fg)',
+                            background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+                            borderRadius: 'var(--adm-r-sm)', padding: '4px 10px', width: 'fit-content',
+                        }}
+                    >
+                        {entry.social_answers?.[t.id] || '— لم يُجب'}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+/** أعمدة CSV: ثابتةٌ خمسة ثمّ سؤالٌ لكل عمود — فالملفّ يُقرأ في أي جدول. */
+function entryCsvColumns(contest: Contest | null): CsvColumn<any>[] {
+    const base: CsvColumn<any>[] = [
+        { header: 'الاسم', accessor: (r: any) => r['الاسم'] },
+        { header: 'الجوال', accessor: (r: any) => r['الجوال'] },
+        { header: 'التاريخ', accessor: (r: any) => r['التاريخ'] },
+        { header: 'الدرجة', accessor: (r: any) => r['الدرجة'] },
+        { header: 'الحالة', accessor: (r: any) => r['الحالة'] },
+    ];
+    (contest?.questions ?? []).forEach((q, i) => {
+        const key = `س${i + 1}: ${q.prompt}`;
+        base.push({ header: key, accessor: (r: any) => r[key] ?? '' });
+    });
+    (contest?.social_tasks ?? []).forEach((t, i) => {
+        const key = `مهمّة${i + 1}: ${t.prompt}`;
+        base.push({ header: key, accessor: (r: any) => r[key] ?? '' });
+    });
+    return base;
+}
+
+function answersAsColumns(e: ContestEntry, contest: Contest | null): Record<string, string> {
+    const out: Record<string, string> = {};
+    (contest?.questions ?? []).forEach((q, i) => {
+        out[`س${i + 1}: ${q.prompt}`] = e.answers?.[q.id] ?? '';
+    });
+    (contest?.social_tasks ?? []).forEach((t, i) => {
+        out[`مهمّة${i + 1}: ${t.prompt}`] = e.social_answers?.[t.id] ?? '';
+    });
+    return out;
+}
+
+
+/**
+ * 🪤 v14.89 — فرقُ ثلاثِ ساعاتٍ صامت في كل مسابقةٍ مجدولة.
+ *    `<input type="datetime-local">` يتكلّم **بتوقيت الجهاز**، والقيمة تُحفظ
+ *    UTC. وكان العرض `iso.slice(0,16)` — أي يُظهر ساعة UTC حرفياً: تكتب
+ *    ٩ مساءً بتوقيت الرياض فيُحفظ `18:00Z`، وعند فتح المسابقة للتعديل ترى
+ *    ٦ مساءً. الدالّتان أدناه تترجمان في الاتّجاهين بتوقيت الجهاز.
+ * 🪤 ولا `toISOString()` لبناء تاريخٍ محلّي — يرجع يوماً للوراء شرق غرينتش.
+ */
+const isoToLocalInput = (iso: string | null | undefined): string => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const localInputToIso = (v: string): string | null => (v ? new Date(v).toISOString() : null);
+
 // ---------- entries + draw sub-view ----------
 const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ contestId, onBack }) => {
     const { customAlert, customConfirm, customPrompt } = useApp();
     const [contest, setContest] = useState<Contest | null>(null);
     const [entries, setEntries] = useState<ContestEntry[]>([]);
+    /** العدد الحقيقي في القاعدة — قد يفوق المعروض، ويُقال صراحةً. */
+    const [entriesTotal, setEntriesTotal] = useState(0);
+    /** بحثٌ وترشيحٌ داخل المشاركات — لم يكن للجدول أيٌّ منهما. */
+    const [entryQuery, setEntryQuery] = useState('');
+    const [entryFilter, setEntryFilter] = useState<'all' | 'qualified' | 'unqualified' | 'winner'>('all');
+    /** المشاركة المفتوحة لقراءة إجاباتها. */
+    const [openEntry, setOpenEntry] = useState<string | null>(null);
     /** v14.65 — أي فائزٍ يُحفظ الآن تسليمُ جائزته (فلا يُضغط الزرّ مرّتين). */
     const [deliveringId, setDeliveringId] = useState<string | null>(null);
     /** عدد من وصلهم إشعار السحب — يُقرأ مرّة عند إغلاق البكرة ثم يُمسح. */
@@ -520,9 +671,24 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
     const load = useCallback(async () => {
         setLoading(true);
         const [c, e] = await Promise.all([contestRepository.get(contestId), contestRepository.entries(contestId)]);
-        setContest(c); setEntries(e); setLoading(false);
+        setContest(c);
+        setEntries(e.rows);
+        setEntriesTotal(e.total);
+        setLoading(false);
     }, [contestId]);
     useEffect(() => { load(); }, [load]);
+
+    /** ما يراه القارئ فعلاً بعد البحث والترشيح — والتصدير يتبعه لا القائمة الخام. */
+    const visibleEntries = useMemo(() => {
+        const q = entryQuery.trim();
+        return entries.filter((e) => {
+            if (entryFilter === 'qualified' && !e.qualified) return false;
+            if (entryFilter === 'unqualified' && e.qualified) return false;
+            if (entryFilter === 'winner' && !e.is_winner) return false;
+            if (!q) return true;
+            return (e.name || '').includes(q) || (e.phone || '').includes(q);
+        });
+    }, [entries, entryQuery, entryFilter]);
 
     const qualified = entries.filter((e) => e.qualified);
     const winners = entries.filter((e) => e.is_winner);
@@ -631,6 +797,15 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                         >
                                             {deliveringId === w.id ? '...' : (w.prize_delivered ? '✅ سُلِّمت' : '📦 لم تُسلَّم')}
                                         </button>
+                                        {/* 🪤 v14.89 — توثيقُ التسليم كان مخبّأً في خاصّية `title`
+                                            (تلميح الفأرة) — وناصر يعمل من الجوّال حيث لا تمرير
+                                            فأرة إطلاقاً. أي أن ما يُكتب لا يُقرأ أبداً. */}
+                                        {w.prize_delivered && (w.prize_delivered_at || w.prize_note) && (
+                                            <div style={{ width: '100%', marginTop: 5, fontSize: '.68rem', color: 'var(--adm-ok-fg)', fontWeight: 700 }}>
+                                                {w.prize_delivered_at && `سُلّمت ${new Date(w.prize_delivered_at).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn')}`}
+                                                {w.prize_note ? ` — ${w.prize_note}` : ''}
+                                            </div>
+                                        )}
                                         </div>
                                     </div>
                                 );
@@ -640,26 +815,148 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                 )}
             </div>
 
-            {/* Entries table */}
-            {loading ? (
-                <div className="h-40 bg-[var(--gray-100)] rounded-2xl animate-pulse" />
-            ) : entries.length === 0 ? (
-                <div className="text-center text-[var(--text-secondary)] py-12">لا مشاركات بعد.</div>
-            ) : (
-                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
-                    {entries.map((e) => (
-                        <div key={e.id} className="flex items-center gap-3 p-3 border-b border-[var(--border-color)] last:border-0">
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm text-[var(--text-primary)] truncate flex items-center gap-2">
-                                    {e.is_winner && <span title="فائز">🏆</span>}{e.name}
+            {/* ═══ المشاركات ═══
+                🪤 v14.89 — أخطر عيبٍ في هذه الشاشة كان صامتاً: الحقلان
+                `answers` و`social_answers` يُنزَّلان مع كل مشاركة **ولا
+                يُعرضان في أي مكان**. أي أن الشاشة اسمها «المسابقات
+                والاستبيانات» ولا سبيل فيها لقراءة إجابةِ استبيانٍ واحدة —
+                بياناتٌ تُجمع من الناس ولا يراها أحد.
+                وكان الجدول بلا بحثٍ ولا ترشيحٍ ولا تاريخٍ ولا تصدير،
+                ومسقوفاً **بصمت** بألف مشاركة. */}
+            <AdmSection
+                title="المشاركات"
+                icon="👥"
+                desc={contest?.pass_mode === 'collect'
+                    ? 'هذه المسابقة بلا تصحيح — كل من شارك يدخل السحب، فلا عمود درجة.'
+                    : 'الدرجة تُحتسب آلياً من الإجابات الصحيحة التي حدّدتَها في الأسئلة.'}
+                badge={{
+                    text: entriesTotal > entries.length
+                        ? `${admNum(entries.length)} معروضة من ${admNum(entriesTotal)}`
+                        : `${admNum(entriesTotal)} مشاركة`,
+                    tone: entriesTotal > entries.length ? 'warn' : 'neutral',
+                }}
+                action={entries.length > 0 ? (
+                    <ExportButton
+                        rows={visibleEntries.map((e) => ({
+                            الاسم: e.name,
+                            الجوال: e.phone,
+                            التاريخ: new Date(e.created_at).toLocaleString('ar-SA-u-ca-gregory-nu-latn'),
+                            الدرجة: contest?.pass_mode === 'collect' ? '—' : `${e.score}/${e.max_score}`,
+                            الحالة: e.is_winner ? 'فائز' : e.qualified ? 'مؤهّل' : 'غير مؤهّل',
+                            ...answersAsColumns(e, contest),
+                        }))}
+                        columns={entryCsvColumns(contest)}
+                        filenameStem={`taki-contest-${contestId}`}
+                        label="📥 تصدير المشاركات وإجاباتها"
+                        accent="emerald"
+                        tooltip="ملفّ CSV فيه كل مشاركةٍ معروضة وإجاباتها سؤالاً سؤالاً"
+                    />
+                ) : undefined}
+            >
+                <AdmToolbar>
+                    <AdmSearch
+                        value={entryQuery}
+                        onChange={setEntryQuery}
+                        placeholder="ابحث باسم المشارك أو جواله…"
+                        label="بحث في المشاركات"
+                    />
+                    <AdmSelect
+                        label="الحالة"
+                        value={entryFilter}
+                        onChange={(v) => setEntryFilter(v as typeof entryFilter)}
+                        options={[
+                            { value: 'all', label: 'الكل' },
+                            { value: 'qualified', label: 'المؤهّلون' },
+                            { value: 'unqualified', label: 'غير المؤهّلين' },
+                            { value: 'winner', label: 'الفائزون' },
+                        ]}
+                    />
+                </AdmToolbar>
+
+                {entriesTotal > entries.length && (
+                    <div
+                        style={{
+                            marginBottom: 12, padding: '9px 12px', borderRadius: 'var(--adm-r-sm)',
+                            background: 'var(--adm-warn-bg)', color: 'var(--adm-warn-fg)',
+                            fontSize: '.78rem', fontWeight: 700, lineHeight: 1.8,
+                        }}
+                    >
+                        تُعرض أحدث {admNum(entries.length)} مشاركة من أصل {admNum(entriesTotal)}.
+                        والسحب لا يتأثّر: الفائزون يُختارون داخل القاعدة من <strong>كل</strong> المشاركات.
+                    </div>
+                )}
+
+                {loading ? (
+                    <AdmSkeleton rows={5} height={46} />
+                ) : entries.length === 0 ? (
+                    <AdmEmpty
+                        icon="👥"
+                        title="لا مشاركات بعد"
+                        hint="حين يشارك أول شخصٍ في هذه المسابقة، تظهر مشاركته وإجاباته هنا."
+                    />
+                ) : visibleEntries.length === 0 ? (
+                    <AdmEmpty
+                        icon="🔎"
+                        title="لا مشاركة تطابق بحثك"
+                        hint="جرّب اسماً آخر أو اختر «الكل» في الحالة."
+                        action={<AdmButton size="sm" onClick={() => { setEntryQuery(''); setEntryFilter('all'); }}>امسح البحث</AdmButton>}
+                    />
+                ) : (
+                    <div style={{ display: 'grid', gap: 6 }}>
+                        {visibleEntries.map((e) => {
+                            const open = openEntry === e.id;
+                            return (
+                                <div
+                                    key={e.id}
+                                    style={{
+                                        border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r-sm)',
+                                        background: 'var(--adm-surface)', overflow: 'hidden',
+                                    }}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenEntry(open ? null : e.id)}
+                                        aria-expanded={open}
+                                        className="adm-focusable"
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                                            padding: '10px 12px', background: 'transparent', border: 'none',
+                                            cursor: 'pointer', textAlign: 'right',
+                                        }}
+                                    >
+                                        <span style={{ flex: 1, minWidth: 0 }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                {e.is_winner && <span title="فائز" aria-hidden="true">🏆</span>}
+                                                <span style={{ fontWeight: 800, fontSize: '.86rem', color: 'var(--adm-fg)' }}>{e.name}</span>
+                                                <AdmPill tone={e.is_winner ? 'info' : e.qualified ? 'ok' : 'neutral'}>
+                                                    {e.is_winner ? 'فائز' : e.qualified ? 'مؤهّل' : 'غير مؤهّل'}
+                                                </AdmPill>
+                                                {contest?.pass_mode !== 'collect' && (
+                                                    <span style={{ fontSize: '.72rem', color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums' }}>
+                                                        {admNum(e.score)}/{admNum(e.max_score)}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span style={{ display: 'block', fontSize: '.7rem', color: 'var(--adm-fg-3)', marginTop: 3 }}>
+                                                شارك {new Date(e.created_at).toLocaleString('ar-SA-u-ca-gregory-nu-latn')}
+                                            </span>
+                                        </span>
+                                        <span aria-hidden="true" style={{ color: 'var(--adm-fg-3)', fontSize: '.75rem' }}>
+                                            {open ? '▲ إخفاء الإجابات' : '▼ اقرأ الإجابات'}
+                                        </span>
+                                    </button>
+
+                                    {open && (
+                                        <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--adm-border)' }}>
+                                            <EntryAnswers entry={e} contest={contest} />
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
-                            <span className="text-[11px] text-[var(--text-secondary)]">{e.score}/{e.max_score}</span>
-                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full text-white ${e.qualified ? 'bg-emerald-500' : 'bg-[var(--gray-400)]'}`}>{e.qualified ? 'مؤهّل' : 'غير مؤهّل'}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
+                            );
+                        })}
+                    </div>
+                )}
+            </AdmSection>
 
             {showDraw && contest && (
                 <DrawReel
@@ -791,7 +1088,7 @@ const DrawReel: React.FC<{
     return (
         <div dir="rtl" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(4px)' }}>
             <div className="relative w-full max-w-md bg-[var(--card-bg)] rounded-3xl border border-purple-300 shadow-2xl overflow-hidden">
-                <div className="px-5 py-4 bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white text-center">
+                <div className="px-5 py-4 text-center" style={{ background: 'var(--adm-fg)', color: 'var(--adm-surface)' }}>
                     <div className="text-base font-extrabold">🎲 سحب الفائزين</div>
                     <div className="text-[11px] opacity-90 mt-0.5">{count > 1 ? `الفائز ${revealIdx + 1} من ${total}` : 'فائز واحد'} · من {entries.length} مؤهّل</div>
                 </div>
@@ -815,7 +1112,8 @@ const DrawReel: React.FC<{
                             <div className="absolute inset-x-0 top-0 h-7 bg-gradient-to-b from-[var(--body-bg)] to-transparent" />
                             <div className="absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-[var(--body-bg)] to-transparent" />
                         </div>
-                        <button onClick={onStopClick} disabled={stopping} className="mt-5 w-full py-4 rounded-2xl text-white font-extrabold text-lg bg-gradient-to-r from-red-500 to-rose-600 active:scale-95 disabled:opacity-60 shadow-lg">
+                        <button onClick={onStopClick} disabled={stopping} className="adm-focusable mt-5 w-full py-4 font-extrabold text-lg active:scale-95 disabled:opacity-60"
+                            style={{ background: 'var(--adm-bad-fg)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}>
                             {stopping ? '⏳ يُحسم الفائز…' : '🛑 قف'}
                         </button>
                         <button onClick={onClose} className="mt-2 w-full py-2 text-xs font-bold text-[var(--text-secondary)]">إلغاء</button>
@@ -836,9 +1134,9 @@ const DrawReel: React.FC<{
                             <div className="text-sm text-[var(--text-secondary)] mt-2">لا يوجد فائزون.</div>
                         )}
                         {hasMore ? (
-                            <button onClick={drawNext} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-gradient-to-r from-purple-600 to-fuchsia-600 active:scale-95">🎲 اسحب الفائز التالي</button>
+                            <button onClick={drawNext} className="adm-focusable mt-5 w-full py-3.5 font-extrabold active:scale-95" style={{ background: 'var(--adm-accent)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}>🎲 اسحب الفائز التالي</button>
                         ) : (
-                            <button onClick={onClose} className="mt-5 w-full py-3.5 rounded-2xl text-white font-extrabold bg-purple-600 active:scale-95">✅ تم</button>
+                            <button onClick={onClose} className="adm-focusable mt-5 w-full py-3.5 font-extrabold active:scale-95" style={{ background: 'var(--adm-accent)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}>✅ تم</button>
                         )}
                     </div>
                 )}

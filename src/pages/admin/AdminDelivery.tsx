@@ -15,8 +15,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
+import { AdmError, AdmSkeleton, AdmEmpty, admNum } from '../../components/admin/ui';
 
-const money = (n: any) => (Number(n) || 0).toLocaleString('ar-SA', { maximumFractionDigits: 2 });
+/* 🪤 كانت `ar-SA` تطبع ١٢٬٣٤٥٫٥ بينما عدد الطلبات يُطبع 12345 — بطاقتان
+   متجاورتان بخطّين رقميّين. `admNum` هو شكل اللوحة الواحد. */
+const money = (n: any) => admNum(Number(n) || 0);
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone?: string }> =
 ({ label, value, hint, tone }) => (
@@ -44,19 +47,40 @@ const AdminDelivery: React.FC = () => {
     const [status, setStatus] = useState<string>('');
     const [shown, setShown] = useState(25);
     const [busy, setBusy] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
 
+    /**
+     * 🪤 v14.89 — ثلاثة عيوبٍ مقيسة كانت هنا:
+     *   • `a.error` و`b.error` و`c.error` **مُهمَلة تماماً** (`a.data || null`):
+     *     فشلُ النداء (صلاحية · شبكة · RLS) كان يترك الشاشة أصفاراً وشريطَ
+     *     «التوصيل موقوف» إلى الأبد بلا سببٍ ظاهر.
+     *   • لا حالة تحميلٍ للقوائم: تظهر «لا متجر فعّل التوصيل بعد» قبل وصول
+     *     البيانات — فراغٌ كاذب يدعو إلى إنشاء ما هو موجود.
+     *   • و`!ov?.global_on` تساوي صحيحاً ما دامت `ov` عَدَماً، فيصرخ إنذار
+     *     «التوصيل موقوف» في **كل فتحةٍ للشاشة** ثم يختفي.
+     */
     const load = useCallback(async () => {
         setBusy(true);
+        setErr(null);
         const [a, b, c] = await Promise.all([
             supabase.rpc('admin_delivery_overview'),
             supabase.rpc('admin_delivery_orders', { p_status: status || null, p_limit: shown, p_offset: 0 }),
             supabase.rpc('admin_delivery_stores'),
         ]);
+        const failed = [a.error, b.error, c.error].filter(Boolean);
+        if (failed.length) {
+            setErr(failed[0]?.message || 'تعذّر جلب بيانات التوصيل.');
+            setBusy(false);
+            setLoaded(true);
+            return;
+        }
         setOv(a.data || null);
         setOrders(Array.isArray((b.data as any)?.rows) ? (b.data as any).rows : []);
         setTotal(Number((b.data as any)?.total) || 0);
         setStores(Array.isArray((c.data as any)?.rows) ? (c.data as any).rows : []);
         setBusy(false);
+        setLoaded(true);
     }, [status, shown]);
     useEffect(() => { load(); }, [load]);
 
@@ -99,25 +123,39 @@ const AdminDelivery: React.FC = () => {
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
             <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                    <h2 className="text-xl font-extrabold">🚚 التوصيل</h2>
-                    <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
-                        التوصيل خدمة يقدّمها التاجر بنفسه. تاكي لا تشحن ولا تتعاقد مع مندوبين،
-                        لكنها تملك إيقاف الخدمة حين تُسيء.
-                    </p>
-                </div>
+                {/* 🪤 v14.89 — حُذف العنوان المحلّي: قشرة اللوحة تطبع اسم الشاشة
+                    ووصفها من `src/data/adminNav.ts`، فكان العنوان يظهر مرّتين
+                    فوق بعضه بصياغتين مختلفتين. */}
+                <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--adm-fg-2)', maxWidth: '62ch' }}>
+                    التوصيل خدمة يقدّمها التاجر بنفسه. تاكي لا تشحن ولا تتعاقد مع مندوبين،
+                    لكنها تملك إيقاف الخدمة حين تُسيء.
+                </p>
                 <button
                     onClick={toggleGlobal}
-                    className={`px-4 py-2.5 rounded-2xl font-black text-sm text-white shadow-lg ${
-                        ov?.global_on ? 'bg-gradient-to-br from-rose-500 to-red-600'
-                                      : 'bg-gradient-to-br from-emerald-500 to-teal-600'}`}
+                    disabled={!loaded || !!err}
+                    className="adm-focusable px-4 py-2.5 font-black text-sm"
+                    style={{
+                        borderRadius: 'var(--adm-r-sm)',
+                        border: '1px solid var(--adm-border)',
+                        background: !loaded ? 'var(--adm-surface-3)'
+                                  : ov?.global_on ? 'var(--adm-bad-bg)' : 'var(--adm-ok-bg)',
+                        color: !loaded ? 'var(--adm-fg-3)'
+                             : ov?.global_on ? 'var(--adm-bad-fg)' : 'var(--adm-ok-fg)',
+                        cursor: loaded && !err ? 'pointer' : 'not-allowed',
+                    }}
                 >
-                    {ov?.global_on ? '⏸ إيقاف التوصيل على المنصّة' : '▶️ إعادة تشغيل التوصيل'}
+                    {!loaded ? '… جارٍ قراءة الحالة'
+                             : ov?.global_on ? '⏸ إيقاف التوصيل على المنصّة' : '▶️ إعادة تشغيل التوصيل'}
                 </button>
             </div>
 
-            {!ov?.global_on && (
-                <div className="rounded-2xl p-4 bg-amber-500/10 border-2 border-amber-500/40 font-bold text-sm">
+            {err && <AdmError message={`تعذّر جلب بيانات التوصيل: ${err}`} onRetry={load} />}
+
+            {loaded && !err && !ov?.global_on && (
+                <div
+                    className="p-4 font-bold text-sm"
+                    style={{ borderRadius: 'var(--adm-r-sm)', background: 'var(--adm-warn-bg)', color: 'var(--adm-warn-fg)' }}
+                >
                     ⏸ التوصيل موقوف على المنصّة كلها الآن. لا يستطيع أي مشترٍ اختياره في الموقع
                     ولا في البوتين، والاستلام من المتجر يعمل طبيعياً.
                 </div>
@@ -139,10 +177,14 @@ const AdminDelivery: React.FC = () => {
             {/* المتاجر */}
             <div className="bg-[var(--card-bg)] rounded-3xl p-4 border border-[var(--border-color)]">
                 <h3 className="font-black text-sm mb-3">🏪 المتاجر التي تقدّم التوصيل</h3>
-                {stores.length === 0 ? (
-                    <div className="text-xs text-[var(--text-secondary)] py-6 text-center">
-                        لا متجر فعّل التوصيل بعد.
-                    </div>
+                {!loaded ? (
+                    <AdmSkeleton rows={3} height={46} />
+                ) : stores.length === 0 ? (
+                    <AdmEmpty
+                        icon="🏪"
+                        title="لا متجر فعّل التوصيل بعد"
+                        hint="التاجر يفعّل التوصيل من لوحته ويرسم نطاقه بنفسه. حين يفعل، يظهر هنا بنطاقاته."
+                    />
                 ) : (
                     <div className="space-y-2">
                         {stores.map(s => (
@@ -192,8 +234,16 @@ const AdminDelivery: React.FC = () => {
                         {Object.entries(STATUS_AR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                 </div>
-                {orders.length === 0 ? (
-                    <div className="text-xs text-[var(--text-secondary)] py-6 text-center">لا طلبات توصيل بهذه الحالة.</div>
+                {!loaded ? (
+                    <AdmSkeleton rows={4} height={44} />
+                ) : orders.length === 0 ? (
+                    <AdmEmpty
+                        icon="🚚"
+                        title={status ? 'لا طلب توصيل بهذه الحالة' : 'لا طلبات توصيل بعد'}
+                        hint={status
+                            ? 'جرّب حالةً أخرى من القائمة أعلاه، أو اختر «كل الحالات».'
+                            : 'أول طلبِ توصيلٍ على المنصّة سيظهر هنا فور إنشائه.'}
+                    />
                 ) : (
                     <div className="space-y-2">
                         {orders.map(o => (

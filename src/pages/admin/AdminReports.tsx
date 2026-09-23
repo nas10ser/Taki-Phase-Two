@@ -1,21 +1,33 @@
 /**
- * AdminReports v10.94 — "Reports & Complaints" center
+ * AdminReports — البلاغات والشكاوى (v14.89 — أُعيد تنظيمها على نظام لوحة الإدارة)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ما تفعله الشاشة (بلا أي تغيير في السلوك): أربعة عروضٍ في تبويبٍ واحد —
+ *   🚩 بلاغات المستخدمين · 📣 شكاوى للإدارة · ⚠️ إنذارات المسؤولين ·
+ *   ⛔ حسابات أوقفتها الإدارة
+ * ونفس نداءات القاعدة تماماً: `listReports` · `listComplaints` ·
+ * `listWarnedUsers` · `admin_suspended_accounts` · `admin_reports_summary` ·
+ * `setReportStatus` / `setComplaintStatus` · `suspendAccount` ·
+ * `admin_set_booking_ban` · `admin_delete_warning`.
  *
- * What changed in v10.94:
- *  - Full Tailwind redesign — matches the rest of the admin panel
- *    (was the only tab still on inline styles)
- *  - Glass-style filter bar that sticks while scrolling cards
- *  - Pill chips for type/status/role with active gradients
- *  - Click-to-copy on phone numbers
- *  - One-click jump to the seller's store page / buyer's admin record
- *  - Status pills tinted to match the action (under_review = red,
- *    resolved = green, dismissed = gray)
+ * 🔴 ما صُحِّح هنا — التباسٌ في التسمية كان يكلّف قراراً:
+ *    كان العرض الفرعي هنا اسمه «⚠️ الإنذارات» ومصدره `user_warnings`
+ *    (إنذاراتٌ على الحساب)، وفي الوقت نفسه تبويبٌ آخر في اللوحة اسمه
+ *    «🛡 الإنذارات» ومصدره `moderation_flags` (مخالفاتٌ يرصدها النظام في
+ *    المحتوى). اسمٌ واحد لرقمين مختلفين. الآن: **«إنذارات المسؤولين»** هنا،
+ *    و«رصد المحتوى الآلي» هناك — والمعرّفات ونداءات القاعدة كما هي حرفياً.
  *
- * Owner requirements still respected:
- *  - Reporter + reported identities visible
- *  - Per-account counts (received vs filed, distinct-reporter)
- *  - Complaints surface here too (not email-only)
- *  - Manual handling only — no auto-restrict
+ * 🔴 ورقمٌ كان يكذب بنطاقه: بطاقات الأرقام تأتي من `admin_reports_summary`
+ *    وهي **للمنصّة كلّها ولا تتأثّر بالمرشِّحات**، بينما القائمة تحتها مُرشَّحة.
+ *    فكان زرّ «عرض المزيد» يقول «ظهر ٥٠ من ٤١٢» وهو يقارن مُرشَّحاً بغير
+ *    مُرشَّح. الآن لكل بطاقةٍ `scope` يقول نطاقها، والزرّ يعدّ ما ظهر وحده.
+ *
+ * 🪤 ولا `dark:` ولا `bg-white` ولا تدرّجات: الألوان رموز `--adm-*` تتبع
+ *    `.dark-mode`/`.light-mode`، واللون للدلالة وحدها (سليم/تحذير/خطر).
+ *
+ * متطلّبات المالك التي لم تُمَسّ:
+ *  - هويّة المُبلِّغ والمُبلَّغ ضدّه ظاهرتان، والعدّادات لكل حساب.
+ *  - الشكاوى تظهر هنا لا في البريد وحده.
+ *  - المعالجة يدوية بالكامل — لا تقييد تلقائي.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -31,6 +43,17 @@ import {
 import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { supabase } from '../../services/supabaseClient';
+import {
+    AdmSection, AdmPageHeader,
+    AdmStat, AdmStatGrid,
+    AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
+    admNum, toneFg, toneBg,
+} from '../../components/admin/ui';
+import type { Tone } from '../../components/admin/ui';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ثوابت العرض
+// ═══════════════════════════════════════════════════════════════════════════
 
 const REPORT_TYPES = [
     { value: 'scam', label: 'احتيال', icon: '⚠️' },
@@ -41,18 +64,50 @@ const REPORT_TYPES = [
     { value: 'other', label: 'أخرى', icon: '❓' },
 ];
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; label: string; icon: string }> = {
-    open:           { bg: 'bg-amber-100',    text: 'text-amber-800',    label: 'مفتوح',          icon: '🟠' },
-    under_review:   { bg: 'bg-red-100',      text: 'text-red-800',      label: 'تحت المراجعة',   icon: '🔴' },
-    reviewing:      { bg: 'bg-red-100',      text: 'text-red-800',      label: 'قيد المراجعة',   icon: '🔴' },
-    resolved:       { bg: 'bg-emerald-100',  text: 'text-emerald-800',  label: 'تم الحل',        icon: '✅' },
-    dismissed:      { bg: 'bg-gray-100',     text: 'text-gray-700',     label: 'مرفوض',          icon: '⛔' },
+/** الحالة → نغمة دلالة + تسمية. لا لون خارج النغمات الخمس. */
+const STATUS_META: Record<string, { tone: Tone; label: string; icon: string }> = {
+    open:         { tone: 'warn',    label: 'مفتوح',        icon: '🟠' },
+    under_review: { tone: 'bad',     label: 'تحت المراجعة', icon: '🔴' },
+    reviewing:    { tone: 'bad',     label: 'قيد المراجعة', icon: '🔴' },
+    resolved:     { tone: 'ok',      label: 'تم الحل',      icon: '✅' },
+    dismissed:    { tone: 'neutral', label: 'مرفوض',        icon: '⛔' },
 };
+
+type ViewId = 'reports' | 'complaints' | 'warnings' | 'suspended';
+
+/**
+ * أسماء العروض ووصفُ كلٍّ منها.
+ * 🪤 الوصف ليس زينة: عرضان من الأربعة يتقاطعان مع شاشاتٍ أخرى في اللوحة
+ *    (الإيقاف يظهر أيضاً في المشترين والتجّار، والإنذار يُشبه اسمَ تبويب
+ *    الرصد الآلي) — فالوصف هو ما يمنع القارئ من الخلط.
+ */
+const VIEWS: Array<{ id: ViewId; icon: string; label: string; desc: string }> = [
+    {
+        id: 'reports', icon: '🚩', label: 'بلاغات المستخدمين',
+        desc: 'بلاغاتٌ قدّمها مستخدمٌ ضدّ مستخدمٍ آخر. كل تغيير حالةٍ هنا يدويّ — لا تقييد تلقائي.',
+    },
+    {
+        id: 'complaints', icon: '📣', label: 'شكاوى للإدارة',
+        desc: 'رسائل أرسلها مستخدمون إلى فريق تاكي مباشرةً — لا ضدّ شخصٍ بعينه.',
+    },
+    {
+        id: 'warnings', icon: '⚠️', label: 'إنذارات المسؤولين',
+        desc: 'إنذاراتٌ أصدرها فريق الإدارة يدوياً على حساب. أمّا ما يرصده النظام تلقائياً داخل المحتوى (محادثات · تقييمات · عروض · صور) فمكانه تبويب «رصد المحتوى الآلي».',
+    },
+    {
+        id: 'suspended', icon: '⛔', label: 'حسابات أوقفتها الإدارة',
+        desc: 'هذه الشاشة هي مكان الإيقاف والرفع مع تسجيل السبب الذي يصل صاحب الحساب ويبقى في سجلّه. أمّا قائمتا «المشترون» و«التجّار» فتعرضان الحالة نفسها للتصفية فقط.',
+    },
+];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// أدوات صغيرة
+// ═══════════════════════════════════════════════════════════════════════════
 
 const fmt = (iso: string) => {
     try {
         const d = new Date(iso);
-        return d.toLocaleString('ar-SA', {
+        return d.toLocaleString('ar-SA-u-ca-gregory', {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit',
         });
@@ -67,31 +122,110 @@ const timeAgo = (iso: string): string => {
     return `قبل ${Math.floor(sec / 86400)} ي`;
 };
 
-// ============================================================
-// Status Pill
-// ============================================================
-const StatusPill: React.FC<{ status: string }> = ({ status }) => {
-    const s = STATUS_STYLES[status] ?? { bg: 'bg-gray-100', text: 'text-gray-700', label: status, icon: '•' };
-    return (
-        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${s.bg} ${s.text}`}>
-            <span>{s.icon}</span>
-            {s.label}
-        </span>
-    );
+/** صفٌّ داخل قسم: سطحٌ أفتح من سطح القسم فلا يذوب فيه. */
+const rowCard = (tone: Tone): React.CSSProperties => ({
+    background: 'var(--adm-surface-2)',
+    border: '1px solid var(--adm-border)',
+    borderInlineStartWidth: 3,
+    borderInlineStartStyle: 'solid',
+    borderInlineStartColor: tone === 'neutral' ? 'var(--adm-border-strong)' : toneFg(tone),
+    borderRadius: 'var(--adm-r-sm)',
+    padding: '13px 14px',
+});
+
+const panelStyle: React.CSSProperties = {
+    background: 'var(--adm-surface-3)',
+    border: '1px solid var(--adm-border)',
+    borderRadius: 'var(--adm-r-sm)',
+    padding: '10px 12px',
 };
 
-// ============================================================
-// Main
-// ============================================================
+const bodyText: React.CSSProperties = {
+    margin: 0, fontSize: '.85rem', fontWeight: 500, lineHeight: 1.85,
+    color: 'var(--adm-fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+};
+
+const metaText: React.CSSProperties = {
+    fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// عناصر مشتركة
+// ═══════════════════════════════════════════════════════════════════════════
+
+const StatusPill: React.FC<{ status: string }> = ({ status }) => {
+    const s = STATUS_META[status] ?? { tone: 'neutral' as Tone, label: status, icon: '•' };
+    return <AdmPill tone={s.tone}>{s.icon} {s.label}</AdmPill>;
+};
+
+/** زرُّ إجراءٍ بنغمة دلالة — النغمة تقول أثر الضغطة قبل الضغط. */
+const ToneButton: React.FC<{
+    tone: Tone;
+    onClick: () => void;
+    children: React.ReactNode;
+    title?: string;
+}> = ({ tone, onClick, children, title }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        className="adm-focusable"
+        style={{
+            padding: '5px 11px', borderRadius: 'var(--adm-r-sm)',
+            fontSize: '.76rem', fontWeight: 800, whiteSpace: 'nowrap',
+            border: '1px solid transparent', cursor: 'pointer',
+            background: toneBg(tone), color: toneFg(tone),
+        }}
+    >
+        {children}
+    </button>
+);
+
+const FilterChip: React.FC<{
+    active: boolean;
+    onClick: () => void;
+    label: string;
+    icon?: string;
+}> = ({ active, onClick, label, icon }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className="adm-focusable"
+        style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '5px 11px', borderRadius: 999,
+            fontSize: '.75rem', fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+            border: `1px solid ${active ? 'transparent' : 'var(--adm-border)'}`,
+            background: active ? 'var(--adm-accent)' : 'var(--adm-surface-2)',
+            color: active ? '#ffffff' : 'var(--adm-fg-2)',
+        }}
+    >
+        {icon && <span aria-hidden="true">{icon}</span>}
+        {label}
+    </button>
+);
+
+const FilterRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+        <span style={{ ...metaText, minWidth: 54 }}>{label}</span>
+        {children}
+    </div>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الشاشة
+// ═══════════════════════════════════════════════════════════════════════════
+
 const AdminReports: React.FC = () => {
     const { customConfirm, customAlert, customPrompt } = useApp();
     const history = useHistory();
 
-    const [view, setView] = useState<'reports' | 'complaints' | 'warnings' | 'suspended'>('reports');
+    const [view, setView] = useState<ViewId>('reports');
     const [reports, setReports] = useState<AdminReportRow[]>([]);
     const [complaints, setComplaints] = useState<AdminComplaintRow[]>([]);
     const [warned, setWarned] = useState<WarnedUser[]>([]);
-    // v12.54 — «الحسابات المعلقة» بأسبابها الكاملة (إنذارات/مخالفات/بلاغات)
+    // v12.54 — «حسابات أوقفتها الإدارة» بأسبابها الكاملة (إنذارات/مخالفات/بلاغات)
     const [suspended, setSuspended] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -103,7 +237,6 @@ const AdminReports: React.FC = () => {
     const [warnMin, setWarnMin] = useState<number>(1);
     // v14.33 — كان النداء بلا حدّ، فتُرجع القاعدة ١٠٠ صفّاً افتراضياً وتتوقّف،
     // بلا زرّ ولا رسالة. أي أن البلاغ رقم ١٠١ **غير موجود** في نظر الإدارة.
-    // والبطاقات الأربع فوق القائمة تعدّ الصفوف المحمّلة وتكتب تحتها «الإجمالي».
     const PAGE = 50;
     const [shown, setShown] = useState(PAGE);
     const [hasMore, setHasMore] = useState(false);
@@ -140,7 +273,7 @@ const AdminReports: React.FC = () => {
     useEffect(() => { load(); }, [load]);
 
     const changeReportStatus = async (id: string, next: string) => {
-        const labelNext = STATUS_STYLES[next]?.label ?? next;
+        const labelNext = STATUS_META[next]?.label ?? next;
         const ok = await customConfirm(`تغيير حالة البلاغ إلى «${labelNext}»؟`);
         if (!ok) return;
         const r = await adminService.setReportStatus(id, next);
@@ -148,7 +281,7 @@ const AdminReports: React.FC = () => {
         else customAlert('❌ تعذّر تحديث الحالة');
     };
     const changeComplaintStatus = async (id: string, next: string) => {
-        const labelNext = STATUS_STYLES[next]?.label ?? next;
+        const labelNext = STATUS_META[next]?.label ?? next;
         const ok = await customConfirm(`تغيير حالة الشكوى إلى «${labelNext}»؟`);
         if (!ok) return;
         const r = await adminService.setComplaintStatus(id, next);
@@ -171,15 +304,19 @@ const AdminReports: React.FC = () => {
             load();
             return;
         }
-        const ok = await customConfirm(`إعادة تفعيل حساب «${name}»؟ سيعود الدخول والعروض كما كانت.`);
+        const ok = await customConfirm(`رفع الإيقاف عن حساب «${name}»؟ سيعود الدخول والعروض كما كانت.`);
         if (!ok) return;
         const r = await adminService.suspendAccount(userId, false);
-        if (r.success) { await customAlert('✅ تم إعادة التفعيل'); load(); }
+        if (r.success) { await customAlert('✅ رُفع الإيقاف وعاد الحساب للعمل'); load(); }
         else customAlert('❌ تعذّر تنفيذ الإجراء');
     };
 
-    // v12.79 — عقوبة «تعليق الحجز»: المستخدم يبقى نشطاً لكن لا يستطيع الحجز
-    // للمدة المحددة (الحارس tr_booking_ban في القاعدة يغطي الويب والبوتين).
+    // v12.79 — عقوبة «تعليق الحجز»: عقوبةٌ أخفّ من إيقاف الحساب — الحساب يبقى
+    // نشطاً ويدخل ويتصفّح، لكنه لا يستطيع الحجز للمدّة المحدّدة (الحارس
+    // tr_booking_ban في القاعدة يغطّي الويب والبوتين).
+    // 🪤 اسمها يبقى «تعليق الحجز» لا «إيقاف»: إشعار القاعدة الذي يصل المستخدم
+    //    يقول «تم تعليق الحجز» حرفياً، وAppContext يطابق ذلك النصّ — فتوحيد
+    //    الكلمة هنا وحدها كان سيخلق اختلافاً بين ما يقرؤه المسؤول وما يصل العميل.
     const bookingBan = async (userId: string, name: string) => {
         const raw = await customPrompt(`⏸️ تعليق الحجز على «${name}» — اكتب عدد الأيام (مثال: 7):`);
         if (raw == null) return;
@@ -230,414 +367,340 @@ const AdminReports: React.FC = () => {
         };
     }, [view, reports, complaints, serverSummary]);
 
+    /**
+     * 🪤 نطاق بطاقات الأرقام ليس تفصيلاً: `admin_reports_summary` لا تأخذ أي
+     *    مرشِّح — فرقمها عن **كل المنصّة** بينما القائمة تحته مُرشَّحة. وحتى
+     *    تصل إجابة الخادم (ثوانٍ) يكون الرقم عن الصفوف المحمّلة وحدها.
+     */
+    const summaryScope = serverSummary
+        ? 'كل المنصّة — لا يتأثّر بالمرشِّحات'
+        : 'الصفوف المحمّلة الآن — بانتظار الخادم';
+
     const warnSummary = useMemo(() => {
         const danger = warned.filter((w) => w.warn_count >= 3).length;
         const totalStrikes = warned.reduce((s, w) => s + w.warn_count, 0);
         return { users: warned.length, danger, totalStrikes };
     }, [warned]);
 
+    /**
+     * 🪤 لا يُعدّ بـ`user_type === 'seller'`: متجر ناصر يملكه حساب أدمن، وكل
+     *    مرشِّح «seller» يُخفيه (درس مسجَّل في قواعد المشروع). العدّ بغير
+     *    المشتري — وهو ما يقوله عنوان البطاقة ووصفها.
+     */
+    const suspendedStores = useMemo(
+        () => suspended.filter((u: any) => u.user_type !== 'buyer').length,
+        [suspended],
+    );
+
     const clearFilters = () => { setQ(''); setStatus(''); setRtype(''); setDays(0); setRole(''); setWarnMin(1); };
     const hasFilters = !!(q || status || rtype || days || role || (view === 'warnings' && warnMin > 1));
+    const warnFiltered = !!(q || role || warnMin > 1);
+    /**
+     * 🪤 لا يُكتب هنا «كل المنصّة»: `admin_list_warned_users` بلا حدٍّ في نصّها،
+     *    لكن الخادم يردّ ١٠٠ صفّاً افتراضياً ويتوقّف (الدرس المدفوع في v14.33
+     *    على `listReports` نفسها) — ولا ترقيم صفحاتٍ في هذا العرض. فالعدّ عن
+     *    الصفوف المعروضة، والتسمية تقول ذلك بدل أن تدّعي الشمول.
+     */
+    const warnScope = warnFiltered ? 'من الحسابات المعروضة بالمرشِّحات' : 'من الحسابات المعروضة';
+    const warnScopeHint = 'العدّ من الصفوف المعروضة أمامك. الخادم يردّ حتى ١٠٠ صفّاً في النداء الواحد — فإن زاد العدد ضيّق البحث أو نوع الحساب.';
+
+    const cur = VIEWS.find((v) => v.id === view) ?? VIEWS[0];
+    const showListFilters = view !== 'suspended';
+
+    // ── الأرقام ──────────────────────────────────────────────────────────
+    const stats = view === 'suspended' ? (
+        <AdmStatGrid cols={2}>
+            <AdmStat
+                label="حسابات موقوفة الآن"
+                value={admNum(suspended.length)}
+                tone={suspended.length > 0 ? 'bad' : 'ok'}
+                icon="⛔"
+                scope="كل المنصّة"
+                title="كل حساب أوقفته الإدارة يدوياً أو أوقفه النظام تلقائياً بعد 3 مخالفات"
+            />
+            <AdmStat
+                label="منها متاجر"
+                value={admNum(suspendedStores)}
+                tone={suspendedStores > 0 ? 'warn' : 'neutral'}
+                icon="🏪"
+                scope="كل المنصّة"
+                title="كل حسابٍ موقوفٍ غير مشترٍ — التاجر، وحسابُ الإدارة الذي يملك متجراً. ومتجرٌ موقوف تختفي عروضه من المنصّة حتى يُرفع الإيقاف."
+            />
+        </AdmStatGrid>
+    ) : view === 'warnings' ? (
+        <AdmStatGrid cols={3}>
+            <AdmStat label="حسابات عليها إنذارات" value={admNum(warnSummary.users)} tone="warn" icon="⚠️" scope={warnScope} title={warnScopeHint} />
+            <AdmStat label="إجمالي الإنذارات الصادرة" value={admNum(warnSummary.totalStrikes)} icon="Σ" scope={warnScope} title={warnScopeHint} />
+            <AdmStat
+                label="حسابات بـ3 إنذارات فأكثر"
+                value={admNum(warnSummary.danger)}
+                tone={warnSummary.danger > 0 ? 'bad' : 'ok'}
+                icon="🔴"
+                scope={warnScope}
+                title={`العتبة التي يُنصح عندها باتخاذ إجراء. ${warnScopeHint}`}
+            />
+        </AdmStatGrid>
+    ) : (
+        <AdmStatGrid cols={4}>
+            <AdmStat label="مفتوح — يحتاج مراجعة" value={admNum(summary.open)} tone="warn" icon="🟠" scope={summaryScope} />
+            <AdmStat
+                label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
+                value={admNum(summary.review)} tone="bad" icon="🔴" scope={summaryScope}
+            />
+            <AdmStat label="تم الحل" value={admNum(summary.resolved)} tone="ok" icon="✅" scope={summaryScope} />
+            <AdmStat label="الإجمالي" value={admNum(summary.total)} icon="Σ" scope={summaryScope} />
+        </AdmStatGrid>
+    );
+
+    // ── محتوى القائمة ────────────────────────────────────────────────────
+    const clearAction = hasFilters
+        ? <AdmButton size="sm" onClick={clearFilters}>✕ امسح المرشِّحات</AdmButton>
+        : undefined;
+
+    let body: React.ReactNode;
+    if (loading) {
+        body = <AdmSkeleton rows={4} height={104} />;
+    } else if (view === 'reports') {
+        body = reports.length === 0 ? (
+            <AdmEmpty
+                icon="🎉"
+                title={hasFilters ? 'لا بلاغ يطابق هذه المرشِّحات' : 'لا توجد بلاغات حالياً'}
+                hint={hasFilters
+                    ? 'المرشِّحات الحالية ضيّقة — وسّع الفترة أو امسحها لترى القائمة كاملة.'
+                    : 'أي بلاغٍ يقدّمه مستخدمٌ ضدّ آخر يظهر هنا فور وصوله، ويبقى حتى تغيّر حالته بنفسك.'}
+                action={clearAction}
+            />
+        ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+                {reports.map((r) => (
+                    <ReportCard key={r.id} report={r} onOpenAccount={openAccount} onStatusChange={changeReportStatus} />
+                ))}
+                {hasMore && (
+                    <AdmButton full onClick={() => setShown((n) => n + PAGE)} disabled={loading}>
+                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admNum(reports.length)} صفّاً`}
+                    </AdmButton>
+                )}
+            </div>
+        );
+    } else if (view === 'complaints') {
+        body = complaints.length === 0 ? (
+            <AdmEmpty
+                icon="🎉"
+                title={hasFilters ? 'لا شكوى تطابق هذه المرشِّحات' : 'لا توجد شكاوى حالياً'}
+                hint={hasFilters
+                    ? 'جرّب حالةً أخرى أو امسح المرشِّحات.'
+                    : 'أي شكوى يرسلها مستخدم إلى فريق تاكي تظهر هنا — لا في البريد وحده.'}
+                action={clearAction}
+            />
+        ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+                {complaints.map((c) => (
+                    <ComplaintCard key={c.id} complaint={c} onOpenAccount={openAccount} onStatusChange={changeComplaintStatus} />
+                ))}
+                {hasMore && (
+                    <AdmButton full onClick={() => setShown((n) => n + PAGE)} disabled={loading}>
+                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admNum(complaints.length)} صفّاً`}
+                    </AdmButton>
+                )}
+            </div>
+        );
+    } else if (view === 'suspended') {
+        // v12.54 — من أُوقف (يدوياً أو تلقائياً بعد ٣ مخالفات) وأسبابه كاملة —
+        // إنذارات + مخالفات مرصودة + بلاغات — حتى يقرر ناصر الرفع عن علم.
+        body = suspended.length === 0 ? (
+            <AdmEmpty
+                icon="✅"
+                title="لا حساب موقوف الآن"
+                hint="أي حساب توقفه الإدارة، أو يوقفه النظام تلقائياً بعد 3 مخالفات محتوى، يظهر هنا بكل أسبابه."
+            />
+        ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+                {suspended.map((u: any) => (
+                    <SuspendedCard key={u.user_id} row={u} onLift={toggleSuspend} />
+                ))}
+            </div>
+        );
+    } else {
+        body = warned.length === 0 ? (
+            <AdmEmpty
+                icon="✅"
+                title={warnFiltered ? 'لا حساب يطابق هذه المرشِّحات' : 'لا حساب عليه إنذار من الإدارة'}
+                hint={warnFiltered
+                    ? 'قلّل العدد الأدنى أو غيّر نوع الحساب أو امسح البحث.'
+                    : 'كل إنذارٍ تصدره من «مراقبة الرسائل» يظهر هنا مع عدّاده وسببه والرسالة التي صدر عليها.'}
+                action={clearAction}
+            />
+        ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+                {warned.map((w) => (
+                    <WarnedUserCard
+                        key={w.user_id}
+                        user={w}
+                        onSuspendToggle={toggleSuspend}
+                        onBookingBan={bookingBan}
+                        onBookingBanLift={bookingBanLift}
+                    />
+                ))}
+            </div>
+        );
+    }
+
+    const shownCount = view === 'reports' ? reports.length
+        : view === 'complaints' ? complaints.length
+        : view === 'warnings' ? warned.length
+        : suspended.length;
 
     return (
-        <div className="space-y-4 animate-fade-in" dir="rtl">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                        🚩 البلاغات والشكاوى
-                    </h1>
-                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                        راجع البلاغات بين المستخدمين والشكاوى المرسلة للإدارة. كل تغيير حالة يدوي.
-                    </p>
-                </div>
-                <Tooltip text="إعادة تحميل القائمة من قاعدة البيانات">
-                    <button
-                        onClick={load}
-                        className="px-4 h-10 bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-red-400 hover:text-red-600 text-[var(--text-secondary)] font-bold rounded-xl text-sm transition-colors flex items-center gap-2"
-                    >
-                        🔄 تحديث
-                    </button>
-                </Tooltip>
-            </div>
+        <div dir="rtl" style={{ display: 'grid', gap: 14 }}>
+            <AdmPageHeader
+                icon="🚩"
+                title="البلاغات والشكاوى"
+                desc="مركزٌ واحد لما يصل الإدارة عن المستخدمين: بلاغاتهم على بعضهم، وشكاواهم لنا، والإنذارات التي أصدرتها الإدارة، والحسابات التي أوقفتها. كل إجراءٍ هنا يدويّ ويُسجَّل."
+                actions={
+                    <AdmButton onClick={load} title="إعادة تحميل القائمة من قاعدة البيانات">🔄 تحديث</AdmButton>
+                }
+            />
 
-            {/* Summary strip */}
-            {view === 'suspended' ? (
-                <div className="grid grid-cols-1 gap-3">
-                    <SummaryCard label="حسابات معلقة (يدوياً أو تلقائياً بعد ٣ مخالفات)" value={suspended.length} gradient="bg-gradient-to-br from-slate-600 to-slate-800" />
-                </div>
-            ) : view !== 'warnings' ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <SummaryCard
-                        label="مفتوح / يحتاج مراجعة"
-                        value={summary.open}
-                        gradient="bg-gradient-to-br from-amber-500 to-orange-500"
-                        pulse
-                    />
-                    <SummaryCard
-                        label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
-                        value={summary.review}
-                        gradient="bg-gradient-to-br from-red-500 to-rose-600"
-                    />
-                    <SummaryCard
-                        label="تم الحل"
-                        value={summary.resolved}
-                        gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
-                    />
-                    <SummaryCard
-                        label="الإجمالي"
-                        value={summary.total}
-                        gradient="bg-gradient-to-br from-slate-500 to-slate-700"
-                    />
-                </div>
-            ) : (
-                <div className="grid grid-cols-3 gap-3">
-                    <SummaryCard label="حسابات مُنذرة" value={warnSummary.users} gradient="bg-gradient-to-br from-amber-500 to-orange-500" />
-                    <SummaryCard label="إجمالي الإنذارات" value={warnSummary.totalStrikes} gradient="bg-gradient-to-br from-slate-500 to-slate-700" />
-                    <SummaryCard label="خطر (٣+)" value={warnSummary.danger} gradient="bg-gradient-to-br from-red-500 to-rose-600" pulse />
-                </div>
-            )}
+            {/* منتقي العرض — اسمٌ واضح لكلٍّ منها، ووصفه يظهر فوق قائمته */}
+            <nav aria-label="أقسام البلاغات" style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {VIEWS.map((v) => {
+                    const on = view === v.id;
+                    return (
+                        <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => { setView(v.id); setStatus(''); }}
+                            aria-current={on ? 'page' : undefined}
+                            className="adm-focusable"
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+                                fontSize: '.82rem', fontWeight: 800, whiteSpace: 'nowrap',
+                                border: `1px solid ${on ? 'transparent' : 'var(--adm-border)'}`,
+                                background: on ? 'var(--adm-accent)' : 'var(--adm-surface)',
+                                color: on ? '#ffffff' : 'var(--adm-fg-2)',
+                            }}
+                        >
+                            <span aria-hidden="true">{v.icon}</span>
+                            {v.label}
+                        </button>
+                    );
+                })}
+            </nav>
 
-            {/* View toggle: Reports vs Complaints vs Warnings */}
-            <div className="flex flex-wrap gap-2">
-                <button
-                    onClick={() => { setView('reports'); setStatus(''); }}
-                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
-                        view === 'reports'
-                            ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-md'
-                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-red-300'
-                    }`}
-                >
-                    🚩 بلاغات المستخدمين
-                </button>
-                <button
-                    onClick={() => { setView('complaints'); setStatus(''); }}
-                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
-                        view === 'complaints'
-                            ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-md'
-                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-red-300'
-                    }`}
-                >
-                    📣 شكاوى للإدارة
-                </button>
-                <button
-                    onClick={() => { setView('warnings'); setStatus(''); }}
-                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
-                        view === 'warnings'
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
-                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-300'
-                    }`}
-                >
-                    ⚠️ الإنذارات
-                </button>
-                <button
-                    onClick={() => { setView('suspended'); setStatus(''); }}
-                    className={`flex-1 md:flex-none px-5 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
-                        view === 'suspended'
-                            ? 'bg-gradient-to-r from-slate-600 to-slate-800 text-white shadow-md'
-                            : 'bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-slate-400'
-                    }`}
-                >
-                    ⛔ الحسابات المعلقة
-                </button>
-            </div>
+            {stats}
 
-            {/* Filters */}
-            <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] shadow-sm space-y-3">
-                <div className="flex gap-2 items-stretch">
-                    <input
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        placeholder="🔍 بحث: اسم، جوال، معرّف، نص..."
-                        className="flex-1 min-w-0 px-4 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold focus:border-red-500 outline-none transition-colors"
-                    />
-                    {hasFilters && (
-                        <Tooltip text="إلغاء كل الفلاتر">
-                            <button
-                                onClick={clearFilters}
-                                className="px-3 bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-secondary)] font-bold rounded-xl text-sm transition-colors flex items-center gap-1"
-                            >
-                                ✕ مسح
-                            </button>
-                        </Tooltip>
-                    )}
-                </div>
-
-                {view !== 'warnings' && view !== 'suspended' && (
-                    <div className="flex flex-wrap gap-1.5">
-                        {/* Status chips */}
-                        <FilterChip active={!status} onClick={() => setStatus('')} label="كل الحالات" icon="•" />
-                        <FilterChip active={status === 'open'} onClick={() => setStatus('open')} label="مفتوح" icon="🟠" />
-                        <FilterChip
-                            active={status === (view === 'reports' ? 'under_review' : 'reviewing')}
-                            onClick={() => setStatus(view === 'reports' ? 'under_review' : 'reviewing')}
-                            label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
-                            icon="🔴"
+            {/* المرشِّحات — قسمٌ يُطوى فلا يزاحم القائمة على شاشة الجوال */}
+            {showListFilters && (
+                <AdmSection
+                    icon="⚙️"
+                    title="البحث والمرشِّحات"
+                    desc="تُطبَّق على القائمة أدناه وحدها — بطاقات الأرقام فوقها عن المنصّة كلّها."
+                    collapsible
+                    defaultOpen
+                    badge={hasFilters ? { text: 'مرشِّحات مفعّلة', tone: 'info' } : undefined}
+                    action={clearAction}
+                >
+                    <div style={{ display: 'grid', gap: 11 }}>
+                        <input
+                            type="search"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                            placeholder="🔎 بحث: اسم، جوال، معرّف، نصّ…"
+                            aria-label="بحث"
+                            className="adm-focusable"
+                            style={{
+                                width: '100%', padding: '9px 12px', fontSize: '.85rem', fontWeight: 600,
+                                borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                                background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+                            }}
                         />
-                        <FilterChip active={status === 'resolved'} onClick={() => setStatus('resolved')} label="تم الحل" icon="✅" />
-                        <FilterChip active={status === 'dismissed'} onClick={() => setStatus('dismissed')} label="مرفوض" icon="⛔" />
-                    </div>
-                )}
 
-                {view === 'warnings' && (
-                    <>
-                        <div className="flex flex-wrap gap-1.5">
-                            <FilterChip active={!role} onClick={() => setRole('')} label="الكل" icon="👥" />
-                            <FilterChip active={role === 'buyer'} onClick={() => setRole('buyer')} label="مشترون" icon="🛒" />
-                            <FilterChip active={role === 'seller'} onClick={() => setRole('seller')} label="تجار" icon="🏪" />
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs font-bold text-[var(--text-secondary)]">من عدد:</span>
-                            <FilterChip active={warnMin === 1} onClick={() => setWarnMin(1)} label="الكل" icon="•" />
-                            <FilterChip active={warnMin === 2} onClick={() => setWarnMin(2)} label="مرتين فأكثر" icon="⚠️" />
-                            <FilterChip active={warnMin === 3} onClick={() => setWarnMin(3)} label="٣ فأكثر (خطر)" icon="🔴" />
-                            <input
-                                type="number" min={1} value={warnMin}
-                                onChange={(e) => setWarnMin(Math.max(1, Number(e.target.value) || 1))}
-                                title="اكتب رقم الإنذارات — يعرض من هذا العدد فأكثر"
-                                className="w-16 px-2 py-1.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg text-center text-xs font-bold text-[var(--text-primary)] outline-none"
-                            />
-                        </div>
-                    </>
-                )}
-
-                {view === 'reports' && (
-                    <>
-                        <div className="flex flex-wrap gap-1.5">
-                            <FilterChip active={!rtype} onClick={() => setRtype('')} label="كل الأنواع" icon="•" />
-                            {REPORT_TYPES.map((t) => (
+                        {view !== 'warnings' && (
+                            <FilterRow label="الحالة:">
+                                <FilterChip active={!status} onClick={() => setStatus('')} label="الكل" icon="•" />
+                                <FilterChip active={status === 'open'} onClick={() => setStatus('open')} label="مفتوح" icon="🟠" />
                                 <FilterChip
-                                    key={t.value}
-                                    active={rtype === t.value}
-                                    onClick={() => setRtype(t.value)}
-                                    label={t.label}
-                                    icon={t.icon}
+                                    active={status === (view === 'reports' ? 'under_review' : 'reviewing')}
+                                    onClick={() => setStatus(view === 'reports' ? 'under_review' : 'reviewing')}
+                                    label={view === 'reports' ? 'تحت المراجعة' : 'قيد المراجعة'}
+                                    icon="🔴"
                                 />
-                            ))}
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            <FilterChip active={!role} onClick={() => setRole('')} label="ضد: الكل" icon="👥" />
-                            <FilterChip active={role === 'seller'} onClick={() => setRole('seller')} label="ضد تاجر" icon="🏪" />
-                            <FilterChip active={role === 'buyer'} onClick={() => setRole('buyer')} label="ضد مشتري" icon="🛒" />
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            <FilterChip active={!days} onClick={() => setDays(0)} label="كل الفترات" icon="📅" />
-                            <FilterChip active={days === 1} onClick={() => setDays(1)} label="آخر يوم" icon="📅" />
-                            <FilterChip active={days === 7} onClick={() => setDays(7)} label="آخر 7 أيام" icon="📅" />
-                            <FilterChip active={days === 14} onClick={() => setDays(14)} label="آخر 14 يوم" icon="📅" />
-                            <FilterChip active={days === 30} onClick={() => setDays(30)} label="آخر 30 يوم" icon="📅" />
-                        </div>
-                    </>
-                )}
-            </div>
+                                <FilterChip active={status === 'resolved'} onClick={() => setStatus('resolved')} label="تم الحل" icon="✅" />
+                                <FilterChip active={status === 'dismissed'} onClick={() => setStatus('dismissed')} label="مرفوض" icon="⛔" />
+                            </FilterRow>
+                        )}
 
-            {/* List */}
-            {loading ? (
-                <div className="space-y-2">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="h-32 bg-[var(--gray-100)] rounded-2xl animate-pulse" />
-                    ))}
-                </div>
-            ) : view === 'reports' ? (
-                reports.length === 0 ? (
-                    <EmptyState
-                        icon="🎉"
-                        title={hasFilters ? 'لا توجد نتائج لهذه الفلاتر' : 'لا توجد بلاغات حالياً'}
-                        subtitle={hasFilters ? 'جرّب توسيع البحث أو امسح الفلاتر' : 'ستظهر البلاغات هنا فور وصولها'}
-                    />
-                ) : (
-                    <div className="space-y-3">
-                        {reports.map((r) => (
-                            <ReportCard
-                                key={r.id}
-                                report={r}
-                                onOpenAccount={openAccount}
-                                onStatusChange={changeReportStatus}
-                            />
-                        ))}
-                        {hasMore && (
-                            <button
-                                onClick={() => setShown(n => n + PAGE)}
-                                disabled={loading}
-                                className="w-full py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] font-black text-sm disabled:opacity-60"
-                            >
-                                {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${reports.length} من ${summary.total}`}
-                            </button>
+                        {view === 'warnings' && (
+                            <>
+                                <FilterRow label="الحساب:">
+                                    <FilterChip active={!role} onClick={() => setRole('')} label="الكل" icon="👥" />
+                                    <FilterChip active={role === 'buyer'} onClick={() => setRole('buyer')} label="مشترون" icon="🛒" />
+                                    <FilterChip active={role === 'seller'} onClick={() => setRole('seller')} label="تجار" icon="🏪" />
+                                </FilterRow>
+                                <FilterRow label="من عدد:">
+                                    <FilterChip active={warnMin === 1} onClick={() => setWarnMin(1)} label="الكل" icon="•" />
+                                    <FilterChip active={warnMin === 2} onClick={() => setWarnMin(2)} label="مرتين فأكثر" icon="⚠️" />
+                                    <FilterChip active={warnMin === 3} onClick={() => setWarnMin(3)} label="3 فأكثر (خطر)" icon="🔴" />
+                                    <input
+                                        type="number" min={1} value={warnMin}
+                                        onChange={(e) => setWarnMin(Math.max(1, Number(e.target.value) || 1))}
+                                        title="اكتب رقم الإنذارات — يعرض من هذا العدد فأكثر"
+                                        aria-label="أقل عدد إنذارات"
+                                        className="adm-focusable"
+                                        style={{
+                                            width: 62, padding: '5px 8px', textAlign: 'center',
+                                            fontSize: '.76rem', fontWeight: 800,
+                                            borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                                            background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+                                        }}
+                                    />
+                                </FilterRow>
+                            </>
+                        )}
+
+                        {view === 'reports' && (
+                            <>
+                                <FilterRow label="النوع:">
+                                    <FilterChip active={!rtype} onClick={() => setRtype('')} label="الكل" icon="•" />
+                                    {REPORT_TYPES.map((t) => (
+                                        <FilterChip key={t.value} active={rtype === t.value} onClick={() => setRtype(t.value)} label={t.label} icon={t.icon} />
+                                    ))}
+                                </FilterRow>
+                                <FilterRow label="ضدّ:">
+                                    <FilterChip active={!role} onClick={() => setRole('')} label="الكل" icon="👥" />
+                                    <FilterChip active={role === 'seller'} onClick={() => setRole('seller')} label="تاجر" icon="🏪" />
+                                    <FilterChip active={role === 'buyer'} onClick={() => setRole('buyer')} label="مشتري" icon="🛒" />
+                                </FilterRow>
+                                <FilterRow label="الفترة:">
+                                    <FilterChip active={!days} onClick={() => setDays(0)} label="كل الفترات" icon="📅" />
+                                    <FilterChip active={days === 1} onClick={() => setDays(1)} label="آخر يوم" />
+                                    <FilterChip active={days === 7} onClick={() => setDays(7)} label="آخر 7 أيام" />
+                                    <FilterChip active={days === 14} onClick={() => setDays(14)} label="آخر 14 يوماً" />
+                                    <FilterChip active={days === 30} onClick={() => setDays(30)} label="آخر 30 يوماً" />
+                                </FilterRow>
+                            </>
                         )}
                     </div>
-                )
-            ) : view === 'complaints' ? (
-                complaints.length === 0 ? (
-                    <EmptyState
-                        icon="🎉"
-                        title={hasFilters ? 'لا توجد نتائج لهذه الفلاتر' : 'لا توجد شكاوى حالياً'}
-                        subtitle={hasFilters ? 'جرّب توسيع البحث أو امسح الفلاتر' : 'ستظهر الشكاوى هنا فور وصولها'}
-                    />
-                ) : (
-                    <div className="space-y-3">
-                        {complaints.map((c) => (
-                            <ComplaintCard
-                                key={c.id}
-                                complaint={c}
-                                onOpenAccount={openAccount}
-                                onStatusChange={changeComplaintStatus}
-                            />
-                        ))}
-                        {hasMore && (
-                            <button
-                                onClick={() => setShown(n => n + PAGE)}
-                                disabled={loading}
-                                className="w-full py-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] font-black text-sm disabled:opacity-60"
-                            >
-                                {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${complaints.length} من ${summary.total}`}
-                            </button>
-                        )}
-                    </div>
-                )
-            ) : view === 'suspended' ? (
-                // v12.54 — «الحسابات المعلقة»: من عُلّق (يدوياً أو تلقائياً بعد ٣
-                // مخالفات) وأسبابه كاملة — إنذارات + مخالفات مرصودة + بلاغات —
-                // حتى يقرر ناصر إعادة التفعيل عن علم.
-                suspended.length === 0 ? (
-                    <EmptyState
-                        icon="✅"
-                        title="لا حسابات معلقة حالياً"
-                        subtitle="أي حساب يُعلّق يدوياً أو تلقائياً (٣ مخالفات محتوى) يظهر هنا بأسبابه"
-                    />
-                ) : (
-                    <div className="space-y-3">
-                        {suspended.map((u: any) => (
-                            <div key={u.user_id} className="bg-[var(--card-bg)] border border-red-300 rounded-2xl p-4 shadow-sm">
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    <div className="min-w-0">
-                                        <div className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                                            {u.user_type === 'seller' ? '🏪' : '🛒'} {u.name || '—'}
-                                            <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-0.5 rounded-full">موقوف</span>
-                                        </div>
-                                        <div className="text-xs text-[var(--text-secondary)] mt-0.5">
-                                            {u.user_type === 'seller' ? 'تاجر' : u.user_type === 'buyer' ? 'مشتري' : (u.user_type || '—')}{u.phone ? ` · ${u.phone}` : ''}
-                                        </div>
-                                    </div>
-                                    <button onClick={() => toggleSuspend(u.user_id, false, u.name || '')}
-                                        className="px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
-                                        ✅ إعادة تفعيل الحساب
-                                    </button>
-                                </div>
-                                <div className="flex gap-2 mt-3 flex-wrap text-[10px] font-extrabold text-[var(--text-secondary)]">
-                                    <span className="px-2 py-1 rounded-full bg-amber-500/10 text-amber-700">⚠️ {Number(u.warn_count) || 0} إنذار</span>
-                                    <span className="px-2 py-1 rounded-full bg-rose-500/10 text-rose-700">🛡 {Number(u.flag_count) || 0} مخالفة محتوى مرصودة</span>
-                                    <span className="px-2 py-1 rounded-full bg-sky-500/10 text-sky-700">🚩 {Number(u.report_count) || 0} بلاغ ضده</span>
-                                    <span className="px-2 py-1 rounded-full bg-[var(--gray-100)]">📣 {Number(u.complaint_count) || 0} شكوى منه</span>
-                                </div>
-                                {Array.isArray(u.warnings) && u.warnings.length > 0 && (
-                                    <div className="mt-3 space-y-1.5">
-                                        <div className="text-[11px] font-extrabold text-[var(--text-primary)]">آخر الإنذارات:</div>
-                                        {u.warnings.map((wn: any, i: number) => (
-                                            <div key={i} className="text-[11px] font-bold text-[var(--text-secondary)] bg-[var(--body-bg)] border border-[var(--border-color)] rounded-lg px-3 py-1.5">
-                                                {wn.auto ? '🤖' : '👤'} {wn.reason}
-                                                <span className="text-[9px] mr-2">{wn.at ? new Date(wn.at).toLocaleDateString('ar-SA-u-ca-gregory') : ''}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {Array.isArray(u.recent_flags) && u.recent_flags.length > 0 && (
-                                    <div className="mt-2 text-[10px] font-bold text-[var(--text-secondary)]">
-                                        🛡 آخر ما رُصد: {u.recent_flags.map((f: any) => (Array.isArray(f.matched) ? f.matched.join('، ') : '')).filter(Boolean).join(' • ') || 'صور/محتوى مرفوض'}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )
-            ) : (
-                warned.length === 0 ? (
-                    <EmptyState
-                        icon="✅"
-                        title={hasFilters ? 'لا حسابات بهذا العدد من الإنذارات' : 'لا توجد حسابات مُنذَرة'}
-                        subtitle={hasFilters ? 'جرّب تقليل العدد أو تغيير الفلتر' : 'كل إنذار تصدره من «مراقبة الرسائل» يظهر هنا مع عدّاده'}
-                    />
-                ) : (
-                    <div className="space-y-3">
-                        {warned.map((w) => (
-                            <WarnedUserCard key={w.user_id} user={w} onSuspendToggle={toggleSuspend} onBookingBan={bookingBan} onBookingBanLift={bookingBanLift} />
-                        ))}
-                    </div>
-                )
+                </AdmSection>
             )}
+
+            {/* القائمة — عنوانها ووصفها يقولان بالضبط ما هذه الأرقام */}
+            <AdmSection
+                icon={cur.icon}
+                title={cur.label}
+                desc={cur.desc}
+                badge={loading ? undefined : { text: `${admNum(shownCount)} معروض`, tone: 'neutral' }}
+            >
+                {body}
+            </AdmSection>
         </div>
     );
 };
 
-// ============================================================
-// Cards & helpers
-// ============================================================
-
-const SummaryCard: React.FC<{
-    label: string;
-    value: number;
-    gradient: string;
-    pulse?: boolean;
-}> = ({ label, value, gradient, pulse }) => (
-    <div className={`relative overflow-hidden rounded-2xl p-4 text-white shadow-md ${gradient}`}>
-        {pulse && value > 0 && (
-            <span className="absolute top-3 right-3 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-            </span>
-        )}
-        <div className="text-3xl font-extrabold tabular-nums">{value}</div>
-        <div className="text-xs opacity-90 mt-1 font-medium">{label}</div>
-    </div>
-);
-
-const FilterChip: React.FC<{
-    active: boolean;
-    onClick: () => void;
-    label: string;
-    icon?: string;
-}> = ({ active, onClick, label, icon }) => (
-    <button
-        onClick={onClick}
-        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-            active
-                ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow'
-                : 'bg-[var(--body-bg)] text-[var(--text-secondary)] hover:bg-[var(--gray-100)] hover:text-[var(--text-primary)]'
-        }`}
-    >
-        {icon && <span>{icon}</span>}
-        {label}
-    </button>
-);
-
-const EmptyState: React.FC<{ icon: string; title: string; subtitle: string }> = ({ icon, title, subtitle }) => (
-    <div className="bg-[var(--card-bg)] rounded-3xl p-12 border border-dashed border-[var(--border-color)] text-center">
-        <div className="text-6xl mb-3">{icon}</div>
-        <div className="font-extrabold text-[var(--text-primary)] mb-1">{title}</div>
-        <div className="text-sm text-[var(--text-secondary)]">{subtitle}</div>
-    </div>
-);
-
-const ActionButton: React.FC<{
-    onClick: () => void;
-    children: React.ReactNode;
-    variant: 'review' | 'resolve' | 'dismiss';
-    tooltip?: string;
-}> = ({ onClick, children, variant, tooltip }) => {
-    const styles: Record<string, string> = {
-        review: 'bg-red-50 text-red-700 hover:bg-red-100',
-        resolve: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-        dismiss: 'bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)]',
-    };
-    const btn = (
-        <button
-            onClick={onClick}
-            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${styles[variant]}`}
-        >
-            {children}
-        </button>
-    );
-    return tooltip ? <Tooltip text={tooltip}>{btn}</Tooltip> : btn;
-};
+// ═══════════════════════════════════════════════════════════════════════════
+// بطاقة بلاغ
+// ═══════════════════════════════════════════════════════════════════════════
 
 interface ReportCardProps {
     report: AdminReportRow;
@@ -646,48 +709,42 @@ interface ReportCardProps {
 }
 
 const ReportCard: React.FC<ReportCardProps> = ({ report: r, onOpenAccount, onStatusChange }) => {
-    const typeLabel = REPORT_TYPES.find(t => t.value === r.report_type);
+    const typeLabel = REPORT_TYPES.find((t) => t.value === r.report_type);
+    const tone = STATUS_META[r.status]?.tone ?? 'neutral';
+
     return (
-        <div className={`bg-[var(--card-bg)] border rounded-2xl p-4 shadow-sm transition-all hover:shadow-md ${
-            r.status === 'open' ? 'border-amber-300' : r.status === 'under_review' ? 'border-red-300' : 'border-[var(--border-color)]'
-        }`}>
-            {/* Top row: type + status + time */}
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 bg-[var(--gray-100)] text-[var(--text-primary)] px-2.5 py-1 rounded-lg text-xs font-extrabold">
-                        {typeLabel?.icon ?? '⚠️'} {typeLabel?.label ?? r.report_type}
-                    </span>
+        <div style={rowCard(tone)}>
+            {/* النوع + الحالة + الوقت */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                    <AdmPill>{typeLabel?.icon ?? '⚠️'} {typeLabel?.label ?? r.report_type}</AdmPill>
                     <StatusPill status={r.status} />
                     {r.reported_under_review && (
-                        <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
-                            ⚠️ الحساب تحت المراجعة
-                        </span>
+                        <AdmPill tone="bad" title="النظام حوّل الحساب تلقائياً لتحت المراجعة">⚠️ الحساب تحت المراجعة</AdmPill>
                     )}
                 </div>
                 <Tooltip text={fmt(r.created_at)}>
-                    <span className="text-[11px] text-[var(--gray-400)] font-bold tabular-nums">
-                        {timeAgo(r.created_at)}
-                    </span>
+                    <span style={{ ...metaText, fontVariantNumeric: 'tabular-nums' }}>{timeAgo(r.created_at)}</span>
                 </Tooltip>
             </div>
 
-            {/* Parties */}
-            <div className="flex items-center gap-2 flex-wrap mb-3">
+            {/* الطرفان */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 11 }}>
                 <PartyButton
                     label="المُبلِّغ"
                     name={r.reporter_name}
                     role={r.reporter_role}
-                    extra={`${r.reporter_filed_count} بلاغ مُقدّم`}
+                    extra={`${admNum(r.reporter_filed_count)} بلاغ مُقدّم`}
                     extraTooltip="عدد البلاغات التي قدّمها هذا المستخدم — كثرة الأرقام = مُبلِّغ كيدي محتمل"
                     onClick={() => onOpenAccount(r.reporter_id, r.reporter_role, r.reporter_name)}
                     icon="👤"
                 />
-                <span className="text-[var(--gray-400)] font-bold">←</span>
+                <span aria-hidden="true" style={{ color: 'var(--adm-fg-3)', fontWeight: 800 }}>←</span>
                 <PartyButton
-                    label="المُبلَّغ ضده"
+                    label="المُبلَّغ ضدّه"
                     name={r.reported_name}
                     role={r.reported_role}
-                    extra={`${r.reported_received_count} بلاغ مستلَم · ${r.reported_distinct_reporters} مبلِّغ مختلف/14ي`}
+                    extra={`${admNum(r.reported_received_count)} بلاغ مستلَم · ${admNum(r.reported_distinct_reporters)} مبلِّغ مختلف/14ي`}
                     extraTooltip="إذا تجاوز عدد المبلِّغين المختلفين 3 خلال 14 يوم، النظام يحوّل الحساب تلقائياً لتحت المراجعة"
                     onClick={() => onOpenAccount(r.reported_id, r.reported_role, r.reported_name)}
                     icon="🎯"
@@ -695,57 +752,39 @@ const ReportCard: React.FC<ReportCardProps> = ({ report: r, onOpenAccount, onSta
                 />
             </div>
 
-            {/* Phone copy */}
             {r.reporter_phone && (
-                <div className="flex items-center gap-2 mb-2 text-xs">
-                    <span className="text-[var(--text-secondary)] font-bold">📞 جوال المبلِّغ:</span>
-                    <span className="text-[var(--text-primary)] font-bold tabular-nums" dir="ltr">{r.reporter_phone}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, fontSize: '.78rem' }}>
+                    <span style={metaText}>📞 جوال المبلِّغ</span>
+                    <span dir="ltr" style={{ fontWeight: 800, color: 'var(--adm-fg)', fontVariantNumeric: 'tabular-nums' }}>{r.reporter_phone}</span>
                     <CopyButton value={r.reporter_phone} label="الجوال" size="xs" />
                 </div>
             )}
 
-            {/* Reason */}
-            <div className="bg-[var(--body-bg)] rounded-xl p-3 mb-3">
-                <div className="text-[10px] text-[var(--gray-400)] font-extrabold mb-1">سبب البلاغ</div>
-                <p className="text-sm text-[var(--text-primary)] font-medium leading-relaxed whitespace-pre-wrap">
-                    {r.reason}
-                </p>
+            <div style={{ ...panelStyle, marginBottom: 10 }}>
+                <div style={{ ...metaText, marginBottom: 4 }}>سبب البلاغ</div>
+                <p style={bodyText}>{r.reason}</p>
             </div>
 
-            {r.admin_note && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
-                    <div className="text-[10px] text-amber-700 font-extrabold mb-1">📝 ملاحظة الأدمن</div>
-                    <p className="text-xs text-amber-900 font-medium whitespace-pre-wrap">{r.admin_note}</p>
-                </div>
-            )}
+            {r.admin_note && <AdminNote text={r.admin_note} />}
 
-            {/* Actions */}
-            <div className="flex flex-wrap gap-2">
-                <ActionButton
-                    onClick={() => onStatusChange(r.id, 'under_review')}
-                    variant="review"
-                    tooltip="ضع الحساب تحت المراجعة — قيد على الحساب حتى ينتهي التحقيق"
-                >
-                    🔴 تحت المراجعة
-                </ActionButton>
-                <ActionButton
-                    onClick={() => onStatusChange(r.id, 'resolved')}
-                    variant="resolve"
-                    tooltip="أغلق البلاغ كمحلول — اتخذت إجراء أو لا حاجة لإجراء"
-                >
-                    ✅ تم الحل
-                </ActionButton>
-                <ActionButton
-                    onClick={() => onStatusChange(r.id, 'dismissed')}
-                    variant="dismiss"
-                    tooltip="ارفض البلاغ — كيدي أو غير صحيح"
-                >
-                    ⛔ رفض (كيدي)
-                </ActionButton>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                <Tooltip text="ضع الحساب تحت المراجعة — قيد على الحساب حتى ينتهي التحقيق">
+                    <ToneButton tone="bad" onClick={() => onStatusChange(r.id, 'under_review')}>🔴 تحت المراجعة</ToneButton>
+                </Tooltip>
+                <Tooltip text="أغلق البلاغ كمحلول — اتخذت إجراء أو لا حاجة لإجراء">
+                    <ToneButton tone="ok" onClick={() => onStatusChange(r.id, 'resolved')}>✅ تم الحل</ToneButton>
+                </Tooltip>
+                <Tooltip text="ارفض البلاغ — كيدي أو غير صحيح">
+                    <ToneButton tone="neutral" onClick={() => onStatusChange(r.id, 'dismissed')}>⛔ رفض (كيدي)</ToneButton>
+                </Tooltip>
             </div>
         </div>
     );
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// بطاقة شكوى
+// ═══════════════════════════════════════════════════════════════════════════
 
 interface ComplaintCardProps {
     complaint: AdminComplaintRow;
@@ -753,76 +792,72 @@ interface ComplaintCardProps {
     onStatusChange: (id: string, status: string) => void;
 }
 
-const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccount, onStatusChange }) => (
-    <div className={`bg-[var(--card-bg)] border rounded-2xl p-4 shadow-sm transition-all hover:shadow-md ${
-        c.status === 'open' ? 'border-amber-300' : c.status === 'reviewing' ? 'border-red-300' : 'border-[var(--border-color)]'
-    }`}>
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-            <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1 bg-[var(--gray-100)] text-[var(--text-primary)] px-2.5 py-1 rounded-lg text-xs font-extrabold">
-                    📣 {c.category}{c.subject ? ` — ${c.subject}` : ''}
-                </span>
-                <StatusPill status={c.status} />
-            </div>
-            <Tooltip text={fmt(c.created_at)}>
-                <span className="text-[11px] text-[var(--gray-400)] font-bold tabular-nums">
-                    {timeAgo(c.created_at)}
-                </span>
-            </Tooltip>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-            <PartyButton
-                label="من"
-                name={c.user_name}
-                role={c.user_type || '—'}
-                onClick={() => onOpenAccount(c.user_id, c.user_type === 'seller' ? 'seller' : 'buyer', c.user_name)}
-                icon="👤"
-            />
-            {c.user_phone && (
-                <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-[var(--text-primary)] font-bold tabular-nums" dir="ltr">📞 {c.user_phone}</span>
-                    <CopyButton value={c.user_phone} label="الجوال" size="xs" />
+const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccount, onStatusChange }) => {
+    const tone = STATUS_META[c.status]?.tone ?? 'neutral';
+    return (
+        <div style={rowCard(tone)}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                    <AdmPill>📣 {c.category}{c.subject ? ` — ${c.subject}` : ''}</AdmPill>
+                    <StatusPill status={c.status} />
                 </div>
-            )}
-        </div>
-
-        <div className="bg-[var(--body-bg)] rounded-xl p-3 mb-3">
-            <p className="text-sm text-[var(--text-primary)] font-medium leading-relaxed whitespace-pre-wrap">
-                {c.message}
-            </p>
-        </div>
-
-        {c.admin_note && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
-                <div className="text-[10px] text-amber-700 font-extrabold mb-1">📝 ملاحظة الأدمن</div>
-                <p className="text-xs text-amber-900 font-medium whitespace-pre-wrap">{c.admin_note}</p>
+                <Tooltip text={fmt(c.created_at)}>
+                    <span style={{ ...metaText, fontVariantNumeric: 'tabular-nums' }}>{timeAgo(c.created_at)}</span>
+                </Tooltip>
             </div>
-        )}
 
-        <div className="flex flex-wrap gap-2">
-            <ActionButton
-                onClick={() => onStatusChange(c.id, 'reviewing')}
-                variant="review"
-                tooltip="ضع الشكوى قيد المراجعة"
-            >
-                🔴 قيد المراجعة
-            </ActionButton>
-            <ActionButton
-                onClick={() => onStatusChange(c.id, 'resolved')}
-                variant="resolve"
-                tooltip="أغلق الشكوى كمحلولة"
-            >
-                ✅ تم الحل
-            </ActionButton>
-            <ActionButton
-                onClick={() => onStatusChange(c.id, 'dismissed')}
-                variant="dismiss"
-                tooltip="ارفض الشكوى"
-            >
-                ⛔ رفض
-            </ActionButton>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 11 }}>
+                <PartyButton
+                    label="من"
+                    name={c.user_name}
+                    role={c.user_type || '—'}
+                    onClick={() => onOpenAccount(c.user_id, c.user_type === 'seller' ? 'seller' : 'buyer', c.user_name)}
+                    icon="👤"
+                />
+                {c.user_phone && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.78rem' }}>
+                        <span dir="ltr" style={{ fontWeight: 800, color: 'var(--adm-fg)', fontVariantNumeric: 'tabular-nums' }}>📞 {c.user_phone}</span>
+                        <CopyButton value={c.user_phone} label="الجوال" size="xs" />
+                    </span>
+                )}
+            </div>
+
+            <div style={{ ...panelStyle, marginBottom: 10 }}>
+                <p style={bodyText}>{c.message}</p>
+            </div>
+
+            {c.admin_note && <AdminNote text={c.admin_note} />}
+
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                <Tooltip text="ضع الشكوى قيد المراجعة">
+                    <ToneButton tone="bad" onClick={() => onStatusChange(c.id, 'reviewing')}>🔴 قيد المراجعة</ToneButton>
+                </Tooltip>
+                <Tooltip text="أغلق الشكوى كمحلولة">
+                    <ToneButton tone="ok" onClick={() => onStatusChange(c.id, 'resolved')}>✅ تم الحل</ToneButton>
+                </Tooltip>
+                <Tooltip text="ارفض الشكوى">
+                    <ToneButton tone="neutral" onClick={() => onStatusChange(c.id, 'dismissed')}>⛔ رفض</ToneButton>
+                </Tooltip>
+            </div>
         </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// عناصر البطاقات
+// ═══════════════════════════════════════════════════════════════════════════
+
+const AdminNote: React.FC<{ text: string }> = ({ text }) => (
+    <div
+        style={{
+            background: toneBg('warn'), color: toneFg('warn'),
+            borderRadius: 'var(--adm-r-sm)', padding: '9px 12px', marginBottom: 10,
+        }}
+    >
+        <div style={{ fontSize: '.68rem', fontWeight: 800, marginBottom: 3 }}>📝 ملاحظة الإدارة</div>
+        <p style={{ margin: 0, fontSize: '.78rem', fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.8 }}>
+            {text}
+        </p>
     </div>
 );
 
@@ -835,49 +870,131 @@ const PartyButton: React.FC<{
     icon: string;
     danger?: boolean;
     onClick: () => void;
-}> = ({ label, name, role, extra, extraTooltip, icon, danger, onClick }) => (
-    <div className="flex flex-col gap-0.5">
-        <button
-            onClick={onClick}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
-                danger
-                    ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
-            }`}
-        >
-            <span>{icon}</span>
-            <span className="text-[10px] opacity-80">{label}:</span>
-            <span>{name}</span>
-            <span className="text-[10px] opacity-70">({role})</span>
-            <span className="opacity-50">→</span>
-        </button>
-        {extra && (
-            extraTooltip ? (
-                <Tooltip text={extraTooltip}>
-                    <span className="text-[10px] text-[var(--text-secondary)] font-bold mr-1 cursor-help underline decoration-dotted decoration-[var(--gray-400)] underline-offset-2">
-                        {extra}
-                    </span>
-                </Tooltip>
-            ) : (
-                <span className="text-[10px] text-[var(--text-secondary)] font-bold mr-1">{extra}</span>
-            )
+}> = ({ label, name, role, extra, extraTooltip, icon, danger, onClick }) => {
+    const tone: Tone = danger ? 'bad' : 'info';
+    return (
+        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+            <button
+                type="button"
+                onClick={onClick}
+                className="adm-focusable"
+                style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 11px', borderRadius: 'var(--adm-r-sm)',
+                    fontSize: '.78rem', fontWeight: 800, cursor: 'pointer',
+                    border: '1px solid transparent',
+                    background: toneBg(tone), color: toneFg(tone),
+                }}
+            >
+                <span aria-hidden="true">{icon}</span>
+                <span style={{ fontSize: '.68rem', opacity: .8 }}>{label}:</span>
+                <span>{name}</span>
+                <span style={{ fontSize: '.68rem', opacity: .75 }}>({role})</span>
+                <span aria-hidden="true" style={{ opacity: .55 }}>→</span>
+            </button>
+            {extra && (
+                extraTooltip ? (
+                    <Tooltip text={extraTooltip}>
+                        <span
+                            style={{
+                                ...metaText, cursor: 'help', paddingInlineStart: 4,
+                                textDecoration: 'underline dotted', textUnderlineOffset: 2,
+                            }}
+                        >
+                            {extra}
+                        </span>
+                    </Tooltip>
+                ) : (
+                    <span style={{ ...metaText, paddingInlineStart: 4 }}>{extra}</span>
+                )
+            )}
+        </span>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// بطاقة حسابٍ أوقفته الإدارة
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SuspendedCard: React.FC<{
+    row: any;
+    onLift: (id: string, suspend: boolean, name: string) => void;
+}> = ({ row: u, onLift }) => (
+    <div style={rowCard('bad')}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 9, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontWeight: 800, fontSize: '.92rem', color: 'var(--adm-fg)' }}>
+                    <span aria-hidden="true">{u.user_type === 'buyer' ? '🛒' : '🏪'}</span>
+                    {u.name || '—'}
+                    <AdmPill tone="bad">موقوف</AdmPill>
+                </div>
+                <div style={{ fontSize: '.74rem', color: 'var(--adm-fg-2)', marginTop: 3, fontWeight: 600 }}>
+                    {u.user_type === 'seller' ? 'تاجر' : u.user_type === 'buyer' ? 'مشتري' : (u.user_type || '—')}
+                    {u.phone ? ` · ${u.phone}` : ''}
+                </div>
+            </div>
+            <ToneButton tone="ok" onClick={() => onLift(u.user_id, false, u.name || '')} title="يعود الدخول والعروض كما كانت">
+                ✅ رفع الإيقاف
+            </ToneButton>
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 11 }}>
+            <AdmPill tone="warn">⚠️ {admNum(Number(u.warn_count) || 0)} إنذار من الإدارة</AdmPill>
+            <AdmPill tone="bad">🛡 {admNum(Number(u.flag_count) || 0)} مخالفة رصدها النظام</AdmPill>
+            <AdmPill tone="info">🚩 {admNum(Number(u.report_count) || 0)} بلاغ ضدّه</AdmPill>
+            <AdmPill>📣 {admNum(Number(u.complaint_count) || 0)} شكوى منه</AdmPill>
+        </div>
+
+        {Array.isArray(u.warnings) && u.warnings.length > 0 && (
+            <div style={{ marginTop: 11, display: 'grid', gap: 5 }}>
+                <div style={metaText}>آخر الإنذارات المسجَّلة على هذا الحساب</div>
+                {u.warnings.map((wn: any, i: number) => (
+                    <div
+                        key={i}
+                        style={{
+                            ...panelStyle, padding: '7px 10px',
+                            fontSize: '.76rem', fontWeight: 600, color: 'var(--adm-fg-2)',
+                            display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
+                        }}
+                    >
+                        <span title={wn.auto ? 'أصدره النظام آلياً' : 'أصدره مسؤول'} aria-hidden="true">{wn.auto ? '🤖' : '👤'}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}>{wn.reason}</span>
+                        <span style={metaText}>
+                            {wn.at ? new Date(wn.at).toLocaleDateString('ar-SA-u-ca-gregory') : ''}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        )}
+
+        {Array.isArray(u.recent_flags) && u.recent_flags.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: '.72rem', fontWeight: 700, color: 'var(--adm-fg-2)' }}>
+                🛡 آخر ما رصده النظام:{' '}
+                {u.recent_flags
+                    .map((f: any) => (Array.isArray(f.matched) ? f.matched.join('، ') : ''))
+                    .filter(Boolean)
+                    .join(' • ') || 'صور/محتوى مرفوض'}
+            </div>
         )}
     </div>
 );
 
-// ============================================================
-// Warned-user card (v11.48) — count badge, suspend, and a drill-down that
-// reads each warning + the offending message it was issued on.
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// بطاقة حسابٍ عليه إنذارات من الإدارة (v11.48)
+// عدّادٌ، وإجراءات، وتفصيلٌ يقرأ كل إنذارٍ والرسالة التي صدر عليها.
+// ═══════════════════════════════════════════════════════════════════════════
+
 const WarnedUserCard: React.FC<{
     user: WarnedUser;
     onSuspendToggle: (id: string, suspend: boolean, name: string) => void;
     onBookingBan: (id: string, name: string) => void;
     onBookingBanLift: (id: string, name: string) => void;
 }> = ({ user: w, onSuspendToggle, onBookingBan, onBookingBanLift }) => {
+    const { customConfirm, customAlert } = useApp();
     const [open, setOpen] = useState(false);
     const [warnings, setWarnings] = useState<UserWarning[] | null>(null);
     const danger = w.warn_count >= 3;
+    const tone: Tone = danger ? 'bad' : w.warn_count === 2 ? 'warn' : 'neutral';
     const roleLabel = w.user_type === 'seller' ? 'تاجر' : w.user_type === 'buyer' ? 'مشتري' : (w.user_type || '—');
 
     const toggle = async () => {
@@ -886,77 +1003,105 @@ const WarnedUserCard: React.FC<{
         if (next && warnings === null) setWarnings(await adminService.getUserWarnings(w.user_id));
     };
 
+    // v12.53 — حذف يدوي: يزيل الإنذار من السجل، وإن كان إشعاره المؤجل لم يصل
+    // المخالف بعدُ يُلغى إرساله نهائياً.
+    const deleteWarning = async (id: string) => {
+        const ok = await customConfirm('حذف هذا الإنذار نهائياً؟ إن لم يصل إشعاره للمخالف بعد فسيُلغى إرساله.');
+        if (!ok) return;
+        const { data, error } = await supabase.rpc('admin_delete_warning', { p_warning_id: id });
+        if (error || !(data as any)?.success) { await customAlert('❌ تعذّر الحذف'); return; }
+        setWarnings((prev) => (prev || []).filter((x) => x.id !== id));
+    };
+
     return (
-        <div className={`bg-[var(--card-bg)] border rounded-2xl p-4 shadow-sm ${danger ? 'border-red-400' : 'border-[var(--border-color)]'}`}>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="min-w-0">
-                    <div className="font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                        {w.user_type === 'seller' ? '🏪' : '🛒'} {w.name || '—'}
-                        {w.is_suspended && <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-0.5 rounded-full">موقوف</span>}
+        <div style={rowCard(tone)}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 9, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontWeight: 800, fontSize: '.92rem', color: 'var(--adm-fg)' }}>
+                        <span aria-hidden="true">{w.user_type === 'buyer' ? '🛒' : '🏪'}</span>
+                        {w.name || '—'}
+                        {w.is_suspended && <AdmPill tone="bad">موقوف</AdmPill>}
                     </div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    <div style={{ fontSize: '.74rem', color: 'var(--adm-fg-2)', marginTop: 3, fontWeight: 600 }}>
                         {roleLabel}{w.phone ? ` · ${w.phone}` : ''} · آخر إنذار {timeAgo(w.last_warned_at)}
                     </div>
                 </div>
-                <span className={`text-sm font-extrabold px-3 py-1 rounded-full text-white ${danger ? 'bg-red-600' : w.warn_count === 2 ? 'bg-amber-500' : 'bg-[var(--gray-400)]'}`}>
-                    {w.warn_count} إنذار{danger ? ' 🔴' : ''}
-                </span>
+                <AdmPill tone={tone}>{admNum(w.warn_count)} إنذار{danger ? ' 🔴' : ''}</AdmPill>
             </div>
 
             {danger && (
-                <div className="mt-2 text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                    ⚠️ ٣ إنذارات أو أكثر — يُنصح باتخاذ إجراء (إيقاف الحساب).
+                <div
+                    style={{
+                        marginTop: 9, padding: '8px 11px', borderRadius: 'var(--adm-r-sm)',
+                        background: toneBg('bad'), color: toneFg('bad'),
+                        fontSize: '.76rem', fontWeight: 700,
+                    }}
+                >
+                    ⚠️ 3 إنذارات أو أكثر — يُنصح باتخاذ إجراء (إيقاف الحساب).
                 </div>
             )}
 
-            <div className="flex flex-wrap gap-2 mt-3">
-                <button onClick={toggle} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)]">
-                    {open ? 'إخفاء التفاصيل' : '📄 اقرأ الإنذارات والرسائل'}
-                </button>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 11 }}>
+                <AdmButton size="sm" onClick={toggle}>
+                    {open ? '▲ إخفاء التفاصيل' : '📄 اقرأ الإنذارات والرسائل'}
+                </AdmButton>
                 {w.is_suspended ? (
-                    <button onClick={() => onSuspendToggle(w.user_id, false, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">✅ إعادة تفعيل</button>
+                    <ToneButton tone="ok" onClick={() => onSuspendToggle(w.user_id, false, w.name || '')} title="يعود الدخول والعروض كما كانت">
+                        ✅ رفع الإيقاف
+                    </ToneButton>
                 ) : (
-                    <button onClick={() => onSuspendToggle(w.user_id, true, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-red-50 text-red-600 border border-red-200">⛔ إيقاف الحساب</button>
+                    <ToneButton tone="bad" onClick={() => onSuspendToggle(w.user_id, true, w.name || '')} title="يمنع الدخول كلّياً وتُنهى الجلسات — ويُسجَّل السبب">
+                        ⛔ إيقاف الحساب
+                    </ToneButton>
                 )}
-                {/* v12.79 — عقوبة أخف من إيقاف الحساب: تعليق الحجز فقط لمدة يقررها المالك */}
-                <button onClick={() => onBookingBan(w.user_id, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200">⏸️ تعليق الحجز لمدة…</button>
-                <button onClick={() => onBookingBanLift(w.user_id, w.name || '')} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] text-[var(--text-secondary)] border border-[var(--border-color)]">▶️ رفع تعليق الحجز</button>
+                {/* v12.79 — عقوبة أخفّ من إيقاف الحساب: الحساب يبقى يعمل ولا يستطيع الحجز وحده */}
+                <ToneButton tone="warn" onClick={() => onBookingBan(w.user_id, w.name || '')} title="الحساب يبقى يعمل — يُمنع من الحجز وحده للمدّة التي تكتبها">
+                    ⏸️ تعليق الحجز لمدة…
+                </ToneButton>
+                <AdmButton size="sm" onClick={() => onBookingBanLift(w.user_id, w.name || '')}>
+                    ▶️ رفع تعليق الحجز
+                </AdmButton>
             </div>
 
             {open && (
-                <div className="mt-3 space-y-2">
+                <div style={{ marginTop: 11, display: 'grid', gap: 8 }}>
                     {warnings === null ? (
-                        <div className="text-xs text-[var(--text-secondary)]">جاري التحميل...</div>
+                        <AdmSkeleton rows={2} height={56} />
                     ) : warnings.length === 0 ? (
-                        <div className="text-xs text-[var(--text-secondary)]">لا تفاصيل.</div>
+                        <AdmEmpty
+                            icon="📄"
+                            title="لا تفاصيل محفوظة لهذه الإنذارات"
+                            hint="العدّاد يقول إنها صدرت، لكن نصوصها غير متاحة — إنذاراتٌ قديمة سابقة لحفظ التفاصيل."
+                        />
                     ) : warnings.map((wn) => (
-                        <div key={wn.id} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] font-bold text-amber-600">⚠️ إنذار</span>
-                                <span className="flex items-center gap-2">
-                                    <span className="text-[10px] text-[var(--text-secondary)]">{fmt(wn.created_at)}{wn.admin_name ? ` · ${wn.admin_name}` : ''}</span>
-                                    {/* v12.53 — حذف يدوي: يزيل الإنذار من السجل، وإن كان
-                                        إشعاره المؤجل لم يصل المخالف بعدُ يُلغى إرساله نهائياً */}
-                                    <button
-                                        onClick={async () => {
-                                            if (!window.confirm('حذف هذا الإنذار نهائياً؟ إن لم يصل إشعاره للمخالف بعد فسيُلغى إرساله.')) return;
-                                            const { data, error } = await supabase.rpc('admin_delete_warning', { p_warning_id: wn.id });
-                                            if (error || !(data as any)?.success) { alert('❌ تعذّر الحذف'); return; }
-                                            setWarnings(prev => (prev || []).filter(x => x.id !== wn.id));
-                                        }}
-                                        className="text-[10px] font-extrabold text-red-500 border border-red-200 rounded-lg px-2 py-0.5 hover:bg-red-50"
-                                    >🗑 حذف</button>
+                        <div key={wn.id} style={panelStyle}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                <AdmPill tone="warn">⚠️ إنذار</AdmPill>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={metaText}>{fmt(wn.created_at)}{wn.admin_name ? ` · ${wn.admin_name}` : ''}</span>
+                                    <ToneButton tone="bad" onClick={() => deleteWarning(wn.id)} title="يُزيله من السجل ومن عدّاد الحساب">
+                                        🗑 حذف
+                                    </ToneButton>
                                 </span>
                             </div>
-                            <div className="text-sm text-[var(--text-primary)] mt-1 whitespace-pre-wrap break-words">{wn.reason}</div>
+                            <p style={{ ...bodyText, marginTop: 7 }}>{wn.reason}</p>
                             {wn.context_message && (
-                                <div className="mt-2 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                    <div className="text-[10px] font-bold text-red-700 mb-0.5">الرسالة المخالفة:</div>
-                                    <div className="text-red-900 whitespace-pre-wrap break-words">{wn.context_message}</div>
+                                <div
+                                    style={{
+                                        marginTop: 8, padding: '8px 11px', borderRadius: 'var(--adm-r-sm)',
+                                        background: toneBg('bad'), color: toneFg('bad'),
+                                    }}
+                                >
+                                    <div style={{ fontSize: '.68rem', fontWeight: 800, marginBottom: 3 }}>الرسالة المخالفة</div>
+                                    <div style={{ fontSize: '.78rem', fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.8 }}>
+                                        {wn.context_message}
+                                    </div>
                                 </div>
                             )}
                             {wn.context_barcode && (
-                                <div className="mt-1 text-[10px] text-[var(--text-secondary)]">كود المحادثة: <span className="font-mono">{wn.context_barcode}</span></div>
+                                <div style={{ ...metaText, marginTop: 6 }}>
+                                    كود المحادثة: <span style={{ fontFamily: 'monospace' }}>{wn.context_barcode}</span>
+                                </div>
                             )}
                         </div>
                     ))}

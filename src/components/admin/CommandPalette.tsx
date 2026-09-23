@@ -16,26 +16,14 @@ import type { AdminPermission } from '../../services/authService';
 import { useHistory } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
 import { useAdminRecents, RecentEntity } from '../../hooks/useAdminRecents';
+import { ADMIN_TABS, ADMIN_GROUP_BY_ID, AdminTabId } from '../../data/adminNav';
 
-export type AdminTab =
-    | 'overview'
-    | 'buyers'
-    | 'sellers'
-    | 'reports'
-    | 'moderation'
-    | 'analytics'
-    | 'analyst'
-    | 'audience'
-    | 'tools'
-    | 'locations'
-    | 'contests'
-    | 'launch'
-    | 'tax'
-    | 'invoices'
-    | 'messages'
-    | 'messaging'
-    | 'admins'
-    | 'delivery';
+/**
+ * 🪤 v14.89 — كان هذا النوع يُعدّد التبويبات يدوياً، وكانت القائمة أدناه
+ * تكتب أسماءها مرّةً ثانية بعد `AdminDashboard` — فانحرفا فعلاً («المشترون»
+ * هناك / «إدارة المشترين» هنا). المصدر الآن `src/data/adminNav.ts` وحده.
+ */
+export type AdminTab = AdminTabId;
 
 interface CommandPaletteProps {
     open: boolean;
@@ -51,6 +39,8 @@ type NavCommand = {
     icon: string;
     keywords: string;
     tab: AdminTab;
+    /** سطر الفائدة من الكتالوج — يُعرض تحت الاسم فيعرف القارئ ما يفتحه. */
+    subtitle?: string;
     /** v14.38 — الصلاحية اللازمة لرؤية هذه الوجهة. */
     perm?: AdminPermission;
 };
@@ -76,6 +66,19 @@ type RecentCommand = {
 };
 type Item = NavCommand | ActionCommand | UserCommand | RecentCommand;
 
+
+/**
+ * جسرُ النيّة إلى الشاشة الوجهة.
+ * 🪤 كان هذا يمرّ عبر خاصّية `onQuickAction` — و`AdminDashboard` لا يمرّرها
+ *    إطلاقاً. فالوعد المكتوب في اللوحة («يفتح البانرات ← بانر جديد») كان
+ *    ينقل إلى الشاشة ولا يفتح النموذج: وعدٌ في الواجهة بلا كودٍ ينفّذه.
+ *    والشاشة الوجهة تقرأ المفتاح نفسه من `sessionStorage` وتمسحه بعد قراءته
+ *    (نيّةٌ لمرّةٍ واحدة)، فالكتابة هنا مباشرةً تُغلق الحلقة بلا وسيط.
+ */
+function setQuickIntent(id: string): void {
+    try { sessionStorage.setItem('taki:admin:quick_action', id); } catch { /* تخزينٌ محجوب */ }
+}
+
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
     open,
     onClose,
@@ -94,28 +97,23 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
     // Static nav + action commands. Memoized so identity is stable for
     // dependency arrays.
-    const navCommands: NavCommand[] = useMemo(() => [
-        { kind: 'nav', id: 'nav-overview', perm: 'tab_overview',  label: 'الرئيسية',         icon: '🏠', keywords: 'overview home dashboard رئيسية',                    tab: 'overview' },
-        { kind: 'nav', id: 'nav-buyers', perm: 'tab_buyers',    label: 'إدارة المشترين',   icon: '🛒', keywords: 'buyers customers مشتري مشترين عميل',                tab: 'buyers' },
-        { kind: 'nav', id: 'nav-sellers', perm: 'tab_sellers',   label: 'إدارة البائعين',   icon: '🏪', keywords: 'sellers merchants تاجر متاجر بائع اشتراك',          tab: 'sellers' },
-        { kind: 'nav', id: 'nav-reports', perm: 'tab_reports',   label: 'البلاغات والشكاوى', icon: '🚩', keywords: 'reports complaints بلاغ شكوى ابلاغ',                tab: 'reports' },
-        { kind: 'nav', id: 'nav-moderation', perm: 'tab_reports', label: 'الإنذارات (فلترة المحتوى)', icon: '🛡', keywords: 'moderation warnings nsfw filter انذار انذارات تحرش فلترة اباحي محتوى', tab: 'moderation' },
-        { kind: 'nav', id: 'nav-analytics', perm: 'tab_analytics', label: 'التحليلات',        icon: '📊', keywords: 'analytics stats charts إحصائيات تقارير تحليلات',   tab: 'analytics' },
-        { kind: 'nav', id: 'nav-analyst', perm: 'tab_analytics',   label: 'المحلل الذكي',     icon: '🧠', keywords: 'ai analyst insights churn محلل ذكي رؤى عزوف توصيات ذروة', tab: 'analyst' },
-        { kind: 'nav', id: 'nav-delivery', perm: 'tab_delivery', label: 'التوصيل', icon: '🚚', keywords: 'delivery courier zones توصيل مندوب نطاق نطاقات شحن', tab: 'delivery' },
-        { kind: 'nav', id: 'nav-tools', perm: 'tab_tools',     label: 'أدوات الإدارة',    icon: '🛠️', keywords: 'tools settings banners campaigns بانر حملة اعدادات', tab: 'tools' },
-        { kind: 'nav', id: 'nav-locations', perm: 'tab_tools', label: 'المولات والأسواق', icon: '🏬', keywords: 'locations malls markets مول سوق مولات اسواق مواقع', tab: 'locations' },
-        { kind: 'nav', id: 'nav-launch', perm: 'tab_launch',    label: 'جاهزية الإطلاق',   icon: '🚀', keywords: 'launch prelaunch health check payment gateway اطلاق فحص دفع بوابة',  tab: 'launch' },
-        { kind: 'nav', id: 'nav-tax', perm: 'action_view_finance',       label: 'الزكاة والضريبة',  icon: '🧾', keywords: 'tax vat zakat invoice زكاة ضريبة ضريبه فاتورة فواتير هيئة',           tab: 'tax' },
-        { kind: 'nav', id: 'nav-invoices', perm: 'action_view_finance',  label: 'فواتير الموقع',    icon: '💳', keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير الموقع سجل', tab: 'invoices' },
-        { kind: 'nav', id: 'nav-messaging', perm: 'tab_messages', label: 'الإشعارات والرسائل', icon: '📨', keywords: 'messaging notifications email templates اشعارات رسائل ايميل بريد قوالب تذكير اشتراك حجز', tab: 'messaging' },
-        // v14.65 — أربعة تبويبات موجودة في اللوحة ولم يكن البحث السريع يعرفها،
-        // فمن يبحث عنها يظنّها غير موجودة. (كُشفت في تدقيق ٩ سبتمبر.)
-        { kind: 'nav', id: 'nav-audience', perm: 'tab_analytics', label: 'جمهور المدن', icon: '🗺', keywords: 'audience cities map geo جمهور مدن خريطة مناطق نطاق مصادر هبوط', tab: 'audience' },
-        { kind: 'nav', id: 'nav-contests', perm: 'tab_contests', label: 'المسابقات', icon: '🎁', keywords: 'contests surveys draw prizes مسابقة مسابقات استبيان سحب جوائز فائز', tab: 'contests' },
-        { kind: 'nav', id: 'nav-messages', perm: 'tab_messages', label: 'الرسائل (مراقبة المحادثات)', icon: '💬', keywords: 'messages chat monitor conversations رسائل محادثات مراقبة دردشة شات', tab: 'messages' },
-        { kind: 'nav', id: 'nav-admins', perm: 'tab_admins', label: 'المسؤولون', icon: '👑', keywords: 'admins team permissions roles مسؤول مسؤولون فريق صلاحيات ادمن', tab: 'admins' },
-    ], []);
+    // v14.89 — الوجهات تُبنى من كتالوج التنقّل: اسمٌ واحد وسطرُ فائدةٍ واحد
+    // وصلاحيةٌ واحدة لكل شاشة، يقرؤها الشريط وهذه اللوحة معاً.
+    const navCommands: NavCommand[] = useMemo(
+        () => ADMIN_TABS.map((t) => ({
+            kind: 'nav' as const,
+            id: `nav-${t.id}`,
+            perm: t.permission as AdminPermission,
+            label: t.label,
+            icon: t.icon,
+            // مجموعةُ الشاشة وسطرُ فائدتها يدخلان البحث: من يكتب «فاتورة»
+            // أو «مال» يجد «المدفوعات» ولو لم يتذكّر اسمها.
+            keywords: `${t.keywords} ${ADMIN_GROUP_BY_ID[t.group]?.label ?? ''} ${t.hint}`,
+            tab: t.id,
+            subtitle: t.hint,
+        })),
+        []
+    );
 
     const actionCommands: ActionCommand[] = useMemo(() => [
         {
@@ -123,14 +121,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             label: 'إضافة بانر إعلاني',
             subtitle: 'يفتح أدوات الإدارة → بانر جديد',
             keywords: 'banner add new بانر اضافة جديد اعلان',
-            run: () => { onNavigate('tools'); onQuickAction?.('new-banner'); onClose(); },
+            run: () => { setQuickIntent('new-banner'); onQuickAction?.('new-banner'); onNavigate('tools'); onClose(); },
         },
         {
             kind: 'action', id: 'act-new-campaign', icon: '📢',
             label: 'إنشاء حملة ترويجية',
             subtitle: 'يفتح أدوات الإدارة → حملة جديدة',
             keywords: 'campaign promotion new حملة ترويج جديد اعلان',
-            run: () => { onNavigate('tools'); onQuickAction?.('new-campaign'); onClose(); },
+            run: () => { setQuickIntent('new-campaign'); onQuickAction?.('new-campaign'); onNavigate('tools'); onClose(); },
         },
         {
             kind: 'action', id: 'act-view-reports', icon: '🚩',
@@ -355,7 +353,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                                 badge={isSeller ? 'تاجر' : 'مشتري'}
                                                 onHover={() => setSelectedIdx(idx)}
                                                 onSelect={() => runItem({ kind: 'recent', id: r.id, recent: r })}
-                                                accent={isSeller ? 'purple' : 'blue'}
                                             />
                                         );
                                     })}
@@ -363,7 +360,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             )}
 
                             {filteredNav.length > 0 && (
-                                <CategoryHeader label="الصفحات" />
+                                <CategoryHeader label="الشاشات" />
                             )}
                             {filteredNav.map((c, i) => {
                                 const idx = navStart + i;
@@ -375,9 +372,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                         active={active}
                                         icon={c.icon}
                                         title={c.label}
+                                        subtitle={c.subtitle}
                                         onHover={() => setSelectedIdx(idx)}
                                         onSelect={() => runItem(c)}
-                                        accent="emerald"
                                     />
                                 );
                             })}
@@ -398,7 +395,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                         subtitle={c.subtitle}
                                         onHover={() => setSelectedIdx(idx)}
                                         onSelect={() => runItem(c)}
-                                        accent="amber"
                                     />
                                 );
                             })}
@@ -422,7 +418,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                         badge={isSeller ? 'تاجر' : 'مشتري'}
                                         onHover={() => setSelectedIdx(idx)}
                                         onSelect={() => runItem({ kind: 'user', id: u.id, user: u })}
-                                        accent={isSeller ? 'purple' : 'blue'}
                                     />
                                 );
                             })}
@@ -459,16 +454,28 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 // ============================================================
 
 const CategoryHeader: React.FC<{ label: string }> = ({ label }) => (
-    <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-[var(--gray-400)] uppercase tracking-wide">
+    <div
+        className="px-3 pt-3 pb-1 font-bold tracking-wide"
+        style={{ fontSize: '.64rem', color: 'var(--adm-fg-3)', letterSpacing: '.08em' }}
+    >
         {label}
     </div>
 );
 
-const ACCENT: Record<string, string> = {
-    emerald: 'bg-emerald-50 text-emerald-700',
-    amber: 'bg-amber-50 text-amber-700',
-    blue: 'bg-blue-50 text-blue-700',
-    purple: 'bg-purple-50 text-purple-700',
+/**
+ * 🪤 v14.89 — كانت هنا أربعةُ ألوانٍ **فاتحةٍ ثابتة** (`bg-emerald-50` …)
+ * لتمييز نوع الصفّ داخل قائمةٍ واحدة: لا تتبع الوضع الداكن إطلاقاً (نصٌّ
+ * فاتحٌ على خلفيةٍ فاتحة ليلاً)، وأربعةُ ألوانٍ في قائمةٍ واحدة تمييزٌ لا
+ * يقرؤه أحد. الصفُّ المحدَّد الآن **واحدٌ** بلون الهوية، والنوع يقوله
+ * عنوانُ فئته فوقه.
+ */
+const ROW_ACTIVE: React.CSSProperties = {
+    background: 'var(--adm-accent-weak)',
+    color: 'var(--adm-fg)',
+};
+const ROW_IDLE: React.CSSProperties = {
+    background: 'transparent',
+    color: 'var(--adm-fg)',
 };
 
 interface CommandRowProps {
@@ -479,7 +486,6 @@ interface CommandRowProps {
     subtitle?: string;
     subtitleLtr?: boolean;
     badge?: string;
-    accent: 'emerald' | 'amber' | 'blue' | 'purple';
     onHover: () => void;
     onSelect: () => void;
 }
@@ -492,7 +498,6 @@ const CommandRow: React.FC<CommandRowProps> = ({
     subtitle,
     subtitleLtr,
     badge,
-    accent,
     onHover,
     onSelect,
 }) => (
@@ -501,9 +506,8 @@ const CommandRow: React.FC<CommandRowProps> = ({
         data-cmd-idx={idx}
         onClick={onSelect}
         onMouseEnter={onHover}
-        className={`w-full text-right px-3 py-2.5 rounded-xl flex items-center gap-3 transition-colors ${
-            active ? ACCENT[accent] : 'hover:bg-[var(--gray-100)] text-[var(--text-primary)]'
-        }`}
+        className="w-full text-right px-3 py-2.5 flex items-center gap-3 transition-colors adm-focusable"
+        style={{ ...(active ? ROW_ACTIVE : ROW_IDLE), borderRadius: 'var(--adm-r-sm)' }}
     >
         <span className="text-xl flex-shrink-0">{icon}</span>
         <div className="flex-1 min-w-0 text-right">

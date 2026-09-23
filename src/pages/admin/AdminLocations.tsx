@@ -15,6 +15,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import { REGIONS, CITIES, geoName } from '../../data/mock';
 import { adminService } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
+import { AdmError, AdmSkeleton, AdmEmpty } from '../../components/admin/ui';
 import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
 import MapAutoResize from '../../components/MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
@@ -42,11 +43,14 @@ const AdminLocations: React.FC = () => {
     const [search, setSearch] = useState('');
     const [form, setForm] = useState<Partial<LocRow> | null>(null);
     const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
-        const data = await adminService.listLocations();
-        setRows(data as LocRow[]);
+        setErr(null);
+        const res = await adminService.listLocations();
+        if (res.error) setErr(res.error);
+        else setRows(res.rows as LocRow[]);
         setLoading(false);
     };
     useEffect(() => { load(); }, []);
@@ -115,13 +119,11 @@ const AdminLocations: React.FC = () => {
     return (
         <div className="space-y-4" dir="rtl">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">🏬 إدارة المولات والأسواق</h1>
-                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                        تظهر في الموقع والبوتين معاً. {rows.length} موقعاً.
-                    </p>
-                </div>
-                <button onClick={openAdd} className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition">
+                {/* 🪤 v14.89 — العنوان يأتي من قشرة اللوحة (adminNav.ts) فلا يُكتب هنا. */}
+                <p className="text-sm" style={{ color: 'var(--adm-fg-2)' }}>
+                    تظهر في الموقع والبوتين معاً. {rows.length} موقعاً.
+                </p>
+                <button onClick={openAdd} className="adm-focusable px-4 py-2.5 font-bold text-sm active:scale-95 transition" style={{ background: 'var(--adm-accent)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}>
                     ➕ إضافة مول/سوق
                 </button>
             </div>
@@ -132,12 +134,18 @@ const AdminLocations: React.FC = () => {
                 className="w-full px-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-emerald-500 outline-none"
             />
 
-            {loading ? (
-                <div className="py-12 text-center text-[var(--text-secondary)] text-sm">⏳ جارٍ التحميل…</div>
+            {err ? (
+                <AdmError message={`تعذّرت قراءة المواقع: ${err}`} onRetry={load} />
+            ) : loading ? (
+                <AdmSkeleton rows={4} height={46} />
             ) : filtered.length === 0 ? (
-                <div className="py-12 text-center text-[var(--text-secondary)] text-sm rounded-2xl border border-dashed border-[var(--border-color)]">
-                    {search ? 'لا نتائج للبحث.' : 'لا توجد مواقع بعد — أضف أول مول/سوق.'}
-                </div>
+                <AdmEmpty
+                    icon="🏬"
+                    title={search ? 'لا نتائج للبحث' : 'لا توجد مواقع بعد'}
+                    hint={search
+                        ? 'جرّب اسماً آخر للمول أو للمدينة.'
+                        : 'المولات والأسواق هنا هي ما يختار منه التجّار مواقع فروعهم — أضف أوّلها.'}
+                />
             ) : (
                 <div className="rounded-2xl border border-[var(--border-color)] overflow-hidden divide-y divide-[var(--border-color)]">
                     {filtered.map(r => (
@@ -160,9 +168,10 @@ const AdminLocations: React.FC = () => {
             {form && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4" onClick={() => !saving && setForm(null)}>
                     <div className="bg-[var(--card-bg)] rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="sticky top-0 bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-4 rounded-t-3xl flex items-center justify-between z-10">
+                        <div className="sticky top-0 p-4 flex items-center justify-between z-10"
+                             style={{ background: 'var(--adm-surface-2)', borderBottom: '1px solid var(--adm-border)' }}>
                             <div className="text-lg font-bold">{form.id ? '✏️ تعديل موقع' : '➕ مول/سوق جديد'}</div>
-                            <button onClick={() => !saving && setForm(null)} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">✕</button>
+                            <button onClick={() => !saving && setForm(null)} className="adm-focusable w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'var(--adm-surface-3)', color: 'var(--adm-fg-2)', border: '1px solid var(--adm-border)' }}>✕</button>
                         </div>
                         <div className="p-4 space-y-3">
                             <div className="grid grid-cols-2 gap-3">
@@ -226,7 +235,7 @@ const AdminLocations: React.FC = () => {
                         </div>
                         <div className="sticky bottom-0 bg-[var(--body-bg)] p-3 rounded-b-3xl flex gap-3 border-t border-[var(--border-color)]">
                             <button onClick={() => setForm(null)} disabled={saving} className="flex-1 py-3 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl">إلغاء</button>
-                            <button onClick={save} disabled={saving} className="flex-[2] py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl disabled:opacity-50">
+                            <button onClick={save} disabled={saving} className="adm-focusable flex-[2] py-3 font-bold disabled:opacity-50" style={{ background: 'var(--adm-accent)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}>
                                 {saving ? 'جارٍ الحفظ...' : '💾 حفظ'}
                             </button>
                         </div>

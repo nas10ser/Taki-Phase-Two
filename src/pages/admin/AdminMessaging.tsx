@@ -130,7 +130,7 @@ const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
     pending: { label: '⏳ بالانتظار',    cls: 'bg-amber-50 text-amber-700 border-amber-200' },
     sending: { label: '📤 يُرسل الآن',   cls: 'bg-blue-50 text-blue-700 border-blue-200' },
     failed:  { label: '❌ فشل',          cls: 'bg-red-50 text-red-700 border-red-200' },
-    expired: { label: '🕓 انتهت صلاحيته', cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+    expired: { label: '🕓 انتهت صلاحيته', cls: 'adm-chip-neutral' },
 };
 
 // دمج تجاوز محفوظ فوق الافتراضيات (كما تفعل قاعدة البيانات تماماً)
@@ -150,7 +150,7 @@ const Toggle: React.FC<{ on: boolean; onFlip: () => void }> = ({ on, onFlip }) =
         onClick={onFlip}
         className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-emerald-500' : 'bg-[var(--gray-300)]'}`}
     >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
+        <span className={`inline-block h-4 w-4 transform rounded-full adm-knob shadow transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
 );
 
@@ -243,13 +243,13 @@ const AdminMessaging: React.FC = () => {
     return (
         <div className="space-y-5 pb-28" dir="rtl">
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-500 to-violet-600 rounded-3xl p-6 text-white shadow-lg">
-                <h1 className="text-2xl font-extrabold flex items-center gap-2">📨 الإشعارات والرسائل</h1>
-                <p className="text-sm opacity-90 mt-1.5 leading-relaxed">
-                    تحكم كامل برسائل الاشتراك والحجز: النص، التوقيت (أيام/دقائق)، والقناة (إشعار في الموقع أو إيميل أو الاثنين).
-                    التعديلات تسري فوراً على الموقع والتطبيق والبوتين.
-                </p>
-            </div>
+            {/* 🪤 v14.89 — حُذفت اللافتة المتدرّجة والعنوان المحلّي: القشرة تطبع
+                اسم الشاشة ووصفها، واللون في اللوحة للدلالة لا للزينة. */}
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--adm-fg-2)', maxWidth: '68ch' }}>
+                نصّ كل رسالةٍ ترسلها المنصّة وتوقيتها وقناتها (إشعارٌ في الموقع أو بريد أو الاثنان).
+                التعديلات تسري فوراً على الموقع والتطبيق والبوتين.
+                ولقراءة <strong>محادثات</strong> الطلبات نفسها، افتح «مراقبة المحادثات».
+            </p>
 
             {/* حالة مرسل الإيميل */}
             <section className={`rounded-2xl border p-4 ${emailStatus?.configured ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
@@ -422,7 +422,7 @@ const AdminMessaging: React.FC = () => {
                 ) : (
                     <div className="space-y-1.5">
                         {outbox.map((m) => {
-                            const chip = STATUS_CHIP[m.status] ?? { label: m.status, cls: 'bg-gray-100 text-gray-600 border-gray-200' };
+                            const chip = STATUS_CHIP[m.status] ?? { label: m.status, cls: 'adm-chip-neutral' };
                             return (
                                 <div key={m.id} className="flex items-center gap-2 border border-[var(--border-color)] rounded-xl px-3 py-2">
                                     <div className="flex-1 min-w-0">
@@ -458,7 +458,7 @@ const AdminMessaging: React.FC = () => {
                             type="button"
                             onClick={handleSave}
                             disabled={saving}
-                            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-xs font-extrabold shadow disabled:opacity-50"
+                            className="adm-focusable px-6 py-2.5 text-xs font-extrabold disabled:opacity-50" style={{ background: 'var(--adm-accent)', color: '#ffffff', border: 'none', borderRadius: 'var(--adm-r-sm)' }}
                         >
                             {saving ? 'جاري الحفظ...' : '💾 حفظ الإعدادات'}
                         </button>

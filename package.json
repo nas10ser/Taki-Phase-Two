@@ -1,12 +1,12 @@
 {
   "name": "TAKI",
-  "version": "14.88.0",
+  "version": "14.89.0",
   "description": "TAKI — discount booking platform (React 18 + Parcel 2 + Supabase, Node 24)",
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
     "start": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
     "dev": "parcel index.html --public-url / --host 0.0.0.0 --port 3000",
-    "build": "node scripts/preview-env.js && node scripts/check-env.js && node scripts/check-versions.js && node scripts/check-csp.js && node scripts/check-deps.js && node scripts/check-file-size.js && node scripts/archive-progress.js --check && npm run lint && npm run typecheck && npm test && parcel build index.html --public-url / && node scripts/fix-head-tags.js && node scripts/check-bundle-budget.js && node scripts/inject-csp.js && node scripts/copy-static.js",
+    "build": "node scripts/preview-env.js && node scripts/check-env.js && node scripts/check-versions.js && node scripts/check-csp.js && node scripts/check-deps.js && node scripts/check-file-size.js && node scripts/check-admin-ui.js && node scripts/archive-progress.js --check && npm run lint && npm run typecheck && npm test && parcel build index.html --public-url / && node scripts/fix-head-tags.js && node scripts/check-bundle-budget.js && node scripts/inject-csp.js && node scripts/copy-static.js",
     "lint": "eslint src scripts api shared",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist",

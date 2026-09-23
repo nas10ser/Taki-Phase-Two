@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { ExportButton } from './ExportButton';
 
 interface TopRow {
     id: string;
@@ -130,6 +131,26 @@ export const TopActivityPanel: React.FC = () => {
             )}
 
             <div className="flex items-center gap-1.5 flex-wrap">
+                {/* v14.89 — التصدير انتقل إلى هنا: كان مربوطاً بقائمتَي «أعلى
+                    البائعين/المشترين» المكرّرتين أسفل الصفحة، وقد حُذفتا لأنهما
+                    تجيبان سؤال هذه اللوحة نفسه بدالّةٍ أخرى وفترةٍ أخرى. */}
+                <ExportButton
+                    rows={rows.map((r, i) => ({ ...r, rank: i + 1 }))}
+                    columns={[
+                        { header: 'الترتيب', accessor: (r: any) => r.rank },
+                        { header: kind === 'stores' ? 'المتجر' : 'المشتري', accessor: (r: any) => r.label ?? '' },
+                        { header: 'الجوال', accessor: (r: any) => r.phone ?? '' },
+                        { header: 'حجوزات', accessor: (r: any) => r.bookings ?? 0 },
+                        { header: 'مكتملة', accessor: (r: any) => r.completed ?? 0 },
+                        { header: 'الكمية', accessor: (r: any) => r.qty ?? 0 },
+                        { header: 'القيمة (ر.س)', accessor: (r: any) => r.revenue ?? 0 },
+                        { header: 'المعرّف', accessor: (r: any) => r.id },
+                    ]}
+                    filenameStem={kind === 'stores' ? 'taki-top-stores' : 'taki-top-buyers'}
+                    label="📥 تصدير القائمة"
+                    accent="emerald"
+                    tooltip={`تنزيل القائمة الظاهرة (${rows.length}) كملف CSV — بنفس الفترة والعدد المختارين`}
+                />
                 <span className="text-xs font-bold text-[var(--text-secondary)]">عدد النتائج:</span>
                 <input type="number" min={1} max={2000} value={limit}
                     onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))}

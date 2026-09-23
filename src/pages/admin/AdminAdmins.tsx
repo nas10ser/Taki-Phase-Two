@@ -180,7 +180,7 @@ const AdminAdmins: React.FC = () => {
                                             {row.name || '(بدون اسم)'}
                                         </span>
                                         {isProtected && (
-                                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-gradient-to-l from-amber-500 to-rose-500 text-white">
+                                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full" style={{ background: 'var(--adm-warn-bg)', color: 'var(--adm-warn-fg)' }}>
                                                 👑 المسؤول الرئيسي
                                             </span>
                                         )}

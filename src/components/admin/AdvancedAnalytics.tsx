@@ -1,24 +1,28 @@
 /**
- * AdvancedAnalytics — world-class admin analytics panel (v10.98).
+ * AdvancedAnalytics — أرقام المنصّة على فترةٍ تختارها (v14.89)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 **الفخّ الذي أُغلق هنا: كلمة «إيراد» كانت تعني شيئين.**
+ *    كان في هذه الشاشة «💰 الإيراد الشهري المتوقّع» و«💰 الإيرادات الشهرية»
+ *    و«GMV»، وفي شاشةٍ أخرى «اشتراكات شهرية» و«إجمالي المبيعات» — وكلّها
+ *    «مال» بلا ما يفرّق. وهما مالان مختلفان تماماً:
+ *      • **مبيعات التجّار (GMV)** — ما يدفعه المشترون للتجّار. لا يمرّ بحساب
+ *        تاكي إطلاقاً (الدفع مباشر لحساب التاجر، بلا عمولة).
+ *      • **اشتراكات التجّار في تاكي** — ما تقبضه تاكي فعلاً.
+ *    فصارت التسمية واحدة: كل ما في هذا الملفّ من مالٍ هو **اشتراكات**،
+ *    و«قيمة مبيعات التجّار (GMV)» في ملفّ المستثمر أعلى الشاشة. ولكل بطاقة
+ *    `title` يقول ما يدخل في الرقم وما لا يدخل، و`scope` يقول مداه.
  *
- * Renders 12 analytics views in one tab, each backed by a dedicated RPC
- * added in the v10_98_admin_world_class_analytics migration:
- *  1. Revenue forecast hero
- *  2. Booking funnel (view → book)
- *  3. Daily metrics multi-line chart
- *  4. Activity heatmap (7 × 24)
- *  5. Monthly MRR bar chart
- *  6. Subscription growth (new vs churn)
- *  7. Subscription lifecycle donut
- *  8. Cohort retention table
- *  9. Upcoming renewals timeline
- *  10. Churned customers list (win-back)
- *  11. Browse-but-didn't-book leaderboard
- *  12. Category conversion table
+ * 🪤 وما حُذف من هنا لأنه كان مكرّراً في مجموعة «النمو»:
+ *    • **خريطة النشاط الأسبوعية** (٧×٢٤): شاشة «المحلل الذكي» تحمل تحليل
+ *      ساعات الذروة وهو أغنى (تصنيف × مدينة × ساعة، بفترةٍ حرّة). بقي هنا
+ *      سطرُ إحالة.
+ *    • **التوزيع الجغرافي**: الجغرافيا كلّها في «جمهور المدن». سطرُ إحالة.
+ *    • **جدولا «الاستبقاء» و«الأفواج»**: كانا يجيبان السؤال نفسه («كم عاد
+ *      ممّن سجّل في شهر كذا») بجدولين لا يمكن التوفيق بينهما بصرياً. صارا
+ *      جدولاً واحداً: الأفواج أساساً، والاستبقاء أعمدةً فيه.
  *
- * SVG-only charts — no external libraries — so the bundle stays lean.
- * Everything refreshes together via `refresh()` when the user changes
- * the period (7/30/90 days).
+ * 🪤 ولا `dark:` ولا `bg-white` ولا تدرّج: الألوان رموزٌ من `styles.css`
+ *    (`--adm-*`) تتبع `.dark-mode` و`.light-mode` معاً.
  */
 
 import React, {
@@ -30,21 +34,38 @@ import React, {
 } from 'react';
 import { useHistory } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
-import { Tooltip } from './Tooltip';
 import { CopyButton } from './CopyButton';
 import { ExportButton } from './ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
+import {
+    AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill,
+    AdmEmpty, AdmSkeleton, AdmButton, AdmTable,
+    admNum, admMoney,
+} from './ui';
+import type { AdmColumn, Tone } from './ui';
 
-// ============================================================
-// Period selector — drives every section's "last N days" filter
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// الفترة — تحكم أقسام «آخر N يوم» وحدها. الأقسام الشهرية لها مداها المكتوب.
+// ═══════════════════════════════════════════════════════════════════════════
 type Period = 7 | 30 | 90;
 
-// ============================================================
-// Tiny shared chart primitives
-// ============================================================
-const fmtMoney = (v: number) => `${Math.round(v).toLocaleString('ar-SA')} ر.س`;
-const fmtNum = (v: number) => v.toLocaleString('ar-SA');
+const PERIOD_LABEL: Record<Period, string> = {
+    7: '٧ أيام',
+    30: '٣٠ يوماً',
+    90: '٩٠ يوماً',
+};
+const periodScope = (p: Period) => `آخر ${PERIOD_LABEL[p]}`;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// صِيَغ مشتركة
+// ═══════════════════════════════════════════════════════════════════════════
+// 🪤 شكلُ الرقم قرارُ لوحةٍ واحد لا قرارُ ملفّ: `admNum`/`admMoney` من نظام
+//    التصميم (أرقامٌ لاتينية تصطفّ عمودياً في الجداول)، وهما يمرّران القيمة
+//    بـ`Number()` فلا يُسقط عمودُ `numeric` واصلٌ نصّاً الشاشةَ كلّها.
+//    والنسبة المئوية وحدها ليست في النظام بعد، فتُبنى منه هنا.
+const fmtMoney = admMoney;
+const fmtNum = admNum;
+const fmtPct = (v: number) => `${admNum(v)}٪`;
 const fmtDate = (iso: string | null) => {
     if (!iso) return '—';
     try { return new Date(iso).toLocaleDateString('ar-SA-u-ca-gregory'); } catch { return iso; }
@@ -54,12 +75,44 @@ const daysAgo = (iso: string) => {
     const d = Math.floor(ms / 86400000);
     if (d < 1) return 'اليوم';
     if (d === 1) return 'أمس';
-    return `قبل ${d} يوم`;
+    return `قبل ${fmtNum(d)} يوماً`;
 };
 
-// ============================================================
-// 1) Revenue forecast hero
-// ============================================================
+/** سطرُ إحالة — «هذا موجودٌ هناك، ولا يُكرَّر هنا». */
+const RefLine = memo<{ icon: string; text: string }>(({ icon, text }) => (
+    <div
+        style={{
+            display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
+            padding: '11px 13px', borderRadius: 'var(--adm-r-sm)',
+            background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+        }}
+    >
+        <span aria-hidden="true" style={{ fontSize: '.95rem', lineHeight: 1 }}>{icon}</span>
+        <span style={{ fontSize: '.82rem', fontWeight: 700, color: 'var(--adm-fg-2)', flex: 1, minWidth: 180, lineHeight: 1.7 }}>
+            {text}
+        </span>
+    </div>
+));
+RefLine.displayName = 'RefLine';
+
+/** كتلةٌ داخل قسم — عنوانٌ صغير وسطرُ سياق، فلا تتراكم البطاقات. */
+const Block = memo<{ title: string; hint?: string; right?: React.ReactNode; children: React.ReactNode }>(
+    ({ title, hint, right, children }) => (
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--adm-border)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                <h4 style={{ margin: 0, fontSize: '.88rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{title}</h4>
+                {hint && <span style={{ fontSize: '.74rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>{hint}</span>}
+                {right && <span style={{ marginInlineStart: 'auto' }}>{right}</span>}
+            </div>
+            {children}
+        </div>
+    )
+);
+Block.displayName = 'Block';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ١) اشتراكات التجّار في تاكي — الوضع الحالي + المحصّل + النمو + الحالات
+// ═══════════════════════════════════════════════════════════════════════════
 interface ForecastData {
     monthly_expected: number;
     paying_sellers: number;
@@ -69,61 +122,259 @@ interface ForecastData {
     expires_30d: number;
     avg_arpu: number;
 }
+interface MrrPoint { month_key: string; month_label: string; paid_amount: number; paid_count: number; refunded_amount: number; }
+interface GrowthPoint { month_key: string; month_label: string; new_subs: number; churned_subs: number; net_change: number; }
 
-const RevenueForecastHero = memo<{ data: ForecastData | null }>(({ data }) => (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 p-6 text-white shadow-2xl">
-        <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10 blur-3xl"></div>
-        <div className="absolute -left-16 -bottom-16 w-64 h-64 rounded-full bg-white/5 blur-3xl"></div>
-        <div className="relative">
-            <div className="flex items-center gap-2 mb-3">
-                <span className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold">
-                    💰 الإيراد الشهري المتوقّع
-                </span>
-            </div>
-            <div className="text-5xl font-extrabold tabular-nums mb-1">
-                {data ? fmtMoney(data.monthly_expected) : '...'}
-            </div>
-            <div className="text-sm opacity-80 mb-4">
-                ARPU = {data ? fmtMoney(data.avg_arpu) : '...'} لكل تاجر مدفوع
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <Chip label="مدفوعون"     value={data?.paying_sellers ?? '...'} tone="emerald-strong" />
-                <Chip label="تجريبي"      value={data?.trial_sellers ?? '...'}  tone="amber" />
-                <Chip label="مجاني"       value={data?.free_sellers ?? '...'}   tone="gray" />
-                <Chip label="ينتهي 7 أيام" value={data?.expires_7d ?? '...'}     tone="red" highlight={Boolean(data && data.expires_7d > 0)} />
-            </div>
-        </div>
-    </div>
-));
-RevenueForecastHero.displayName = 'RevenueForecastHero';
+const LIFECYCLE_META: Record<string, { label: string; color: string }> = {
+    trial: { label: 'تجريبي', color: '#d97706' },
+    active: { label: 'نشط', color: '#059669' },
+    past_due: { label: 'متأخر', color: '#dc2626' },
+    cancelled: { label: 'ملغي', color: '#64748b' },
+    gifted: { label: 'هدية', color: '#8b5cf6' },
+    frozen: { label: 'مجمّد', color: '#2563eb' },
+};
 
-const Chip = memo<{
-    label: string;
-    value: string | number;
-    tone: 'emerald-strong' | 'amber' | 'gray' | 'red' | 'blue';
-    highlight?: boolean;
-}>(({ label, value, tone, highlight }) => {
-    const toneCls: Record<string, string> = {
-        'emerald-strong': 'bg-white/25',
-        amber: 'bg-amber-300/20',
-        gray: 'bg-white/10',
-        red: 'bg-red-400/30',
-        blue: 'bg-blue-400/30',
+const SubscriptionsSection = memo<{
+    forecast: ForecastData | null;
+    mrr: MrrPoint[];
+    growth: GrowthPoint[];
+    lifecycle: Array<{ status: string; cnt: number }>;
+}>(({ forecast, mrr, growth, lifecycle }) => {
+    // ── المحصّل شهرياً ──
+    const mrrMax = Math.max(...mrr.map((d) => d.paid_amount), 1);
+    const mrrTotal = mrr.reduce((s, d) => s + d.paid_amount, 0);
+    const mrrCurrent = mrr.length ? mrr[mrr.length - 1] : null;
+    const mrrPrev = mrr.length > 1 ? mrr[mrr.length - 2] : null;
+    const mrrMoM = mrrPrev && mrrPrev.paid_amount > 0 && mrrCurrent
+        ? Math.round(((mrrCurrent.paid_amount - mrrPrev.paid_amount) / mrrPrev.paid_amount) * 100)
+        : null;
+
+    // ── جديد مقابل إلغاء ──
+    const growthMax = Math.max(...growth.flatMap((d) => [d.new_subs, d.churned_subs]), 1);
+    const totalNew = growth.reduce((s, d) => s + d.new_subs, 0);
+    const totalChurn = growth.reduce((s, d) => s + d.churned_subs, 0);
+    const net = totalNew - totalChurn;
+
+    // ── توزيع الحالات ──
+    const lcTotal = lifecycle.reduce((s, d) => s + d.cnt, 0);
+
+    return (
+        <AdmSection
+            icon="💳"
+            title="اشتراكات التجّار في تاكي"
+            desc="ما تقبضه تاكي من التجّار مقابل الاشتراك في المنصّة. لا علاقة له بمبيعات المتاجر — تلك في «قيمة مبيعات التجّار (GMV)» أعلى الشاشة."
+        >
+            <AdmStatGrid cols={3}>
+                <AdmStat
+                    icon="💳"
+                    label="اشتراكات التجّار في تاكي — المتوقّع شهرياً"
+                    value={forecast ? fmtMoney(forecast.monthly_expected) : '—'}
+                    scope="الاشتراكات النشطة الآن، بعد الخصم"
+                    tone="ok"
+                    title="مجموع ما يدفعه التجّار المشتركون لتاكي شهرياً بعد خصوماتهم. لا يدخل فيه أي ريال من مبيعات المتاجر، ولا يعني أنه حُصّل فعلاً — المحصّل في «المحصّل فعلاً» أدناه."
+                />
+                <AdmStat
+                    icon="📐"
+                    label="متوسط اشتراك التاجر (ARPU)"
+                    value={forecast ? fmtMoney(forecast.avg_arpu) : '—'}
+                    scope="لكل تاجرٍ مشترك"
+                    title="المتوقّع شهرياً ÷ عدد التجّار المشتركين. لا يشمل التجّار المجانيين ولا التجريبيين."
+                />
+                <AdmStat
+                    icon="✅"
+                    label="تجّار مشتركون"
+                    value={forecast ? fmtNum(forecast.paying_sellers) : '—'}
+                    scope="كل المنصّة"
+                    title="تجّار على باقةٍ مدفوعة نشطة، غير موقوفين."
+                />
+                <AdmStat
+                    icon="🧪"
+                    label="تجّار على تجربة"
+                    value={forecast ? fmtNum(forecast.trial_sellers) : '—'}
+                    scope="كل المنصّة"
+                    tone="info"
+                    title="تجّار في فترة التجربة — لم يدفعوا بعد."
+                />
+                <AdmStat
+                    icon="🆓"
+                    label="تجّار على الباقة المجانية"
+                    value={forecast ? fmtNum(forecast.free_sellers) : '—'}
+                    scope="كل المنصّة"
+                    title="تجّار يعملون بلا اشتراك مدفوع — لا يدخلون في أي رقمٍ مالي هنا."
+                />
+                <AdmStat
+                    icon="⏳"
+                    label="اشتراكٌ ينتهي قريباً"
+                    value={forecast ? fmtNum(forecast.expires_7d) : '—'}
+                    scope={forecast ? `و${fmtNum(forecast.expires_30d)} خلال ٣٠ يوماً` : undefined}
+                    tone={forecast && forecast.expires_7d > 0 ? 'bad' : 'neutral'}
+                    title="عدد التجّار الذين ينتهي اشتراكهم خلال سبعة أيام. تفاصيلهم في «جدول الاشتراكات» أدناه."
+                />
+            </AdmStatGrid>
+
+            {/* ── المحصّل فعلاً ─────────────────────────────────────────── */}
+            <Block
+                title="المحصّل فعلاً — آخر ١٢ شهراً"
+                hint={mrr.length ? `إجمالي ${fmtMoney(mrrTotal)}` : undefined}
+            >
+                {mrr.length === 0 ? (
+                    <AdmEmpty
+                        icon="💤"
+                        title="لا دفعات اشتراكٍ مسجّلة بعد"
+                        hint="يبدأ هذا المخطّط عند أوّل دفعة اشتراكٍ تصل من بوّابة الدفع."
+                    />
+                ) : (
+                    <>
+                        <div style={{ marginBottom: 12 }}>
+                            <AdmStatGrid cols={2}>
+                                <AdmStat
+                                    label="هذا الشهر"
+                                    value={fmtMoney(mrrCurrent?.paid_amount ?? 0)}
+                                    scope={`${fmtNum(mrrCurrent?.paid_count ?? 0)} دفعة`}
+                                    tone="ok"
+                                    delta={mrrMoM === null ? undefined : {
+                                        text: `${mrrMoM >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(mrrMoM))}٪ عن الشهر السابق`,
+                                        good: mrrMoM === 0 ? undefined : mrrMoM > 0,
+                                    }}
+                                    title="مجموع دفعات الاشتراك المسجّلة في الشهر الجاري — مالٌ وصل تاكي فعلاً."
+                                />
+                                <AdmStat
+                                    label="مستردّ للتجّار"
+                                    value={fmtMoney(mrr.reduce((s, d) => s + d.refunded_amount, 0))}
+                                    scope="آخر ١٢ شهراً"
+                                    tone="warn"
+                                    title="دفعات اشتراكٍ أُعيدت للتاجر — تُطرح من المحصّل."
+                                />
+                            </AdmStatGrid>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 118 }}>
+                            {mrr.map((d) => (
+                                <div
+                                    key={d.month_key}
+                                    title={`${d.month_label}: ${fmtMoney(d.paid_amount)} · ${fmtNum(d.paid_count)} دفعة`}
+                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, height: '100%', justifyContent: 'flex-end' }}
+                                >
+                                    <div
+                                        style={{
+                                            width: '100%',
+                                            height: `${(d.paid_amount / mrrMax) * 100}%`,
+                                            minHeight: 2,
+                                            background: 'var(--adm-accent)',
+                                            borderRadius: '5px 5px 0 0',
+                                        }}
+                                    />
+                                    <span style={{ fontSize: '.6rem', fontWeight: 700, color: 'var(--adm-fg-3)', whiteSpace: 'nowrap' }}>
+                                        {d.month_label}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </Block>
+
+            {/* ── جديد مقابل إلغاء ──────────────────────────────────────── */}
+            {growth.length > 0 && (
+                <Block
+                    title="اشتراكاتٌ جديدة مقابل إلغاءات — آخر ١٢ شهراً"
+                    hint="الأخضر انضمام، والأحمر إلغاء"
+                >
+                    <div style={{ marginBottom: 12 }}>
+                        <AdmStatGrid cols={3}>
+                            <AdmStat label="اشتراكات جديدة" value={fmtNum(totalNew)} scope="آخر ١٢ شهراً" tone="ok" />
+                            <AdmStat label="إلغاءات" value={fmtNum(totalChurn)} scope="آخر ١٢ شهراً" tone={totalChurn > 0 ? 'bad' : 'neutral'} />
+                            <AdmStat
+                                label="الصافي"
+                                value={`${net >= 0 ? '+' : '−'}${fmtNum(Math.abs(net))}`}
+                                scope="جديد ناقص إلغاء"
+                                tone={net > 0 ? 'ok' : net < 0 ? 'bad' : 'neutral'}
+                            />
+                        </AdmStatGrid>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 104 }}>
+                        {growth.map((d) => (
+                            <div
+                                key={d.month_key}
+                                title={`${d.month_label}: +${fmtNum(d.new_subs)} جديد · −${fmtNum(d.churned_subs)} إلغاء`}
+                                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, height: '100%', justifyContent: 'flex-end' }}
+                            >
+                                <div style={{ width: '100%', display: 'flex', gap: 2, alignItems: 'flex-end', height: '100%' }}>
+                                    <div style={{ flex: 1, height: `${(d.new_subs / growthMax) * 100}%`, minHeight: d.new_subs > 0 ? 2 : 0, background: 'var(--adm-ok-fg)', borderRadius: '4px 4px 0 0' }} />
+                                    <div style={{ flex: 1, height: `${(d.churned_subs / growthMax) * 100}%`, minHeight: d.churned_subs > 0 ? 2 : 0, background: 'var(--adm-bad-fg)', borderRadius: '4px 4px 0 0' }} />
+                                </div>
+                                <span style={{ fontSize: '.6rem', fontWeight: 700, color: 'var(--adm-fg-3)', whiteSpace: 'nowrap' }}>
+                                    {d.month_label}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </Block>
+            )}
+
+            {/* ── توزيع الحالات ─────────────────────────────────────────── */}
+            <Block title="حالات الاشتراكات الآن" hint={lcTotal > 0 ? `${fmtNum(lcTotal)} اشتراكاً` : undefined}>
+                {lcTotal === 0 ? (
+                    <AdmEmpty icon="🍩" title="لا اشتراكات بعد" hint="يظهر التوزيع عند أوّل اشتراكٍ يُسجَّل على المنصّة." />
+                ) : (
+                    <LifecycleDonut data={lifecycle} total={lcTotal} />
+                )}
+            </Block>
+        </AdmSection>
+    );
+});
+SubscriptionsSection.displayName = 'SubscriptionsSection';
+
+const LifecycleDonut = memo<{ data: Array<{ status: string; cnt: number }>; total: number }>(({ data, total }) => {
+    let cum = 0;
+    const arcs = data.map((d) => {
+        const meta = LIFECYCLE_META[d.status] ?? { label: d.status, color: '#94a3b8' };
+        const start = cum / total;
+        cum += d.cnt;
+        return { ...d, meta, start, end: cum / total, pct: Math.round((d.cnt / total) * 100) };
+    });
+    const polar = (cx: number, cy: number, r: number, angle: number) => {
+        const a = (angle - 0.25) * 2 * Math.PI; // يبدأ من الساعة ١٢
+        return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    };
+    const arcPath = (start: number, end: number) => {
+        if (end - start >= 0.999) return 'M 50 5 A 45 45 0 1 1 49.99 5 Z';
+        const p1 = polar(50, 50, 45, start);
+        const p2 = polar(50, 50, 45, end);
+        return `M ${p1.x} ${p1.y} A 45 45 0 ${end - start > 0.5 ? 1 : 0} 1 ${p2.x} ${p2.y}`;
     };
     return (
-        <div className={`rounded-xl px-3 py-2 backdrop-blur-sm ${toneCls[tone]} ${
-            highlight ? 'ring-2 ring-white/40' : ''
-        }`}>
-            <div className="text-2xl font-extrabold tabular-nums">{value}</div>
-            <div className="text-[10px] opacity-90 font-bold">{label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+            <svg viewBox="0 0 100 100" style={{ width: 124, height: 124, flexShrink: 0 }} role="img" aria-label={`توزيع ${total} اشتراكاً على الحالات`}>
+                {arcs.map((a) => (
+                    <path key={a.status} d={arcPath(a.start, a.end)} fill="none" stroke={a.meta.color} strokeWidth="12" />
+                ))}
+                <text x="50" y="47" textAnchor="middle" style={{ fill: 'var(--adm-fg)', fontSize: 15, fontWeight: 900 }}>
+                    {total}
+                </text>
+                <text x="50" y="59" textAnchor="middle" style={{ fill: 'var(--adm-fg-3)', fontSize: 6, fontWeight: 700 }}>
+                    اشتراك
+                </text>
+            </svg>
+            <div style={{ flex: 1, minWidth: 180, display: 'grid', gap: 7 }}>
+                {arcs.map((a) => (
+                    <div key={a.status} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: a.meta.color, flexShrink: 0 }} />
+                        <span style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--adm-fg)', flex: 1 }}>{a.meta.label}</span>
+                        <span style={{ fontSize: '.8rem', fontWeight: 900, color: 'var(--adm-fg)', fontVariantNumeric: 'tabular-nums' }}>{fmtNum(a.cnt)}</span>
+                        <span style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums', minWidth: 38, textAlign: 'left' }}>
+                            {fmtPct(a.pct)}
+                        </span>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 });
-Chip.displayName = 'Chip';
+LifecycleDonut.displayName = 'LifecycleDonut';
 
-// ============================================================
-// 2) Booking funnel — view_deal → book
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// ٢) قمع التحويل
+// ═══════════════════════════════════════════════════════════════════════════
 interface FunnelData {
     total_views: number;
     unique_viewers: number;
@@ -133,100 +384,93 @@ interface FunnelData {
     avg_views_per_booker: number;
 }
 
-const BookingFunnelCard = memo<{ data: FunnelData | null; period: Period }>(({ data, period }) => {
-    // Compute bar widths relative to the largest stage so the funnel reads
-    // as a true funnel shape (each stage narrower than the prior).
+const FunnelSection = memo<{ data: FunnelData | null; period: Period }>(({ data, period }) => {
     const max = Math.max(data?.total_views ?? 0, 1);
-    const viewsPct = max ? 100 : 0;
-    const bookPct = max ? Math.round(((data?.total_bookings ?? 0) / max) * 100) : 0;
+    const bookPct = Math.round(((data?.total_bookings ?? 0) / max) * 100);
     return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                    🔥 قمع التحويل
-                    <Tooltip text="نسبة من شاهد عرضاً ثم قام بالحجز فعلاً. الـ ROI الأساسي للمنصة.">
-                        <span className="text-xs text-[var(--gray-400)] font-bold cursor-help">⓵</span>
-                    </Tooltip>
-                </h3>
-                <span className="text-xs text-[var(--text-secondary)] font-bold">آخر {period} يوم</span>
-            </div>
-            <div className="space-y-3">
-                <FunnelStage
-                    label="👀 شاهدوا العرض"
-                    primary={fmtNum(data?.total_views ?? 0)}
-                    sub={`${fmtNum(data?.unique_viewers ?? 0)} مستخدم فريد`}
-                    pct={viewsPct}
-                    color="from-blue-500 to-indigo-600"
-                />
-                <FunnelStage
-                    label="🎟️ حجزوا فعلاً"
-                    primary={fmtNum(data?.total_bookings ?? 0)}
-                    sub={`${fmtNum(data?.unique_bookers ?? 0)} مستخدم فريد`}
-                    pct={bookPct}
-                    color="from-emerald-500 to-teal-600"
-                />
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-                <MetricBox
-                    label="نسبة التحويل"
-                    value={`${data?.conversion_pct ?? 0}%`}
-                    sub="من شاهد ثم حجز"
-                    tone="emerald"
-                />
-                <MetricBox
-                    label="متوسط المشاهدات"
-                    value={fmtNum(data?.avg_views_per_booker ?? 0)}
-                    sub="مشاهدة قبل كل حجز"
-                    tone="blue"
-                />
-            </div>
-        </section>
+        <AdmSection
+            icon="🔥"
+            title="قمع التحويل"
+            desc="من شاهد عرضاً، كم منهم حجز فعلاً. أهمّ نسبةٍ في المنصّة."
+            badge={{ text: periodScope(period), tone: 'info' }}
+        >
+            {!data ? (
+                <AdmEmpty icon="🔥" title="لا مشاهدات في الفترة المختارة" hint="وسّع الفترة أو انتظر أوّل زيارة." />
+            ) : (
+                <>
+                    <div style={{ display: 'grid', gap: 12 }}>
+                        <FunnelStage
+                            label="👀 شاهدوا العرض"
+                            primary={fmtNum(data.total_views)}
+                            sub={`${fmtNum(data.unique_viewers)} مستخدماً فريداً`}
+                            pct={100}
+                            tone="info"
+                        />
+                        <FunnelStage
+                            label="🎟️ حجزوا فعلاً"
+                            primary={fmtNum(data.total_bookings)}
+                            sub={`${fmtNum(data.unique_bookers)} مستخدماً فريداً`}
+                            pct={bookPct}
+                            tone="ok"
+                        />
+                    </div>
+                    <div style={{ marginTop: 14 }}>
+                        <AdmStatGrid cols={2}>
+                            <AdmStat
+                                label="نسبة التحويل"
+                                value={fmtPct(data.conversion_pct)}
+                                scope={periodScope(period)}
+                                tone="ok"
+                                title="عدد الحجوزات ÷ عدد مشاهدات العروض في الفترة. لا يدخل فيه من فتح التطبيق بلا فتح عرض."
+                            />
+                            <AdmStat
+                                label="مشاهدات قبل كل حجز"
+                                value={fmtNum(data.avg_views_per_booker)}
+                                scope={periodScope(period)}
+                                tone="info"
+                                title="متوسط عدد العروض التي يقلّبها المشتري قبل أن يحجز."
+                            />
+                        </AdmStatGrid>
+                    </div>
+                </>
+            )}
+        </AdmSection>
     );
 });
-BookingFunnelCard.displayName = 'BookingFunnelCard';
+FunnelSection.displayName = 'FunnelSection';
 
-const FunnelStage = memo<{
-    label: string; primary: string; sub: string; pct: number; color: string;
-}>(({ label, primary, sub, pct, color }) => (
-    <div>
-        <div className="flex items-baseline justify-between mb-1">
-            <span className="font-bold text-sm text-[var(--text-primary)]">{label}</span>
-            <span className="text-xs text-[var(--text-secondary)] font-bold">{sub}</span>
-        </div>
-        <div className="relative h-12 bg-[var(--body-bg)] rounded-xl overflow-hidden">
-            <div
-                className={`h-full bg-gradient-to-l ${color} rounded-xl flex items-center justify-end px-4 transition-all`}
-                style={{ width: `${Math.max(pct, 8)}%` }}
-            >
-                <span className="text-white font-extrabold text-base tabular-nums">{primary}</span>
+const FunnelStage = memo<{ label: string; primary: string; sub: string; pct: number; tone: Tone }>(
+    ({ label, primary, sub, pct, tone }) => (
+        <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{label}</span>
+                <span style={{ fontSize: '.74rem', fontWeight: 700, color: 'var(--adm-fg-3)' }}>{sub}</span>
+            </div>
+            <div style={{ position: 'relative', height: 44, background: 'var(--adm-surface-3)', borderRadius: 'var(--adm-r-sm)', overflow: 'hidden' }}>
+                <div
+                    style={{
+                        height: '100%',
+                        width: `${Math.max(pct, 10)}%`,
+                        background: `var(--adm-${tone}-bg)`,
+                        borderInlineEnd: `2px solid var(--adm-${tone}-fg)`,
+                        borderRadius: 'var(--adm-r-sm)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                        paddingInlineEnd: 13,
+                    }}
+                >
+                    <span style={{ fontSize: '1rem', fontWeight: 900, color: `var(--adm-${tone}-fg)`, fontVariantNumeric: 'tabular-nums' }}>
+                        {primary}
+                    </span>
+                </div>
             </div>
         </div>
-    </div>
-));
+    )
+);
 FunnelStage.displayName = 'FunnelStage';
 
-const MetricBox = memo<{
-    label: string; value: string; sub?: string; tone: 'emerald' | 'blue' | 'red' | 'amber';
-}>(({ label, value, sub, tone }) => {
-    const toneCls: Record<string, string> = {
-        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        blue: 'bg-blue-50 text-blue-700 border-blue-200',
-        red: 'bg-red-50 text-red-700 border-red-200',
-        amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    };
-    return (
-        <div className={`rounded-xl p-3 border ${toneCls[tone]}`}>
-            <div className="text-2xl font-extrabold tabular-nums">{value}</div>
-            <div className="text-xs font-bold opacity-80">{label}</div>
-            {sub && <div className="text-[10px] opacity-70 mt-0.5">{sub}</div>}
-        </div>
-    );
-});
-MetricBox.displayName = 'MetricBox';
-
-// ============================================================
-// 3) Daily metrics multi-series chart (events / bookings / new users)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// ٣) الحركة اليومية
+// ═══════════════════════════════════════════════════════════════════════════
 interface DailyPoint {
     day_key: string;
     day_label: string;
@@ -237,15 +481,12 @@ interface DailyPoint {
     cancelled_bookings: number;
 }
 
-const DailyMetricsChart = memo<{ data: DailyPoint[]; period: Period }>(({ data, period }) => {
+const DailySection = memo<{ data: DailyPoint[]; period: Period }>(({ data, period }) => {
     if (!data || data.length === 0) {
         return (
-            <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-                <h3 className="text-lg font-extrabold mb-3">📈 المقاييس اليومية</h3>
-                <div className="h-44 flex items-center justify-center text-[var(--gray-400)] font-bold text-sm">
-                    لا توجد بيانات في الفترة المختارة
-                </div>
-            </section>
+            <AdmSection icon="📈" title="الحركة اليومية" desc="الأحداث والحجوزات والتسجيلات، يوماً بيوم." badge={{ text: periodScope(period), tone: 'info' }}>
+                <AdmEmpty icon="📉" title="لا حركة في الفترة المختارة" hint="جرّب فترةً أوسع من الأعلى." />
+            </AdmSection>
         );
     }
     const maxEvents = Math.max(...data.map((d) => d.events), 1);
@@ -255,394 +496,157 @@ const DailyMetricsChart = memo<{ data: DailyPoint[]; period: Period }>(({ data, 
     const W = 100;
     const H = 100;
     const stepX = data.length > 1 ? W / (data.length - 1) : 0;
-
     const line = (vals: number[], max: number) =>
-        vals
-            .map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * stepX} ${H - (v / max) * (H - 8)}`)
-            .join(' ');
+        vals.map((v, i) => `${i === 0 ? 'M' : 'L'} ${i * stepX} ${H - (v / max) * (H - 8)}`).join(' ');
 
     const totalEvents = data.reduce((s, d) => s + d.events, 0);
     const totalBookings = data.reduce((s, d) => s + d.bookings, 0);
     const totalNewUsers = data.reduce((s, d) => s + d.new_users, 0);
+    const totalCompleted = data.reduce((s, d) => s + d.completed_bookings, 0);
+    const totalCancelled = data.reduce((s, d) => s + d.cancelled_bookings, 0);
 
     return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)]">📈 المقاييس اليومية</h3>
-                <span className="text-xs text-[var(--text-secondary)] font-bold">آخر {period} يوم</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 mb-3">
-                <LegendBlock color="bg-indigo-500" label="أحداث" value={fmtNum(totalEvents)} />
-                <LegendBlock color="bg-emerald-500" label="حجوزات" value={fmtNum(totalBookings)} />
-                <LegendBlock color="bg-amber-500" label="مستخدمون جدد" value={fmtNum(totalNewUsers)} />
-            </div>
-            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-44">
-                <path d={line(data.map((d) => d.events), maxEvents)} fill="none" stroke="#6366f1" strokeWidth="0.6" strokeLinejoin="round" />
-                <path d={line(data.map((d) => d.bookings), maxBookings)} fill="none" stroke="#10b981" strokeWidth="0.6" strokeLinejoin="round" />
-                <path d={line(data.map((d) => d.new_users), maxUsers)} fill="none" stroke="#f59e0b" strokeWidth="0.6" strokeLinejoin="round" />
-            </svg>
-            <div className="flex justify-between text-[10px] text-[var(--gray-400)] font-bold mt-1 tabular-nums" dir="ltr">
-                {data.length > 0 && <span>{data[0].day_label}</span>}
-                {data.length > 4 && <span>{data[Math.floor(data.length / 2)].day_label}</span>}
-                {data.length > 0 && <span>{data[data.length - 1].day_label}</span>}
-            </div>
-        </section>
-    );
-});
-DailyMetricsChart.displayName = 'DailyMetricsChart';
+        <AdmSection
+            icon="📈"
+            title="الحركة اليومية"
+            desc="كل خطٍّ مقياسه الخاص — الشكل يقول الاتجاه، والأرقام تحته تقول الحجم."
+            badge={{ text: periodScope(period), tone: 'info' }}
+        >
+            <AdmStatGrid cols={3}>
+                <AdmStat icon="◼" label="أحداث" value={fmtNum(totalEvents)} scope={periodScope(period)} tone="info" title="كل حدثٍ سجّلته المنصّة: فتح تطبيق، فتح عرض، حجز، تقييم…" />
+                <AdmStat icon="◼" label="حجوزات" value={fmtNum(totalBookings)} scope={`${fmtNum(totalCompleted)} مكتملاً · ${fmtNum(totalCancelled)} ملغى`} tone="ok" title="كل حجزٍ أُنشئ في الفترة، بحالته أياً كانت." />
+                <AdmStat icon="◼" label="مستخدمون جدد" value={fmtNum(totalNewUsers)} scope={periodScope(period)} tone="warn" title="حسابات سُجّلت في الفترة — مشترين وتجّاراً." />
+            </AdmStatGrid>
 
-const LegendBlock = memo<{ color: string; label: string; value: string }>(({ color, label, value }) => (
-    <div className="bg-[var(--body-bg)] rounded-xl p-2.5">
-        <div className="flex items-center gap-1.5 mb-0.5">
-            <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
-            <span className="text-[10px] text-[var(--text-secondary)] font-bold">{label}</span>
-        </div>
-        <div className="text-lg font-extrabold tabular-nums">{value}</div>
-    </div>
-));
-LegendBlock.displayName = 'LegendBlock';
-
-// ============================================================
-// 4) Activity heatmap — 7 × 24 grid
-// ============================================================
-const DAY_LABELS = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
-
-const ActivityHeatmap = memo<{ data: Array<{ dow: number; hour: number; cnt: number }>; period: Period }>(({ data, period }) => {
-    const matrix = useMemo(() => {
-        const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
-        for (const { dow, hour, cnt } of data) {
-            if (dow >= 0 && dow < 7 && hour >= 0 && hour < 24) {
-                grid[dow][hour] = cnt;
-            }
-        }
-        return grid;
-    }, [data]);
-
-    const max = useMemo(() => {
-        let m = 0;
-        for (const row of matrix) for (const v of row) if (v > m) m = v;
-        return m;
-    }, [matrix]);
-
-    const peakCell = useMemo(() => {
-        let best = { dow: 0, hour: 0, cnt: 0 };
-        for (let d = 0; d < 7; d++) {
-            for (let h = 0; h < 24; h++) {
-                if (matrix[d][h] > best.cnt) best = { dow: d, hour: h, cnt: matrix[d][h] };
-            }
-        }
-        return best;
-    }, [matrix]);
-
-    const cellColor = (v: number): string => {
-        if (max === 0) return 'bg-[var(--gray-100)]';
-        const intensity = v / max;
-        if (intensity === 0) return 'bg-[var(--gray-100)]';
-        if (intensity < 0.2) return 'bg-emerald-100';
-        if (intensity < 0.4) return 'bg-emerald-200';
-        if (intensity < 0.6) return 'bg-emerald-400';
-        if (intensity < 0.8) return 'bg-emerald-500';
-        return 'bg-emerald-600';
-    };
-
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)]">
-                    🌡️ خريطة النشاط الأسبوعية
-                </h3>
-                <span className="text-xs text-[var(--text-secondary)] font-bold">آخر {period} يوم · بتوقيت الرياض</span>
-            </div>
-            {max > 0 && (
-                <div className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-                    🏆 أنشط وقت:{' '}
-                    <span className="text-emerald-700 font-extrabold">
-                        {DAY_LABELS[peakCell.dow]} الساعة {peakCell.hour}:00
-                    </span>{' '}
-                    ({fmtNum(peakCell.cnt)} حدث)
-                </div>
-            )}
-            <div className="overflow-x-auto">
-                <div className="inline-block min-w-full">
-                    <div className="flex items-center gap-1 mb-1 text-[10px] text-[var(--gray-400)] font-bold tabular-nums" dir="ltr">
-                        <div className="w-12" />
-                        {Array.from({ length: 24 }, (_, h) => (
-                            <div key={h} className="w-5 text-center">
-                                {h % 3 === 0 ? h : ''}
-                            </div>
-                        ))}
-                    </div>
-                    {matrix.map((row, dow) => (
-                        <div key={dow} className="flex items-center gap-1 mb-1">
-                            <div className="w-12 text-[10px] font-bold text-[var(--text-secondary)] text-left">
-                                {DAY_LABELS[dow]}
-                            </div>
-                            {row.map((v, h) => (
-                                <Tooltip key={h} text={`${DAY_LABELS[dow]} ${h}:00 — ${fmtNum(v)} حدث`}>
-                                    <div
-                                        className={`w-5 h-5 rounded ${cellColor(v)} hover:ring-2 hover:ring-emerald-300 cursor-pointer`}
-                                    />
-                                </Tooltip>
-                            ))}
-                        </div>
-                    ))}
-                </div>
-            </div>
-            <div className="flex items-center gap-2 mt-3 text-[10px] text-[var(--text-secondary)] font-bold">
-                <span>أقل</span>
-                <div className="flex gap-1">
-                    {['bg-[var(--gray-100)]', 'bg-emerald-100', 'bg-emerald-200', 'bg-emerald-400', 'bg-emerald-500', 'bg-emerald-600'].map(
-                        (c, i) => <div key={i} className={`w-4 h-3 rounded ${c}`} />
-                    )}
-                </div>
-                <span>أكثر</span>
-            </div>
-        </section>
-    );
-});
-ActivityHeatmap.displayName = 'ActivityHeatmap';
-
-// ============================================================
-// 5) Monthly MRR bar chart (12 months)
-// ============================================================
-interface MrrPoint { month_key: string; month_label: string; paid_amount: number; paid_count: number; refunded_amount: number; }
-
-const MonthlyMrrChart = memo<{ data: MrrPoint[] }>(({ data }) => {
-    if (!data || data.length === 0) {
-        return (
-            <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-                <h3 className="text-lg font-extrabold mb-2">💰 إيرادات شهرية</h3>
-                <div className="h-32 flex items-center justify-center text-[var(--gray-400)] font-bold text-sm">
-                    لا توجد دفعات مسجّلة بعد. سيبدأ المخطط بعد أول دفعة من بوابة الدفع.
-                </div>
-            </section>
-        );
-    }
-    const max = Math.max(...data.map((d) => d.paid_amount), 1);
-    const total = data.reduce((s, d) => s + d.paid_amount, 0);
-    const currentMonth = data[data.length - 1];
-    const prevMonth = data.length > 1 ? data[data.length - 2] : null;
-    const monthOverMonth = prevMonth && prevMonth.paid_amount > 0
-        ? Math.round(((currentMonth.paid_amount - prevMonth.paid_amount) / prevMonth.paid_amount) * 100)
-        : null;
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)]">💰 الإيرادات الشهرية</h3>
-                <span className="text-sm font-extrabold text-emerald-600 tabular-nums">{fmtMoney(total)} إجمالي</span>
-            </div>
-            <div className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-                هذا الشهر: <span className="text-[var(--text-primary)] font-extrabold">{fmtMoney(currentMonth.paid_amount)}</span>
-                {monthOverMonth !== null && (
-                    <span className={`mr-2 ${monthOverMonth >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {monthOverMonth >= 0 ? '↑' : '↓'} {Math.abs(monthOverMonth)}% vs الشهر السابق
-                    </span>
-                )}
-            </div>
-            <div className="flex items-end gap-1 h-32">
-                {data.map((d) => (
-                    <Tooltip key={d.month_key} text={`${d.month_label}: ${fmtMoney(d.paid_amount)} (${d.paid_count} دفعة)`}>
-                        <div className="flex-1 flex flex-col items-center gap-1">
-                            <div
-                                className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 rounded-t-md cursor-pointer hover:from-emerald-600"
-                                style={{ height: `${(d.paid_amount / max) * 100}%`, minHeight: 2 }}
-                            />
-                            <div className="text-[9px] text-[var(--text-secondary)] font-bold whitespace-nowrap">
-                                {d.month_label}
-                            </div>
-                        </div>
-                    </Tooltip>
-                ))}
-            </div>
-        </section>
-    );
-});
-MonthlyMrrChart.displayName = 'MonthlyMrrChart';
-
-// ============================================================
-// 6) Subscription growth chart (new vs churned per month)
-// ============================================================
-interface GrowthPoint { month_key: string; month_label: string; new_subs: number; churned_subs: number; net_change: number; }
-
-const SubscriptionGrowthChart = memo<{ data: GrowthPoint[] }>(({ data }) => {
-    if (!data || data.length === 0) return null;
-    const max = Math.max(...data.flatMap((d) => [d.new_subs, d.churned_subs]), 1);
-    const totalNew = data.reduce((s, d) => s + d.new_subs, 0);
-    const totalChurn = data.reduce((s, d) => s + d.churned_subs, 0);
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <h3 className="text-lg font-extrabold text-[var(--text-primary)] mb-1">📊 نمو الاشتراكات شهرياً</h3>
-            <div className="text-xs text-[var(--text-secondary)] mb-3 font-bold flex gap-3">
-                <span>اشتراكات جديدة: <span className="text-emerald-700 font-extrabold">{fmtNum(totalNew)}</span></span>
-                <span>إلغاءات: <span className="text-red-700 font-extrabold">{fmtNum(totalChurn)}</span></span>
-                <span>الصافي: <span className={`font-extrabold ${totalNew - totalChurn >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{totalNew - totalChurn >= 0 ? '+' : ''}{fmtNum(totalNew - totalChurn)}</span></span>
-            </div>
-            <div className="flex items-end gap-2 h-28">
-                {data.map((d) => (
-                    <Tooltip key={d.month_key} text={`${d.month_label}: +${d.new_subs} جديد / -${d.churned_subs} إلغاء`}>
-                        <div className="flex-1 flex flex-col items-center gap-1">
-                            <div className="w-full flex gap-0.5 items-end" style={{ height: '100%' }}>
-                                <div
-                                    className="flex-1 bg-emerald-500 rounded-t-sm"
-                                    style={{ height: `${(d.new_subs / max) * 100}%`, minHeight: d.new_subs > 0 ? 2 : 0 }}
-                                />
-                                <div
-                                    className="flex-1 bg-red-500 rounded-t-sm"
-                                    style={{ height: `${(d.churned_subs / max) * 100}%`, minHeight: d.churned_subs > 0 ? 2 : 0 }}
-                                />
-                            </div>
-                            <div className="text-[9px] text-[var(--text-secondary)] font-bold">{d.month_label}</div>
-                        </div>
-                    </Tooltip>
-                ))}
-            </div>
-        </section>
-    );
-});
-SubscriptionGrowthChart.displayName = 'SubscriptionGrowthChart';
-
-// ============================================================
-// 7) Lifecycle donut
-// ============================================================
-const LIFECYCLE_META: Record<string, { label: string; color: string }> = {
-    trial:      { label: 'تجريبي',    color: '#f59e0b' },
-    active:     { label: 'نشط',       color: '#10b981' },
-    past_due:   { label: 'متأخر',     color: '#dc2626' },
-    cancelled:  { label: 'ملغي',      color: '#6b7280' },
-    gifted:     { label: 'هدية',      color: '#8b5cf6' },
-    frozen:     { label: 'مجمّد',     color: '#3b82f6' },
-};
-
-const LifecyclePie = memo<{ data: Array<{ status: string; cnt: number }> }>(({ data }) => {
-    const total = data.reduce((s, d) => s + d.cnt, 0);
-    if (total === 0) {
-        return (
-            <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-                <h3 className="text-lg font-extrabold mb-3">🍩 دورة حياة الاشتراك</h3>
-                <div className="h-40 flex items-center justify-center text-[var(--gray-400)] font-bold text-sm">
-                    لا توجد اشتراكات بعد
-                </div>
-            </section>
-        );
-    }
-    // Build SVG arcs for a donut chart.
-    let cum = 0;
-    const arcs = data.map((d) => {
-        const meta = LIFECYCLE_META[d.status] ?? { label: d.status, color: '#94a3b8' };
-        const start = cum / total;
-        cum += d.cnt;
-        const end = cum / total;
-        return { ...d, meta, start, end, pct: Math.round((d.cnt / total) * 100) };
-    });
-    const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
-        const a = (angle - 0.25) * 2 * Math.PI; // start at 12 o'clock
-        return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-    };
-    const arcPath = (start: number, end: number) => {
-        if (end - start >= 0.999) {
-            // Full circle — draw as two halves.
-            return `M 50 5 A 45 45 0 1 1 49.99 5 Z`;
-        }
-        const p1 = polarToCartesian(50, 50, 45, start);
-        const p2 = polarToCartesian(50, 50, 45, end);
-        const large = end - start > 0.5 ? 1 : 0;
-        return `M ${p1.x} ${p1.y} A 45 45 0 ${large} 1 ${p2.x} ${p2.y}`;
-    };
-
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <h3 className="text-lg font-extrabold text-[var(--text-primary)] mb-3">🍩 دورة حياة الاشتراك</h3>
-            <div className="flex items-center gap-4 flex-wrap">
-                <svg viewBox="0 0 100 100" className="w-32 h-32 flex-shrink-0">
-                    {arcs.map((a) => (
-                        <path
-                            key={a.status}
-                            d={arcPath(a.start, a.end)}
-                            fill="none"
-                            stroke={a.meta.color}
-                            strokeWidth="12"
-                            strokeLinecap="butt"
-                        />
-                    ))}
-                    <text x="50" y="46" textAnchor="middle" className="fill-[var(--text-primary)]" style={{ fontSize: 14, fontWeight: 800 }}>
-                        {total}
-                    </text>
-                    <text x="50" y="58" textAnchor="middle" className="fill-[var(--text-secondary)]" style={{ fontSize: 6, fontWeight: 700 }}>
-                        اشتراك
-                    </text>
+            <div style={{ marginTop: 14 }}>
+                <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 168 }} role="img" aria-label="منحنيات الأحداث والحجوزات والتسجيلات اليومية">
+                    <path d={line(data.map((d) => d.events), maxEvents)} fill="none" strokeWidth="0.7" strokeLinejoin="round" style={{ stroke: 'var(--adm-info-fg)' }} />
+                    <path d={line(data.map((d) => d.bookings), maxBookings)} fill="none" strokeWidth="0.7" strokeLinejoin="round" style={{ stroke: 'var(--adm-ok-fg)' }} />
+                    <path d={line(data.map((d) => d.new_users), maxUsers)} fill="none" strokeWidth="0.7" strokeLinejoin="round" style={{ stroke: 'var(--adm-warn-fg)' }} />
                 </svg>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                    {arcs.map((a) => (
-                        <div key={a.status} className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: a.meta.color }} />
-                            <span className="text-xs font-bold text-[var(--text-primary)] flex-1">{a.meta.label}</span>
-                            <span className="text-xs font-extrabold tabular-nums">{a.cnt}</span>
-                            <span className="text-[10px] text-[var(--text-secondary)] font-bold tabular-nums">({a.pct}%)</span>
-                        </div>
-                    ))}
+                <div dir="ltr" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: '.64rem', fontWeight: 700, color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums' }}>
+                    <span>{data[0].day_label}</span>
+                    {data.length > 4 && <span>{data[Math.floor(data.length / 2)].day_label}</span>}
+                    <span>{data[data.length - 1].day_label}</span>
                 </div>
             </div>
-        </section>
+        </AdmSection>
     );
 });
-LifecyclePie.displayName = 'LifecyclePie';
+DailySection.displayName = 'DailySection';
 
-// ============================================================
-// 8) User cohorts retention table
-// ============================================================
-const CohortTable = memo<{ data: Array<{ cohort_key: string; cohort_label: string; registered: number; active_now: number; booked_ever: number; retention_pct: number; }> }>(({ data }) => (
-    <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm overflow-hidden">
-        <h3 className="text-lg font-extrabold text-[var(--text-primary)] mb-1">👥 مجموعات المستخدمين (Cohorts)</h3>
-        <p className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-            من سجّل في الشهر، كم منهم لا يزال نشطاً الآن وكم منهم حجز فعلاً
-        </p>
-        <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-                <thead>
-                    <tr className="text-xs text-[var(--text-secondary)] font-bold border-b border-[var(--border-color)]">
-                        <th className="text-right py-2">الشهر</th>
-                        <th className="text-right py-2">سجّلوا</th>
-                        <th className="text-right py-2">حجزوا</th>
-                        <th className="text-right py-2">نشطون الآن</th>
-                        <th className="text-right py-2">الاستبقاء</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map((c) => (
-                        <tr key={c.cohort_key} className="border-b border-[var(--border-color)] hover:bg-[var(--body-bg)]">
-                            <td className="py-2.5 font-bold">{c.cohort_label}</td>
-                            <td className="py-2.5 tabular-nums">{fmtNum(c.registered)}</td>
-                            <td className="py-2.5 tabular-nums text-emerald-700 font-bold">{fmtNum(c.booked_ever)}</td>
-                            <td className="py-2.5 tabular-nums">{fmtNum(c.active_now)}</td>
-                            <td className="py-2.5">
-                                <RetentionBar pct={c.retention_pct} />
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </section>
-));
-CohortTable.displayName = 'CohortTable';
+// ═══════════════════════════════════════════════════════════════════════════
+// ٤) الأفواج والاستبقاء — جدولٌ واحد بدل جدولين
+// ═══════════════════════════════════════════════════════════════════════════
+interface CohortRow {
+    cohort_key: string; cohort_label: string;
+    registered: number; active_now: number; booked_ever: number; retention_pct: number;
+}
+interface RetentionRow {
+    cohort_month: string; cohort_label: string; cohort_size: number;
+    d1_pct: number; d7_pct: number; d30_pct: number; d60_pct: number;
+}
+interface CohortMerged extends CohortRow { ret: RetentionRow | null }
 
-const RetentionBar = memo<{ pct: number }>(({ pct }) => {
+const retTone = (pct: number): Tone => (pct >= 50 ? 'ok' : pct >= 25 ? 'info' : pct >= 10 ? 'warn' : 'neutral');
+
+const RetPill = memo<{ pct: number | null }>(({ pct }) =>
+    pct === null
+        ? <span style={{ color: 'var(--adm-fg-3)', fontWeight: 700 }}>—</span>
+        : <AdmPill tone={retTone(pct)}>{fmtPct(pct)}</AdmPill>
+);
+RetPill.displayName = 'RetPill';
+
+const ActiveBar = memo<{ count: number; pct: number }>(({ count, pct }) => {
     const safe = Math.max(0, Math.min(100, pct));
-    const color = safe >= 60 ? 'bg-emerald-500' : safe >= 30 ? 'bg-amber-500' : 'bg-red-500';
+    const tone: Tone = safe >= 60 ? 'ok' : safe >= 30 ? 'warn' : 'bad';
     return (
-        <div className="flex items-center gap-2">
-            <div className="relative w-16 h-2 bg-[var(--gray-100)] rounded-full overflow-hidden">
-                <div className={`h-full ${color}`} style={{ width: `${safe}%` }} />
-            </div>
-            <span className="text-xs font-extrabold tabular-nums" style={{ minWidth: 32 }}>{safe}%</span>
-        </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums', minWidth: 28 }}>{fmtNum(count)}</span>
+            <span style={{ position: 'relative', width: 54, height: 7, background: 'var(--adm-surface-3)', borderRadius: 999, overflow: 'hidden', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: `${safe}%`, background: `var(--adm-${tone}-fg)` }} />
+            </span>
+            <span style={{ fontSize: '.7rem', fontWeight: 800, color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums', minWidth: 36 }}>
+                {fmtPct(safe)}
+            </span>
+        </span>
     );
 });
-RetentionBar.displayName = 'RetentionBar';
+ActiveBar.displayName = 'ActiveBar';
 
-// ============================================================
-// 9) Upcoming renewals / subscription timeline
-// ============================================================
+const COHORT_CSV_COLUMNS: CsvColumn<CohortMerged>[] = [
+    { header: 'شهر التسجيل', accessor: (r) => r.cohort_label },
+    { header: 'سجّلوا', accessor: (r) => r.registered },
+    { header: 'حجزوا مرّةً على الأقل', accessor: (r) => r.booked_ever },
+    { header: 'نشطون الآن', accessor: (r) => r.active_now },
+    { header: 'نسبة النشطين %', accessor: (r) => r.retention_pct },
+    { header: 'عادوا بعد يوم %', accessor: (r) => r.ret?.d1_pct ?? '' },
+    { header: 'عادوا بعد أسبوع %', accessor: (r) => r.ret?.d7_pct ?? '' },
+    { header: 'عادوا بعد شهر %', accessor: (r) => r.ret?.d30_pct ?? '' },
+    { header: 'عادوا بعد شهرين %', accessor: (r) => r.ret?.d60_pct ?? '' },
+];
+
+const CohortRetentionSection = memo<{ cohorts: CohortRow[]; retention: RetentionRow[] }>(({ cohorts, retention }) => {
+    // 🪤 المفتاحان من دالّتين مختلفتين لكنّهما بنفس الصيغة (`YYYY-MM`) —
+    //    فالربط دقيق. وشهرٌ بلا صفّ استبقاءٍ يعرض «—» لا صفراً كاذباً.
+    const rows: CohortMerged[] = useMemo(() => {
+        const byKey = new Map(retention.map((r) => [r.cohort_month, r]));
+        return cohorts.map((c) => ({ ...c, ret: byKey.get(c.cohort_key) ?? null }));
+    }, [cohorts, retention]);
+
+    const columns: Array<AdmColumn<CohortMerged>> = useMemo(() => [
+        { header: 'شهر التسجيل', cell: (r) => <span style={{ fontWeight: 800 }}>{r.cohort_label}</span> },
+        { header: 'سجّلوا', numeric: true, cell: (r) => fmtNum(r.registered) },
+        { header: 'حجزوا', numeric: true, cell: (r) => <span style={{ fontWeight: 800, color: 'var(--adm-ok-fg)' }}>{fmtNum(r.booked_ever)}</span> },
+        { header: 'نشطون الآن', cell: (r) => <ActiveBar count={r.active_now} pct={r.retention_pct} /> },
+        { header: 'عادوا بعد يوم', cell: (r) => <RetPill pct={r.ret?.d1_pct ?? null} /> },
+        { header: 'بعد أسبوع', cell: (r) => <RetPill pct={r.ret?.d7_pct ?? null} /> },
+        { header: 'بعد شهر', cell: (r) => <RetPill pct={r.ret?.d30_pct ?? null} /> },
+        { header: 'بعد شهرين', secondary: true, cell: (r) => <RetPill pct={r.ret?.d60_pct ?? null} /> },
+    ], []);
+
+    return (
+        <AdmSection
+            icon="👥"
+            title="الأفواج والاستبقاء"
+            desc="لكل شهر تسجيل: كم مشترياً سجّل فيه، وكم منهم حجز، وكم لا يزال نشطاً، وكم عاد بعد يومٍ وأسبوعٍ وشهرٍ وشهرين."
+            collapsible
+            defaultOpen={false}
+            action={
+                <ExportButton
+                    rows={rows}
+                    columns={COHORT_CSV_COLUMNS}
+                    filenameStem="taki-cohorts-retention"
+                    accent="blue"
+                    tooltip="تنزيل جدول الأفواج والاستبقاء كاملاً"
+                />
+            }
+        >
+            <AdmTable
+                columns={columns}
+                rows={rows}
+                keyOf={(r) => r.cohort_key}
+                caption="أفواج المشترين حسب شهر التسجيل، ونِسب عودتهم بعد يوم وأسبوع وشهر وشهرين"
+                empty={{
+                    icon: '👥',
+                    title: 'لا أفواج بعد',
+                    hint: 'يظهر الجدول بعد أوّل شهرٍ يسجّل فيه مشترون.',
+                }}
+            />
+            <p style={{ margin: '12px 0 0', fontSize: '.76rem', lineHeight: 1.85, color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                «نشطون الآن» = من فتح التطبيق خلال آخر ٣٠ يوماً، مهما كان شهر تسجيله.
+                و«عادوا بعد …» = من عاد في اليوم المحدَّد بعد تسجيله هو (لا بعد تاريخ اليوم) —
+                فهما يقيسان شيئين مختلفين عمداً: الأوّل حالةٌ راهنة، والثاني عادةٌ أوّل أسابيع.
+                و«—» تعني شهراً لم يسجّل فيه أحد.
+            </p>
+        </AdmSection>
+    );
+});
+CohortRetentionSection.displayName = 'CohortRetentionSection';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ٥) جدول الاشتراكات
+// ═══════════════════════════════════════════════════════════════════════════
 interface SubTimelineRow {
     store_id: string; name: string; shop: string | null; phone: string | null;
     plan: string; started_at: string | null; expires_at: string | null;
@@ -662,15 +666,21 @@ const TIMELINE_CSV_COLUMNS: CsvColumn<SubTimelineRow>[] = [
     { header: 'الصافي', accessor: (r) => r.net_amount },
 ];
 
-const SubscriptionTimelineSection = memo<{ data: SubTimelineRow[]; onOpenSeller: (id: string, name: string) => void }>(({ data, onOpenSeller }) => {
-    // Bucket by urgency.
+const SubscriptionTimelineSection = memo<{ data: SubTimelineRow[]; onOpenSeller: (id: string) => void }>(({ data, onOpenSeller }) => {
     const expiringSoon = data.filter((r) => r.days_remaining !== null && r.days_remaining >= 0 && r.days_remaining <= 7);
     const expiringMonth = data.filter((r) => r.days_remaining !== null && r.days_remaining > 7 && r.days_remaining <= 30);
     const expired = data.filter((r) => r.days_remaining !== null && r.days_remaining < 0);
+    const sum = (rows: SubTimelineRow[]) => rows.reduce((s, r) => s + r.net_amount, 0);
+
     return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)]">📅 جدول الاشتراكات</h3>
+        <AdmSection
+            icon="📅"
+            title="جدول الاشتراكات"
+            desc="كل تاجرٍ مشترك ومتى ينتهي اشتراكه. المبالغ هنا اشتراكاتٌ لتاكي، لا مبيعات متجره."
+            collapsible
+            defaultOpen={false}
+            badge={{ text: `${fmtNum(data.length)} تاجراً`, tone: 'neutral' }}
+            action={
                 <ExportButton
                     rows={data}
                     columns={TIMELINE_CSV_COLUMNS}
@@ -678,269 +688,352 @@ const SubscriptionTimelineSection = memo<{ data: SubTimelineRow[]; onOpenSeller:
                     accent="purple"
                     tooltip="تنزيل جدول الاشتراكات كاملاً مع التواريخ والمبالغ"
                 />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                <UrgencyCard
-                    label="ينتهي خلال 7 أيام"
-                    count={expiringSoon.length}
-                    sum={expiringSoon.reduce((s, r) => s + r.net_amount, 0)}
-                    tone="red"
+            }
+        >
+            <AdmStatGrid cols={3}>
+                <AdmStat
+                    label="ينتهي خلال ٧ أيام"
+                    value={fmtNum(expiringSoon.length)}
+                    scope={`${fmtMoney(sum(expiringSoon))} شهرياً`}
+                    tone={expiringSoon.length ? 'bad' : 'neutral'}
+                    title="اشتراكاتٌ على وشك الانتهاء — تواصلٌ الآن يمنع الفقد."
                 />
-                <UrgencyCard
-                    label="ينتهي خلال 30 يوم"
-                    count={expiringMonth.length}
-                    sum={expiringMonth.reduce((s, r) => s + r.net_amount, 0)}
-                    tone="amber"
+                <AdmStat
+                    label="ينتهي خلال ٣٠ يوماً"
+                    value={fmtNum(expiringMonth.length)}
+                    scope={`${fmtMoney(sum(expiringMonth))} شهرياً`}
+                    tone={expiringMonth.length ? 'warn' : 'neutral'}
                 />
-                <UrgencyCard
+                <AdmStat
                     label="منتهٍ بالفعل"
-                    count={expired.length}
-                    sum={expired.reduce((s, r) => s + r.net_amount, 0)}
-                    tone="gray"
+                    value={fmtNum(expired.length)}
+                    scope={`${fmtMoney(sum(expired))} شهرياً`}
+                    title="اشتراكاتٌ انقضت ولم تُجدَّد بعد."
                 />
-            </div>
-            <div className="max-h-80 overflow-y-auto divide-y divide-[var(--border-color)]">
+            </AdmStatGrid>
+
+            <div style={{ marginTop: 14, maxHeight: 340, overflowY: 'auto' }}>
                 {data.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-[var(--gray-400)] font-bold">لا توجد اشتراكات</div>
-                ) : data.slice(0, 25).map((row) => (
-                    <TimelineRow key={row.store_id} row={row} onOpen={() => onOpenSeller(row.store_id, row.shop ?? row.name)} />
-                ))}
+                    <AdmEmpty icon="📅" title="لا اشتراكات مسجّلة" hint="تظهر هنا كل باقةٍ تُطبَّق على تاجر من شاشة «التجّار»." />
+                ) : (
+                    data.slice(0, 25).map((row) => (
+                        <TimelineRow key={row.store_id} row={row} onOpen={() => onOpenSeller(row.store_id)} />
+                    ))
+                )}
             </div>
-        </section>
+            {data.length > 25 && (
+                <p style={{ margin: '10px 0 0', fontSize: '.75rem', fontWeight: 700, color: 'var(--adm-fg-3)' }}>
+                    معروضٌ ٢٥ من {fmtNum(data.length)} — البقيّة في ملفّ CSV أعلاه.
+                </p>
+            )}
+        </AdmSection>
     );
 });
 SubscriptionTimelineSection.displayName = 'SubscriptionTimelineSection';
 
-const UrgencyCard = memo<{ label: string; count: number; sum: number; tone: 'red' | 'amber' | 'gray' }>(({ label, count, sum, tone }) => {
-    const toneCls: Record<string, string> = {
-        red: 'bg-red-50 border-red-200 text-red-700',
-        amber: 'bg-amber-50 border-amber-200 text-amber-700',
-        gray: 'bg-[var(--body-bg)] border-[var(--border-color)] text-[var(--text-secondary)]',
+const RowButton: React.FC<{ onClick?: () => void; children: React.ReactNode }> = ({ onClick, children }) => {
+    // 🪤 `border: 0` أوّلاً ثم `borderBottom` — العكس يُلغي اللون فيرث الخطّ
+    //    لون النصّ بدل لون الحدّ.
+    const style: React.CSSProperties = {
+        width: '100%', textAlign: 'right', padding: '11px 4px',
+        display: 'flex', alignItems: 'center', gap: 11,
+        background: 'transparent',
+        border: 0,
+        borderBottom: '1px solid var(--adm-border)',
     };
+    if (!onClick) return <div style={style}>{children}</div>;
     return (
-        <div className={`rounded-xl border p-3 ${toneCls[tone]}`}>
-            <div className="text-2xl font-extrabold tabular-nums">{count}</div>
-            <div className="text-xs font-bold mb-1">{label}</div>
-            <div className="text-[10px] opacity-80 tabular-nums">{fmtMoney(sum)}/شهر</div>
-        </div>
+        <button type="button" onClick={onClick} className="adm-focusable" style={{ ...style, cursor: 'pointer' }}>
+            {children}
+        </button>
     );
-});
-UrgencyCard.displayName = 'UrgencyCard';
+};
 
 const TimelineRow = memo<{ row: SubTimelineRow; onOpen: () => void }>(({ row, onOpen }) => {
     const dr = row.days_remaining;
-    const urgencyCls =
-        dr === null ? 'text-[var(--text-secondary)]' :
-        dr < 0 ? 'text-red-700' :
-        dr <= 7 ? 'text-red-600' :
-        dr <= 30 ? 'text-amber-600' :
-        'text-[var(--text-secondary)]';
+    const tone: Tone = dr === null ? 'neutral' : dr < 0 ? 'bad' : dr <= 7 ? 'bad' : dr <= 30 ? 'warn' : 'neutral';
     return (
-        <button onClick={onOpen} className="w-full text-right py-3 px-2 hover:bg-[var(--body-bg)] flex items-center gap-3 transition-colors">
-            <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm truncate">{row.shop ?? row.name}</div>
-                <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5" dir="ltr">
-                    <span>{row.phone ?? '—'}</span>
-                </div>
-            </div>
-            <div className="text-left flex-shrink-0">
-                <div className="text-sm font-extrabold tabular-nums text-emerald-700">{fmtMoney(row.net_amount)}</div>
-                <div className={`text-[10px] font-bold ${urgencyCls} tabular-nums`}>
+        <RowButton onClick={onOpen}>
+            <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.shop ?? row.name}
+                </span>
+                <span dir="ltr" style={{ display: 'block', fontSize: '.73rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                    {row.phone ?? '—'}
+                </span>
+            </span>
+            <span style={{ flexShrink: 0, textAlign: 'left' }}>
+                <span style={{ display: 'block', fontSize: '.84rem', fontWeight: 900, color: 'var(--adm-ok-fg)', fontVariantNumeric: 'tabular-nums' }}>
+                    {fmtMoney(row.net_amount)}
+                </span>
+                <span style={{ display: 'block', fontSize: '.7rem', fontWeight: 800, color: `var(--adm-${tone}-fg)`, fontVariantNumeric: 'tabular-nums' }}>
                     {dr === null
-                        ? '— بلا انتهاء'
+                        ? 'بلا تاريخ انتهاء'
                         : dr < 0
-                            ? `منتهٍ منذ ${Math.abs(dr)} يوم`
-                            : `${dr} يوم متبقي`}
-                </div>
-            </div>
-        </button>
+                            ? `منتهٍ منذ ${fmtNum(Math.abs(dr))} يوماً`
+                            : `${fmtNum(dr)} يوماً متبقياً`}
+                </span>
+            </span>
+        </RowButton>
     );
 });
 TimelineRow.displayName = 'TimelineRow';
 
-// ============================================================
-// 10) Churned customers (win-back list)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// ٦) الاشتراكات المفقودة (للاسترجاع)
+// ═══════════════════════════════════════════════════════════════════════════
 interface ChurnedRow {
     store_id: string; name: string; shop: string | null;
     phone: string | null; plan: string | null;
     ended_at: string; days_since_churn: number; last_amount: number;
 }
 
-const ChurnedCustomersSection = memo<{ data: ChurnedRow[]; onOpenSeller: (id: string, name: string) => void }>(({ data, onOpenSeller }) => {
+const CHURNED_CSV_COLUMNS: CsvColumn<ChurnedRow>[] = [
+    { header: 'المتجر', accessor: (r) => r.shop ?? r.name },
+    { header: 'الجوال', accessor: (r) => r.phone ?? '' },
+    { header: 'انتهى في', accessor: (r) => r.ended_at },
+    { header: 'أيام منذ الإلغاء', accessor: (r) => r.days_since_churn },
+    { header: 'قيمة الاشتراك المفقود', accessor: (r) => r.last_amount },
+];
+
+const ChurnedSection = memo<{ data: ChurnedRow[]; onOpenSeller: (id: string) => void }>(({ data, onOpenSeller }) => {
     const totalLost = data.reduce((s, r) => s + r.last_amount, 0);
     return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                <h3 className="text-lg font-extrabold text-[var(--text-primary)]">🪦 الاشتراكات المفقودة (للاسترجاع)</h3>
+        <AdmSection
+            icon="🪦"
+            title="اشتراكاتٌ فُقدت — فرصة استرجاع"
+            desc="تجّار اشتركوا في تاكي ثم تركوا خلال آخر ٩٠ يوماً."
+            collapsible
+            defaultOpen={false}
+            badge={data.length ? { text: `${fmtNum(data.length)} تاجراً`, tone: 'warn' } : { text: 'لا فقد', tone: 'ok' }}
+            action={
                 <ExportButton
                     rows={data}
-                    columns={[
-                        { header: 'المتجر',       accessor: (r: ChurnedRow) => r.shop ?? r.name },
-                        { header: 'الجوال',       accessor: (r: ChurnedRow) => r.phone ?? '' },
-                        { header: 'انتهى في',     accessor: (r: ChurnedRow) => r.ended_at },
-                        { header: 'أيام منذ الإلغاء', accessor: (r: ChurnedRow) => r.days_since_churn },
-                        { header: 'المبلغ المفقود', accessor: (r: ChurnedRow) => r.last_amount },
-                    ]}
+                    columns={CHURNED_CSV_COLUMNS}
                     filenameStem="taki-win-back-list"
                     accent="purple"
+                    tooltip="تنزيل قائمة التجّار الذين تركوا — للتواصل معهم"
                 />
-            </div>
-            <div className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-                {data.length} تاجر اشتركوا وتركوا — فرصة استرجاع بـ{' '}
-                <span className="text-red-700 font-extrabold">{fmtMoney(totalLost)}</span> شهرياً
-            </div>
-            <div className="max-h-80 overflow-y-auto divide-y divide-[var(--border-color)]">
-                {data.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-[var(--gray-400)] font-bold">🎉 لا توجد اشتراكات مفقودة!</div>
-                ) : data.map((row) => (
-                    <button
-                        key={row.store_id}
-                        onClick={() => onOpenSeller(row.store_id, row.shop ?? row.name)}
-                        className="w-full text-right py-3 px-2 hover:bg-[var(--body-bg)] flex items-center gap-3 transition-colors"
-                    >
-                        <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-bold flex-shrink-0">
-                            {(row.shop ?? row.name)?.[0] ?? '?'}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="font-bold text-sm truncate">{row.shop ?? row.name}</div>
-                            <div className="text-xs text-[var(--text-secondary)]" dir="ltr">{row.phone ?? '—'}</div>
-                        </div>
-                        <div className="text-left flex-shrink-0">
-                            <div className="text-xs font-bold text-red-700">منذ {row.days_since_churn} يوم</div>
-                            <div className="text-[10px] text-[var(--text-secondary)]">{fmtDate(row.ended_at)}</div>
-                        </div>
-                    </button>
-                ))}
-            </div>
-        </section>
+            }
+        >
+            {data.length === 0 ? (
+                <AdmEmpty icon="🎉" title="لم يترك أي تاجرٍ اشتراكه" hint="لا إلغاءات في آخر ٩٠ يوماً." />
+            ) : (
+                <>
+                    <AdmStat
+                        label="اشتراكاتٌ فُقدت شهرياً"
+                        value={fmtMoney(totalLost)}
+                        scope={`${fmtNum(data.length)} تاجراً · آخر ٩٠ يوماً`}
+                        tone="bad"
+                        title="مجموع ما كان هؤلاء التجّار يدفعونه لتاكي شهرياً قبل تركهم. مالُ اشتراكاتٍ لا مبيعات."
+                    />
+                    <div style={{ marginTop: 14, maxHeight: 340, overflowY: 'auto' }}>
+                        {data.map((row) => (
+                            <RowButton key={row.store_id} onClick={() => onOpenSeller(row.store_id)}>
+                                <span
+                                    aria-hidden="true"
+                                    style={{
+                                        width: 34, height: 34, borderRadius: 999, flexShrink: 0,
+                                        background: 'var(--adm-bad-bg)', color: 'var(--adm-bad-fg)',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 900, fontSize: '.85rem',
+                                    }}
+                                >
+                                    {(row.shop ?? row.name)?.[0] ?? '?'}
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ display: 'block', fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {row.shop ?? row.name}
+                                    </span>
+                                    <span dir="ltr" style={{ display: 'block', fontSize: '.73rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                                        {row.phone ?? '—'}
+                                    </span>
+                                </span>
+                                <span style={{ flexShrink: 0, textAlign: 'left' }}>
+                                    <span style={{ display: 'block', fontSize: '.73rem', fontWeight: 800, color: 'var(--adm-bad-fg)' }}>
+                                        منذ {fmtNum(row.days_since_churn)} يوماً
+                                    </span>
+                                    <span style={{ display: 'block', fontSize: '.68rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                                        {fmtDate(row.ended_at)}
+                                    </span>
+                                </span>
+                            </RowButton>
+                        ))}
+                    </div>
+                </>
+            )}
+        </AdmSection>
     );
 });
-ChurnedCustomersSection.displayName = 'ChurnedCustomersSection';
+ChurnedSection.displayName = 'ChurnedSection';
 
-// ============================================================
-// 11) Browse-but-didn't-book list
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// ٧) شاهدوا ولم يحجزوا
+// ═══════════════════════════════════════════════════════════════════════════
 interface NoBookRow {
     user_id: string; name: string; phone: string | null;
     views_count: number; last_viewed_at: string; deals_seen: number;
 }
 
+const NOBOOK_CSV_COLUMNS: CsvColumn<NoBookRow>[] = [
+    { header: 'الاسم', accessor: (r) => r.name },
+    { header: 'الجوال', accessor: (r) => r.phone ?? '' },
+    { header: 'مشاهدات', accessor: (r) => r.views_count },
+    { header: 'عروض مختلفة', accessor: (r) => r.deals_seen },
+    { header: 'آخر مشاهدة', accessor: (r) => r.last_viewed_at },
+];
+
 const BrowseNoBookSection = memo<{ data: NoBookRow[]; period: Period }>(({ data, period }) => (
-    <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
-            <h3 className="text-lg font-extrabold text-[var(--text-primary)]">🎣 شاهدوا ولم يحجزوا</h3>
+    <AdmSection
+        icon="🎣"
+        title="شاهدوا ولم يحجزوا"
+        desc="مشترون قلّبوا العروض ولم يحجزوا — أقرب الناس إلى أوّل حجز."
+        collapsible
+        defaultOpen={false}
+        badge={{ text: periodScope(period), tone: 'info' }}
+        action={
             <ExportButton
                 rows={data}
-                columns={[
-                    { header: 'الاسم',       accessor: (r: NoBookRow) => r.name },
-                    { header: 'الجوال',      accessor: (r: NoBookRow) => r.phone ?? '' },
-                    { header: 'مشاهدات',     accessor: (r: NoBookRow) => r.views_count },
-                    { header: 'عروض مختلفة', accessor: (r: NoBookRow) => r.deals_seen },
-                    { header: 'آخر مشاهدة',  accessor: (r: NoBookRow) => r.last_viewed_at },
-                ]}
+                columns={NOBOOK_CSV_COLUMNS}
                 filenameStem="taki-browse-no-book"
                 accent="blue"
-                tooltip="تنزيل قائمة المهتمين الذين لم يحجزوا — للتسويق المستهدف"
+                tooltip="تنزيل قائمة المهتمّين الذين لم يحجزوا — للتسويق المستهدف"
             />
-        </div>
-        <div className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-            مشترون شاهدوا عروضاً خلال آخر {period} يوم بدون حجز — مرشّحون قويّون لإعادة استهداف
-        </div>
-        <div className="max-h-80 overflow-y-auto divide-y divide-[var(--border-color)]">
-            {data.length === 0 ? (
-                <div className="text-center py-8 text-sm text-[var(--gray-400)] font-bold">
-                    لا توجد بيانات. كل من شاهد قام بحجز فعلاً 👍
-                </div>
-            ) : data.map((row) => (
-                <div key={row.user_id} className="py-3 px-2 flex items-center gap-3 hover:bg-[var(--body-bg)]">
-                    <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold flex-shrink-0">
-                        {row.name?.[0] ?? '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm truncate">{row.name}</div>
-                        <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5" dir="ltr">
-                            <span>{row.phone ?? '—'}</span>
-                            {row.phone && <CopyButton value={row.phone} label="الجوال" size="xs" />}
-                        </div>
-                    </div>
-                    <div className="text-left flex-shrink-0">
-                        <div className="text-base font-extrabold text-blue-700 tabular-nums">{row.views_count}</div>
-                        <div className="text-[10px] text-[var(--text-secondary)] font-bold">مشاهدة</div>
-                        <div className="text-[10px] text-[var(--text-secondary)]">{daysAgo(row.last_viewed_at)}</div>
-                    </div>
-                </div>
-            ))}
-        </div>
-    </section>
+        }
+    >
+        {data.length === 0 ? (
+            <AdmEmpty icon="👍" title="لا أحد شاهد بلا حجز" hint="كل من فتح عرضاً في هذه الفترة حجز فعلاً." />
+        ) : (
+            <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+                {data.map((row) => (
+                    <RowButton key={row.user_id}>
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                width: 34, height: 34, borderRadius: 999, flexShrink: 0,
+                                background: 'var(--adm-info-bg)', color: 'var(--adm-info-fg)',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                fontWeight: 900, fontSize: '.85rem',
+                            }}
+                        >
+                            {row.name?.[0] ?? '?'}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {row.name}
+                            </span>
+                            <span dir="ltr" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.73rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                                <span>{row.phone ?? '—'}</span>
+                                {row.phone && <CopyButton value={row.phone} label="الجوال" size="xs" />}
+                            </span>
+                        </span>
+                        <span style={{ flexShrink: 0, textAlign: 'left' }}>
+                            <span style={{ display: 'block', fontSize: '.92rem', fontWeight: 900, color: 'var(--adm-info-fg)', fontVariantNumeric: 'tabular-nums' }}>
+                                {fmtNum(row.views_count)}
+                            </span>
+                            <span style={{ display: 'block', fontSize: '.68rem', color: 'var(--adm-fg-3)', fontWeight: 700 }}>
+                                مشاهدة · {fmtNum(row.deals_seen)} عرضاً
+                            </span>
+                            <span style={{ display: 'block', fontSize: '.68rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>
+                                {daysAgo(row.last_viewed_at)}
+                            </span>
+                        </span>
+                    </RowButton>
+                ))}
+            </div>
+        )}
+    </AdmSection>
 ));
 BrowseNoBookSection.displayName = 'BrowseNoBookSection';
 
-// ============================================================
-// 12) Category conversion table
-// ============================================================
-const CategoryFunnelTable = memo<{ data: Array<{ category: string; views: number; bookings: number; conversion_pct: number; }> }>(({ data }) => {
-    if (data.length === 0) return null;
-    const maxViews = Math.max(...data.map((d) => d.views), 1);
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <h3 className="text-lg font-extrabold text-[var(--text-primary)] mb-3">🏷️ أداء التصنيفات</h3>
-            <div className="space-y-2.5">
-                {data.map((c) => (
-                    <div key={c.category} className="bg-[var(--body-bg)] rounded-xl p-3">
-                        <div className="flex items-baseline justify-between mb-1.5">
-                            <span className="font-extrabold text-sm">{c.category}</span>
-                            <span className="text-xs tabular-nums">
-                                <span className="font-extrabold text-emerald-700">{fmtNum(c.bookings)}</span>
-                                {' / '}
-                                <span className="text-[var(--text-secondary)]">{fmtNum(c.views)}</span>
-                                {' · '}
-                                <span className="font-extrabold text-blue-700">{c.conversion_pct}%</span>
+// ═══════════════════════════════════════════════════════════════════════════
+// ٨) أداء التصنيفات — يبقى هنا: التصنيفات ليست جغرافيا ولا تشخيصاً
+// ═══════════════════════════════════════════════════════════════════════════
+const CategoryFunnelSection = memo<{ data: Array<{ category: string; views: number; bookings: number; conversion_pct: number }>; period: Period }>(
+    ({ data, period }) => {
+        const maxViews = Math.max(...data.map((d) => d.views), 1);
+        return (
+            <AdmSection
+                icon="🏷️"
+                title="أداء التصنيفات"
+                desc="أيّ تصنيفٍ يُشاهَد كثيراً ويُحجَز قليلاً — الفجوة هي الفرصة."
+                collapsible
+                defaultOpen={false}
+                badge={{ text: periodScope(period), tone: 'info' }}
+            >
+                {data.length === 0 ? (
+                    <AdmEmpty icon="🏷️" title="لا مشاهدات لأي تصنيف" hint="جرّب فترةً أوسع من الأعلى." />
+                ) : (
+                    <>
+                        <div style={{ display: 'grid', gap: 10 }}>
+                            {data.map((c) => (
+                                <div key={c.category} style={{ background: 'var(--adm-surface-2)', borderRadius: 'var(--adm-r-sm)', padding: '11px 12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
+                                        <span style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{c.category}</span>
+                                        <span style={{ fontSize: '.74rem', fontWeight: 700, color: 'var(--adm-fg-3)', fontVariantNumeric: 'tabular-nums' }}>
+                                            <span style={{ color: 'var(--adm-ok-fg)', fontWeight: 900 }}>{fmtNum(c.bookings)}</span>
+                                            {' حجزاً من '}
+                                            <span style={{ color: 'var(--adm-info-fg)', fontWeight: 900 }}>{fmtNum(c.views)}</span>
+                                            {' مشاهدة · '}
+                                            <span style={{ color: 'var(--adm-fg)', fontWeight: 900 }}>{fmtPct(c.conversion_pct)}</span>
+                                        </span>
+                                    </div>
+                                    <div style={{ position: 'relative', height: 8, background: 'var(--adm-surface-3)', borderRadius: 999, overflow: 'hidden' }}>
+                                        <div style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: `${(c.views / maxViews) * 100}%`, background: 'var(--adm-info-fg)', opacity: .45 }} />
+                                        <div style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: `${(c.bookings / maxViews) * 100}%`, background: 'var(--adm-ok-fg)' }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12, fontSize: '.72rem', fontWeight: 700, color: 'var(--adm-fg-3)' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <span aria-hidden="true" style={{ width: 13, height: 7, borderRadius: 3, background: 'var(--adm-info-fg)', opacity: .45 }} /> مشاهدات
+                            </span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <span aria-hidden="true" style={{ width: 13, height: 7, borderRadius: 3, background: 'var(--adm-ok-fg)' }} /> حجوزات
                             </span>
                         </div>
-                        <div className="relative h-2 bg-[var(--card-bg)] rounded-full overflow-hidden">
-                            <div className="absolute inset-y-0 right-0 bg-gradient-to-l from-blue-400 to-blue-600 rounded-full"
-                                 style={{ width: `${(c.views / maxViews) * 100}%` }} />
-                            <div className="absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-500 to-emerald-700 rounded-full"
-                                 style={{ width: `${((c.bookings) / maxViews) * 100}%` }} />
-                        </div>
-                    </div>
-                ))}
-            </div>
-            <div className="flex items-center gap-3 text-[10px] text-[var(--text-secondary)] font-bold mt-3">
-                <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded" /> مشاهدات</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-2 bg-emerald-500 rounded" /> حجوزات</span>
-            </div>
-        </section>
-    );
-});
-CategoryFunnelTable.displayName = 'CategoryFunnelTable';
+                    </>
+                )}
+            </AdmSection>
+        );
+    }
+);
+CategoryFunnelSection.displayName = 'CategoryFunnelSection';
 
-// ============================================================
-// Period chip selector
-// ============================================================
-const PeriodSelector = memo<{ period: Period; onChange: (p: Period) => void }>(({ period, onChange }) => (
-    <div className="inline-flex bg-[var(--card-bg)] rounded-xl border border-[var(--border-color)] p-1 gap-1">
-        {([7, 30, 90] as Period[]).map((p) => (
-            <button
-                key={p}
-                onClick={() => onChange(p)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
-                    period === p
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--gray-100)]'
-                }`}
-            >
-                آخر {p} يوم
-            </button>
-        ))}
+// ═══════════════════════════════════════════════════════════════════════════
+// منتقي الفترة
+// ═══════════════════════════════════════════════════════════════════════════
+const PeriodPicker = memo<{ period: Period; onChange: (p: Period) => void }>(({ period, onChange }) => (
+    <div role="group" aria-label="فترة الأرقام" style={{ display: 'inline-flex', gap: 5, flexWrap: 'wrap' }}>
+        {([7, 30, 90] as Period[]).map((p) => {
+            const on = period === p;
+            return (
+                <button
+                    key={p}
+                    type="button"
+                    onClick={() => onChange(p)}
+                    aria-pressed={on}
+                    className="adm-focusable"
+                    style={{
+                        padding: '6px 13px', fontSize: '.78rem', fontWeight: 800, borderRadius: 999,
+                        cursor: 'pointer',
+                        border: `1px solid ${on ? 'transparent' : 'var(--adm-border)'}`,
+                        background: on ? 'var(--adm-accent)' : 'var(--adm-surface-2)',
+                        color: on ? '#ffffff' : 'var(--adm-fg-2)',
+                    }}
+                >
+                    آخر {PERIOD_LABEL[p]}
+                </button>
+            );
+        })}
     </div>
 ));
-PeriodSelector.displayName = 'PeriodSelector';
+PeriodPicker.displayName = 'PeriodPicker';
 
-// ============================================================
-// Master container — coordinates fetching + period state
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// الحاوية — تجلب كل شيء مرّةً واحدة وتوزّعه
+// ═══════════════════════════════════════════════════════════════════════════
 export const AdvancedAnalytics: React.FC = () => {
     const history = useHistory();
     const [period, setPeriod] = useState<Period>(30);
@@ -948,11 +1041,11 @@ export const AdvancedAnalytics: React.FC = () => {
     const [forecast, setForecast] = useState<ForecastData | null>(null);
     const [funnel, setFunnel] = useState<FunnelData | null>(null);
     const [daily, setDaily] = useState<DailyPoint[]>([]);
-    const [heatmap, setHeatmap] = useState<Array<{ dow: number; hour: number; cnt: number }>>([]);
     const [mrr, setMrr] = useState<MrrPoint[]>([]);
     const [growth, setGrowth] = useState<GrowthPoint[]>([]);
     const [lifecycle, setLifecycle] = useState<Array<{ status: string; cnt: number }>>([]);
-    const [cohorts, setCohorts] = useState<Array<{ cohort_key: string; cohort_label: string; registered: number; active_now: number; booked_ever: number; retention_pct: number }>>([]);
+    const [cohorts, setCohorts] = useState<CohortRow[]>([]);
+    const [retention, setRetention] = useState<RetentionRow[]>([]);
     const [timeline, setTimeline] = useState<SubTimelineRow[]>([]);
     const [churned, setChurned] = useState<ChurnedRow[]>([]);
     const [noBook, setNoBook] = useState<NoBookRow[]>([]);
@@ -962,16 +1055,16 @@ export const AdvancedAnalytics: React.FC = () => {
     const refresh = useCallback(async () => {
         setLoading(true);
         const [
-            f, fn, dm, hm, m, g, lc, ch, tl, cs, nb, cf,
+            f, fn, dm, m, g, lc, ch, rc, tl, cs, nb, cf,
         ] = await Promise.all([
             adminService.getRevenueForecast(),
             adminService.getBookingFunnel(period),
             adminService.getDailyMetrics(period),
-            adminService.getActivityHeatmap(period),
             adminService.getMrrMonthly(12),
             adminService.getSubscriptionGrowth(12),
             adminService.getSubscriptionLifecycle(),
             adminService.getUserCohorts(6),
+            adminService.getRetentionCurve(6),
             adminService.getSubscriptionTimeline(200),
             adminService.getChurnedSubscribers(90, 100),
             adminService.getBrowseNoBook(period, 50),
@@ -980,11 +1073,11 @@ export const AdvancedAnalytics: React.FC = () => {
         setForecast(f);
         setFunnel(fn);
         setDaily(dm);
-        setHeatmap(hm);
         setMrr(m);
         setGrowth(g);
         setLifecycle(lc);
         setCohorts(ch);
+        setRetention(rc);
         setTimeline(tl);
         setChurned(cs);
         setNoBook(nb);
@@ -994,82 +1087,60 @@ export const AdvancedAnalytics: React.FC = () => {
 
     useEffect(() => { refresh(); }, [refresh]);
 
-    const openSeller = useCallback((id: string, _name: string) => {
+    const openSeller = useCallback((id: string) => {
         history.push(`/store/${id}`);
     }, [history]);
 
     return (
-        <div className="space-y-5 animate-fade-in" dir="rtl">
-            {/* Period selector + refresh */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div>
-                    <h2 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                        🚀 التحليلات المتقدّمة
-                        <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                            نظام عالمي
-                        </span>
-                    </h2>
-                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                        كل ما تحتاجه لاتخاذ قرار: قمع تحويل، إيرادات، استبقاء، استرجاع
-                    </p>
+        <div style={{ display: 'grid', gap: 14 }} dir="rtl">
+
+            {/* ── شريط الفترة ─────────────────────────────────────────────── */}
+            <AdmCard>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: '.88rem', fontWeight: 800, color: 'var(--adm-fg)' }}>فترة الأرقام</div>
+                        <p style={{ margin: '5px 0 0', fontSize: '.78rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', maxWidth: '62ch' }}>
+                            تتحكّم بالأقسام الموسومة بالفترة وحدها. الأقسام الشهرية (الاشتراكات · الأفواج) مداها مكتوبٌ في عنوانها ولا يتغيّر باختيارك.
+                        </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <PeriodPicker period={period} onChange={setPeriod} />
+                        <AdmButton onClick={refresh} disabled={loading} title="إعادة تحميل كل أرقام هذه الشاشة">
+                            {loading ? 'جارٍ التحميل…' : '↻ تحديث'}
+                        </AdmButton>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <PeriodSelector period={period} onChange={setPeriod} />
-                    <Tooltip text="إعادة تحميل كل التحليلات">
-                        <button
-                            onClick={refresh}
-                            disabled={loading}
-                            className="h-10 px-4 bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-emerald-300 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50"
-                        >
-                            🔄 تحديث
-                        </button>
-                    </Tooltip>
-                </div>
-            </div>
+            </AdmCard>
 
             {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="h-48 bg-[var(--gray-100)] rounded-2xl animate-pulse" />
-                    ))}
-                </div>
+                <AdmCard><AdmSkeleton rows={5} height={70} /></AdmCard>
             ) : (
                 <>
-                    {/* Revenue hero */}
-                    <RevenueForecastHero data={forecast} />
+                    <SubscriptionsSection forecast={forecast} mrr={mrr} growth={growth} lifecycle={lifecycle} />
 
-                    {/* Funnel + Daily */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <BookingFunnelCard data={funnel} period={period} />
-                        <DailyMetricsChart data={daily} period={period} />
-                    </div>
+                    <FunnelSection data={funnel} period={period} />
 
-                    {/* Heatmap */}
-                    <ActivityHeatmap data={heatmap} period={period} />
+                    <DailySection data={daily} period={period} />
 
-                    {/* MRR + Growth */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <MonthlyMrrChart data={mrr} />
-                        <SubscriptionGrowthChart data={growth} />
-                    </div>
+                    <CategoryFunnelSection data={categories} period={period} />
 
-                    {/* Lifecycle + Cohorts */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <LifecyclePie data={lifecycle} />
-                        <CohortTable data={cohorts} />
-                    </div>
+                    <CohortRetentionSection cohorts={cohorts} retention={retention} />
 
-                    {/* Subscription timeline */}
                     <SubscriptionTimelineSection data={timeline} onOpenSeller={openSeller} />
 
-                    {/* Churned + Browse-no-book side by side */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <ChurnedCustomersSection data={churned} onOpenSeller={openSeller} />
-                        <BrowseNoBookSection data={noBook} period={period} />
-                    </div>
+                    <ChurnedSection data={churned} onOpenSeller={openSeller} />
 
-                    {/* Categories */}
-                    <CategoryFunnelTable data={categories} />
+                    <BrowseNoBookSection data={noBook} period={period} />
+
+                    {/* 🪤 إحالتان بدل تكرارَين: ما كان هنا موجودٌ أغنى في شاشتَيه. */}
+                    <RefLine
+                        icon="🕐"
+                        text="خريطة ساعات النشاط في شاشة «المحلل الذكي» — هناك تُقرأ بالتصنيف والمدينة والساعة معاً، لا بجدولٍ مصغّر."
+                    />
+                    <RefLine
+                        icon="🗺"
+                        text="التوزيع الجغرافي كلّه في شاشة «جمهور المدن»: المناطق والمدن ومن أين يدخل المشترون."
+                    />
                 </>
             )}
         </div>

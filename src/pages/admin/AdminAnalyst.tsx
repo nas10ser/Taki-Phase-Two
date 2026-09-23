@@ -1,21 +1,53 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+/**
+ * AdminAnalyst — «🧠 المحلل الذكي» (v14.89 — أُعيد تنظيمها على نظام لوحة الإدارة)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * القاعدة الحاكمة: هذه الشاشة **تشخيصٌ وتوصية**، لا جداول أرقامٍ عامّة.
+ * «التحليلات» للأرقام على فترة، و«جمهور المدن» للجغرافيا. وكل قسمٍ هنا يجيب
+ * ثلاثة أسئلة: من يضعف؟ لماذا؟ وماذا أفعل؟
+ *
+ * 🔴 مكرّرٌ داخل الشاشة نفسها — قِيس على v14.88 ثم حُذف:
+ *  • «الحجوزات شهرياً (٦ أشهر)» — رسمُ الموسميّة (١٢ شهراً) يحتويه كلّه.
+ *  • **خمسة** تمثيلات لساعات الذروة (بطاقة «أقوى ٣ ساعات» · رسم ٢٤ ساعة ·
+ *    خريطة ٧×٢٤ · رسمٌ في المحلل المخصّص · ورسمان في المستكشف) ⇐ بقي
+ *    **اثنان**: الخريطة (الأغنى) والبطاقة (الخلاصة). ورسمُ أيام الأسبوع هو
+ *    صفوفُ الخريطة نفسها فسقط معها.
+ *  • **ثلاث** لوحات «أين الفرصة» بثلاثة رموز (⚡/⚡/🔥) لفكرةٍ واحدة ⇐ لوحةٌ
+ *    واحدة بثلاثة محاور (مدن · تصنيفات · مواقع) ووسمٍ واحد «⚡ فرصة».
+ *  • الإلغاءات في **أربعة** مواضع ⇐ التشخيص + قسمٌ واحد يضمّ «من ألغى؟»
+ *    و«راصد الأسوأ» معاً (وبطاقة «ملغى» في المحلل المخصّص حُذفت).
+ *  • بطاقتا «⚖️ مقارنة بمنافسيه» و«⚔️ منافسوه المباشرون» ⇐ بطاقةٌ واحدة.
+ *
+ * 🔴 ومكرّرٌ مع شاشةٍ أخرى ⇐ حُذف وبقي سطرُ إحالةٍ مكانه: «قمع التحويل»
+ *    والاحتفاظ بالكوهورت (في «التحليلات») · الجداول الجغرافية (في «جمهور
+ *    المدن»، وبقيت **التوصية** وحدها) · و«المواسم السعودية» التي كانت
+ *    **تواريخ مكتوبة في الكود** («٢٣ سبتمبر»، «رمضان تقريباً فبراير ٢٠٢٧»)
+ *    بينما تقويم الفعاليات الحقيقي يكتبه ناصر في «البانرات والحملات» —
+ *    وتقويمٌ ثانٍ يناقض الأول أسوأ من غيابه.
+ *
+ * 🔴 ورقمان متناقضان لنفس المقياس: «حجوزات آخر N يوم» من `admin_ai_analyst`
+ *    و«الخلاصة التنفيذية» من `admin_ai_funnel` — على بُعد شاشةٍ واحدة. الآن
+ *    **مصدرٌ واحد** (`admin_ai_funnel`) يُعرض **مرّةً واحدة**.
+ *
+ * 🔴 والإرسال الجماعي كان حلقةَ `admin_notify_user` لكل تاجر. حين يكون
+ *    الجمهور **كل التجار** صار بثّاً واحداً على الخادم
+ *    (`admin_broadcast_notification`)؛ وتبقى الحلقة للشريحة المفلترة وحدها،
+ *    لأن دالّة البثّ لا تعرف مرشّحات المدينة/التصنيف/الحالة — فاستعمالها
+ *    لشريحةٍ كان سيُرسل إلى **كل** التجار بصمت، وهو كذبٌ في عدد المستقبِلين.
+ *
+ * 🪤 ولا `dark:` ولا `bg-white` ولا تدرّجات: الألوان رموز `--adm-*` واللون
+ *    للدلالة وحدها. ولا عنوان محلّي هنا — القشرة تطبعه من `adminNav.ts`.
+ */
+
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { adminService } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
 import { CATEGORIES } from '../../data/mock';
-
-/**
- * AdminAnalyst (v12.38) — «🧠 المحلل الذكي».
- *
- * شركة تحليل بيانات كاملة تعمل آلياً بلا تدخل بشري (طلب ناصر):
- *  - يقرأ كل نشاط المنصة عبر admin_ai_analyst (حجوزات/مشاهدات/اشتراكات/تجديد)
- *  - يولّد «رؤى» عربية جاهزة مرتبة بالخطورة (عزوف التجار أولاً)
- *  - صحة كل تاجر على حدة + تقرير معمّق + توصية مخصصة يعتمدها المالك
- *    قبل إرسالها (admin_notify_user) — الإرسال دائماً بقرار ناصر
- *  - فرص المدن/التصنيفات/المولات (طلب عالٍ بعرض قليل = فرصة استقطاب)
- *  - تنبيه أسبوعي تلقائي (cron: analyst_weekly_pulse) عند بدء العزوف أو القفزات
- *
- * كل الأرقام تُحسب في القاعدة؛ هذا الملف يحوّلها لقرارات مفهومة وبسيطة.
- */
+import {
+    AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
+    AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, AdmToolbar,
+    AdmDateRange, admNum,
+} from '../../components/admin/ui';
+import type { Tone } from '../../components/admin/ui';
 
 // ─── أنواع البيانات القادمة من الـRPC ───────────────────────────────────────
 interface HourRow { h: number; n: number }
@@ -30,7 +62,6 @@ interface SellerRow {
     bookings_30: number; bookings_prev30: number;
     deal_views_30: number; store_views_30: number;
     rating_avg: number | null; rating_count: number;
-    /** v12.39 — growth/content-quality fields */
     top_category: string | null;
     avg_images: number | null;
     weak_image_deals: number;
@@ -57,9 +88,14 @@ const fmtHour = (h: number): string => {
     const v = h % 12 === 0 ? 12 : h % 12;
     return `${v} ${p}`;
 };
-const arNum = (n: number): string => (Number(n) || 0).toLocaleString('ar-SA');
 const daysLeft = (iso: string | null): number | null =>
     iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000) : null;
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: fmtHour(h) }));
+const DOW_OPTIONS = [{ value: 'all', label: 'كل الأيام' }, ...DOW_AR.map((d, i) => ({ value: String(i), label: d }))];
+
+/** نغمةُ الدلالة لكل درجة خطورة — لا لون خارج النغمات الخمس. */
+const TONE_OF: Record<Insight['severity'], Tone> = { critical: 'bad', warn: 'warn', good: 'ok', info: 'info' };
 
 // ─── درجة خطر التاجر (0-100، الأعلى = أخطر) + السبب المرجّح ─────────────────
 const sellerRisk = (s: SellerRow): { score: number; reasons: string[] } => {
@@ -67,7 +103,7 @@ const sellerRisk = (s: SellerRow): { score: number; reasons: string[] } => {
     const reasons: string[] = [];
     const dl = daysLeft(s.expires_at);
     if (dl !== null && dl < 0) { score += 40; reasons.push('اشتراكه منتهٍ ولم يجدّد'); }
-    else if (dl !== null && dl <= 7) { score += 25; reasons.push(`اشتراكه ينتهي خلال ${arNum(dl)} يوم`); }
+    else if (dl !== null && dl <= 7) { score += 25; reasons.push(`اشتراكه ينتهي خلال ${admNum(dl)} يوم`); }
     if (s.active_deals === 0) { score += 25; reasons.push('لا يملك أي عرض نشط'); }
     if (s.bookings_30 === 0) { score += 20; reasons.push('صفر حجوزات آخر ٣٠ يوماً'); }
     else if (s.bookings_prev30 > 0 && s.bookings_30 < s.bookings_prev30 / 2) {
@@ -80,7 +116,6 @@ const sellerRisk = (s: SellerRow): { score: number; reasons: string[] } => {
     const lastActive = s.last_active_at ? Date.now() - new Date(s.last_active_at).getTime() : null;
     if (lastActive !== null && lastActive > 14 * 86400000) { score += 10; reasons.push('لم يفتح المنصة منذ أسبوعين+'); }
     if (s.rating_avg !== null && s.rating_count >= 3 && s.rating_avg < 3) { score += 10; reasons.push(`تقييمه منخفض (${s.rating_avg}★)`); }
-    // v12.39 — جودة المحتوى تدخل في الخطر (صور/وصف/دوام)
     if (s.active_deals > 0 && s.weak_image_deals >= s.active_deals) { score += 5; reasons.push('كل عروضه بصورة واحدة أو بلا صور'); }
     if (s.active_deals > 0 && !s.has_hours) { score += 5; reasons.push('لم يفعّل ساعات عمل متجره'); }
     return { score: Math.min(100, score), reasons };
@@ -100,7 +135,6 @@ const buildSellerTip = (s: SellerRow, report: any | null): { title: string; body
     if (peakDay) lines.push(`• أقوى أيامك هو ${DOW_AR[peakDay.dow]} — ركّز كمياتك وخصوماتك فيه.`);
     if (s.deal_views_30 >= 20 && s.bookings_30 === 0) lines.push('• عروضك تُشاهد ولا تُحجز — جرّب خصماً أوضح (٣٠٪+) أو صوراً أجود للمنتج.');
     if (s.deal_views_30 + s.store_views_30 < 10) lines.push('• زياراتك قليلة — شارك رابط متجرك وباركود الدعوة مع عملائك في واتساب وحسابات التواصل.');
-    // v12.39 — جودة المحتوى (صور/وصف/دوام)
     if (s.weak_image_deals > 0) lines.push(`• ${s.weak_image_deals} من عروضك بصورة واحدة أو بلا صور — أضف ٣ صور واضحة بزوايا مختلفة لكل عرض؛ العروض متعددة الصور تُحجز أكثر بوضوح.`);
     if (s.weak_desc_deals > 0) lines.push(`• ${s.weak_desc_deals} من عروضك بلا وصف كافٍ — اكتب المقاسات والمميزات وحالة المنتج؛ الوصف الجيد يرفع الثقة ويقلل الإلغاء.`);
     if (s.active_deals > 0 && !s.has_hours) lines.push('• فعّل «ساعات العمل» من لوحتك — تظهر للمشتري وتمنع حجوزات تصلك والمحل مغلق.');
@@ -113,7 +147,7 @@ const buildSellerTip = (s: SellerRow, report: any | null): { title: string; body
     };
 };
 
-// ─── مولّد رؤى المنصة ────────────────────────────────────────────────────────
+// ─── مولّد رؤى المنصة (يغذّي التشخيص — لا يُعرض وحده) ────────────────────────
 const buildInsights = (d: any): Insight[] => {
     const out: Insight[] = [];
     if (!d) return out;
@@ -127,9 +161,9 @@ const buildInsights = (d: any): Insight[] => {
     if (expiredNoRenew.length > 0) {
         out.push({
             id: 'churn-now', severity: 'critical', icon: '🚨',
-            title: `${arNum(expiredNoRenew.length)} تاجر منتهي الاشتراك ولم يجدّد`,
+            title: `${admNum(expiredNoRenew.length)} تاجر منتهي الاشتراك ولم يجدّد`,
             body: expiredNoRenew.slice(0, 5).map((s) => `«${s.shop}»${sellerRisk(s).reasons[1] ? ' — ' + sellerRisk(s).reasons[1] : ''}`).join(' • '),
-            action: 'افتح «صحة التجار» بالأسفل، راجع السبب المرجّح لكل تاجر، وأرسل له التوصية أو خصماً من تبويب البائعين.',
+            action: 'افتح «صحة التجار» بالأسفل، راجع السبب المرجّح لكل تاجر، وأرسل له التوصية أو خصماً من شاشة التجّار.',
         });
     }
     if (ren.length >= 2) {
@@ -153,8 +187,8 @@ const buildInsights = (d: any): Insight[] => {
     if (expiringSoon.length > 0) {
         out.push({
             id: 'expiring', severity: 'warn', icon: '⏳',
-            title: `${arNum(expiringSoon.length)} تاجر ينتهي اشتراكه خلال أسبوع`,
-            body: expiringSoon.slice(0, 5).map((s) => `«${s.shop}» (${arNum(daysLeft(s.expires_at) || 0)} يوم)`).join(' • '),
+            title: `${admNum(expiringSoon.length)} تاجر ينتهي اشتراكه خلال أسبوع`,
+            body: expiringSoon.slice(0, 5).map((s) => `«${s.shop}» (${admNum(daysLeft(s.expires_at) || 0)} يوم)`).join(' • '),
             action: 'من ينتهي وهو ضعيف الحجوزات غالباً لن يجدّد — أرسل له توصية تحسين الآن قبل قرار التجديد.',
         });
     }
@@ -168,14 +202,12 @@ const buildInsights = (d: any): Insight[] => {
             out.push({
                 id: 'conv-low', severity: 'warn', icon: '🔻',
                 title: `نسبة تحويل المشاهدات لحجوزات منخفضة (${(conv * 100).toFixed(1)}٪)`,
-                body: `${arNum(views)} مشاهدة عرض أنتجت ${arNum(bookings)} حجزاً فقط في الفترة.`,
+                body: `${admNum(views)} مشاهدة عرض أنتجت ${admNum(bookings)} حجزاً فقط في الفترة.`,
                 action: 'الأسباب المعتادة: خصومات غير مقنعة أو صور ضعيفة. شجّع التجار على خصومات ٣٠٪+ وصور واضحة.',
             });
         } else {
             out.push({ id: 'conv-ok', severity: 'good', icon: '✅', title: `نسبة التحويل صحية (${(conv * 100).toFixed(1)}٪)`, body: 'المعروض يقنع الزوار بالحجز.' });
         }
-    } else if (views === 0 && bookings > 0) {
-        out.push({ id: 'views-new', severity: 'info', icon: 'ℹ️', title: 'عدّاد الزيارات الزمني بدأ للتو', body: 'بدأنا اليوم تسجيل المشاهدات بوقتها (v12.38) — خلال أيام ستكتمل صورة الزيارات وساعات ذروتها.' });
     }
 
     // ٤) إلغاءات مرتفعة
@@ -185,7 +217,7 @@ const buildInsights = (d: any): Insight[] => {
             id: 'cancel-high', severity: 'warn', icon: '🚫',
             title: `نسبة الإلغاء/الانتهاء مرتفعة (${Math.round((cancelled / bookings) * 100)}٪)`,
             body: 'مشترون يحجزون ولا يستلمون — غالباً مهلة الاستلام قصيرة أو المتجر بعيد.',
-            action: 'راجع مدد التحضير عند التجار كثيري الإلغاء، وذكّر المشترين بمهلة الساعتين.',
+            action: 'راجع مدد التحضير عند التجار كثيري الإلغاء، وذكّر المشترين بمهلة الاستلام.',
         });
     }
 
@@ -193,7 +225,7 @@ const buildInsights = (d: any): Insight[] => {
     if (monthly.length >= 2) {
         const lastM = monthly[monthly.length - 1]; const prevM = monthly[monthly.length - 2];
         if (lastM.new_buyers > prevM.new_buyers && lastM.new_buyers >= 3) {
-            out.push({ id: 'buyers-up', severity: 'good', icon: '🛒', title: `نمو المشترين الجدد: ${arNum(lastM.new_buyers)} هذا الشهر`, body: `مقابل ${arNum(prevM.new_buyers)} الشهر السابق — التسويق يعمل.` });
+            out.push({ id: 'buyers-up', severity: 'good', icon: '🛒', title: `نمو المشترين الجدد: ${admNum(lastM.new_buyers)} هذا الشهر`, body: `مقابل ${admNum(prevM.new_buyers)} الشهر السابق — التسويق يعمل.` });
         }
     }
     const b = d.buyers || {};
@@ -207,19 +239,7 @@ const buildInsights = (d: any): Insight[] => {
         });
     }
 
-    // ٦) فرص العرض/الطلب
-    const cities: GeoRow[] = d.cities || [];
-    const hot = cities.filter((c) => c.bookings >= 5 && c.deals <= 2 && c.city !== 'غير محدد');
-    if (hot.length) {
-        out.push({
-            id: 'geo-gap', severity: 'info', icon: '🗺',
-            title: `طلب مرتفع بعرض قليل في: ${hot.map((c) => c.city).join('، ')}`,
-            body: 'حجوزات كثيرة على عروض قليلة = فرصة ذهبية لاستقطاب تجار جدد هناك.',
-            action: 'استهدف تجار هذه المدن برابط الدعوة أو بحملة — سيجدون طلباً جاهزاً.',
-        });
-    }
-
-    // ٧) v12.39 — جودة محتوى المنصة (صور/أوصاف العروض)
+    // ٦) جودة محتوى المنصة (صور/أوصاف العروض)
     const content = d.content || {};
     const activeDeals = Number(content.active_deals) || 0;
     const weakImgs = (Number(content.no_image) || 0) + (Number(content.one_image) || 0);
@@ -227,41 +247,26 @@ const buildInsights = (d: any): Insight[] => {
         out.push({
             id: 'content-imgs', severity: 'warn', icon: '🖼',
             title: `${Math.round((weakImgs / activeDeals) * 100)}٪ من العروض النشطة صورها ضعيفة`,
-            body: `${arNum(weakImgs)} من ${arNum(activeDeals)} عرضاً بصورة واحدة أو بلا صور — الصور أول ما يقنع المشتري.`,
-            action: 'استخدم «الإرسال المستهدف» بالأسفل مع قالب «جودة الصور» لتنبيه المتاجر المعنية دفعة واحدة.',
+            body: `${admNum(weakImgs)} من ${admNum(activeDeals)} عرضاً بصورة واحدة أو بلا صور — الصور أول ما يقنع المشتري.`,
+            action: 'استخدم «الإرسال المستهدف» مع قالب «جودة الصور» لتنبيه المتاجر المعنية دفعة واحدة.',
         });
     }
     if (activeDeals >= 3 && (Number(content.no_desc) || 0) / activeDeals > 0.4) {
         out.push({
             id: 'content-desc', severity: 'info', icon: '📝',
-            title: `${arNum(Number(content.no_desc) || 0)} عرضاً بلا وصف كافٍ`,
+            title: `${admNum(Number(content.no_desc) || 0)} عرضاً بلا وصف كافٍ`,
             body: 'الوصف الناقص يزيد أسئلة الشات والإلغاءات — ذكّر التجار بكتابة المقاسات والتفاصيل.',
-        });
-    }
-
-    // ٨) v12.39 — مدن فيها مشترون نشطون بلا عرض كافٍ (من حجوزاتهم الفعلية)
-    const bbc: BuyerCityRow[] = d.buyers_by_city || [];
-    const cityDeals = new Map(cities.map((c) => [c.city, c.deals]));
-    const demandNoSupply = bbc.filter((b) => b.city !== 'غير محدد' && b.buyers >= 2 && (cityDeals.get(b.city) ?? 0) <= 1);
-    if (demandNoSupply.length) {
-        out.push({
-            id: 'buyer-city-gap', severity: 'info', icon: '🎯',
-            title: `مشترون نشطون بعرض شبه معدوم في: ${demandNoSupply.map((b) => b.city).join('، ')}`,
-            body: 'هؤلاء يحجزون فعلاً لكن الخيارات أمامهم قليلة — أول تاجر تستقطبه هناك سيحصد الطلب كله.',
-            action: 'ركّز حملات استقطاب التجار على هذه المدن أولاً (أعلى عائد على الجهد).',
         });
     }
     return out;
 };
 
-// ─── v12.42 — «العقل المشخّص»: تحليل + تسويق + حلول في تقرير واحد ────────────
-// يقرأ كل مصادر البيانات معاً (التحليل العام + تفاعل الأقسام + القمع
-// والإلغاءات) ويُخرج: درجة صحة المنصة، أضعف النقاط، وقائمة تشخيصات — لكل
-// واحدة: الدليل بالأرقام، مكمن الخلل الجذري، خطوات العلاج (تشغيل + تسويق)،
-// والأثر المتوقع. هذا يحل محل «الرؤى» المتفرقة السابقة (طلب ناصر: لا تكرار).
+// ─── «العقل المشخّص»: تحليل + تسويق + حلول في تقرير واحد ─────────────────────
+// يقرأ كل مصادر البيانات معاً ويُخرج: درجة صحة المنصة، أضعف النقاط، وقائمة
+// تشخيصات — لكل واحدة: الدليل بالأرقام، مكمن الخلل، خطوات العلاج، والأثر.
 interface Diagnosis {
     id: string;
-    severity: 'critical' | 'warn' | 'good' | 'info';
+    severity: Insight['severity'];
     icon: string;
     title: string;
     evidence: string;
@@ -280,7 +285,6 @@ const buildDiagnosis = (
     const sellers: SellerRow[] = d.sellers || [];
     const f = fn?.funnel || {};
     const b = Number(f.bookings) || 0;
-    const canc = Number(f.cancelled) || 0;
 
     // ١) العزوف: منتهون بلا تجديد — مع السبب المهيمن بينهم
     const expired = sellers.filter((s) => { const dl = daysLeft(s.expires_at); return dl !== null && dl < 0; });
@@ -295,12 +299,12 @@ const buildDiagnosis = (
                 : 'أسباب متفاوتة — افتح بطاقة كل تاجر في «صحة التجار» لسببه الفردي.';
         items.push({
             id: 'dg-churn', severity: 'critical', icon: '🚨',
-            title: `${arNum(expired.length)} تاجر انتهى اشتراكه ولم يجدّد`,
-            evidence: expired.slice(0, 5).map((s) => `«${s.shop}» (${arNum(s.bookings_30)} حجز/٣٠ي، ${arNum(s.active_deals)} عرض نشط)`).join(' • '),
+            title: `${admNum(expired.length)} تاجر انتهى اشتراكه ولم يجدّد`,
+            evidence: expired.slice(0, 5).map((s) => `«${s.shop}» (${admNum(s.bookings_30)} حجز/٣٠ي، ${admNum(s.active_deals)} عرض نشط)`).join(' • '),
             why: dominantWhy,
             fix: [
                 'أرسل لكل واحد توصيته الجاهزة من بطاقته (سبب ضعفه بالضبط) قبل عرض أي خصم.',
-                'قدّم «خصم عودة» مؤقتاً من لوحة البائعين لمن كانت حجوزاته ضعيفة رغم نشاطه.',
+                'قدّم «خصم عودة» مؤقتاً من شاشة التجّار لمن كانت حجوزاته ضعيفة رغم نشاطه.',
                 'من توقف عن النشر: أرسل قالب «تنشيط متجر خامل» من الإرسال المستهدف.',
             ],
             impact: 'استرجاع تاجر قائم أرخص ٥ أضعاف من استقطاب جديد — كل تاجر يعود = إيراد شهري مستمر.',
@@ -314,11 +318,11 @@ const buildDiagnosis = (
         items.push({
             id: 'dg-seller-cancel', severity: 'critical', icon: '⛔',
             title: 'تجار يلغون حجوزات عملائهم بأنفسهم',
-            evidence: selfCancelers.map((s) => `«${s.shop}» ألغى ${arNum(Number(s.c_seller))} حجزاً`).join(' • '),
+            evidence: selfCancelers.map((s) => `«${s.shop}» ألغى ${admNum(Number(s.c_seller))} حجزاً`).join(' • '),
             why: 'السلعة غير متوفرة فعلاً وقت وصول العميل (كمية وهمية أو عرض شكلي) — هذا أسرع طريق لفقدان ثقة المشترين.',
             fix: [
                 'أرسل تنبيهاً مباشراً لهؤلاء التجار من الإرسال المستهدف (فلتر «الأكثر إلغاءً من التاجر» في راصد الأسوأ).',
-                'راقبهم أسبوعين — التكرار يستحق إنذاراً رسمياً من تبويب الإنذارات.',
+                'راقبهم أسبوعين — التكرار يستحق إنذاراً رسمياً من شاشة الإنذارات.',
                 'وجّههم لاستخدام «الكمية المحدودة» الفعلية بدل أرقام مبالغ فيها.',
             ],
             impact: 'كل إلغاء من تاجر = مشترٍ غالباً لن يعود — وقف هذا النزيف يرفع الاحتفاظ مباشرة.',
@@ -331,18 +335,18 @@ const buildDiagnosis = (
         penalties.push({ label: 'عدم استلام', pts: 8 });
         items.push({
             id: 'dg-noshow', severity: 'warn', icon: '⏱',
-            title: `${arNum(sysCanc)} حجزاً ماتت بانتهاء المهلة دون استلام`,
+            title: `${admNum(sysCanc)} حجزاً ماتت بانتهاء المهلة دون استلام`,
             evidence: `${Math.round((sysCanc / Math.max(1, b)) * 100)}٪ من حجوزات الفترة انتهت تلقائياً.`,
             why: 'المشتري يحجز بحماس ثم ينسى أو يستصعب الوصول — أو مدة التحضير لدى التاجر أطول من صبره.',
             fix: [
-                'رسائل التذكير قبل انتهاء المهلة تعمل — راجع نصها وتوقيتها في «الإشعارات والرسائل».',
+                'رسائل التذكير قبل انتهاء المهلة تعمل — راجع نصها وتوقيتها في «الإشعارات والبريد».',
                 'شجّع التجار على مدد تحضير واقعية قصيرة (توصية جاهزة من بطاقاتهم).',
             ],
             impact: 'كل حجز يُستلم بدل أن يموت = مبيعة حقيقية وتقييم وثقة.',
         });
     }
 
-    // ٤) تركّز خطير: المنصة تقف على متجر/مدينة واحدة
+    // ٤) تركّز خطير: المنصة تقف على متجر واحد
     const byStore = (fn?.by_store || []) as any[];
     const topStore = [...byStore].sort((a, c) => Number(c.bookings) - Number(a.bookings))[0];
     if (topStore && b >= 10 && Number(topStore.bookings) / b > 0.6) {
@@ -350,11 +354,11 @@ const buildDiagnosis = (
         items.push({
             id: 'dg-concentration', severity: 'warn', icon: '🎯',
             title: `«${topStore.shop}» وحده يمثل ${Math.round((Number(topStore.bookings) / b) * 100)}٪ من كل الحجوزات`,
-            evidence: `${arNum(Number(topStore.bookings))} من أصل ${arNum(b)} حجزاً في الفترة.`,
+            evidence: `${admNum(Number(topStore.bookings))} من أصل ${admNum(b)} حجزاً في الفترة.`,
             why: 'الاعتماد على متجر واحد هشّ — لو توقف أو غادر تنهار أرقام المنصة كلها.',
             fix: [
-                'كثّف استقطاب تجار في المدن والأقسام ذات العلامة «⚡» و«🔥» (الطلب جاهز).',
-                'استخدم خطة التسويق أدناه — هدفك: لا يتجاوز أي متجر ٣٠٪ من الحجوزات.',
+                'كثّف استقطاب تجار في المدن والأقسام الموسومة «⚡ فرصة» في لوحة «أين الفرصة؟».',
+                'استخدم خطة النمو والتسويق أدناه — هدفك: لا يتجاوز أي متجر ٣٠٪ من الحجوزات.',
             ],
             impact: 'توزيع أوسع = نمو أثبت وإيراد اشتراكات أعلى.',
         });
@@ -364,12 +368,12 @@ const buildDiagnosis = (
     const hungryCats = ((p2?.cat_engagement || []) as any[]).filter((c) => Number(c.bookings_30) > 0 && Number(c.active_deals) === 0);
     if (hungryCats.length > 0) {
         items.push({
-            id: 'dg-hungry-cats', severity: 'warn', icon: '🔥',
-            title: `${arNum(hungryCats.length)} قسم عليه طلب حقيقي بلا أي عرض نشط الآن`,
-            evidence: hungryCats.map((c) => `${catLabel(c.category)} (${arNum(Number(c.bookings_30))} حجزاً سابقاً)`).join(' • '),
+            id: 'dg-hungry-cats', severity: 'warn', icon: '⚡',
+            title: `${admNum(hungryCats.length)} قسم عليه طلب حقيقي بلا أي عرض نشط الآن`,
+            evidence: hungryCats.map((c) => `${catLabel(c.category)} (${admNum(Number(c.bookings_30))} حجزاً سابقاً)`).join(' • '),
             why: 'مشترون جرّبوا وحجزوا في هذه الأقسام ثم اختفى المعروض — طلب مثبت بالمال يضيع يومياً.',
             fix: [
-                'استقطب تاجراً واحداً على الأقل لكل قسم منها (نص الإقناع جاهز في خطة التسويق).',
+                'استقطب تاجراً واحداً على الأقل لكل قسم منها (نص الإقناع جاهز في خطة النمو والتسويق).',
                 'اسأل تجارك الحاليين القريبين من هذه الأقسام إضافة عروض فيها.',
             ],
             impact: 'أول تاجر في قسم جائع يحصد كل طلبه — وأسرع نمو لأرقامك.',
@@ -387,17 +391,17 @@ const buildDiagnosis = (
             items.push({
                 id: 'dg-retention', severity: 'warn', icon: '🔁',
                 title: `فقط ${Math.round(rr * 100)}٪ من المشترين يعودون لحجز ثانٍ`,
-                evidence: `${arNum(retBack)} عادوا من أصل ${arNum(retTot)} مشترياً جرّبوا الحجز.`,
+                evidence: `${admNum(retBack)} عادوا من أصل ${admNum(retTot)} مشترياً جرّبوا الحجز (التفصيل بالكوهورت في «التحليلات»).`,
                 why: 'التجربة الأولى لا تخلق عادة — غالباً لقلة العروض الجديدة أو غياب سبب للعودة.',
                 fix: [
-                    'مسابقة شهرية بجائزة (تبويب المسابقات + إشعار تلقائي) — أقوى أداة عودة.',
-                    'حملة أسبوعية «جديد هذا الأسبوع في مدينتك» من الإشعارات والرسائل.',
+                    'مسابقة شهرية بجائزة (شاشة المسابقات + إشعار تلقائي) — أقوى أداة عودة.',
+                    'حملة أسبوعية «جديد هذا الأسبوع في مدينتك» من «الإشعارات والبريد».',
                     'شجّع المتابعة: من يتابع متجراً يصله كل عرض جديد تلقائياً.',
                 ],
                 impact: 'رفع العودة ١٠٪ يضاعف الحجوزات بلا ريال تسويق واحد.',
             });
         } else if (rr >= 0.4) {
-            items.push({ id: 'dg-retention-good', severity: 'good', icon: '🔁', title: `ولاء ممتاز: ${Math.round(rr * 100)}٪ من المشترين يعودون`, evidence: `${arNum(retBack)} من ${arNum(retTot)} عادوا لحجز جديد.` });
+            items.push({ id: 'dg-retention-good', severity: 'good', icon: '🔁', title: `ولاء ممتاز: ${Math.round(rr * 100)}٪ من المشترين يعودون`, evidence: `${admNum(retBack)} من ${admNum(retTot)} عادوا لحجز جديد.` });
         }
     }
 
@@ -413,7 +417,7 @@ const buildDiagnosis = (
                 evidence: `${l2.mon} و${l1.mon}: صفر تسجيلات جديدة.`,
                 why: 'لا قنوات اكتساب نشطة حالياً — المنصة تعيش على مستخدميها الحاليين فقط.',
                 fix: [
-                    'نفّذ خطوة واحدة من «خطة التسويق» أسبوعياً (ابدأ بمجموعات واتساب مدينتك الأقوى).',
+                    'نفّذ خطوة واحدة من «خطة النمو والتسويق» أسبوعياً (ابدأ بمجموعات واتساب مدينتك الأقوى).',
                     'فعّل باركود الدعوة: اطلب من كل تاجر تعليقه عند الكاشير هذا الأسبوع.',
                 ],
                 impact: 'قناة اكتساب واحدة منتظمة تكسر الركود خلال أسبوعين.',
@@ -421,7 +425,7 @@ const buildDiagnosis = (
         }
     }
 
-    // ٨) دمج قواعد الرؤى السابقة (تجديد، تحويل، جودة صور، فرص مدن...) بلا تكرار
+    // ٨) دمج قواعد الرؤى (تجديد، تحويل، جودة صور...) بلا تكرار
     for (const ins of buildInsights(d)) {
         if (items.some((x) => x.id === 'dg-churn' && ins.id === 'churn-now')) continue;
         items.push({
@@ -443,53 +447,223 @@ const buildDiagnosis = (
     return { health, weakest, items };
 };
 
-// v12.39 — التقويم الموسمي السعودي لخطة النمو (إرشادي ثابت + بياناتك تحدد ذروتك الفعلية)
-const SAUDI_SEASONS: { icon: string; name: string; when: string; tip: string }[] = [
-    { icon: '🌙', name: 'رمضان والعيد', when: 'رمضان القادم يبدأ تقريباً فبراير ٢٠٢٧ (يتقدم ~١١ يوماً كل سنة)', tip: 'أقوى موسم تخفيضات في السعودية — جهّز التجار قبله بأسبوعين: عروض سحور/عيديات/ملابس عيد.' },
-    { icon: '🎒', name: 'العودة للمدارس', when: 'منتصف أغسطس - أول سبتمبر', tip: 'قرطاسية، ملابس أطفال، أحذية — استقطب متاجر هذه الأصناف قبلها بشهر.' },
-    { icon: '🇸🇦', name: 'اليوم الوطني', when: '٢٣ سبتمبر', tip: 'خصومات وطنية ضخمة متوقعة من المشترين — نظّم حملة «عروض اليوم الوطني» ومسابقة.' },
-    { icon: '🏜', name: 'يوم التأسيس', when: '٢٢ فبراير', tip: 'موسم خصومات صاعد — فرصة لحملة بنرات مبكرة قبل المنافسين.' },
-    { icon: '🛍', name: 'الجمعة البيضاء', when: 'نهاية نوفمبر', tip: 'ذروة التسوق السنوية — افتح باب «عروض الجمعة البيضاء» وشجّع خصومات ٥٠٪+.' },
-    { icon: '☀️', name: 'إجازة الصيف', when: 'يونيو - أغسطس', tip: 'نشاط المولات يرتفع مساءً — وجّه التجار للنشر قبل المغرب وتمديد ساعات العمل.' },
-];
+// ═══════════════════════════════════════════════════════════════════════════
+// مكوّنات عرض صغيرة
+// ═══════════════════════════════════════════════════════════════════════════
 
-// ─── مكوّنات عرض صغيرة ──────────────────────────────────────────────────────
-const SEV_STYLE: Record<Insight['severity'], { bg: string; border: string }> = {
-    critical: { bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.45)' },
-    warn:     { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.45)' },
-    good:     { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.4)' },
-    info:     { bg: 'var(--card-bg)',        border: 'var(--border-color)' },
+/** أعمدة SVG بسيطة (بلا مكتبات) — بقي منها رسمان: الموسميّة والاتجاه اليومي. */
+const Bars: React.FC<{ data: { label: string; n: number }[]; color?: string; height?: number }> = memo(
+    ({ data, color = 'var(--adm-accent)', height = 100 }) => {
+        const max = Math.max(1, ...data.map((d) => d.n));
+        const bw = 100 / Math.max(1, data.length);
+        return (
+            <svg viewBox={`0 0 100 ${height / 2 + 14}`} style={{ width: '100%', direction: 'ltr' }} preserveAspectRatio="none" role="img">
+                {data.map((d, i) => {
+                    const h = (d.n / max) * (height / 2 - 6);
+                    return (
+                        <g key={i}>
+                            <rect x={i * bw + bw * 0.15} y={height / 2 - h} width={bw * 0.7} height={Math.max(h, d.n > 0 ? 1 : 0)} rx={1} fill={color} opacity={d.n === max ? 1 : 0.5} />
+                            <text x={i * bw + bw / 2} y={height / 2 + 8} fontSize={2.8} textAnchor="middle" fill="var(--adm-fg-3)">{d.label}</text>
+                        </g>
+                    );
+                })}
+            </svg>
+        );
+    },
+);
+Bars.displayName = 'Bars';
+
+/** سطرٌ مضغوط: اسمٌ على اليمين وأرقامٌ على اليسار — بدل أحد عشر تنسيقاً. */
+const MiniRow = memo<{ label: React.ReactNode; value: React.ReactNode }>(({ label, value }) => (
+    <div style={{
+        display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center',
+        fontSize: '.78rem', padding: '5px 0', borderBottom: '1px solid var(--adm-border)',
+    }}>
+        <span style={{ fontWeight: 700, color: 'var(--adm-fg)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ color: 'var(--adm-fg-2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{value}</span>
+    </div>
+));
+MiniRow.displayName = 'MiniRow';
+
+/** بطاقة تشخيص: الدليل ← مكمن الخلل ← العلاج ← الأثر. */
+const DiagnosisCard = memo<{ dg: Diagnosis }>(({ dg }) => {
+    const tone = TONE_OF[dg.severity];
+    return (
+        <div style={{
+            borderRadius: 'var(--adm-r)', padding: '14px 15px',
+            background: 'var(--adm-surface)',
+            border: '1px solid var(--adm-border)',
+            borderInlineStart: `4px solid var(--adm-${tone}-fg)`,
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span aria-hidden="true">{dg.icon}</span>
+                <span style={{ fontWeight: 800, fontSize: '.92rem', color: 'var(--adm-fg)' }}>{dg.title}</span>
+            </div>
+            <p style={{ margin: '7px 0 0', fontSize: '.8rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                <b style={{ color: 'var(--adm-fg)' }}>الدليل:</b> {dg.evidence}
+            </p>
+            {dg.why && (
+                <p style={{ margin: '5px 0 0', fontSize: '.8rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                    <b style={{ color: 'var(--adm-fg)' }}>مكمن الخلل:</b> {dg.why}
+                </p>
+            )}
+            {dg.fix && dg.fix.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                    <b style={{ fontSize: '.8rem', color: 'var(--adm-fg)' }}>العلاج:</b>
+                    <ol style={{ margin: '4px 0 0', paddingInlineStart: 18, fontSize: '.8rem', lineHeight: 1.85, color: 'var(--adm-fg-2)' }}>
+                        {dg.fix.map((s, i) => <li key={i}>{s}</li>)}
+                    </ol>
+                </div>
+            )}
+            {dg.impact && (
+                <p style={{ margin: '8px 0 0', fontSize: '.76rem', lineHeight: 1.7, color: 'var(--adm-ok-fg)', fontWeight: 700 }}>
+                    الأثر المتوقع: <span style={{ fontWeight: 500 }}>{dg.impact}</span>
+                </p>
+            )}
+        </div>
+    );
+});
+DiagnosisCard.displayName = 'DiagnosisCard';
+
+const noteStyle: React.CSSProperties = { margin: '10px 0 0', fontSize: '.75rem', lineHeight: 1.8, color: 'var(--adm-fg-3)' };
+const panelStyle: React.CSSProperties = {
+    background: 'var(--adm-surface)', border: '1px solid var(--adm-border)',
+    borderRadius: 'var(--adm-r-sm)', padding: '10px 12px',
+};
+const softPanelStyle: React.CSSProperties = { background: 'var(--adm-surface-2)', borderRadius: 'var(--adm-r-sm)', padding: '11px 13px' };
+const panelTitleStyle: React.CSSProperties = { fontWeight: 800, fontSize: '.78rem', color: 'var(--adm-fg)', marginBottom: 5 };
+const panelBodyStyle: React.CSSProperties = { fontSize: '.78rem', color: 'var(--adm-fg-2)', lineHeight: 1.8 };
+const subTitleStyle: React.CSSProperties = { fontWeight: 800, fontSize: '.82rem', color: 'var(--adm-fg)', marginBottom: 7 };
+const areaStyle: React.CSSProperties = {
+    width: '100%', padding: '11px 12px', fontSize: '.82rem', lineHeight: 1.85, fontWeight: 600,
+    borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+    background: 'var(--adm-surface-2)', color: 'var(--adm-fg)', resize: 'vertical',
+};
+const checkBoxStyle: React.CSSProperties = { width: 16, height: 16, accentColor: 'var(--adm-accent)' };
+const checkStyle: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: '.8rem',
+    fontWeight: 700, color: 'var(--adm-fg)', cursor: 'pointer',
+};
+const copyBoxStyle: React.CSSProperties = {
+    marginTop: 9, padding: '9px 11px', borderRadius: 'var(--adm-r-sm)',
+    border: '1px dashed var(--adm-border-strong)', background: 'var(--adm-surface)',
+    color: 'var(--adm-fg)', fontSize: '.78rem', lineHeight: 1.85, userSelect: 'all',
 };
 
-const Tile: React.FC<{ icon: string; label: string; value: string; sub?: string }> = ({ icon, label, value, sub }) => (
-    <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-3 text-center">
-        <div className="text-xl">{icon}</div>
-        <div className="text-lg font-black text-[var(--text-primary)] mt-1 tabular-nums">{value}</div>
-        <div className="text-[11px] font-bold text-[var(--text-secondary)]">{label}</div>
-        {sub && <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">{sub}</div>}
-    </div>
-);
-
-/** أعمدة SVG بسيطة (بدون مكتبات) — تُستخدم للساعات والأيام والأشهر. */
-const Bars: React.FC<{ data: { label: string; n: number }[]; color?: string; height?: number }> = ({ data, color = '#10b981', height = 120 }) => {
-    const max = Math.max(1, ...data.map((d) => d.n));
-    const bw = 100 / Math.max(1, data.length);
+/**
+ * خريطة الأسبوع (يوم × ساعة) — **التمثيل الوحيد الغنيّ للذروة** في الشاشة.
+ * كانت إلى جانبها أربعة رسومٍ أخرى تقول الشيء نفسه بتفصيلٍ أقلّ.
+ */
+const WeekHeatmap = memo<{
+    cells: any[];
+    activeDow: number | 'all';
+    onPick: (dow: number, h: number) => void;
+}>(({ cells, activeDow, onPick }) => {
+    const hm = new Map<string, number>(cells.map((c) => [`${c.dow}-${c.h}`, Number(c.n)]));
+    const maxN = Math.max(1, ...cells.map((c) => Number(c.n)));
     return (
-        <svg viewBox={`0 0 100 ${height / 2 + 14}`} className="w-full" style={{ direction: 'ltr' }} preserveAspectRatio="none" role="img">
-            {data.map((d, i) => {
-                const h = (d.n / max) * (height / 2 - 6);
-                return (
-                    <g key={i}>
-                        <rect x={i * bw + bw * 0.15} y={height / 2 - h} width={bw * 0.7} height={Math.max(h, d.n > 0 ? 1 : 0)} rx={1} fill={color} opacity={d.n === max ? 1 : 0.55} />
-                        <text x={i * bw + bw / 2} y={height / 2 + 8} fontSize={2.8} textAnchor="middle" fill="var(--text-secondary)">{d.label}</text>
-                    </g>
-                );
-            })}
-        </svg>
+        <div className="adm-table-wrap" style={{ direction: 'ltr' }}>
+            <div style={{ display: 'inline-block', minWidth: '100%' }}>
+                {Array.from({ length: 7 }, (_, dow) => (
+                    <div key={dow} style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+                        <span style={{ width: 52, flexShrink: 0, direction: 'rtl', textAlign: 'right', paddingInlineEnd: 4, fontSize: '.62rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>
+                            {DOW_AR[dow]}
+                        </span>
+                        {Array.from({ length: 24 }, (_, h) => {
+                            const n = hm.get(`${dow}-${h}`) || 0;
+                            const active = activeDow === 'all' || activeDow === dow;
+                            return (
+                                <button
+                                    key={h} type="button" onClick={() => onPick(dow, h)} className="adm-focusable"
+                                    title={`${DOW_AR[dow]} ${fmtHour(h)} — ${n} حجز`}
+                                    style={{
+                                        flex: 1, minWidth: 10, height: 16, borderRadius: 3, border: 'none', cursor: 'pointer',
+                                        background: n === 0 ? 'var(--adm-surface-3)' : 'var(--adm-accent)',
+                                        opacity: n === 0 ? (active ? 1 : .45) : (active ? .2 + .8 * (n / maxN) : .3),
+                                    }}
+                                />
+                            );
+                        })}
+                    </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <span style={{ width: 52, flexShrink: 0 }} />
+                    {Array.from({ length: 24 }, (_, h) => (
+                        <span key={h} style={{ flex: 1, minWidth: 10, textAlign: 'center', fontSize: '.55rem', color: 'var(--adm-fg-3)' }}>
+                            {h % 3 === 0 ? h : ''}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+});
+WeekHeatmap.displayName = 'WeekHeatmap';
+
+/** لوحة التاجر المفتوحة: تقريره، بطاقة المنافسة **الواحدة**، ثم التوصية. */
+const SellerPanel: React.FC<{
+    s: SellerRow; report: any | null; competitors: any | null; loading: boolean;
+    draft: string; onDraft: (v: string) => void;
+    email: boolean; onEmail: (v: boolean) => void;
+    sending: boolean; onSend: () => void; onRetry: () => void;
+}> = ({ s, report, competitors, loading, draft, onDraft, email, onEmail, sending, onSend, onRetry }) => {
+    if (loading) return <AdmSkeleton rows={2} height={46} />;
+    if (!report) return <AdmError message="تعذّر تحميل تقرير هذا التاجر." onRetry={onRetry} />;
+    const bestHour: HourRow | null = report.cat_city_hours?.length
+        ? [...report.cat_city_hours].sort((a: HourRow, b: HourRow) => b.n - a.n)[0] : null;
+    return (
+        <>
+            <div style={panelStyle}>
+                <div style={panelTitleStyle}>⏰ أفضل ساعة لتصنيفه في مدينته</div>
+                <div style={panelBodyStyle}>
+                    {bestHour ? `${fmtHour(bestHour.h)} (${catLabel(report.top_category)})` : 'لا بيانات كافية بعد'}
+                </div>
+            </div>
+
+            {/* بطاقةٌ واحدة للمنافسة — كانتا بطاقتين متجاورتين تقولان الشيء نفسه
+                بمستويَي تفصيل: متوسط المنافسين، ثم المنافسون المباشرون. */}
+            <div style={panelStyle}>
+                <div style={panelTitleStyle}>
+                    ⚔️ موقعه بين منافسيه {competitors?.city ? `(${competitors.city} / ${catLabel(competitors.category)})` : '(نفس المدينة والتصنيف)'}
+                </div>
+                <MiniRow label={<b>{s.shop} (هو)</b>} value={`📦 ${admNum(s.bookings_30)}/٣٠ي • 🏷 ${admNum(s.active_deals)} • ⭐ ${s.rating_avg ?? '—'}`} />
+                <MiniRow label="متوسط منافسيه" value={`📦 ${report.cat_city_avg_bookings_30 ?? '—'}/٣٠ي`} />
+                {((competitors?.competitors || []) as any[]).map((c: any) => (
+                    <MiniRow key={c.id} label={c.shop}
+                        value={`📦 ${admNum(c.bookings_30)}/٣٠ي • 🏷 ${admNum(c.active_deals)} • ⭐ ${c.rating_avg ?? '—'} • 👁 ${admNum(c.views_30)}`} />
+                ))}
+                <p style={noteStyle}>إن كان أضعف منهم فالتوصية أدناه هي الفرق.</p>
+            </div>
+
+            {report.top_deal?.item_name && (
+                <div style={panelStyle}>
+                    <div style={panelTitleStyle}>🏆 أفضل منتجاته</div>
+                    <div style={panelBodyStyle}>«{report.top_deal.item_name}» — {admNum(report.top_deal.bookings)} حجزاً، {admNum(report.top_deal.views)} مشاهدة</div>
+                </div>
+            )}
+
+            <div>
+                <div style={panelTitleStyle}>📨 التوصية المقترحة — عدّلها كما تريد، ولن تُرسل إلا بضغطتك</div>
+                <textarea value={draft} onChange={(e) => onDraft(e.target.value)} rows={7}
+                    className="adm-focusable" style={areaStyle} aria-label={`نص التوصية لـ${s.shop}`} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 9, flexWrap: 'wrap' }}>
+                    <label style={checkStyle}>
+                        <input type="checkbox" checked={email} onChange={(e) => onEmail(e.target.checked)} style={checkBoxStyle} />
+                        📧 أرسل نسخة بريدية أيضاً
+                    </label>
+                    <span style={{ flex: 1 }} />
+                    <AdmButton variant="primary" onClick={onSend} disabled={sending || !draft.trim()}>
+                        {sending ? '⏳ جاري الإرسال…' : `📨 إرسال التوصية لـ«${s.shop}»`}
+                    </AdmButton>
+                </div>
+            </div>
+        </>
     );
 };
 
-// ─── المكوّن الرئيسي ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// المكوّن الرئيسي
+// ═══════════════════════════════════════════════════════════════════════════
 const AdminAnalyst: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [days, setDays] = useState(30);
@@ -501,19 +675,18 @@ const AdminAnalyst: React.FC = () => {
     const [tipDraft, setTipDraft] = useState('');
     const [tipEmail, setTipEmail] = useState(false);
     const [sending, setSending] = useState(false);
-    // v12.39 — فلاتر (مدينة/تصنيف/حالة) تُطبَّق على قائمة الصحة وعلى الإرسال المستهدف
+    // مرشّحات (مدينة/تصنيف/حالة) تُطبَّق على قائمة الصحة وعلى الإرسال المستهدف
     const [fCity, setFCity] = useState('all');
     const [fCat, setFCat] = useState('all');
     const [fStatus, setFStatus] = useState<'all' | 'weak' | 'risk' | 'expired' | 'nodeals'>('all');
-    // v12.39 — الإرسال الجماعي المستهدف (بموافقة ناصر دائماً)
+    // الإرسال الجماعي المستهدف (بموافقة ناصر دائماً)
     const [bulkMsg, setBulkMsg] = useState('');
     const [bulkEmail, setBulkEmail] = useState(false);
     const [bulkSending, setBulkSending] = useState(false);
     const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-    // v12.40 — تفاعل الأقسام + البحث + المستكشف + منافسو التاجر المفتوح
     const [pulse2, setPulse2] = useState<any | null>(null);
-    // v12.41 — القمع والإلغاءات + فلاتر «الأسوأ» التنفيذية (ناصر يحدد الحد)
     const [funnelData, setFunnelData] = useState<any | null>(null);
+    // راصد الأسوأ: أنت تحدد البعد والمقياس والحد
     const [worstDim, setWorstDim] = useState<'by_city' | 'by_category' | 'by_store'>('by_city');
     const [worstMetric, setWorstMetric] = useState<'cancel_rate' | 'least_bookings' | 'seller_cancels'>('cancel_rate');
     const [worstMin, setWorstMin] = useState(3);
@@ -521,6 +694,9 @@ const AdminAnalyst: React.FC = () => {
     const [mxCat, setMxCat] = useState<string>('all');
     const [matrix, setMatrix] = useState<any | null>(null);
     const [matrixLoading, setMatrixLoading] = useState(false);
+    /** 🪤 «إعادة المحاولة» بإعادة ضبط نفس المدينة لا تفعل شيئاً — React تتجاهل
+        القيمة المطابقة فلا يعمل التأثير. عدّادٌ صريح هو ما يُعيد الجلب فعلاً. */
+    const [matrixNonce, setMatrixNonce] = useState(0);
     const [competitors, setCompetitors] = useState<any | null>(null);
 
     const load = useCallback(async () => {
@@ -544,11 +720,11 @@ const AdminAnalyst: React.FC = () => {
         adminService.getAiMatrix(mxCity === 'all' ? null : mxCity, mxCat === 'all' ? null : mxCat)
             .then((m) => { if (alive) { setMatrix(m); setMatrixLoading(false); } });
         return () => { alive = false; };
-    }, [mxCity, mxCat]);
+    }, [mxCity, mxCat, matrixNonce]);
 
-    // v12.42 — العقل المشخّص الموحّد (يحل محل الرؤى المتفرقة)
     const diagnosis = useMemo(() => buildDiagnosis(data, pulse2, funnelData), [data, pulse2, funnelData]);
-    // v12.43 — «المحلل المخصص»: شريحة حرة يحددها ناصر يدوياً وتتحلل تلقائياً
+
+    // «المحلل المخصص»: شريحة حرة يحددها ناصر يدوياً وتتحلل تلقائياً
     const isoDay = (offset: number) => {
         const dt = new Date(Date.now() + offset * 86400000);
         return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
@@ -578,7 +754,7 @@ const AdminAnalyst: React.FC = () => {
         return () => { alive = false; clearTimeout(tm); };
     }, [cuStart, cuEnd, cuFrom, cuTo, cuDow, cuCity, cuCat]);
 
-    // v12.42 — التحكم الكامل بالساعات
+    // التحكم الكامل بالساعات (خريطة ٧×٢٤ + تحليل مدى تختاره)
     const [hrFrom, setHrFrom] = useState(16);
     const [hrTo, setHrTo] = useState(22);
     const [hrDow, setHrDow] = useState<number | 'all'>('all');
@@ -591,14 +767,20 @@ const AdminAnalyst: React.FC = () => {
             .then((h) => { if (alive) { setHoursData(h); setHoursLoading(false); } });
         return () => { alive = false; };
     }, [hrFrom, hrTo, hrDow, days]);
+
     const sellers: SellerRow[] = useMemo(() => {
         const list: SellerRow[] = (data?.sellers || []).map((s: SellerRow) => s);
         return list.sort((a, b) => sellerRisk(b).score - sellerRisk(a).score);
     }, [data]);
 
-    // v12.39 — خيارات الفلاتر + القائمة المفلترة (تُغذي الصحة والإرسال المستهدف)
-    const cityOptions = useMemo(() => Array.from(new Set(sellers.map((s) => s.city).filter(Boolean))) as string[], [sellers]);
-    const catOptions = useMemo(() => Array.from(new Set(sellers.map((s) => s.top_category).filter(Boolean))) as string[], [sellers]);
+    const cityOptions = useMemo(
+        () => [{ value: 'all', label: 'كل المدن' }, ...Array.from(new Set(sellers.map((s) => s.city).filter(Boolean) as string[])).map((c) => ({ value: c, label: c }))],
+        [sellers],
+    );
+    const catOptions = useMemo(
+        () => [{ value: 'all', label: 'كل التصنيفات' }, ...Array.from(new Set(sellers.map((s) => s.top_category).filter(Boolean) as string[])).map((c) => ({ value: c, label: catLabel(c) }))],
+        [sellers],
+    );
     const filteredSellers = useMemo(() => sellers.filter((s) => {
         if (fCity !== 'all' && s.city !== fCity) return false;
         if (fCat !== 'all' && s.top_category !== fCat) return false;
@@ -610,6 +792,59 @@ const AdminAnalyst: React.FC = () => {
         if (fStatus === 'nodeals' && s.active_deals !== 0) return false;
         return true;
     }), [sellers, fCity, fCat, fStatus]);
+
+    // خيارات المدن/الأقسام للوحات الاستكشاف (من بيانات المنصّة لا من التجار)
+    const geoCityOptions = useMemo(
+        () => [{ value: 'all', label: 'كل المدن' }, ...((data?.cities || []) as GeoRow[]).filter((c) => c.city && c.city !== 'غير محدد').map((c) => ({ value: c.city!, label: c.city! }))],
+        [data],
+    );
+    const geoCatOptions = useMemo(
+        () => [{ value: 'all', label: 'كل الأقسام' }, ...((data?.categories || []) as GeoRow[]).filter((c) => c.category).map((c) => ({ value: c.category!, label: catLabel(c.category) }))],
+        [data],
+    );
+
+    // ── أين الفرصة؟ — محورٌ واحد لكل بُعد، ووسمٌ واحد «⚡ فرصة» ───────────────
+    /** المدن: **توصية فقط** — الجداول الجغرافية مكانها «جمهور المدن». */
+    const cityOpportunities = useMemo(() => {
+        const cities = (data?.cities || []) as GeoRow[];
+        const supply = new Map(cities.map((c) => [c.city, Number(c.deals) || 0]));
+        const names = new Set<string>();
+        cities.forEach((c) => { if (c.city && c.city !== 'غير محدد' && c.bookings >= 5 && c.deals <= 2) names.add(c.city); });
+        ((data?.buyers_by_city || []) as BuyerCityRow[]).forEach((b) => {
+            if (b.city && b.city !== 'غير محدد' && b.buyers >= 2 && (supply.get(b.city) ?? 0) <= 1) names.add(b.city);
+        });
+        return Array.from(names);
+    }, [data]);
+
+    /** التصنيفات: تفاعل ٣٠ يوماً (المصدر الأغنى) مدموجاً بطلب/عرض كل قسم. */
+    const catRows = useMemo(() => {
+        const eng = new Map<string, any>(((pulse2?.cat_engagement || []) as any[]).map((c) => [String(c.category), c]));
+        const base = new Map<string, GeoRow>(((data?.categories || []) as GeoRow[]).map((c) => [String(c.category), c]));
+        return Array.from(new Set([...eng.keys(), ...base.keys()])).map((id) => {
+            const e = eng.get(id); const g = base.get(id);
+            const deals = Number(e?.active_deals ?? g?.deals ?? 0);
+            const b30 = Number(e?.bookings_30 ?? 0);
+            const bAll = Number(g?.bookings ?? 0);
+            const views = Number(e?.views_30 || 0);
+            const clicks = Number(e?.clicks_30 || 0);
+            const engagement = views + clicks;
+            const verdict: { text: string; tone: Tone } =
+                (b30 > 0 && deals === 0) || (bAll >= 5 && deals <= 2)
+                    ? { text: '⚡ فرصة', tone: 'warn' }
+                    : engagement >= 10 && b30 / Math.max(engagement, 1) < 0.05
+                        ? { text: 'يُشاهَد ولا يُحجز', tone: 'info' }
+                        : b30 >= 5 ? { text: 'رائج', tone: 'ok' } : { text: 'هادئ', tone: 'neutral' };
+            return { id, deals, b30, bAll, views, clicks, verdict };
+        }).sort((a, b) => (b.b30 + b.bAll) - (a.b30 + a.bAll));
+    }, [data, pulse2]);
+
+    /** المواقع (المولات والأسواق): طلبٌ مقابل عرض. */
+    const mallRows = useMemo(() => ((data?.malls || []) as GeoRow[]).map((m) => ({
+        name: m.mall || 'غير محدد',
+        bookings: Number(m.bookings) || 0,
+        deals: Number(m.deals) || 0,
+        opportunity: Number(m.bookings) >= 5 && Number(m.deals) <= 2,
+    })), [data]);
 
     // قوالب رسائل جاهزة للإرسال المستهدف — كلها قابلة للتعديل قبل الإرسال
     const bulkTemplates = useMemo(() => {
@@ -624,21 +859,43 @@ const AdminAnalyst: React.FC = () => {
         ];
     }, [data]);
 
+    /**
+     * 🔴 الجمهور هنا جمهوران لا واحد:
+     *  • بلا أي مرشّح ⇒ «كل التجار» ⇐ **بثٌّ واحد على الخادم**.
+     *  • مع مرشّح ⇒ شريحةٌ لا تعرفها دالّة البثّ (لا مدينة ولا تصنيف ولا حالة)
+     *    ⇐ تبقى الحلقة المفردة، وإلا وصلت الرسالة إلى **كل** التجار بصمت.
+     */
+    const wholeAudience = fCity === 'all' && fCat === 'all' && fStatus === 'all';
+
     const sendBulk = async () => {
         if (bulkSending || !bulkMsg.trim() || filteredSellers.length === 0) return;
+        const title = '💡 رسالة من فريق تاكي';
+        if (wholeAudience) {
+            const ok = await customConfirm(`ستصل هذه الرسالة إلى كل التجار على المنصّة دفعةً واحدة${bulkEmail ? ' + بريد إلكتروني' : ''}. متابعة؟`);
+            if (!ok) return;
+            setBulkSending(true);
+            const r = await adminService.broadcastNotification({
+                titleAr: title, bodyAr: bulkMsg.trim(), audience: 'sellers', email: bulkEmail,
+            });
+            setBulkSending(false);
+            await customAlert(r.success
+                ? `✅ وصلت إلى ${admNum(r.notified)} تاجراً${r.emailed ? ` (و${admNum(r.emailed)} بريداً)` : ''}.`
+                : `❌ تعذّر الإرسال: ${r.error || ''}`);
+            return;
+        }
         const ok = await customConfirm(`سيتم إرسال هذه الرسالة إلى ${filteredSellers.length} تاجراً (${fCity === 'all' ? 'كل المدن' : fCity} / ${fCat === 'all' ? 'كل التصنيفات' : catLabel(fCat)})${bulkEmail ? ' + بريد إلكتروني' : ''}. متابعة؟`);
         if (!ok) return;
         setBulkSending(true);
         setBulkProgress({ done: 0, total: filteredSellers.length });
         let done = 0, failed = 0;
         for (const s of filteredSellers) {
-            const r = await adminService.notifyUser({ userId: s.id, titleAr: '💡 رسالة من فريق تاكي', bodyAr: bulkMsg.trim(), email: bulkEmail });
+            const r = await adminService.notifyUser({ userId: s.id, titleAr: title, bodyAr: bulkMsg.trim(), email: bulkEmail });
             if (r.success) done++; else failed++;
             setBulkProgress({ done: done + failed, total: filteredSellers.length });
         }
         setBulkSending(false);
         setBulkProgress(null);
-        await customAlert(failed === 0 ? `✅ أُرسلت الرسالة لـ${arNum(done)} تاجراً.` : `⚠️ نجح ${arNum(done)} وفشل ${arNum(failed)}.`);
+        await customAlert(failed === 0 ? `✅ أُرسلت الرسالة لـ${admNum(done)} تاجراً.` : `⚠️ نجح ${admNum(done)} وفشل ${admNum(failed)}.`);
     };
 
     const openReport = async (s: SellerRow) => {
@@ -672,931 +929,660 @@ const AdminAnalyst: React.FC = () => {
         else await customAlert('❌ تعذّر الإرسال: ' + (r.error || ''));
     };
 
-    // بيانات الرسوم
-    const hourBars = useMemo(() => {
-        const arr: HourRow[] = data?.peak_hours || [];
-        const map = new Map(arr.map((r) => [r.h, r.n]));
-        return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: map.get(h) || 0 }));
-    }, [data]);
-    const dayBars = useMemo(() => {
-        const arr: DowRow[] = data?.peak_days || [];
-        const map = new Map(arr.map((r) => [r.dow, r.n]));
-        return Array.from({ length: 7 }, (_, i) => ({ label: DOW_AR[i].slice(0, 3), n: map.get(i) || 0 }));
-    }, [data]);
-    const monthBars = useMemo(() => {
-        const arr: MonthRow[] = data?.monthly || [];
-        return arr.map((m) => ({ label: m.mon.slice(5), n: m.bookings }));
-    }, [data]);
-
-    const funnel = data?.funnel || {};
+    // ─── أرقام الخلاصة: **مصدرٌ واحد** (`admin_ai_funnel`) وعرضٌ واحد ─────────
+    const fn = funnelData?.funnel || {};
+    const bookings = Number(fn.bookings) || 0;
+    const completed = Number(fn.completed) || 0;
+    const cancelled = Number(fn.cancelled) || 0;
     const buyers = data?.buyers || {};
-    const topHour: HourRow | null = (data?.peak_hours || []).length
-        ? [...data.peak_hours].sort((a: HourRow, b: HourRow) => b.n - a.n)[0] : null;
+    const peakHours: HourRow[] = useMemo(
+        () => [...((data?.peak_hours || []) as HourRow[])].sort((a, b) => b.n - a.n).slice(0, 3),
+        [data],
+    );
     const renew: RenewRow[] = data?.renewals || [];
     const lastRenew = renew.length ? renew[renew.length - 1] : null;
+    const criticalItem = diagnosis.items.find((i) => i.severity === 'critical');
+    /** نسبةُ رقمٍ من حجوزات الفترة — تُكتب مرّةً وتُقرأ في كل بطاقة. */
+    const shareOfPeriod = (n: number) => (bookings ? `${admNum(Math.round((n / bookings) * 100))}٪ من حجوزات الفترة` : 'لا حجوزات بعد');
+    const healthTone: Tone = diagnosis.health >= 75 ? 'ok' : diagnosis.health >= 50 ? 'warn' : 'bad';
 
-    if (loading) {
-        return <div className="space-y-3">{[0, 1, 2, 3].map((i) => <div key={i} className="h-28 bg-[var(--gray-100)] rounded-2xl animate-pulse" />)}</div>;
-    }
-    if (!data) {
-        return <div className="text-center py-16 text-[var(--text-secondary)]">تعذّر تحميل التحليلات — أعد المحاولة.<div><button onClick={load} className="mt-3 px-4 py-2 rounded-xl bg-emerald-500 text-white font-bold text-sm">🔄 إعادة المحاولة</button></div></div>;
-    }
+    if (loading) return <AdmSkeleton rows={5} height={96} />;
+    if (!data) return <AdmError message="تعذّر تحميل بيانات المحلل — القاعدة لم تُجب." onRetry={load} />;
 
     return (
-        <div dir="rtl" className="space-y-4">
-            {/* الرأس + اختيار الفترة */}
-            <div className="bg-gradient-to-l from-indigo-600 to-violet-700 text-white rounded-3xl p-5">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                        <div className="text-xl font-black">🧠 المحلل الذكي — التجار والسوق</div>
-                        <div className="text-[12px] opacity-90 mt-1 leading-relaxed max-w-xl">
-                            هذا التبويب يحلل <b>التجار وصحة السوق</b>: عزوف التجار وأسبابه، ساعات الذروة، الفرص بالمدن
-                            والتصنيفات، وتوصية جاهزة لكل تاجر <b>لا تُرسل إلا بموافقتك</b>.
-                            (أرقام <b>المشترين</b> في تبويب «جمهور المدن»، والأرقام المالية العامة في «التحليلات».)
-                        </div>
-                        <div className="text-[11px] opacity-80 mt-1.5 font-bold">
-                            ⬅️ الأزرار جانباً تحدد فترة التحليل لكل الأقسام أدناه — واللوحة المخصصة تتبعها تلقائياً.
-                        </div>
-                    </div>
-                    <div className="flex gap-1.5 items-center">
+        <div dir="rtl" style={{ display: 'grid', gap: 14 }}>
+
+            {/* ── فترة التحليل: زرٌّ واحد يحكم كل الأقسام ───────────────────── */}
+            <AdmCard>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>فترة التحليل</span>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {[7, 30, 90].map((d) => (
-                            <button key={d}
-                                onClick={() => {
-                                    // v12.52 — إنهاء «تضارب التواريخ»: الزر يضبط الفترة لكل
-                                    // الأقسام ويُزامن تواريخ اللوحة المخصصة معه فلا يتعارضان.
-                                    setDays(d);
-                                    setCuStart(isoDay(-d));
-                                    setCuEnd(isoDay(0));
-                                }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold ${days === d ? 'bg-white text-indigo-700' : 'bg-white/15 text-white'}`}>
-                                {arNum(d)} يوم
+                            <button key={d} type="button" aria-pressed={days === d} className="adm-focusable"
+                                onClick={() => { setDays(d); setCuStart(isoDay(-d)); setCuEnd(isoDay(0)); }}
+                                style={{
+                                    padding: '6px 13px', fontSize: '.78rem', fontWeight: 800, borderRadius: 999, cursor: 'pointer',
+                                    border: `1px solid ${days === d ? 'transparent' : 'var(--adm-border)'}`,
+                                    background: days === d ? 'var(--adm-accent)' : 'var(--adm-surface-2)',
+                                    color: days === d ? '#ffffff' : 'var(--adm-fg-2)',
+                                }}>
+                                {admNum(d)} يوماً
                             </button>
                         ))}
-                        <button onClick={load} className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-white/15" title="تحديث">🔄</button>
                     </div>
+                    <span style={{ flex: 1 }} />
+                    <AdmButton onClick={load} size="sm" title="إعادة جلب كل الأقسام">🔄 تحديث</AdmButton>
                 </div>
-            </div>
-
-            {/* 🎛 v12.43 — المحلل المخصص: أي تاريخ/ساعة/مدينة/تصنيف يدوياً → تحليل تلقائي */}
-            <section className="bg-[var(--card-bg)] border-2 border-violet-300 rounded-2xl p-4 space-y-3">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🎛 المحلل المخصص — حدد أي شيء وسيتحلل فوراً</h3>
-                <p className="text-[10px] font-bold text-[var(--text-secondary)] leading-relaxed -mt-1.5">
-                    هذه اللوحة <b>تتبع أزرار الفترة في الأعلى تلقائياً</b> (٧/٣٠/٩٠ يوم). وإذا عدّلت أي حقل هنا يدوياً،
-                    فالنتائج داخل هذه اللوحة فقط تتبع اختيارك — بقية الأقسام تبقى على فترة الأزرار العلوية.
+                <p style={{ ...noteStyle, marginTop: 9 }}>
+                    تسري على كل الأقسام، وتُزامِن تواريخ «المحلل المخصّص» معها — فلا يتعارض رقمان.
                 </p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                    <label className="block">
-                        <span className="font-bold text-[var(--text-secondary)] block mb-1">من تاريخ</span>
-                        <input type="date" value={cuStart} max={cuEnd} onChange={(e) => setCuStart(e.target.value)}
-                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none" />
-                    </label>
-                    <label className="block">
-                        <span className="font-bold text-[var(--text-secondary)] block mb-1">إلى تاريخ</span>
-                        <input type="date" value={cuEnd} min={cuStart} onChange={(e) => setCuEnd(e.target.value)}
-                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none" />
-                    </label>
-                    <label className="block">
-                        <span className="font-bold text-[var(--text-secondary)] block mb-1">من الساعة</span>
-                        <select value={cuFrom} onChange={(e) => setCuFrom(Number(e.target.value))}
-                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
-                        </select>
-                    </label>
-                    <label className="block">
-                        <span className="font-bold text-[var(--text-secondary)] block mb-1">إلى الساعة</span>
-                        <select value={cuTo} onChange={(e) => setCuTo(Number(e.target.value))}
-                            className="w-full px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
-                        </select>
-                    </label>
-                    <select value={cuDow === 'all' ? 'all' : String(cuDow)} onChange={(e) => setCuDow(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">📅 كل الأيام</option>
-                        {DOW_AR.map((d0, i) => <option key={i} value={i}>{d0}</option>)}
-                    </select>
-                    <select value={cuCity} onChange={(e) => setCuCity(e.target.value)}
-                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏙 كل المدن</option>
-                        {((data.cities || []) as GeoRow[]).filter((c) => c.city && c.city !== 'غير محدد').map((c) => <option key={c.city} value={c.city}>{c.city}</option>)}
-                    </select>
-                    <select value={cuCat} onChange={(e) => setCuCat(e.target.value)}
-                        className="px-2 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏷 كل الأقسام</option>
-                        {((data.categories || []) as GeoRow[]).filter((c) => c.category).map((c) => <option key={c.category} value={c.category}>{catLabel(c.category)}</option>)}
-                    </select>
-                    <button type="button"
-                        onClick={() => { setCuStart(isoDay(-30)); setCuEnd(isoDay(0)); setCuFrom(0); setCuTo(23); setCuDow('all'); setCuCity('all'); setCuCat('all'); }}
-                        className="px-2 py-2 rounded-lg text-xs font-extrabold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] active:scale-95">
-                        ↺ إعادة الضبط
-                    </button>
-                </div>
+            </AdmCard>
 
-                {cuLoading ? (
-                    <div className="h-24 bg-[var(--gray-100)] rounded-xl animate-pulse" />
-                ) : cuData?.totals ? (() => {
-                    const tt = cuData.totals;
-                    const b = Number(tt.bookings) || 0;
-                    const ok = Number(tt.completed) || 0;
-                    const bad = Number(tt.cancelled) || 0;
-                    const attributed = (Number(tt.cancel_buyer) || 0) + (Number(tt.cancel_seller) || 0) + (Number(tt.cancel_system) || 0);
-                    const domCancel = attributed === 0 ? null
-                        : Number(tt.cancel_seller) >= Number(tt.cancel_buyer) && Number(tt.cancel_seller) >= Number(tt.cancel_system) ? 'التاجر 🏪'
-                        : Number(tt.cancel_system) >= Number(tt.cancel_buyer) ? 'انتهاء المهلة ⏱' : 'المشتري 🛒';
-                    const daily: { d: string; n: number }[] = cuData.daily || [];
-                    const half = Math.floor(daily.length / 2);
-                    const firstHalf = daily.slice(0, half).reduce((a, r) => a + r.n, 0);
-                    const secondHalf = daily.slice(half).reduce((a, r) => a + r.n, 0);
-                    const trend = daily.length < 4 ? null : secondHalf > firstHalf * 1.2 ? '📈 صاعد' : secondHalf < firstHalf * 0.8 ? '📉 هابط' : '➡️ مستقر';
-                    const topStore = (cuData.top_stores || [])[0];
-                    const topCat0 = (cuData.top_categories || [])[0];
-                    const hrs: HourRow[] = cuData.hours || [];
-                    const bestH = hrs.length ? [...hrs].sort((a, c) => c.n - a.n)[0] : null;
-                    return (
-                        <>
-                            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                                <Tile icon="📦" label="حجوزات" value={arNum(b)} sub={`${arNum(Number(tt.qty) || 0)} قطعة`} />
-                                <Tile icon="✅" label="مكتمل" value={arNum(ok)} sub={b ? `${Math.round((ok / b) * 100)}٪` : '—'} />
-                                <Tile icon="🚫" label="ملغى" value={arNum(bad)} sub={b ? `${Math.round((bad / b) * 100)}٪` : '—'} />
-                                <Tile icon="🛒" label="مشترون" value={arNum(Number(tt.buyers) || 0)} />
-                                <Tile icon="🏪" label="تجار مستفيدون" value={arNum(Number(tt.sellers) || 0)} />
-                            </div>
-                            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                                <Tile icon="👁" label="مشاهدات" value={arNum(Number(tt.views) || 0)} />
-                                <Tile icon="👆" label="نقرات" value={arNum(Number(tt.clicks) || 0)} />
-                                <Tile icon="🔎" label="عمليات بحث" value={arNum(Number(tt.searches) || 0)} />
-                                <Tile icon="🏷" label="عروض نُشرت" value={arNum(Number(tt.deals_published) || 0)} />
-                            </div>
-
-                            {daily.length > 1 && (
-                                <div>
-                                    <div className="font-bold text-[11px] text-[var(--text-primary)] mb-1">📈 الاتجاه اليومي للشريحة</div>
-                                    <Bars data={daily.map((r, i) => ({ label: daily.length <= 14 || i % Math.ceil(daily.length / 10) === 0 ? r.d.slice(5) : '', n: r.n }))} color="#8b5cf6" height={80} />
-                                </div>
-                            )}
-                            {hrs.length > 0 && (
-                                <div>
-                                    <div className="font-bold text-[11px] text-[var(--text-primary)] mb-1">⏰ توزيع ساعات الشريحة</div>
-                                    <Bars data={(() => { const m = new Map(hrs.map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#10b981" height={80} />
-                                </div>
-                            )}
-
-                            {/* أقوى عناصر الشريحة */}
-                            <div className="grid md:grid-cols-2 gap-2 text-[11px]">
-                                {([
-                                    ['🏙 المدن', cuData.top_cities], ['🏷 الأقسام', cuData.top_categories],
-                                    ['🏬 المولات', cuData.top_malls], ['🏪 المتاجر', cuData.top_stores],
-                                ] as [string, any[]][]).filter(([, rows]) => (rows || []).length > 0).map(([label, rows]) => (
-                                    <div key={label} className="bg-[var(--body-bg)] rounded-xl p-2.5">
-                                        <div className="font-extrabold text-[var(--text-primary)] mb-1">{label}</div>
-                                        {(rows as any[]).slice(0, 4).map((r, i) => (
-                                            <div key={i} className="flex items-center justify-between text-[var(--text-secondary)]">
-                                                <span className="truncate ml-2">{label === '🏷 الأقسام' ? catLabel(r.name) : r.name}</span>
-                                                <span className="tabular-nums whitespace-nowrap">📦 {arNum(Number(r.n))} • ✅ {arNum(Number(r.ok))} • 🚫 {arNum(Number(r.bad))}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ))}
-                            </div>
-                            {(cuData.top_deals || []).length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                    {(cuData.top_deals as any[]).map((r, i) => (
-                                        <span key={i} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏆 «{r.name}» — {r.shop} ×{arNum(Number(r.n))}</span>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* 🤖 حكم المحلل الآلي على الشريحة */}
-                            <div className="bg-[var(--body-bg)] rounded-xl p-3 text-[11px] leading-relaxed">
-                                <div className="font-extrabold text-[var(--text-primary)] mb-1">🤖 حكم المحلل على هذه الشريحة:</div>
-                                <ul className="pr-4 list-disc text-[var(--text-secondary)] space-y-0.5">
-                                    {b === 0 && <li>لا حجوزات في هذه الشريحة — إن كان فيها مشاهدات/بحث فهي طلب كامن بلا معروض مناسب، وإلا فهي شريحة خاملة لا تستحق ميزانية الآن.</li>}
-                                    {b > 0 && <li>الاكتمال {Math.round((ok / b) * 100)}٪ {ok / b >= 0.7 ? '— صحي ✅' : ok / b >= 0.5 ? '— مقبول، راقبه 👀' : '— ضعيف: راجع مدد التحضير والتذكيرات ⚠️'}.</li>}
-                                    {bad > 0 && <li>الإلغاء {Math.round((bad / b) * 100)}٪{domCancel ? ` — الأكثر إلغاءً هنا: ${domCancel}` : ' — كلها قبل بدء تتبع «من ألغى»'}.</li>}
-                                    {trend && <li>الاتجاه خلال الفترة: {trend}.</li>}
-                                    {bestH && <li>أفضل ساعة في الشريحة: {fmtHour(bestH.h)} ({arNum(bestH.n)} حجزاً) — اجدول حملاتك قبلها بساعة.</li>}
-                                    {topStore && <li>الأقوى هنا: «{topStore.name}» بـ{arNum(Number(topStore.n))} حجزاً{topCat0 ? ` — وأنشط قسم: ${catLabel(topCat0.name)}` : ''}.</li>}
-                                    {b > 0 && Number(tt.sellers) === 1 && <li>⚠️ كل حجوزات الشريحة من تاجر واحد — الشريحة هشة، استقطب منافساً له.</li>}
-                                </ul>
-                            </div>
-                        </>
-                    );
-                })() : <div className="text-[11px] text-[var(--text-secondary)]">تعذّر التحليل — عدّل الفلاتر للمحاولة.</div>}
-            </section>
-
-            {/* 📋 v12.41 — الخلاصة التنفيذية (تقرير الرئيس التنفيذي) */}
-            {(() => {
-                const fn = funnelData?.funnel || {};
-                const b = Number(fn.bookings) || 0;
-                const comp = Number(fn.completed) || 0;
-                const canc = Number(fn.cancelled) || 0;
-                const compPct = b ? Math.round((comp / b) * 100) : 0;
-                const cancPct = b ? Math.round((canc / b) * 100) : 0;
-                const topCity = ((data.cities || []) as GeoRow[])[0];
-                const topCat = ((data.categories || []) as GeoRow[])[0];
-                const critical = diagnosis.items.find((i) => i.severity === 'critical');
-                const ret = funnelData?.retention || [];
-                const retTot = ret.reduce((a: number, r: any) => a + Number(r.buyers || 0), 0);
-                const retBack = ret.reduce((a: number, r: any) => a + Number(r.returned || 0), 0);
-                return (
-                    <section className="bg-[var(--card-bg)] border-2 border-slate-400/40 rounded-2xl p-4">
-                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-1.5">📋 الخلاصة التنفيذية — قرارك في سطور</h3>
-                        <div className="text-xs text-[var(--text-primary)] leading-relaxed">
-                            خلال آخر {arNum(days)} يوماً: <b>{arNum(b)}</b> حجزاً، اكتمل استلام <b>{arNum(comp)}</b> ({arNum(compPct)}٪)
-                            وأُلغي <b>{arNum(canc)}</b> ({arNum(cancPct)}٪). أقوى مدينة <b>{topCity?.city ?? '—'}</b> وأقوى قسم <b>{catLabel(topCat?.category)}</b>.
-                            {retTot > 0 && <> من كل من جرّب الشراء، عاد <b>{arNum(retBack)}</b> من <b>{arNum(retTot)}</b> للحجز مجدداً.</>}
-                        </div>
-                        <div className="text-xs mt-2 font-bold" style={{ color: critical ? '#ef4444' : '#10b981' }}>
-                            {critical
-                                ? <>🎯 القرار الأهم الآن: {critical.title} — {critical.fix?.[0] || critical.evidence}</>
-                                : '🎯 لا يوجد خطر عاجل — القرار الأنسب: نفّذ خطوة واحدة من خطة التسويق أدناه لتسريع النمو.'}
-                        </div>
-                    </section>
-                );
-            })()}
-
-            {/* مؤشرات سريعة */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <Tile icon="📦" label={`حجوزات آخر ${arNum(days)} يوم`} value={arNum(Number(funnel.bookings) || 0)}
-                    sub={`${arNum(Number(funnel.completed) || 0)} مكتمل`} />
-                <Tile icon="⏰" label="أقوى ٣ ساعات" value={(data?.peak_hours || []).length
-                        ? [...data.peak_hours].sort((a: HourRow, b: HourRow) => b.n - a.n).slice(0, 3).map((r: HourRow) => fmtHour(r.h)).join(' · ')
-                        : '—'}
-                    sub={topHour ? `الأعلى: ${arNum(topHour.n)} حجزاً — التفصيل الكامل في «التحكم بالساعات»` : 'لا بيانات بعد'} />
-                <Tile icon="🔁" label="معدل عودة المشترين" value={`${Number(buyers.with_booking) ? Math.round(((Number(buyers.repeaters) || 0) / Number(buyers.with_booking)) * 100) : 0}٪`}
-                    sub={`${arNum(Number(buyers.active_30) || 0)} نشط آخر ٣٠ يوم`} />
-                <Tile icon="💳" label="تجديد الشهر الحالي" value={lastRenew && lastRenew.expired ? `${Math.round((lastRenew.renewed / lastRenew.expired) * 100)}٪` : '—'}
-                    sub={lastRenew ? `${arNum(lastRenew.renewed)} من ${arNum(lastRenew.expired)} جدّدوا` : 'لا انتهاءات بعد'} />
-            </div>
-
-            {/* 🧠 v12.42 — التشخيص الشامل: درجة الصحة + مكمن الخلل + العلاج */}
-            <section className="space-y-2">
-                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                    <div className="flex items-center gap-4 flex-wrap">
-                        <div className="text-center">
-                            <div className="text-3xl font-black tabular-nums" style={{ color: diagnosis.health >= 75 ? '#10b981' : diagnosis.health >= 50 ? '#f59e0b' : '#ef4444' }}>
-                                {arNum(diagnosis.health)}٪
-                            </div>
-                            <div className="text-[10px] font-bold text-[var(--text-secondary)]">صحة المنصة</div>
-                        </div>
-                        <div className="flex-1 min-w-[180px]">
-                            <div className="h-3 bg-[var(--body-bg)] rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all" style={{ width: `${diagnosis.health}%`, background: diagnosis.health >= 75 ? '#10b981' : diagnosis.health >= 50 ? '#f59e0b' : '#ef4444' }} />
-                            </div>
-                            <div className="text-[11px] text-[var(--text-secondary)] mt-1.5">
-                                {diagnosis.weakest.length
-                                    ? <>أضعف النقاط حالياً: <b className="text-[var(--text-primary)]">{diagnosis.weakest.join(' • ')}</b> — علاجها مفصّل في التشخيصات أدناه.</>
-                                    : 'لا نقاط ضعف جوهرية — المؤشرات كلها ضمن الصحي.'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🧠 التشخيص الشامل — مكمن الخلل والعلاج (الأخطر أولاً)</h3>
-                {diagnosis.items.length === 0 && <div className="text-xs text-[var(--text-secondary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">لا توجد مشاكل مرصودة حالياً.</div>}
-                {diagnosis.items.map((dg) => (
-                    <div key={dg.id} className="rounded-2xl p-3.5" style={{ background: SEV_STYLE[dg.severity].bg, border: `1.5px solid ${SEV_STYLE[dg.severity].border}` }}>
-                        <div className="font-extrabold text-sm text-[var(--text-primary)]">{dg.icon} {dg.title}</div>
-                        <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">📌 <b>الدليل:</b> {dg.evidence}</div>
-                        {dg.why && <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">🔍 <b className="text-[var(--text-primary)]">مكمن الخلل:</b> {dg.why}</div>}
-                        {dg.fix && dg.fix.length > 0 && (
-                            <div className="text-xs mt-1.5">
-                                <b className="text-[var(--text-primary)]">🛠 العلاج:</b>
-                                <ol className="pr-5 list-decimal text-[var(--text-secondary)] leading-relaxed mt-0.5 space-y-0.5">
-                                    {dg.fix.map((s, i) => <li key={i}>{s}</li>)}
-                                </ol>
-                            </div>
-                        )}
-                        {dg.impact && <div className="text-[11px] mt-1.5 font-bold" style={{ color: '#10b981' }}>📈 الأثر المتوقع: <span className="font-normal">{dg.impact}</span></div>}
-                    </div>
-                ))}
-            </section>
-
-            {/* 📉 v12.41 — قمع التحويل: من دخل الصفحة حتى الاستلام + من ألغى */}
-            {funnelData && (() => {
-                const fn = funnelData.funnel || {};
-                const steps = [
-                    { label: 'دخل صفحة متجر', n: Number(fn.store_views) || 0, icon: '🏪' },
-                    { label: 'شاهد عرضاً', n: Number(fn.deal_views) || 0, icon: '👁' },
-                    { label: 'نقر على عرض', n: Number(fn.clicks) || 0, icon: '👆' },
-                    { label: 'حجز', n: Number(fn.bookings) || 0, icon: '📦' },
-                    { label: 'استلم (مكتمل)', n: Number(fn.completed) || 0, icon: '✅' },
-                ];
-                const maxStep = Math.max(1, ...steps.map((s) => s.n));
-                const canc = Number(fn.cancelled) || 0;
-                return (
-                    <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
-                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📉 قمع التحويل — من الدخول حتى الاستلام</h3>
-                        <div className="space-y-1.5">
-                            {steps.map((s, i) => (
-                                <div key={s.label} className="flex items-center gap-2 text-[11px]">
-                                    <span className="w-28 shrink-0 font-bold text-[var(--text-primary)]">{s.icon} {s.label}</span>
-                                    <div className="flex-1 bg-[var(--body-bg)] rounded-full h-5 overflow-hidden">
-                                        <div className="h-full rounded-full flex items-center px-2 text-[10px] font-black text-white"
-                                            style={{ width: `${Math.max(6, (s.n / maxStep) * 100)}%`, background: i === 4 ? '#10b981' : '#6366f1', minWidth: 34 }}>
-                                            {arNum(s.n)}
-                                        </div>
-                                    </div>
-                                    {i > 0 && steps[i - 1].n > 0 && (
-                                        <span className="w-12 shrink-0 text-[10px] text-[var(--text-secondary)] tabular-nums">{Math.round((s.n / steps[i - 1].n) * 100)}٪</span>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-secondary)]">مراحل الدخول والمشاهدة والنقر بدأ تسجيلها الزمني في v12.38 — تكتمل خلال أيام. الحجوزات والاستلام تاريخ كامل.</div>
-
-                        <div className="font-bold text-xs text-[var(--text-primary)]">🚫 الإلغاءات ({arNum(canc)}) — من ألغى؟</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <Tile icon="🛒" label="ألغاها المشتري" value={arNum(Number(fn.cancel_buyer) || 0)} />
-                            <Tile icon="🏪" label="ألغاها التاجر" value={arNum(Number(fn.cancel_seller) || 0)} />
-                            <Tile icon="⏱" label="انتهت المهلة (تلقائي)" value={arNum(Number(fn.cancel_system) || 0)} />
-                            <Tile icon="🗂" label="قديمة (قبل التتبع)" value={arNum(Number(fn.cancel_legacy) || 0)} />
-                        </div>
-                        <div className="text-[10px] text-[var(--text-secondary)]">
-                            بدأنا اليوم تسجيل «من ألغى» لكل إلغاء جديد (موقع + بوتات + انتهاء المهلة) — القديمة تظهر «قبل التتبع».
-                            إلغاء التاجر المتكرر مؤشر خطير (سلعة غير متوفرة فعلياً)، وانتهاء المهلة يعني مشترين يحجزون ولا يستلمون.
-                        </div>
-
-                        {(funnelData.retention || []).length > 0 && (
-                            <>
-                                <div className="font-bold text-xs text-[var(--text-primary)]">🔁 الاحتفاظ بالمشترين (حسب شهر أول حجز)</div>
-                                <div className="space-y-1">
-                                    {(funnelData.retention as any[]).map((r) => (
-                                        <div key={r.cohort} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-1.5">
-                                            <span className="font-bold text-[var(--text-primary)]">{r.cohort}</span>
-                                            <span className="text-[var(--text-secondary)] tabular-nums">
-                                                {arNum(Number(r.buyers) || 0)} مشترٍ جديد • عاد منهم {arNum(Number(r.returned) || 0)}
-                                                {Number(r.buyers) > 0 && ` (${Math.round((Number(r.returned) / Number(r.buyers)) * 100)}٪)`}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-                    </section>
-                );
-            })()}
-
-            {/* 🚨 v12.41 — فلاتر «الأسوأ» التنفيذية: أنت تحدد البعد والمقياس والحد */}
-            {funnelData && (() => {
-                const rows: any[] = (funnelData[worstDim] || []).filter((r: any) => Number(r.bookings) >= worstMin);
-                const sorted = [...rows].sort((a, b) => {
-                    if (worstMetric === 'least_bookings') return Number(a.bookings) - Number(b.bookings);
-                    if (worstMetric === 'seller_cancels') return Number(b.c_seller || 0) - Number(a.c_seller || 0);
-                    return (Number(b.cancelled) / Math.max(1, Number(b.bookings))) - (Number(a.cancelled) / Math.max(1, Number(a.bookings)));
-                }).slice(0, 10);
-                const nameOf = (r: any) => worstDim === 'by_city' ? r.city : worstDim === 'by_category' ? catLabel(r.category) : `${r.shop}${r.city ? ` (${r.city})` : ''}`;
-                return (
-                    <section className="bg-[var(--card-bg)] border-2 border-rose-200 rounded-2xl p-4 space-y-2.5">
-                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🚨 راصد الأسوأ — أنت تحدد المعيار</h3>
-                        <div className="flex flex-wrap gap-2 items-center">
-                            <select value={worstDim} onChange={(e) => setWorstDim(e.target.value as any)}
-                                className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                                <option value="by_city">🏙 المدن</option>
-                                <option value="by_category">🏷 الأقسام</option>
-                                <option value="by_store">🏪 المتاجر</option>
-                            </select>
-                            <select value={worstMetric} onChange={(e) => setWorstMetric(e.target.value as any)}
-                                className="flex-1 min-w-[150px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                                <option value="cancel_rate">الأعلى نسبة إلغاء</option>
-                                <option value="least_bookings">الأقل حجوزات (الأقل استفادة)</option>
-                                <option value="seller_cancels">الأكثر إلغاءً من التاجر نفسه</option>
-                            </select>
-                            <label className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-secondary)]">
-                                حد أدنى للحجوزات:
-                                <input type="number" min={0} value={worstMin}
-                                    onChange={(e) => setWorstMin(Math.max(0, Number(e.target.value) || 0))}
-                                    className="w-16 px-2 py-1.5 rounded-lg bg-[var(--body-bg)] border border-[var(--border-color)] text-center text-[var(--text-primary)] outline-none" />
-                            </label>
-                        </div>
-                        <div className="space-y-1.5">
-                            {sorted.map((r, i) => {
-                                const rate = Math.round((Number(r.cancelled) / Math.max(1, Number(r.bookings))) * 100);
-                                return (
-                                    <div key={i} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2 gap-2 flex-wrap">
-                                        <span className="font-bold text-[var(--text-primary)]">{i + 1}. {nameOf(r)}</span>
-                                        <span className="text-[var(--text-secondary)] tabular-nums">
-                                            📦 {arNum(Number(r.bookings))} • ✅ {arNum(Number(r.completed))} • 🚫 {arNum(Number(r.cancelled))} ({arNum(rate)}٪)
-                                            {Number(r.c_seller) > 0 && <span className="text-rose-500 font-bold"> • التاجر ألغى {arNum(Number(r.c_seller))}</span>}
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                            {sorted.length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا نتائج فوق الحد المحدد — خفّض «الحد الأدنى».</div>}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-secondary)]">💡 متجر يكثر إلغاؤه بنفسه = سلعة غير متوفرة فعلاً (أرسل له تنبيهاً من الإرسال المستهدف). مدينة عالية الإلغاء = راجع مدد التحضير ومواعيد المحلات فيها.</div>
-                    </section>
-                );
-            })()}
-
-            {/* ⏰ v12.42 — التحكم الكامل بالساعات (كل الساعات + مدى تختاره أنت) */}
-            <section className="bg-[var(--card-bg)] border-2 border-emerald-200 rounded-2xl p-4 space-y-3">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">⏰ التحكم الكامل بالساعات — كل ساعة بكل تفاصيلها</h3>
-                <div>
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1">كل الساعات الـ٢٤ (حجوزات، توقيت الرياض)</div>
-                    <Bars data={hourBars} color="#10b981" />
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1 mt-2">📅 أيام الأسبوع</div>
-                    <Bars data={dayBars} color="#6366f1" />
-                </div>
-
-                {/* خريطة الأسبوع الحرارية: يوم × ساعة — اضغط أي خلية لتحليلها فوراً */}
-                {hoursData?.heatmap && (
+            {/* ── ١) الخلاصة التنفيذية: صحة المنصّة + المؤشرات + القرار ──────── */}
+            <AdmSection title="الخلاصة التنفيذية" icon="📋" badge={{ text: `${admNum(diagnosis.health)}٪ صحة`, tone: healthTone }}
+                desc="حالة المنصّة في سطرٍ وأرقامٍ قليلة، ثم القرار الأهم الآن.">
+                <div style={{ display: 'grid', gap: 14 }}>
                     <div>
-                        <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🗓 خريطة الأسبوع (يوم × ساعة) — الأغمق = الأنشط، واضغط أي خلية لتحليلها</div>
-                        <div className="overflow-x-auto" style={{ direction: 'ltr' }}>
-                            {(() => {
-                                const hm = new Map<string, number>((hoursData.heatmap as any[]).map((c) => [`${c.dow}-${c.h}`, Number(c.n)]));
-                                const maxN = Math.max(1, ...(hoursData.heatmap as any[]).map((c) => Number(c.n)));
-                                return (
-                                    <div className="inline-block min-w-full">
-                                        {Array.from({ length: 7 }, (_, dow) => (
-                                            <div key={dow} className="flex items-center gap-[2px] mb-[2px]">
-                                                <span className="w-12 shrink-0 text-[9px] font-bold text-[var(--text-secondary)] text-right pl-1" style={{ direction: 'rtl' }}>{DOW_AR[dow]}</span>
-                                                {Array.from({ length: 24 }, (_, h) => {
-                                                    const n = hm.get(`${dow}-${h}`) || 0;
-                                                    const active = hrDow !== 'all' ? hrDow === dow : true;
-                                                    return (
-                                                        <button key={h} type="button"
-                                                            onClick={() => { setHrDow(dow); setHrFrom(h); setHrTo(h); }}
-                                                            title={`${DOW_AR[dow]} ${fmtHour(h)} — ${n} حجز`}
-                                                            className="flex-1 rounded-[3px]"
-                                                            style={{
-                                                                minWidth: 10, height: 16, cursor: 'pointer',
-                                                                background: n === 0 ? 'var(--body-bg)' : `rgba(16,185,129,${0.25 + 0.75 * (n / maxN)})`,
-                                                                outline: active ? 'none' : '1px solid transparent',
-                                                                opacity: active ? 1 : 0.45,
-                                                            }} />
-                                                    );
-                                                })}
-                                            </div>
-                                        ))}
-                                        <div className="flex items-center gap-[2px]">
-                                            <span className="w-12 shrink-0" />
-                                            {Array.from({ length: 24 }, (_, h) => (
-                                                <span key={h} className="flex-1 text-center text-[8px] text-[var(--text-secondary)]" style={{ minWidth: 10 }}>{h % 3 === 0 ? h : ''}</span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
+                        <div style={{ height: 10, borderRadius: 999, background: 'var(--adm-surface-3)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${diagnosis.health}%`, background: `var(--adm-${healthTone}-fg)`, transition: 'width .25s' }} />
                         </div>
+                        <p style={{ margin: '8px 0 0', fontSize: '.8rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                            {diagnosis.weakest.length
+                                ? <>أضعف النقاط حالياً: <b style={{ color: 'var(--adm-fg)' }}>{diagnosis.weakest.join(' • ')}</b> — علاجها مفصّل في التشخيص أدناه.</>
+                                : 'لا نقاط ضعف جوهرية — المؤشرات كلها ضمن الصحي.'}
+                        </p>
+                    </div>
+
+                    <AdmStatGrid cols={3}>
+                        <AdmStat icon="📦" label="حجوزات الفترة" value={admNum(bookings)} scope={`آخر ${admNum(days)} يوماً`} />
+                        <AdmStat icon="✅" label="اكتمل استلامها" value={admNum(completed)} tone="ok" scope={shareOfPeriod(completed)} />
+                        <AdmStat icon="🚫" label="أُلغيت" value={admNum(cancelled)} scope={shareOfPeriod(cancelled)}
+                            tone={bookings && cancelled / bookings > 0.35 ? 'bad' : 'neutral'} />
+                        <AdmStat icon="⏰" label="أقوى ٣ ساعات" value={peakHours.length ? fmtHour(peakHours[0].h) : '—'}
+                            scope={peakHours.length > 1 ? `ثم ${peakHours.slice(1).map((r) => fmtHour(r.h)).join(' · ')} — كل المنصّة` : 'لا بيانات ساعات بعد'} />
+                        <AdmStat icon="🔁" label="عودة المشترين" scope={`${admNum(Number(buyers.active_30) || 0)} مشترياً نشطاً آخر ٣٠ يوماً`}
+                            value={`${Number(buyers.with_booking) ? Math.round(((Number(buyers.repeaters) || 0) / Number(buyers.with_booking)) * 100) : 0}٪`} />
+                        <AdmStat icon="💳" label="تجديد الشهر الحالي" scope={lastRenew ? `${admNum(lastRenew.renewed)} من ${admNum(lastRenew.expired)} جدّدوا` : 'لا اشتراكات انتهت بعد'}
+                            value={lastRenew && lastRenew.expired ? `${Math.round((lastRenew.renewed / lastRenew.expired) * 100)}٪` : '—'} />
+                    </AdmStatGrid>
+
+                    <div style={{
+                        padding: '12px 14px', borderRadius: 'var(--adm-r-sm)',
+                        background: criticalItem ? 'var(--adm-bad-bg)' : 'var(--adm-ok-bg)',
+                        color: criticalItem ? 'var(--adm-bad-fg)' : 'var(--adm-ok-fg)',
+                        fontSize: '.83rem', fontWeight: 700, lineHeight: 1.8,
+                    }}>
+                        {criticalItem
+                            ? <>🎯 القرار الأهم الآن: {criticalItem.title} — {criticalItem.fix?.[0] || criticalItem.evidence}</>
+                            : '🎯 لا يوجد خطر عاجل — القرار الأنسب: نفّذ خطوة واحدة من «خطة النمو والتسويق» أدناه.'}
+                    </div>
+
+                    <p style={noteStyle}>
+                        أرقام الحجوزات هنا مصدرها واحد (تحليل القمع) ولا تتكرّر في أي بطاقةٍ أخرى بهذه الشاشة.
+                        قمع التحويل الكامل والاحتفاظ بالكوهورت في شاشة <b>«التحليلات»</b>، والأرقام الجغرافية في <b>«جمهور المدن»</b>.
+                    </p>
+                </div>
+            </AdmSection>
+
+            {/* ── ٢) التشخيص: مكمن الخلل والعلاج ───────────────────────────── */}
+            <AdmSection title="التشخيص — مكمن الخلل والعلاج" icon="🧠"
+                badge={diagnosis.items.length ? { text: `${admNum(diagnosis.items.length)} تشخيصاً`, tone: 'neutral' } : undefined}
+                desc="الأخطر أولاً. كل بطاقة: الدليل بالأرقام، ثم السبب الجذري، ثم خطوات العلاج.">
+                {diagnosis.items.length === 0 ? (
+                    <AdmEmpty icon="✅" title="لا مشاكل مرصودة حالياً" hint="كل القواعد التي يفحصها المحلل ضمن الحدود الصحية — عاود الفحص بعد تغيّر الفترة." />
+                ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                        {diagnosis.items.map((dg) => <DiagnosisCard key={dg.id} dg={dg} />)}
                     </div>
                 )}
+            </AdmSection>
 
-                {/* أدوات التحكم: من / إلى / اليوم */}
-                <div className="flex flex-wrap gap-2 items-center bg-[var(--body-bg)] rounded-xl p-2.5">
-                    <span className="text-[11px] font-bold text-[var(--text-primary)]">حلّل المدى:</span>
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-[var(--text-secondary)]">
-                        من
-                        <select value={hrFrom} onChange={(e) => setHrFrom(Number(e.target.value))}
-                            className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
-                        </select>
-                    </label>
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-[var(--text-secondary)]">
-                        إلى
-                        <select value={hrTo} onChange={(e) => setHrTo(Number(e.target.value))}
-                            className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
-                        </select>
-                    </label>
-                    <select value={hrDow === 'all' ? 'all' : String(hrDow)} onChange={(e) => setHrDow(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                        className="px-2 py-1.5 rounded-lg text-xs font-bold bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">📅 كل الأيام</option>
-                        {DOW_AR.map((d0, i) => <option key={i} value={i}>{d0}</option>)}
-                    </select>
-                    <span className="text-[10px] text-[var(--text-secondary)]">— يدعم الالتفاف عبر منتصف الليل (مثل ١٠م → ٤ص)</span>
-                </div>
+            {/* ── ٣) صحة التجار ─────────────────────────────────────────────── */}
+            <AdmSection title="صحة التجار" icon="🏪" badge={{ text: `${admNum(filteredSellers.length)} من ${admNum(sellers.length)}`, tone: 'neutral' }}
+                desc="الأخطر أولاً. اضغط أي تاجر لتقريره المعمّق وتوصيةٍ جاهزة لا تُرسل إلا بضغطتك.">
+                <AdmToolbar>
+                    <AdmSelect label="المدينة" value={fCity} onChange={setFCity} options={cityOptions} />
+                    <AdmSelect label="التصنيف" value={fCat} onChange={setFCat} options={catOptions} />
+                    <AdmSelect
+                        label="الحالة" value={fStatus} onChange={(v) => setFStatus(v as typeof fStatus)}
+                        options={[
+                            { value: 'all', label: 'كل الحالات' },
+                            { value: 'weak', label: 'الضعاف (خطر ٣٠+)' },
+                            { value: 'risk', label: 'الخطرون (خطر ٦٠+)' },
+                            { value: 'expired', label: 'منتهو الاشتراك' },
+                            { value: 'nodeals', label: 'بلا عروض نشطة' },
+                        ]}
+                    />
+                </AdmToolbar>
 
-                {/* نتائج المدى المحدد */}
-                {hoursLoading ? (
-                    <div className="h-20 bg-[var(--gray-100)] rounded-xl animate-pulse" />
-                ) : hoursData?.totals ? (
-                    <>
-                        <div className="font-bold text-xs text-[var(--text-primary)]">
-                            نتائج {hrDow === 'all' ? 'كل الأيام' : DOW_AR[hrDow as number]} من {fmtHour(hrFrom)} إلى {fmtHour(hrTo)} (آخر {arNum(days)} يوماً):
-                        </div>
-                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                            <Tile icon="📦" label="حجوزات" value={arNum(Number(hoursData.totals.bookings) || 0)} sub={`✅ ${arNum(Number(hoursData.totals.completed) || 0)} • 🚫 ${arNum(Number(hoursData.totals.cancelled) || 0)}`} />
-                            <Tile icon="🛒" label="مشترون نشطون" value={arNum(Number(hoursData.totals.buyers) || 0)} />
-                            <Tile icon="🏪" label="تجار مستفيدون" value={arNum(Number(hoursData.totals.sellers) || 0)} />
-                            <Tile icon="👁" label="مشاهدات ونقرات" value={arNum((Number(hoursData.totals.views) || 0) + (Number(hoursData.totals.clicks) || 0))} sub={`🔎 ${arNum(Number(hoursData.totals.searches) || 0)} بحث`} />
-                            <Tile icon="🏷" label="عروض نُشرت" value={arNum(Number(hoursData.totals.deals_published) || 0)} />
-                        </div>
-                        {(((hoursData.top_categories || []) as any[]).length > 0 || ((hoursData.top_cities || []) as any[]).length > 0) && (
-                            <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                {(hoursData.top_categories as any[]).map((c) => (
-                                    <span key={c.category} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏷 {catLabel(c.category)} ×{arNum(Number(c.n))}</span>
-                                ))}
-                                {(hoursData.top_cities as any[]).map((c) => (
-                                    <span key={c.city} className="font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">🏙 {c.city} ×{arNum(Number(c.n))}</span>
-                                ))}
-                            </div>
-                        )}
-                    </>
-                ) : null}
-                <div className="text-[10px] text-[var(--text-secondary)]">💡 استخدمه لقرارات دقيقة: متى تجدول الحملات، أي ساعات تنصح تجار مدينة معينة بالنشر فيها، ومتى يكون البث الجماعي أعلى وصولاً.</div>
-            </section>
-
-            {/* 📈 النمو الشهري */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-1">📈 الحجوزات شهرياً (٦ أشهر)</h3>
-                <Bars data={monthBars} color="#f59e0b" height={100} />
-                <div className="grid grid-cols-3 gap-2 mt-2 text-center text-[11px]">
-                    {(data.monthly || []).slice(-3).map((m: MonthRow) => (
-                        <div key={m.mon} className="bg-[var(--body-bg)] rounded-xl p-2">
-                            <div className="font-black text-[var(--text-primary)]">{m.mon.slice(5)}/{m.mon.slice(2, 4)}</div>
-                            <div className="text-[var(--text-secondary)]">🏪 {arNum(m.new_sellers)} تاجر جديد</div>
-                            <div className="text-[var(--text-secondary)]">🛒 {arNum(m.new_buyers)} مشترٍ جديد</div>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-            {/* 🏪 صحة التجار */}
-            <section className="space-y-2">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🏪 صحة التجار (الأخطر أولاً) — اضغط تاجراً للتقرير والتوصية</h3>
-                {/* v12.39 — فلترة: مدينة / تصنيف / حالة (تنعكس أيضاً على الإرسال المستهدف بالأسفل) */}
-                <div className="flex flex-wrap gap-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-2.5">
-                    <select value={fCity} onChange={(e) => setFCity(e.target.value)}
-                        className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏙 كل المدن</option>
-                        {cityOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <select value={fCat} onChange={(e) => setFCat(e.target.value)}
-                        className="flex-1 min-w-[110px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏷 كل التصنيفات</option>
-                        {catOptions.map((c) => <option key={c} value={c}>{catLabel(c)}</option>)}
-                    </select>
-                    <select value={fStatus} onChange={(e) => setFStatus(e.target.value as any)}
-                        className="flex-1 min-w-[130px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">📋 كل الحالات</option>
-                        <option value="weak">🟡 الضعاف (خطر ٣٠+)</option>
-                        <option value="risk">🔴 الخطرون (خطر ٦٠+)</option>
-                        <option value="expired">⛔ منتهو الاشتراك</option>
-                        <option value="nodeals">📭 بلا عروض نشطة</option>
-                    </select>
-                    <span className="text-[11px] font-bold text-[var(--text-secondary)] self-center whitespace-nowrap">= {arNum(filteredSellers.length)} تاجر</span>
-                </div>
-                {filteredSellers.map((s) => {
-                    const risk = sellerRisk(s);
-                    const dl = daysLeft(s.expires_at);
-                    const trend = s.bookings_30 > s.bookings_prev30 ? '↗️' : s.bookings_30 < s.bookings_prev30 ? '↘️' : '→';
-                    const riskColor = risk.score >= 60 ? '#ef4444' : risk.score >= 30 ? '#f59e0b' : '#10b981';
-                    const isOpen = openSeller === s.id;
-                    return (
-                        <div key={s.id} className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
-                            <button onClick={() => openReport(s)} className="w-full text-right p-3.5">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-extrabold text-sm text-[var(--text-primary)]">{s.shop}</span>
-                                    {s.city && <span className="text-[10px] text-[var(--text-secondary)]">📍 {s.city}</span>}
-                                    <span className="text-[10px] font-black text-white px-2 py-0.5 rounded-full mr-auto" style={{ background: riskColor }}>
-                                        {risk.score >= 60 ? 'خطر عالٍ' : risk.score >= 30 ? 'انتبه' : 'سليم'} {arNum(risk.score)}
-                                    </span>
-                                </div>
-                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-secondary)] mt-1.5">
-                                    <span>📦 {arNum(s.bookings_30)} حجز/٣٠ي {trend}</span>
-                                    <span>👁 {arNum(s.deal_views_30 + s.store_views_30)} زيارة</span>
-                                    <span>🏷 {arNum(s.active_deals)} عرض نشط</span>
-                                    <span>⭐ {s.rating_avg ?? '—'}</span>
-                                    <span>{dl === null ? '🆓 بلا اشتراك مؤقت' : dl < 0 ? `⛔ منتهٍ منذ ${arNum(-dl)} يوم` : `⏳ ${arNum(dl)} يوم متبقٍ`}</span>
-                                </div>
-                                {risk.reasons.length > 0 && (
-                                    <div className="text-[11px] mt-1.5" style={{ color: riskColor }}>
-                                        السبب المرجّح: {risk.reasons.slice(0, 2).join(' + ')}
-                                    </div>
-                                )}
-                            </button>
-
-                            {isOpen && (
-                                <div className="border-t border-[var(--border-color)] p-3.5 space-y-3 bg-[var(--body-bg)]">
-                                    {reportLoading ? (
-                                        <div className="h-16 bg-[var(--gray-100)] rounded-xl animate-pulse" />
-                                    ) : report ? (
-                                        <>
-                                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                                <div className="bg-[var(--card-bg)] rounded-xl p-2.5">
-                                                    <div className="font-bold text-[var(--text-primary)] mb-1">⏰ أفضل ساعة لتصنيفه بمدينته</div>
-                                                    <div className="text-[var(--text-secondary)]">
-                                                        {report.cat_city_hours?.length
-                                                            ? fmtHour([...report.cat_city_hours].sort((a: HourRow, b: HourRow) => b.n - a.n)[0].h) + ` (${catLabel(report.top_category)})`
-                                                            : 'لا بيانات كافية بعد'}
-                                                    </div>
-                                                </div>
-                                                <div className="bg-[var(--card-bg)] rounded-xl p-2.5">
-                                                    <div className="font-bold text-[var(--text-primary)] mb-1">⚖️ مقارنة بمنافسيه (نفس المدينة/التصنيف)</div>
-                                                    <div className="text-[var(--text-secondary)]">
-                                                        هو: {arNum(s.bookings_30)} حجز • متوسطهم: {report.cat_city_avg_bookings_30 ?? '—'} حجز/٣٠ يوم
-                                                    </div>
-                                                </div>
-                                                {report.top_deal?.item_name && (
-                                                    <div className="bg-[var(--card-bg)] rounded-xl p-2.5 col-span-2">
-                                                        <div className="font-bold text-[var(--text-primary)] mb-1">🏆 أفضل منتجاته</div>
-                                                        <div className="text-[var(--text-secondary)]">«{report.top_deal.item_name}» — {arNum(report.top_deal.bookings)} حجزاً، {arNum(report.top_deal.views)} مشاهدة</div>
-                                                    </div>
-                                                )}
-                                                {/* v12.40 — أقرب منافسيه المباشرين (نفس المدينة + التصنيف) */}
-                                                {(competitors?.competitors || []).length > 0 && (
-                                                    <div className="bg-[var(--card-bg)] rounded-xl p-2.5 col-span-2">
-                                                        <div className="font-bold text-[var(--text-primary)] mb-1">⚔️ منافسوه المباشرون ({competitors.city || '—'} / {catLabel(competitors.category)})</div>
-                                                        <div className="space-y-1">
-                                                            {competitors.competitors.map((c: any) => (
-                                                                <div key={c.id} className="flex items-center justify-between text-[var(--text-secondary)]">
-                                                                    <span className="font-bold text-[var(--text-primary)]">{c.shop}</span>
-                                                                    <span className="tabular-nums">📦 {arNum(c.bookings_30)}/٣٠ي • 🏷 {arNum(c.active_deals)} • ⭐ {c.rating_avg ?? '—'} • 👁 {arNum(c.views_30)}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="text-[10px] text-[var(--text-secondary)] mt-1">قارن أرقامه بهم — إن كان أضعف منهم فتوصيتك له أدناه هي الفرق.</div>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">📨 التوصية المقترحة (عدّلها كما تريد — لن تُرسل إلا بضغطتك)</div>
-                                                <textarea value={tipDraft} onChange={(e) => setTipDraft(e.target.value)} rows={7}
-                                                    className="w-full text-xs p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] leading-relaxed outline-none focus:border-indigo-500" />
-                                                <div className="flex items-center gap-3 mt-2 flex-wrap">
-                                                    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)] cursor-pointer">
-                                                        <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={tipEmail} onChange={(e) => setTipEmail(e.target.checked)} />
-                                                        📧 أرسل نسخة بريدية أيضاً
-                                                    </label>
-                                                    <button onClick={() => sendTip(s)} disabled={sending || !tipDraft.trim()}
-                                                        className="mr-auto px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-indigo-600 disabled:opacity-50">
-                                                        {sending ? '⏳ جاري الإرسال…' : `📨 إرسال التوصية لـ«${s.shop}»`}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="text-xs text-[var(--text-secondary)]">تعذّر تحميل التقرير.</div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-                {filteredSellers.length === 0 && <div className="text-xs text-[var(--text-secondary)]">لا تجار مطابقين لهذه الفلاتر.</div>}
-            </section>
-
-            {/* 📣 v12.39 — الإرسال المستهدف: نفس الفلاتر أعلاه تحدد المستقبلين */}
-            <section className="bg-[var(--card-bg)] border-2 border-indigo-200 rounded-2xl p-4 space-y-2.5">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📣 إرسال مستهدف للتجار (حسب الفلاتر أعلاه)</h3>
-                <div className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-                    اختر المدينة/التصنيف/الحالة من فلاتر «صحة التجار»، ثم اختر قالباً أو اكتب رسالتك — تصل
-                    للمحددين فقط ({arNum(filteredSellers.length)} تاجر حالياً) إشعاراً داخل الموقع وبوتاتهم المرتبطة. <b>لن تُرسل إلا بتأكيدك.</b>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                    {bulkTemplates.map((t) => (
-                        <button key={t.id} onClick={() => setBulkMsg(t.text)}
-                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] active:scale-95">
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
-                <textarea value={bulkMsg} onChange={(e) => setBulkMsg(e.target.value)} rows={5}
-                    placeholder="اكتب الرسالة أو اختر قالباً..."
-                    className="w-full text-xs p-3 rounded-xl bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] leading-relaxed outline-none focus:border-indigo-500" />
-                <div className="flex items-center gap-3 flex-wrap">
-                    <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-primary)] cursor-pointer">
-                        <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={bulkEmail} onChange={(e) => setBulkEmail(e.target.checked)} />
-                        📧 بريد إلكتروني أيضاً
-                    </label>
-                    <button onClick={sendBulk} disabled={bulkSending || !bulkMsg.trim() || filteredSellers.length === 0}
-                        className="mr-auto px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-indigo-600 disabled:opacity-50">
-                        {bulkSending && bulkProgress
-                            ? `⏳ ${arNum(bulkProgress.done)}/${arNum(bulkProgress.total)}...`
-                            : `📨 إرسال لـ${arNum(filteredSellers.length)} تاجر`}
-                    </button>
-                </div>
-            </section>
-
-            {/* 🌱 v12.39 — خطة نمو المنصة (لناصر شخصياً) */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 space-y-3">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🌱 خطة نمو المنصة (لك)</h3>
-
-                <div>
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1">📆 موسمية حجوزاتك (١٢ شهراً)</div>
-                    <Bars data={(data.seasonal || []).map((m: { mon: string; bookings: number }) => ({ label: m.mon.slice(5), n: m.bookings }))} color="#8b5cf6" height={90} />
-                </div>
-
-                <div>
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🗓 المواسم السعودية القادمة — استعد قبلها بأسبوعين</div>
-                    <div className="grid md:grid-cols-2 gap-2">
-                        {SAUDI_SEASONS.map((s) => (
-                            <div key={s.name} className="bg-[var(--body-bg)] rounded-xl p-2.5 text-[11px]">
-                                <div className="font-extrabold text-[var(--text-primary)]">{s.icon} {s.name} <span className="font-normal text-[var(--text-secondary)]">— {s.when}</span></div>
-                                <div className="text-[var(--text-secondary)] mt-0.5 leading-relaxed">{s.tip}</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div>
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🎯 أين تركّز جهدك؟ (طلب المشترين الفعلي مقابل عرض التجار — ٩٠ يوماً)</div>
-                    <div className="space-y-1.5">
-                        {((data.buyers_by_city || []) as BuyerCityRow[]).slice(0, 8).map((b) => {
-                            const supply = ((data.cities || []) as GeoRow[]).find((c) => c.city === b.city)?.deals ?? 0;
-                            const verdict = supply <= 1 && b.buyers >= 2 ? { t: '⚡ استقطب تجاراً هنا فوراً', c: '#f59e0b' }
-                                : b.bookings >= 10 && supply >= 3 ? { t: '✅ سوق متوازن — نمّه بالحملات', c: '#10b981' }
-                                : { t: '👀 راقب', c: 'var(--text-secondary)' };
+                {filteredSellers.length === 0 ? (
+                    <AdmEmpty icon="🔎" title="لا تجار مطابقين" hint="لا أحد يطابق هذه المرشّحات — وسّعها أو أعدها إلى «كل الحالات»." />
+                ) : (
+                    <div style={{ display: 'grid', gap: 9 }}>
+                        {filteredSellers.map((s) => {
+                            const risk = sellerRisk(s);
+                            const dl = daysLeft(s.expires_at);
+                            const trend = s.bookings_30 > s.bookings_prev30 ? '↗︎' : s.bookings_30 < s.bookings_prev30 ? '↘︎' : '→';
+                            const riskTone: Tone = risk.score >= 60 ? 'bad' : risk.score >= 30 ? 'warn' : 'ok';
+                            const isOpen = openSeller === s.id;
                             return (
-                                <div key={b.city} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2">
-                                    <span className="font-bold text-[var(--text-primary)]">{b.city}</span>
-                                    <span className="text-[var(--text-secondary)] tabular-nums">🛒 {arNum(b.buyers)} مشترٍ • 📦 {arNum(b.bookings)} حجز • 🏷 {arNum(supply)} عرض</span>
-                                    <span className="font-bold" style={{ color: verdict.c }}>{verdict.t}</span>
+                                <div key={s.id} style={{
+                                    border: '1px solid var(--adm-border)', borderRadius: 'var(--adm-r)',
+                                    background: 'var(--adm-surface)', overflow: 'hidden',
+                                }}>
+                                    <button
+                                        type="button" onClick={() => openReport(s)} aria-expanded={isOpen}
+                                        className="adm-focusable"
+                                        style={{ width: '100%', textAlign: 'right', padding: '13px 14px', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ fontWeight: 800, fontSize: '.9rem', color: 'var(--adm-fg)' }}>{s.shop}</span>
+                                            {s.city && <span style={{ fontSize: '.72rem', color: 'var(--adm-fg-3)' }}>📍 {s.city}</span>}
+                                            <span style={{ marginInlineStart: 'auto' }}>
+                                                <AdmPill tone={riskTone}>
+                                                    {risk.score >= 60 ? 'خطر عالٍ' : risk.score >= 30 ? 'انتبه' : 'سليم'} {admNum(risk.score)}
+                                                </AdmPill>
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', marginTop: 7, fontSize: '.76rem', color: 'var(--adm-fg-2)', fontVariantNumeric: 'tabular-nums' }}>
+                                            <span>📦 {admNum(s.bookings_30)} حجز/٣٠ي {trend}</span>
+                                            <span>👁 {admNum(s.deal_views_30 + s.store_views_30)} زيارة</span>
+                                            <span>🏷 {admNum(s.active_deals)} عرض نشط</span>
+                                            <span>⭐ {s.rating_avg ?? '—'}</span>
+                                            <span>{dl === null ? '🆓 بلا اشتراك' : dl < 0 ? `⛔ منتهٍ منذ ${admNum(-dl)} يوم` : `⏳ ${admNum(dl)} يوم متبقٍ`}</span>
+                                        </div>
+                                        {risk.reasons.length > 0 && (
+                                            <div style={{ marginTop: 6, fontSize: '.76rem', fontWeight: 700, color: `var(--adm-${riskTone}-fg)` }}>
+                                                السبب المرجّح: {risk.reasons.slice(0, 2).join(' + ')}
+                                            </div>
+                                        )}
+                                    </button>
+
+                                    {isOpen && (
+                                        <div style={{ borderTop: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)', padding: 14, display: 'grid', gap: 10 }}>
+                                            <SellerPanel
+                                                s={s} report={report} competitors={competitors} loading={reportLoading}
+                                                draft={tipDraft} onDraft={setTipDraft}
+                                                email={tipEmail} onEmail={setTipEmail}
+                                                sending={sending} onSend={() => sendTip(s)} onRetry={() => openReport(s)}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
-                        {(data.buyers_by_city || []).length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا حجوزات بعد.</div>}
+                    </div>
+                )}
+            </AdmSection>
+
+            {/* ── ٤) الإرسال المستهدف ───────────────────────────────────────── */}
+            <AdmSection title="إرسال مستهدف للتجار" icon="📣" collapsible defaultOpen={false}
+                badge={{ text: wholeAudience ? 'كل التجار' : `${admNum(filteredSellers.length)} تاجراً`, tone: wholeAudience ? 'warn' : 'info' }}
+                desc="المستقبِلون هم نتيجة مرشّحات «صحة التجار» أعلاه. لا شيء يُرسل إلا بتأكيدك.">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {bulkTemplates.map((t) => (
+                        <AdmButton key={t.id} size="sm" onClick={() => setBulkMsg(t.text)}>{t.label}</AdmButton>
+                    ))}
+                </div>
+                <textarea value={bulkMsg} onChange={(e) => setBulkMsg(e.target.value)} rows={5} placeholder="اكتب الرسالة أو اختر قالباً…"
+                    className="adm-focusable" style={areaStyle} aria-label="نص الرسالة الجماعية" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 9, flexWrap: 'wrap' }}>
+                    <label style={checkStyle}>
+                        <input type="checkbox" checked={bulkEmail} onChange={(e) => setBulkEmail(e.target.checked)} style={checkBoxStyle} />
+                        📧 بريد إلكتروني أيضاً
+                    </label>
+                    <span style={{ flex: 1 }} />
+                    <AdmButton variant="primary" onClick={sendBulk} disabled={bulkSending || !bulkMsg.trim() || filteredSellers.length === 0}>
+                        {bulkSending && bulkProgress
+                            ? `⏳ ${admNum(bulkProgress.done)}/${admNum(bulkProgress.total)}…`
+                            : wholeAudience ? '📨 إرسال لكل التجار' : `📨 إرسال لـ${admNum(filteredSellers.length)} تاجراً`}
+                    </AdmButton>
+                </div>
+                <p style={noteStyle}>
+                    {wholeAudience
+                        ? 'بلا مرشّحات = بثٌّ واحد ينفّذه الخادم دفعةً واحدة (أسرع وأدقّ من إرسالٍ لكل تاجر على حدة).'
+                        : 'مع مرشّح = إرسالٌ لكل تاجر في الشريحة على حدة، لأن البثّ الجماعي لا يفهم المرشّحات.'}
+                    {' '}تصل الرسالة إشعاراً داخل الموقع وإلى بوت التاجر المرتبط.
+                </p>
+            </AdmSection>
+
+            {/* ── ٥) أين الفرصة؟ — لوحةٌ واحدة بثلاثة محاور ووسمٍ واحد ──────── */}
+            <AdmSection title="أين الفرصة؟" icon="⚡"
+                desc="موضعٌ واحد لكل فجوةٍ بين الطلب والعرض — بثلاثة محاور ووسمٍ واحد «⚡ فرصة».">
+                <div style={{ display: 'grid', gap: 16 }}>
+                    <div>
+                        <div style={subTitleStyle}>🏙 محور المدن — التوصية</div>
+                        {cityOpportunities.length ? (
+                            <p style={{ margin: 0, fontSize: '.82rem', lineHeight: 1.85, color: 'var(--adm-fg-2)' }}>
+                                ركّز استقطاب التجار على <b style={{ color: 'var(--adm-warn-fg)' }}>{cityOpportunities.join('، ')}</b> —
+                                الطلب فيها يفوق المعروض، وأول تاجر تستقطبه سيحصد الطلب كله.
+                            </p>
+                        ) : (
+                            <p style={{ margin: 0, fontSize: '.82rem', lineHeight: 1.85, color: 'var(--adm-fg-2)' }}>
+                                لا فجوة جغرافية واضحة الآن — الطلب والعرض متقاربان في مدنك.
+                            </p>
+                        )}
+                        <p style={noteStyle}>أرقام المدن والمناطق كاملةً في شاشة <b>«جمهور المدن»</b> — لا تُكرَّر هنا.</p>
+                    </div>
+
+                    <div>
+                        <div style={subTitleStyle}>🏷 محور التصنيفات — الطلب مقابل المعروض</div>
+                        <AdmTable
+                            caption="تفاعل كل تصنيف: مشاهدات ونقرات وحجوزات مقابل العروض النشطة"
+                            rows={catRows}
+                            keyOf={(r) => r.id}
+                            empty={{ icon: '🏷', title: 'لا تفاعل مسجّل بعد', hint: 'يظهر هذا المحور بعد أول مشاهدات وحجوزات على الأقسام.' }}
+                            columns={[
+                                { header: 'التصنيف', cell: (r) => catLabel(r.id) },
+                                { header: 'مشاهدات ٣٠ي', numeric: true, secondary: true, cell: (r) => admNum(r.views) },
+                                { header: 'نقرات ٣٠ي', numeric: true, secondary: true, cell: (r) => admNum(r.clicks) },
+                                { header: 'حجوزات ٣٠ي', numeric: true, cell: (r) => admNum(r.b30) },
+                                { header: 'عروض نشطة', numeric: true, cell: (r) => admNum(r.deals) },
+                                { header: 'الحكم', cell: (r) => <AdmPill tone={r.verdict.tone}>{r.verdict.text}</AdmPill> },
+                            ]}
+                        />
+                    </div>
+
+                    <div>
+                        <div style={subTitleStyle}>🏬 محور المواقع — المولات والأسواق</div>
+                        <AdmTable
+                            caption="المولات والأسواق: حجوزات مقابل عروض نشطة"
+                            rows={mallRows.slice(0, 10)}
+                            keyOf={(r) => r.name}
+                            empty={{ icon: '🏬', title: 'لا مواقع مسجّلة بعد', hint: 'تظهر هنا حين يربط التجار عروضهم بمولٍّ أو سوق.' }}
+                            columns={[
+                                { header: 'الموقع', cell: (r) => r.name },
+                                { header: 'حجوزات', numeric: true, cell: (r) => admNum(r.bookings) },
+                                { header: 'عروض', numeric: true, cell: (r) => admNum(r.deals) },
+                                { header: 'الحكم', cell: (r) => (r.opportunity ? <AdmPill tone="warn">⚡ فرصة</AdmPill> : <AdmPill>—</AdmPill>) },
+                            ]}
+                        />
                     </div>
                 </div>
+            </AdmSection>
 
-                <div>
-                    <div className="font-bold text-xs text-[var(--text-primary)] mb-1.5">🧭 توصيات جذرية للمنصة (من بياناتك الفعلية)</div>
-                    <ul className="text-[11px] text-[var(--text-secondary)] leading-relaxed space-y-1 pr-4 list-disc">
-                        {Number(buyers.dormant_30) > 0 && <li><b className="text-[var(--text-primary)]">{arNum(Number(buyers.dormant_30))} مشترٍ خامل +٣٠ يوماً</b> — أعدهم بحملة من «الإشعارات والرسائل» (عروض المدينة الجديدة) أو مسابقة بجائزة.</li>}
-                        <li><b className="text-[var(--text-primary)]">استقطاب التجار الأثمن نمواً:</b> ركّز على مدن «⚡» أعلاه وتصنيفات «فرصة» — أرسل باركود دعوة التاجر لهم عبر واتساب المحلات مباشرة.</li>
-                        <li><b className="text-[var(--text-primary)]">حافظ على المجدّدين:</b> راقب بطاقة «تجديد الشهر الحالي» بالأعلى — أي هبوط تحت ٧٠٪ عالجه بخصم تجديد مؤقت من لوحة البائعين.</li>
-                        <li><b className="text-[var(--text-primary)]">المواسم تصنع القفزات:</b> جهّز حملة + مسابقة قبل كل موسم أعلاه بأسبوعين — البنرات والرعاة جاهزون في أدواتك.</li>
-                        {Number((data.content || {}).no_image) + Number((data.content || {}).one_image) > 0 && <li><b className="text-[var(--text-primary)]">جودة المحتوى تسويق مجاني:</b> استخدم قالب «جودة الصور» بالإرسال المستهدف — منصة صورها جميلة تبيع نفسها.</li>}
-                    </ul>
-                </div>
-            </section>
+            {/* ── ٦) الإلغاءات: من ألغى، وأين تتركّز ────────────────────────── */}
+            <AdmSection title="الإلغاءات — من ألغى وأين تتركّز" icon="🚫"
+                desc="موضعٌ واحد للإلغاء في هذه الشاشة: الفاعل أولاً، ثم أسوأ المدن والأقسام والمتاجر.">
+                {!funnelData ? <AdmSkeleton rows={2} height={70} /> : (
+                    <div style={{ display: 'grid', gap: 16 }}>
+                        <AdmStatGrid cols={4}>
+                            <AdmStat icon="🛒" label="ألغاها المشتري" value={admNum(Number(fn.cancel_buyer) || 0)} scope={`آخر ${admNum(days)} يوماً`} />
+                            <AdmStat icon="🏪" label="ألغاها التاجر" value={admNum(Number(fn.cancel_seller) || 0)} tone={Number(fn.cancel_seller) > 0 ? 'bad' : 'neutral'} scope="مؤشّر خطير: سلعة غير متوفرة" />
+                            <AdmStat icon="⏱" label="انتهت المهلة" value={admNum(Number(fn.cancel_system) || 0)} scope="حجز لم يُستلم" />
+                            <AdmStat icon="🗂" label="قديمة" value={admNum(Number(fn.cancel_legacy) || 0)} scope="قبل تتبّع «من ألغى»" />
+                        </AdmStatGrid>
 
-            {/* 🎯 v12.40 — المستكشف: مدينة × قسم × ساعة */}
-            <section className="bg-[var(--card-bg)] border-2 border-emerald-200 rounded-2xl p-4 space-y-2.5">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">🎯 المستكشف: أي قسم؟ أي مدينة؟ أي ساعة؟</h3>
-                <div className="text-[11px] text-[var(--text-secondary)]">اختر الشريحة وسيعرض لك حركتها بالساعة (حجوزات ٩٠ يوماً + مشاهدات/نقرات) وأفضل عروضها — هكذا تعرف أين الطلب ومتى بالضبط.</div>
-                <div className="flex flex-wrap gap-2">
-                    <select value={mxCity} onChange={(e) => setMxCity(e.target.value)}
-                        className="flex-1 min-w-[120px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏙 كل المدن</option>
-                        {((data.cities || []) as GeoRow[]).filter((c) => c.city && c.city !== 'غير محدد').map((c) => <option key={c.city} value={c.city}>{c.city}</option>)}
-                    </select>
-                    <select value={mxCat} onChange={(e) => setMxCat(e.target.value)}
-                        className="flex-1 min-w-[120px] px-2.5 py-2 rounded-lg text-xs font-bold bg-[var(--body-bg)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none">
-                        <option value="all">🏷 كل الأقسام</option>
-                        {((data.categories || []) as GeoRow[]).filter((c) => c.category).map((c) => <option key={c.category} value={c.category}>{catLabel(c.category)}</option>)}
-                    </select>
-                </div>
-                {matrixLoading ? (
-                    <div className="h-24 bg-[var(--gray-100)] rounded-xl animate-pulse" />
-                ) : matrix ? (
-                    <>
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                            <Tile icon="📦" label="حجوزات ٣٠ي" value={arNum(Number(matrix.totals?.bookings_30) || 0)} />
-                            <Tile icon="👁" label="مشاهدات ٣٠ي" value={arNum(Number(matrix.totals?.views_30) || 0)} />
-                            <Tile icon="👆" label="نقرات ٣٠ي" value={arNum(Number(matrix.totals?.clicks_30) || 0)} />
-                            <Tile icon="🏷" label="عروض نشطة" value={arNum(Number(matrix.totals?.active_deals) || 0)} />
-                            <Tile icon="🏪" label="متاجر" value={arNum(Number(matrix.totals?.stores) || 0)} />
+                        <div>
+                            <div style={subTitleStyle}>🚨 راصد الأسوأ — أنت تحدد المعيار</div>
+                            <AdmToolbar>
+                                <AdmSelect
+                                    label="البُعد" value={worstDim} onChange={(v) => setWorstDim(v as typeof worstDim)}
+                                    options={[
+                                        { value: 'by_city', label: 'المدن' },
+                                        { value: 'by_category', label: 'الأقسام' },
+                                        { value: 'by_store', label: 'المتاجر' },
+                                    ]}
+                                />
+                                <AdmSelect
+                                    label="المقياس" value={worstMetric} onChange={(v) => setWorstMetric(v as typeof worstMetric)}
+                                    options={[
+                                        { value: 'cancel_rate', label: 'الأعلى نسبة إلغاء' },
+                                        { value: 'least_bookings', label: 'الأقل حجوزات' },
+                                        { value: 'seller_cancels', label: 'الأكثر إلغاءً من التاجر' },
+                                    ]}
+                                />
+                                <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+                                    <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>حد أدنى للحجوزات</span>
+                                    <input
+                                        type="number" min={0} value={worstMin}
+                                        onChange={(e) => setWorstMin(Math.max(0, Number(e.target.value) || 0))}
+                                        className="adm-focusable"
+                                        style={{
+                                            width: 84, padding: '7px 10px', fontSize: '.82rem', fontWeight: 700, textAlign: 'center',
+                                            borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                                            background: 'var(--adm-surface)', color: 'var(--adm-fg)',
+                                        }}
+                                    />
+                                </label>
+                            </AdmToolbar>
+                            {(() => {
+                                const rows: any[] = ((funnelData[worstDim] || []) as any[]).filter((r: any) => Number(r.bookings) >= worstMin);
+                                const sorted = [...rows].sort((a, b) => {
+                                    if (worstMetric === 'least_bookings') return Number(a.bookings) - Number(b.bookings);
+                                    if (worstMetric === 'seller_cancels') return Number(b.c_seller || 0) - Number(a.c_seller || 0);
+                                    return (Number(b.cancelled) / Math.max(1, Number(b.bookings))) - (Number(a.cancelled) / Math.max(1, Number(a.bookings)));
+                                }).slice(0, 10);
+                                const nameOf = (r: any) => worstDim === 'by_city' ? r.city : worstDim === 'by_category' ? catLabel(r.category) : `${r.shop}${r.city ? ` (${r.city})` : ''}`;
+                                return (
+                                    <AdmTable
+                                        caption="أسوأ عشرة صفوف حسب البُعد والمقياس المختارين"
+                                        rows={sorted}
+                                        keyOf={(_r, i) => String(i)}
+                                        empty={{ icon: '🔎', title: 'لا نتائج فوق الحد المحدد', hint: 'خفّض «الحد الأدنى للحجوزات» ليظهر صفٌّ.' }}
+                                        columns={[
+                                            { header: '#', numeric: true, width: '42px', cell: (_r, i) => admNum(i + 1) },
+                                            { header: 'الاسم', cell: (r) => nameOf(r) },
+                                            { header: 'حجوزات', numeric: true, cell: (r) => admNum(Number(r.bookings)) },
+                                            { header: 'مكتملة', numeric: true, secondary: true, cell: (r) => admNum(Number(r.completed)) },
+                                            { header: 'ملغاة', numeric: true, cell: (r) => `${admNum(Number(r.cancelled))} (${admNum(Math.round((Number(r.cancelled) / Math.max(1, Number(r.bookings))) * 100))}٪)` },
+                                            {
+                                                header: 'ألغاها التاجر', numeric: true,
+                                                cell: (r) => (Number(r.c_seller) > 0
+                                                    ? <AdmPill tone="bad">{admNum(Number(r.c_seller))}</AdmPill>
+                                                    : <span style={{ color: 'var(--adm-fg-3)' }}>—</span>),
+                                            },
+                                        ]}
+                                    />
+                                );
+                            })()}
+                            <p style={noteStyle}>
+                                متجر يكثر إلغاؤه بنفسه = سلعة غير متوفرة فعلاً (أرسل له تنبيهاً من الإرسال المستهدف).
+                                ومدينة عالية الإلغاء = راجع مدد التحضير ومواعيد المحلات فيها.
+                            </p>
                         </div>
-                        <div className="font-bold text-xs text-[var(--text-primary)]">⏰ حجوزات هذه الشريحة بالساعة (٩٠ يوماً، توقيت الرياض)</div>
-                        <Bars data={(() => { const m = new Map(((matrix.hours || []) as HourRow[]).map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#10b981" height={90} />
-                        {((matrix.view_hours || []) as HourRow[]).length > 0 && (
+                    </div>
+                )}
+            </AdmSection>
+
+            {/* ── ٧) ساعات الذروة: خريطة ٧×٢٤ + تحليل مدى ──────────────────── */}
+            <AdmSection title="ساعات الذروة" icon="⏰"
+                desc="الخريطة تقول متى يشتري الناس بالضبط؛ اضغط أي خلية لتحليل ساعتها، أو حدّد مدى بنفسك.">
+                <div style={{ display: 'grid', gap: 16 }}>
+                    {hoursData?.heatmap ? (
+                        <div>
+                            <div style={subTitleStyle}>
+                                🗓 خريطة الأسبوع (يوم × ساعة) — الأغمق أنشط، والضغط يحلّل الخلية
+                            </div>
+                            <WeekHeatmap
+                                cells={(hoursData.heatmap || []) as any[]}
+                                activeDow={hrDow}
+                                onPick={(dow, h) => { setHrDow(dow); setHrFrom(h); setHrTo(h); }}
+                            />
+                        </div>
+                    ) : hoursLoading ? <AdmSkeleton rows={2} height={60} /> : null}
+
+                    <div>
+                        <AdmToolbar>
+                            <AdmSelect label="من الساعة" value={String(hrFrom)} onChange={(v) => setHrFrom(Number(v))} options={HOUR_OPTIONS} />
+                            <AdmSelect label="إلى الساعة" value={String(hrTo)} onChange={(v) => setHrTo(Number(v))} options={HOUR_OPTIONS} />
+                            <AdmSelect label="اليوم" value={hrDow === 'all' ? 'all' : String(hrDow)} onChange={(v) => setHrDow(v === 'all' ? 'all' : Number(v))} options={DOW_OPTIONS} />
+                        </AdmToolbar>
+                        {hoursLoading ? <AdmSkeleton rows={1} height={70} /> : hoursData?.totals ? (
                             <>
-                                <div className="font-bold text-xs text-[var(--text-primary)]">👁 المشاهدات/النقرات بالساعة</div>
-                                <Bars data={(() => { const m = new Map(((matrix.view_hours || []) as HourRow[]).map((r) => [r.h, r.n])); return Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : '', n: m.get(h) || 0 })); })()} color="#0ea5e9" height={90} />
-                            </>
-                        )}
-                        {((matrix.top_deals || []) as any[]).length > 0 && (
-                            <div className="text-[11px] space-y-1">
-                                <div className="font-bold text-[var(--text-primary)]">🏆 أفضل عروض الشريحة</div>
-                                {(matrix.top_deals as any[]).map((t, i) => (
-                                    <div key={i} className="flex items-center justify-between text-[var(--text-secondary)] bg-[var(--body-bg)] rounded-lg px-2.5 py-1.5">
-                                        <span className="truncate ml-2">«{t.item_name}» — {t.shop_name}</span>
-                                        <span className="tabular-nums whitespace-nowrap">📦 {arNum(t.bookings)} • 👁 {arNum(t.views)}</span>
+                                <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--adm-fg-2)', marginBottom: 9 }}>
+                                    {hrDow === 'all' ? 'كل الأيام' : DOW_AR[hrDow as number]} من {fmtHour(hrFrom)} إلى {fmtHour(hrTo)} — آخر {admNum(days)} يوماً
+                                    {' '}(يدعم الالتفاف عبر منتصف الليل، مثل ١٠م ← ٤ص).
+                                </div>
+                                <AdmStatGrid cols={3}>
+                                    <AdmStat icon="📦" label="حجوزات" value={admNum(Number(hoursData.totals.bookings) || 0)} scope="في هذا المدى" />
+                                    <AdmStat icon="🛒" label="مشترون نشطون" value={admNum(Number(hoursData.totals.buyers) || 0)} scope="في هذا المدى" />
+                                    <AdmStat icon="🏪" label="تجار مستفيدون" value={admNum(Number(hoursData.totals.sellers) || 0)} scope="في هذا المدى" />
+                                    <AdmStat icon="👁" label="مشاهدات ونقرات" value={admNum((Number(hoursData.totals.views) || 0) + (Number(hoursData.totals.clicks) || 0))} scope={`${admNum(Number(hoursData.totals.searches) || 0)} عملية بحث`} />
+                                    <AdmStat icon="✅" label="اكتملت" value={admNum(Number(hoursData.totals.completed) || 0)} tone="ok" scope="في هذا المدى" />
+                                    <AdmStat icon="🏷" label="عروض نُشرت" value={admNum(Number(hoursData.totals.deals_published) || 0)} scope="في هذا المدى" />
+                                </AdmStatGrid>
+                                {(((hoursData.top_categories || []) as any[]).length > 0 || ((hoursData.top_cities || []) as any[]).length > 0) && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                                        {((hoursData.top_categories || []) as any[]).map((c) => (
+                                            <AdmPill key={`c-${c.category}`} tone="info">🏷 {catLabel(c.category)} ×{admNum(Number(c.n))}</AdmPill>
+                                        ))}
+                                        {((hoursData.top_cities || []) as any[]).map((c) => (
+                                            <AdmPill key={`t-${c.city}`}>🏙 {c.city} ×{admNum(Number(c.n))}</AdmPill>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </>
-                ) : <div className="text-[11px] text-[var(--text-secondary)]">تعذّر التحميل — غيّر الاختيار للمحاولة مجدداً.</div>}
-            </section>
-
-            {/* 💸 v12.40 — أقسام تحتاج تخفيضات / أقسام عليها طلب بلا معروض */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">💸 أين يجب أن تتركز التخفيضات؟ (تفاعل كل قسم)</h3>
-                <div className="space-y-1.5">
-                    {(((pulse2?.cat_engagement || []) as any[])).map((c) => {
-                        const eng = (Number(c.views_30) || 0) + (Number(c.clicks_30) || 0);
-                        const b30 = Number(c.bookings_30) || 0;
-                        const verdict = b30 > 0 && Number(c.active_deals) === 0
-                            ? { t: '🔥 طلب بلا معروض — استقطب تجاراً فوراً', col: '#ef4444' }
-                            : eng >= 10 && b30 / Math.max(eng, 1) < 0.05
-                            ? { t: '💸 يُشاهَد ولا يُحجز — يحتاج تخفيضات أقوى', col: '#f59e0b' }
-                            : b30 >= 5
-                            ? { t: '✅ قسم رائج', col: '#10b981' }
-                            : { t: '👀 هادئ', col: 'var(--text-secondary)' };
-                        return (
-                            <div key={c.category} className="flex items-center justify-between text-[11px] bg-[var(--body-bg)] rounded-lg px-2.5 py-2 gap-2 flex-wrap">
-                                <span className="font-bold text-[var(--text-primary)]">{catLabel(c.category)}</span>
-                                <span className="text-[var(--text-secondary)] tabular-nums">👁 {arNum(Number(c.views_30) || 0)} • 👆 {arNum(Number(c.clicks_30) || 0)} • 📦 {arNum(b30)} • 🏷 {arNum(Number(c.active_deals) || 0)}</span>
-                                <span className="font-bold" style={{ color: verdict.col }}>{verdict.t}</span>
-                            </div>
-                        );
-                    })}
-                    {((pulse2?.cat_engagement || []) as any[]).length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا بيانات بعد.</div>}
+                                )}
+                            </>
+                        ) : null}
+                        <p style={noteStyle}>
+                            استخدمه لقرارات دقيقة: متى تجدول الحملات، وأي ساعاتٍ تنصح تجار مدينةٍ معيّنة بالنشر فيها.
+                        </p>
+                    </div>
                 </div>
-                <div className="text-[10px] text-[var(--text-secondary)] mt-2">المشاهدات/النقرات الزمنية بدأ تسجيلها في v12.38 — تكتمل دقتها خلال أيام. الحكم «طلب بلا معروض» فوري ودقيق من الحجوزات.</div>
-            </section>
+            </AdmSection>
 
-            {/* 🔎 v12.40 — عمليات البحث */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">🔎 ماذا يبحث الزوار؟ (آخر ٣٠ يوماً — {arNum(Number(pulse2?.search_total_30) || 0)} عملية بحث)</h3>
+            {/* ── ٨) المحلل المخصّص ─────────────────────────────────────────── */}
+            <AdmSection title="المحلل المخصّص" icon="🎛" collapsible defaultOpen={false}
+                desc="حدّد أي تاريخ وساعة ومدينة وقسم — وسيتحلّل فوراً. هذه اللوحة وحدها تتبع اختيارك، وبقية الشاشة تتبع فترة الأعلى.">
+                <div style={{ display: 'grid', gap: 12 }}>
+                    <AdmDateRange value={{ from: cuStart, to: cuEnd }} onChange={(r) => { setCuStart(r.from); setCuEnd(r.to); }} />
+                    <AdmToolbar>
+                        <AdmSelect label="من الساعة" value={String(cuFrom)} onChange={(v) => setCuFrom(Number(v))} options={HOUR_OPTIONS} />
+                        <AdmSelect label="إلى الساعة" value={String(cuTo)} onChange={(v) => setCuTo(Number(v))} options={HOUR_OPTIONS} />
+                        <AdmSelect label="اليوم" value={cuDow === 'all' ? 'all' : String(cuDow)} onChange={(v) => setCuDow(v === 'all' ? 'all' : Number(v))} options={DOW_OPTIONS} />
+                        <AdmSelect label="المدينة" value={cuCity} onChange={setCuCity} options={geoCityOptions} />
+                        <AdmSelect label="القسم" value={cuCat} onChange={setCuCat} options={geoCatOptions} />
+                        <AdmButton
+                            size="sm"
+                            onClick={() => { setCuStart(isoDay(-days)); setCuEnd(isoDay(0)); setCuFrom(0); setCuTo(23); setCuDow('all'); setCuCity('all'); setCuCat('all'); }}
+                        >
+                            ↺ إعادة الضبط
+                        </AdmButton>
+                    </AdmToolbar>
+
+                    {cuLoading ? <AdmSkeleton rows={2} height={70} /> : cuData?.totals ? (() => {
+                        const tt = cuData.totals;
+                        const b = Number(tt.bookings) || 0;
+                        const ok = Number(tt.completed) || 0;
+                        const bad = Number(tt.cancelled) || 0;
+                        const attributed = (Number(tt.cancel_buyer) || 0) + (Number(tt.cancel_seller) || 0) + (Number(tt.cancel_system) || 0);
+                        const domCancel = attributed === 0 ? null
+                            : Number(tt.cancel_seller) >= Number(tt.cancel_buyer) && Number(tt.cancel_seller) >= Number(tt.cancel_system) ? 'التاجر 🏪'
+                                : Number(tt.cancel_system) >= Number(tt.cancel_buyer) ? 'انتهاء المهلة ⏱' : 'المشتري 🛒';
+                        const daily: { d: string; n: number }[] = cuData.daily || [];
+                        const half = Math.floor(daily.length / 2);
+                        const firstHalf = daily.slice(0, half).reduce((a, r) => a + r.n, 0);
+                        const secondHalf = daily.slice(half).reduce((a, r) => a + r.n, 0);
+                        const trend = daily.length < 4 ? null : secondHalf > firstHalf * 1.2 ? '📈 صاعد' : secondHalf < firstHalf * 0.8 ? '📉 هابط' : '➡️ مستقر';
+                        const topStore = (cuData.top_stores || [])[0];
+                        const topCat0 = (cuData.top_categories || [])[0];
+                        const hrs: HourRow[] = cuData.hours || [];
+                        const bestH = hrs.length ? [...hrs].sort((a, c) => c.n - a.n)[0] : null;
+                        return (
+                            <>
+                                <AdmStatGrid cols={4}>
+                                    <AdmStat icon="📦" label="حجوزات" value={admNum(b)} scope={`${admNum(Number(tt.qty) || 0)} قطعة — في هذه الشريحة`} />
+                                    <AdmStat icon="✅" label="مكتمل" value={admNum(ok)} tone="ok" scope={b ? `${admNum(Math.round((ok / b) * 100))}٪ من الشريحة` : 'لا حجوزات'} />
+                                    <AdmStat icon="🛒" label="مشترون" value={admNum(Number(tt.buyers) || 0)} scope="في هذه الشريحة" />
+                                    <AdmStat icon="🏪" label="تجار مستفيدون" value={admNum(Number(tt.sellers) || 0)} scope="في هذه الشريحة" />
+                                    <AdmStat icon="👁" label="مشاهدات" value={admNum(Number(tt.views) || 0)} scope="في هذه الشريحة" />
+                                    <AdmStat icon="👆" label="نقرات" value={admNum(Number(tt.clicks) || 0)} scope="في هذه الشريحة" />
+                                    <AdmStat icon="🔎" label="عمليات بحث" value={admNum(Number(tt.searches) || 0)} scope="في هذه الشريحة" />
+                                    <AdmStat icon="🏷" label="عروض نُشرت" value={admNum(Number(tt.deals_published) || 0)} scope="في هذه الشريحة" />
+                                </AdmStatGrid>
+
+                                {daily.length > 1 && (
+                                    <div>
+                                        <div style={panelTitleStyle}>📈 الاتجاه اليومي للشريحة</div>
+                                        <Bars height={80} data={daily.map((r, i) => ({ label: daily.length <= 14 || i % Math.ceil(daily.length / 10) === 0 ? r.d.slice(5) : '', n: r.n }))} />
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
+                                    {([
+                                        ['🏙 المدن', cuData.top_cities], ['🏷 الأقسام', cuData.top_categories],
+                                        ['🏬 المولات', cuData.top_malls], ['🏪 المتاجر', cuData.top_stores],
+                                    ] as [string, any[]][]).filter(([, rows]) => (rows || []).length > 0).map(([label, rows]) => (
+                                        <div key={label} style={softPanelStyle}>
+                                            <div style={panelTitleStyle}>{label}</div>
+                                            {(rows as any[]).slice(0, 4).map((r, i) => (
+                                                <MiniRow
+                                                    key={i}
+                                                    label={label === '🏷 الأقسام' ? catLabel(r.name) : r.name}
+                                                    value={`📦 ${admNum(Number(r.n))} • ✅ ${admNum(Number(r.ok))} • 🚫 ${admNum(Number(r.bad))}`}
+                                                />
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {((cuData.top_deals || []) as any[]).length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {(cuData.top_deals as any[]).map((r, i) => (
+                                            <AdmPill key={i} tone="info">🏆 «{r.name}» — {r.shop} ×{admNum(Number(r.n))}</AdmPill>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div style={softPanelStyle}>
+                                    <div style={panelTitleStyle}>🤖 حكم المحلل على هذه الشريحة</div>
+                                    <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: '.78rem', lineHeight: 1.9, color: 'var(--adm-fg-2)' }}>
+                                        {b === 0 && <li>لا حجوزات هنا — إن كانت فيها مشاهدات أو بحث فهي طلبٌ كامن بلا معروضٍ مناسب، وإلا فشريحةٌ خاملة لا تستحق ميزانية الآن.</li>}
+                                        {b > 0 && <li>الاكتمال {Math.round((ok / b) * 100)}٪ {ok / b >= 0.7 ? '— صحي ✅' : ok / b >= 0.5 ? '— مقبول، راقبه 👀' : '— ضعيف: راجع مدد التحضير والتذكيرات ⚠️'}.</li>}
+                                        {bad > 0 && <li>الإلغاء {Math.round((bad / b) * 100)}٪{domCancel ? ` — الأكثر إلغاءً هنا: ${domCancel}` : ' — كلها قبل بدء تتبّع «من ألغى»'}.</li>}
+                                        {trend && <li>الاتجاه خلال الفترة: {trend}.</li>}
+                                        {bestH && <li>أفضل ساعة في الشريحة: {fmtHour(bestH.h)} ({admNum(bestH.n)} حجزاً) — اجدول حملاتك قبلها بساعة.</li>}
+                                        {topStore && <li>الأقوى هنا: «{topStore.name}» بـ{admNum(Number(topStore.n))} حجزاً{topCat0 ? ` — وأنشط قسم: ${catLabel(topCat0.name)}` : ''}.</li>}
+                                        {b > 0 && Number(tt.sellers) === 1 && <li>⚠️ كل حجوزات الشريحة من تاجرٍ واحد — الشريحة هشّة، استقطب منافساً له.</li>}
+                                    </ul>
+                                </div>
+                            </>
+                        );
+                    })() : <AdmEmpty icon="🎛" title="لا نتيجة لهذه الشريحة" hint="عدّل التواريخ أو الساعات أو المدينة والقسم ثم انتظر لحظة." />}
+                </div>
+            </AdmSection>
+
+            {/* ── ٩) المستكشف: مدينة × قسم ─────────────────────────────────── */}
+            <AdmSection title="المستكشف: مدينة × قسم" icon="🔭" collapsible defaultOpen={false}
+                desc="حجم شريحةٍ بعينها خلال ٩٠ يوماً وأفضل عروضها — لمعرفة أين الطلب الحقيقي قبل استقطاب تاجر.">
+                <AdmToolbar>
+                    <AdmSelect label="المدينة" value={mxCity} onChange={setMxCity} options={geoCityOptions} />
+                    <AdmSelect label="القسم" value={mxCat} onChange={setMxCat} options={geoCatOptions} />
+                </AdmToolbar>
+                {matrixLoading ? <AdmSkeleton rows={2} height={70} /> : matrix ? (
+                    <div style={{ display: 'grid', gap: 12 }}>
+                        <AdmStatGrid cols={3}>
+                            <AdmStat icon="📦" label="حجوزات" value={admNum(Number(matrix.totals?.bookings_30) || 0)} scope="آخر ٣٠ يوماً — في هذه الشريحة" />
+                            <AdmStat icon="👁" label="مشاهدات" value={admNum(Number(matrix.totals?.views_30) || 0)} scope="آخر ٣٠ يوماً — في هذه الشريحة" />
+                            <AdmStat icon="👆" label="نقرات" value={admNum(Number(matrix.totals?.clicks_30) || 0)} scope="آخر ٣٠ يوماً — في هذه الشريحة" />
+                            <AdmStat icon="🏷" label="عروض نشطة" value={admNum(Number(matrix.totals?.active_deals) || 0)} scope="في هذه الشريحة الآن" />
+                            <AdmStat icon="🏪" label="متاجر" value={admNum(Number(matrix.totals?.stores) || 0)} scope="في هذه الشريحة الآن" />
+                        </AdmStatGrid>
+                        <AdmTable
+                            caption="أفضل عروض الشريحة خلال ٩٠ يوماً"
+                            rows={(matrix.top_deals || []) as any[]}
+                            keyOf={(_r, i) => String(i)}
+                            empty={{ icon: '🔭', title: 'لا عروض في هذه الشريحة', hint: 'وهذه بذاتها إشارة: طلبٌ محتمل بلا معروض — جرّب مدينةً أو قسماً آخر للمقارنة.' }}
+                            columns={[
+                                { header: 'العرض', cell: (t: any) => `«${t.item_name}»` },
+                                { header: 'المتجر', secondary: true, cell: (t: any) => t.shop_name },
+                                { header: 'حجوزات', numeric: true, cell: (t: any) => admNum(t.bookings) },
+                                { header: 'مشاهدات', numeric: true, cell: (t: any) => admNum(t.views) },
+                            ]}
+                        />
+                        <p style={noteStyle}>ساعات هذه الشريحة تُقرأ من خريطة «ساعات الذروة» أعلاه — لا يُرسم لها رسمٌ ثالث.</p>
+                    </div>
+                ) : <AdmError message="تعذّر تحميل شريحة المستكشف." onRetry={() => setMatrixNonce((n) => n + 1)} />}
+            </AdmSection>
+
+            {/* ── ١٠) جودة محتوى العروض ─────────────────────────────────────── */}
+            <AdmSection title="جودة محتوى العروض النشطة" icon="🖼"
+                desc="الصور والوصف أول ما يقنع المشتري — وضعفهما يظهر في توصية كل تاجر تلقائياً.">
+                <AdmStatGrid cols={4}>
+                    <AdmStat icon="🏷" label="عروض نشطة" value={admNum(Number((data.content || {}).active_deals) || 0)} scope="كل المنصّة" />
+                    <AdmStat icon="🚫" label="بلا صور إطلاقاً" value={admNum(Number((data.content || {}).no_image) || 0)} tone={Number((data.content || {}).no_image) > 0 ? 'bad' : 'neutral'} scope="كل المنصّة" />
+                    <AdmStat icon="🖼" label="بصورة واحدة" value={admNum(Number((data.content || {}).one_image) || 0)} tone={Number((data.content || {}).one_image) > 0 ? 'warn' : 'neutral'} scope="كل المنصّة" />
+                    <AdmStat icon="📝" label="بلا وصف كافٍ" value={admNum(Number((data.content || {}).no_desc) || 0)} tone={Number((data.content || {}).no_desc) > 0 ? 'warn' : 'neutral'} scope="كل المنصّة" />
+                </AdmStatGrid>
+                <p style={noteStyle}>
+                    المتاجر ضعيفة المحتوى تظهر أسبابها داخل بطاقتها في «صحة التجار»، وتوصيتها الجاهزة تتضمّن علاجها.
+                    (وفلتر المحتوى يرفض الصور غير اللائقة تلقائياً.)
+                </p>
+            </AdmSection>
+
+            {/* ── ١١) ماذا يبحث الزوار؟ ─────────────────────────────────────── */}
+            <AdmSection title="ماذا يبحث الزوار؟" icon="🔎" collapsible defaultOpen={false}
+                badge={{ text: `${admNum(Number(pulse2?.search_total_30) || 0)} عملية بحث / ٣٠ يوماً`, tone: 'neutral' }}
+                desc="كل كلمةٍ تتكرّر بلا عروضٍ تلبّيها = طلبٌ جاهز تستقطب له تاجراً أو تطلبه من تجارك.">
                 {((pulse2?.searches || []) as any[]).length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {(pulse2.searches as any[]).map((s) => (
-                            <span key={s.q} className="text-[11px] font-bold bg-[var(--body-bg)] border border-[var(--border-color)] rounded-full px-3 py-1.5 text-[var(--text-primary)]">
-                                {s.q} <span className="text-[var(--text-secondary)]">×{arNum(Number(s.n) || 0)}</span>
-                            </span>
+                            <AdmPill key={s.q}>{s.q} ×{admNum(Number(s.n) || 0)}</AdmPill>
                         ))}
                     </div>
                 ) : (
-                    <div className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-                        بدأنا اليوم تسجيل كل كلمة بحث في الرئيسية وقائمة العروض — خلال أيام سترى هنا <b>أعلى الكلمات المبحوثة</b>:
-                        كل كلمة تتكرر بلا عروض تلبّيها = طلب جاهز تستقطب له تاجراً أو تطلب من تجارك توفيره.
-                    </div>
+                    <AdmEmpty icon="🔎" title="لا كلمات بحث بعد" hint="تُسجَّل كل كلمة بحثٍ في الرئيسية وقائمة العروض — تظهر هنا فور تراكمها." />
                 )}
-            </section>
+            </AdmSection>
 
-            {/* 📢 v12.40 — خطة التسويق الجاهزة */}
-            <section className="bg-[var(--card-bg)] border-2 border-amber-200 rounded-2xl p-4 space-y-2.5">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm">📢 خطة التسويق الجاهزة (خطوة بخطوة — انسخ ونفّذ)</h3>
-                <div className="grid md:grid-cols-2 gap-2 text-[11px]">
-                    <div className="bg-[var(--body-bg)] rounded-xl p-3 leading-relaxed">
-                        <div className="font-extrabold text-[var(--text-primary)] mb-1">🏪 جذب التجار (رتّبها المحلل بأولوية العائد)</div>
-                        <ol className="pr-4 list-decimal space-y-1 text-[var(--text-secondary)]">
-                            <li>ابدأ بشرائح «🔥 طلب بلا معروض» و«⚡» أعلاه — الطلب موجود والمنافسة صفر.</li>
-                            <li>زر السوق/المول المستهدف وقت الذروة (انظر المستكشف) وكلّم المحلات مباشرة، أو أرسل لواتساب المحل.</li>
-                            <li>أرسل لهم النص الجاهز أدناه + باركود دعوة تاجر من لوحتك.</li>
-                            <li>قدّم «أول ١٤ يوماً مجاناً» (زر التجربة في وضع الاشتراك العام) — يزيل التردد.</li>
-                            <li>بعد انضمامه أرسل له توصية «تنشيط متجر خامل» من الإرسال المستهدف ليبدأ صح.</li>
-                        </ol>
-                        <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
-                            «أهلاً 👋 منصة تاكي توصل عروض محلك لمشترين يبحثون فعلاً في مدينتك — تحليلنا يُظهر طلباً على قسمك الآن. التسجيل دقائق وأول ١٤ يوماً مجاناً: www.takisa.net»
+            {/* ── ١٢) موسمية الحجوزات ───────────────────────────────────────── */}
+            <AdmSection title="موسمية حجوزاتك" icon="📆"
+                desc="اثنا عشر شهراً من حجوزاتك الفعلية — ذروتك الحقيقية تُقرأ من هنا لا من تقويمٍ عام.">
+                <Bars height={90} color="var(--adm-info-fg)" data={(data.seasonal || []).map((m: { mon: string; bookings: number }) => ({ label: m.mon.slice(5), n: m.bookings }))} />
+                <div style={{ marginTop: 12 }}>
+                    <AdmStatGrid cols={3}>
+                        {((data.monthly || []) as MonthRow[]).slice(-3).map((m) => (
+                            <AdmStat
+                                key={m.mon}
+                                label={`${m.mon.slice(5)}/${m.mon.slice(2, 4)}`}
+                                value={`${admNum(m.new_sellers)} 🏪 · ${admNum(m.new_buyers)} 🛒`}
+                                scope="تسجيلات جديدة في الشهر"
+                            />
+                        ))}
+                    </AdmStatGrid>
+                </div>
+                <p style={noteStyle}>
+                    مواعيد المواسم والفعاليات يكتبها تقويم <b>«البانرات والحملات»</b> — ولا تُكتب في هذه الشاشة حتى لا يوجد تقويمان متناقضان.
+                </p>
+            </AdmSection>
+
+            {/* ── ١٣) خطة النمو والتسويق ────────────────────────────────────── */}
+            <AdmSection title="خطة النمو والتسويق" icon="🌱" collapsible defaultOpen={false}
+                desc="ما تفعله أنت هذا الأسبوع — توصياتٌ من بياناتك الفعلية، ونصوصٌ جاهزة للنسخ.">
+                <div style={{ display: 'grid', gap: 14 }}>
+                    <div>
+                        <div style={subTitleStyle}>🧭 توصيات جذرية</div>
+                        <ul style={{ margin: 0, paddingInlineStart: 18, fontSize: '.8rem', lineHeight: 1.95, color: 'var(--adm-fg-2)' }}>
+                            {Number(buyers.dormant_30) > 0 && (
+                                <li><b style={{ color: 'var(--adm-fg)' }}>{admNum(Number(buyers.dormant_30))} مشترٍ خامل +٣٠ يوماً</b> — أعدهم بحملةٍ من «الإشعارات والبريد» أو بمسابقةٍ بجائزة.</li>
+                            )}
+                            <li><b style={{ color: 'var(--adm-fg)' }}>استقطاب التجار الأثمن نمواً:</b> ابدأ بما وُسم «⚡ فرصة» في لوحة «أين الفرصة؟» — أرسل باركود دعوة التاجر لهم عبر واتساب المحلات مباشرة.</li>
+                            <li><b style={{ color: 'var(--adm-fg)' }}>حافظ على المجدّدين:</b> راقب «تجديد الشهر الحالي» في الخلاصة — أي هبوطٍ تحت ٧٠٪ عالجه بخصم تجديد مؤقت من شاشة التجّار.</li>
+                            <li><b style={{ color: 'var(--adm-fg)' }}>المواسم تصنع القفزات:</b> جهّز حملةً ومسابقة قبل كل فعاليةٍ في تقويم «البانرات والحملات» بأسبوعين.</li>
+                            {Number((data.content || {}).no_image) + Number((data.content || {}).one_image) > 0 && (
+                                <li><b style={{ color: 'var(--adm-fg)' }}>جودة المحتوى تسويقٌ مجاني:</b> استخدم قالب «جودة الصور» في الإرسال المستهدف.</li>
+                            )}
+                        </ul>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
+                        <div style={softPanelStyle}>
+                            <div style={{ fontWeight: 800, fontSize: '.8rem', color: 'var(--adm-fg)', marginBottom: 5 }}>🏪 جذب التجار — بأولوية العائد</div>
+                            <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: '.78rem', lineHeight: 1.9, color: 'var(--adm-fg-2)' }}>
+                                <li>ابدأ بما وُسم «⚡ فرصة» — الطلب موجود والمنافسة صفر.</li>
+                                <li>زر السوق أو المول وقت الذروة (خريطة الساعات) وكلّم المحلات مباشرة.</li>
+                                <li>أرسل لهم النص الجاهز أدناه + باركود دعوة تاجر من لوحتك.</li>
+                                <li>قدّم «أول ١٤ يوماً مجاناً» — يزيل التردد.</li>
+                                <li>بعد انضمامه أرسل له قالب «تنشيط متجر خامل» ليبدأ صح.</li>
+                            </ol>
+                            <div style={copyBoxStyle}>
+                                «أهلاً 👋 منصة تاكي توصل عروض محلك لمشترين يبحثون فعلاً في مدينتك — تحليلنا يُظهر طلباً على قسمك الآن. التسجيل دقائق وأول ١٤ يوماً مجاناً: www.takisa.net»
+                            </div>
+                        </div>
+                        <div style={softPanelStyle}>
+                            <div style={{ fontWeight: 800, fontSize: '.8rem', color: 'var(--adm-fg)', marginBottom: 5 }}>🛒 جذب المشترين — بتوقيت الذروة</div>
+                            <ol style={{ margin: 0, paddingInlineStart: 18, fontSize: '.78rem', lineHeight: 1.9, color: 'var(--adm-fg-2)' }}>
+                                <li>إعلانات مستهدفة جغرافياً قبل ساعة الذروة بساعتين.</li>
+                                <li>مجموعات واتساب/تيليجرام لكل مدينة — أقوى ٣ عروض بصورها + رابط مباشر.</li>
+                                <li>مسابقة بجائزة + إشعار تلقائي — أفضل أداة إرجاع للخاملين ({admNum(Number(buyers.dormant_30) || 0)} خاملاً حالياً).</li>
+                                <li>باركود المتجر عند الكاشير — كل زبونٍ يمسحه يصبح مستخدماً.</li>
+                                <li>قبل كل فعاليةٍ في تقويم «البانرات والحملات»: بانر + حملة مجدولة.</li>
+                            </ol>
+                            <div style={copyBoxStyle}>
+                                «خصومات حقيقية في {(((data.cities || [])[0] as GeoRow | undefined)?.city) || 'مدينتك'} تصل ٥٠٪ 🔥 احجز قبل نفاد الكمية — بدون تحميل تطبيق: www.takisa.net»
+                            </div>
                         </div>
                     </div>
-                    <div className="bg-[var(--body-bg)] rounded-xl p-3 leading-relaxed">
-                        <div className="font-extrabold text-[var(--text-primary)] mb-1">🛒 جذب المشترين (بتوقيت الذروة)</div>
-                        <ol className="pr-4 list-decimal space-y-1 text-[var(--text-secondary)]">
-                            <li>انشر إعلانات سناب/تيك توك مستهدفة جغرافياً على مدن «✅ متوازن» — قبل ساعة الذروة بساعتين.</li>
-                            <li>مجموعات واتساب/تيليجرام الخاصة بكل مدينة — انشر أقوى ٣ عروض بصورها + رابط مباشر.</li>
-                            <li>شغّل مسابقة بجائزة من تبويب المسابقات + إشعار تلقائي — أفضل أداة إرجاع للخاملين ({arNum(Number(buyers.dormant_30) || 0)} خامل حالياً).</li>
-                            <li>اطلب من كل تاجر تعليق باركود متجره عند الكاشير — كل زبون يمسحه يصبح مستخدماً.</li>
-                            <li>قبل كل موسم (انظر التقويم أعلاه): بانر + حملة مجدولة من «الإشعارات والرسائل».</li>
-                        </ol>
-                        <div className="mt-2 p-2 bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--border-color)] text-[var(--text-primary)]" style={{ userSelect: 'all' }}>
-                            «خصومات حقيقية في {(((data.cities || [])[0] as GeoRow | undefined)?.city) || 'مدينتك'} تصل ٥٠٪ 🔥 احجز قبل نفاد الكمية — بدون تحميل تطبيق: www.takisa.net»
-                        </div>
-                    </div>
+                    <p style={noteStyle}>النصّان قابلان للنسخ (اضغط عليهما مطولاً) ويتحدّثان تلقائياً بأقوى مدنك الحالية.</p>
                 </div>
-                <div className="text-[10px] text-[var(--text-secondary)]">النصوص قابلة للنسخ (اضغط عليها مطولاً) — وتتحدث تلقائياً بأقوى مدنك الحالية.</div>
-            </section>
+            </AdmSection>
 
-            {/* 🖼 v12.39 — جودة محتوى العروض */}
-            <section className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                <h3 className="font-extrabold text-[var(--text-primary)] text-sm mb-2">🖼 جودة محتوى العروض النشطة</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <Tile icon="🏷" label="عروض نشطة" value={arNum(Number((data.content || {}).active_deals) || 0)} />
-                    <Tile icon="🚫" label="بلا صور إطلاقاً" value={arNum(Number((data.content || {}).no_image) || 0)} />
-                    <Tile icon="🖼" label="بصورة واحدة فقط" value={arNum(Number((data.content || {}).one_image) || 0)} />
-                    <Tile icon="📝" label="بلا وصف كافٍ" value={arNum(Number((data.content || {}).no_desc) || 0)} />
-                </div>
-                <div className="text-[11px] text-[var(--text-secondary)] mt-2 leading-relaxed">
-                    💡 نقيس اكتمال الصور والوصف وساعات العمل (وفلتر المحتوى يرفض الصور غير اللائقة تلقائياً منذ v12.31).
-                    المتاجر ضعيفة المحتوى تظهر أسبابها داخل بطاقتها في «صحة التجار» وتوصيتها الجاهزة تتضمن علاجها.
-                </div>
-            </section>
-
-            {/* 🗺 الفرص */}
-            <section className="grid md:grid-cols-3 gap-3">
-                {[
-                    { title: '🏙 المدن', rows: (data.cities || []).map((c: GeoRow) => ({ name: c.city!, ...c })) },
-                    { title: '🏷 التصنيفات', rows: (data.categories || []).map((c: GeoRow) => ({ name: catLabel(c.category), ...c })) },
-                    { title: '🏬 المولات والأسواق', rows: (data.malls || []).map((c: GeoRow) => ({ name: c.mall!, ...c })) },
-                ].map((sec) => (
-                    <div key={sec.title} className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-3.5">
-                        <h4 className="font-extrabold text-xs text-[var(--text-primary)] mb-2">{sec.title} — الطلب مقابل العرض</h4>
-                        <div className="space-y-1.5">
-                            {sec.rows.slice(0, 8).map((r: any, i: number) => (
-                                <div key={i} className="flex items-center justify-between text-[11px]">
-                                    <span className="text-[var(--text-primary)] font-bold truncate ml-2">{r.name}</span>
-                                    <span className="text-[var(--text-secondary)] whitespace-nowrap tabular-nums">
-                                        📦 {arNum(r.bookings)} • 🏷 {arNum(r.deals)}
-                                        {r.bookings >= 5 && r.deals <= 2 && <span className="text-amber-500 font-black"> ⚡فرصة</span>}
-                                    </span>
-                                </div>
-                            ))}
-                            {sec.rows.length === 0 && <div className="text-[11px] text-[var(--text-secondary)]">لا بيانات بعد.</div>}
-                        </div>
-                    </div>
-                ))}
-            </section>
-
-            <div className="text-[11px] text-[var(--text-secondary)] bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-3 leading-relaxed">
-                🤖 يعمل المحلل آلياً بالكامل: يفحص المنصة كل أحد صباحاً ويرسل لك إشعاراً تلقائياً إن بدأ عزوف للتجار أو حدثت قفزة انضمام —
-                بدون أي تدخل. إرسال التوصيات للتجار فقط هو ما يبقى بيدك (بضغطة واحدة من هنا).
-            </div>
+            <AdmCard>
+                <p style={{ margin: 0, fontSize: '.78rem', lineHeight: 1.9, color: 'var(--adm-fg-2)' }}>
+                    🤖 يعمل المحلل آلياً بالكامل: يفحص المنصّة كل أحدٍ صباحاً ويرسل لك إشعاراً إن بدأ عزوفُ تجارٍ أو حدثت قفزة انضمام — بلا أي تدخّل.
+                    والذي يبقى بيدك وحدك هو إرسال التوصيات للتجار.
+                </p>
+            </AdmCard>
         </div>
     );
 };

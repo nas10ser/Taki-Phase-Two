@@ -113,12 +113,13 @@ const AdminMessages: React.FC = () => {
 
     return (
         <div className="space-y-4 animate-fade-in" dir="rtl">
-            <div>
-                <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">💬 مراقبة الرسائل</h1>
-                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                    كل المحادثات بين المشترين والتجار، لحظة بلحظة. {canModerate ? 'يمكنك الحذف والإنذار.' : '(عرض فقط — بلا صلاحية حذف/إنذار)'}
-                </p>
-            </div>
+            {/* 🪤 v14.89 — العنوان من قشرة اللوحة. وهذه الشاشة **للقراءة**:
+                لضبط نصوص الرسائل التي ترسلها المنصّة افتح «الإشعارات والبريد». */}
+            <p className="text-sm" style={{ color: 'var(--adm-fg-2)', maxWidth: '64ch', lineHeight: 1.8 }}>
+                كل المحادثات بين المشترين والتجّار، لحظةً بلحظة.{' '}
+                {canModerate ? 'يمكنك الحذف والإنذار.' : '(عرضٌ فقط — بلا صلاحية حذف أو إنذار.)'}{' '}
+                ولضبط <strong>نصوص</strong> الرسائل التي ترسلها المنصّة، افتح «الإشعارات والبريد».
+            </p>
 
             <input
                 type="text"

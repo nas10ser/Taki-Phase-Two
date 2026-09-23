@@ -15,6 +15,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
+import { AdmStat, AdmPill, admNum, admMoney } from '../../components/admin/ui';
 import { openPrintWindow } from '../../utils/invoice';
 import { downloadCsv } from '../../utils/csvExport';
 
@@ -288,10 +289,13 @@ const AdminInvoices: React.FC = () => {
         <div dir="rtl" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* رأس الصفحة + مفتاح الإيقاف الشامل */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {/* 🪤 v14.89 — العنوان من قشرة اللوحة. ووُضّح اللبس: كلمة
+                    «فواتير» كانت تعني هنا سندات دفع المشترين للتجّار، وفي
+                    شاشة الضريبة فواتير اشتراك التجّار في تاكي. */}
                 <div style={{ flex: 1, minWidth: 220 }}>
-                    <h2 style={{ margin: 0, fontWeight: 900, fontSize: '1.3rem', color: 'var(--text-primary)' }}>🧾 فواتير الموقع — الدفع المباشر</h2>
-                    <p style={{ margin: '4px 0 0', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                        سجل مرجعي خفيف لكل عملية دفع إلكتروني (المال ينتقل للتاجر مباشرة — 0% عمولة). التوليد عند الطلب فقط.
+                    <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: 'var(--adm-fg-2)', lineHeight: 1.8 }}>
+                        سجلٌّ مرجعيّ لكل عملية دفعٍ إلكتروني <strong>من المشتري إلى التاجر مباشرةً</strong> —
+                        لا يمرّ بحساب تاكي ولا عمولة عليه. (أمّا ما يدفعه التجّار لتاكي فهو في شاشة «الزكاة والضريبة».)
                     </p>
                 </div>
                 <button onClick={toggleDirectPay}
@@ -306,9 +310,18 @@ const AdminInvoices: React.FC = () => {
 
             {/* بطاقات المجاميع — تجميع على الفهارس دون جلب صفوف */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-                {statCard('🧮', 'عدد العمليات (حسب الفلتر)', String(stats?.count ?? '—'), 'linear-gradient(135deg, #0d9488, #059669)')}
-                {statCard('💰', 'إجمالي المبالغ (ر.س)', stats ? stats.total.toFixed(2) : '—', 'linear-gradient(135deg, #6366f1, #8b5cf6)')}
-                {statCard('🏪', 'بوابات التجار المربوطة', String(gateways.length), 'linear-gradient(135deg, #f59e0b, #f97316)')}
+                {/* 🪤 v14.89 — «إجمالي المبالغ» كان يُقرأ كأنه دخل تاكي، وهو
+                    مالٌ انتقل من المشترين إلى التجّار. والبطاقة الثالثة كانت
+                    حرفياً طول القائمة المعروضة كاملةً أسفل الصفحة بنفس
+                    العنوان — حُذفت، والعدد صار شارةً على عنوان ذلك القسم. */}
+                <AdmStat icon="🧮" label="عدد العمليات" value={admNum(stats?.count ?? 0)} scope="حسب المرشِّح المختار" />
+                <AdmStat
+                    icon="💰"
+                    label="مالٌ انتقل للتجّار"
+                    value={admMoney(stats?.total ?? 0)}
+                    scope="من المشترين إلى التجّار — لا دخلَ لتاكي فيه"
+                    title="مجموع ما دفعه المشترون للتجّار عبر بوّابات التجّار أنفسهم. لا يمرّ بحساب تاكي، ولا عمولة عليه، وليس إيراد المنصّة."
+                />
             </div>
 
             {/* v12.84 — البحث الفوري: رقم حجز / رقم عملية / مرجع بوابة */}
@@ -459,7 +472,10 @@ const AdminInvoices: React.FC = () => {
 
             {/* بوابات التجار — إيقاف/تفعيل إداري */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16 }}>
-                <h3 style={{ margin: '0 0 12px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)' }}>🏪 بوابات التجار المربوطة</h3>
+                <h3 style={{ margin: '0 0 12px', fontWeight: 900, fontSize: '1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🏪 بوّابات التجّار المربوطة
+                    <AdmPill tone={gateways.length ? 'ok' : 'neutral'}>{admNum(gateways.length)}</AdmPill>
+                </h3>
                 {gateways.length === 0 ? (
                     <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
                         لا يوجد تجار ربطوا بواباتهم بعد — بطاقة «💳 بوابة الدفع» متاحة الآن في لوحة كل تاجر.

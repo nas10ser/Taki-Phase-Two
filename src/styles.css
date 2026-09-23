@@ -2764,3 +2764,182 @@ html.light-mode .taki-variant-row:not(.picked) {
 .taki-admin .text-\[0\.72rem\] {
   font-size: 0.625rem;   /* ١٠ بكسل */
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   رموز لوحة الإدارة (v14.89) — نظامٌ واحد بدل ٢٥٣ نمطاً مضمّناً
+   ───────────────────────────────────────────────────────────────────────────
+   🪤 لماذا رموزٌ لا أصناف Tailwind الداكنة: `darkMode` غير مضبوط في
+   `tailwind.config.js` فالافتراضي `media` — أي أن `dark:` يتبع **نظام
+   التشغيل وحده**، بينما التطبيق يكتب `.dark-mode` / `.light-mode` على
+   `<html>` حسب اختيار المستخدم. فأي `dark:` هنا يكذب على من بدّل الثيم
+   يدوياً. الرموز أدناه تتبع الاثنين معاً.
+   🪤 وقِيس قبل الكتابة: ٩٤ تدرّجاً لونياً · ٣٦ «رقماً كبيراً» مكتوباً
+   يدوياً · ٦٠ حالةً فارغة · ٢٧ هيكل تحميل · ١٢ `bg-white` صلباً (أبيضُ على
+   أبيض في الوضع الداكن) · وثلاث قيم زاوية مختلفة للبطاقة نفسها.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+    --adm-surface:        #ffffff;
+    --adm-surface-2:      #f8fafc;
+    --adm-surface-3:      #f1f5f9;
+    --adm-border:         #e4e9ef;
+    --adm-border-strong:  #cbd5e1;
+    --adm-fg:             #0f172a;
+    --adm-fg-2:           #52616f;
+    --adm-fg-3:           #7a8894;
+    --adm-accent:         #047857;
+    --adm-accent-weak:    #e7f5ef;
+    --adm-ok-fg:          #15803d;
+    --adm-ok-bg:          #e8f6ed;
+    --adm-warn-fg:        #92600a;
+    --adm-warn-bg:        #fdf3dd;
+    --adm-bad-fg:         #b3261e;
+    --adm-bad-bg:         #fdeae8;
+    --adm-info-fg:        #1d5f96;
+    --adm-info-bg:        #e6f0f9;
+    --adm-neutral-fg:     #52616f;
+    --adm-neutral-bg:     #eef2f6;
+    --adm-r:              14px;
+    --adm-r-sm:           9px;
+    --adm-shadow:         0 1px 2px rgba(15, 23, 42, .04);
+    --adm-shadow-lift:    0 2px 6px rgba(15, 23, 42, .07), 0 12px 28px -20px rgba(15, 23, 42, .3);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not(.light-mode) {
+        --adm-surface:        #1c2632;
+        --adm-surface-2:      #212d3b;
+        --adm-surface-3:      #273545;
+        --adm-border:         #33414f;
+        --adm-border-strong:  #475565;
+        --adm-fg:             #f1f5f9;
+        --adm-fg-2:           #b3c0cc;
+        --adm-fg-3:           #8b98a5;
+        --adm-accent:         #34d399;
+        --adm-accent-weak:    #14352b;
+        --adm-ok-fg:          #4ade80;
+        --adm-ok-bg:          #12301f;
+        --adm-warn-fg:        #fbbf24;
+        --adm-warn-bg:        #342713;
+        --adm-bad-fg:         #fca5a5;
+        --adm-bad-bg:         #37191a;
+        --adm-info-fg:        #7dd3fc;
+        --adm-info-bg:        #14293a;
+        --adm-neutral-fg:     #b3c0cc;
+        --adm-neutral-bg:     #293644;
+        --adm-shadow:         0 1px 2px rgba(0, 0, 0, .3);
+        --adm-shadow-lift:    0 2px 6px rgba(0, 0, 0, .4), 0 12px 28px -20px rgba(0, 0, 0, .9);
+    }
+}
+
+.dark-mode {
+    --adm-surface:        #1c2632;
+    --adm-surface-2:      #212d3b;
+    --adm-surface-3:      #273545;
+    --adm-border:         #33414f;
+    --adm-border-strong:  #475565;
+    --adm-fg:             #f1f5f9;
+    --adm-fg-2:           #b3c0cc;
+    --adm-fg-3:           #8b98a5;
+    --adm-accent:         #34d399;
+    --adm-accent-weak:    #14352b;
+    --adm-ok-fg:          #4ade80;
+    --adm-ok-bg:          #12301f;
+    --adm-warn-fg:        #fbbf24;
+    --adm-warn-bg:        #342713;
+    --adm-bad-fg:         #fca5a5;
+    --adm-bad-bg:         #37191a;
+    --adm-info-fg:        #7dd3fc;
+    --adm-info-bg:        #14293a;
+    --adm-neutral-fg:     #b3c0cc;
+    --adm-neutral-bg:     #293644;
+    --adm-shadow:         0 1px 2px rgba(0, 0, 0, .3);
+    --adm-shadow-lift:    0 2px 6px rgba(0, 0, 0, .4), 0 12px 28px -20px rgba(0, 0, 0, .9);
+}
+
+/* حلقة تركيزٍ موحّدة داخل اللوحة — المضمّن `outline:none` منتشرٌ في الواجهة
+   (٤٦ موضعاً، درس v14.63) فالمهمّ في الورقة يعلو على المضمّن غير المهمّ. */
+.adm-focusable:focus-visible {
+    outline: 2px solid var(--adm-accent) !important;
+    outline-offset: 2px !important;
+}
+
+/* شبكة الأرقام: عمودان على الجوال، وتتوسّع بالشاشة. البطاقة تُملأ ولا
+   تُمطَّط: عددُ الأعمدة يُختار ليملأه المحتوى (لا بطاقةٌ وحيدة في صفّ). */
+.adm-statgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 640px) {
+    .adm-statgrid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .adm-statgrid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+    .adm-statgrid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* جدول اللوحة: رأسٌ ثابت اللون، صفوفٌ بحدٍّ سفليّ، وتمريرٌ أفقيّ داخل
+   حاويته وحدها — فلا يتمرّر جسم الصفحة جانبياً أبداً. */
+.adm-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+.adm-table thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--adm-surface-2); color: var(--adm-fg-2);
+    font-weight: 800; font-size: .74rem; letter-spacing: .01em;
+    text-align: right; padding: 10px 12px; white-space: nowrap;
+    border-bottom: 1px solid var(--adm-border);
+}
+.adm-table tbody td {
+    padding: 11px 12px; color: var(--adm-fg);
+    border-bottom: 1px solid var(--adm-border);
+    vertical-align: middle;
+}
+.adm-table tbody tr:last-child td { border-bottom: none; }
+.adm-table tbody tr:hover td { background: var(--adm-surface-2); }
+.adm-table .adm-num { font-variant-numeric: tabular-nums; }
+
+/* نصٌّ لقارئ الشاشة وحده. 🪤 كان `sr-only` يُستعمل في الكود ولا تعريف له في
+   هذه الورقة إطلاقاً (Tailwind هنا بلا preflight ويُولّد الأصناف المستعملة،
+   لكن الاعتماد على ذلك في صنفٍ حَرِجٍ للوصول مخاطرة) — فيُعرَّف صراحةً. */
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* أعمدة ثانوية: تُخفى على الجوال فيبقى الجدول مقروءاً بلا تمريرٍ لا ينتهي. */
+@media (max-width: 719px) {
+    .adm-col-secondary { display: none; }
+}
+
+/* 🪤 `scrollbar-hide` كان مستعملاً في ستّة مواضع — **وغير معرَّف في أي مكان**:
+   لا في هذه الورقة ولا كإضافة في `tailwind.config.js` (`plugins: []`). أي أن
+   شريط التمرير كان يظهر خلافاً للمقصود في شريطَي التنقّل. صنفٌ يُستعمل ولا
+   وجود له لا يُخطئ ولا يُسجَّل — يمرّ صامتاً. */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* تلميح اختصار لوحة المفاتيح: يظهر على الشاشات الواسعة وحدها.
+   🪤 وكان الوسم يحمل `style={{display:'none'}}` مضمّناً وصنفاً غير معرَّف —
+   فلا يظهر أبداً، ولو عُرِّف الصنف لما غلب المضمّنَ بلا `!important`
+   (درس v14.63). الآن لا نمط مضمّن، والصنف وحده يحكم. */
+.adm-kbd { display: none; }
+@media (min-width: 820px) { .adm-kbd { display: inline-block; } }
+
+/* أزرار لوحة الإدارة — صنفٌ واحد بدل نمطٍ مضمّنٍ يتكرّر. */
+.adm-btn-primary {
+    background: var(--adm-accent);
+    color: #ffffff;
+    border: 1px solid transparent;
+    border-radius: var(--adm-r-sm);
+}
+.adm-btn-danger {
+    background: var(--adm-bad-fg);
+    color: #ffffff;
+    border: 1px solid transparent;
+    border-radius: var(--adm-r-sm);
+}
+
+/* شارةٌ محايدة ومقبضُ مفتاح — كانا `bg-gray-100` و`bg-white` صلبين
+   (رماديٌّ فاتحٌ ونصٌّ رماديّ على سطحٍ داكن = غير مقروء ليلاً). */
+.adm-chip-neutral {
+    background: var(--adm-neutral-bg);
+    color: var(--adm-neutral-fg);
+    border-color: var(--adm-border);
+}
+.adm-knob { background: var(--adm-surface); }

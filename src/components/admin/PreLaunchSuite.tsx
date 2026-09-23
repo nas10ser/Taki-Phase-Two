@@ -12,11 +12,10 @@
  *     real load tests against production from inside the app)
  */
 
-import React, { useCallback, useEffect, useMemo, useState, memo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
-import { Tooltip } from './Tooltip';
 import { CopyButton } from './CopyButton';
 
 // ============================================================
@@ -443,7 +442,7 @@ const HealthCheckRunner: React.FC = () => {
                 <button
                     onClick={run}
                     disabled={running}
-                    className="px-5 h-11 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl text-sm shadow-md disabled:opacity-50 flex items-center gap-2"
+                    className="adm-focusable adm-btn-primary px-5 h-11 font-extrabold text-sm disabled:opacity-50 flex items-center gap-2"
                 >
                     {running ? '⏳ جارٍ الفحص...' : '🩺 ابدأ الفحص الشامل'}
                 </button>
@@ -768,8 +767,8 @@ const PaymentGatewaySetup: React.FC = () => {
                 disabled={saving}
                 className={`w-full py-3 rounded-xl font-extrabold text-sm transition-all ${
                     enabled
-                        ? 'bg-red-500 hover:bg-red-600 text-white'
-                        : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 text-white shadow-md'
+                        ? 'adm-btn-danger'
+                        : 'adm-btn-primary'
                 } disabled:opacity-50`}
             >
                 {enabled ? '⛔ تعطيل البوابة' : '🚀 تفعيل البوابة (بعد اكتمال الإعدادات)'}
@@ -788,67 +787,6 @@ const PaymentGatewaySetup: React.FC = () => {
 // ============================================================
 // Toggles Audit — every platform setting in one place
 // ============================================================
-const TogglesAudit: React.FC = () => {
-    const [settings, setSettings] = useState<Array<{ key: string; value: any; description: string | null; updated_at: string }>>([]);
-    const [loading, setLoading] = useState(true);
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        const r = await adminService.listPlatformSettings();
-        setSettings(r);
-        setLoading(false);
-    }, []);
-
-    useEffect(() => { load(); }, [load]);
-
-    return (
-        <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-extrabold text-[var(--text-primary)]">⚙️ كل الـSettings (للقراءة)</h3>
-                <button onClick={load} className="text-xs font-bold text-emerald-600">🔄 تحديث</button>
-            </div>
-            <p className="text-xs text-[var(--text-secondary)] mb-3 font-bold">
-                كل الإعدادات المخزّنة في platform_settings. للتعديل، استخدم الواجهات المخصّصة في تاب «الأدوات» أو «إدارة البائعين».
-            </p>
-            {loading ? (
-                <div className="h-32 bg-[var(--gray-100)] rounded-xl animate-pulse" />
-            ) : settings.length === 0 ? (
-                <div className="text-center py-8 text-sm text-[var(--gray-400)] font-bold">لا توجد إعدادات</div>
-            ) : (
-                <div className="space-y-2">
-                    {settings.map((s) => {
-                        const val = s.value;
-                        const isBool = typeof val === 'boolean';
-                        const isStr = typeof val === 'string';
-                        const display = isBool
-                            ? (val ? '✓ مفعّل' : '✗ معطّل')
-                            : isStr
-                            ? (val || '— فارغ —')
-                            : JSON.stringify(val);
-                        return (
-                            <div key={s.key} className="flex items-start gap-3 bg-[var(--body-bg)] rounded-xl p-3">
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-extrabold text-sm text-[var(--text-primary)]">{s.key}</div>
-                                    {s.description && (
-                                        <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{s.description}</div>
-                                    )}
-                                </div>
-                                <div className={`text-xs font-extrabold tabular-nums px-2 py-1 rounded ${
-                                    isBool
-                                        ? (val ? 'bg-emerald-100 text-emerald-700' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]')
-                                        : 'bg-[var(--card-bg)] text-[var(--text-primary)] border border-[var(--border-color)]'
-                                }`} dir="ltr" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {display}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </section>
-    );
-};
-
 // ============================================================
 // Launch Checklist — explicit manual gates
 // ============================================================
@@ -1165,7 +1103,8 @@ export default function () {
 
 const Step: React.FC<{ n: number; title: string; children: React.ReactNode }> = ({ n, title, children }) => (
     <div className="flex gap-3">
-        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-extrabold flex items-center justify-center text-sm">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full font-extrabold flex items-center justify-center text-sm"
+             style={{ background: 'var(--adm-accent)', color: '#ffffff' }}>
             {n}
         </div>
         <div className="flex-1">
@@ -1358,7 +1297,7 @@ const SmokeTestRunner: React.FC = () => {
                 <button
                     onClick={run}
                     disabled={running}
-                    className="px-5 h-11 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-extrabold rounded-xl text-sm shadow-md disabled:opacity-50 flex items-center gap-2"
+                    className="adm-focusable adm-btn-primary px-5 h-11 font-extrabold text-sm disabled:opacity-50 flex items-center gap-2"
                 >
                     {running ? '⏳ يفحص...' : '🧪 ابدأ اختبار الصفحات'}
                 </button>
@@ -1417,24 +1356,29 @@ const SmokeTestRunner: React.FC = () => {
 // ============================================================
 export const PreLaunchSuite: React.FC = () => (
     <div className="space-y-5 animate-fade-in" dir="rtl">
-        <div>
-            <h2 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                🚀 جاهزية الإطلاق
-                <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                    Pre-Launch
-                </span>
-            </h2>
-            <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                فحص شامل، إعداد بوابة، ومراجعة ما يلزم قبل فتح الموقع لملايين المستخدمين
-            </p>
-        </div>
+        {/* 🪤 v14.89 — حُذف العنوان المحلّي: قشرة اللوحة تطبع اسم الشاشة
+            ووصفها من `src/data/adminNav.ts`. */}
 
         <HealthCheckRunner />
         <SmokeTestRunner />
         <PaymentGatewaySetup />
         <PaymentAttemptsTable />
         <LaunchChecklist />
-        <TogglesAudit />
+        {/* 🪤 v14.89 — حُذف «⚙️ كل الـSettings (للقراءة)»: جدولٌ يسرد صفوف
+            `platform_settings` **بأسمائها التقنية الخام** (`booking_holds`،
+            `banner_autoplay_seconds`، `telegram_bot_enabled`…) — وهي نفسها
+            تُحرَّر بالعربي في شاشة «البانرات والحملات». ناصر غير مبرمج،
+            والأسماء الخام لا تفيده، ووجودها يجعله يظنّ أن ثمّة إعداداتٍ
+            ثانية في مكانٍ آخر. */}
+        <div
+            style={{
+                padding: '11px 13px', borderRadius: 'var(--adm-r-sm)',
+                background: 'var(--adm-surface-2)', border: '1px solid var(--adm-border)',
+                color: 'var(--adm-fg-2)', fontSize: '.82rem', fontWeight: 700, lineHeight: 1.8,
+            }}
+        >
+            إعدادات المنصّة كلّها تُقرأ وتُحرَّر بأسمائها العربية في شاشة «البانرات والحملات».
+        </div>
         <LoadTestGuide />
     </div>
 );

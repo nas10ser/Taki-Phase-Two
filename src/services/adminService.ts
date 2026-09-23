@@ -736,12 +736,23 @@ export const adminService = {
     },
 
     // ===== Malls/markets (locations) management =====
-    async listLocations() {
+    /**
+     * 🪤 v14.89 — كانت تبتلع الخطأ وتُرجع `[]`، فتقول الشاشة «لا توجد مواقع
+     *    بعد — أضف أول مول/سوق» عند **فشل القراءة**: دعوةٌ إلى إنشاء نسخةٍ
+     *    ثانية من بياناتٍ موجودة. الآن تفرّق بين «لا صفوف» و«تعذّرت القراءة».
+     */
+    async listLocations(): Promise<{
+        rows: Array<{ id: string; name: string; name_en: string | null; type: 'mall' | 'market'; city_id: string; lat: number; lng: number }>;
+        error: string | null;
+    }> {
         const { data, error } = await supabase
             .from('locations')
             .select('id,name,name_en,type,city_id,lat,lng');
-        if (error) { console.error('[adminService.listLocations]', error); return []; }
-        return (data ?? []) as Array<{ id: string; name: string; name_en: string | null; type: 'mall' | 'market'; city_id: string; lat: number; lng: number }>;
+        if (error) {
+            console.error('[adminService.listLocations]', error);
+            return { rows: [], error: error.message || 'تعذّرت قراءة المواقع' };
+        }
+        return { rows: (data ?? []) as any, error: null };
     },
 
     async upsertLocation(p: { id?: string; name: string; name_en?: string; type: 'mall' | 'market'; city_id: string; lat: number; lng: number }) {

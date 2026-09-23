@@ -61,7 +61,8 @@ const Dialog: React.FC<DialogProps> = ({ targetName, onResolve }) => {
                 className="bg-[var(--card-bg)] rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="sticky top-0 z-10 bg-gradient-to-l from-amber-500 to-orange-600 text-white p-5 rounded-t-3xl flex items-center justify-between">
+                <div className="sticky top-0 z-10 p-5 flex items-center justify-between"
+                     style={{ background: 'var(--adm-surface-2)', color: 'var(--adm-fg)', borderBottom: '1px solid var(--adm-border)', borderTopLeftRadius: 'var(--adm-r)', borderTopRightRadius: 'var(--adm-r)' }}>
                     <div className="min-w-0">
                         <div className="text-xs opacity-90 font-bold">ترقية لمسؤول</div>
                         <div className="text-lg font-extrabold truncate">{targetName}</div>
@@ -154,7 +155,8 @@ const Dialog: React.FC<DialogProps> = ({ targetName, onResolve }) => {
                     >إلغاء</button>
                     <button
                         onClick={handleConfirm}
-                        className="flex-1 py-3 bg-gradient-to-l from-amber-500 to-orange-600 text-white font-extrabold rounded-xl hover:shadow-lg active:scale-[0.98]"
+                        className="flex-1 py-3 font-extrabold active:scale-[0.98] adm-focusable"
+                        style={{ background: 'var(--adm-accent)', color: '#ffffff', borderRadius: 'var(--adm-r-sm)', border: 'none' }}
                     >👑 ترقية ومنح الصلاحيات</button>
                 </div>
             </div>

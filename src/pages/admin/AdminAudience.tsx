@@ -1,34 +1,68 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { adminService } from '../../services/adminService';
-import { REGIONS, CITIES, LOCATIONS, CATEGORIES } from '../../data/mock';
-import SiteTrafficPanel from '../../components/admin/SiteTrafficPanel';
-
 /**
- * v12.52 — «👥 جمهور المدن» ج٢ (طلب ناصر): أرقام واضحة بلا خرائط —
- * حُذفت خريطة التتبع نهائياً احتراماً لخصوصية المستخدمين.
- *  - المناطق الـ١٣ كلها بأعداد المسجلين والمتفاعلين (اضغط منطقة لتصفيتها).
- *  - المدن: مسجلون + متفاعلون + اليوم/أمس — والمنتقل من مدينة لأخرى يُحسب
- *    على آخر مدينة عُرف فيها (الدمام ← الخبر = الخبر).
- *  - يوم محدد + مدى ساعات بتوقيت الرياض + منطقة/مدينة/سوق محدد بنطاق كم.
- *  - تفصيل الحجوزات: مكتمل / نشط / ملغى (مشتري / تاجر / انتهاء الوقت).
- *  - ساعات الذروة (٢٤ ساعة) للنطاق المحدد.
- * المصدر: RPC admin_geo_insights v2 (أدمن فقط) — لا تُرجع أي إحداثيات أفراد.
- * هذا التبويب يحلل «المشترين» — المحلل الذكي يحلل «التجار والسوق».
+ * AdminAudience — «جمهور المدن»: الجغرافيا وحدها (v14.89)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * القاعدة الحاكمة بعد الجرد: **هذه الشاشة تجيب سؤالاً واحداً** — أين يسكن
+ * المشترون، وكم منهم دخل وحجز في كل منطقة ومدينة. الأرقامُ على فترةٍ مكانها
+ * «التحليلات»، والتشخيصُ مكانه «المحلل الذكي».
+ *
+ * 🪤 ما حُذف من هنا، وقد قِيس تكرارُه على الصفحة نفسها:
+ *   • **«⏰ ساعات الذروة»** — «المحلل الذكي» يعرض خريطة ساعاتٍ أغنى (ساعة ×
+ *     يوم) على البيانات نفسها. بقي هنا سطرُ إحالةٍ قابلٌ للنقر.
+ *   • **«🏷 أين دخلوا؟ (التصنيفات)»** — التصنيف ليس جغرافيا، وهو في
+ *     «التحليلات» كجدول تحويل. سطرُ إحالةٍ بدله.
+ *   • **عنوان الشاشة المحلّي** — قشرةُ اللوحة تطبع اسم التبويب ووصفه من
+ *     `adminNav.ts` فوق كل شاشة، فكتابته هنا تكرارٌ حرفيّ.
+ *
+ * 🪤 وما صُحّح لأن الرقم كان يكذب بلا أن يُخطئ:
+ *   • **جدول المدن يخلط أربعة مديات** في صفٍّ واحد: «مسجّلون» تراكميّ من أوّل
+ *     يوم · «دخلوا» يتبع الفترة · «اليوم»/«أمس» يومان ثابتان. صار المدى
+ *     مكتوباً في **رأس كل عمود**، وتحت الجدول سطرٌ يقول إن الاختلاف مقصود.
+ *     (وقِيس في نصّ الدالّة: «اليوم»/«أمس» يُحسبان من أحداث الفترة نفسها —
+ *     فإن اخترتَ يوماً ماضياً لا يشملهما ظهرا صفراً، وليس ذلك عطلاً.)
+ *   • **«📦 إجمالي الحجوزات» يشمل الملغاة، و«حجوزات المنصّات» لا تشملها**
+ *     (`bk_all` مقابل `bk` في `admin_geo_insights`) — فالمجموعُ أقلّ دائماً
+ *     بلا تفسير. صار لكلّ رقمٍ `scope` يقول أيّهما.
+ *   • **رسمان يوميّان متجاوران** يقولان الشيء نفسه بمقياسين: الرسم هنا
+ *     يتبع التصفية الجغرافية، ورسمُ «زوّار الموقع» يقيس جلسات التصفّح في كل
+ *     الموقع بفترته الخاصّة. صارا قسماً واحداً ظاهراً وآخر يُفتح عمداً،
+ *     ولكلٍّ نطاقُه مكتوباً فوقه.
+ *   • ورسمُ الأعمدة كان يقيس العمودين **بأقصى «من دخل» وحده**، فلو تجاوز
+ *     الحاجزون الداخلين (حجزٌ بلا حدث فتح) خرج العمود من الإطار. المقياس
+ *     الآن أقصى الاثنين.
+ *
+ * المصدر: RPC `admin_geo_insights` (أدمن فقط) — لا تُرجع أي إحداثيات أفراد.
  */
 
-type Geo = any;
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useHistory } from 'react-router-dom';
+import { adminService } from '../../services/adminService';
+import { REGIONS, CITIES, LOCATIONS } from '../../data/mock';
+import SiteTrafficPanel from '../../components/admin/SiteTrafficPanel';
+import {
+    AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
+    AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, admNum,
+} from '../../components/admin/ui';
+import type { AdmColumn } from '../../components/admin/ui';
 
-const arNum = (n: number | null | undefined) => (Number(n) || 0).toLocaleString('ar-SA');
+// ═══════════════════════════════════════════════════════════════════════════
+// الأنواع والأدوات
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface DailyRow { d: string; actives: number; opens: number; bookers: number; bookings: number }
+interface RegionRow { region: string; registered: number; actives: number; buyers: number; sellers: number }
+interface CityRow { city: string; region: string | null; registered: number; actives: number; today: number; yesterday: number }
+interface SourceRow { source: string; users: number; opens: number; bookings: number }
+
+const num = (v: unknown): number => Number(v) || 0;
 const cityName = (id: string | null) => CITIES.find(c => c.id === id)?.name || id || '—';
 const regionName = (id: string | null) => REGIONS.find(r => r.id === id)?.name || id || '—';
-const catName = (id: string) => {
-    const c = CATEGORIES.find(x => x.id === id);
-    return c ? `${c.emoji} ${c.ar}` : id;
-};
+
+/** نسبة التغيّر — و`null` حين لا خطَّ أساس (أمسُ صفر) فلا تُعرض «٠٪» كأنها قياس. */
 const deltaPct = (today: number, yday: number): number | null => {
     if (!yday) return null;
     return Math.round(((today - yday) / yday) * 100);
 };
+
 /** «٥ م» بدل 17 — تسميات ساعات مفهومة لغير التقنيين. */
 const hourLabel = (h: number) => {
     const ampm = h < 12 ? 'ص' : 'م';
@@ -36,51 +70,48 @@ const hourLabel = (h: number) => {
     return `${base} ${ampm}`;
 };
 
-/** شريط أعمدة SVG بسيط (بلا مكتبات) — نفس روح SellerAnalytics. */
-const DailyBars: React.FC<{ rows: Array<{ d: string; actives: number; bookers: number }> }> = ({ rows }) => {
-    const max = Math.max(1, ...rows.map(r => r.actives));
-    const W = 700, H = 160, pad = 4;
-    const bw = Math.max(6, (W - pad * 2) / Math.max(1, rows.length) - 4);
-    return (
-        <div className="overflow-x-auto" dir="ltr">
-            <svg viewBox={`0 0 ${W} ${H + 24}`} className="w-full min-w-[320px]" style={{ maxHeight: 200 }}>
-                {rows.map((r, i) => {
-                    const x = pad + i * ((W - pad * 2) / Math.max(1, rows.length));
-                    const hA = Math.round((r.actives / max) * H);
-                    const hB = Math.round((r.bookers / max) * H);
-                    const day = r.d.slice(8, 10);
-                    return (
-                        <g key={r.d}>
-                            <rect x={x} y={H - hA} width={bw} height={Math.max(hA, r.actives > 0 ? 3 : 0)} rx={3} fill="#0d9488" opacity={0.85} />
-                            <rect x={x + bw * 0.25} y={H - hB} width={bw * 0.5} height={Math.max(hB, r.bookers > 0 ? 3 : 0)} rx={2} fill="#f59e0b" />
-                            <text x={x + bw / 2} y={H + 14} textAnchor="middle" fontSize={9} fill="var(--text-secondary)" fontWeight={700}>{day}</text>
-                        </g>
-                    );
-                })}
-            </svg>
-        </div>
-    );
+const SRC_META: Record<string, { emoji: string; ar: string }> = {
+    web: { emoji: '🌐', ar: 'الموقع / التطبيق' },
+    telegram: { emoji: '✈️', ar: 'بوت تيليجرام' },
+    whatsapp: { emoji: '💬', ar: 'بوت واتساب' },
 };
 
-/** أعمدة ساعات الذروة (٢٤ ساعة) — أعلى ساعة تتلوّن ذهبياً. */
-const HourBars: React.FC<{ rows: Array<{ hr: number; opens: number }> }> = ({ rows }) => {
-    const max = Math.max(1, ...rows.map(r => r.opens));
-    const top = rows.reduce((b, r) => (r.opens > b.opens ? r : b), { hr: -1, opens: -1 });
-    const W = 700, H = 120, pad = 4;
-    const bw = Math.max(5, (W - pad * 2) / 24 - 3);
+// ═══════════════════════════════════════════════════════════════════════════
+// الرسم اليومي — عمودان لكل يوم: من دخل، ومن حجز
+// ═══════════════════════════════════════════════════════════════════════════
+
+const DailyChart: React.FC<{ rows: DailyRow[] }> = ({ rows }) => {
+    const n = rows.length;
+    const max = Math.max(1, ...rows.map(r => Math.max(num(r.actives), num(r.bookers))));
+    const W = 720, H = 148, PAD = 8, LAB = 20;
+    const slot = (W - PAD * 2) / Math.max(1, n);
+    const bw = Math.min(14, Math.max(3, slot * 0.36));
+    const step = Math.max(1, Math.ceil(n / 12));
+
     return (
-        <div className="overflow-x-auto" dir="ltr">
-            <svg viewBox={`0 0 ${W} ${H + 26}`} className="w-full min-w-[420px]" style={{ maxHeight: 170 }}>
-                {rows.map((r) => {
-                    const x = pad + r.hr * ((W - pad * 2) / 24);
-                    const h = Math.round((r.opens / max) * H);
-                    const isTop = r.hr === top.hr && r.opens > 0;
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }} dir="ltr">
+            <svg
+                viewBox={`0 0 ${W} ${H + LAB}`}
+                role="img"
+                aria-label={`أعمدة يومية لعدد من دخل ومن حجز خلال ${n} يوماً`}
+                style={{ display: 'block', width: '100%', minWidth: Math.min(700, Math.max(300, n * 24)), height: 'auto', maxHeight: 210 }}
+            >
+                <line x1={PAD} y1={H} x2={W - PAD} y2={H} stroke="var(--adm-border)" strokeWidth={1} />
+                {rows.map((r, i) => {
+                    const a = num(r.actives);
+                    const b = num(r.bookers);
+                    const cx = PAD + i * slot + slot / 2;
+                    const ha = a > 0 ? Math.max(2, Math.round((a / max) * (H - 8))) : 0;
+                    const hb = b > 0 ? Math.max(2, Math.round((b / max) * (H - 8))) : 0;
                     return (
-                        <g key={r.hr}>
-                            <rect x={x} y={H - h} width={bw} height={Math.max(h, r.opens > 0 ? 3 : 1)} rx={2}
-                                fill={isTop ? '#f59e0b' : '#0d9488'} opacity={r.opens > 0 ? 0.9 : 0.18} />
-                            {r.hr % 3 === 0 && (
-                                <text x={x + bw / 2} y={H + 14} textAnchor="middle" fontSize={8.5} fill="var(--text-secondary)" fontWeight={700}>{hourLabel(r.hr)}</text>
+                        <g key={r.d}>
+                            <title>{`${r.d} — ${admNum(a)} دخلوا · ${admNum(b)} حجزوا`}</title>
+                            <rect x={cx - bw - 1} y={H - ha} width={bw} height={ha} rx={2} fill="var(--adm-accent)" />
+                            <rect x={cx + 1} y={H - hb} width={bw} height={hb} rx={2} fill="var(--adm-warn-fg)" />
+                            {i % step === 0 && (
+                                <text x={cx} y={H + 14} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--adm-fg-3)">
+                                    {r.d.slice(8, 10)}
+                                </text>
                             )}
                         </g>
                     );
@@ -90,13 +121,30 @@ const HourBars: React.FC<{ rows: Array<{ hr: number; opens: number }> }> = ({ ro
     );
 };
 
-const SRC_META: Record<string, { emoji: string; ar: string }> = {
-    web: { emoji: '🌐', ar: 'الموقع / التطبيق' },
-    telegram: { emoji: '✈️', ar: 'بوت تيليجرام' },
-    whatsapp: { emoji: '💬', ar: 'بوت واتساب' },
-};
+const Swatch: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '.74rem', fontWeight: 700, color: 'var(--adm-fg-2)' }}>
+        <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: color, display: 'inline-block' }} />
+        {label}
+    </span>
+);
+
+/** سطرُ إحالةٍ إلى شاشةٍ أخرى — لأن ما حُذف من هنا لم يُحذف من اللوحة. */
+const MovedTo: React.FC<{ icon: string; what: string; where: string; why: string; onGo: () => void }> = ({ icon, what, where, why, onGo }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 2px', borderBottom: '1px solid var(--adm-border)' }}>
+        <span aria-hidden="true" style={{ fontSize: '.95rem' }}>{icon}</span>
+        <span style={{ flex: 1, minWidth: 180 }}>
+            <span style={{ fontSize: '.83rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{what}</span>
+            <span style={{ display: 'block', fontSize: '.75rem', color: 'var(--adm-fg-2)', lineHeight: 1.7, marginTop: 2 }}>{why}</span>
+        </span>
+        <AdmButton size="sm" onClick={onGo}>{where} ←</AdmButton>
+    </div>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 const AdminAudience: React.FC = () => {
+    const history = useHistory();
+
     const [days, setDays] = useState(7);
     const [onDate, setOnDate] = useState('');        // يوم محدد — يطغى على الفترة
     const [hourFrom, setHourFrom] = useState(-1);    // -1 = كل الساعات
@@ -105,8 +153,10 @@ const AdminAudience: React.FC = () => {
     const [city, setCity] = useState('');
     const [mall, setMall] = useState('');            // سوق/مول محدد (نطاق كم حوله)
     const [radiusKm, setRadiusKm] = useState(10);
-    const [data, setData] = useState<Geo | null>(null);
+    const [data, setData] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
+    const [failed, setFailed] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
 
     const regionCities = useMemo(() => CITIES.filter(c => !region || c.regionId === region), [region]);
     const cityMalls = useMemo(() => LOCATIONS.filter(l => city && l.cityId === city), [city]);
@@ -126,328 +176,503 @@ const AdminAudience: React.FC = () => {
             lat: mallObj?.lat ?? null,
             lng: mallObj?.lng ?? null,
             radiusKm: mallObj ? radiusKm : null,
-        }).then(d => { if (alive) { setData(d); setLoading(false); } });
+        })
+            .then(d => {
+                if (!alive) return;
+                setData(d);
+                setFailed(!d);
+                setLoading(false);
+            })
+            // 🪤 بلا هذا المصيدِ يبقى «جارٍ التحليل» إلى الأبد عند انقطاع الشبكة:
+            //    الوعدُ يُرفض فلا يُنفَّذ `then` ولا يُطفأ التحميل.
+            .catch(() => {
+                if (!alive) return;
+                setData(null);
+                setFailed(true);
+                setLoading(false);
+            });
         return () => { alive = false; };
-    }, [days, onDate, hourFrom, hourTo, hoursOn, region, city, mallObj, radiusKm]);
+    }, [days, onDate, hourFrom, hourTo, hoursOn, region, city, mallObj, radiusKm, reloadKey]);
 
     const t = data?.totals || {};
-    const daily: Array<any> = data?.daily || [];
-    const hours: Array<any> = data?.hours || [];
-    const regions: Array<any> = data?.regions || [];
-    const sources: Array<any> = data?.sources || [];
-    const cats: Array<any> = data?.cats || [];
-    const cities: Array<any> = data?.cities || [];
+    const daily = useMemo<DailyRow[]>(() => (data?.daily ?? []) as DailyRow[], [data]);
+    const sources = useMemo<SourceRow[]>(() => (data?.sources ?? []) as SourceRow[], [data]);
+    const cities = useMemo<CityRow[]>(() => (data?.cities ?? []) as CityRow[], [data]);
 
-    const todayDelta = deltaPct(Number(t.actives_today) || 0, Number(t.actives_yday) || 0);
-    const conv = (Number(t.actives) || 0) > 0 ? Math.round(((Number(t.bookers) || 0) / Number(t.actives)) * 100) : 0;
-    const catTotal = Math.max(1, cats.reduce((s, c) => s + (Number(c.views) || 0), 0));
+    /** المناطق الثلاث عشرة كلها — حتى الصفرية، فغيابُ منطقةٍ يُقرأ «لا بيانات» لا «صفر». */
+    const regions13 = useMemo(() => {
+        const rows = (data?.regions ?? []) as RegionRow[];
+        return REGIONS.map(r => {
+            const row = rows.find(x => x.region === r.id);
+            return {
+                id: r.id,
+                name: r.name,
+                registered: num(row?.registered),
+                actives: num(row?.actives),
+            };
+        });
+    }, [data]);
+
+    const todayDelta = deltaPct(num(t.actives_today), num(t.actives_yday));
+    const conv = num(t.actives) > 0 ? Math.round((num(t.bookers) / num(t.actives)) * 100) : 0;
     const bigDrop = !onDate && todayDelta !== null && todayDelta <= -40;
-    const topHour = hours.reduce((b: any, r: any) => ((r.opens || 0) > (b?.opens || 0) ? r : b), null);
+    const srcBookings = sources.reduce((s, x) => s + num(x.bookings), 0);
+    const chartHasData = daily.some(r => num(r.actives) > 0 || num(r.bookers) > 0);
+    const peakDay = daily.reduce<DailyRow | null>((b, r) => (num(r.actives) > num(b?.actives) ? r : b), null);
 
-    // المسجلون داخل النطاق المختار (مدينة > منطقة > الكل)
+    // المسجلون داخل النطاق المختار (مدينة ‹ منطقة ‹ الكل)
     const scopeRegistered = city
-        ? Number(cities.find(c => c.city === city)?.registered) || 0
+        ? num(cities.find(c => c.city === city)?.registered)
         : region
-            ? Number(regions.find(r => r.region === region)?.registered) || 0
-            : Number(t.total_users) || 0;
+            ? num(regions13.find(r => r.id === region)?.registered)
+            : num(t.total_users);
 
-    // نضمن ظهور المناطق الـ١٣ كلها حتى الصفرية
-    const regions13 = useMemo(() => REGIONS.map(r => {
-        const row = regions.find(x => x.region === r.id) || {};
-        return { id: r.id, name: r.name, registered: Number(row.registered) || 0, actives: Number(row.actives) || 0, buyers: Number(row.buyers) || 0, sellers: Number(row.sellers) || 0 };
-    }), [regions]);
+    const placeLabel = mallObj
+        ? `${mallObj.name} (${radiusKm} كم حوله)`
+        : city ? cityName(city) : region ? regionName(region) : 'كل السعودية';
 
     const periodLabel = onDate
-        ? `يوم ${onDate}${hoursOn ? ` (${hourLabel(hourFrom)} → ${hourLabel(hourTo)})` : ''}`
-        : `${days === 1 ? 'اليوم' : `آخر ${days} يوم`}${hoursOn ? ` (${hourLabel(hourFrom)} → ${hourLabel(hourTo)})` : ''}`;
+        ? `يوم ${onDate}`
+        : days === 1 ? 'اليوم' : `آخر ${days} يوماً`;
+
+    const hoursLabel = hoursOn ? `${hourLabel(hourFrom)} → ${hourLabel(hourTo)}` : 'كل الساعات';
+    const filtersOn = !!(onDate || hoursOn || region || city || mall) || days !== 7;
+
+    const resetFilters = useCallback(() => {
+        setDays(7); setOnDate(''); setHourFrom(-1); setHourTo(-1);
+        setRegion(''); setCity(''); setMall(''); setRadiusKm(10);
+    }, []);
+
+    const cityColumns = useMemo<Array<AdmColumn<CityRow>>>(() => [
+        {
+            header: 'المدينة',
+            cell: (c) => (
+                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
+                    <button
+                        type="button"
+                        onClick={() => { setRegion(c.region || ''); setCity(c.city); setMall(''); }}
+                        className="adm-focusable"
+                        title={`تصفية كل أرقام الصفحة على ${cityName(c.city)}`}
+                        style={{
+                            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                            fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-accent)',
+                            textDecoration: 'underline', textUnderlineOffset: 3,
+                        }}
+                    >
+                        {cityName(c.city)}
+                    </button>
+                    <span style={{ fontSize: '.7rem', color: 'var(--adm-fg-3)', fontWeight: 600 }}>{regionName(c.region)}</span>
+                </span>
+            ),
+        },
+        { header: 'مسجّلون — كل الوقت', numeric: true, cell: (c) => admNum(num(c.registered)) },
+        { header: 'دخلوا — الفترة المختارة', numeric: true, cell: (c) => admNum(num(c.actives)) },
+        { header: 'اليوم', numeric: true, cell: (c) => admNum(num(c.today)) },
+        { header: 'أمس', numeric: true, secondary: true, cell: (c) => admNum(num(c.yesterday)) },
+        {
+            header: 'التغيّر: اليوم مقابل أمس',
+            cell: (c) => {
+                const dl = deltaPct(num(c.today), num(c.yesterday));
+                if (dl === null) return <span style={{ color: 'var(--adm-fg-3)' }}>—</span>;
+                if (dl === 0) return <AdmPill>بلا تغيّر</AdmPill>;
+                return <AdmPill tone={dl < 0 ? 'bad' : 'ok'}>{dl > 0 ? `▲ ${dl}٪` : `▼ ${Math.abs(dl)}٪`}</AdmPill>;
+            },
+        },
+    ], []);
+
+    // ═══════════════════════════════════════════════════════════════════════
 
     return (
-        <div className="space-y-4 font-tajawal" dir="rtl">
-            <div>
-                <h2 className="text-xl font-extrabold text-[var(--text-primary)]">👥 جمهور المدن — أعداد المشترين وتفاعلهم</h2>
-                <p className="text-xs text-[var(--text-secondary)] font-bold mt-1 leading-relaxed">
-                    هذا التبويب عن <b>المشترين</b>: كم مسجّلاً في كل منطقة ومدينة، كم دخلوا، متى ذروتهم، وماذا فعلوا —
-                    أرقام فقط <b>بلا خرائط تتبّع</b> احتراماً للخصوصية. (تحليل التجار والسوق في «المحلل الذكي»).
-                </p>
-            </div>
+        <div style={{ display: 'grid', gap: 14 }} dir="rtl">
 
-            {/* v14.80 — زوّار الموقع ومصادرهم. مكانُه هنا مقصود: هذا تبويب
-                «الجمهور»، وكان يقيس **المسجّلين وحدهم** — والزائر الذي يفتح
-                الصفحة ثم يخرج كان غائباً عنه تماماً. */}
-            <SiteTrafficPanel />
-
-            <div style={{ height: 1, background: 'var(--border-color)', margin: '4px 0' }} />
-
-            {/* التحكم الكامل: الفترة/اليوم + الساعات + المكان */}
-            <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
+            {/* ── المرشِّحات: فترة + ساعات + مكان ─────────────────────────── */}
+            <AdmCard>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>الفترة</span>
                     {[1, 7, 14, 30].map(d => (
-                        <button key={d} onClick={() => { setDays(d); setOnDate(''); }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${!onDate && days === d ? 'bg-teal-600 text-white border-teal-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
-                            {d === 1 ? 'اليوم' : `آخر ${d} يوم`}
-                        </button>
+                        <AdmButton
+                            key={d}
+                            size="sm"
+                            variant={!onDate && days === d ? 'primary' : 'secondary'}
+                            onClick={() => { setDays(d); setOnDate(''); }}
+                        >
+                            {d === 1 ? 'اليوم' : `آخر ${d} يوماً`}
+                        </AdmButton>
                     ))}
-                    <label className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-extrabold cursor-pointer ${onDate ? 'bg-teal-600 text-white border-teal-600' : 'bg-[var(--body-bg)] text-[var(--text-primary)] border-[var(--border-color)]'}`}>
+                    <label
+                        className="adm-focusable"
+                        style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                            padding: '5px 11px', borderRadius: 'var(--adm-r-sm)',
+                            border: `1px solid ${onDate ? 'transparent' : 'var(--adm-border)'}`,
+                            background: onDate ? 'var(--adm-accent)' : 'var(--adm-surface-2)',
+                            color: onDate ? '#ffffff' : 'var(--adm-fg)',
+                            fontSize: '.78rem', fontWeight: 800,
+                        }}
+                    >
                         📅 يوم محدد
-                        <input type="date" value={onDate} onChange={e => setOnDate(e.target.value)}
-                            className="bg-transparent text-inherit font-bold text-[11px] outline-none" style={{ colorScheme: 'auto' }} />
-                        {onDate && <button onClick={(ev) => { ev.preventDefault(); setOnDate(''); }} className="font-black">✕</button>}
+                        <input
+                            type="date"
+                            value={onDate}
+                            onChange={e => setOnDate(e.target.value)}
+                            style={{ background: 'transparent', color: 'inherit', border: 'none', font: 'inherit', outline: 'none', colorScheme: 'auto' }}
+                        />
+                        {onDate && (
+                            <button
+                                type="button"
+                                onClick={(ev) => { ev.preventDefault(); setOnDate(''); }}
+                                aria-label="إلغاء اليوم المحدد"
+                                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontWeight: 900, padding: 0 }}
+                            >
+                                ✕
+                            </button>
+                        )}
                     </label>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <select value={hourFrom} onChange={e => { const v = Number(e.target.value); setHourFrom(v); if (v >= 0 && hourTo < 0) setHourTo(23); if (v < 0) setHourTo(-1); }}
-                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
-                        <option value={-1}>🕐 كل الساعات</option>
-                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>من {hourLabel(h)}</option>)}
-                    </select>
-                    <select value={hourTo} disabled={hourFrom < 0} onChange={e => setHourTo(Number(e.target.value))}
-                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)] disabled:opacity-50">
-                        <option value={-1}>—</option>
-                        {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>إلى {hourLabel(h)}</option>)}
-                    </select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <select value={region} onChange={e => { setRegion(e.target.value); setCity(''); setMall(''); }}
-                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
-                        <option value="">🌍 كل المناطق (١٣)</option>
-                        {REGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                    <select value={city} onChange={e => { setCity(e.target.value); setMall(''); }}
-                        className="px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
-                        <option value="">🏙 كل المدن</option>
-                        {regionCities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                </div>
-                {city && cityMalls.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <select value={mall} onChange={e => setMall(e.target.value)}
-                            className="flex-1 min-w-[160px] px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-[var(--text-primary)]">
-                            <option value="">🏬 المدينة كاملة (بدون سوق محدد)</option>
-                            {cityMalls.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
-                        {mall && (
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-bold text-[var(--text-secondary)]">نطاق</span>
-                                <input type="number" min={1} max={100} value={radiusKm}
-                                    onChange={e => setRadiusKm(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
-                                    className="w-16 px-2 py-1 rounded-lg border border-[var(--border-color)] bg-[var(--body-bg)] text-xs font-bold text-center text-[var(--text-primary)]" />
-                                <span className="text-[10px] font-bold text-[var(--text-secondary)]">كم حول السوق</span>
-                            </div>
-                        )}
-                    </div>
-                )}
-                <div className="text-[10px] font-bold text-teal-700">🎯 يعرض الآن: {periodLabel} • {mallObj ? `${mallObj.name} (${radiusKm} كم)` : city ? cityName(city) : region ? regionName(region) : 'كل السعودية'}</div>
-            </div>
 
-            {loading ? (
-                <div className="text-center py-14 text-sm font-extrabold text-[var(--text-secondary)]">⏳ جاري تحليل الجمهور...</div>
-            ) : !data ? (
-                <div className="text-center py-14 text-sm font-extrabold text-red-600">❌ تعذّر جلب البيانات — أعد المحاولة</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <AdmSelect
+                        label="المنطقة"
+                        value={region}
+                        onChange={(v) => { setRegion(v); setCity(''); setMall(''); }}
+                        options={[{ value: '', label: '🌍 كل المناطق' }, ...REGIONS.map(r => ({ value: r.id, label: r.name }))]}
+                    />
+                    <AdmSelect
+                        label="المدينة"
+                        value={city}
+                        onChange={(v) => { setCity(v); setMall(''); }}
+                        options={[{ value: '', label: '🏙 كل المدن' }, ...regionCities.map(c => ({ value: c.id, label: c.name }))]}
+                    />
+                    {city && cityMalls.length > 0 && (
+                        <AdmSelect
+                            label="سوق / مول"
+                            value={mall}
+                            onChange={setMall}
+                            options={[{ value: '', label: '🏬 المدينة كاملة' }, ...cityMalls.map(l => ({ value: l.id, label: l.name }))]}
+                        />
+                    )}
+                    {mallObj && (
+                        <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>النطاق حول السوق (كم)</span>
+                            <input
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={radiusKm}
+                                onChange={e => setRadiusKm(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
+                                className="adm-focusable"
+                                style={{
+                                    width: 90, padding: '7px 10px', fontSize: '.82rem', fontWeight: 700,
+                                    borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                                    background: 'var(--adm-surface)', color: 'var(--adm-fg)', textAlign: 'center',
+                                }}
+                            />
+                        </label>
+                    )}
+                    <AdmSelect
+                        label="من الساعة"
+                        value={hourFrom < 0 ? '' : String(hourFrom)}
+                        onChange={(v) => {
+                            if (v === '') { setHourFrom(-1); setHourTo(-1); return; }
+                            setHourFrom(Number(v));
+                            if (hourTo < 0) setHourTo(23);
+                        }}
+                        options={[{ value: '', label: '🕐 كل الساعات' }, ...Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: hourLabel(h) }))]}
+                    />
+                    {hourFrom >= 0 && (
+                        <AdmSelect
+                            label="إلى الساعة"
+                            value={hourTo < 0 ? '23' : String(hourTo)}
+                            onChange={(v) => setHourTo(Number(v))}
+                            options={Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: hourLabel(h) }))}
+                        />
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--adm-border)' }}>
+                    <span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>يعرض الآن</span>
+                    <AdmPill tone="info">📍 {placeLabel}</AdmPill>
+                    <AdmPill tone="info">🗓 {periodLabel}</AdmPill>
+                    <AdmPill tone={hoursOn ? 'info' : 'neutral'}>🕐 {hoursLabel}</AdmPill>
+                    {filtersOn && (
+                        <span style={{ marginInlineStart: 'auto' }}>
+                            <AdmButton size="sm" variant="ghost" onClick={resetFilters}>إعادة الضبط</AdmButton>
+                        </span>
+                    )}
+                </div>
+            </AdmCard>
+
+            {/* ── هبوطٌ حادّ اليوم ─────────────────────────────────────────── */}
+            {!loading && !failed && bigDrop && (
+                <div
+                    role="status"
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        padding: '12px 14px', borderRadius: 'var(--adm-r)',
+                        background: 'var(--adm-bad-bg)', color: 'var(--adm-bad-fg)',
+                        fontSize: '.84rem', fontWeight: 800, lineHeight: 1.8,
+                    }}
+                >
+                    <span>🚨 هبوط حادّ اليوم: دخل {admNum(num(t.actives_today))} مقابل {admNum(num(t.actives_yday))} أمس ({todayDelta}٪).</span>
+                    <span style={{ fontWeight: 600 }}>تحقّق من الخدمة أوّلاً، ثم من الحملة.</span>
+                </div>
+            )}
+
+            {failed ? (
+                <AdmError
+                    message="تعذّر جلب أرقام الجمهور. قد تكون الشبكة انقطعت، أو انتهت جلسة الدخول."
+                    onRetry={() => setReloadKey(k => k + 1)}
+                />
+            ) : loading ? (
+                <>
+                    <AdmCard><AdmSkeleton rows={2} height={86} /></AdmCard>
+                    <AdmCard><AdmSkeleton rows={1} height={190} /></AdmCard>
+                </>
             ) : (
                 <>
-                    {/* إنذار الهبوط */}
-                    {bigDrop && (
-                        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-3 text-sm font-extrabold text-red-700">
-                            🚨 هبوط حاد: دخل اليوم {arNum(t.actives_today)} مقابل {arNum(t.actives_yday)} أمس ({todayDelta}٪) — تحقق من الخدمة أو أطلق حملة.
-                        </div>
-                    )}
+                    {/* ── الأرقام على النطاق المختار ───────────────────────── */}
+                    <AdmSection
+                        title="الأرقام على النطاق المختار"
+                        icon="📊"
+                        desc="تحت كل رقمٍ مداه: ما هو تراكميٌّ من أوّل يوم، وما يتبع الفترة والمكان المختارين أعلاه."
+                    >
+                        <AdmStatGrid cols={3}>
+                            <AdmStat
+                                icon="🪪"
+                                label="مسجّلون في هذا النطاق"
+                                value={admNum(scopeRegistered)}
+                                scope={`كل الوقت — ${placeLabel}`}
+                                title="عدد الحسابات التي آخرُ موقعٍ معروفٍ لها داخل النطاق المختار. رقمٌ تراكميّ لا يتبع الفترة."
+                            />
+                            <AdmStat
+                                icon="👥"
+                                label="دخلوا فعلاً"
+                                value={admNum(num(t.actives))}
+                                tone="ok"
+                                scope="الفترة المختارة"
+                                delta={!onDate && todayDelta !== null ? { text: `${todayDelta > 0 ? '▲' : todayDelta < 0 ? '▼' : '—'} ${Math.abs(todayDelta)}٪ اليوم عن أمس`, good: todayDelta === 0 ? undefined : todayDelta > 0 } : undefined}
+                                title="أشخاصٌ مختلفون لهم حساب وسُجّل لهم نشاطٌ داخل الفترة والنطاق. الزائر بلا حساب غير محسوبٍ هنا — مكانه «زوّار الموقع» أسفل الصفحة."
+                            />
+                            <AdmStat
+                                icon="🆕"
+                                label="سجّلوا حساباً جديداً"
+                                value={admNum(num(t.new_users))}
+                                tone="info"
+                                scope="الفترة المختارة"
+                                title="حساباتٌ أُنشئت داخل الفترة المختارة ويقع موقعها في النطاق المختار."
+                            />
+                            <AdmStat
+                                icon="🎟"
+                                label="أشخاص حجزوا"
+                                value={admNum(num(t.bookers))}
+                                tone="warn"
+                                scope="الفترة المختارة — بلا الملغاة"
+                                title="أشخاصٌ مختلفون أنشأوا حجزاً واحداً على الأقلّ لم يُلغَ."
+                            />
+                            <AdmStat
+                                icon="📦"
+                                label="إجمالي الحجوزات"
+                                value={admNum(num(t.bookings))}
+                                scope="الفترة المختارة — يشمل الملغاة"
+                                title="كل حجزٍ أُنشئ في الفترة أيّاً كان مصيره: مكتمل أو قائم أو ملغى. ولذلك هو أكبر من مجموع حجوزات المنصّات أدناه، فتلك تستثني الملغاة."
+                            />
+                            <AdmStat
+                                icon="🔁"
+                                label="٪ من الداخلين حجزوا"
+                                value={`${conv}٪`}
+                                tone={conv < 10 ? 'bad' : 'ok'}
+                                scope="الفترة المختارة"
+                                title="«أشخاص حجزوا» ÷ «دخلوا فعلاً» داخل الفترة والنطاق نفسيهما، بلا الحجوزات الملغاة. وهي غير «٪ الزوّار الذين حجزوا» في «زوّار الموقع» أسفل الصفحة: تلك تُقاس على جلسات التصفّح كلّها بما فيها زوّارٌ بلا حساب."
+                            />
+                        </AdmStatGrid>
+                    </AdmSection>
 
-                    {/* الأرقام الرئيسية — بلغة بسيطة */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-[var(--text-primary)]">{arNum(scopeRegistered)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🪪 مسجّلون في هذا النطاق</div>
-                        </div>
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-teal-700">{arNum(t.actives)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">👥 دخلوا فعلاً في الفترة المحددة</div>
-                        </div>
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-indigo-600">{arNum(t.new_users)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🆕 سجّلوا جديداً في الفترة</div>
-                        </div>
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-amber-600">{arNum(t.bookers)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🎟 أشخاص حجزوا</div>
-                        </div>
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className="text-2xl font-black text-[var(--text-primary)]">{arNum(t.bookings)}</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">📦 إجمالي الحجوزات</div>
-                        </div>
-                        <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)] text-center">
-                            <div className={`text-2xl font-black ${conv < 10 ? 'text-red-600' : 'text-emerald-600'}`}>{conv}٪</div>
-                            <div className="text-[10px] font-extrabold text-[var(--text-secondary)] mt-0.5">🔁 من دخلوا وانتهوا بحجز</div>
-                        </div>
-                    </div>
-
-                    {/* تفصيل الحجوزات: من أنجز ومن ألغى؟ */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">📦 ماذا حدث للحجوزات في هذه الفترة؟</div>
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                            <div className="bg-emerald-500/10 rounded-xl p-2.5">
-                                <div className="text-lg font-black text-emerald-600">{arNum(t.bk_completed)}</div>
-                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">✅ استُلمت (مكتملة)</div>
-                            </div>
-                            <div className="bg-sky-500/10 rounded-xl p-2.5">
-                                <div className="text-lg font-black text-sky-600">{arNum(t.bk_active)}</div>
-                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">⏳ ما زالت قائمة</div>
-                            </div>
-                            <div className="bg-red-500/10 rounded-xl p-2.5">
-                                <div className="text-lg font-black text-red-600">{arNum(t.bk_cancelled)}</div>
-                                <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">🚫 أُلغيت</div>
-                            </div>
-                        </div>
-                        {Number(t.bk_cancelled) > 0 && (
-                            <div className="flex gap-2 mt-2 text-[10px] font-extrabold text-[var(--text-secondary)] flex-wrap">
-                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">🛍 ألغاها المشتري: {arNum(t.bk_c_buyer)}</span>
-                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">🏪 ألغاها التاجر: {arNum(t.bk_c_seller)}</span>
-                                <span className="px-2 py-1 rounded-full bg-[var(--body-bg)] border border-[var(--border-color)]">⏰ انتهى وقتها تلقائياً: {arNum(t.bk_c_system)}</span>
+                    {/* ── مصير الحجوزات ───────────────────────────────────── */}
+                    <AdmSection
+                        title="ماذا حدث للحجوزات؟"
+                        icon="📦"
+                        desc={`الثلاثة معاً = «إجمالي الحجوزات» (${admNum(num(t.bookings))}) — فهو وحده يشمل الملغاة.`}
+                    >
+                        <AdmStatGrid cols={3}>
+                            <AdmStat icon="✅" label="استُلمت (مكتملة)" value={admNum(num(t.bk_completed))} tone="ok" scope="الفترة المختارة" />
+                            <AdmStat icon="⏳" label="ما زالت قائمة" value={admNum(num(t.bk_active))} tone="info" scope="الفترة المختارة" />
+                            <AdmStat icon="🚫" label="أُلغيت" value={admNum(num(t.bk_cancelled))} tone="bad" scope="الفترة المختارة" />
+                        </AdmStatGrid>
+                        {num(t.bk_cancelled) > 0 && (
+                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 12 }}>
+                                <span style={{ fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-3)', alignSelf: 'center' }}>من ألغى؟</span>
+                                <AdmPill>🛍 المشتري: {admNum(num(t.bk_c_buyer))}</AdmPill>
+                                <AdmPill>🏪 التاجر: {admNum(num(t.bk_c_seller))}</AdmPill>
+                                <AdmPill>⏰ انتهت المهلة تلقائياً: {admNum(num(t.bk_c_system))}</AdmPill>
                             </div>
                         )}
-                    </div>
+                    </AdmSection>
 
-                    {/* المناطق الـ١٣ — أرقام لا خرائط */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">🗺 المناطق الـ١٣ — كم مسجّلاً في كل منطقة؟</div>
-                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">اضغط أي منطقة لتصفية كل الأرقام عليها. «مسجّل» = آخر موقع معروف له داخل المنطقة.</p>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            {regions13.map(r => (
-                                <button key={r.id} onClick={() => { setRegion(region === r.id ? '' : r.id); setCity(''); setMall(''); }}
-                                    className={`text-right rounded-xl p-2.5 border transition-all ${region === r.id ? 'border-teal-600 bg-teal-600/10 shadow' : 'border-[var(--border-color)] bg-[var(--body-bg)] hover:shadow'}`}>
-                                    <div className="text-[11px] font-extrabold text-[var(--text-primary)] truncate">{r.name}</div>
-                                    <div className="flex items-baseline gap-2 mt-1">
-                                        <span className="text-lg font-black text-teal-700">{arNum(r.registered)}</span>
-                                        <span className="text-[9px] font-bold text-[var(--text-secondary)]">مسجّل</span>
-                                        <span className="text-xs font-black text-amber-600 mr-auto">{arNum(r.actives)}</span>
-                                        <span className="text-[9px] font-bold text-[var(--text-secondary)]">نشِط</span>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* ساعات الذروة */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
-                            <div className="text-sm font-extrabold text-[var(--text-primary)]">⏰ ساعات الذروة {city ? `في ${cityName(city)}` : region ? `في ${regionName(region)}` : ''}</div>
-                            {topHour && topHour.opens > 0 && (
-                                <span className="text-[10px] font-black text-amber-600 bg-amber-500/10 px-2 py-1 rounded-full">🔥 الذروة: {hourLabel(topHour.hr)} ({arNum(topHour.opens)} دخول)</span>
-                            )}
-                        </div>
-                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">كل عمود = عدد مرات الدخول في تلك الساعة (بتوقيت الرياض) خلال الفترة المحددة.</p>
-                        <HourBars rows={hours} />
-                    </div>
-
-                    {/* الرسم اليومي */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="text-sm font-extrabold text-[var(--text-primary)]">📈 التفاعل اليومي</div>
-                            <div className="text-[10px] font-bold text-[var(--text-secondary)]">
-                                <span className="inline-block w-2.5 h-2.5 rounded-sm ml-1" style={{ background: '#0d9488' }} /> دخلوا
-                                <span className="inline-block w-2.5 h-2.5 rounded-sm mr-2 ml-1" style={{ background: '#f59e0b' }} /> حجزوا
-                            </div>
-                        </div>
-                        <DailyBars rows={daily} />
-                    </div>
-
-                    {/* المصادر */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">📡 من أين يدخلون؟</div>
-                        <div className="grid grid-cols-3 gap-2">
-                            {['web', 'telegram', 'whatsapp'].map(src => {
-                                const s = sources.find(x => x.source === src) || { users: 0, opens: 0, bookings: 0 };
+                    {/* ── المناطق الثلاث عشرة ─────────────────────────────── */}
+                    <AdmSection
+                        title="المناطق الثلاث عشرة"
+                        icon="🗺"
+                        desc="اضغط منطقةً لتصفية كل أرقام الصفحة عليها. «مسجّل» تراكميٌّ من أوّل يوم (آخر موقعٍ معروفٍ للحساب)، و«نشِط» يتبع الفترة المختارة — ولذلك تظهر بقيّة المناطق بنشاطٍ صفر ما دامت منطقةٌ واحدة مختارة."
+                        badge={region ? { text: `مُصفّى على ${regionName(region)}`, tone: 'info' } : undefined}
+                        action={region ? <AdmButton size="sm" variant="ghost" onClick={() => { setRegion(''); setCity(''); setMall(''); }}>إلغاء التصفية</AdmButton> : undefined}
+                    >
+                        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+                            {regions13.map(r => {
+                                const on = region === r.id;
                                 return (
-                                    <div key={src} className="bg-[var(--body-bg)] rounded-xl p-2.5 border border-[var(--border-color)] text-center">
-                                        <div className="text-lg">{SRC_META[src].emoji}</div>
-                                        <div className="text-[10px] font-extrabold text-[var(--text-secondary)]">{SRC_META[src].ar}</div>
-                                        <div className="text-base font-black text-[var(--text-primary)] mt-1">{arNum(s.users)}</div>
-                                        <div className="text-[9px] font-bold text-[var(--text-secondary)]">مستخدم • {arNum(s.bookings)} حجز</div>
-                                    </div>
+                                    <button
+                                        key={r.id}
+                                        type="button"
+                                        onClick={() => { setRegion(on ? '' : r.id); setCity(''); setMall(''); }}
+                                        aria-pressed={on}
+                                        className="adm-focusable"
+                                        style={{
+                                            textAlign: 'right', cursor: 'pointer',
+                                            padding: '11px 12px', borderRadius: 'var(--adm-r-sm)',
+                                            border: `1px solid ${on ? 'var(--adm-accent)' : 'var(--adm-border)'}`,
+                                            background: on ? 'var(--adm-accent-weak)' : 'var(--adm-surface-2)',
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '.78rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {r.name}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--adm-fg)', fontVariantNumeric: 'tabular-nums' }}>
+                                                {admNum(r.registered)}
+                                            </span>
+                                            <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'var(--adm-fg-3)' }}>مسجّل</span>
+                                            <span style={{ marginInlineStart: 'auto', fontSize: '.8rem', fontWeight: 900, color: 'var(--adm-warn-fg)', fontVariantNumeric: 'tabular-nums' }}>
+                                                {admNum(r.actives)}
+                                            </span>
+                                            <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'var(--adm-fg-3)' }}>نشِط</span>
+                                        </div>
+                                    </button>
                                 );
                             })}
                         </div>
-                    </div>
+                    </AdmSection>
 
-                    {/* التصنيفات */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-2">🏷 أين دخلوا؟ (أي التصنيفات شاهدوا)</div>
-                        {cats.length === 0 ? (
-                            <div className="text-xs font-bold text-[var(--text-secondary)] text-center py-3">لا مشاهدات منتجات مسجلة في هذه الفترة/النطاق بعد.</div>
-                        ) : (
-                            <div className="space-y-1.5">
-                                {cats.map((c) => {
-                                    const pct = Math.round(((Number(c.views) || 0) / catTotal) * 100);
-                                    return (
-                                        <div key={c.category} className="flex items-center gap-2">
-                                            <div className="w-28 text-[11px] font-extrabold text-[var(--text-primary)] truncate">{catName(c.category)}</div>
-                                            <div className="flex-1 h-3 bg-[var(--body-bg)] rounded-full overflow-hidden border border-[var(--border-color)]">
-                                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#0d9488,#14b8a6)' }} />
-                                            </div>
-                                            <div className="w-24 text-[11px] font-black text-teal-700 text-left" dir="ltr">{pct}٪ ({arNum(c.viewers)} شخص)</div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* المدن */}
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-3 border border-[var(--border-color)]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">🏙 المدن — مسجّلون ونشاط</div>
-                        <p className="text-[10px] font-bold text-[var(--text-secondary)] mb-2">
-                            المنتقل بين المدن يُحسب على <b>آخر مدينة</b> عُرف فيها (كان في الدمام وصار في الخبر ← يُحسب على الخبر).
-                        </p>
-                        {cities.length === 0 ? (
-                            <div className="text-xs font-bold text-[var(--text-secondary)] text-center py-3">
-                                لا مستخدمين بموقع معروف تفاعلوا في هذه الفترة — كلما شارك المتسوقون مواقعهم امتلأ هذا الجدول.
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-[11px]">
-                                    <thead>
-                                        <tr className="text-[var(--text-secondary)] font-extrabold">
-                                            <th className="text-right py-1.5">المدينة</th>
-                                            <th className="text-center py-1.5">مسجّلون</th>
-                                            <th className="text-center py-1.5">دخلوا في الفترة</th>
-                                            <th className="text-center py-1.5">اليوم</th>
-                                            <th className="text-center py-1.5">أمس</th>
-                                            <th className="text-center py-1.5">التغيّر</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {cities.map((c) => {
-                                            const dl = deltaPct(Number(c.today) || 0, Number(c.yesterday) || 0);
-                                            return (
-                                                <tr key={c.city} className="border-t border-[var(--border-color)] font-bold text-[var(--text-primary)]">
-                                                    <td className="py-1.5">
-                                                        <button onClick={() => { setRegion(c.region || ''); setCity(c.city); setMall(''); }} className="font-extrabold text-teal-700 hover:underline">
-                                                            {cityName(c.city)}
-                                                        </button>
-                                                        {' '}<span className="text-[9px] text-[var(--text-secondary)]">({regionName(c.region)})</span>
-                                                    </td>
-                                                    <td className="text-center">{arNum(c.registered)}</td>
-                                                    <td className="text-center">{arNum(c.actives)}</td>
-                                                    <td className="text-center">{arNum(c.today)}</td>
-                                                    <td className="text-center">{arNum(c.yesterday)}</td>
-                                                    <td className="text-center">
-                                                        {dl === null ? <span className="text-[var(--text-secondary)]">—</span> : (
-                                                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${dl < 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                                {dl > 0 ? `▲${dl}٪` : dl < 0 ? `▼${Math.abs(dl)}٪` : '='}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                        <div className="text-[10px] font-bold text-[var(--text-secondary)] mt-2 leading-relaxed">
-                            🔒 خصوصية: {arNum(t.located_users)} من {arNum(t.total_users)} مستخدماً شاركوا موقعهم — نعرض <b>أعداداً فقط</b>،
-                            لا خرائط ولا مواقع أفراد. الجلسات تُحسب مرة كل ٣٠ دقيقة كحد أقصى لكل مستخدم.
+                    {/* ── المدن ───────────────────────────────────────────── */}
+                    <AdmSection
+                        title="المدن"
+                        icon="🏙"
+                        desc="المنتقل بين المدن يُحسب على آخر مدينةٍ عُرف فيها (كان في الدمام وصار في الخبر ← يُحسب على الخبر)."
+                        badge={cities.length ? { text: `${admNum(cities.length)} مدينة`, tone: 'neutral' } : undefined}
+                    >
+                        <AdmTable<CityRow>
+                            columns={cityColumns}
+                            rows={cities}
+                            keyOf={(c) => c.city}
+                            caption="المدن: المسجّلون والنشاط اليومي"
+                            empty={{
+                                icon: '🏙',
+                                title: 'لا مستخدمين بموقعٍ معروف تفاعلوا في هذا النطاق',
+                                hint: 'الجدول يمتلئ كلّما شارك المتسوّقون مواقعهم. جرّب توسيع الفترة أو إلغاء تصفية المنطقة.',
+                            }}
+                        />
+                        <div style={{ fontSize: '.74rem', color: 'var(--adm-fg-2)', fontWeight: 600, lineHeight: 1.9, marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--adm-border)' }}>
+                            📏 <b>أعمدة هذا الجدول بمدياتٍ مختلفة عمداً</b>، ولا يصحّ جمعها أو مقارنتها ببعض:
+                            «مسجّلون» رقمٌ تراكميّ من أوّل يوم · «دخلوا» يتبع الفترة المختارة أعلاه ·
+                            «اليوم» و«أمس» يومان ثابتان لا يتبعان الفترة، ويظهران صفراً إن كانت الفترة المختارة لا تشملهما.
+                            <br />
+                            🔒 خصوصية: {admNum(num(t.located_users))} من {admNum(num(t.total_users))} مستخدماً شاركوا موقعهم — نعرض
+                            <b> أعداداً فقط</b>، لا خرائط ولا مواقع أفراد. والجلسة تُحسب مرّةً كل ثلاثين دقيقة كحدٍّ أقصى لكل مستخدم.
                         </div>
-                    </div>
+                    </AdmSection>
+
+                    {/* ── يوماً بيوم ──────────────────────────────────────── */}
+                    <AdmSection
+                        title="يوماً بيوم داخل النطاق المختار"
+                        icon="📈"
+                        desc="عمودان لكل يوم: من دخل، ومن حجز — لأصحاب الحسابات داخل المكان والفترة المختارين. (أمّا زوّار الموقع كلّهم بلا تصفيةٍ جغرافية فقسمٌ مستقلّ أسفل الصفحة، ولا يصحّ مقارنة الرقمين.)"
+                        action={
+                            <span style={{ display: 'inline-flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Swatch color="var(--adm-accent)" label="دخلوا" />
+                                <Swatch color="var(--adm-warn-fg)" label="حجزوا" />
+                            </span>
+                        }
+                    >
+                        {!chartHasData ? (
+                            <AdmEmpty
+                                icon="📈"
+                                title="لا نشاط مسجّل في هذا النطاق"
+                                hint="لا دخولٌ ولا حجزٌ لأصحاب الحسابات داخل المكان والفترة المختارين."
+                            />
+                        ) : (
+                            <>
+                                <DailyChart rows={daily} />
+                                {peakDay && num(peakDay.actives) > 0 && (
+                                    <div style={{ marginTop: 10 }}>
+                                        <AdmPill tone="info">
+                                            🔝 أعلى يوم: {peakDay.d} — {admNum(num(peakDay.actives))} دخلوا · {admNum(num(peakDay.bookers))} حجزوا
+                                        </AdmPill>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </AdmSection>
+
+                    {/* ── المنصّات ────────────────────────────────────────── */}
+                    <AdmSection
+                        title="من أي منصّة يستعملون تاكي؟"
+                        icon="📱"
+                        desc="المنصّة التي فتحوا منها تاكي وحجزوا: الموقع، أو بوت تيليجرام، أو بوت واتساب. وهي غير «قناة الإحالة» (بحثٌ أو انستقرام أو رابط حملة) — تلك في «زوّار الموقع ومصادرهم» أسفل الصفحة، وتُقاس على جلسات التصفّح لا على الحسابات."
+                    >
+                        <AdmStatGrid cols={3}>
+                            {(['web', 'telegram', 'whatsapp'] as const).map(src => {
+                                const s = sources.find(x => x.source === src);
+                                return (
+                                    <AdmStat
+                                        key={src}
+                                        icon={SRC_META[src].emoji}
+                                        label={SRC_META[src].ar}
+                                        value={admNum(num(s?.users))}
+                                        scope={`مستخدماً · ${admNum(num(s?.bookings))} حجز`}
+                                        title={`أشخاصٌ مختلفون سُجّل لهم نشاطٌ من ${SRC_META[src].ar} داخل الفترة والنطاق المختارين. والحجوزات هنا بلا الملغاة.`}
+                                    />
+                                );
+                            })}
+                        </AdmStatGrid>
+                        <div style={{ fontSize: '.74rem', color: 'var(--adm-fg-2)', fontWeight: 600, lineHeight: 1.9, marginTop: 12 }}>
+                            🧮 مجموع الحجوزات هنا <b>{admNum(srcBookings)}</b> — <b>بلا الملغاة</b>، بينما «إجمالي الحجوزات»
+                            أعلاه <b>{admNum(num(t.bookings))}</b> <b>يشملها</b> ({admNum(num(t.bk_cancelled))} ملغاة).
+                            ولا تظهر هنا منصّةٌ بلا نشاطٍ في الفترة ولو كان لها حجز.
+                        </div>
+                    </AdmSection>
+
+                    {/* ── ما نُقل من هذه الشاشة ───────────────────────────── */}
+                    <AdmCard>
+                        <div style={{ fontSize: '.95rem', fontWeight: 900, color: 'var(--adm-fg)' }}>🔗 نُقل من هذه الشاشة</div>
+                        <p style={{ margin: '5px 0 10px', fontSize: '.8rem', color: 'var(--adm-fg-2)', lineHeight: 1.8, maxWidth: '68ch' }}>
+                            هذه الشاشة للجغرافيا وحدها — أين يسكن المشترون وكم دخلوا وحجزوا. وما كان يتكرّر هنا صار له مكانٌ واحد:
+                        </p>
+                        <MovedTo
+                            icon="⏰"
+                            what="ساعات الذروة"
+                            why="«المحلل الذكي» يعرضها أغنى: ساعةً × يوماً، مع التوصية المبنيّة عليها."
+                            where="المحلل الذكي"
+                            onGo={() => history.push('/admin?tab=analyst')}
+                        />
+                        <MovedTo
+                            icon="🏷"
+                            what="التصنيفات الأكثر مشاهدة"
+                            why="التصنيف ليس جغرافيا؛ وهو في «التحليلات» ضمن جدول تحويل التصنيفات (مشاهدة ← حجز)."
+                            where="التحليلات"
+                            onGo={() => history.push('/admin?tab=analytics')}
+                        />
+                    </AdmCard>
+
+                    {/* ── زوّار الموقع: نطاقٌ آخر، فقسمٌ يُفتح عمداً ─────── */}
+                    <AdmSection
+                        title="زوّار الموقع ومصادرهم"
+                        icon="🌍"
+                        collapsible
+                        defaultOpen={false}
+                        badge={{ text: 'كل الموقع — بلا تصفية جغرافية', tone: 'info' }}
+                        desc="قسمٌ بمقياسٍ مختلفٍ تماماً عمّا فوقه: يعدّ جلسات التصفّح (ومنها زوّارٌ بلا حساب)، وله فترتُه الخاصّة، ولا تصفّيه مرشِّحات المنطقة والمدينة أعلاه. بداخله: القنوات والحملات والمواقع المُحيلة والأجهزة وآخر صفحةٍ قبل المغادرة."
+                    >
+                        <SiteTrafficPanel />
+                    </AdmSection>
                 </>
             )}
         </div>

@@ -1,11 +1,38 @@
 /**
- * AdminTools — أدوات الإدارة المتقدمة
+ * AdminTools — البانرات والحملات وإعدادات المنصّة (v14.89 — أُعيدت على نظام اللوحة)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ما تفعله الشاشة (بلا تغيير في المنطق): بانرات الرئيسية (إضافة/تعديل/ترتيب/
+ * تفعيل/حذف + مدّة التنقّل) · الحملات الترويجية (نشرٌ سريع + نافذة كاملة +
+ * بثّ/إيقاف/حذف) · مفاتيح التشغيل (بوابة الدفع · تيليجرام · واتساب ورقمه) ·
+ * مهلة الحجز · حملة الموسم وتواريخ التذكير · أداة ضغط الصور.
  *
- * يجمع:
- *  - بوابة الدفع SaaS toggle
- *  - إدارة البانرات الإعلانية (CRUD)
- *  - الحملات الترويجية (إنشاء، تفعيل، إيقاف)
- *  - الإعدادات العامة
+ * 🔴 أربعة عيوب قِيست وصُحِّحت هنا:
+ *
+ *  ١) **زرٌّ يقول «تمّ» ولا يفعل شيئاً.** مفتاح بوابة الدفع كان يكتب بـ
+ *     `update … eq('key')`: لو لم يكن الصفّ موجوداً عاد `error=null` وصفر
+ *     صفوف، فيرى ناصر «✅ تم التفعيل» ولا شيء تغيّر. الآن كل كتابةٍ في هذا
+ *     الملفّ تمرّ بـ`writeSetting`/`.select()` **وتُعدّ صفوفها**، وصفرُ صفوفٍ
+ *     خطأٌ صريح لا نجاحٌ صامت (وهذا يشمل الحذف الذي ترفضه RLS: يعود بلا خطأ).
+ *
+ *  ٢) **مفاتيح كاذبة في أوّل ثانية.** كانت المفاتيح تُرسم بقيمها الافتراضية
+ *     قبل وصول القيم الحقيقية (تيليجرام «مُفعّل»، الدفع «مطفأة»، المهل ٢/٦/٧٢)
+ *     — وضغطةٌ حينها تقلب من القيمة الخطأ. الآن لا يُرسم أي مفتاح أو حقل إعداد
+ *     قبل وصول قيمته: `AdmSkeleton` مكانه، و`AdmError` إن فشل التحميل.
+ *
+ *  ٣) **صلاحيات فرعية مطبَّقة على النصف.** `action_manage_campaigns` كانت
+ *     تُفحص في موضعين و`action_manage_banners` في موضعٍ واحد، فأدمنٌ بلا
+ *     صلاحية الحملات ينشر من «نشر فوراً» ويحذف، وبلا صلاحية البنرات ينشئ
+ *     ويرتّب. الآن **كل إجراء** مربوطٌ بصلاحيته، وما لا يُسمح به **يُخفى**
+ *     (كبقيّة اللوحة) لا يُعطَّل، والفحص يبقى في الفعل أيضاً لا في الإخفاء وحده.
+ *
+ *  ٤) **مصطلحاتٌ تقنية أمام غير المبرمج.** مكان البانر كان يُعرض خاماً
+ *     (`home_top`)، وحقلا مدينة/منطقة الحملة كانا نصّين يُطلب فيهما مفتاحٌ
+ *     إنجليزي يُخمَّن (`riyadh`, `central`) — وخطأٌ فيهما حملةٌ لا تصل أحداً
+ *     بلا أي تحذير. الآن: ترجمةٌ لكل قيمة معروضة، وقائمتا اختيار من
+ *     `REGIONS`/`CITIES` (نفس المعرّفات التي تقارنها `taki_user_in_campaign`).
+ *
+ * 🪤 ولا `dark:` ولا `bg-white` ولا تدرّجات: الألوان رموز `--adm-*` تتبع
+ *    `.dark-mode`/`.light-mode`، واللون للدلالة وحدها.
  */
 
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
@@ -18,99 +45,165 @@ import { Tooltip } from '../../components/admin/Tooltip';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import { applySwUpdate } from '../../sw-cleanup';
 import { SEASONS, campaignSellerOpen, campaignPublicLive, SeasonCampaign } from '../../data/seasons';
+import { REGIONS, CITIES } from '../../data/mock';
 import { BANNER } from '../../utils/imageCompression';
 import { normalizeArabicNumerals } from '../../utils/helpers';
 import ImageOptimizer from '../../components/admin/ImageOptimizer';
+import {
+    AdmCard, AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmError, AdmButton,
+} from '../../components/admin/ui';
 
-// ============================================================
-// Setting Toggle Card
-// ============================================================
-const ToggleCard = memo<{
-    icon: string;
-    title: string;
-    subtitle: string;
-    enabled: boolean;
+// ═══════════════════════════════════════════════════════════════════════════
+// أنماطٌ مشتركة + ترجمة القيم المعروضة
+// ═══════════════════════════════════════════════════════════════════════════
+
+const fieldStyle: React.CSSProperties = {
+    width: '100%', padding: '9px 11px', fontSize: '.85rem', fontWeight: 600,
+    borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+    background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+};
+const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: '.72rem', fontWeight: 800, color: 'var(--adm-fg-3)', marginBottom: 5,
+};
+const hintStyle: React.CSSProperties = {
+    display: 'block', fontSize: '.72rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', marginTop: 5,
+};
+
+/** مكان البانر — تُعرض التسمية العربية في كل موضع، لا المفتاح الخام. */
+const BANNER_POSITIONS: { v: string; label: string }[] = [
+    { v: 'home_top', label: 'أعلى الصفحة الرئيسية' },
+    { v: 'category_top', label: 'أعلى التصنيفات' },
+];
+const positionLabel = (p?: string | null): string =>
+    BANNER_POSITIONS.find((x) => x.v === p)?.label ?? (p || '—');
+
+/** المدينة/المنطقة: المعرّف هو ما تقارنه القاعدة، والاسم هو ما يراه القارئ. */
+const cityLabel = (id?: string | null): string =>
+    id ? (CITIES.find((c) => c.id === id)?.name ?? id) : '';
+const regionLabel = (id?: string | null): string =>
+    id ? (REGIONS.find((r) => r.id === id)?.name ?? id) : '';
+
+const AUDIENCE_LABELS: Record<string, string> = {
+    all: '👥 الجميع', buyer: '🛒 المشترون', seller: '🏪 البائعون',
+};
+
+/**
+ * كتابةُ إعدادٍ **تُثبت نفسها**.
+ * 🪤 `upsert` لأن الصفّ قد لا يكون موجوداً (هذا بالضبط ما كان يُسقط مفتاح
+ *    بوابة الدفع)، و`.select()` لأن صفر صفوفٍ بلا خطأ هو شكل الرفض الصامت
+ *    الذي تعيده RLS. تُعيد رسالة خطأ، أو `null` عند نجاحٍ مُثبَت.
+ */
+async function writeSetting(key: string, value: unknown, description: string): Promise<string | null> {
+    const { data, error } = await supabase
+        .from('platform_settings')
+        .upsert({ key, value, description, updated_at: new Date().toISOString() })
+        .select('key');
+    if (error) return error.message;
+    if (!data || data.length === 0) return 'لم تُحفَظ أي قيمة (صفر صفوف) — قد تمنعك صلاحياتك. حدّث الصفحة وحاول مجدداً.';
+    return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// مفتاحٌ واحد لكل التبديلات
+// ═══════════════════════════════════════════════════════════════════════════
+
+const Sw: React.FC<{
+    on: boolean;
     onToggle: () => void | Promise<void>;
-    color?: 'green' | 'blue' | 'purple';
-}>(({ icon, title, subtitle, enabled, onToggle, color = 'green' }) => {
+    label: string;
+    disabled?: boolean;
+}> = ({ on, onToggle, label, disabled }) => {
     const [busy, setBusy] = useState(false);
-    const colors = {
-        green: enabled ? 'bg-emerald-500' : 'bg-[var(--gray-300)]',
-        blue: enabled ? 'bg-blue-500' : 'bg-[var(--gray-300)]',
-        purple: enabled ? 'bg-purple-500' : 'bg-[var(--gray-300)]',
-    };
-    const handleClick = async () => {
-        if (busy) return;
+    const click = async () => {
+        if (busy || disabled) return;
         setBusy(true);
         try { await onToggle(); } finally { setBusy(false); }
     };
-    return (
-        <div className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm flex items-center gap-4">
-            <div className="text-3xl">{icon}</div>
-            <div className="flex-1">
-                <div className="font-bold text-[var(--text-primary)]">{title}</div>
-                <div className="text-xs text-[var(--text-secondary)] mt-0.5">{subtitle}</div>
-            </div>
-            <button
-                onClick={handleClick}
-                disabled={busy}
-                aria-busy={busy}
-                aria-pressed={enabled}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ease-out ${colors[color]} active:scale-95 ${busy ? 'opacity-70 cursor-wait' : 'cursor-pointer hover:brightness-110'}`}
-            >
-                <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ease-out ${
-                        enabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                />
-            </button>
-        </div>
-    );
-});
-ToggleCard.displayName = 'ToggleCard';
-
-// Reusable smooth toggle pill — used inline in lists where the row card
-// supplies its own layout. Optimistic by design: flips visually immediately
-// while the parent's onToggle reconciles with the server.
-const ToggleSwitch: React.FC<{
-    enabled: boolean;
-    onToggle: () => void | Promise<void>;
-    color?: 'green' | 'blue';
-    size?: 'sm' | 'md';
-    label?: string;
-}> = ({ enabled, onToggle, color = 'green', size = 'sm', label }) => {
-    const [busy, setBusy] = useState(false);
-    const handleClick = async () => {
-        if (busy) return;
-        setBusy(true);
-        try { await onToggle(); } finally { setBusy(false); }
-    };
-    const dims = size === 'md' ? 'h-7 w-12' : 'h-6 w-11';
-    const knob = size === 'md' ? 'h-5 w-5' : 'h-4 w-4';
-    const onColor = color === 'green' ? 'bg-emerald-500' : 'bg-blue-500';
+    const locked = busy || !!disabled;
     return (
         <button
-            onClick={handleClick}
-            disabled={busy}
-            aria-busy={busy}
-            aria-pressed={enabled}
-            aria-label={label}
-            className={`relative inline-flex ${dims} items-center rounded-full transition-all duration-300 ease-out ${enabled ? onColor : 'bg-[var(--gray-300)]'} active:scale-95 ${busy ? 'opacity-70 cursor-wait' : 'cursor-pointer hover:brightness-110'}`}
+            type="button" onClick={click} disabled={locked}
+            aria-pressed={on} aria-busy={busy} aria-label={label} title={label}
+            className="adm-focusable"
+            style={{
+                position: 'relative', flexShrink: 0, width: 46, height: 26, borderRadius: 999,
+                border: '1px solid var(--adm-border)',
+                background: on ? 'var(--adm-ok-fg)' : 'var(--adm-surface-3)',
+                cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? .55 : 1,
+                transition: 'background .2s',
+            }}
         >
+            {/* 🪤 قرصٌ أبيض ثابت يختفي ليلاً: `--adm-ok-fg` أخضرُ فاتح في الوضع
+                الداكن، فالأبيض عليه بالكاد يُرى. القرص يتبع الثيم عكسَ مساره. */}
             <span
-                className={`inline-block ${knob} transform rounded-full bg-white shadow-md transition-transform duration-300 ease-out ${
-                    size === 'md'
-                        ? (enabled ? 'translate-x-6' : 'translate-x-1')
-                        : (enabled ? 'translate-x-6' : 'translate-x-1')
-                }`}
+                style={{
+                    position: 'absolute', top: 2, insetInlineStart: on ? 22 : 2,
+                    width: 20, height: 20, borderRadius: 999,
+                    background: on ? 'var(--adm-surface)' : 'var(--adm-fg-3)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,.28)', transition: 'inset-inline-start .2s',
+                }}
             />
         </button>
     );
 };
 
-// ============================================================
-// Banner Modal
-// ============================================================
+/** صفّ إعداد: أيقونة + عنوان + شرحٌ بحالته الحالية + المفتاح. */
+const SettingRow: React.FC<{
+    icon: string; title: string; desc: string; note?: React.ReactNode; right: React.ReactNode;
+}> = ({ icon, title, desc, note, right }) => (
+    <div
+        style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12, padding: '13px 14px',
+            borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+            background: 'var(--adm-surface-2)',
+        }}
+    >
+        <span style={{ fontSize: '1.25rem', lineHeight: 1.2 }} aria-hidden="true">{icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '.88rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{title}</div>
+            <div style={{ fontSize: '.75rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', marginTop: 3 }}>{desc}</div>
+            {note}
+        </div>
+        {right}
+    </div>
+);
+
+const Field = memo<{
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+    placeholder?: string;
+    dir?: 'rtl' | 'ltr';
+}>(({ label, value, onChange, placeholder, dir }) => (
+    <label style={{ display: 'block' }}>
+        <span style={labelStyle}>{label}</span>
+        <input
+            type="text" dir={dir} placeholder={placeholder} value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="adm-focusable" style={fieldStyle}
+        />
+    </label>
+));
+Field.displayName = 'Field';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// نافذة البانر
+// ═══════════════════════════════════════════════════════════════════════════
+
+const modalShell: React.CSSProperties = {
+    width: '100%', maxHeight: '90vh', overflowY: 'auto',
+    background: 'var(--adm-surface)', border: '1px solid var(--adm-border)',
+    borderRadius: 'var(--adm-r)', boxShadow: 'var(--adm-shadow-lift)',
+};
+const modalHead: React.CSSProperties = {
+    position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 10,
+    padding: '13px 15px', background: 'var(--adm-surface-2)', borderBottom: '1px solid var(--adm-border)',
+};
+const modalFoot: React.CSSProperties = {
+    position: 'sticky', bottom: 0, display: 'flex', gap: 10, padding: '12px 15px',
+    background: 'var(--adm-surface-2)', borderTop: '1px solid var(--adm-border)',
+};
+
 const BannerModal: React.FC<{
     initial?: any | null;
     onClose: () => void;
@@ -140,10 +233,8 @@ const BannerModal: React.FC<{
     // Blob URL backing the "adjust existing image" flow — revoked on close.
     const objectUrlRef = useRef<string | null>(null);
 
-    // Link a banner by NAME, not by ID. Stores + their deals are derived from
-    // the deals already in memory, so the admin never types a UUID or a URL.
-    // Each unique storeId→shopName is a selectable store; its active deals are
-    // the deal options once a store is chosen.
+    // الربط بالاسم لا بالمعرّف: المتاجر وعروضها تُشتق من العروض في الذاكرة،
+    // فلا يكتب المدير UUID ولا رابطاً أبداً.
     const stores = useMemo(() => {
         const map = new Map<string, string>();
         for (const d of deals) {
@@ -175,11 +266,8 @@ const BannerModal: React.FC<{
         setStoreQuery('');
     };
 
-    // Esc closes the modal. Banner draft is purely client-side until the
-    // explicit "نشر" button — no DB write happens on close.
+    // Esc تُغلق — المسوّدة كلها في المتصفّح حتى زرّ النشر الصريح.
     useEscClose(true, onClose);
-
-    // Revoke any outstanding blob URL when the modal unmounts.
     useEffect(() => () => { if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current); }, []);
 
     const closeEditor = () => {
@@ -187,8 +275,7 @@ const BannerModal: React.FC<{
         if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null; }
     };
 
-    // Pick from device → open the positioner on a data URL (no upload yet;
-    // the cropped 1200×600 result is what gets uploaded).
+    // اختيار من الجهاز → أداة تحديد الجزء الظاهر (لا رفع قبل القصّ).
     const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         e.target.value = ''; // allow re-picking the same file
@@ -201,9 +288,8 @@ const BannerModal: React.FC<{
         reader.readAsDataURL(file);
     };
 
-    // Re-open the positioner on an already-set image_url. We fetch it into a
-    // blob first so the canvas is same-origin (never tainted). External URLs
-    // that block CORS fall back gracefully with a clear message.
+    // إعادة فتح الأداة على صورةٍ محفوظة: تُجلب إلى blob أولاً كي يبقى الكانفس
+    // من نفس المصدر (لا يتلوّث)، والمصادر الخارجية ترتدّ برسالةٍ واضحة.
     const handleAdjustExisting = async () => {
         const url = form.image_url.trim();
         if (!url) return;
@@ -220,7 +306,6 @@ const BannerModal: React.FC<{
         }
     };
 
-    // Editor handed back a ready 1200×600 JPEG → upload it, set the URL.
     const handleEditorApply = async (file: File) => {
         closeEditor();
         setUploading(true);
@@ -238,20 +323,16 @@ const BannerModal: React.FC<{
 
     const handleSave = async () => {
         if (saving) return;
-        if (!form.image_url.trim()) {
-            await customAlert('⚠️ يرجى رفع صورة أو لصق رابط');
-            return;
-        }
+        if (!form.image_url.trim()) { await customAlert('⚠️ يرجى رفع صورة أو لصق رابط'); return; }
         setSaving(true);
-        // try/finally + a 12s safety timeout so the button can never stick on
-        // "جاري النشر..." if the network stalls (v11.23).
+        // كل ما قد يرمي داخل try، و`setSaving(false)` في finally، ومهلة ١٢ ثانية
+        // فلا يعلق الزرّ على «جاري النشر...» مهما تعثّرت الشبكة (v11.23).
         let err: any = null;
+        let rows = -1;
         try {
-            // deal_id / store_id are FOREIGN KEYS (→ deals.id / users.id). An
-            // empty optional field MUST be null, never '' — Postgres treats ''
-            // as a real value and it fails banners_deal_id_fkey /
-            // banners_store_id_fkey. This was the silent "النشر لا يعمل" bug
-            // (v11.30): the form shipped deal_id:'' store_id:'' on every banner.
+            // 🪤 `deal_id`/`store_id` مفاتيح أجنبية: الفارغ **يجب** أن يكون null
+            // لا `''` — فـ`''` قيمةٌ حقيقية عند بوستجرس وتكسر
+            // `banners_deal_id_fkey` (كان هذا عيب «النشر لا يعمل»، v11.30).
             const row = {
                 title_ar: form.title_ar.trim() || null,
                 title_en: form.title_en.trim() || null,
@@ -262,28 +343,34 @@ const BannerModal: React.FC<{
                 position: form.position,
                 is_active: form.is_active,
             };
-            // Edit updates the same row in place; otherwise insert a new banner.
+            // 🪤 `.select('id')` ليس زينة: تعديلٌ ترفضه RLS — أو صفٌّ حُذف من
+            // جهازٍ آخر — يعود بـ`error=null` وصفر صفوف، فتقول الشاشة «حُفظ».
             const writeQuery = isEdit
-                ? supabase.from('banners').update(row).eq('id', initial.id)
-                : supabase.from('banners').insert([row]);
+                ? supabase.from('banners').update(row).eq('id', initial.id).select('id')
+                : supabase.from('banners').insert([row]).select('id');
             const timeout = new Promise<{ error: any }>(resolve =>
                 setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
             );
-            const { error } = await Promise.race([writeQuery as any, timeout]);
-            err = error;
+            const res: any = await Promise.race([writeQuery as any, timeout]);
+            err = res?.error ?? null;
+            rows = Array.isArray(res?.data) ? res.data.length : -1;
         } catch (e: any) {
             err = { message: e?.message || 'فشل النشر — تحقق من الاتصال' };
         } finally {
             setSaving(false);
         }
         if (err) {
-            // Translate the raw Postgres FK error into a clear Arabic hint.
+            // ترجمة خطأ المفتاح الأجنبي الخام إلى سببٍ مفهوم.
             const m = String(err.message || '');
             const friendly =
-                m.includes('banners_deal_id_fkey') ? 'رقم العرض الذي أدخلته غير موجود. تأكد منه أو اتركه فارغاً.'
-                : m.includes('banners_store_id_fkey') ? 'رقم المتجر الذي أدخلته غير موجود. تأكد منه أو اتركه فارغاً.'
+                m.includes('banners_deal_id_fkey') ? 'العرض المرتبط لم يعد موجوداً. اختر عرضاً آخر أو اترك الربط فارغاً.'
+                : m.includes('banners_store_id_fkey') ? 'المتجر المرتبط لم يعد موجوداً. اختر متجراً آخر أو اترك الربط فارغاً.'
                 : (m || 'فشل النشر');
             await customAlert('❌ ' + friendly);
+            return;
+        }
+        if (rows === 0) {
+            await customAlert('❌ لم يُحفَظ شيء (صفر صفوف). قد يكون البانر حُذف، أو لا تسمح صلاحياتك بتعديله. حدّث الصفحة.');
             return;
         }
         await customAlert(isEdit ? '✅ تم حفظ تعديلات البانر' : '✅ تم نشر البانر بنجاح');
@@ -292,292 +379,225 @@ const BannerModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-            <div className="bg-[var(--card-bg)] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-                <div className="sticky top-0 bg-gradient-to-r from-orange-500 to-red-600 text-white p-5 rounded-t-3xl flex items-center justify-between">
-                    <div className="text-xl font-bold">{isEdit ? '✏️ تعديل البانر' : '🖼️ بانر إعلاني جديد'}</div>
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"
-                    >
-                        ✕
-                    </button>
+        <div
+            className="fixed inset-0 z-[3000] flex items-center justify-center p-4 animate-fade-in"
+            style={{ background: 'rgba(8, 13, 20, .55)', backdropFilter: 'blur(3px)' }}
+        >
+            <div role="dialog" aria-modal="true" aria-label="بطاقة البانر" dir="rtl" style={{ ...modalShell, maxWidth: 560 }}>
+                <div style={modalHead}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '.7rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>بانر إعلاني</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--adm-fg)' }}>
+                            {isEdit ? 'تعديل البانر' : 'بانر جديد'}
+                        </div>
+                    </div>
+                    <AdmButton size="sm" variant="ghost" onClick={onClose} title="إغلاق (Esc)">✕</AdmButton>
                 </div>
 
-                <div className="p-5 space-y-4">
+                <div style={{ padding: 15, display: 'grid', gap: 14 }}>
                     {form.image_url && (
-                        <div className="rounded-2xl overflow-hidden border border-[var(--border-color)] relative">
-                            {/* WYSIWYG preview — exactly the 2.5:1 shape shown on the home page */}
-                            <div className="relative w-full" style={{ aspectRatio: '2.5 / 1', background: 'var(--gray-100)' }}>
+                        <div style={{ position: 'relative', borderRadius: 'var(--adm-r-sm)', overflow: 'hidden', border: '1px solid var(--adm-border)' }}>
+                            {/* معاينة بنفس نسبة الرئيسية تماماً (2.5:1) */}
+                            <div style={{ position: 'relative', width: '100%', aspectRatio: '2.5 / 1', background: 'var(--adm-surface-3)' }}>
                                 <img
-                                    src={form.image_url}
-                                    alt=""
-                                    className="absolute inset-0 w-full h-full object-cover"
+                                    src={form.image_url} alt=""
+                                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                                     onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
                                 />
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-3 py-2 pointer-events-none">
-                                    <span className="text-[10px] font-bold text-white/90">معاينة كما سيظهر في الرئيسية تماماً (2.5:1)</span>
-                                </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setForm({ ...form, image_url: '' })}
-                                className="absolute top-2 left-2 bg-red-500/90 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-md active:scale-90 transition"
-                                aria-label="إزالة الصورة"
-                            >
-                                ✕
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleAdjustExisting}
-                                className="absolute top-2 right-2 bg-black/55 backdrop-blur-sm text-white rounded-full px-3 h-8 flex items-center gap-1 text-xs font-bold shadow-md active:scale-90 transition"
-                            >
-                                ✂️ ضبط الجزء الظاهر
-                            </button>
+                            <div style={{ position: 'absolute', top: 7, insetInlineStart: 7, display: 'flex', gap: 6 }}>
+                                <AdmButton size="sm" variant="danger" onClick={() => setForm({ ...form, image_url: '' })} title="إزالة الصورة">✕</AdmButton>
+                                <AdmButton size="sm" onClick={handleAdjustExisting}>✂️ ضبط الجزء الظاهر</AdmButton>
+                            </div>
+                            <div style={{ padding: '6px 9px', fontSize: '.7rem', fontWeight: 700, color: 'var(--adm-fg-3)', background: 'var(--adm-surface-2)' }}>
+                                معاينة كما سيظهر في الرئيسية تماماً (2.5:1)
+                            </div>
                         </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field
-                            label="العنوان (عربي)"
-                            value={form.title_ar}
-                            onChange={(v) => setForm({ ...form, title_ar: v })}
-                        />
-                        <Field
-                            label="العنوان (English)"
-                            value={form.title_en}
-                            onChange={(v) => setForm({ ...form, title_en: v })}
-                        />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <Field label="العنوان (عربي)" value={form.title_ar} onChange={(v) => setForm({ ...form, title_ar: v })} />
+                        <Field label="العنوان (English)" value={form.title_en} onChange={(v) => setForm({ ...form, title_en: v })} dir="ltr" />
                     </div>
 
-                    {/* Image: upload OR paste URL */}
+                    {/* الصورة: رفعٌ أو رابط */}
                     <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1">
-                            صورة البانر <span className="text-red-500">*</span>
-                        </label>
-                        <div className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                            📐 المقاس المثالي <b>1200×480</b> بكسل (نسبة 2.5:1). بعد اختيار الصورة ستفتح أداة تتيح لك تحريك الصورة واختيار الجزء الظاهر بالضبط.
+                        <span style={labelStyle}>صورة البانر <span style={{ color: 'var(--adm-bad-fg)' }}>*</span></span>
+                        <div style={{ ...hintStyle, marginTop: 0, marginBottom: 8 }}>
+                            📐 المقاس المثالي <b>1200×480</b> بكسل (نسبة 2.5:1). بعد الاختيار تفتح أداةٌ تحرّك الصورة وتحدّد الجزء الظاهر بالضبط.
                         </div>
-                        {/* A native <label> opens the file picker on click WITHOUT a
-                            programmatic fileInputRef.click() — that path silently failed
-                            on some desktop browsers («الرفع لا يعمل من اللابتوب»). The
-                            input is visually hidden but kept in the DOM (not display:none,
-                            which can swallow .click()). Works on web + PWA, mobile + laptop. */}
+                        {/* 🪤 `<label>` أصليّ يفتح المنتقي بلا `fileInputRef.click()` —
+                            ذلك المسار كان يفشل صامتاً على بعض متصفّحات سطح المكتب.
+                            والحقل مخفيٌّ بصرياً لا بـ`display:none` (تبتلع النقرة). */}
                         <label
-                            className={`w-full px-3 py-3 bg-orange-50 hover:bg-orange-100 border-2 border-dashed border-orange-300 text-orange-700 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}
+                            className="adm-focusable"
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                width: '100%', padding: '12px', fontSize: '.85rem', fontWeight: 800,
+                                borderRadius: 'var(--adm-r-sm)', border: '1px dashed var(--adm-border-strong)',
+                                background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+                                cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? .5 : 1,
+                            }}
                         >
                             <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                onChange={handleFilePick}
-                                disabled={uploading}
+                                ref={fileInputRef} type="file" accept="image/*"
+                                onChange={handleFilePick} disabled={uploading}
                                 style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}
                             />
                             {uploading ? '⏳ جاري الرفع...' : '📤 رفع صورة من الجهاز'}
                         </label>
-                        <div className="text-[11px] text-[var(--text-secondary)] text-center my-1.5">— أو —</div>
+                        <div style={{ textAlign: 'center', fontSize: '.72rem', color: 'var(--adm-fg-3)', margin: '7px 0' }}>— أو —</div>
                         <input
-                            type="text"
-                            placeholder="ألصق رابط الصورة (https://...)"
+                            type="text" dir="ltr" placeholder="ألصق رابط الصورة (https://...)"
                             value={form.image_url}
                             onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 focus:bg-[var(--card-bg)] outline-none"
+                            className="adm-focusable" style={fieldStyle}
                         />
                     </div>
-                    {/* What happens when the banner is tapped. The admin links by
-                        NAME: search a store, then optionally pick one of its deals.
-                        No IDs, no links. Empty = the banner just shows. */}
-                    <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--body-bg)] p-3 space-y-3">
+
+                    {/* وجهة الضغط — بالاسم لا بالمعرّف */}
+                    <div style={{ borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)', padding: 13, display: 'grid', gap: 11 }}>
                         <div>
-                            <div className="text-sm font-extrabold text-[var(--text-primary)]">🔗 عند الضغط على البانر</div>
-                            <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 leading-relaxed">
-                                اختياري. اختر متجراً (وعرضاً محدداً إن أردت). اترك الكل فارغاً لعرض الصورة فقط.
-                            </div>
+                            <div style={{ fontSize: '.85rem', fontWeight: 800, color: 'var(--adm-fg)' }}>🔗 عند الضغط على البانر</div>
+                            <div style={{ ...hintStyle, marginTop: 3 }}>اختياري. اختر متجراً (وعرضاً محدداً إن أردت). اترك الكل فارغاً لعرض الصورة فقط.</div>
                         </div>
 
                         {!form.store_id ? (
-                            /* Step 1 — search the store by name */
-                            <div className="relative">
-                                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">🏪 ابحث عن المتجر بالاسم</label>
+                            <div style={{ position: 'relative' }}>
+                                <span style={labelStyle}>🏪 ابحث عن المتجر بالاسم</span>
                                 <input
-                                    type="text"
-                                    value={storeQuery}
+                                    type="text" value={storeQuery}
                                     onChange={(e) => setStoreQuery(e.target.value)}
                                     placeholder="اكتب اسم المتجر..."
-                                    className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 outline-none"
+                                    className="adm-focusable" style={fieldStyle}
                                 />
                                 {storeMatches.length > 0 && (
-                                    <div className="mt-1 max-h-52 overflow-y-auto rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] shadow-lg divide-y divide-[var(--border-color)]">
+                                    <div style={{ marginTop: 6, maxHeight: 200, overflowY: 'auto', borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface)' }}>
                                         {storeMatches.map((s) => (
                                             <button
-                                                key={s.id}
-                                                type="button"
-                                                onClick={() => selectStore(s)}
-                                                className="w-full text-right px-3 py-2.5 text-sm font-bold text-[var(--text-primary)] hover:bg-orange-50 active:bg-orange-100 transition flex items-center gap-2"
+                                                key={s.id} type="button" onClick={() => selectStore(s)}
+                                                className="adm-focusable"
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'right',
+                                                    padding: '9px 11px', fontSize: '.84rem', fontWeight: 700, cursor: 'pointer',
+                                                    background: 'transparent', border: 0, borderBottom: '1px solid var(--adm-border)', color: 'var(--adm-fg)',
+                                                }}
                                             >
-                                                <span>🏪</span><span className="truncate">{s.name}</span>
+                                                <span aria-hidden="true">🏪</span>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                                             </button>
                                         ))}
                                     </div>
                                 )}
                                 {storeQuery.trim() && storeMatches.length === 0 && (
-                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1.5">
-                                        لا يوجد متجر بهذا الاسم. (تظهر المتاجر التي لديها عروض فقط.)
-                                    </div>
+                                    <span style={hintStyle}>لا يوجد متجر بهذا الاسم. (تظهر المتاجر التي لديها عروض فقط.)</span>
                                 )}
                             </div>
                         ) : (
-                            /* Step 2 — store chosen; optionally pick a specific deal */
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
-                                    <span className="text-sm font-bold text-emerald-800 flex items-center gap-2 min-w-0">
-                                        <span>🏪</span><span className="truncate">{selectedStoreName || 'متجر مُختار'}</span>
+                            <div style={{ display: 'grid', gap: 11 }}>
+                                <div
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                                        padding: '9px 11px', borderRadius: 'var(--adm-r-sm)',
+                                        background: 'var(--adm-ok-bg)', color: 'var(--adm-ok-fg)',
+                                    }}
+                                >
+                                    <span style={{ fontSize: '.84rem', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        🏪 {selectedStoreName || 'متجر مُختار'}
                                     </span>
                                     <button
-                                        type="button"
-                                        onClick={clearStore}
-                                        className="text-xs font-bold text-emerald-700 hover:text-red-600 flex-shrink-0"
+                                        type="button" onClick={clearStore} className="adm-focusable"
+                                        style={{ background: 'transparent', border: 0, color: 'inherit', fontSize: '.76rem', fontWeight: 800, cursor: 'pointer' }}
                                     >
                                         تغيير ✕
                                     </button>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">🎯 عرض محدد من هذا المتجر (اختياري)</label>
+                                <label style={{ display: 'block' }}>
+                                    <span style={labelStyle}>🎯 عرض محدد من هذا المتجر (اختياري)</span>
                                     <select
                                         value={form.deal_id}
                                         onChange={(e) => setForm({ ...form, deal_id: e.target.value })}
-                                        className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 outline-none"
+                                        className="adm-focusable" style={fieldStyle}
                                     >
                                         <option value="">— بدون عرض محدد (يفتح صفحة المتجر) —</option>
                                         {storeDeals.map((d) => (
                                             <option key={d.id} value={d.id}>{d.itemName}</option>
                                         ))}
                                     </select>
-                                    <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                    <span style={hintStyle}>
                                         {storeDeals.length === 0
                                             ? 'لا توجد عروض نشطة لهذا المتجر — سيفتح البانر صفحة المتجر.'
                                             : 'إن اخترت عرضاً، يفتح البانر صفحة ذلك العرض مباشرة بدل صفحة المتجر.'}
-                                    </div>
-                                </div>
+                                    </span>
+                                </label>
                             </div>
                         )}
 
-                        {/* External link — secondary/advanced, used only if no store is chosen */}
-                        <details className="rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]">
-                            <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-[var(--text-secondary)]">
+                        <details style={{ borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface)' }}>
+                            <summary style={{ cursor: 'pointer', padding: '8px 11px', fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
                                 🌐 أو رابط خارجي بدل المتجر (متقدّم)
                             </summary>
-                            <div className="p-3">
-                                <Field
-                                    label="رابط الوجهة"
-                                    value={form.target_url}
-                                    onChange={(v) => setForm({ ...form, target_url: v })}
-                                    placeholder="https://..."
-                                />
-                                <div className="text-[11px] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                                    صفحة خارجية تُفتح عند الضغط (مثل منتج في موقعك). يُستخدم فقط إذا لم تختر متجراً بالأعلى.
-                                </div>
+                            <div style={{ padding: 11 }}>
+                                <Field label="رابط الوجهة" value={form.target_url} onChange={(v) => setForm({ ...form, target_url: v })} placeholder="https://..." dir="ltr" />
+                                <span style={hintStyle}>صفحة خارجية تُفتح عند الضغط. تُستخدم فقط إذا لم تختر متجراً بالأعلى.</span>
                             </div>
                         </details>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">المكان</label>
+
+                    <label style={{ display: 'block' }}>
+                        <span style={labelStyle}>مكان الظهور</span>
                         <select
                             value={form.position}
                             onChange={(e) => setForm({ ...form, position: e.target.value })}
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm"
+                            className="adm-focusable" style={fieldStyle}
                         >
-                            <option value="home_top">أعلى الصفحة الرئيسية</option>
-                            <option value="category_top">أعلى التصنيفات</option>
+                            {BANNER_POSITIONS.map((p) => <option key={p.v} value={p.v}>{p.label}</option>)}
                         </select>
-                    </div>
+                    </label>
                 </div>
 
-                <div className="sticky bottom-0 bg-[var(--body-bg)] p-4 rounded-b-3xl flex gap-3 border-t">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-3 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl"
-                    >
-                        إلغاء
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex-[2] py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold rounded-xl disabled:opacity-50"
-                    >
+                <div style={modalFoot}>
+                    <AdmButton onClick={onClose} full>إلغاء</AdmButton>
+                    <AdmButton variant="primary" onClick={handleSave} disabled={saving} full>
                         {saving ? (isEdit ? 'جاري الحفظ...' : 'جاري النشر...') : (isEdit ? '💾 حفظ التعديلات' : '🚀 نشر البانر')}
-                    </button>
+                    </AdmButton>
                 </div>
             </div>
 
-            {/* Upload-in-progress veil (after the positioner hands back the crop) */}
             {uploading && (
-                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-[3100]">
-                    <div className="bg-[var(--card-bg)] rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3">
-                        <span className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-sm font-bold text-[var(--text-primary)]">جاري رفع الصورة...</span>
-                    </div>
+                <div className="fixed inset-0 flex items-center justify-center z-[3100]" style={{ background: 'rgba(8,13,20,.45)' }}>
+                    <AdmCard>
+                        <span style={{ fontSize: '.85rem', fontWeight: 800, color: 'var(--adm-fg)' }}>⏳ جاري رفع الصورة...</span>
+                    </AdmCard>
                 </div>
             )}
 
-            {/* WYSIWYG banner positioner (portal — renders to <body>) */}
             {editorSrc && (
-                <BannerImageEditor
-                    src={editorSrc}
-                    isRTL={isRTL}
-                    onApply={handleEditorApply}
-                    onCancel={closeEditor}
-                />
+                <BannerImageEditor src={editorSrc} isRTL={isRTL} onApply={handleEditorApply} onCancel={closeEditor} />
             )}
         </div>
     );
 };
 
-const Field = memo<{
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-}>(({ label, value, onChange, placeholder }) => (
-    <div>
-        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">{label}</label>
-        <input
-            type="text"
-            placeholder={placeholder}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-orange-500 focus:bg-[var(--card-bg)] outline-none"
-        />
-    </div>
-));
-Field.displayName = 'Field';
+// ═══════════════════════════════════════════════════════════════════════════
+// نافذة الحملة الترويجية
+// ═══════════════════════════════════════════════════════════════════════════
 
-// ============================================================
-// Campaign Modal — لإنشاء وتعديل حملة ترويجية
-// ============================================================
 type CampaignDraft = {
-    title_ar: string;
-    title_en: string;
-    body_ar: string;
-    body_en: string;
+    title_ar: string; title_en: string; body_ar: string; body_en: string;
     target_audience: 'all' | 'buyer' | 'seller';
-    target_city: string;
-    target_region: string;
-    image_url: string;
-    action_url: string;
-    action_label_ar: string;
-    action_label_en: string;
-    starts_at: string;
-    ends_at: string;
-    priority: number;
-    is_active: boolean;
+    target_city: string; target_region: string;
+    image_url: string; action_url: string;
+    action_label_ar: string; action_label_en: string;
+    starts_at: string; ends_at: string;
+    priority: number; is_active: boolean;
     /** v12.27 — إعادة بث تلقائية: none/daily/every_3_days/weekend/weekly/monthly */
     recurrence: string;
     /** ساعة الإرسال بتوقيت الرياض (0–23) */
     recurrence_hour: number;
 };
 
-// خيارات التكرار — الكرون الساعي في قاعدة البيانات يعيد البث حسبها (بتوقيت الرياض)
+// خيارات التكرار — الكرون الساعي في القاعدة يعيد البثّ حسبها (بتوقيت الرياض)
 const RECURRENCE_OPTIONS: { v: string; label: string; icon: string }[] = [
     { v: 'none',         label: 'بدون تكرار',       icon: '⏹' },
     { v: 'daily',        label: 'يومياً',            icon: '📆' },
@@ -586,29 +606,33 @@ const RECURRENCE_OPTIONS: { v: string; label: string; icon: string }[] = [
     { v: 'weekly',       label: 'أسبوعياً',          icon: '🗓' },
     { v: 'monthly',      label: 'شهرياً',            icon: '📅' },
 ];
-export const RECURRENCE_LABELS: Record<string, string> = Object.fromEntries(
+const RECURRENCE_LABELS: Record<string, string> = Object.fromEntries(
     RECURRENCE_OPTIONS.map((o) => [o.v, o.label])
 );
 
 const emptyCampaign: CampaignDraft = {
-    title_ar: '',
-    title_en: '',
-    body_ar: '',
-    body_en: '',
-    target_audience: 'all',
-    target_city: '',
-    target_region: '',
-    image_url: '',
-    action_url: '',
-    action_label_ar: '',
-    action_label_en: '',
-    starts_at: '',
-    ends_at: '',
-    priority: 0,
-    is_active: true,
-    recurrence: 'none',
-    recurrence_hour: 10,
+    title_ar: '', title_en: '', body_ar: '', body_en: '',
+    target_audience: 'all', target_city: '', target_region: '',
+    image_url: '', action_url: '', action_label_ar: '', action_label_en: '',
+    starts_at: '', ends_at: '', priority: 0, is_active: true,
+    recurrence: 'none', recurrence_hour: 10,
 };
+
+/** زرّ اختيارٍ واحد داخل مجموعة (جمهور / تكرار). */
+const PickButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+    <button
+        type="button" onClick={onClick} aria-pressed={active} className="adm-focusable"
+        style={{
+            padding: '9px 7px', fontSize: '.76rem', fontWeight: 800, cursor: 'pointer',
+            borderRadius: 'var(--adm-r-sm)', textAlign: 'center',
+            border: `1px solid ${active ? 'var(--adm-accent)' : 'var(--adm-border)'}`,
+            background: active ? 'var(--adm-info-bg)' : 'var(--adm-surface-2)',
+            color: active ? 'var(--adm-accent)' : 'var(--adm-fg-2)',
+        }}
+    >
+        {children}
+    </button>
+);
 
 const CampaignModal: React.FC<{
     initial: any | null;
@@ -623,6 +647,8 @@ const CampaignModal: React.FC<{
         starts_at: initial?.starts_at ? toLocalDateInput(initial.starts_at) : '',
         ends_at: initial?.ends_at ? toLocalDateInput(initial.ends_at) : '',
         target_audience: (initial?.target_audience as any) ?? 'all',
+        target_city: initial?.target_city ?? '',
+        target_region: initial?.target_region ?? '',
         priority: initial?.priority ?? 0,
         is_active: initial?.is_active ?? true,
         recurrence: initial?.recurrence ?? 'none',
@@ -630,12 +656,30 @@ const CampaignModal: React.FC<{
     }));
     const [saving, setSaving] = useState(false);
 
-    // Esc closes the campaign modal — same rationale as the banner modal:
-    // nothing persists until "نشر" / "تعديل" is pressed.
     useEscClose(true, onClose);
 
     const set = <K extends keyof CampaignDraft>(k: K, v: CampaignDraft[K]) =>
         setForm((prev) => ({ ...prev, [k]: v }));
+
+    // 🪤 المدينة تتبع المنطقة: مدينةٌ من منطقةٍ أخرى استهدافٌ لا يطابق أحداً.
+    //    لكنّ المرشِّح وحده يُخفي المدينة المحفوظة فيعرض المنتقي «كل المدن»
+    //    بينما الحالة تحمل مدينةً — فيُحفظ ما لا يراه أحد. لذلك تُضاف المدينة
+    //    الحالية للقائمة دائماً، وتُمسح فقط إن كانت **معروفةً** ولا تنتمي
+    //    للمنطقة الجديدة (والقيمة القديمة المجهولة تبقى كما هي).
+    const cityChoices = useMemo(() => {
+        const list = CITIES.filter((c) => !form.target_region || c.regionId === form.target_region);
+        const cur = CITIES.find((c) => c.id === form.target_city);
+        return cur && !list.includes(cur) ? [cur, ...list] : list;
+    }, [form.target_region, form.target_city]);
+    const unknownCity = !!form.target_city && !CITIES.some((c) => c.id === form.target_city);
+    const unknownRegion = !!form.target_region && !REGIONS.some((r) => r.id === form.target_region);
+    const pickRegion = (v: string) => {
+        setForm((prev) => {
+            const city = CITIES.find((c) => c.id === prev.target_city);
+            const keep = !city || !v || city.regionId === v;
+            return { ...prev, target_region: v, target_city: keep ? prev.target_city : '' };
+        });
+    };
 
     const handleSave = async () => {
         if (!form.title_ar.trim() || !form.body_ar.trim()) {
@@ -644,9 +688,8 @@ const CampaignModal: React.FC<{
         }
         if (saving) return;
 
-        // Validate dates BEFORE the spinner — a malformed value shows a clear
-        // error instantly instead of any spinner time (v11.22.1). Empty is fine
-        // (starts_at defaults to now, ends_at to null).
+        // التواريخ تُفحص **قبل** المؤشّر: قيمةٌ معطوبة تعطي خطأً فورياً بلا
+        // انتظار (v11.22.1). والفراغ مقبول (البداية = الآن، والنهاية = بلا نهاية).
         const startMs = form.starts_at ? new Date(form.starts_at).getTime() : Date.now();
         const endMs = form.ends_at ? new Date(form.ends_at).getTime() : null;
         if (Number.isNaN(startMs) || (endMs !== null && Number.isNaN(endMs))) {
@@ -659,15 +702,12 @@ const CampaignModal: React.FC<{
         }
 
         setSaving(true);
-        // EVERYTHING that can throw (date conversion + network) lives inside the
-        // try, and setSaving(false) is in finally — so the button can NEVER
-        // stick on "جاري الحفظ..." no matter what fails (v11.22.1: the row was
-        // previously built OUTSIDE the try, so a bad date hung the button).
+        // كل ما قد يرمي داخل try و`setSaving(false)` في finally، فلا يعلق الزرّ.
         let result: any;
         let broadcastCount = 0;
         try {
-            // The DB has NOT NULL on title_en/body_en. Mirror Arabic when missing
-            // so admins can publish a single-language campaign without friction.
+            // القاعدة تفرض NOT NULL على `title_en`/`body_en` — تُنسخ العربية
+            // عند غيابها كي تُنشر حملةٌ بلغةٍ واحدة بلا احتكاك.
             const row: any = {
                 title_ar: form.title_ar.trim(),
                 title_en: (form.title_en.trim() || form.title_ar.trim()),
@@ -688,8 +728,6 @@ const CampaignModal: React.FC<{
                 recurrence_hour: Math.min(23, Math.max(0, Number(form.recurrence_hour) || 10)),
             };
 
-            // 12s timeout so a stalled network call never leaves the button
-            // stuck. The user sees a clear error and can retry.
             const networkCall = isEdit
                 ? supabase.from('promotional_campaigns').update(row).eq('id', initial.id).select().maybeSingle()
                 : supabase.from('promotional_campaigns').insert([row]).select().maybeSingle();
@@ -697,11 +735,8 @@ const CampaignModal: React.FC<{
                 setTimeout(() => resolve({ error: { message: 'انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً' } }), 12000)
             );
             result = await Promise.race([networkCall as any, timeout]);
-            // On a NEW active campaign, fan out to the targeted inboxes right
-            // away (v11.22) — without this the campaign reaches nobody. Edits
-            // don't re-broadcast (broadcast_campaign skips users who already
-            // saw it, but we also don't want an edit to re-ping everyone).
-            // Broadcast also gets its own timeout so a slow fan-out can't hang.
+            // حملةٌ جديدة مفعّلة تُبثّ فوراً (v11.22) — بدون ذلك لا تصل أحداً.
+            // والتعديل لا يُعيد البثّ عمداً. وللبثّ مهلته كي لا يعلّق الزرّ.
             if (!result?.error && !isEdit && row.is_active && result?.data?.id) {
                 const bc = promoRepository.broadcastNow(result.data.id);
                 const bcTimeout = new Promise<number>(resolve => setTimeout(() => resolve(0), 12000));
@@ -717,6 +752,12 @@ const CampaignModal: React.FC<{
             await customAlert('❌ ' + (result.error.message || 'فشل الحفظ — تحقق من الاتصال'));
             return;
         }
+        // 🪤 `maybeSingle()` تعيد `data=null` بلا خطأ حين لا يتغيّر أي صفّ —
+        // وهي بالضبط صورة الرفض الصامت (صفٌّ محذوف أو سياسةٌ تمنع).
+        if (!result?.data) {
+            await customAlert('❌ لم تُحفَظ الحملة (صفر صفوف). قد تكون حُذفت، أو لا تسمح صلاحياتك بتعديلها.');
+            return;
+        }
         await customAlert(
             isEdit
                 ? '✅ تم تعديل الحملة'
@@ -729,129 +770,111 @@ const CampaignModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-            <div className="bg-[var(--card-bg)] rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
-                <div className="sticky top-0 bg-gradient-to-r from-pink-500 via-rose-500 to-red-500 text-white p-5 rounded-t-3xl flex items-center justify-between z-10">
-                    <div>
-                        <div className="text-xs opacity-80 mb-1">📢 حملة ترويجية</div>
-                        <div className="text-xl font-bold">{isEdit ? 'تعديل الحملة' : 'حملة جديدة'}</div>
+        <div
+            className="fixed inset-0 z-[3000] flex items-center justify-center p-4 animate-fade-in"
+            style={{ background: 'rgba(8, 13, 20, .55)', backdropFilter: 'blur(3px)' }}
+        >
+            <div role="dialog" aria-modal="true" aria-label="بطاقة الحملة" dir="rtl" style={{ ...modalShell, maxWidth: 680 }}>
+                <div style={modalHead}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '.7rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>📢 حملة ترويجية</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 900, color: 'var(--adm-fg)' }}>
+                            {isEdit ? 'تعديل الحملة' : 'حملة جديدة'}
+                        </div>
                     </div>
-                    <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-xl">✕</button>
+                    <AdmButton size="sm" variant="ghost" onClick={onClose} title="إغلاق (Esc)">✕</AdmButton>
                 </div>
 
-                <div className="p-5 space-y-4">
-                    {/* الجمهور المستهدف */}
+                <div style={{ padding: 15, display: 'grid', gap: 14 }}>
                     <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">🎯 الجمهور المستهدف</label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {([
-                                { v: 'all', label: 'الجميع', icon: '👥' },
-                                { v: 'buyer', label: 'المشترون', icon: '🛒' },
-                                { v: 'seller', label: 'البائعون', icon: '🏪' },
-                            ] as const).map((o) => (
-                                <button
-                                    key={o.v}
-                                    onClick={() => set('target_audience', o.v as any)}
-                                    className={`p-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                                        form.target_audience === o.v
-                                            ? 'bg-pink-50 border-pink-500 text-pink-700'
-                                            : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                    }`}
-                                >
-                                    <div className="text-2xl mb-1">{o.icon}</div>
-                                    {o.label}
-                                </button>
+                        <span style={labelStyle}>🎯 الجمهور المستهدف</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+                            {(['all', 'buyer', 'seller'] as const).map((v) => (
+                                <PickButton key={v} active={form.target_audience === v} onClick={() => set('target_audience', v)}>
+                                    {AUDIENCE_LABELS[v]}
+                                </PickButton>
                             ))}
                         </div>
                     </div>
 
-                    {/* العنوان والمحتوى — عربي */}
                     <Field label="العنوان (عربي) *" value={form.title_ar} onChange={(v) => set('title_ar', v)} placeholder="مثال: عيد سعيد — خصومات تصل 70%" />
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">المحتوى (عربي) *</label>
+                    <label style={{ display: 'block' }}>
+                        <span style={labelStyle}>المحتوى (عربي) *</span>
                         <textarea
-                            rows={3}
-                            value={form.body_ar}
+                            rows={3} value={form.body_ar}
                             onChange={(e) => set('body_ar', e.target.value)}
                             placeholder="اكتب نص الحملة الذي سيظهر للمستخدمين..."
-                            className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-pink-500 focus:bg-[var(--card-bg)] outline-none"
+                            className="adm-focusable" style={{ ...fieldStyle, lineHeight: 1.8, resize: 'vertical' }}
                         />
-                    </div>
+                    </label>
 
-                    {/* English (optional) */}
-                    <details className="rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)]">
-                        <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-[var(--text-secondary)]">🌐 إضافة نسخة إنجليزية (اختياري — تنسخ العربية تلقائياً إذا تركت فارغة)</summary>
-                        <div className="p-3 space-y-3">
-                            <Field label="Title (English)" value={form.title_en} onChange={(v) => set('title_en', v)} />
-                            <div>
-                                <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">Body (English)</label>
+                    <details style={{ borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
+                        <summary style={{ cursor: 'pointer', padding: '8px 11px', fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
+                            🌐 نسخة إنجليزية (اختياري — تُنسخ العربية إن تُركت فارغة)
+                        </summary>
+                        <div style={{ padding: 11, display: 'grid', gap: 10 }}>
+                            <Field label="Title (English)" value={form.title_en} onChange={(v) => set('title_en', v)} dir="ltr" />
+                            <label style={{ display: 'block' }}>
+                                <span style={labelStyle}>Body (English)</span>
                                 <textarea
-                                    rows={2}
-                                    value={form.body_en}
+                                    rows={2} dir="ltr" value={form.body_en}
                                     onChange={(e) => set('body_en', e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-sm outline-none"
+                                    className="adm-focusable" style={{ ...fieldStyle, background: 'var(--adm-surface)', lineHeight: 1.8, resize: 'vertical' }}
                                 />
-                            </div>
+                            </label>
                         </div>
                     </details>
 
-                    {/* جدولة */}
                     <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">📅 الجدولة (اختياري)</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <div className="text-[10px] text-[var(--gray-400)] mb-1">يبدأ</div>
+                        <span style={labelStyle}>📅 الجدولة (اختياري)</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <label style={{ display: 'block' }}>
+                                <span style={{ ...labelStyle, fontSize: '.68rem' }}>يبدأ</span>
                                 <input
-                                    type="datetime-local"
-                                    value={form.starts_at}
+                                    type="datetime-local" value={form.starts_at}
                                     onChange={(e) => set('starts_at', e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-pink-500 outline-none"
+                                    className="adm-focusable" style={fieldStyle}
                                 />
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-[var(--gray-400)] mb-1">ينتهي (فارغ = بلا انتهاء)</div>
+                            </label>
+                            <label style={{ display: 'block' }}>
+                                <span style={{ ...labelStyle, fontSize: '.68rem' }}>ينتهي (فارغ = بلا انتهاء)</span>
                                 <input
-                                    type="datetime-local"
-                                    value={form.ends_at}
+                                    type="datetime-local" value={form.ends_at}
                                     onChange={(e) => set('ends_at', e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm focus:border-pink-500 outline-none"
+                                    className="adm-focusable" style={fieldStyle}
                                 />
-                            </div>
+                            </label>
                         </div>
                     </div>
 
-                    {/* 🔁 التكرار التلقائي (v12.27) */}
                     <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">🔁 التكرار التلقائي</label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <span style={labelStyle}>🔁 التكرار التلقائي</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
                             {RECURRENCE_OPTIONS.map((o) => (
-                                <button
-                                    key={o.v}
-                                    type="button"
-                                    onClick={() => set('recurrence', o.v)}
-                                    className={`p-2.5 rounded-xl border-2 font-bold text-xs transition-all ${
-                                        form.recurrence === o.v
-                                            ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
-                                            : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-secondary)]'
-                                    }`}
-                                >
-                                    <div className="text-lg mb-0.5">{o.icon}</div>
-                                    {o.label}
-                                </button>
+                                <PickButton key={o.v} active={form.recurrence === o.v} onClick={() => set('recurrence', o.v)}>
+                                    {o.icon} {o.label}
+                                </PickButton>
                             ))}
                         </div>
                         {form.recurrence !== 'none' && (
-                            <div className="mt-3 flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                                <div className="flex-1">
-                                    <div className="text-xs font-bold text-indigo-800">⏰ ساعة إعادة الإرسال (بتوقيت الرياض)</div>
-                                    <div className="text-[10px] text-indigo-600 mt-0.5">
-                                        يُعاد إرسال الحملة تلقائياً كإشعار جديد لكل الجمهور (الموقع + التطبيق + البوتات) حسب التكرار، حتى تاريخ النهاية أو إيقاف الحملة.
+                            <div
+                                style={{
+                                    marginTop: 10, display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap',
+                                    padding: 11, borderRadius: 'var(--adm-r-sm)',
+                                    background: 'var(--adm-info-bg)', color: 'var(--adm-info-fg)',
+                                }}
+                            >
+                                <div style={{ flex: 1, minWidth: 180 }}>
+                                    <div style={{ fontSize: '.78rem', fontWeight: 800 }}>⏰ ساعة إعادة الإرسال (بتوقيت الرياض)</div>
+                                    <div style={{ fontSize: '.72rem', lineHeight: 1.75, marginTop: 3 }}>
+                                        تُعاد الحملة إشعاراً جديداً لكل الجمهور (الموقع + التطبيق + البوتان) حسب التكرار، حتى تاريخ النهاية أو إيقاف الحملة.
                                     </div>
                                 </div>
                                 <select
                                     value={form.recurrence_hour}
                                     onChange={(e) => set('recurrence_hour', Number(e.target.value))}
-                                    className="px-2 py-2 bg-[var(--card-bg)] border border-indigo-200 rounded-xl text-sm font-bold outline-none"
+                                    className="adm-focusable"
+                                    style={{ ...fieldStyle, width: 'auto', background: 'var(--adm-surface)' }}
                                 >
                                     {Array.from({ length: 24 }, (_, h) => (
                                         <option key={h} value={h}>
@@ -863,59 +886,77 @@ const CampaignModal: React.FC<{
                         )}
                     </div>
 
-                    {/* CTA + media (collapsible) */}
-                    <details className="rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)]">
-                        <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-[var(--text-secondary)]">🔗 زر إجراء + صورة (اختياري)</summary>
-                        <div className="p-3 space-y-3">
-                            <Field label="رابط الصورة" value={form.image_url} onChange={(v) => set('image_url', v)} placeholder="https://..." />
-                            <Field label="رابط عند الضغط" value={form.action_url} onChange={(v) => set('action_url', v)} placeholder="/store/abc أو https://..." />
-                            <div className="grid grid-cols-2 gap-3">
+                    <details style={{ borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
+                        <summary style={{ cursor: 'pointer', padding: '8px 11px', fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
+                            🔗 زر إجراء + صورة (اختياري)
+                        </summary>
+                        <div style={{ padding: 11, display: 'grid', gap: 10 }}>
+                            <Field label="رابط الصورة" value={form.image_url} onChange={(v) => set('image_url', v)} placeholder="https://..." dir="ltr" />
+                            <Field label="رابط عند الضغط" value={form.action_url} onChange={(v) => set('action_url', v)} placeholder="/store/abc أو https://..." dir="ltr" />
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                 <Field label="نص الزر (عربي)" value={form.action_label_ar} onChange={(v) => set('action_label_ar', v)} placeholder="تصفح العروض" />
-                                <Field label="نص الزر (English)" value={form.action_label_en} onChange={(v) => set('action_label_en', v)} placeholder="Browse" />
+                                <Field label="نص الزر (English)" value={form.action_label_en} onChange={(v) => set('action_label_en', v)} placeholder="Browse" dir="ltr" />
                             </div>
                         </div>
                     </details>
 
-                    {/* أولوية + استهداف جغرافي */}
-                    <div className="grid grid-cols-3 gap-3">
-                        <div>
-                            <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">⚡ الأولوية</label>
+                    {/* 🪤 الاستهداف الجغرافي كان حقلين نصّيين يُطلب فيهما مفتاحٌ
+                        إنجليزي مخمَّن؛ وخطأُ حرفٍ = حملةٌ لا تصل أحداً بلا تحذير.
+                        القوائم من نفس مصدر بقيّة الموقع، فالمعرّف صحيحٌ دائماً. */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                        <label style={{ display: 'block' }}>
+                            <span style={labelStyle}>⚡ الأولوية</span>
                             <input
-                                type="number"
-                                min={0}
-                                value={form.priority}
+                                type="number" min={0} value={form.priority}
                                 onChange={(e) => set('priority', Number(e.target.value) || 0)}
-                                className="w-full px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm outline-none"
+                                className="adm-focusable" style={fieldStyle} dir="ltr"
                             />
-                        </div>
-                        <Field label="مدينة (اختياري)" value={form.target_city} onChange={(v) => set('target_city', v)} placeholder="riyadh" />
-                        <Field label="منطقة (اختياري)" value={form.target_region} onChange={(v) => set('target_region', v)} placeholder="central" />
+                        </label>
+                        <label style={{ display: 'block' }}>
+                            <span style={labelStyle}>🗺 المنطقة (اختياري)</span>
+                            <select value={form.target_region} onChange={(e) => pickRegion(e.target.value)} className="adm-focusable" style={fieldStyle}>
+                                <option value="">كل المناطق</option>
+                                {REGIONS.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                {unknownRegion && <option value={form.target_region}>قيمة محفوظة: {form.target_region}</option>}
+                            </select>
+                        </label>
+                        <label style={{ display: 'block' }}>
+                            <span style={labelStyle}>📍 المدينة (اختياري)</span>
+                            <select value={form.target_city} onChange={(e) => set('target_city', e.target.value)} className="adm-focusable" style={fieldStyle}>
+                                <option value="">كل المدن</option>
+                                {cityChoices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                {unknownCity && <option value={form.target_city}>قيمة محفوظة: {form.target_city}</option>}
+                            </select>
+                        </label>
                     </div>
+                    <span style={{ ...hintStyle, marginTop: -6 }}>
+                        بلا اختيار = الحملة تصل الجميع. ومع الاختيار تصل من تدلّ بياناته على تلك المدينة/المنطقة
+                        (حجزٌ سابق من متجرٍ فيها، أو أقرب مدينةٍ لموقعه) — فكلّما ضيّقت، قلّ العدد.
+                    </span>
 
-                    {/* تفعيل فوري */}
-                    <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <div
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                            padding: 12, borderRadius: 'var(--adm-r-sm)',
+                            background: form.is_active ? 'var(--adm-ok-bg)' : 'var(--adm-surface-2)',
+                            border: '1px solid var(--adm-border)',
+                        }}
+                    >
                         <div>
-                            <div className="font-bold text-sm text-emerald-800">تفعيل الحملة فوراً</div>
-                            <div className="text-xs text-emerald-600 mt-0.5">إذا أُلغي، تحفظ كمسوّدة</div>
+                            <div style={{ fontSize: '.85rem', fontWeight: 800, color: form.is_active ? 'var(--adm-ok-fg)' : 'var(--adm-fg)' }}>
+                                تفعيل الحملة فوراً
+                            </div>
+                            <div style={{ fontSize: '.72rem', color: 'var(--adm-fg-2)', marginTop: 2 }}>إن أُلغي، تُحفظ كمسوّدة بلا بثّ.</div>
                         </div>
-                        <button
-                            onClick={() => set('is_active', !form.is_active)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.is_active ? 'bg-emerald-500' : 'bg-[var(--gray-300)]'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-[var(--card-bg)] transition-transform ${form.is_active ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+                        <Sw on={form.is_active} onToggle={() => set('is_active', !form.is_active)} label="تفعيل الحملة فوراً" />
                     </div>
                 </div>
 
-                <div className="sticky bottom-0 bg-[var(--body-bg)] p-4 rounded-b-3xl flex gap-3 border-t border-[var(--border-color)]">
-                    <button onClick={onClose} className="flex-1 py-3 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold rounded-xl">إلغاء</button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex-[2] py-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold rounded-xl hover:shadow-lg disabled:opacity-50"
-                    >
+                <div style={modalFoot}>
+                    <AdmButton onClick={onClose} full>إلغاء</AdmButton>
+                    <AdmButton variant="primary" onClick={handleSave} disabled={saving} full>
                         {saving ? 'جاري الحفظ...' : (isEdit ? '💾 حفظ التعديلات' : '🚀 نشر الحملة')}
-                    </button>
+                    </AdmButton>
                 </div>
             </div>
         </div>
@@ -930,10 +971,10 @@ function toLocalDateInput(iso: string): string {
     } catch { return ''; }
 }
 
-// ============================================================
-// Quick-post box — write a campaign right inside the page, in 3 fields.
-// For anything more than a one-shot announcement, use the full modal.
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// نشرٌ سريع — حملةٌ في ثلاثة حقول
+// ═══════════════════════════════════════════════════════════════════════════
+
 const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void }> = ({ onPosted, onAdvanced }) => {
     const { customAlert } = useApp();
     const [title, setTitle] = useState('');
@@ -944,39 +985,27 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
     const handlePost = async () => {
         const t = title.trim();
         const b = body.trim();
-        if (!t || !b) {
-            await customAlert('⚠️ اكتب العنوان والمحتوى قبل النشر.');
-            return;
-        }
+        if (!t || !b) { await customAlert('⚠️ اكتب العنوان والمحتوى قبل النشر.'); return; }
         if (posting) return;
         setPosting(true);
-        // Insert the campaign, then immediately fan it out to every targeted
-        // user's notification inbox via broadcast_campaign(). BEFORE v11.22 the
-        // quick-post only inserted the row — the fan-out RPC was never called,
-        // so "نشر فوراً" created a campaign that reached NOBODY (campaigns sat
-        // at current_impressions=0). try/finally guarantees the button never
-        // hangs on "جاري النشر" regardless of which step fails.
+        // تُدرَج الحملة ثمّ تُبثّ فوراً عبر `broadcast_campaign`. قبل v11.22 كان
+        // النشر السريع يُدرج الصفّ فقط بلا بثّ — فتُنشأ حملةٌ لا تصل **أحداً**.
         let count = 0;
         let failMsg = '';
         try {
             const { data, error } = await supabase
                 .from('promotional_campaigns')
                 .insert([{
-                    title_ar: t,
-                    title_en: t,    // mirror — admin can refine later via modal
-                    body_ar: b,
-                    body_en: b,
+                    title_ar: t, title_en: t,   // نسخة مرآة — يُنقّحها المدير لاحقاً من النافذة الكاملة
+                    body_ar: b, body_en: b,
                     target_audience: audience,
                     starts_at: new Date().toISOString(),
-                    ends_at: null,
-                    priority: 0,
-                    is_active: true,
+                    ends_at: null, priority: 0, is_active: true,
                 }])
                 .select('id')
                 .single();
             if (error) throw error;
-            // Fan-out with a 12s safety timeout so a slow broadcast never
-            // leaves the button stuck on "جاري النشر".
+            if (!data?.id) throw new Error('لم يُنشأ أي صفّ — قد تمنعك صلاحياتك.');
             const bc = promoRepository.broadcastNow(data.id);
             const bcTimeout = new Promise<number>(resolve => setTimeout(() => resolve(0), 12000));
             count = await Promise.race([bc, bcTimeout]);
@@ -985,10 +1014,7 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
         } finally {
             setPosting(false);
         }
-        if (failMsg) {
-            await customAlert('❌ ' + failMsg);
-            return;
-        }
+        if (failMsg) { await customAlert('❌ ' + failMsg); return; }
         setTitle('');
         setBody('');
         await customAlert(
@@ -1000,84 +1026,73 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
     };
 
     return (
-        <div className="bg-pink-50 border border-pink-200 rounded-2xl p-4 mb-3">
-            <div className="flex items-center justify-between mb-3">
-                <div className="font-bold text-sm text-pink-900 flex items-center gap-2">📝 اكتب حملة بسرعة</div>
-                <button
-                    onClick={onAdvanced}
-                    className="text-[11px] text-pink-700 font-bold hover:underline"
-                >
-                    ⚙️ خيارات متقدمة (تواريخ، صورة، زر إجراء...)
-                </button>
+        <div
+            style={{
+                padding: 13, marginBottom: 12, display: 'grid', gap: 9,
+                borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)',
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '.85rem', fontWeight: 800, color: 'var(--adm-fg)' }}>📝 اكتب حملة بسرعة</span>
+                <AdmButton size="sm" variant="ghost" onClick={onAdvanced}>⚙️ خيارات متقدمة (تواريخ · صورة · زرّ إجراء · استهداف)</AdmButton>
             </div>
             <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="✏️ اكتب العنوان هنا..."
-                className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-pink-200 rounded-xl text-sm font-bold focus:border-pink-500 outline-none mb-2"
+                type="text" value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder="✏️ العنوان..." aria-label="عنوان الحملة السريعة"
+                className="adm-focusable" style={{ ...fieldStyle, background: 'var(--adm-surface)', fontWeight: 800 }}
             />
             <textarea
-                rows={3}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="📄 اكتب المحتوى الذي سيظهر للمستخدمين..."
-                className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-pink-200 rounded-xl text-sm focus:border-pink-500 outline-none mb-3"
+                rows={3} value={body} onChange={(e) => setBody(e.target.value)}
+                placeholder="📄 المحتوى الذي سيظهر للمستخدمين..." aria-label="محتوى الحملة السريعة"
+                className="adm-focusable" style={{ ...fieldStyle, background: 'var(--adm-surface)', lineHeight: 1.8, resize: 'vertical' }}
             />
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex gap-1.5">
-                    {([
-                        { v: 'all', label: '👥 الكل' },
-                        { v: 'buyer', label: '🛒 المشترون' },
-                        { v: 'seller', label: '🏪 البائعون' },
-                    ] as const).map((o) => (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 9, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {(['all', 'buyer', 'seller'] as const).map((v) => (
                         <button
-                            key={o.v}
-                            onClick={() => setAudience(o.v)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                audience === o.v
-                                    ? 'bg-pink-500 text-white'
-                                    : 'bg-[var(--card-bg)] text-[var(--text-secondary)] border border-pink-200'
-                            }`}
+                            key={v} type="button" onClick={() => setAudience(v)} aria-pressed={audience === v}
+                            className="adm-focusable"
+                            style={{
+                                padding: '6px 12px', fontSize: '.76rem', fontWeight: 800, cursor: 'pointer', borderRadius: 999,
+                                border: `1px solid ${audience === v ? 'var(--adm-accent)' : 'var(--adm-border)'}`,
+                                background: audience === v ? 'var(--adm-info-bg)' : 'var(--adm-surface)',
+                                color: audience === v ? 'var(--adm-accent)' : 'var(--adm-fg-2)',
+                            }}
                         >
-                            {o.label}
+                            {AUDIENCE_LABELS[v]}
                         </button>
                     ))}
                 </div>
-                <button
-                    onClick={handlePost}
+                <AdmButton
+                    variant="primary" onClick={handlePost}
                     disabled={posting || !title.trim() || !body.trim()}
-                    className="px-5 py-2 bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg disabled:opacity-50"
                 >
                     {posting ? '... جاري النشر' : '📤 نشر فوراً'}
-                </button>
+                </AdmButton>
             </div>
         </div>
     );
 };
 
-// ============================================================
-// Main Component
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// الشاشة
+// ═══════════════════════════════════════════════════════════════════════════
+
 const AdminTools: React.FC = () => {
-    // v14.38 — ثلاث صلاحيات كانت مربّعات اختيار بلا قارئ في الكود ولا في القاعدة:
-    // ناصر يمنع أدمن فرعياً من الحملات أو البنرات أو عروض الموسم، ويبقى قادراً
-    // عليها كلها. تُفحص هنا في **الفعل** لا في إخفاء الزرّ وحده.
+    // v14.38/v14.89 — الصلاحيتان تُفحصان في **كل** إجراء، وما لا يُسمح به يُخفى.
     // (و`action_manage_seasonal` محروسة في RLS على `pinned_stores` ولا شاشة لها.)
-    const { hasPermission: hasPerm } = useApp();
+    const { hasPermission: hasPerm, customAlert, customConfirm } = useApp();
     const canCampaigns = hasPerm('action_manage_campaigns');
-    const canBanners   = hasPerm('action_manage_banners');
-    const { customAlert, customConfirm } = useApp();
+    const canBanners = hasPerm('action_manage_banners');
+
     const [paymentEnabled, setPaymentEnabled] = useState(false);
     const [telegramBotEnabled, setTelegramBotEnabled] = useState(true);
     const [whatsappBotEnabled, setWhatsappBotEnabled] = useState(false);
     const [whatsappBotNumber, setWhatsappBotNumber] = useState('');
     const [savingWaNumber, setSavingWaNumber] = useState(false);
-    // v12.44 — هوية المواسم: الموسم المفعّل حالياً ('' = الهوية الأساسية).
-    // v12.57 — صار للعرض فقط: القيمة تُشتق في القاعدة من النافذة العامة
+    // v12.57 — الهوية الموسمية للعرض فقط: تُشتق في القاعدة من النافذة العامة
     // للحملة (trigger + كرون كل ١٥ دقيقة) — لا تفعيل يدوي منفصل.
     const [seasonTheme, setSeasonTheme] = useState('');
-    // v12.48 — «حملة الموسم»: نافذة التجار + النافذة العامة + تاريخ الفعالية
     const [camp, setCamp] = useState({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '', hero_title_ar: '', hero_tagline_ar: '', hero_title_en: '', hero_tagline_en: '' });
     const [campSaved, setCampSaved] = useState(false);
     const [savingCamp, setSavingCamp] = useState(false);
@@ -1085,27 +1100,28 @@ const AdminTools: React.FC = () => {
     const [eventDates, setEventDates] = useState<Record<string, string>>({});
     const [savingDates, setSavingDates] = useState(false);
     const [banners, setBanners] = useState<any[]>([]);
-    // v12.71 — مدة عرض كل بانر في الرئيسية (ثوانٍ) — نص للحقل، يُحفظ رقماً
+    // v12.71 — مدة عرض كل بانر في الرئيسية (ثوانٍ) — نصٌّ للحقل، يُحفظ رقماً
     const [bannerSeconds, setBannerSeconds] = useState('2');
     const [savingBannerSeconds, setSavingBannerSeconds] = useState(false);
     // v14.12 — مهلة الحجز بالساعات: استلام · توصيل · شبكة أمان الطلب المنطلق.
-    // الرقم الوحيد في المنصّة كلها: تقرؤه القاعدة (`tr_ad_set_booking_hold`
-    // و`expire_due_bookings`) والموقع والبوتان والصفحات القانونية من هذا الصفّ.
     const [holdPickup, setHoldPickup] = useState('2');
     const [holdDelivery, setHoldDelivery] = useState('6');
     const [holdSafety, setHoldSafety] = useState('72');
     const [savingHolds, setSavingHolds] = useState(false);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
-    const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = new banner
+    const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = بانر جديد
     const [campaignModal, setCampaignModal] = useState<{ open: boolean; initial: any | null }>({ open: false, initial: null });
     const [loading, setLoading] = useState(true);
+    // 🔴 لا يُرسم مفتاحٌ ولا حقلُ إعدادٍ قبل وصول قيمته، ولا بعد فشل التحميل:
+    // القيم الافتراضية تُظهر حالةً غير الحقيقية، وضغطةٌ حينها تقلب من القيمة الخطأ.
+    const [loadErr, setLoadErr] = useState('');
 
     const fetchAll = useCallback(async () => {
         setLoading(true);
-        // BUG FIX: code used to query a non-existent `global_settings` table
-        // with key `is_payment_gateway_enabled`. Real table is `platform_settings`,
-        // real key is `payment_gateway_enabled`, value is a jsonb boolean (not string).
+        setLoadErr('');
+        // 🪤 الجدول `platform_settings` والمفتاح `payment_gateway_enabled`
+        // والقيمة jsonb منطقية (لا نصّ) — وكان الكود يسأل جدولاً غير موجود.
         const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes, holdsRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
@@ -1120,14 +1136,16 @@ const AdminTools: React.FC = () => {
             supabase.from('platform_settings').select('value').eq('key', 'booking_holds').maybeSingle(),
         ]);
 
+        const firstErr = [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes, holdsRes]
+            .map((r: any) => r?.error?.message).find(Boolean);
+
         setPaymentEnabled(paymentRes.data?.value === true);
-        // Bot defaults ON: enabled unless explicitly turned off (fail-open).
+        // البوت الافتراضي يعمل: مُفعّل ما لم يُطفأ صراحةً (fail-open).
         setTelegramBotEnabled(botRes.data?.value !== false);
-        // WhatsApp defaults OFF (dormant until enabled + number set).
+        // واتساب الافتراضي مطفأ (نائم حتى التفعيل + رقم).
         setWhatsappBotEnabled(waBotRes.data?.value === true);
         setWhatsappBotNumber(typeof waNumRes.data?.value === 'string' ? waNumRes.data.value : '');
         setSeasonTheme(typeof seasonThemeRes.data?.value === 'string' ? seasonThemeRes.data.value : '');
-        // v12.48 — حملة الموسم + تواريخ التذكير
         const cv = (seasonCampRes.data?.value ?? null) as any;
         const hasCamp = !!(cv && typeof cv.season_id === 'string' && cv.season_id);
         setCampSaved(hasCamp);
@@ -1148,11 +1166,10 @@ const AdminTools: React.FC = () => {
         setEventDates(Object.fromEntries(SEASONS.map(s => [s.id, typeof dv[s.id] === 'string' ? dv[s.id] : ''])));
         setBanners(bannerRes.data ?? []);
         setCampaigns(campaignRes.data ?? []);
-        // v12.71 — سرعة تنقّل البانر (ثوانٍ، الافتراضي ٢)
         const bs = Number(bannerSecRes.data?.value);
         setBannerSeconds(Number.isFinite(bs) && bs >= 1 && bs <= 120 ? String(bs) : '2');
-        // v14.12 — مهلة الحجز. الافتراضات هنا تطابق ما تفترضه القاعدة حرفياً
-        // (`taki_booking_hold_hours`) كي لا يعرض الحقل رقماً لا يُطبَّق.
+        // v14.12 — الافتراضات هنا تطابق `taki_booking_hold_hours` حرفياً كي لا
+        // يعرض الحقل رقماً لا يُطبَّق.
         const hv = (holdsRes.data?.value ?? {}) as any;
         const hnum = (x: any, d: number) => {
             const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
@@ -1161,76 +1178,107 @@ const AdminTools: React.FC = () => {
         setHoldPickup(hnum(hv.pickup_hours, 2));
         setHoldDelivery(hnum(hv.delivery_hours, 6));
         setHoldSafety(hnum(hv.in_progress_hours, 72));
+        if (firstErr) setLoadErr(firstErr);
         setLoading(false);
     }, []);
 
-    useEffect(() => {
-        fetchAll();
-    }, [fetchAll]);
+    useEffect(() => { fetchAll(); }, [fetchAll]);
 
-    // Quick-action bridge from the ⌘K command palette. Each entry is a
-    // one-shot intent: read it, clear it, act on it. Anything we don't
-    // recognise is ignored silently — the user just lands on the tools
-    // tab, which is still useful.
+    // جسرٌ من لوحة الأوامر (⌘K): نيّةٌ تُقرأ مرّةً ثم تُمسح. وما لا يُسمح به
+    // لا يُفتح — النيّة لا تلتفّ على الصلاحية.
     useEffect(() => {
         try {
             const intent = sessionStorage.getItem('taki:admin:quick_action');
             if (!intent) return;
             sessionStorage.removeItem('taki:admin:quick_action');
-            if (intent === 'new-banner') {
+            if (intent === 'new-banner' && canBanners) {
                 setBannerEdit(null);
                 setBannerModalOpen(true);
-            } else if (intent === 'new-campaign') {
+            } else if (intent === 'new-campaign' && canCampaigns) {
                 setCampaignModal({ open: true, initial: null });
             }
-        } catch {}
-    }, []);
+        } catch { /* sessionStorage محجوب — تجاهل بصمت */ }
+    }, [canBanners, canCampaigns]);
 
+    // ── مفاتيح التشغيل ──────────────────────────────────────────────────────
+
+    /**
+     * 🔴 كان هذا المفتاح يكتب بـ`update … eq('key')`: صفٌّ غير موجود = صفر
+     * صفوف بلا خطأ، فيقول «✅ تم التفعيل» ولا شيء يتغيّر. الآن `writeSetting`
+     * (upsert + إثبات بالقراءة)، وأي فشل يُعيد المفتاح لمكانه.
+     */
     const togglePayment = async () => {
         const newValue = !paymentEnabled;
         setPaymentEnabled(newValue);
-        const { error } = await supabase
-            .from('platform_settings')
-            .update({ value: newValue, updated_at: new Date().toISOString() })
-            .eq('key', 'payment_gateway_enabled');
-        if (error) {
-            setPaymentEnabled(!newValue); // rollback optimistic update
-            await customAlert('❌ ' + error.message);
-            return;
-        }
-        await customAlert(
-            newValue
-                ? '✅ تم تفعيل بوابة الدفع. التجار سيحتاجون اشتراك لإضافة عروض.'
-                : '✅ تم تعطيل البوابة. التطبيق الآن مجاني بالكامل.'
-        );
+        const err = await writeSetting('payment_gateway_enabled', newValue, 'Enable/disable the SaaS payment gateway platform-wide');
+        if (err) { setPaymentEnabled(!newValue); await customAlert('❌ ' + err); return; }
+        await customAlert(newValue
+            ? '✅ تم تفعيل بوابة الدفع. التجار سيحتاجون اشتراكاً لإضافة عروض.'
+            : '✅ تم تعطيل البوابة. التطبيق الآن مجاني بالكامل.');
     };
 
-    // Single kill-switch for the Telegram bot (request 2). Upsert so the row is
-    // created if missing; the bot polls telegram_bot_enabled (≤45s) and the web
-    // hides the link button via AppContext realtime — both flip from this one toggle.
+    // مفتاح إيقافٍ واحد لبوت تيليجرام: البوت يسأل `telegram_bot_enabled`
+    // (≤٤٥ ثانية) والموقع يخفي زرّ الربط عبر realtime — كلاهما من هنا.
     const toggleBot = async () => {
         const newValue = !telegramBotEnabled;
-        setTelegramBotEnabled(newValue); // optimistic
-        const { error } = await supabase
-            .from('platform_settings')
-            .upsert({ key: 'telegram_bot_enabled', value: newValue, description: 'Enable/disable the Telegram bot platform-wide', updated_at: new Date().toISOString() });
-        if (error) {
-            setTelegramBotEnabled(!newValue); // rollback
-            await customAlert('❌ ' + error.message);
-            return;
-        }
-        await customAlert(
-            newValue
-                ? '✅ تم تفعيل بوت تيليجرام — عاد للعمل وظهر زر الربط في الإعدادات (قد يستغرق التفعيل حتى دقيقة).'
-                : '🔌 تم تعطيل بوت تيليجرام — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة). تقدر تعيد تفعيله بأي وقت بنفس الزر.'
-        );
+        setTelegramBotEnabled(newValue);
+        const err = await writeSetting('telegram_bot_enabled', newValue, 'Enable/disable the Telegram bot platform-wide');
+        if (err) { setTelegramBotEnabled(!newValue); await customAlert('❌ ' + err); return; }
+        await customAlert(newValue
+            ? '✅ تم تفعيل بوت تيليجرام — عاد للعمل وظهر زر الربط في الإعدادات (قد يستغرق حتى دقيقة).'
+            : '🔌 تم تعطيل بوت تيليجرام — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة). تقدر تعيد تفعيله بأي وقت بنفس الزر.');
     };
 
-    // v12.57 — توحيد (طلب ناصر): أُلغي التفعيل اليدوي المنفصل للهوية.
-    // seasonal_theme يُشتق في القاعدة من النافذة العامة للحملة تلقائياً
-    // (trigger عند الحفظ/الإنهاء + كرون كل ١٥ دقيقة لانقلاب منتصف الليل)،
-    // فتتبعه كل الواجهات: ألوان الموقع وبانر الرئيسية وسطر الموسم في البوتين.
-    // هذه نسخة محلية من نفس الاشتقاق لتحديث شارة «النشط الآن» فوراً بعد الحفظ.
+    // مرآة تيليجرام لواتساب: خادم واتساب يسأل `wa_bot_is_enabled()` ويتوقّف
+    // عن الردّ عند الإطفاء، والموقع يخفي قسم الربط. v11.97
+    const toggleWhatsappBot = async () => {
+        const newValue = !whatsappBotEnabled;
+        setWhatsappBotEnabled(newValue);
+        const err = await writeSetting('whatsapp_bot_enabled', newValue, 'Enable/disable the WhatsApp bot platform-wide');
+        if (err) { setWhatsappBotEnabled(!newValue); await customAlert('❌ ' + err); return; }
+        await customAlert(newValue
+            ? '✅ تم تفعيل بوت واتساب — سيعمل ويظهر زر الربط بمجرّد إدخال الرقم أدناه.'
+            : '🔌 تم تعطيل بوت واتساب — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة).');
+    };
+
+    // رقم واتساب الرسمي — يقود رابط `wa.me`. قسم الربط يبقى مخفياً حتى يكون
+    // المفتاح مُفعّلاً **والرقم** مضبوطاً (أرقام فقط). v11.97
+    const saveWhatsappNumber = async () => {
+        const digits = whatsappBotNumber.replace(/\D/g, '');
+        setSavingWaNumber(true);
+        const err = await writeSetting('whatsapp_bot_number', digits, 'Public WhatsApp Business number (digits only) for the bot deep link');
+        setSavingWaNumber(false);
+        if (err) { await customAlert('❌ ' + err); return; }
+        setWhatsappBotNumber(digits);
+        await customAlert(digits
+            ? `✅ تم حفظ رقم واتساب: ${digits}`
+            : '✅ تم مسح رقم واتساب — زر الربط سيبقى مخفياً حتى تُدخل رقماً.');
+    };
+
+    // ── مهلة الحجز ──────────────────────────────────────────────────────────
+
+    const saveHolds = async () => {
+        const num = (t: string) => parseFloat(normalizeArabicNumerals(t));
+        const p = num(holdPickup), d = num(holdDelivery), sfy = num(holdSafety);
+        if ([p, d, sfy].some(n => !Number.isFinite(n) || n < 0.25 || n > 8760)) {
+            await customAlert('⚠️ كل مهلة يجب أن تكون بين ربع ساعة و8760 ساعة (سنة).');
+            return;
+        }
+        // التوصيل أقصر من الاستلام وعدٌ أقلّ لطلبٍ طريقُه أطول — نسأل ولا نمنع.
+        if (d < p && !(await customConfirm(`⚠️ مهلة التوصيل (${d}) أقصر من مهلة الاستلام (${p}).\nطلب التوصيل يحتاج تجهيزاً وطريقاً، فالأقصر يُلغي طلبات صحيحة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+        if (sfy < d && !(await customConfirm(`⚠️ شبكة الأمان (${sfy}) أقصر من مهلة التوصيل (${d}).\nمعناها أن طلباً انطلق مندوبه قد يُلغى قبل انتهاء مهلته الأصلية.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+        setSavingHolds(true);
+        const err = await writeSetting('booking_holds',
+            { pickup_hours: p, delivery_hours: d, in_progress_hours: sfy },
+            'مهلة الحجز بالساعات: الاستلام · التوصيل · شبكة أمان الطلب المنطلق');
+        setSavingHolds(false);
+        if (err) { await customAlert('❌ ' + err); return; }
+        await customAlert(`✅ تم الحفظ — استلام ${p} ساعة · توصيل ${d} ساعة · شبكة أمان ${sfy} ساعة.\nيسري على الطلبات الجديدة فوراً.`);
+    };
+
+    // ── الموسم ──────────────────────────────────────────────────────────────
+
+    // نسخةٌ محلّية من اشتقاق القاعدة، لتحديث شارة «النشط الآن» فور الحفظ.
     const localEffectiveTheme = (c: typeof camp): string => {
         if (!c.season_id || !c.public_from || !c.public_to) return '';
         const d = new Date();
@@ -1238,8 +1286,7 @@ const AdminTools: React.FC = () => {
         return t >= c.public_from && t <= c.public_to ? c.season_id : '';
     };
 
-    // v12.48 — «حملة الموسم»: حفظ/إنهاء الحملة + إشعار التجار + تواريخ التذكير.
-    // كل التواريخ يقررها ناصر يدوياً؛ الحارس النهائي للنافذة DB trigger.
+    // v12.48 — حملة الموسم: التواريخ يقررها المالك، والحارس النهائي DB trigger.
     const saveCampaign = async () => {
         if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         if (!camp.season_id) { await customAlert('⚠️ اختر الموسم أولاً'); return; }
@@ -1250,29 +1297,23 @@ const AdminTools: React.FC = () => {
         if (camp.seller_from > camp.seller_to) { await customAlert('⚠️ نافذة التجار: تاريخ البداية بعد النهاية'); return; }
         if (camp.public_from > camp.public_to) { await customAlert('⚠️ النافذة العامة: تاريخ البداية بعد النهاية'); return; }
         setSavingCamp(true);
-        const { error } = await supabase.from('platform_settings').upsert({
-            key: 'season_campaign',
-            value: {
-                season_id: camp.season_id,
-                event_date: camp.event_date || null,
-                seller_from: camp.seller_from,
-                seller_to: camp.seller_to,
-                public_from: camp.public_from,
-                public_to: camp.public_to,
-                // v12.69 — نصوص البانر المخصصة (فارغة = يُستخدم نص الموسم الافتراضي)
-                hero_title_ar: camp.hero_title_ar.trim() || null,
-                hero_tagline_ar: camp.hero_tagline_ar.trim() || null,
-                hero_title_en: camp.hero_title_en.trim() || null,
-                hero_tagline_en: camp.hero_tagline_en.trim() || null,
-            },
-            description: 'Season campaign windows: seller submissions + public page (v12.48)',
-            updated_at: new Date().toISOString(),
-        });
+        const err = await writeSetting('season_campaign', {
+            season_id: camp.season_id,
+            event_date: camp.event_date || null,
+            seller_from: camp.seller_from,
+            seller_to: camp.seller_to,
+            public_from: camp.public_from,
+            public_to: camp.public_to,
+            // v12.69 — نصوص البانر المخصصة (فارغة = نصّ الموسم الافتراضي)
+            hero_title_ar: camp.hero_title_ar.trim() || null,
+            hero_tagline_ar: camp.hero_tagline_ar.trim() || null,
+            hero_title_en: camp.hero_title_en.trim() || null,
+            hero_tagline_en: camp.hero_tagline_en.trim() || null,
+        }, 'Season campaign windows: seller submissions + public page (v12.48)');
         setSavingCamp(false);
-        if (error) { await customAlert('❌ ' + error.message); return; }
+        if (err) { await customAlert('❌ ' + err); return; }
         setCampSaved(true);
-        // v12.57 — الهوية تتبع الحملة: القاعدة زامنت seasonal_theme فور الحفظ
-        // (trigger)، وهنا نحدّث الشارة محلياً بنفس المنطق دون انتظار realtime.
+        // v12.57 — الهوية تتبع الحملة: القاعدة زامنت `seasonal_theme` فور الحفظ.
         const eff = localEffectiveTheme(camp);
         setSeasonTheme(eff);
         const s = SEASONS.find(x => x.id === camp.season_id);
@@ -1288,27 +1329,25 @@ const AdminTools: React.FC = () => {
     };
 
     const clearCampaign = async () => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         const ok = await customConfirm('سيتم إنهاء الحملة نهائياً: تختفي صفحة عروض الموسم من موقع المشترين والبوتات، ويقفل باب إضافة العروض للتجار، وتعود ألوان المنصة وبانر الرئيسية للهوية الأساسية فوراً (العروض الموسومة سابقاً تبقى عروضاً عادية). متابعة؟');
         if (!ok) return;
         setSavingCamp(true);
-        // v12.52 — كان value: null يفشل بصمت (العمود NOT NULL) فتبقى الحملة حية
-        // رغم «الإنهاء» — {} تعني «لا حملة» عند الويب والبوتين معاً.
-        const { error } = await supabase.from('platform_settings').upsert({
-            key: 'season_campaign', value: {},
-            description: 'Season campaign windows: seller submissions + public page (v12.48)',
-            updated_at: new Date().toISOString(),
-        });
+        // 🪤 v12.52 — `value: null` كان يفشل بصمت (العمود NOT NULL) فتبقى الحملة
+        // حيّةً رغم «الإنهاء». `{}` تعني «لا حملة» عند الويب والبوتين معاً.
+        const err = await writeSetting('season_campaign', {}, 'Season campaign windows: seller submissions + public page (v12.48)');
         setSavingCamp(false);
-        if (error) { await customAlert('❌ ' + error.message); return; }
+        if (err) { await customAlert('❌ ' + err); return; }
         setCampSaved(false);
         setCamp({ season_id: '', event_date: '', seller_from: '', seller_to: '', public_from: '', public_to: '', hero_title_ar: '', hero_tagline_ar: '', hero_title_en: '', hero_tagline_en: '' });
-        setSeasonTheme(''); // v12.57 — القاعدة صفّرت الهوية بنفس اللحظة (trigger)
+        setSeasonTheme(''); // القاعدة صفّرت الهوية باللحظة نفسها (trigger)
         await customAlert('✅ انتهت الحملة — اختفت صفحة الموسم من الموقع والبوتات، وعادت الألوان والبانر للهوية الأساسية لجميع المستخدمين.');
     };
 
-    // إشعار للتجار فقط (وليس المشترين) عبر admin_broadcast_notification —
-    // يصلهم داخل التطبيق وفي البوتين (outbox v11.70) تلقائياً.
+    // إشعارٌ للتجار وحدهم عبر `admin_broadcast_notification` — يصلهم داخل
+    // التطبيق وفي البوتين (outbox v11.70) تلقائياً.
     const notifySellersCampaign = async () => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         const s = SEASONS.find(x => x.id === camp.season_id);
         if (!s) return;
         const ok = await customConfirm(`سيصل إشعار لجميع التجار لإضافة منتجاتهم لعروض ${s.ar}. متابعة؟`);
@@ -1325,98 +1364,68 @@ const AdminTools: React.FC = () => {
         await customAlert(`✅ وصل الإشعار إلى ${(data as any)?.notified ?? 0} تاجر.`);
     };
 
-    // تواريخ الفعاليات للتذكير: قراءة-تعديل-كتابة تحافظ على سجل «أُرسل سابقاً»
-    // حتى لا يتكرر تذكير الـ٣٠/٧ أيام بعد كل حفظ.
+    // قراءة-تعديل-كتابة تحافظ على سجلّ «أُرسل سابقاً» فلا يتكرّر تذكير الـ٣٠/٧
+    // أيام بعد كل حفظ.
     const saveEventDates = async () => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         setSavingDates(true);
         const { data } = await supabase.from('platform_settings').select('value').eq('key', 'season_event_dates').maybeSingle();
         const notified = (data?.value as any)?.notified ?? [];
         const dates = Object.fromEntries(Object.entries(eventDates).filter(([, v]) => !!v));
-        const { error } = await supabase.from('platform_settings').upsert({
-            key: 'season_event_dates',
-            value: { dates, notified },
-            description: 'Season event dates for the 30/7-day admin reminders (v12.48)',
-            updated_at: new Date().toISOString(),
-        });
+        const err = await writeSetting('season_event_dates', { dates, notified }, 'Season event dates for the 30/7-day admin reminders (v12.48)');
         setSavingDates(false);
-        if (error) { await customAlert('❌ ' + error.message); return; }
+        if (err) { await customAlert('❌ ' + err); return; }
         await customAlert('✅ حُفظت التواريخ — سيصلك إشعار تلقائي قبل كل فعالية بشهر ثم بأسبوع.');
     };
 
-    // Kill-switch for the WhatsApp bot — mirrors Telegram. The WA server polls
-    // wa_bot_is_enabled() (≤45s) and stops replying when OFF; the web hides the
-    // WhatsApp link section via AppContext realtime. v11.97
-    const toggleWhatsappBot = async () => {
-        const newValue = !whatsappBotEnabled;
-        setWhatsappBotEnabled(newValue); // optimistic
-        const { error } = await supabase
-            .from('platform_settings')
-            .upsert({ key: 'whatsapp_bot_enabled', value: newValue, description: 'Enable/disable the WhatsApp bot platform-wide', updated_at: new Date().toISOString() });
-        if (error) {
-            setWhatsappBotEnabled(!newValue); // rollback
-            await customAlert('❌ ' + error.message);
-            return;
-        }
-        await customAlert(
-            newValue
-                ? '✅ تم تفعيل بوت واتساب — سيعمل ويظهر زر الربط في الإعدادات بمجرد إدخال رقم الواتساب أدناه.'
-                : '🔌 تم تعطيل بوت واتساب — توقّف عن الرد وأُخفي زر الربط (يسري خلال دقيقة).'
-        );
-    };
+    // ── البانرات ────────────────────────────────────────────────────────────
 
-    // The bot's public WhatsApp Business number — drives the wa.me deep link. The
-    // link section in settings stays hidden until BOTH the toggle is ON and this
-    // number is set (digits only). v11.97
-    const saveWhatsappNumber = async () => {
-        const digits = whatsappBotNumber.replace(/\D/g, '');
-        setSavingWaNumber(true);
-        const { error } = await supabase
-            .from('platform_settings')
-            .upsert({ key: 'whatsapp_bot_number', value: digits, description: 'Public WhatsApp Business number (digits only) for the bot deep link', updated_at: new Date().toISOString() });
-        setSavingWaNumber(false);
-        if (error) { await customAlert('❌ ' + error.message); return; }
-        setWhatsappBotNumber(digits);
-        await customAlert(digits
-            ? `✅ تم حفظ رقم واتساب: ${digits}`
-            : '✅ تم مسح رقم واتساب — زر الربط سيبقى مخفياً حتى تُدخل رقماً.');
+    const saveBannerSeconds = async () => {
+        if (!canBanners) { await customAlert('⛔ ليست لديك صلاحية إدارة البنرات.'); return; }
+        const n = parseFloat(normalizeArabicNumerals(bannerSeconds));
+        if (!Number.isFinite(n) || n < 1 || n > 120) { await customAlert('⚠️ أدخل رقماً بين 1 و120 ثانية.'); return; }
+        setSavingBannerSeconds(true);
+        const err = await writeSetting('banner_autoplay_seconds', n, 'Home banner autoplay interval in seconds (admin-controlled, default 2)');
+        setSavingBannerSeconds(false);
+        if (err) { await customAlert('❌ ' + err); return; }
+        await customAlert(`✅ تم الحفظ — البانر يتنقل الآن كل ${n} ثانية.`);
     };
 
     const deleteBanner = async (id: string) => {
         if (!canBanners) { await customAlert('⛔ ليست لديك صلاحية إدارة البنرات.'); return; }
         const ok = await customConfirm('هل تريد حذف هذا البانر نهائياً؟');
         if (!ok) return;
-        // Optimistic remove — UI reacts instantly; rollback on failure.
         const previous = banners;
         setBanners(prev => prev.filter(b => b.id !== id));
-        const { error } = await supabase.from('banners').delete().eq('id', id);
-        if (error) {
+        // 🪤 حذفٌ ترفضه RLS يعود بـ`error=null` وصفر صفوف — فيختفي من الشاشة
+        // وهو باقٍ في القاعدة. `.select('id')` هو ما يكشف ذلك.
+        const { data, error } = await supabase.from('banners').delete().eq('id', id).select('id');
+        if (error || !data || data.length === 0) {
             setBanners(previous);
-            await customAlert('❌ ' + error.message);
+            await customAlert('❌ ' + (error?.message || 'لم يُحذف البانر (صفر صفوف) — قد تمنعك صلاحياتك.'));
         }
     };
 
-    // Banner reordering: persist the new order to `banners.display_order`
-    // for each affected row. We do this in parallel via Promise.allSettled
-    // so a single failed write doesn't block the rest.
+    // الترتيب يُكتب لكل صفٍّ متأثّر بالتوازي، فلا تُعطّل كتابةٌ فاشلة البقية.
     const dragId = useRef<string | null>(null);
     const persistBannerOrder = async (newList: any[]) => {
-        const updates = newList.map((b, i) => ({ id: b.id, display_order: i }));
-        // Reflect locally first (optimistic) — the parent state already
-        // received the reordered list before this is called.
-        const writes = updates.map(({ id, display_order }) =>
-            supabase.from('banners').update({ display_order }).eq('id', id)
+        if (!canBanners) return;
+        const writes = newList.map((b, i) =>
+            supabase.from('banners').update({ display_order: i }).eq('id', b.id).select('id')
         );
         const results = await Promise.allSettled(writes);
-        const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && (r.value as any).error)).length;
-        if (failed > 0) {
-            await customAlert(`⚠️ تعذّر حفظ ترتيب ${failed} بانر — حدّث الصفحة للتأكد`);
-        }
+        const failed = results.filter((r) =>
+            r.status === 'rejected'
+            || (r.value as any)?.error
+            || !((r.value as any)?.data?.length)
+        ).length;
+        if (failed > 0) await customAlert(`⚠️ تعذّر حفظ ترتيب ${failed} بانر — حدّث الصفحة للتأكد`);
     };
     const onBannerDragStart = (id: string) => { dragId.current = id; };
     const onBannerDrop = (targetId: string) => {
         const sourceId = dragId.current;
         dragId.current = null;
-        if (!sourceId || sourceId === targetId) return;
+        if (!canBanners || !sourceId || sourceId === targetId) return;
         const srcIdx = banners.findIndex((b) => b.id === sourceId);
         const dstIdx = banners.findIndex((b) => b.id === targetId);
         if (srcIdx < 0 || dstIdx < 0) return;
@@ -1427,6 +1436,7 @@ const AdminTools: React.FC = () => {
         persistBannerOrder(next);
     };
     const moveBanner = (id: string, direction: -1 | 1) => {
+        if (!canBanners) return;
         const idx = banners.findIndex((b) => b.id === id);
         if (idx < 0) return;
         const targetIdx = idx + direction;
@@ -1438,30 +1448,25 @@ const AdminTools: React.FC = () => {
     };
 
     const toggleBanner = async (b: any) => {
+        if (!canBanners) { await customAlert('⛔ ليست لديك صلاحية إدارة البنرات.'); return; }
         const next = !b.is_active;
-        // v12.31 — التفعيل اليدوي من الأدمن يمسح frozen_reason (البنر الذي
-        // أخفاه انتهاء اشتراك المتجر لا يعود إلا بهذا القرار الصريح).
+        // v12.31 — التفعيل اليدوي يمسح `frozen_reason`: البنر الذي أخفاه انتهاء
+        // اشتراك المتجر لا يعود إلا بهذا القرار الصريح.
         const patch: any = next ? { is_active: true, frozen_reason: null } : { is_active: false };
-        // Flip locally first — toggle pill snaps instantly.
         setBanners(prev => prev.map(x => x.id === b.id ? { ...x, ...patch } : x));
-        const { error } = await supabase.from('banners').update(patch).eq('id', b.id);
-        if (error) {
+        const { data, error } = await supabase.from('banners').update(patch).eq('id', b.id).select('id');
+        if (error || !data || data.length === 0) {
             setBanners(prev => prev.map(x => x.id === b.id ? { ...x, is_active: !next, frozen_reason: b.frozen_reason } : x));
-            await customAlert('❌ ' + error.message);
+            await customAlert('❌ ' + (error?.message || 'لم يُحفَظ التغيير (صفر صفوف) — قد تمنعك صلاحياتك.'));
         }
     };
 
+    // ── الحملات ─────────────────────────────────────────────────────────────
+
     /**
-     * v14.33 — «تفعيل» كان يقلب عموداً ولا يبثّ شيئاً.
-     *
-     * 🪤 ناصر يحفظ حملة و«تفعيل الحملة فوراً» مُطفأ (أو يعدّل حملة قديمة)، ثم
-     * يقلب «تفعيل» في القائمة منتظراً أن تخرج. لا إشعار يخرج، ولا دفعة، ولا
-     * رسالة تيليجرام — لأن هذا المفتاح لا ينادي `broadcast_campaign` إطلاقاً.
-     * والحملة تبقى «مفعّلة» في الشاشة، فيظنّها أُرسلت.
-     *
-     * والآن يعرض عدد من ستصلهم **قبل** الإرسال: الاستهداف بالمدينة صار يعمل
-     * فعلاً (كان يُهمَل فتصل حملةُ الرياض المملكةَ كلها)، فمن حقّه أن يرى كم
-     * يُقصي استهدافُه قبل أن يضغط.
+     * v14.33 — «تفعيل» كان يقلب عموداً ولا يبثّ شيئاً: لا إشعار ولا دفعة ولا
+     * رسالة تيليجرام، والحملة تبدو «مفعّلة» فيُظنّ أنها أُرسلت. والآن يُعرض
+     * عدد من ستصلهم **قبل** الإرسال، لأن استهداف المدينة صار يعمل فعلاً.
      */
     const toggleCampaign = async (c: any) => {
         if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
@@ -1469,7 +1474,7 @@ const AdminTools: React.FC = () => {
         if (next) {
             const { data: aud } = await supabase.rpc('admin_campaign_audience', { p_campaign_id: c.id });
             const a: any = aud || {};
-            const scope = [a.targeted_city, a.targeted_region].filter(Boolean).join(' · ');
+            const scope = [cityLabel(a.targeted_city), regionLabel(a.targeted_region)].filter(Boolean).join(' · ');
             const ok = await customConfirm(
                 `📣 تفعيل وبثّ «${c.title_ar}»؟\n\n` +
                 `• الجمهور المؤهّل: ${a.eligible ?? '—'}\n` +
@@ -1479,10 +1484,10 @@ const AdminTools: React.FC = () => {
             if (!ok) return;
         }
         setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: next } : x));
-        const { error } = await supabase.from('promotional_campaigns').update({ is_active: next }).eq('id', c.id);
-        if (error) {
+        const { data, error } = await supabase.from('promotional_campaigns').update({ is_active: next }).eq('id', c.id).select('id');
+        if (error || !data || data.length === 0) {
             setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, is_active: !next } : x));
-            await customAlert('❌ ' + error.message);
+            await customAlert('❌ ' + (error?.message || 'لم يُحفَظ التغيير (صفر صفوف) — قد تمنعك صلاحياتك.'));
             return;
         }
         if (!next) return;
@@ -1497,679 +1502,623 @@ const AdminTools: React.FC = () => {
     };
 
     const deleteCampaign = async (c: any) => {
+        if (!canCampaigns) { await customAlert('⛔ ليست لديك صلاحية إدارة الحملات.'); return; }
         const ok = await customConfirm(`حذف حملة "${c.title_ar}" نهائياً؟`);
         if (!ok) return;
         const previous = campaigns;
         setCampaigns(prev => prev.filter(x => x.id !== c.id));
-        const { error } = await supabase.from('promotional_campaigns').delete().eq('id', c.id);
-        if (error) {
+        const { data, error } = await supabase.from('promotional_campaigns').delete().eq('id', c.id).select('id');
+        if (error || !data || data.length === 0) {
             setCampaigns(previous);
-            await customAlert('❌ ' + error.message);
+            await customAlert('❌ ' + (error?.message || 'لم تُحذف الحملة (صفر صفوف) — قد تمنعك صلاحياتك.'));
         }
     };
 
+    const forceUpdate = async () => {
+        const ok = await customConfirm('سيتم تحديث التطبيق لأحدث نسخة وإعادة التحميل. متابعة؟');
+        if (ok) await applySwUpdate();
+    };
+
+    // ── العرض ───────────────────────────────────────────────────────────────
+
+    const settingsReady = !loading && !loadErr;
+    const activeBanners = banners.filter(b => b.is_active).length;
+    const activeCampaigns = campaigns.filter(c => c.is_active).length;
+    const campSeason = SEASONS.find(s => s.id === camp.season_id);
+    const parsedSeason: SeasonCampaign | null = campSaved && camp.season_id ? {
+        seasonId: camp.season_id,
+        sellerFrom: camp.seller_from || undefined, sellerTo: camp.seller_to || undefined,
+        publicFrom: camp.public_from || undefined, publicTo: camp.public_to || undefined,
+    } : null;
+    const sellerOpen = campaignSellerOpen(parsedSeason);
+    const publicLive = campaignPublicLive(parsedSeason);
+    const seasonDate = (label: string, key: keyof typeof camp) => (
+        <label style={{ display: 'block' }}>
+            <span style={labelStyle}>{label}</span>
+            <input
+                type="date" value={camp[key]}
+                onChange={e => setCamp(prev => ({ ...prev, [key]: e.target.value }))}
+                className="adm-focusable" style={fieldStyle}
+            />
+        </label>
+    );
+
     return (
-        <div className="space-y-6 animate-fade-in" dir="rtl">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-[var(--text-primary)]">🛠️ أدوات الإدارة</h1>
-                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                        إعدادات المنصة، البانرات، الحملات الترويجية
-                    </p>
-                </div>
-                {/* Force-update escape hatch (v11.23): if the device is stuck on an
-                    old cached build (iOS Safari pins the SW), this purges every
-                    cache and hard-reloads to the latest deploy in one tap. */}
-                <button
-                    type="button"
-                    onClick={async () => {
-                        const ok = await customConfirm('سيتم تحديث التطبيق لأحدث نسخة وإعادة التحميل. متابعة؟');
-                        if (ok) await applySwUpdate();
-                    }}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center gap-2"
-                >
+        // العنوان والوصف تطبعهما قشرة اللوحة من `adminNav` — فلا عنوان محلّي هنا.
+        <div className="space-y-5 animate-fade-in" dir="rtl">
+            {/* مخرج طوارئ: جهازٌ عالقٌ على نسخةٍ قديمة (iOS يثبّت الخدمة العاملة). */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <AdmButton size="sm" onClick={forceUpdate} title="يمسح كل النسخ المخزّنة ويعيد التحميل على أحدث إصدار">
                     🔄 تحديث التطبيق للأحدث
-                </button>
+                </AdmButton>
             </div>
 
-            {/* Settings */}
-            <section>
-                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3">⚙️ الإعدادات العامة</h2>
-                <div className="space-y-3">
-                    <ToggleCard
-                        icon="💳"
-                        title="بوابة الدفع (SaaS)"
-                        subtitle={
-                            paymentEnabled
-                                ? 'مُفعّلة — التجار يجب أن يشتركوا'
-                                : 'مُعطّلة — التطبيق مجاني'
-                        }
-                        enabled={paymentEnabled}
-                        onToggle={togglePayment}
-                    />
-                    <ToggleCard
-                        icon="🤖"
-                        title="بوت تيليجرام"
-                        subtitle={
-                            telegramBotEnabled
-                                ? 'مُفعّل — البوت يعمل وزر الربط ظاهر في الإعدادات'
-                                : 'مُعطّل — البوت متوقف عن الرد وزر الربط مخفي'
-                        }
-                        enabled={telegramBotEnabled}
-                        onToggle={toggleBot}
-                        color="blue"
-                    />
-                    <ToggleCard
-                        icon="💬"
-                        title="بوت واتساب"
-                        subtitle={
-                            whatsappBotEnabled
-                                ? 'مُفعّل — البوت يعمل وزر الربط يظهر في الإعدادات (يلزم إدخال الرقم أدناه)'
-                                : 'مُعطّل — البوت متوقف عن الرد وزر الربط مخفي'
-                        }
-                        enabled={whatsappBotEnabled}
-                        onToggle={toggleWhatsappBot}
-                        color="green"
-                    />
-                    {whatsappBotEnabled && (
-                        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">📱 رقم واتساب الرسمي للبوت</label>
-                            <p className="text-xs text-[var(--gray-400)] mb-2">أرقام فقط مع رمز الدولة (مثال: 9665XXXXXXXX). زر الربط لن يظهر في الإعدادات حتى تُدخل رقماً صحيحاً.</p>
-                            <div className="flex gap-2">
-                                <input
-                                    type="tel"
-                                    dir="ltr"
-                                    value={whatsappBotNumber}
-                                    onChange={e => setWhatsappBotNumber(e.target.value.replace(/\D/g, ''))}
-                                    placeholder="9665XXXXXXXX"
-                                    className="flex-1 px-3 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
-                                />
-                                <button
-                                    onClick={saveWhatsappNumber}
-                                    disabled={savingWaNumber}
-                                    className="px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
-                                >
-                                    {savingWaNumber ? '⏳' : '💾 حفظ'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </section>
+            {loadErr && <AdmError message={`تعذّر تحميل الإعدادات: ${loadErr}`} onRetry={fetchAll} />}
 
-            {/* ════════════════════════════════════════════════════════════════
-                v14.12 — مهلة الحجز بيد ناصر (طلبه): الرقم الوحيد في المنصّة.
-                يكتب `platform_settings.booking_holds`، ومنه تقرأ **القاعدة**
-                (تحديد expiry_time عند الإدراج + الإلغاء التلقائي) و**الموقع**
-                (ورقة الحجز والشروط والاسترداد والأسئلة الشائعة) و**البوتان**.
-                يسري فوراً بلا نشر — لا نصّ مكتوب في أي مكان يخالفه.
-               ════════════════════════════════════════════════════════════════ */}
-            <section>
-                <h2 className="text-lg font-bold text-[var(--text-primary)] mb-3">⏳ مهلة الحجز</h2>
-                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3">
-                        كم من الوقت يبقى الطلب محجوزاً قبل أن يُلغى تلقائياً وتعود الكمّية للبيع.
-                        يسري فوراً على الطلبات الجديدة، ويتغيّر معه نصّ ورقة الحجز وصفحات
-                        الشروط والاسترداد والأسئلة الشائعة والبوتين في اللحظة نفسها.
-                        <br />
-                        <strong>لا يمسّ الطلبات القائمة</strong> — كل طلب يحتفظ بالمهلة التي وُعد بها وقت حجزه.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {([
-                            { key: 'pickup',   icon: '🏪', label: 'استلام من المتجر', value: holdPickup,   set: setHoldPickup,   hint: 'المشتري يذهب للمتجر — المخزون محبوس طوال المهلة، فالإطالة تعني بيعاً أقلّ.' },
-                            { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', value: holdDelivery, set: setHoldDelivery, hint: 'التجهيز والطريق. تتوقّف المهلة بمجرّد انطلاق المندوب.' },
-                            { key: 'safety',   icon: '🛟', label: 'شبكة أمان الطلب المنطلق', value: holdSafety,   set: setHoldSafety,   hint: 'حدٌّ أقصى لطلبٍ انطلق مندوبه ولم يُغلقه التاجر — كي لا يُحبس المخزون للأبد.' },
-                        ] as const).map(f => (
-                            <div key={f.key} className="bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl p-3">
-                                <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">{f.icon} {f.label}</div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="number"
-                                        min={0.25}
-                                        max={8760}
-                                        step={0.25}
-                                        inputMode="decimal"
-                                        value={f.value}
-                                        onChange={(e) => f.set(normalizeArabicNumerals(e.target.value))}
-                                        className="w-24 px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-sm font-extrabold text-[var(--text-primary)] text-center outline-none focus:border-emerald-500"
-                                        dir="ltr"
-                                    />
-                                    <span className="text-xs font-bold text-[var(--text-secondary)]">ساعة</span>
-                                </div>
-                                <div className="text-[0.68rem] text-[var(--gray-400)] mt-2 leading-relaxed">{f.hint}</div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex items-center justify-end gap-2 mt-3">
-                        <button
-                            onClick={async () => {
-                                const num = (t: string) => parseFloat(normalizeArabicNumerals(t));
-                                const p = num(holdPickup), d = num(holdDelivery), sfy = num(holdSafety);
-                                const bad = [p, d, sfy].some(n => !Number.isFinite(n) || n < 0.25 || n > 8760);
-                                if (bad) { await customAlert('⚠️ كل مهلة يجب أن تكون بين ربع ساعة و8760 ساعة (سنة).'); return; }
-                                // التوصيل أقصر من الاستلام يعني وعداً أقلّ لطلبٍ طريقُه أطول — نسأل لا نمنع.
-                                if (d < p && !(await customConfirm(`⚠️ مهلة التوصيل (${d}) أقصر من مهلة الاستلام (${p}).\nطلب التوصيل يحتاج تجهيزاً وطريقاً، فالأقصر يُلغي طلبات صحيحة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
-                                if (sfy < d && !(await customConfirm(`⚠️ شبكة الأمان (${sfy}) أقصر من مهلة التوصيل (${d}).\nمعناها أن طلباً انطلق مندوبه قد يُلغى قبل انتهاء مهلته الأصلية.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
-                                setSavingHolds(true);
-                                const { error } = await supabase.from('platform_settings').upsert({
-                                    key: 'booking_holds',
-                                    value: { pickup_hours: p, delivery_hours: d, in_progress_hours: sfy },
-                                    description: 'مهلة الحجز بالساعات: الاستلام · التوصيل · شبكة أمان الطلب المنطلق',
-                                    updated_at: new Date().toISOString(),
-                                });
-                                setSavingHolds(false);
-                                if (error) { await customAlert('❌ ' + error.message); return; }
-                                await customAlert(`✅ تم الحفظ — استلام ${p} ساعة · توصيل ${d} ساعة · شبكة أمان ${sfy} ساعة.\nيسري على الطلبات الجديدة فوراً.`);
-                            }}
-                            disabled={savingHolds}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all"
-                        >
-                            {savingHolds ? 'جاري الحفظ...' : '💾 حفظ المهل'}
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            {/* v12.57 — نظام موحّد (طلب ناصر): البطاقة تختار موسم الحملة فقط،
-                والتفعيل الفعلي كله (ألوان الموقع + بانر الرئيسية + صفحة العروض
-                + القائمة الجانبية + خانة التاجر + البوتان) تحكمه تواريخ الحملة
-                أدناه وحدها — القاعدة تشتق seasonal_theme من النافذة العامة
-                تلقائياً (trigger عند الحفظ + كرون كل ١٥ دقيقة). */}
-            <section>
-                <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🎨 الموسم — هوية وحملة موحّدة</h2>
-                    {seasonTheme ? (
-                        <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[var(--primary-light)] text-[var(--primary)]">
-                            🟢 الهوية النشطة الآن: {SEASONS.find(s => s.id === seasonTheme)?.emoji} {SEASONS.find(s => s.id === seasonTheme)?.ar}
-                        </span>
-                    ) : (
-                        <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[var(--gray-100)] text-[var(--text-secondary)]">
-                            ⚪ الهوية الأساسية — لا موسم نشط الآن
-                        </span>
-                    )}
-                </div>
-                <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
-                    نظام واحد بلا لخبطة: <b>اختر الموسم من البطاقات</b> ثم حدد التواريخ واحفظ الحملة بالأسفل. ألوان المنصة والبانر وصفحة العروض والقائمة الجانبية والبوتات كلها تشتغل <b>تلقائياً مع بداية «الصفحة العامة»</b> وتنطفئ مع نهايتها، وخانة «شارك في عروض الموسم» عند التاجر تتبع «نافذة التجار» — لا يوجد أي تفعيل يدوي منفصل، و«إنهاء الحملة» يعيد كل شيء فوراً.
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {SEASONS.map(s => {
-                        const selected = camp.season_id === s.id;
-                        const liveNow = seasonTheme === s.id;
-                        return (
-                            <button
-                                key={s.id}
-                                type="button"
-                                onClick={() => setCamp(prev => ({ ...prev, season_id: s.id }))}
-                                className={`relative text-right rounded-2xl overflow-hidden border-2 transition-all active:scale-[0.97] ${
-                                    selected
-                                        ? 'border-[var(--primary)] shadow-lg'
-                                        : 'border-[var(--border-color)] hover:shadow-md'
-                                }`}
-                                style={{ background: 'var(--card-bg)' }}
-                            >
-                                <div className="h-16 w-full relative" style={{ background: s.swatch }}>
-                                    <span className="absolute bottom-1.5 right-2.5 text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))' }}>{s.emoji}</span>
-                                    {liveNow && (
-                                        <span className="absolute top-1.5 left-2 text-[10px] font-black bg-white/95 text-emerald-700 px-2 py-0.5 rounded-full shadow">
-                                            🟢 نشط الآن
-                                        </span>
-                                    )}
-                                    {!liveNow && selected && campSaved && (
-                                        <span className="absolute top-1.5 left-2 text-[10px] font-black bg-white/95 text-amber-600 px-2 py-0.5 rounded-full shadow">
-                                            ⏳ مجدول
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="p-2.5">
-                                    <div className="text-sm font-extrabold text-[var(--text-primary)]">{s.ar}</div>
-                                    <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">{s.hintAr}</div>
-                                    <div className={`mt-2 text-[11px] font-black rounded-lg py-1.5 text-center ${
-                                        selected
-                                            ? 'text-white'
-                                            : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'
-                                    }`}
-                                        style={selected ? { background: s.swatch } : undefined}
-                                    >
-                                        {selected ? '✓ موسم الحملة — حدد التواريخ بالأسفل' : 'اختر لهذه الحملة'}
-                                    </div>
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* v12.48 — «حملة الموسم»: مشاركة التجار + صفحة العروض الحصرية */}
-                {(() => {
-                    const campSeason = SEASONS.find(s => s.id === camp.season_id);
-                    const parsed: SeasonCampaign | null = campSaved && camp.season_id ? {
-                        seasonId: camp.season_id,
-                        sellerFrom: camp.seller_from || undefined, sellerTo: camp.seller_to || undefined,
-                        publicFrom: camp.public_from || undefined, publicTo: camp.public_to || undefined,
-                    } : null;
-                    const sellerOpen = campaignSellerOpen(parsed);
-                    const publicLive = campaignPublicLive(parsed);
-                    const dateInput = (label: string, key: keyof typeof camp) => (
-                        <div>
-                            <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">{label}</label>
-                            <input
-                                type="date"
-                                value={camp[key]}
-                                onChange={e => setCamp(prev => ({ ...prev, [key]: e.target.value }))}
-                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
-                            />
-                        </div>
-                    );
-                    return (
-                        <div className="mt-5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4">
-                            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-                                <h3 className="text-base font-extrabold text-[var(--text-primary)]">📅 تواريخ الحملة — التحكم الوحيد بالتفعيل</h3>
-                                {campSaved && (
-                                    <div className="flex gap-1.5 flex-wrap">
-                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${sellerOpen ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
-                                            🏪 باب التجار: {sellerOpen ? 'مفتوح الآن' : 'مغلق'}
-                                        </span>
-                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${publicLive ? 'bg-emerald-500/15 text-emerald-600' : 'bg-[var(--gray-100)] text-[var(--text-secondary)]'}`}>
-                                            👥 الصفحة + الهوية + البوتات: {publicLive ? 'شغّالة الآن' : 'مطفأة'}
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                            <p className="text-xs text-[var(--text-secondary)] mb-3 leading-relaxed">
-                                <b>نافذة التجار:</b> فيها فقط تظهر للتاجر خانة «شارك في عروض الموسم» عند إضافة/تعديل المنتج. <b>النافذة العامة:</b> فيها فقط تظهر صفحة العروض للمتسوقين (القائمة الجانبية + زر «تسوّق الآن» + زر الموسم في البوتين) <b>وتشتغل هوية الألوان والبانر تلقائياً</b> — وتنطفئ كلها بانتهائها دون أي تدخل منك.
-                            </p>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-                                <div>
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">الموسم (من البطاقات أعلاه)</label>
-                                    <div className={`w-full px-2.5 py-2 rounded-xl border text-sm font-extrabold ${campSeason ? 'border-[var(--primary)] bg-[var(--primary-light)] text-[var(--primary)]' : 'border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-secondary)]'}`}>
-                                        {campSeason ? `${campSeason.emoji} ${campSeason.ar}` : '⬆️ اضغط بطاقة موسم أولاً'}
-                                    </div>
-                                </div>
-                                {dateInput('🗓 تاريخ الفعالية (اختياري)', 'event_date')}
-                                <div className="hidden md:block" />
-                                {dateInput('🏪 التجار — من', 'seller_from')}
-                                {dateInput('🏪 التجار — إلى', 'seller_to')}
-                                <div className="hidden md:block" />
-                                {dateInput('👥 الصفحة العامة — من', 'public_from')}
-                                {dateInput('👥 الصفحة العامة — إلى', 'public_to')}
-                            </div>
-                            {/* v12.57 — تنبيه التعارض: نافذة عامة لا تشمل تاريخ الفعالية
-                                المسجّل للتذكير (مثل حملة «اليوم الوطني» في يوليو والفعلية
-                                ٢٣ سبتمبر) — هذا مصدر اللخبطة الذي أشار له ناصر. */}
-                            {campSeason && eventDates[camp.season_id] && camp.public_from && camp.public_to
-                                && (eventDates[camp.season_id] < camp.public_from || eventDates[camp.season_id] > camp.public_to) && (
-                                <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] font-bold text-[var(--text-primary)] leading-relaxed">
-                                    💡 انتبه: تاريخ فعالية «{campSeason.ar}» المسجّل عندك للتذكير هو <b>{eventDates[camp.season_id]}</b>، لكن نافذتك العامة ({camp.public_from} → {camp.public_to}) لا تشمله — إن لم يكن هذا مقصوداً عدّل التواريخ قبل الحفظ.
-                                </div>
-                            )}
-                            {/* v12.69 — نص بانر الموسم تحت تحكم المالك (طلب ناصر):
-                                عنوان + سطر تسويقي لكل حملة، والفراغ = الافتراضي.
-                                يظهر في بانر الرئيسية + صفحة /seasonal + القائمة الجانبية. */}
-                            {campSeason && (
-                                <div className="mt-3 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] p-3">
-                                    <div className="text-xs font-extrabold text-[var(--text-primary)] mb-1">✍️ نص بانر الموسم — أنت المتحكم</div>
-                                    <p className="text-[11px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                                        يظهر للمتسوقين في بانر الرئيسية وصفحة العروض الموسمية والقائمة الجانبية.
-                                        اتركه فارغاً ليُستخدم النص الافتراضي (الظاهر داخل الحقل كمثال باهت)، ويسري تعديلك فور «💾 حفظ الحملة».
-                                    </p>
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">العنوان الكبير</label>
-                                    <input
-                                        type="text"
-                                        value={camp.hero_title_ar}
-                                        onChange={e => setCamp(prev => ({ ...prev, hero_title_ar: e.target.value }))}
-                                        placeholder={`عروض ${campSeason.ar} الحصرية`}
-                                        className="w-full px-2.5 py-2 mb-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm font-bold outline-none focus:border-violet-500"
-                                    />
-                                    <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">السطر التسويقي (تحت العنوان)</label>
-                                    <textarea
-                                        rows={2}
-                                        value={camp.hero_tagline_ar}
-                                        onChange={e => setCamp(prev => ({ ...prev, hero_tagline_ar: e.target.value }))}
-                                        placeholder={campSeason.taglineAr}
-                                        className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none focus:border-violet-500 leading-relaxed"
-                                    />
-                                    <details className="mt-2 rounded-xl border border-[var(--border-color)]">
-                                        <summary className="cursor-pointer px-3 py-2 text-[11px] font-bold text-[var(--text-secondary)]">🌐 النسخة الإنجليزية (لمستخدمي English)</summary>
-                                        <div className="p-2.5 space-y-2">
-                                            <input
-                                                type="text" dir="ltr"
-                                                value={camp.hero_title_en}
-                                                onChange={e => setCamp(prev => ({ ...prev, hero_title_en: e.target.value }))}
-                                                placeholder={`Exclusive ${campSeason.en} Deals`}
-                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm outline-none"
-                                            />
-                                            <textarea
-                                                rows={2} dir="ltr"
-                                                value={camp.hero_tagline_en}
-                                                onChange={e => setCamp(prev => ({ ...prev, hero_tagline_en: e.target.value }))}
-                                                placeholder={campSeason.taglineEn}
-                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-primary)] text-sm outline-none leading-relaxed"
-                                            />
-                                        </div>
-                                    </details>
-                                </div>
-                            )}
-                            <div className="flex gap-2 mt-3 flex-wrap">
-                                <button
-                                    onClick={saveCampaign}
-                                    disabled={savingCamp}
-                                    className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
-                                >
-                                    {savingCamp ? '⏳' : '💾 حفظ الحملة'}
-                                </button>
-                                {campSaved && campSeason && (
-                                    <button
-                                        onClick={notifySellersCampaign}
-                                        disabled={savingCamp}
-                                        className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-extrabold shadow-md hover:shadow-lg active:scale-95 transition-all disabled:opacity-60"
-                                    >
-                                        📣 إشعار التجار الآن
-                                    </button>
-                                )}
-                                {campSaved && (
-                                    <button
-                                        onClick={clearCampaign}
-                                        disabled={savingCamp}
-                                        className="py-2.5 px-4 rounded-xl border border-red-300 text-red-500 text-sm font-extrabold hover:bg-red-500/10 transition-all disabled:opacity-60"
-                                    >
-                                        🗑 إنهاء الحملة
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* تذكير المالك قبل ٣٠ ثم ٧ أيام من كل فعالية (كرون يومي) */}
-                            <div className="mt-4 pt-3 border-t border-[var(--border-color)]">
-                                <div className="text-sm font-extrabold text-[var(--text-primary)] mb-1">⏰ تواريخ الفعاليات — للتذكير التلقائي</div>
-                                <p className="text-[11px] text-[var(--text-secondary)] mb-2.5 leading-relaxed">
-                                    سيصلك إشعار قبل كل فعالية <b>بشهر</b> ثم <b>بأسبوع</b> حتى تجهّز الحملة. حدّث التواريخ متى شئت (رمضان والعيد يتقدمان كل سنة).
-                                </p>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                                    {SEASONS.map(s => (
-                                        <div key={s.id}>
-                                            <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">{s.emoji} {s.ar}</label>
-                                            <input
-                                                type="date"
-                                                value={eventDates[s.id] || ''}
-                                                onChange={e => setEventDates(prev => ({ ...prev, [s.id]: e.target.value }))}
-                                                className="w-full px-2.5 py-2 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-semibold outline-none"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                                <button
-                                    onClick={saveEventDates}
-                                    disabled={savingDates}
-                                    className="mt-3 w-full py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--body-bg)] text-[var(--text-primary)] text-sm font-extrabold hover:shadow-md transition-all disabled:opacity-60"
-                                >
-                                    {savingDates ? '⏳' : '💾 حفظ تواريخ التذكير'}
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })()}
-            </section>
-
-            {/* v13.34 — ضغط الصور القديمة بضغطة واحدة (بلاغ ناصر: الموقع يعلق عند الدخول) */}
-            <ImageOptimizer />
-
-            {/* Banners */}
-            <section>
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)]">🖼️ البانرات الإعلانية</h2>
-                    <button
-                        onClick={() => { setBannerEdit(null); setBannerModalOpen(true); }}
-                        className="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all"
-                    >
+            {/* ═══ ١ — البانرات (الأكثر استعمالاً) ═══ */}
+            <AdmSection
+                title="البانرات الإعلانية"
+                icon="🖼️"
+                desc="الصور التي تتنقّل أعلى الصفحة الرئيسية. الترتيب هنا هو ترتيب ظهورها عند الزائر."
+                badge={loading ? undefined : { text: `${activeBanners} نشط من ${banners.length}`, tone: activeBanners ? 'ok' : 'neutral' }}
+                action={canBanners && (
+                    <AdmButton variant="primary" size="sm" onClick={() => { setBannerEdit(null); setBannerModalOpen(true); }}>
                         ➕ بانر جديد
-                    </button>
-                </div>
+                    </AdmButton>
+                )}
+            >
+                {!canBanners && (
+                    <div style={{ marginBottom: 12 }}>
+                        <AdmPill tone="info">للعرض فقط — لا تملك صلاحية «البنرات الإعلانية»</AdmPill>
+                    </div>
+                )}
 
-                {/* v12.71 — سرعة تنقّل البانر في الرئيسية بيد المدير (الافتراضي ٢ ثانية) */}
-                <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4 mb-3 flex flex-wrap items-center gap-3">
-                    <div className="flex-1 min-w-[180px]">
-                        <div className="text-sm font-extrabold text-[var(--text-primary)]">⏱ مدة عرض كل بانر (بالثواني)</div>
-                        <div className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">
-                            كل كم ثانية ينتقل البانر في الصفحة الرئيسية للبانر التالي تلقائياً. يسري فوراً على كل الزوار بعد الحفظ.
+                {/* مدّة التنقّل — إعدادُ بانرٍ، فيتبع صلاحية البنرات */}
+                {canBanners && (loading
+                    ? <div style={{ marginBottom: 12 }}><AdmSkeleton rows={1} height={64} /></div>
+                    : settingsReady && (
+                        <div
+                            style={{
+                                display: 'flex', alignItems: 'flex-end', gap: 11, flexWrap: 'wrap', marginBottom: 12,
+                                padding: 12, borderRadius: 'var(--adm-r-sm)',
+                                border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)',
+                            }}
+                        >
+                            <div style={{ flex: 1, minWidth: 190 }}>
+                                <div style={{ fontSize: '.85rem', fontWeight: 800, color: 'var(--adm-fg)' }}>⏱ مدّة عرض كل بانر</div>
+                                <div style={{ fontSize: '.74rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', marginTop: 3 }}>
+                                    كل كم ثانية ينتقل البانر للتالي في الرئيسية. يسري على كل الزوار فور الحفظ.
+                                </div>
+                            </div>
+                            <label style={{ display: 'block' }}>
+                                <span style={labelStyle}>بالثواني</span>
+                                <input
+                                    type="number" min={1} max={120} step={0.5} inputMode="decimal" dir="ltr"
+                                    value={bannerSeconds}
+                                    onChange={(e) => setBannerSeconds(e.target.value)}
+                                    className="adm-focusable"
+                                    style={{ ...fieldStyle, width: 92, textAlign: 'center', fontWeight: 800, background: 'var(--adm-surface)' }}
+                                />
+                            </label>
+                            <AdmButton onClick={saveBannerSeconds} disabled={savingBannerSeconds}>
+                                {savingBannerSeconds ? 'جاري الحفظ...' : '💾 حفظ'}
+                            </AdmButton>
                         </div>
-                    </div>
-                    <input
-                        type="number"
-                        min={1}
-                        max={120}
-                        step={0.5}
-                        inputMode="decimal"
-                        value={bannerSeconds}
-                        onChange={(e) => setBannerSeconds(e.target.value)}
-                        className="w-24 px-3 py-2.5 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-extrabold text-[var(--text-primary)] text-center outline-none focus:border-emerald-500"
-                        dir="ltr"
-                    />
-                    <button
-                        onClick={async () => {
-                            const n = parseFloat(bannerSeconds);
-                            if (!Number.isFinite(n) || n < 1 || n > 120) {
-                                await customAlert('⚠️ أدخل رقماً بين 1 و120 ثانية.');
-                                return;
-                            }
-                            setSavingBannerSeconds(true);
-                            const { error } = await supabase.from('platform_settings').upsert({
-                                key: 'banner_autoplay_seconds',
-                                value: n,
-                                description: 'Home banner autoplay interval in seconds (admin-controlled, default 2)',
-                                updated_at: new Date().toISOString(),
-                            });
-                            setSavingBannerSeconds(false);
-                            if (error) { await customAlert('❌ ' + error.message); return; }
-                            await customAlert(`✅ تم الحفظ — البانر يتنقل الآن كل ${n} ثانية.`);
-                        }}
-                        disabled={savingBannerSeconds}
-                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all"
-                    >
-                        {savingBannerSeconds ? 'جاري الحفظ...' : '💾 حفظ'}
-                    </button>
-                </div>
+                    )
+                )}
+
                 {loading ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Array.from({ length: 2 }).map((_, i) => (
-                            <div key={i} className="h-32 bg-[var(--gray-100)] rounded-2xl animate-pulse" />
-                        ))}
-                    </div>
+                    <AdmSkeleton rows={2} height={120} />
                 ) : banners.length === 0 ? (
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-12 border border-dashed border-[var(--border-color)] text-center text-[var(--gray-400)]">
-                        لا توجد بانرات. أضف الأول الآن.
-                    </div>
+                    <AdmEmpty
+                        icon="🖼️"
+                        title="لا توجد بانرات بعد"
+                        hint="البانر صورةٌ أعلى الرئيسية تفتح متجراً أو عرضاً عند الضغط. أضف الأول لتجرّبه."
+                        action={canBanners
+                            ? <AdmButton variant="primary" size="sm" onClick={() => { setBannerEdit(null); setBannerModalOpen(true); }}>➕ بانر جديد</AdmButton>
+                            : undefined}
+                    />
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
                         {banners.map((b, i) => (
                             <div
                                 key={b.id}
-                                draggable
+                                draggable={canBanners}
                                 onDragStart={() => onBannerDragStart(b.id)}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={() => onBannerDrop(b.id)}
-                                className="group bg-[var(--card-bg)] rounded-2xl overflow-hidden border border-[var(--border-color)] shadow-sm transition-all hover:shadow-md cursor-move"
+                                style={{
+                                    borderRadius: 'var(--adm-r-sm)', overflow: 'hidden',
+                                    border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)',
+                                    cursor: canBanners ? 'move' : 'default',
+                                }}
                             >
-                                <div className="relative h-32 bg-[var(--gray-100)]">
+                                <div style={{ position: 'relative', height: 122, background: 'var(--adm-surface-3)' }}>
                                     {b.image_url && (
                                         <img
-                                            src={b.image_url}
-                                            alt=""
-                                            className="w-full h-full object-cover pointer-events-none"
-                                            onError={(e) =>
-                                                ((e.target as HTMLImageElement).style.display = 'none')
-                                            }
+                                            src={b.image_url} alt=""
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                                            onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
                                         />
                                     )}
-                                    <Tooltip text="اسحب لإعادة الترتيب">
-                                        <span className="absolute top-2 left-2 bg-black/40 backdrop-blur-sm text-white text-base font-bold rounded-md px-2 py-1 cursor-grab active:cursor-grabbing">
-                                            ⋮⋮
-                                        </span>
-                                    </Tooltip>
-                                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                                        <span className="bg-black/40 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums">
+                                    <div style={{ position: 'absolute', top: 7, insetInlineEnd: 7, display: 'flex', gap: 5, alignItems: 'center' }}>
+                                        <span
+                                            style={{
+                                                fontSize: '.66rem', fontWeight: 800, padding: '2px 7px', borderRadius: 999,
+                                                background: 'rgba(8,13,20,.62)', color: '#ffffff', fontVariantNumeric: 'tabular-nums',
+                                            }}
+                                        >
                                             #{i + 1}
                                         </span>
-                                        <span
-                                            className={`px-2 py-1 rounded-md text-[10px] font-bold text-white ${
-                                                b.is_active ? 'bg-emerald-500' : 'bg-red-500'
-                                            }`}
-                                        >
-                                            {b.is_active ? '✓ نشط' : '✕ متوقف'}
-                                        </span>
+                                        <AdmPill tone={b.is_active ? 'ok' : 'bad'}>{b.is_active ? 'نشط' : 'متوقف'}</AdmPill>
                                     </div>
+                                    {canBanners && (
+                                        <Tooltip text="اسحب لإعادة الترتيب">
+                                            <span
+                                                style={{
+                                                    position: 'absolute', top: 7, insetInlineStart: 7, cursor: 'grab',
+                                                    fontSize: '.8rem', fontWeight: 800, padding: '2px 7px', borderRadius: 'var(--adm-r-sm)',
+                                                    background: 'rgba(8,13,20,.62)', color: '#ffffff',
+                                                }}
+                                            >
+                                                ⋮⋮
+                                            </span>
+                                        </Tooltip>
+                                    )}
                                 </div>
-                                <div className="p-3">
-                                    <div className="font-bold text-sm truncate">
+                                <div style={{ padding: 12 }}>
+                                    <div style={{ fontSize: '.86rem', fontWeight: 800, color: 'var(--adm-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {b.title_ar || 'بدون عنوان'}
                                     </div>
-                                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">{b.position}</div>
-                                    {/* v12.31 — بنر أخفاه انتهاء اشتراك المتجر: لا يعود إلا بتفعيل يدوي من هنا */}
+                                    <div style={{ fontSize: '.73rem', color: 'var(--adm-fg-2)', marginTop: 3 }}>
+                                        📍 {positionLabel(b.position)}
+                                    </div>
+                                    {/* v12.31 — بنر أخفاه انتهاء اشتراك المتجر: لا يعود إلا بقرارٍ صريح */}
                                     {!b.is_active && b.frozen_reason === 'subscription_expired' && (
-                                        <div className="mt-2 text-[11px] font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
-                                            ⏸ أُخفي تلقائياً — انتهى اشتراك المتجر المرتبط به. لن يعود للظهور إلا إذا فعّلته أنت بعد تجديد اشتراكه.
+                                        <div
+                                            style={{
+                                                marginTop: 8, padding: '7px 9px', borderRadius: 'var(--adm-r-sm)',
+                                                fontSize: '.72rem', fontWeight: 700, lineHeight: 1.75,
+                                                background: 'var(--adm-warn-bg)', color: 'var(--adm-warn-fg)',
+                                            }}
+                                        >
+                                            ⏸ أُخفي تلقائياً — انتهى اشتراك المتجر المرتبط به. لن يعود إلا إذا فعّلته أنت بعد تجديد اشتراكه.
                                         </div>
                                     )}
-                                    <div className="flex gap-2 mt-3 items-center">
-                                        <ToggleSwitch
-                                            enabled={b.is_active}
-                                            onToggle={() => toggleBanner(b)}
-                                            label={b.is_active ? 'إيقاف' : 'تفعيل'}
-                                        />
-                                        <span className="text-[10px] font-bold text-[var(--text-secondary)]">
-                                            {b.is_active ? 'نشط' : 'متوقف'}
-                                        </span>
-                                        <div className="flex-1" />
-                                        <Tooltip text="انقل للأعلى">
-                                            <button
-                                                type="button"
-                                                onClick={() => moveBanner(b.id, -1)}
-                                                disabled={i === 0}
-                                                className="w-7 h-7 text-sm font-bold bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)] rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                                            >
-                                                ↑
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip text="انقل للأسفل">
-                                            <button
-                                                type="button"
-                                                onClick={() => moveBanner(b.id, 1)}
-                                                disabled={i === banners.length - 1}
-                                                className="w-7 h-7 text-sm font-bold bg-[var(--gray-100)] text-[var(--text-secondary)] hover:bg-[var(--gray-200)] rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                                            >
-                                                ↓
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip text="تعديل البانر">
-                                            <button
-                                                type="button"
-                                                onClick={() => { setBannerEdit(b); setBannerModalOpen(true); }}
-                                                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200 active:scale-90"
-                                            >
-                                                ✏️
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip text="حذف نهائي">
-                                            <button
-                                                type="button"
-                                                onClick={() => deleteBanner(b.id)}
-                                                className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200 active:scale-90"
-                                            >
-                                                🗑
-                                            </button>
-                                        </Tooltip>
-                                    </div>
+                                    {canBanners && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11, flexWrap: 'wrap' }}>
+                                            {/* الحالة مكتوبةٌ مرّةً واحدة — في الشارة فوق الصورة. */}
+                                            <Sw on={b.is_active} onToggle={() => toggleBanner(b)} label={b.is_active ? 'إيقاف البانر' : 'تفعيل البانر'} />
+                                            <span style={{ flex: 1 }} />
+                                            <Tooltip text="انقل للأعلى">
+                                                <AdmButton size="sm" onClick={() => moveBanner(b.id, -1)} disabled={i === 0}>↑</AdmButton>
+                                            </Tooltip>
+                                            <Tooltip text="انقل للأسفل">
+                                                <AdmButton size="sm" onClick={() => moveBanner(b.id, 1)} disabled={i === banners.length - 1}>↓</AdmButton>
+                                            </Tooltip>
+                                            <Tooltip text="تعديل البانر">
+                                                <AdmButton size="sm" onClick={() => { setBannerEdit(b); setBannerModalOpen(true); }}>✏️</AdmButton>
+                                            </Tooltip>
+                                            <Tooltip text="حذف نهائي">
+                                                <AdmButton size="sm" variant="danger" onClick={() => deleteBanner(b.id)}>🗑</AdmButton>
+                                            </Tooltip>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
-            </section>
+            </AdmSection>
 
-            {/* Campaigns */}
-            <section>
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold text-[var(--text-primary)]">📢 الحملات الترويجية</h2>
-                </div>
-
-                {/* Inline quick-post — fastest path: title + body + go */}
-                <QuickCampaignBox
-                    onPosted={fetchAll}
-                    onAdvanced={() => setCampaignModal({ open: true, initial: null })}
-                />
-
-                {campaigns.length === 0 ? (
-                    <div className="bg-[var(--card-bg)] rounded-2xl p-6 border border-dashed border-[var(--border-color)] text-center text-sm text-[var(--text-secondary)]">
-                        لا توجد حملات بعد. اكتب حملتك الأولى في المربع أعلاه واضغط نشر.
+            {/* ═══ ٢ — الحملات ═══ */}
+            <AdmSection
+                title="الحملات الترويجية"
+                icon="📢"
+                desc="إشعارٌ يصل المستخدمين في الموقع والتطبيق وتيليجرام وواتساب. آخر ٢٠ حملة."
+                badge={loading ? undefined : { text: `${activeCampaigns} فعّالة من ${campaigns.length}`, tone: activeCampaigns ? 'ok' : 'neutral' }}
+            >
+                {!canCampaigns && (
+                    <div style={{ marginBottom: 12 }}>
+                        <AdmPill tone="info">للعرض فقط — لا تملك صلاحية «الحملات الترويجية»</AdmPill>
                     </div>
+                )}
+
+                {canCampaigns && (
+                    <QuickCampaignBox
+                        onPosted={fetchAll}
+                        onAdvanced={() => setCampaignModal({ open: true, initial: null })}
+                    />
+                )}
+
+                {loading ? (
+                    <AdmSkeleton rows={3} height={74} />
+                ) : campaigns.length === 0 ? (
+                    <AdmEmpty
+                        icon="📢"
+                        title="لا توجد حملات بعد"
+                        hint={canCampaigns
+                            ? 'اكتب حملتك الأولى في المربّع أعلاه واضغط «نشر فوراً».'
+                            : 'لا تملك صلاحية إنشاء الحملات.'}
+                    />
                 ) : (
-                    <div className="space-y-2">
+                    <div style={{ display: 'grid', gap: 9 }}>
                         {campaigns.map((c) => {
-                            const audienceLabel: Record<string, string> = { all: '👥 الجميع', buyer: '🛒 المشترون', seller: '🏪 البائعون' };
                             const ends = c.ends_at ? new Date(c.ends_at) : null;
-                            const ended = ends && ends.getTime() < Date.now();
+                            const ended = !!ends && ends.getTime() < Date.now();
                             return (
                                 <div
                                     key={c.id}
-                                    className={`bg-[var(--card-bg)] rounded-2xl p-4 border ${ended ? 'border-red-200 opacity-70' : 'border-[var(--border-color)]'} flex items-start gap-3`}
+                                    style={{
+                                        display: 'flex', alignItems: 'flex-start', gap: 11, padding: 12,
+                                        borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                                        background: 'var(--adm-surface-2)', opacity: ended ? .72 : 1,
+                                    }}
                                 >
-                                    <div className="text-2xl flex-shrink-0">{c.image_url ? '🖼️' : '📢'}</div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-sm text-[var(--text-primary)] truncate">{c.title_ar}</div>
-                                        <div className="text-xs text-[var(--text-secondary)] line-clamp-2 mt-0.5">{c.body_ar}</div>
-                                        <div className="text-[10px] text-[var(--gray-400)] mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                                            <span>{audienceLabel[c.target_audience] ?? c.target_audience}</span>
-                                            <span>•</span>
+                                    <span style={{ fontSize: '1.2rem', flexShrink: 0 }} aria-hidden="true">{c.image_url ? '🖼️' : '📢'}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '.86rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{c.title_ar}</span>
+                                            <AdmPill tone={ended ? 'bad' : c.is_active ? 'ok' : 'neutral'}>
+                                                {ended ? 'منتهية' : c.is_active ? 'فعّالة' : 'مسوّدة'}
+                                            </AdmPill>
+                                        </div>
+                                        <div
+                                            style={{
+                                                fontSize: '.76rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', marginTop: 3,
+                                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                                            }}
+                                        >
+                                            {c.body_ar}
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', fontSize: '.7rem', color: 'var(--adm-fg-3)', fontWeight: 700, marginTop: 6 }}>
+                                            <span>{AUDIENCE_LABELS[c.target_audience] ?? c.target_audience}</span>
                                             <span>أولوية {c.priority ?? 0}</span>
-                                            {c.target_city && <><span>•</span><span>📍 {c.target_city}</span></>}
+                                            {c.target_region && <span>🗺 {regionLabel(c.target_region)}</span>}
+                                            {c.target_city && <span>📍 {cityLabel(c.target_city)}</span>}
                                             {c.recurrence && c.recurrence !== 'none' && (
-                                                <><span>•</span><span className="text-indigo-600 font-bold">🔁 {RECURRENCE_LABELS[c.recurrence] ?? c.recurrence}</span></>
+                                                <span>🔁 {RECURRENCE_LABELS[c.recurrence] ?? c.recurrence}</span>
                                             )}
-                                            {ends && (
-                                                <>
-                                                    <span>•</span>
-                                                    <span className={ended ? 'text-red-600 font-bold' : ''}>
-                                                        {ended ? 'منتهية' : `حتى ${ends.toLocaleDateString('ar-SA-u-ca-gregory')}`}
-                                                    </span>
-                                                </>
-                                            )}
+                                            {ends && !ended && <span>حتى {ends.toLocaleDateString('ar-SA-u-ca-gregory')}</span>}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                        <ToggleSwitch
-                                            enabled={c.is_active}
-                                            onToggle={() => toggleCampaign(c)}
-                                            label={c.is_active ? 'إيقاف' : 'تفعيل'}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setCampaignModal({ open: true, initial: c })}
-                                            className="w-8 h-8 rounded-lg bg-[var(--gray-100)] hover:bg-[var(--gray-200)] text-[var(--text-secondary)] flex items-center justify-center transition-all duration-200 active:scale-90"
-                                            aria-label="تعديل"
-                                        >
-                                            ✏️
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => deleteCampaign(c)}
-                                            className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-all duration-200 active:scale-90"
-                                            aria-label="حذف"
-                                        >
-                                            🗑
-                                        </button>
-                                    </div>
+                                    {canCampaigns && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+                                            <Sw on={c.is_active} onToggle={() => toggleCampaign(c)} label={c.is_active ? 'إيقاف الحملة' : 'تفعيل الحملة وبثّها'} />
+                                            <Tooltip text="تعديل الحملة">
+                                                <AdmButton size="sm" onClick={() => setCampaignModal({ open: true, initial: c })}>✏️</AdmButton>
+                                            </Tooltip>
+                                            <Tooltip text="حذف نهائي">
+                                                <AdmButton size="sm" variant="danger" onClick={() => deleteCampaign(c)}>🗑</AdmButton>
+                                            </Tooltip>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
                     </div>
                 )}
-            </section>
+            </AdmSection>
 
-            {bannerModalOpen && (
+            {/* ═══ ٣ — مفاتيح التشغيل ═══ */}
+            <AdmSection
+                title="مفاتيح التشغيل"
+                icon="⚙️"
+                desc="ثلاثة مفاتيح تسري على المنصّة كلها خلال دقيقة، بلا نشرٍ جديد."
+            >
+                {loading ? <AdmSkeleton rows={3} height={68} /> : !settingsReady ? (
+                    <AdmError message="لم تصل قيم المفاتيح — لا تُعرض حتى لا تُقلب من قيمةٍ خاطئة." onRetry={fetchAll} />
+                ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                        <SettingRow
+                            icon="💳"
+                            title="بوابة الدفع (SaaS)"
+                            desc={paymentEnabled ? 'مُفعّلة — التجار يجب أن يشتركوا لإضافة عروض.' : 'مُعطّلة — التطبيق مجاني بالكامل.'}
+                            note={
+                                <div style={{ fontSize: '.71rem', fontWeight: 700, color: 'var(--adm-fg-3)', marginTop: 5, lineHeight: 1.7 }}>
+                                    ℹ️ هذه الشاشة هي <b>المكان الوحيد</b> لضبط بوابة الدفع — لا يوجد مفتاحٌ ثانٍ لها في شاشة التجّار ولا في أي شاشةٍ أخرى.
+                                </div>
+                            }
+                            right={<Sw on={paymentEnabled} onToggle={togglePayment} label="بوابة الدفع" />}
+                        />
+                        <SettingRow
+                            icon="🤖"
+                            title="بوت تيليجرام"
+                            desc={telegramBotEnabled ? 'مُفعّل — يردّ على المستخدمين وزرّ الربط ظاهر في الإعدادات.' : 'مُعطّل — توقّف عن الردّ وزرّ الربط مخفي.'}
+                            right={<Sw on={telegramBotEnabled} onToggle={toggleBot} label="بوت تيليجرام" />}
+                        />
+                        <SettingRow
+                            icon="💬"
+                            title="بوت واتساب"
+                            desc={whatsappBotEnabled ? 'مُفعّل — يعمل وزرّ الربط يظهر بمجرّد إدخال الرقم أدناه.' : 'مُعطّل — توقّف عن الردّ وزرّ الربط مخفي.'}
+                            right={<Sw on={whatsappBotEnabled} onToggle={toggleWhatsappBot} label="بوت واتساب" />}
+                        />
+                        {whatsappBotEnabled && (
+                            <div style={{ padding: 13, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
+                                <span style={labelStyle}>📱 رقم واتساب الرسمي للبوت</span>
+                                <div style={{ fontSize: '.73rem', color: 'var(--adm-fg-2)', lineHeight: 1.75, marginBottom: 8 }}>
+                                    أرقام فقط مع رمز الدولة (مثال: 9665XXXXXXXX). زرّ الربط لا يظهر في الإعدادات حتى تُدخل رقماً صحيحاً.
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <input
+                                        type="tel" dir="ltr" value={whatsappBotNumber}
+                                        onChange={e => setWhatsappBotNumber(e.target.value.replace(/\D/g, ''))}
+                                        placeholder="9665XXXXXXXX" aria-label="رقم واتساب الرسمي"
+                                        className="adm-focusable"
+                                        style={{ ...fieldStyle, flex: '1 1 190px', width: 'auto', background: 'var(--adm-surface)', fontWeight: 800 }}
+                                    />
+                                    <AdmButton variant="primary" onClick={saveWhatsappNumber} disabled={savingWaNumber}>
+                                        {savingWaNumber ? '⏳ جاري الحفظ...' : '💾 حفظ الرقم'}
+                                    </AdmButton>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </AdmSection>
+
+            {/* ═══ ٤ — مهلة الحجز ═══ */}
+            <AdmSection
+                title="مهلة الحجز"
+                icon="⏳"
+                desc="كم يبقى الطلب محجوزاً قبل أن يُلغى تلقائياً وتعود الكمّية للبيع. الرقم الوحيد في المنصّة: تقرؤه القاعدة والموقع والبوتان والصفحات القانونية معاً."
+                collapsible
+                defaultOpen={false}
+            >
+                {loading ? <AdmSkeleton rows={3} height={92} /> : !settingsReady ? (
+                    <AdmError message="لم تصل المهل الحالية — لا تُعرض الحقول حتى لا تُحفظ أرقامٌ افتراضية فوق الحقيقية." onRetry={fetchAll} />
+                ) : (
+                    <>
+                        <p style={{ fontSize: '.78rem', lineHeight: 1.85, color: 'var(--adm-fg-2)', margin: '0 0 12px' }}>
+                            يسري فوراً على الطلبات الجديدة، ويتغيّر معه نصّ ورقة الحجز وصفحات الشروط والاسترداد والأسئلة الشائعة والبوتان في اللحظة نفسها.
+                            <br />
+                            <strong style={{ color: 'var(--adm-fg)' }}>ولا يمسّ الطلبات القائمة</strong> — كل طلبٍ يحتفظ بالمهلة التي وُعد بها وقت حجزه.
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+                            {([
+                                { key: 'pickup',   icon: '🏪', label: 'استلام من المتجر', value: holdPickup,   set: setHoldPickup,   hint: 'المشتري يذهب للمتجر — المخزون محبوس طوال المهلة، فالإطالة تعني بيعاً أقلّ.' },
+                                { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', value: holdDelivery, set: setHoldDelivery, hint: 'التجهيز والطريق. تتوقّف المهلة بمجرّد انطلاق المندوب.' },
+                                { key: 'safety',   icon: '🛟', label: 'شبكة أمان الطلب المنطلق', value: holdSafety, set: setHoldSafety, hint: 'حدٌّ أقصى لطلبٍ انطلق مندوبه ولم يُغلقه التاجر — كي لا يُحبس المخزون للأبد.' },
+                            ] as const).map(f => (
+                                <div key={f.key} style={{ padding: 12, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
+                                    <div style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', marginBottom: 7 }}>{f.icon} {f.label}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <input
+                                            type="number" min={0.25} max={8760} step={0.25} inputMode="decimal" dir="ltr"
+                                            value={f.value}
+                                            onChange={(e) => f.set(normalizeArabicNumerals(e.target.value))}
+                                            aria-label={f.label}
+                                            className="adm-focusable"
+                                            style={{ ...fieldStyle, width: 92, textAlign: 'center', fontWeight: 800, background: 'var(--adm-surface)' }}
+                                        />
+                                        <span style={{ fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>ساعة</span>
+                                    </div>
+                                    <div style={{ fontSize: '.7rem', lineHeight: 1.8, color: 'var(--adm-fg-3)', marginTop: 8 }}>{f.hint}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                            <AdmButton variant="primary" onClick={saveHolds} disabled={savingHolds}>
+                                {savingHolds ? 'جاري الحفظ...' : '💾 حفظ المهل'}
+                            </AdmButton>
+                        </div>
+                    </>
+                )}
+            </AdmSection>
+
+            {/* ═══ ٥ — الموسم (هوية + حملة موحّدة) ═══
+                v12.57 — لا تفعيل يدوي: القاعدة تشتقّ `seasonal_theme` من النافذة
+                العامة (trigger + كرون ١٥ دقيقة)، فتتبعه الألوان والبانر وصفحة
+                العروض والقائمة الجانبية وخانة التاجر والبوتان. */}
+            {canCampaigns && (
+                <AdmSection
+                    title="الموسم — هوية وحملة موحّدة"
+                    icon="🎨"
+                    desc="اختر الموسم ثمّ حدّد نافذتي التجار والجمهور. كل شيء يشتغل وينطفئ بالتواريخ وحدها."
+                    badge={loading ? undefined : seasonTheme
+                        ? { text: `نشط: ${SEASONS.find(s => s.id === seasonTheme)?.ar ?? seasonTheme}`, tone: 'ok' }
+                        : { text: 'الهوية الأساسية', tone: 'neutral' }}
+                    collapsible
+                    defaultOpen={false}
+                >
+                    {loading ? <AdmSkeleton rows={3} height={96} /> : !settingsReady ? (
+                        <AdmError message="لم تصل بيانات الحملة الموسمية — لا تُعرض حتى لا تُحفَظ فوق الحقيقية." onRetry={fetchAll} />
+                    ) : (
+                        <>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                                {SEASONS.map(s => {
+                                    const selected = camp.season_id === s.id;
+                                    const liveNow = seasonTheme === s.id;
+                                    return (
+                                        <button
+                                            key={s.id} type="button"
+                                            onClick={() => setCamp(prev => ({ ...prev, season_id: s.id }))}
+                                            aria-pressed={selected}
+                                            className="adm-focusable"
+                                            style={{
+                                                textAlign: 'right', borderRadius: 'var(--adm-r-sm)', overflow: 'hidden', cursor: 'pointer',
+                                                border: `1px solid ${selected ? 'var(--adm-accent)' : 'var(--adm-border)'}`,
+                                                background: 'var(--adm-surface-2)', padding: 0,
+                                            }}
+                                        >
+                                            <div style={{ position: 'relative', height: 54, background: s.swatch }}>
+                                                <span style={{ position: 'absolute', bottom: 6, insetInlineEnd: 9, fontSize: '1.3rem', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.4))' }}>{s.emoji}</span>
+                                                {(liveNow || (selected && campSaved)) && (
+                                                    <span style={{ position: 'absolute', top: 6, insetInlineStart: 6 }}>
+                                                        <AdmPill tone={liveNow ? 'ok' : 'warn'}>{liveNow ? 'نشط الآن' : 'مجدول'}</AdmPill>
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ padding: 10 }}>
+                                                <div style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{s.ar}</div>
+                                                <div style={{ fontSize: '.71rem', color: 'var(--adm-fg-2)', marginTop: 2, lineHeight: 1.7 }}>{s.hintAr}</div>
+                                                <div style={{ fontSize: '.71rem', fontWeight: 800, marginTop: 7, color: selected ? 'var(--adm-accent)' : 'var(--adm-fg-3)' }}>
+                                                    {selected ? '✓ موسم الحملة — حدّد التواريخ بالأسفل' : 'اختر لهذه الحملة'}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <div style={{ marginTop: 14, padding: 13, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '.88rem', fontWeight: 800, color: 'var(--adm-fg)' }}>📅 تواريخ الحملة — التحكّم الوحيد بالتفعيل</span>
+                                    {campSaved && (
+                                        <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                            <AdmPill tone={sellerOpen ? 'ok' : 'neutral'}>🏪 باب التجار: {sellerOpen ? 'مفتوح' : 'مغلق'}</AdmPill>
+                                            <AdmPill tone={publicLive ? 'ok' : 'neutral'}>👥 الصفحة والهوية والبوتات: {publicLive ? 'شغّالة' : 'مطفأة'}</AdmPill>
+                                        </span>
+                                    )}
+                                </div>
+                                <p style={{ fontSize: '.76rem', lineHeight: 1.85, color: 'var(--adm-fg-2)', margin: '7px 0 12px' }}>
+                                    <b>نافذة التجار:</b> فيها وحدها تظهر للتاجر خانة «شارك في عروض الموسم». <b>النافذة العامة:</b> فيها وحدها تظهر صفحة العروض للمتسوّقين (القائمة الجانبية + زرّ الموسم في البوتين) <b>وتشتغل هوية الألوان والبانر تلقائياً</b> — وتنطفئ كلها بانتهائها بلا أي تدخّل.
+                                </p>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                                    <div>
+                                        <span style={labelStyle}>الموسم (من البطاقات أعلاه)</span>
+                                        <div
+                                            style={{
+                                                ...fieldStyle, fontWeight: 800,
+                                                color: campSeason ? 'var(--adm-accent)' : 'var(--adm-fg-3)',
+                                                borderColor: campSeason ? 'var(--adm-accent)' : 'var(--adm-border)',
+                                            }}
+                                        >
+                                            {campSeason ? `${campSeason.emoji} ${campSeason.ar}` : '⬆️ اضغط بطاقة موسم أولاً'}
+                                        </div>
+                                    </div>
+                                    {seasonDate('🗓 تاريخ الفعالية (اختياري)', 'event_date')}
+                                    {seasonDate('🏪 التجار — من', 'seller_from')}
+                                    {seasonDate('🏪 التجار — إلى', 'seller_to')}
+                                    {seasonDate('👥 الصفحة العامة — من', 'public_from')}
+                                    {seasonDate('👥 الصفحة العامة — إلى', 'public_to')}
+                                </div>
+
+                                {/* v12.57 — تنبيه التعارض: نافذةٌ عامة لا تشمل تاريخ الفعالية المسجّل. */}
+                                {campSeason && eventDates[camp.season_id] && camp.public_from && camp.public_to
+                                    && (eventDates[camp.season_id] < camp.public_from || eventDates[camp.season_id] > camp.public_to) && (
+                                    <div
+                                        style={{
+                                            marginTop: 10, padding: '9px 11px', borderRadius: 'var(--adm-r-sm)',
+                                            fontSize: '.74rem', fontWeight: 700, lineHeight: 1.8,
+                                            background: 'var(--adm-warn-bg)', color: 'var(--adm-warn-fg)',
+                                        }}
+                                    >
+                                        💡 تاريخ فعالية «{campSeason.ar}» المسجّل عندك للتذكير هو <b>{eventDates[camp.season_id]}</b>، لكن نافذتك العامة ({camp.public_from} → {camp.public_to}) لا تشمله — إن لم يكن هذا مقصوداً فعدّل التواريخ قبل الحفظ.
+                                    </div>
+                                )}
+
+                                {/* v12.69 — نصّ بانر الموسم بيد المالك: الفراغ = الافتراضي. */}
+                                {campSeason && (
+                                    <div style={{ marginTop: 12, padding: 12, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface)' }}>
+                                        <div style={{ fontSize: '.82rem', fontWeight: 800, color: 'var(--adm-fg)' }}>✍️ نصّ بانر الموسم</div>
+                                        <p style={{ fontSize: '.73rem', lineHeight: 1.8, color: 'var(--adm-fg-2)', margin: '5px 0 10px' }}>
+                                            يظهر للمتسوّقين في بانر الرئيسية وصفحة العروض الموسمية والقائمة الجانبية. اتركه فارغاً ليُستخدم النصّ الافتراضي (الظاهر باهتاً داخل الحقل)، ويسري تعديلك فور «💾 حفظ الحملة».
+                                        </p>
+                                        <label style={{ display: 'block', marginBottom: 9 }}>
+                                            <span style={labelStyle}>العنوان الكبير</span>
+                                            <input
+                                                type="text" value={camp.hero_title_ar}
+                                                onChange={e => setCamp(prev => ({ ...prev, hero_title_ar: e.target.value }))}
+                                                placeholder={`عروض ${campSeason.ar} الحصرية`}
+                                                className="adm-focusable" style={{ ...fieldStyle, fontWeight: 800 }}
+                                            />
+                                        </label>
+                                        <label style={{ display: 'block' }}>
+                                            <span style={labelStyle}>السطر التسويقي (تحت العنوان)</span>
+                                            <textarea
+                                                rows={2} value={camp.hero_tagline_ar}
+                                                onChange={e => setCamp(prev => ({ ...prev, hero_tagline_ar: e.target.value }))}
+                                                placeholder={campSeason.taglineAr}
+                                                className="adm-focusable" style={{ ...fieldStyle, lineHeight: 1.8, resize: 'vertical' }}
+                                            />
+                                        </label>
+                                        <details style={{ marginTop: 9, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)' }}>
+                                            <summary style={{ cursor: 'pointer', padding: '8px 11px', fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
+                                                🌐 النسخة الإنجليزية (لمستخدمي English)
+                                            </summary>
+                                            <div style={{ padding: 11, display: 'grid', gap: 9 }}>
+                                                <input
+                                                    type="text" dir="ltr" value={camp.hero_title_en}
+                                                    onChange={e => setCamp(prev => ({ ...prev, hero_title_en: e.target.value }))}
+                                                    placeholder={`Exclusive ${campSeason.en} Deals`}
+                                                    aria-label="Season hero title (English)"
+                                                    className="adm-focusable" style={fieldStyle}
+                                                />
+                                                <textarea
+                                                    rows={2} dir="ltr" value={camp.hero_tagline_en}
+                                                    onChange={e => setCamp(prev => ({ ...prev, hero_tagline_en: e.target.value }))}
+                                                    placeholder={campSeason.taglineEn}
+                                                    aria-label="Season hero tagline (English)"
+                                                    className="adm-focusable" style={{ ...fieldStyle, lineHeight: 1.8, resize: 'vertical' }}
+                                                />
+                                            </div>
+                                        </details>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: 9, marginTop: 12, flexWrap: 'wrap' }}>
+                                    <AdmButton variant="primary" onClick={saveCampaign} disabled={savingCamp}>
+                                        {savingCamp ? '⏳ جاري الحفظ...' : '💾 حفظ الحملة'}
+                                    </AdmButton>
+                                    {campSaved && campSeason && (
+                                        <AdmButton onClick={notifySellersCampaign} disabled={savingCamp}>📣 إشعار التجار الآن</AdmButton>
+                                    )}
+                                    {campSaved && (
+                                        <AdmButton variant="danger" onClick={clearCampaign} disabled={savingCamp}>🗑 إنهاء الحملة</AdmButton>
+                                    )}
+                                </div>
+
+                                {/* تذكير المالك قبل ٣٠ ثمّ ٧ أيام من كل فعالية (كرون يومي) */}
+                                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--adm-border)' }}>
+                                    <div style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)' }}>⏰ تواريخ الفعاليات — للتذكير التلقائي</div>
+                                    <p style={{ fontSize: '.73rem', lineHeight: 1.8, color: 'var(--adm-fg-2)', margin: '5px 0 10px' }}>
+                                        سيصلك إشعار قبل كل فعالية <b>بشهر</b> ثمّ <b>بأسبوع</b> حتى تجهّز الحملة. حدّث التواريخ متى شئت (رمضان والعيد يتقدّمان كل سنة).
+                                    </p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                                        {SEASONS.map(s => (
+                                            <label key={s.id} style={{ display: 'block' }}>
+                                                <span style={labelStyle}>{s.emoji} {s.ar}</span>
+                                                <input
+                                                    type="date" value={eventDates[s.id] || ''}
+                                                    onChange={e => setEventDates(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                                    className="adm-focusable" style={fieldStyle}
+                                                />
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 11 }}>
+                                        <AdmButton onClick={saveEventDates} disabled={savingDates}>
+                                            {savingDates ? '⏳ جاري الحفظ...' : '💾 حفظ تواريخ التذكير'}
+                                        </AdmButton>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </AdmSection>
+            )}
+
+            {/* ═══ ٦ — الصيانة (أداة الصور) ═══ */}
+            <AdmSection
+                title="الصيانة"
+                icon="🧰"
+                desc="أدواتٌ تُشغَّل مرّةً عند الحاجة — لا شأن لها بالعمل اليومي."
+                collapsible
+                defaultOpen={false}
+            >
+                {/* v13.34 — ضغط الصور القديمة بضغطة واحدة (بلاغ: الموقع يعلق عند الدخول) */}
+                <ImageOptimizer />
+            </AdmSection>
+
+            {bannerModalOpen && canBanners && (
                 <BannerModal
                     initial={bannerEdit}
                     onClose={() => { setBannerModalOpen(false); setBannerEdit(null); }}
                     onSaved={fetchAll}
                 />
             )}
-            {campaignModal.open && (
+            {campaignModal.open && canCampaigns && (
                 <CampaignModal
                     initial={campaignModal.initial}
                     onClose={() => setCampaignModal({ open: false, initial: null })}
