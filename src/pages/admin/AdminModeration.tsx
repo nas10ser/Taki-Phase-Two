@@ -34,7 +34,7 @@ import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { CATEGORIES } from '../../data/mock';
 import {
-    AdmSection, AdmPageHeader,
+    AdmSection,
     AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     AdmTable,
@@ -358,12 +358,16 @@ const AdminModeration: React.FC = () => {
 
     return (
         <div dir="rtl" style={{ display: 'grid', gap: 14 }}>
-            <AdmPageHeader
-                icon="🛡"
-                title="رصد المحتوى الآلي"
-                desc="مخالفاتٌ رصدها النظام تلقائياً في المحادثات والتقييمات والعروض والصور — بلا بلاغٍ من أحد، وفي الموقع والبوتين معاً. أمّا الإنذارات التي يصدرها فريق الإدارة على الحسابات فمكانها «إنذارات المسؤولين» في تبويب البلاغات والشكاوى."
-                actions={<AdmButton onClick={load} title="إعادة قراءة المخالفات والإعدادات من قاعدة البيانات">🔄 تحديث</AdmButton>}
-            />
+            {/* 🪤 v14.89b — كان هنا عنوان الشاشة ووصفها، وقشرةُ اللوحة تطبع
+                الاثنين من `adminNav.ts` — فظهر العنوان مرّتين فوق بعضه بصياغتين
+                مختلفتين (بلاغ ناصر). بقي الوصفُ التشغيليّ والإجراءات. */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <p style={{ flex: '1 1 260px', margin: 0, fontSize: '.85rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                    مخالفاتٌ رصدها النظام تلقائياً — بلا بلاغٍ من أحد. أمّا الإنذارات التي يصدرها
+                    فريق الإدارة على الحسابات فمكانها «إنذارات المسؤولين» في شاشة البلاغات والشكاوى.
+                </p>
+                <AdmButton onClick={load} title="إعادة قراءة المخالفات والإعدادات من قاعدة البيانات">🔄 تحديث</AdmButton>
+            </div>
 
             {loading && !overview ? (
                 <AdmSkeleton rows={4} height={88} />

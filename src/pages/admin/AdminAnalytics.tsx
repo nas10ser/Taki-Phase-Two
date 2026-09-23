@@ -226,22 +226,10 @@ const AdminAnalytics: React.FC = () => {
 
     return (
         <div className="space-y-5 animate-fade-in" dir="rtl">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-extrabold text-[var(--text-primary)] flex items-center gap-2">
-                    📊 التحليلات اللحظية
-                    <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                        </span>
-                        Live
-                    </span>
-                </h1>
-                <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-                    مراقبة لحظية لكل ما يحدث على المنصة الآن
-                </p>
-            </div>
+            {/* 🪤 v14.89b — كان هنا عنوان الشاشة ووصفها، وقشرةُ اللوحة تطبع
+                الاثنين من `adminNav.ts` — فظهر العنوان مرّتين (بلاغ ناصر).
+                وشارة «Live» حُذفت معه: هذه الشاشة **عن فترةٍ تختارها** لا عن
+                اللحظة — واللحظيّ كلّه في «الرئيسية». */}
 
             {/* v12.52 — دليل مبسّط (طلب ناصر: «لست خبيراً مالياً») — ماذا يعني كل رقم؟ */}
             <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-3">

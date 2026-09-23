@@ -29,7 +29,7 @@ import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { SmartChip } from '../../components/admin/SmartChip';
 import {
-    AdmCard, AdmSection, AdmPageHeader, AdmStat, AdmStatGrid,
+    AdmCard, AdmSection, AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton, AdmSearch, AdmToolbar,
 } from '../../components/admin/ui';
 import { CsvColumn } from '../../utils/csvExport';
@@ -839,28 +839,24 @@ const AdminBuyers: React.FC = () => {
         <div style={{ display: 'grid', gap: 14 }} dir="rtl">
 
             {/* ── الرأس ───────────────────────────────────────────────────── */}
-            <AdmPageHeader
-                icon="🛒"
-                title="المشترون"
-                desc="ابحث عن أي مشتري، افتح بطاقته لتعديل بياناته أو تعليق حسابه، أو حدّد عدّة حسابات لإجراءٍ جماعي."
-                actions={
-                    <>
-                        <ExportButton
-                            rows={filteredUsers}
-                            columns={BUYER_CSV_COLUMNS}
-                            filenameStem="taki-buyers"
-                            tooltip="تنزيل القائمة المعروضة حالياً كملف CSV يفتح في Excel — ستحتوي على كل الحسابات بعد تطبيق البحث والفلاتر"
-                        />
-                        <AdmButton
-                            variant={selectionMode ? 'primary' : 'secondary'}
-                            onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
-                            title={selectionMode ? 'إلغاء وضع التحديد' : 'تحديد عدة حسابات لإجراء جماعي'}
-                        >
-                            {selectionMode ? '✕ خروج من التحديد' : '☑ تحديد متعدد'}
-                        </AdmButton>
-                    </>
-                }
-            />
+            {/* 🪤 v14.89b — كان هنا عنوان الشاشة ووصفها، وقشرةُ اللوحة تطبع
+                الاثنين من `adminNav.ts` — فظهر العنوان مرّتين فوق بعضه بصياغتين
+                مختلفتين (بلاغ ناصر). بقي الوصفُ التشغيليّ والإجراءات. */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <ExportButton
+                    rows={filteredUsers}
+                    columns={BUYER_CSV_COLUMNS}
+                    filenameStem="taki-buyers"
+                    tooltip="تنزيل القائمة المعروضة حالياً كملف CSV يفتح في Excel — ستحتوي على كل الحسابات بعد تطبيق البحث والفلاتر"
+                />
+                <AdmButton
+                    variant={selectionMode ? 'primary' : 'secondary'}
+                    onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+                    title={selectionMode ? 'إلغاء وضع التحديد' : 'تحديد عدة حسابات لإجراء جماعي'}
+                >
+                    {selectionMode ? '✕ خروج من التحديد' : '☑ تحديد متعدد'}
+                </AdmButton>
+            </div>
 
             {/* ── الأرقام ─────────────────────────────────────────────────── */}
             <div>

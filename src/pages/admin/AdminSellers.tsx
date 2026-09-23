@@ -35,7 +35,7 @@ import { SmartChip } from '../../components/admin/SmartChip';
 import { admNum, toDateInput } from '../../components/admin/ui';
 import { fieldCss, labelCss, pickCss } from '../../components/admin/sellerStyles';
 import {
-    AdmSection, AdmPageHeader, AdmStat, AdmStatGrid, AdmPill,
+    AdmSection, AdmStat, AdmStatGrid, AdmPill,
     AdmEmpty, AdmSkeleton, AdmButton, toneFg,
 } from '../../components/admin/ui';
 import type { Tone } from '../../components/admin/ui';
@@ -1278,20 +1278,21 @@ const AdminSellers: React.FC = () => {
             {/* v14.36 — طلبات تغيير اسم المتجر أولاً: طلبٌ معلّق يجب أن يُرى قبل
                 أي شيء آخر، والبطاقة تُخفي نفسها حين لا يوجد طلب. */}
             <StoreNameRequests />
-            <AdmPageHeader
-                icon="🏪"
-                title="إدارة البائعين"
-                desc="اشتراكات المتاجر وخصوماتها ورعاتها. البحث يسأل الخادم، والأرقام أدناه تُحسب من الصفحة المحمّلة وحدها — لذلك يقول كلٌّ منها نطاقه."
-                actions={
-                    <ExportButton
-                        rows={filtered}
-                        columns={SELLER_CSV_COLUMNS}
-                        filenameStem="taki-sellers"
-                        accent="purple"
-                        tooltip="تنزيل القائمة المعروضة حالياً كملف CSV — يحتوي على الباقة، تاريخ الانتهاء، الخصم، والمبلغ لكل تاجر"
-                    />
-                }
-            />
+            {/* 🪤 v14.89b — كان هنا عنوان الشاشة ووصفها، وقشرةُ اللوحة تطبع
+                الاثنين من `adminNav.ts` — فظهر العنوان مرّتين فوق بعضه بصياغتين
+                مختلفتين (بلاغ ناصر). بقي الوصفُ التشغيليّ والإجراءات. */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <p style={{ flex: '1 1 260px', margin: 0, fontSize: '.85rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                    البحث يسأل الخادم، والأرقام أدناه تُحسب من الصفحة المحمّلة وحدها — لذلك يقول كلٌّ منها نطاقه.
+                </p>
+                <ExportButton
+                    rows={filtered}
+                    columns={SELLER_CSV_COLUMNS}
+                    filenameStem="taki-sellers"
+                    accent="purple"
+                    tooltip="تنزيل القائمة المعروضة حالياً كملف CSV — يحتوي على الباقة، تاريخ الانتهاء، الخصم، والمبلغ لكل تاجر"
+                />
+            </div>
 
             {/* 🪤 v14.89 — هذه الأرقام تُحسب في المتصفّح من الصفحة المحمّلة (٢٠٠ صفّاً
                 كحدٍّ أقصى) لا من المنصّة كلّها، وشاشة «الرئيسية» تحسب اشتراكاتها بطريقةٍ

@@ -138,13 +138,48 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
  <div class="foot">فاتورة صادرة إلكترونياً من منصة تاكي</div></div>`;
 }
 
-/** نافذة طباعة/حفظ PDF. ترجع false إذا حجب المتصفح النوافذ المنبثقة. */
+/**
+ * نافذة طباعة/حفظ PDF. ترجع false إذا حجب المتصفح النوافذ المنبثقة.
+ *
+ * 🔴 بلاغ ناصر (٢٣ سبتمبر): «عند فتح الفواتير لا أستطيع العودة — لا يوجد زرّ».
+ *    السبب: هذه نافذةٌ يفتحها السكربت (`window.open`)، وداخل تطبيقٍ مثبَّت على
+ *    الجوّال تفتح **بلا شريط متصفّح**: لا زرّ رجوع ولا عنوان ولا إغلاق. وكان
+ *    فيها زرُّ طباعةٍ وحده — فالمستخدم عالقٌ في صفحة الفاتورة.
+ *    الآن: زرُّ إغلاقٍ ظاهرٌ **أوّلاً** (قبل الطباعة، فهو المخرج)، وثلاثةُ
+ *    مسارات للخروج بالترتيب لأن `window.close()` قد يُرفض في بعض السياقات:
+ *      ١. `window.close()` — يعمل لأن السكربت هو من فتحها.
+ *      ٢. `history.back()` — إن بقيت مفتوحة.
+ *      ٣. رسالةٌ صريحة تقول ماذا يفعل — لا صمت.
+ *    ولا يظهر أيّ منهما في الورق: كلاهما داخل `.noprint`.
+ */
 export function openPrintWindow(title: string, bodyHtml: string): boolean {
     const w = window.open('', '_blank');
     if (!w) return false;
-    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><style>${PRINT_CSS}</style></head><body>
+    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${PRINT_CSS}
+.taki-bar{position:sticky;top:0;z-index:9;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:12px;background:#ffffff;border-bottom:1px solid #e4e9ef;margin:-16px -16px 16px}
+.taki-btn{padding:11px 22px;border-radius:10px;border:0;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
+.taki-back{background:#eef2f6;color:#334155}
+.taki-print{background:#0d9488;color:#fff}
+.taki-hint{display:none;width:100%;text-align:center;font-size:12px;color:#92600a;background:#fdf3dd;padding:9px;border-radius:8px;margin-top:8px}
+@media print{.taki-bar{display:none}}</style></head><body>
+<div class="taki-bar noprint">
+  <button class="taki-btn taki-back" onclick="takiBack()">→ رجوع</button>
+  <button class="taki-btn taki-print" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+  <div class="taki-hint" id="takiHint">لإغلاق هذه الصفحة استعمل زرّ الرجوع في جهازك، أو أغلق هذا التبويب.</div>
+</div>
 ${bodyHtml}
-<div class="noprint" style="text-align:center;margin:14px"><button onclick="window.print()" style="padding:10px 26px;border-radius:10px;border:0;background:#0d9488;color:#fff;font-weight:800;font-size:14px">🖨 طباعة / حفظ PDF</button></div>
+<script>
+function takiBack(){
+  try { window.close(); } catch (e) {}
+  setTimeout(function(){
+    if (!window.closed) {
+      if (history.length > 1) { history.back(); return; }
+      var h = document.getElementById('takiHint');
+      if (h) h.style.display = 'block';
+    }
+  }, 180);
+}
+<\/script>
 </body></html>`);
     w.document.close();
     return true;

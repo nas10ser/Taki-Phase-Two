@@ -44,7 +44,7 @@ import { CopyButton } from '../../components/admin/CopyButton';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { supabase } from '../../services/supabaseClient';
 import {
-    AdmSection, AdmPageHeader,
+    AdmSection,
     AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     admNum, toneFg, toneBg,
@@ -552,14 +552,15 @@ const AdminReports: React.FC = () => {
 
     return (
         <div dir="rtl" style={{ display: 'grid', gap: 14 }}>
-            <AdmPageHeader
-                icon="🚩"
-                title="البلاغات والشكاوى"
-                desc="مركزٌ واحد لما يصل الإدارة عن المستخدمين: بلاغاتهم على بعضهم، وشكاواهم لنا، والإنذارات التي أصدرتها الإدارة، والحسابات التي أوقفتها. كل إجراءٍ هنا يدويّ ويُسجَّل."
-                actions={
-                    <AdmButton onClick={load} title="إعادة تحميل القائمة من قاعدة البيانات">🔄 تحديث</AdmButton>
-                }
-            />
+            {/* 🪤 v14.89b — كان هنا عنوان الشاشة ووصفها، وقشرةُ اللوحة تطبع
+                الاثنين من `adminNav.ts` — فظهر العنوان مرّتين (بلاغ ناصر). */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <p style={{ flex: '1 1 260px', margin: 0, fontSize: '.85rem', lineHeight: 1.8, color: 'var(--adm-fg-2)' }}>
+                    مركزٌ واحد لما يصل الإدارة عن المستخدمين: بلاغاتهم على بعضهم، وشكاواهم لنا،
+                    والإنذارات التي أصدرتها الإدارة، والحسابات التي أوقفتها. كل إجراءٍ هنا يدويّ ويُسجَّل.
+                </p>
+                <AdmButton onClick={load} title="إعادة تحميل القائمة من قاعدة البيانات">🔄 تحديث</AdmButton>
+            </div>
 
             {/* منتقي العرض — اسمٌ واضح لكلٍّ منها، ووصفه يظهر فوق قائمته */}
             <nav aria-label="أقسام البلاغات" style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>

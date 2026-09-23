@@ -234,7 +234,7 @@ const AdminDashboard: React.FC = () => {
     }
 
     return (
-        <div style={{ background: 'var(--body-bg)', minHeight: '100vh' }}>
+        <div className="adm-shell" style={{ background: 'var(--body-bg)', minHeight: '100vh' }}>
             {/* ── الرأس الثابت: رجوع · القائمة · بحث ─────────────────────── */}
             <div
                 style={{
@@ -246,7 +246,7 @@ const AdminDashboard: React.FC = () => {
                     paddingBottom: 8,
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, minWidth: 0 }}>
                     <button
                         onClick={handleBack}
                         aria-label="رجوع"
@@ -309,9 +309,15 @@ const AdminDashboard: React.FC = () => {
             </div>
 
             {/* ── جسم الشاشة ──────────────────────────────────────────────── */}
-            <div style={{ padding: '16px 14px 90px', display: 'grid', gap: 14 }}>
+            {/* 🔴 v14.89b — `minmax(0, 1fr)` لا `1fr`: عنصرُ الشبكة عرضُه الأدنى
+                `auto` افتراضياً، أي **عرض محتواه**. فشريطُ تبويبات المجموعة
+                (٦٣٩ بكسل) مدّ الحاوية إلى ٧٦٦ على شاشة ٣٧٥، و`app-container`
+                يقصّ بـ`overflow-x: clip` — فقُصَّت **كل** البطاقات من اليسار
+                ولم تكن الصفحة تتمرّر جانبياً لأن القصّ لا تمرير معه.
+                قِيس قبل: clientWidth 375 · scrollWidth 766. */}
+            <div style={{ padding: '16px 14px 90px', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr)' }}>
                 {groupTabs.length > 1 && (
-                    <div style={{ borderBottom: '1px solid var(--adm-border)', paddingBottom: 2 }}>
+                    <div style={{ borderBottom: '1px solid var(--adm-border)', paddingBottom: 2, minWidth: 0, overflow: 'hidden' }}>
                         <AdminTabBar tabs={groupTabs} active={activeTab} onPick={goTab} reportsBadge={reportsBadge} />
                     </div>
                 )}
