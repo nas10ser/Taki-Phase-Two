@@ -417,7 +417,7 @@ const AdminMessaging: React.FC = () => {
                 </div>
                 {outbox.length === 0 ? (
                     <div className="text-center text-xs text-[var(--text-secondary)] py-6 border border-dashed border-[var(--border-color)] rounded-xl">
-                        لا توجد إيميلات بعد — ستظهر هنا عند أول رسالة تفعّل لها قناة «إيميل».
+                        لا رسائل بريدٍ بعد — تظهر هنا عند أول رسالة تفعّل لها قناة «إيميل».
                     </div>
                 ) : (
                     <div className="space-y-1.5">

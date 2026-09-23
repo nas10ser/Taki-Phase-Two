@@ -581,7 +581,8 @@ const AdminTax: React.FC = () => {
             </section>
 
             {/* 🛒 فواتير المشتريات (المدخلات) */}
-            <section className={card} style={{ borderTop: '3px solid #f59e0b' }}>
+            <AdmSection title="فواتير مشترياتك (ضريبة المدخلات)" icon="🛒" desc="تُدخلها أنت لتُخصم من ضريبة مبيعاتك عند الإقرار. تُراجَع مرّةً كل ربع." collapsible defaultOpen={false}>
+                <section className={card} style={{ borderTop: '3px solid #f59e0b' }}>
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="font-extrabold text-sm text-[var(--text-primary)]">🛒 فواتير مشترياتك (ضريبة المدخلات — للاسترداد)</h3>
                     <ExportButton rows={expenses} columns={csvExpenses} filenameStem="taki-expenses" label="CSV" tooltip="تنزيل سجل المشتريات كاملاً" />
@@ -633,6 +634,7 @@ const AdminTax: React.FC = () => {
                     </div>
                 )}
             </section>
+            </AdmSection>
 
             {/* v13.38 — الأوضاع الضريبية للتجار */}
             <VatStatusPanel />
@@ -749,7 +751,8 @@ const AdminTax: React.FC = () => {
             </AdmSection>
 
             {/* الفواتير */}
-            <section className={card}>
+            <AdmSection title="فواتير العملاء" icon="📄" desc="أحدث ٥٠ دفعة اشتراكٍ دفعها التجّار لتاكي — للطباعة أو الأرشيف." collapsible defaultOpen={false}>
+                <section className={card}>
                 <h3 className="font-extrabold text-sm text-[var(--text-primary)] mb-3">📄 فواتير العملاء (أحدث ٥٠ دفعة)</h3>
                 {payments.length === 0 ? (
                     <div className="text-[11px] text-[var(--text-secondary)] font-bold">لا توجد مدفوعات بعد — كل دفعة اشتراك ستظهر هنا بفاتورة جاهزة، وزر «كل الفواتير» أعلاه يطبعها دفعة واحدة.</div>
@@ -773,6 +776,7 @@ const AdminTax: React.FC = () => {
                     </div>
                 )}
             </section>
+            </AdmSection>
         </div>
     );
 };

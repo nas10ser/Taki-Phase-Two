@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ADMIN_PERMS, type PermDef } from '../../data/adminPermissions';
 import { useApp } from '../../context/AppContext';
+import { AdmEmpty } from '../../components/admin/ui';
 import { supabase } from '../../services/supabaseClient';
 import type { AdminPermission } from '../../services/authService';
 
@@ -158,11 +159,11 @@ const AdminAdmins: React.FC = () => {
             )}
 
             {!loading && staff.length === 0 && (
-                <div className="text-center py-20 bg-[var(--card-bg)] rounded-2xl border border-[var(--border-color)]">
-                    <div className="text-5xl mb-3">👥</div>
-                    <p className="font-bold text-[var(--text-primary)]">لا يوجد مسؤولون بعد</p>
-                    <p className="text-sm text-[var(--text-secondary)] mt-2">رقّ أي مستخدم من تبويب المشترين أو البائعين.</p>
-                </div>
+                <AdmEmpty
+                    icon="👑"
+                    title="أنت المسؤول الوحيد"
+                    hint="لمنح شخصٍ صلاحياتٍ جزئية: افتح «المشترون» أو «التجّار»، اختر حسابه، ثم «ترقية لمسؤول» — وحدّد ما يراه بالضبط."
+                />
             )}
 
             <div className="flex flex-col gap-4">

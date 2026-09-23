@@ -9,6 +9,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AdmEmpty } from '../../components/admin/ui';
 import { supabase } from '../../services/supabaseClient';
 import { adminMessageRepository, AdminThread, AdminMessage } from '../../repositories/adminMessageRepository';
 
@@ -135,9 +136,13 @@ const AdminMessages: React.FC = () => {
                     {loading ? (
                         Array.from({ length: 5 }).map((_, i) => <div key={i} className="taki-skeleton h-20 rounded-2xl" />)
                     ) : threads.length === 0 ? (
-                        <div className="text-center text-sm text-[var(--text-secondary)] py-10 bg-[var(--card-bg)] rounded-2xl border border-dashed border-[var(--border-color)]">
-                            لا توجد محادثات بعد.
-                        </div>
+                        <AdmEmpty
+                            icon="💬"
+                            title={search ? 'لا محادثة تطابق بحثك' : 'لا محادثات بعد'}
+                            hint={search
+                                ? 'جرّب اسم متجرٍ أو مشترٍ آخر، أو امسح البحث.'
+                                : 'تظهر هنا محادثةُ كل طلبٍ بين المشتري والتاجر — في الموقع والبوتين معاً — فور أوّل رسالة.'}
+                        />
                     ) : (
                         threads.map((t) => (
                             <button
@@ -203,7 +208,7 @@ const AdminMessages: React.FC = () => {
                                 {loadingMsgs ? (
                                     <div className="text-center text-sm text-[var(--text-secondary)] py-6">...جاري التحميل</div>
                                 ) : messages.length === 0 ? (
-                                    <div className="text-center text-sm text-[var(--text-secondary)] py-6">لا رسائل.</div>
+                                    <AdmEmpty icon="✉️" title="لا رسائل في هذه المحادثة" hint="فُتحت المحادثة ولم يكتب فيها أحد بعد." />
                                 ) : (
                                     messages.map((m) => {
                                         const isBuyer = m.senderRole === 'buyer';
