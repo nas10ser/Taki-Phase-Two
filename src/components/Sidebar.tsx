@@ -81,7 +81,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     }
     // Complaints / contact admin — any signed-in user (#3 entry point).
     if (isAuthReady && user) {
-        menuItems.push({ id: 'complaint', icon: '📣', ar: 'الشكاوى / تواصل الإدارة', en: 'Complaints / Contact admin', path: '__complaint__' });
+        menuItems.push({ id: 'complaint', icon: '📣', ar: 'أرسل شكوى للإدارة', en: 'Send a complaint', path: '__complaint__' });
+        // v14.92 — ومدخلٌ لمتابعتها: كان المستخدم يرسل شكواه ثم لا يعرف عنها
+        // شيئاً — لا حالة ولا ردّ ولا حتى تأكيد أنها وصلت.
+        menuItems.push({ id: 'my-complaints', icon: '🗂', ar: 'شكاواي', en: 'My complaints', path: '/complaints' });
     }
 
     const handleNav = (path: string) => {

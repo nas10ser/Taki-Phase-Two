@@ -41,6 +41,7 @@ import {
     UserWarning,
 } from '../../services/adminService';
 import { CopyButton } from '../../components/admin/CopyButton';
+import { ComplaintsSlaCard } from '../../components/admin/ComplaintsSlaCard';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { supabase } from '../../services/supabaseClient';
 import {
@@ -289,6 +290,23 @@ const AdminReports: React.FC = () => {
         else customAlert('❌ تعذّر تحديث الحالة');
     };
 
+    /**
+     * 🔴 v14.92 — صندوق «ملاحظة الإدارة» كان يُعرض على البطاقة **ولا يمكن
+     *    كتابته أصلاً**: الواجهة لا تمرّر الملاحظة إلى الدالّة رغم أنها
+     *    تقبلها. فلا أثر مكتوب لأي قرار — وهذا يهمّ حين تُراجَع قضيةٌ قديمة
+     *    أو يوجد أكثر من مسؤول.
+     */
+    const setInternalNote = async (id: string, current: string | null) => {
+        // `customPrompt` يأخذ رسالةً واحدة — فالملاحظة الحالية تُعرض داخلها.
+        const note = await customPrompt(
+            '📝 ملاحظة داخلية على هذه الشكوى — لا يراها صاحب الشكوى، للفريق وحده.'
+            + (current ? `\n\nالملاحظة الحالية:\n${current}` : ''));
+        if (note == null) return;
+        const r = await adminService.setComplaintStatus(id, 'reviewing', String(note));
+        if (r.success) { await customAlert('✅ حُفظت الملاحظة.'); load(); }
+        else await customAlert('❌ تعذّر حفظ الملاحظة.');
+    };
+
     const toggleSuspend = async (userId: string, suspend: boolean, name: string) => {
         if (suspend) {
             // السبب ليس تحسيناً: هو ما يظهر لصاحب الحساب في إشعاره وفي سجلّ
@@ -483,19 +501,25 @@ const AdminReports: React.FC = () => {
             </div>
         );
     } else if (view === 'complaints') {
+        // المهلة المعلنة تُضبط من هنا — موضعُ الوعد حيث يُنفَّذ، لا في درجٍ عامّ.
+        const sla = <ComplaintsSlaCard />;
         body = complaints.length === 0 ? (
-            <AdmEmpty
-                icon="🎉"
-                title={hasFilters ? 'لا شكوى تطابق هذه المرشِّحات' : 'لا توجد شكاوى حالياً'}
-                hint={hasFilters
-                    ? 'جرّب حالةً أخرى أو امسح المرشِّحات.'
-                    : 'أي شكوى يرسلها مستخدم إلى فريق تاكي تظهر هنا — لا في البريد وحده.'}
-                action={clearAction}
-            />
+            <div style={{ display: 'grid', gap: 10 }}>
+                {sla}
+                <AdmEmpty
+                    icon="🎉"
+                    title={hasFilters ? 'لا شكوى تطابق هذه المرشِّحات' : 'لا توجد شكاوى حالياً'}
+                    hint={hasFilters
+                        ? 'جرّب حالةً أخرى أو امسح المرشِّحات.'
+                        : 'أي شكوى يرسلها مستخدم إلى فريق تاكي تظهر هنا — لا في البريد وحده.'}
+                    action={clearAction}
+                />
+            </div>
         ) : (
             <div style={{ display: 'grid', gap: 10 }}>
+                {sla}
                 {complaints.map((c) => (
-                    <ComplaintCard key={c.id} complaint={c} onOpenAccount={openAccount} onStatusChange={changeComplaintStatus} />
+                    <ComplaintCard key={c.id} complaint={c} onOpenAccount={openAccount} onStatusChange={changeComplaintStatus} onReplied={load} onInternalNote={setInternalNote} />
                 ))}
                 {hasMore && (
                     <AdmButton full onClick={() => setShown((n) => n + PAGE)} disabled={loading}>
@@ -791,9 +815,13 @@ interface ComplaintCardProps {
     complaint: AdminComplaintRow;
     onOpenAccount: (id: string, role: string, name?: string) => void;
     onStatusChange: (id: string, status: string) => void;
+    /** بعد إرسال ردّ — نُعيد تحميل القائمة فتظهر العدّادات الجديدة. */
+    onReplied: () => void;
+    /** ملاحظةٌ داخلية لا يراها صاحب الشكوى. */
+    onInternalNote: (id: string, current: string | null) => void;
 }
 
-const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccount, onStatusChange }) => {
+const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccount, onStatusChange, onReplied, onInternalNote }) => {
     const tone = STATUS_META[c.status]?.tone ?? 'neutral';
     return (
         <div style={rowCard(tone)}>
@@ -827,20 +855,129 @@ const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccou
                 <p style={bodyText}>{c.message}</p>
             </div>
 
+            {/* v14.92 — مرفقات المشتكي: سياسةُ الاسترداد تطلب منه لقطة كشف
+                البنك ورقم العملية، وكان النموذج لا يقبل ملفاً — والإدارة لا
+                ترى شيئاً. المستودع خاصّ، والرابط موقّت. */}
+            {c.attachments?.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                    {c.attachments.map((p) => <AttachmentChip key={p} path={p} />)}
+                </div>
+            )}
+
             {c.admin_note && <AdminNote text={c.admin_note} />}
 
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                <Tooltip text="ضع الشكوى قيد المراجعة">
+            <ComplaintReplyBox complaint={c} onDone={onReplied} />
+
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 10 }}>
+                <Tooltip text="ضع الشكوى قيد المراجعة (بلا ردّ)">
                     <ToneButton tone="bad" onClick={() => onStatusChange(c.id, 'reviewing')}>🔴 قيد المراجعة</ToneButton>
                 </Tooltip>
-                <Tooltip text="أغلق الشكوى كمحلولة">
+                <Tooltip text="أغلق الشكوى كمحلولة (بلا ردّ — يُفضَّل أن تردّ أوّلاً)">
                     <ToneButton tone="ok" onClick={() => onStatusChange(c.id, 'resolved')}>✅ تم الحل</ToneButton>
                 </Tooltip>
                 <Tooltip text="ارفض الشكوى">
                     <ToneButton tone="neutral" onClick={() => onStatusChange(c.id, 'dismissed')}>⛔ رفض</ToneButton>
                 </Tooltip>
+                <Tooltip text="ملاحظة داخلية لا يراها صاحب الشكوى — تُحفظ في سجلّها">
+                    <ToneButton tone="neutral" onClick={() => onInternalNote(c.id, c.admin_note)}>📝 ملاحظة داخلية</ToneButton>
+                </Tooltip>
             </div>
         </div>
+    );
+};
+
+/**
+ * ردُّ الإدارة — الإصلاح الجوهريّ (v14.92).
+ * 🔴 قبله: تُغيّر الإدارة الحالة إلى «تم الحل» و**لا يصل صاحب الشكوى شيء**.
+ *    الآن كل ردٍّ يُنشئ إشعاراً له، ويظهر في شاشة «شكاواي» عنده.
+ */
+const ComplaintReplyBox: React.FC<{ complaint: AdminComplaintRow; onDone: () => void }> = ({ complaint: c, onDone }) => {
+    const { customAlert } = useApp();
+    const [open, setOpen] = useState(false);
+    const [body, setBody] = useState('');
+    const [closeIt, setCloseIt] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    const send = async () => {
+        const txt = body.trim();
+        if (!txt || busy) return;
+        setBusy(true);
+        const r = await adminService.replyComplaint(c.id, txt, closeIt ? 'resolved' : undefined);
+        setBusy(false);
+        if (!r.success) { await customAlert('❌ تعذّر إرسال الردّ: ' + (r.error || '')); return; }
+        setBody(''); setOpen(false); setCloseIt(false);
+        await customAlert('✅ وصل ردُّك صاحب الشكوى — إشعاراً وفي شاشة «شكاواي» عنده.');
+        onDone();
+    };
+
+    if (!open) {
+        return (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <ToneButton tone="ok" onClick={() => setOpen(true)}>💬 ردَّ على المشتكي</ToneButton>
+                {c.reply_count > 0 && (
+                    <AdmPill tone={c.last_reply_role === 'user' ? 'warn' : 'neutral'}>
+                        {c.last_reply_role === 'user'
+                            ? `${c.reply_count} ردّاً · ينتظر ردّك`
+                            : `${c.reply_count} ردّاً · آخرها منك`}
+                    </AdmPill>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ ...panelStyle, marginBottom: 10 }}>
+            <label style={{ display: 'block', fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-2)', marginBottom: 6 }}>
+                ردٌّ يصل صاحب الشكوى (إشعاراً وفي شاشة «شكاواي» عنده)
+            </label>
+            <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={3}
+                placeholder="اكتب ردّاً واضحاً — هذا ما سيقرؤه صاحب الشكوى."
+                className="adm-focusable"
+                style={{
+                    width: '100%', padding: 10, borderRadius: 'var(--adm-r-sm)', resize: 'vertical',
+                    border: '1px solid var(--adm-border)', background: 'var(--adm-surface)',
+                    color: 'var(--adm-fg)', fontSize: '.84rem', fontFamily: 'inherit', outline: 'none',
+                }}
+            />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, fontSize: '.78rem', fontWeight: 700, color: 'var(--adm-fg-2)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={closeIt} onChange={(e) => setCloseIt(e.target.checked)} />
+                أغلق الشكوى بعد هذا الردّ («تم الحل»)
+            </label>
+            <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+                <ToneButton tone="ok" onClick={send}>{busy ? '⏳ جارٍ الإرسال…' : '📨 أرسل الردّ'}</ToneButton>
+                <ToneButton tone="neutral" onClick={() => { setOpen(false); setBody(''); }}>إلغاء</ToneButton>
+            </div>
+        </div>
+    );
+};
+
+/** مرفقٌ في مستودعٍ خاص: لا عنوان دائم، ورابطٌ موقّت يُصدره الخادم عند الطلب. */
+const AttachmentChip: React.FC<{ path: string }> = ({ path }) => {
+    const [busy, setBusy] = useState(false);
+    const isPdf = /\.pdf$/i.test(path);
+    return (
+        <button
+            type="button"
+            className="adm-focusable"
+            disabled={busy}
+            onClick={async () => {
+                setBusy(true);
+                const url = await adminService.complaintAttachmentUrl(path);
+                setBusy(false);
+                if (url) window.open(url, '_blank', 'noopener');
+            }}
+            style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                padding: '5px 11px', borderRadius: 999, fontSize: '.74rem', fontWeight: 800,
+                border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)', color: 'var(--adm-fg)',
+            }}
+        >
+            <span aria-hidden="true">{isPdf ? '📄' : '🖼️'}</span>
+            {busy ? 'جارٍ الفتح…' : (isPdf ? 'ملف PDF' : 'صورة مرفقة')}
+        </button>
     );
 };
 

@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { flushSync } from 'react-dom';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation, findNearestCity } from '../data/mock';
 import { readRememberedFix, rememberFix, forgetFix, isFreshFix } from '../utils/geoMemory';
-import { SeasonCampaign, parseSeasonCampaign } from '../data/seasons';
-import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor, SponsorLayout, DEFAULT_SPONSOR_LAYOUT, parseSponsorLayout } from '../utils/helpers';
+import { PlatformSettings, PLATFORM_SETTING_KEYS, defaultPlatformSettings, applyPlatformSetting, applySeasonSkin } from './platformSettings';
+import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
 import { storageService } from '../services/storageService';
 import { dealRepository, DEALS_PAGE_SIZE, type DealCursor } from '../repositories/dealRepository';
 import { userRepository, mapUserRowToProfile } from '../repositories/userRepository';
@@ -192,7 +192,7 @@ interface AppContextType {
     incrementDealClick: (dealId: string) => Promise<void>;
     /** Platform-wide feature flags driven by `platform_settings`. Each flag
      *  is admin-controlled; updates propagate via realtime. */
-    platformSettings: { oauthGoogleEnabled: boolean; oauthAppleEnabled: boolean; telegramBotEnabled: boolean; whatsappBotEnabled: boolean; whatsappBotNumber: string; seasonalTheme: string; seasonCampaign: import('../data/seasons').SeasonCampaign | null; sponsorLayout: SponsorLayout; bannerSeconds: number; bookingHolds: { pickupHours: number; deliveryHours: number }; merchantVatRate: number };
+    platformSettings: PlatformSettings;
     /** v12.48 — true بعد وصول platform_settings من الخادم؛ البوابات المعتمدة على النوافذ الزمنية تنتظرها قبل أي redirect */
     platformSettingsReady: boolean;
     /** Seller's saved branches (store_branches table). Drives the
@@ -601,24 +601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // conservative (off) so the UI never accidentally exposes a section before
     // the admin opts in. Realtime listener below keeps every client in sync
     // the instant the admin flips a toggle.
-    const [platformSettings, setPlatformSettings] = useState<{
-        oauthGoogleEnabled: boolean;
-        oauthAppleEnabled: boolean;
-        telegramBotEnabled: boolean;
-        whatsappBotEnabled: boolean;
-        whatsappBotNumber: string;
-        seasonalTheme: string;
-        seasonCampaign: SeasonCampaign | null;
-        sponsorLayout: SponsorLayout;
-        bannerSeconds: number;
-        /** v14.10 — مهلة الحجز بالساعات، مصدرها الوحيد صفّ `booking_holds`.
-         *  الافتراضات هنا للعرض حتى يصل الصفّ، والقاعدة هي الحَكَم دائماً. */
-        bookingHolds: { pickupHours: number; deliveryHours: number };
-        /** v14.17 — نسبة ضريبة **طلبات التجار** من مصدرها الوحيد
-         *  (`platform_settings.merchant_vat`). لا تُثبَّت في الكود: كانت مثبّتة
-         *  في الموقع ومقروءة من القاعدة في البوتين، فاختلف الرقمان. */
-        merchantVatRate: number;
-    }>(() => {
+    const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(() => {
         // v12.44 — «هوية المواسم»: apply the cached season skin during the very
         // first render (before paint) so returning visitors never see the base
         // identity flash in before the themed colors arrive from the server.
@@ -627,7 +610,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             cachedSeason = localStorage.getItem('TAKI_SEASON') || '';
             if (cachedSeason) document.documentElement.setAttribute('data-season', cachedSeason);
         } catch { /* localStorage may be blocked (private mode) */ }
-        return { oauthGoogleEnabled: false, oauthAppleEnabled: false, telegramBotEnabled: true, whatsappBotEnabled: false, whatsappBotNumber: '', seasonalTheme: cachedSeason, seasonCampaign: null, sponsorLayout: DEFAULT_SPONSOR_LAYOUT, bannerSeconds: 2, bookingHolds: { pickupHours: 2, deliveryHours: 6 }, merchantVatRate: 15 };
+        return defaultPlatformSettings(cachedSeason);
     });
     // v12.48 — تمنع SeasonalGate من redirect مبكر قبل وصول نوافذ الحملة
     const [platformSettingsReady, setPlatformSettingsReady] = useState(false);
@@ -651,70 +634,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         let cancelled = false;
         const apply = (key: string, value: any) => {
             if (cancelled) return;
-            if (key === 'oauth_google_enabled') {
-                setPlatformSettings(prev => ({ ...prev, oauthGoogleEnabled: value === true }));
-            } else if (key === 'oauth_apple_enabled') {
-                setPlatformSettings(prev => ({ ...prev, oauthAppleEnabled: value === true }));
-            } else if (key === 'telegram_bot_enabled') {
-                setPlatformSettings(prev => ({ ...prev, telegramBotEnabled: value === true }));
-            } else if (key === 'whatsapp_bot_enabled') {
-                setPlatformSettings(prev => ({ ...prev, whatsappBotEnabled: value === true }));
-            } else if (key === 'whatsapp_bot_number') {
-                // The bot's public WhatsApp Business number (digits only, e.g. "9665…").
-                // Drives the wa.me deep link; empty ⇒ the link button stays hidden.
-                setPlatformSettings(prev => ({ ...prev, whatsappBotNumber: typeof value === 'string' ? value.replace(/\D/g, '') : '' }));
-            } else if (key === 'seasonal_theme') {
-                // v12.44 — «هوية المواسم»: the owner picks a season in AdminTools and
-                // every open client re-skins live. The skin itself is pure CSS keyed
-                // off <html data-season="…">; cached locally for a flash-free reload.
-                const seasonId = typeof value === 'string' ? value : '';
-                animateThemeSwap(); // v12.51 — تبدّل الموسم realtime ينساب بنعومة
-                setPlatformSettings(prev => ({ ...prev, seasonalTheme: seasonId }));
-                try {
-                    if (seasonId) {
-                        document.documentElement.setAttribute('data-season', seasonId);
-                        localStorage.setItem('TAKI_SEASON', seasonId);
-                    } else {
-                        document.documentElement.removeAttribute('data-season');
-                        localStorage.removeItem('TAKI_SEASON');
-                    }
-                } catch { /* ignore */ }
-            } else if (key === 'season_campaign') {
-                // v12.48 — «حملة الموسم»: نوافذ التجار/العامة لصفحة عروض الموسم.
-                setPlatformSettings(prev => ({ ...prev, seasonCampaign: parseSeasonCampaign(value) }));
-            } else if (key === 'sponsor_layout') {
-                // v12.50 — «تحكم ترتيب الرعاة»: نمط ظهور الإعلانات في القوائم.
-                setPlatformSettings(prev => ({ ...prev, sponsorLayout: parseSponsorLayout(value) }));
-            } else if (key === 'booking_holds') {
-                // v14.10 — مهلة الحجز: استلام · توصيل. الرقم الوحيد في المنصّة
-                // كلها، تقرؤه الواجهة والقاعدة والبوتان من هنا، ويسري تغييره
-                // لحظياً عبر قناة platform-settings-sync بلا نشر.
-                const v: any = value || {};
-                const num = (x: any, d: number) => {
-                    const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
-                    return Number.isFinite(n) && n > 0 && n <= 8760 ? n : d;
-                };
-                setPlatformSettings(prev => ({ ...prev, bookingHolds: {
-                    pickupHours: num(v.pickup_hours, 2),
-                    deliveryHours: num(v.delivery_hours, 6),
-                } }));
-            } else if (key === 'merchant_vat') {
-                // v14.17 — نسبة ضريبة طلبات التجار. تُستعمل في العرض فقط (حاسبة
-                // التاجر)؛ الفاتورة نفسها تحمل نسبتها مجمّدة من لحظة البيع.
-                const r = Number((value as any)?.rate);
-                setPlatformSettings(prev => ({ ...prev, merchantVatRate: Number.isFinite(r) && r >= 0 && r <= 100 ? r : 15 }));
-            } else if (key === 'banner_autoplay_seconds') {
-                // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
-                const n = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
-                setPlatformSettings(prev => ({ ...prev, bannerSeconds: Number.isFinite(n) && n >= 1 && n <= 120 ? n : 2 }));
-            }
+            const patch = applyPlatformSetting(key, value);
+            if (!patch) return;
+            // أثر الموسم على DOM يبقى هنا: تبديلُه realtime ينساب بنعومة.
+            if (key === 'seasonal_theme') { animateThemeSwap(); applySeasonSkin(value); }
+            setPlatformSettings(patch);
         };
         (async () => {
             try {
                 const { data } = await supabase
                     .from('platform_settings')
                     .select('key, value')
-                    .in('key', ['oauth_google_enabled', 'oauth_apple_enabled', 'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number', 'seasonal_theme', 'season_campaign', 'sponsor_layout', 'banner_autoplay_seconds', 'booking_holds', 'merchant_vat']);
+                    .in('key', PLATFORM_SETTING_KEYS);
                 (data || []).forEach((r: any) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);

@@ -132,6 +132,11 @@ export interface AdminComplaintRow {
     user_type: string | null;
     target_id: string | null;
     target_name: string | null;
+    /** v14.92 — مرفقات المشتكي (مسارات في مستودع `complaints` الخاص). */
+    attachments: string[];
+    reply_count: number;
+    /** 'user' = آخر ردٍّ من المشتكي ⇒ ينتظر ردّك. */
+    last_reply_role: 'admin' | 'user' | null;
 }
 
 export interface WarnedUser {
@@ -304,6 +309,31 @@ export const adminService = {
             return { success: false, error: error.message };
         }
         return { success: !!data?.success };
+    },
+
+    /**
+     * ردُّ الإدارة على شكوى — **يصل صاحبها إشعاراً** (v14.92).
+     * 🔴 قبله: تغيّر الإدارة الحالة إلى «تم الحل» ولا يعلم صاحب الشكوى شيئاً
+     *    بأي صورة. صندوقٌ مغلق بالمعنى الحرفي.
+     */
+    async replyComplaint(id: string, body: string, status?: string): Promise<{ success: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_complaint_reply', {
+            p_id: id, p_body: body, p_status: status ?? null,
+        });
+        if (error) {
+            console.error('[adminService.replyComplaint]', error);
+            return { success: false, error: error.message };
+        }
+        return { success: !!(data as any)?.ok };
+    },
+
+    /** رابطٌ موقّت لمرفق شكوى — المستودع خاصّ فلا عنوان دائم له. */
+    async complaintAttachmentUrl(path: string): Promise<string | null> {
+        try {
+            const { data, error } = await supabase.storage.from('complaints').createSignedUrl(path, 3600);
+            if (error || !data?.signedUrl) return null;
+            return data.signedUrl;
+        } catch { return null; }
     },
 
     async applySubscription(p: ApplySubscriptionParams): Promise<{ success: boolean; error?: string }> {

@@ -43,6 +43,7 @@ const AdminDashboard  = lazy(() => import('./pages/AdminDashboard'));
 const Subscription    = lazy(() => import('./pages/Subscription'));
 const Contests        = lazy(() => import('./pages/Contests'));
 const Favorites       = lazy(() => import('./pages/Favorites'));
+const MyComplaints    = lazy(() => import('./pages/MyComplaints'));
 const Terms           = lazy(() => import('./pages/legal/Terms'));
 const Privacy         = lazy(() => import('./pages/legal/Privacy'));
 const Refund          = lazy(() => import('./pages/legal/Refund'));
@@ -391,6 +392,8 @@ const App = () => {
                         <Route path="/subscription" component={Subscription} />
                         <Route path="/contests" component={Contests} />
                         <Route path="/favorites" component={Favorites} />
+                        {/* v14.92 — «شكاواي»: لم تكن هناك شاشةٌ تعرض للمستخدم شكاواه ولا ردودها. */}
+                        <Route path="/complaints" component={MyComplaints} />
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />
                         <Route path="/bookings" component={Bookings} />

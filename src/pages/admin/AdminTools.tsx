@@ -37,6 +37,7 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { writePlatformSetting } from '../../services/platformSettingWrite';
 import { promoRepository } from '../../repositories/promoRepository';
 import { storageService } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
@@ -87,21 +88,8 @@ const AUDIENCE_LABELS: Record<string, string> = {
     all: '👥 الجميع', buyer: '🛒 المشترون', seller: '🏪 البائعون',
 };
 
-/**
- * كتابةُ إعدادٍ **تُثبت نفسها**.
- * 🪤 `upsert` لأن الصفّ قد لا يكون موجوداً (هذا بالضبط ما كان يُسقط مفتاح
- *    بوابة الدفع)، و`.select()` لأن صفر صفوفٍ بلا خطأ هو شكل الرفض الصامت
- *    الذي تعيده RLS. تُعيد رسالة خطأ، أو `null` عند نجاحٍ مُثبَت.
- */
-async function writeSetting(key: string, value: unknown, description: string): Promise<string | null> {
-    const { data, error } = await supabase
-        .from('platform_settings')
-        .upsert({ key, value, description, updated_at: new Date().toISOString() })
-        .select('key');
-    if (error) return error.message;
-    if (!data || data.length === 0) return 'لم تُحفَظ أي قيمة (صفر صفوف) — قد تمنعك صلاحياتك. حدّث الصفحة وحاول مجدداً.';
-    return null;
-}
+/** مصدرٌ واحد لكتابة الإعدادات (يُثبت الحفظ بصفٍّ مُعاد). */
+const writeSetting = writePlatformSetting;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // مفتاحٌ واحد لكل التبديلات
