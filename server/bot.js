@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.75.0';
+const BOT_VERSION              = '14.93.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -346,6 +346,7 @@ async function refreshSession(ctx) {
 // ── i18n: per-user language (ar default, en additive). Missing key/lang → Arabic,
 // so the Arabic experience is byte-for-byte unchanged («بدون تغيير أي شي»). v11.83
 const I18N = require('./lib/i18n');
+const CHATV = require('./lib/chatView');
 const tr = I18N.tr;   // request-scoped translate — language resolved from ALS (set in middleware)
 
 /**
@@ -2493,40 +2494,23 @@ async function renderChat(ctx, barcode) {
         const e=r?.error; const msg = e==='not_authorized' ? tr('b1272_not_authorized') : e==='not_found' ? tr('b1272_booking_not_found') : e==='not_linked' ? tr('b1272_login_first') : tr('b1272_chat_open_failed');
         return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     }
-    let m = `💬 *${tr('w1273_booking_chat')}* \`${md(r.barcode)}\`\n🛍 ${md(r.deal_name)} • ${statusLabel(r.status)}\n👤 ${tr('w1273_with')}: *${md(r.other_name)}*\n${DIV}\n\n`;
     const msgs = r.messages || [];
-    if (!msgs.length) m += tr('w1275_no_messages_yet') + '\n';
-    else for (const x of msgs) {
-        const who = x.mine ? tr('q1279_you') : `👤 ${md(r.other_name)}`;
-        m += `${who} _\\(${md(fmtTime(x.at))}\\)_\n${md(x.body)}\n\n`;
-    }
-    m += `${DIV}\n✍️ ${tr('w1280_your_messages')}: *${r.my_count}/3*`;
+    const cap = Number(r.cap) || 0;   // v14.93 — من القاعدة؛ 0 = بلا حدّ
+    const m = CHATV.tgBody(r, cap, { tr, md, fmtTime, statusLabel, div: DIV, keys: {
+        title: 'w1273_booking_chat', with: 'w1273_with', empty: 'w1275_no_messages_yet',
+        you: 'q1279_you', yourMessages: 'w1280_your_messages',
+        finished: 'w_chat_finished', capReached: 'w1284_message_limit_reached' } });
     const btns = [];
-    // حجز منتهٍ (مكتمل/ملغي/منتهي المهلة) = محادثة للقراءة فقط — يطابق حارس
-    // bot_send_booking_message في قاعدة البيانات (v12.22).
-    const finished = ['cancelled','completed','expired'].includes(r.status);
-    const canSend = !finished && r.my_count < 3;
-    if (canSend) btns.push([Markup.button.callback(tr('b1285_write_message'), `chatmsg:${r.barcode}`)]);
-    else if (finished) m += `\n${tr('w_chat_finished')}`;
-    else m += `\n${tr('w1284_message_limit_reached')}`;
+    if (CHATV.canSend(r.status, r.my_count, cap)) btns.push([Markup.button.callback(tr('b1285_write_message'), `chatmsg:${r.barcode}`)]);
     // Task 1 — «back» returns to the booking itself; from there «back» → the list.
     btns.push([Markup.button.callback(tr('b1288_refresh'), `chat:${r.barcode}`), Markup.button.callback(tr('b1288_call'), `call:b:${r.barcode}`)]);
     btns.push([Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${r.barcode}`)]);
     await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
 
-    // v14.29 — الصور تُرسَل بعد النصّ لا داخله: تيليجرام لا يعرض صورة داخل
-    // رسالة نصّية، ورابط المستودع الخاصّ لا يُفتح بلا توقيع. الرابط الموقّع
-    // عمره ١٥ دقيقة، وتيليجرام يُنزّل الصورة إلى خوادمه فورَ الإرسال — فبقاؤها
-    // معروضة لا يعتمد على بقاء الرابط.
-    for (const x of msgs) {
-        if (!x.attachment) continue;
-        const sig = await chatAttach('sign', { uid: r.uid, barcode: r.barcode, path: x.attachment });
-        if (!sig?.url) continue;
-        const who = x.mine ? tr('q1279_you') : r.other_name;
-        try {
-            await ctx.replyWithPhoto(sig.url, { caption: `📎 ${who} — ${fmtTime(x.at)}` });
-        } catch (e) { console.warn('chat photo:', e.message); }
-    }
+    await CHATV.sendAttachments(msgs, r, {
+        sign: path => chatAttach('sign', { uid: r.uid, barcode: r.barcode, path }),
+        send: (url, caption) => ctx.replyWithPhoto(url, { caption }),
+        caption: x => `📎 ${x.mine ? tr('q1279_you') : r.other_name} — ${fmtTime(x.at)}` });
 }
 bot.action(/^chatmsg:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
@@ -3727,7 +3711,10 @@ bot.on('text', async ctx => {
         if (!bc) return ctx.reply(tr('b2251_session_ended'), { parse_mode:'MarkdownV2' });
         const r = await rpc('bot_send_booking_message', { p_telegram_id: tgId(ctx), p_barcode: bc, p_body: text });
         if (!r?.success) {
-            const e=r?.error; const msg = e==='cap_reached' ? tr('b2254_chat_cap_reached') : e==='cancelled' ? tr('b2254_chat_cancelled') : (e==='completed'||e==='expired') ? tr('b2254_chat_finished') : e==='bad_length' ? tr('b2254_chat_bad_length') : tr('b2254_chat_send_failed');
+            const [k, args] = CHATV.errorKey(r?.error, r?.cap, I18N.lang(), {
+                cap: 'b2254_chat_cap_reached', finished: 'b2254_chat_finished',
+                badBody: 'b2254_chat_bad_length', failed: 'b2254_chat_send_failed' });
+            const msg = tr(k, ...args);
             await ctx.reply(msg, { parse_mode:'MarkdownV2' });
         }
         return renderChat(ctx, bc);

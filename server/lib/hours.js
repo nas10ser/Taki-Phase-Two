@@ -3,19 +3,34 @@
  * البيانات (store_is_open / open_status)؛ هنا فقط التنسيق + أيام الأسبوع. v11.77
  * كل النصوص عربية بدون رموز MarkdownV2 محجوزة (تُهرَّب عند الإدراج عبر md()).
  */
-const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
+const { tr, lang } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
+const { arCount } = require('../../shared/arPlural');
 const DAY_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const CLOSING_SOON_MIN = 60;   // «يغلق قريباً» = خلال ساعة
 
 const toMin = hhmm => { const [h, m] = String(hhmm).split(':'); return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0); };
 
-// مدّة بشرية: "ساعة و20 دقيقة" / "40 دقيقة" / "ساعتين".
+/**
+ * مدّة بشرية: «ساعتين و٢٠ دقيقة» · «٤٠ دقيقة» · «11 ساعة».
+ *
+ * 🔴 v14.93 — كانت العربية تُبنى من سلاسل i18n، وفيها عيبان يراهما المستخدم:
+ *    `hrs_hours_many` = «{0} ساعات» لكل h ≥ ٣ ⇒ «يغلق بعد 24 ساعات»،
+ *    و`hrs_h_and_m` = «{0} و{1} دقيقة» لكل m ⇒ «و3 دقيقة».
+ *    جمعُ القلّة لا يتجاوز العشرة، وما دونها لا يُفرد. العربية تُصاغ الآن من
+ *    `shared/arPlural.js` — نفس قاعدة الموقع والقاعدة، ويحرسها `npm test`.
+ *    والإنجليزية بسيطة فتُبنى هنا مباشرةً بلا سلاسل تُوهم أنها مترجَمة.
+ */
 function fmtMins(min) {
     if (min == null) return '';
     const h = Math.floor(min / 60), m = min % 60;
-    if (h <= 0) return tr('hrs_minutes', m);
-    const hh = h === 1 ? tr('hrs_hour_one') : h === 2 ? tr('hrs_hour_two') : tr('hrs_hours_many', h);
-    return m ? tr('hrs_h_and_m', hh, m) : hh;
+    if (lang() === 'en') {
+        const hh = h === 1 ? '1 hr' : `${h} hrs`;
+        if (h <= 0) return `${m} min`;
+        return m ? `${hh} ${m} min` : hh;
+    }
+    if (h <= 0) return arCount(m, 'minutes');
+    const hh = arCount(h, 'hours', true);
+    return m ? `${hh} و${arCount(m, 'minutes')}` : hh;
 }
 // ساعة 12 بصيغة "7:00 ص".
 function fmtClock(hhmm) {

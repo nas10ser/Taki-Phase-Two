@@ -21,6 +21,7 @@ const G      = require('../lib/geo');
 const F      = require('../lib/format');
 const HRS    = require('../lib/hours');
 const I18N   = require('../lib/i18n');
+const CHATV = require('../lib/chatView');
 const GEO_EN = require('../lib/geoNames.json');
 const { getSession } = require('../lib/session');
 // v14.06 — قرار عرض التوصيل: نفس ملف تيليجرام حرفاً بحرف (البوتان توأمان)
@@ -1055,41 +1056,40 @@ function create(deps) {
         return buyerBookingsMenu(from, s);
     }
 
-    // ── محادثة الحجز (٣+٣) — مشترك مشتري/تاجر ──
+    // ── محادثة الحجز — مشترك مشتري/تاجر. الحدّ من القاعدة (v14.93). ──
     async function showChat(from, s, bc) {
         const r = await rpc('bot_booking_chat', aid(from, { p_barcode: bc }));
         if (!r || !r.success) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: ownsStore(s) ? 'wa:s:orders' : 'wa:bookings', title: tr('wa_row_menu') }] });
-        let body = tr('wa_chat_head', bc, r.deal_name, r.other_name, r.my_count, r.other_count);
-        const msgs = Array.isArray(r.messages) ? r.messages : [];
-        if (!msgs.length) body += tr('wa_chat_empty');
-        else body += '\n\n' + msgs.slice(-8).map(m => m.mine ? tr('wa_chat_me', m.body) : tr('wa_chat_them', m.body)).join('\n');
+        const cap = Number(r.cap) || 0;   // v14.93 — من القاعدة؛ 0 = بلا حدّ
+        s.temp.chatCap = cap;             // كي تعرفه خطوةُ الكتابة بلا نداءٍ ثانٍ
+        const body = CHATV.waBody(r, cap, bc, tr, { head: 'wa_chat_head', headNoCap: 'wa_chat_head_nocap',
+            me: 'wa_chat_me', them: 'wa_chat_them', empty: 'wa_chat_empty', finished: 'wa_chat_finished' });
         const btns = [];
-        // حجز منتهٍ = محادثة للقراءة فقط — يطابق حارس القاعدة (v12.22).
-        const finished = ['cancelled', 'completed', 'expired'].includes(r.status);
-        if (finished) body += '\n\n' + tr('wa_chat_finished');
-        if (r.my_count < 3 && !finished) btns.push({ id: `wa:cmsg:${bc}`, title: tr('wa_chat_send') });
-        btns.push({ id: ownsStore(s) ? `wa:so1:${bc}` : `wa:bk1:${bc}`, title: tr('wa_back') });
-        btns.push(menuBtn());
+        if (CHATV.canSend(r.status, r.my_count, cap)) btns.push({ id: `wa:cmsg:${bc}`, title: tr('wa_chat_send') });
+        btns.push({ id: ownsStore(s) ? `wa:so1:${bc}` : `wa:bk1:${bc}`, title: tr('wa_back') }, menuBtn());
         await sendButtons(from, { body, buttons: btns.slice(0, 3) });
-
-        // v14.29 — الصور بعد البطاقة: واتساب لا يعرض صورة داخل رسالة أزرار،
-        // والمستودع خاصّ فلا يُفتح رابطه بلا توقيع. نكتفي بآخر ثلاث صور كي لا
-        // تُغرق محادثةً بأكملها عند كل فتح.
-        const withAtt = msgs.filter(m => m.attachment).slice(-3);
-        for (const m of withAtt) {
-            const sig = await chatAttach('sign', { uid: r.uid, barcode: r.barcode, path: m.attachment });
-            if (!sig || !sig.url) continue;
-            try { await sendImage(from, sig.url, '📎 ' + (m.mine ? tr('wa_chat_me', '') : r.other_name)); }
-            catch (e) { console.warn('wa chat photo:', e.message); }
-        }
+        await CHATV.sendAttachments(r.messages, r, { limit: 3,
+            sign: path => chatAttach('sign', { uid: r.uid, barcode: r.barcode, path }),
+            send: (url, cap2) => sendImage(from, url, cap2),
+            caption: m => '📎 ' + (m.mine ? tr('wa_chat_me', '') : r.other_name) });
     }
-    async function promptChat(from, s, bc) { s.temp.chatBarcode = bc; s.step = 'await_chat_msg'; await sendText(from, tr('wa_chat_prompt') + '\n' + tr('wa_chat_or_photo')); }
+    async function promptChat(from, s, bc, cap = 0) {
+        s.temp.chatBarcode = bc; s.step = 'await_chat_msg';
+        const [pk, pa] = CHATV.promptArgs(cap, I18N.lang(), { prompt: 'wa_chat_prompt', promptNoCap: 'wa_chat_prompt_nocap' });
+        await sendText(from, tr(pk, ...pa) + '\n' + tr('wa_chat_or_photo'));
+    }
     async function sendChat(from, s, body) {
         const bc = s.temp.chatBarcode; s.step = 'idle';
         const r = await rpc('bot_send_booking_message', aid(from, { p_barcode: bc, p_body: body }));
-        if (r && r.success) { await sendText(from, tr('wa_chat_sent', r.my_count)); return showChat(from, s, bc); }
+        if (r && r.success) {
+            const [sk, sa] = CHATV.sentArgs(r, { sent: 'wa_chat_sent', sentNoCap: 'wa_chat_sent_nocap' });
+            await sendText(from, tr(sk, ...sa)); return showChat(from, s, bc);
+        }
         const e = r && r.error;
-        await sendText(from, e === 'cap_reached' ? tr('wa_chat_cap') : e === 'cancelled' ? tr('wa_chat_cancelled') : (e === 'completed' || e === 'expired') ? tr('wa_chat_finished') : tr('wa_chat_fail'));
+        const [k, args] = CHATV.errorKey(e, r?.cap, I18N.lang(), {
+            cap: 'wa_chat_cap', finished: 'wa_chat_finished',
+            badBody: 'wa_chat_bad_body', failed: 'wa_chat_fail' });
+        await sendText(from, tr(k, ...args));
         return showChat(from, s, bc);
     }
 
@@ -2479,7 +2479,7 @@ function create(deps) {
         if (id.startsWith('wa:rfq:')) return askRefund(from, s, id.slice(7));
         if (id.startsWith('wa:rfgo:')) return doRefundRequest(from, s, id.slice(8));
         if (id.startsWith('wa:chat:')) return showChat(from, s, id.slice(8));
-        if (id.startsWith('wa:cmsg:')) return promptChat(from, s, id.slice(8));
+        if (id.startsWith('wa:cmsg:')) return promptChat(from, s, id.slice(8), Number(s.temp?.chatCap) || 0);
         if (id.startsWith('wa:edit:')) return editBooking(from, s, id.slice(8));
         if (id.startsWith('wa:eqty:')) return promptEditQty(from, s, id.slice(8));
         if (id.startsWith('wa:enote:')) return promptEditNote(from, s, id.slice(9));

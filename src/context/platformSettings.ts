@@ -33,6 +33,11 @@ export interface PlatformSettings {
      *  (`platform_settings.merchant_vat`). لا تُثبَّت في الكود: كانت مثبّتة
      *  في الموقع ومقروءة من القاعدة في البوتين، فاختلف الرقمان. */
     merchantVatRate: number;
+    /** v14.93 — حدود محادثة الحجز. `perBooking = 0` تعني **بلا حدّ** — وهو
+     *  الافتراض منذ v14.93: ثلاث رسائل كانت تُقفل المحادثة قبل أن يتّفق
+     *  الطرفان على عنوان التوصيل أصلاً. و`perHour` حارس إغراق لكل مرسِل،
+     *  وهو الجدار الفعليّ بعد رفع الحدّ الأوّل. */
+    chatLimits: { perBooking: number; perHour: number };
     /** v14.92 — المهلة المعلنة للردّ على الشكاوى. تُقال للمشتري عند الإرسال
      *  وفي «شكاواي»، وتُضبط من الإعدادات بلا نشر — فلا يُكتب رقمُ ساعاتٍ
      *  نصّاً في أي مكان (أوّل ضبطٍ يجعله كذباً — درس v14.12). */
@@ -45,7 +50,7 @@ export const PLATFORM_SETTING_KEYS = [
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
-    'complaints_sla_hours',
+    'complaints_sla_hours', 'chat_limits',
 ];
 
 /**
@@ -74,6 +79,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     bookingHolds: { pickupHours: 2, deliveryHours: 6 },
     merchantVatRate: 15,
     complaintsSlaHours: 24,
+    chatLimits: { perBooking: 0, perHour: 120 },
 });
 
 /**
@@ -120,6 +126,13 @@ export const applyPlatformSetting = (
         case 'complaints_sla_hours':
             // v14.92 — كم ساعةً نَعِد بالردّ خلالها على الشكوى.
             return prev => ({ ...prev, complaintsSlaHours: num(value, 24, 1, 720) });
+        case 'chat_limits':
+            // v14.93 — حدود المحادثة. 0 في per_booking = بلا حدّ، فلا يُقصّ
+            // بـGREATEST إلى 1؛ والقاعدة هي الحَكَم دائماً وهذا للعرض فقط.
+            return prev => ({ ...prev, chatLimits: {
+                perBooking: num((value || {}).per_booking, 0, 0, 1000),
+                perHour: num((value || {}).per_hour, 120, 1, 10000),
+            } });
         case 'banner_autoplay_seconds':
             // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
             return prev => ({ ...prev, bannerSeconds: num(value, 2, 1, 120) });

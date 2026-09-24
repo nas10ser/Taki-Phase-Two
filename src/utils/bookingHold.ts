@@ -11,16 +11,15 @@
  *    من اللوحة كان سيجعل الوعد المكتوب مخالفاً لما تفرضه القاعدة فعلاً.
  */
 
-/** جمع الساعات بالعربية: ١ ⇒ ساعة واحدة · ٢ ⇒ ساعتان · ٣‑١٠ ⇒ ساعات · ما فوق ⇒ ساعة. */
-const arHours = (n: number): string =>
-    n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتان' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
+// v14.93 — محرّك الجمع العربي خرج إلى `arPlural.ts` ليستعمله هذا الملفّ
+// والرسائلُ معاً. 🪤 وصُحِّح عيبٌ صامت كان هنا: `n <= 10` تشمل **الكسور**
+// وما دون الواحد، فـ«٠٫٥ ساعات» و«٢٫٥ ساعات» كانتا تُكتبان جمعَ قلّة —
+// ومهلة الحجز تقبل ربع ساعة فعلاً. `arCount` تعامل الكسر معاملة المفرد.
+import { arCount, HOURS, enCount } from './arPlural';
 
-/** صيغة المجرور العربية («خلال ساعتين» لا «خلال ساعتان»). */
-const arHoursGen = (n: number): string =>
-    n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتين' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
-
-const enHours = (n: number): string =>
-    n === 1 ? 'one hour' : n === 2 ? 'two hours' : `${n} hours`;
+const arHours = (n: number): string => arCount(n, HOURS);
+const arHoursGen = (n: number): string => arCount(n, HOURS, true);
+const enHours = (n: number): string => enCount(n, 'hour', 'hours');
 
 /** نصّ المهلة كما يُقرأ في جملة: «ساعتان» / «two hours». */
 export const holdLabel = (n: number, isRTL: boolean): string =>

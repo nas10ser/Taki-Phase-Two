@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { arMessages } from '../utils/arPlural';
 import type { BookingMessage } from '../repositories/bookingRepository';
 import { chatAttachments } from '../services/chatAttachments';
 import { clickable } from '../utils/clickable';
@@ -48,8 +49,13 @@ const Attachment: React.FC<{ path: string; isRTL: boolean }> = ({ path, isRTL })
 
 /**
  * Two-party message thread between buyer and seller for a single booking.
- * Hard cap: 3 messages per side (6 total). When a side reaches its limit,
- * the input is disabled with a "contact directly" hint.
+ *
+ * v14.93 — الحدّ لم يعد ثلاثاً ولا رقماً مثبَّتاً: مصدره
+ * `platform_settings.chat_limits.per_booking`، و**صفرٌ يعني بلا حدّ** وهو
+ * الافتراض. السبب المقيس: مع التوصيل كانت ثلاث رسائل تُقفل المحادثة قبل أن
+ * يتّفق الطرفان على العنوان. والقاعدة هي الحَكَم (`send_booking_message`)،
+ * وهذا العدّاد مرآةٌ لها لا مصدر.
+ * 🪤 والحارس الباقي `per_hour` لكل مرسِل عبر كل حجوزاته — فهو الجدار التالي.
  *
  * Loads messages lazily on mount (if not already in the booking row) and
  * marks the opponent's messages as read on view.
@@ -69,8 +75,11 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
         fetchBookingMessages,
         markBookingMessagesRead,
         customAlert,
+        platformSettings,
     } = useApp();
     const isRTL = language === 'ar';
+    /** 0 = بلا حدّ. */
+    const cap = platformSettings.chatLimits.perBooking;
 
     const booking = (bookings as any[]).find(b => b.barcode === barcode);
     const messages: BookingMessage[] = booking?.messages || [];
@@ -150,8 +159,8 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
 
     const mineCount = messages.filter(m => m.senderRole === myRole).length;
     const theirCount = messages.filter(m => m.senderRole !== myRole).length;
-    const remainingForMe = Math.max(0, 3 - mineCount);
-    const reachedMyCap = mineCount >= 3;
+    const remainingForMe = cap > 0 ? Math.max(0, cap - mineCount) : Infinity;
+    const reachedMyCap = cap > 0 && mineCount >= cap;
 
     const handleSend = async () => {
         const text = draft.trim();
@@ -205,7 +214,11 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                     💬 {isRTL ? 'محادثة الطلب' : 'Order Chat'}
                 </div>
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))' }}>
-                    {isRTL ? `أنت: ${mineCount}/٣ — الطرف الآخر: ${theirCount}/٣` : `You: ${mineCount}/3 — Other: ${theirCount}/3`}
+                    {cap > 0
+                        ? (isRTL ? `أنت: ${mineCount}/${cap} — الطرف الآخر: ${theirCount}/${cap}`
+                                 : `You: ${mineCount}/${cap} — Other: ${theirCount}/${cap}`)
+                        /* بلا حدّ: يُعرض العدد لا الكسر — كسرٌ مقامُه لا نهاية لا معنى له. */
+                        : (isRTL ? `${mineCount} لك · ${theirCount} له` : `${mineCount} yours · ${theirCount} theirs`)}
                 </div>
             </div>
 
@@ -275,8 +288,8 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                     textAlign: 'center',
                 }}>
                     {isRTL
-                        ? '⚠️ وصلت الحد الأقصى (٣ رسائل). للاستيضاح، اتصل بالطرف الآخر مباشرة.'
-                        : '⚠️ You\'ve reached the 3-message limit. For anything else, contact the other party directly.'}
+                        ? `⚠️ وصلت الحد الأقصى (${arMessages(cap)}). للاستيضاح، اتصل بالطرف الآخر مباشرة.`
+                        : `⚠️ You've reached the ${cap}-message limit. For anything else, contact the other party directly.`}
                 </div>
             ) : (
                 <div>
@@ -339,9 +352,9 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                         value={draft}
                         onChange={(e) => setDraft(e.target.value.slice(0, 500))}
                         onKeyDown={handleKey}
-                        placeholder={isRTL
-                            ? `اكتب رسالتك… (متبقي ${remainingForMe})`
-                            : `Type your message… (${remainingForMe} left)`}
+                        placeholder={cap > 0
+                            ? (isRTL ? `اكتب رسالتك… (متبقي ${remainingForMe})` : `Type your message… (${remainingForMe} left)`)
+                            : (isRTL ? 'اكتب رسالتك…' : 'Type your message…')}
                         rows={1}
                         disabled={sending}
                         style={{
