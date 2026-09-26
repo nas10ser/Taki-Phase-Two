@@ -22,6 +22,7 @@ import { supabase } from '../services/supabaseClient';
 import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
+import { publishErrorMessage } from '../utils/publishError';
 
 interface StoreProfile {
     phone?: string;
@@ -1954,16 +1955,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (error: any) {
             const msg: string = error?.message || '';
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
-            const isLocationCap = /LOCATION_LIMIT_EXCEEDED/i.test(msg);
-
-            if (isLocationCap) {
-                customAlert(
-                    language === 'ar'
-                        ? '⚠️ وصلت لحد المواقع المسموح في باقتك.\n\nاختر موقعاً من مواقعك الحالية، أو احذف كل منتجات أحد المواقع الشاغرة لتفريغ خانة قبل إضافة موقع جديد. للترقية لباقة أكبر تواصل مع إدارة تاكي.'
-                        : '⚠️ You\'ve reached your package\'s location limit.\n\nPick one of your existing locations, or free a vacant slot first. Contact TAKI admin to upgrade.'
-                );
-                return;
-            }
+            // v14.95 — سببُ الرفض بعبارةٍ فيها **الخطوة التالية**: حدّ المواقع (نفس النصّ
+            // حرفاً بحرف)، و«المتجر غير موثّق» (P0024) الذي كان يصل جملةً عمياء.
+            const known = publishErrorMessage(`${error?.code || ''} ${msg}`, language === 'ar');
+            if (known) { customAlert(known); return; }
 
             if (isTransientLock) {
                 try {

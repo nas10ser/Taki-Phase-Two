@@ -10,6 +10,7 @@ import { userRepository } from '../repositories/userRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
+import VerifiedBadge from '../components/VerifiedBadge';
 import { notifySetupGapsChanged } from '../components/seller/SetupPath';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 import { getAuthenticityBadge, waLink } from '../utils/helpers';
@@ -714,6 +715,12 @@ const StoreDetails: React.FC = () => {
                     </div>
                     
                     <h1 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: 4 }}>{store.name}</h1>
+                    {/* v14.95 — «متجر موثّق»: الشيء الوحيد الذي يرى المشتري من نظام
+                        التوثيق. لا تُرسم شيئاً إن لم يكن المتجر موثّقاً أو كانت الشارة
+                        مُطفأة — والبوّابة داخل `store_is_verified` على الخادم وحدها. */}
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
+                        <VerifiedBadge storeId={id} />
+                    </div>
                     {/* v13.11 (طلب ناصر): يعرض موقع المتجر المحفوظ — عنوان نصّي إن وُجد
                         مع رابط الخريطة. */}
                     {(() => {

@@ -8266,5 +8266,25 @@
   "w_chat_older_hidden": {
     "ar": "⬆️ أقدمُ {0} رسالةً مخفيّة — تُقرأ كاملةً من الموقع",
     "en": "⬆️ {0} older messages hidden — read them all on the website"
+  },
+  "pub_not_merchant": {
+    "ar": "🔒 نشرُ العروض متاحٌ لحسابات التجار وحدها. إن كان هذا حساب متجرك فافتح لوحة التاجر وأكمل بياناته أولاً.",
+    "en": "🔒 Publishing deals is available to merchant accounts only. If this is your store account, open the seller dashboard and complete its details first."
+  },
+  "pub_not_verified": {
+    "ar": "🔒 لا يُنشر عرضٌ قبل توثيق المتجر.\n\nأرسل طلب التوثيق من لوحة التاجر ← توثيق المتجر، ونراجعه خلال {0} ثم تُنشر عروضك فوراً.",
+    "en": "🔒 No deal is published before the store is verified.\n\nSubmit your request from the seller dashboard → Store verification. We review it within {0}, then your deals go live."
+  },
+  "pub_not_declared": {
+    "ar": "📝 لم تُقرّ بعد بطريقة حساب متجرك، ولا يُنشر عرضٌ قبل الإقرار.\n\nأكمل «إقرار طريقة الحساب» من لوحة التاجر ← صفحتي، ثم انشر بضغطة.",
+    "en": "📝 You have not declared your store payment method yet, and no deal is published before that.\n\nComplete the payment method declaration in the seller dashboard, then publish with one tap."
+  },
+  "pub_no_method": {
+    "ar": "⚠️ أقررتَ ألّا تقبل الدفع عند الاستلام ولا الدفع الإلكتروني — فلا وسيلة لتحصيل ثمن العرض.\n\nعدّل «إقرار طريقة الحساب» من لوحة التاجر ← صفحتي، ثم انشر.",
+    "en": "⚠️ You declared that you accept neither cash on delivery nor online payment, so there is no way to collect the price.\n\nUpdate the payment method declaration in the seller dashboard, then publish."
+  },
+  "pub_open_dashboard": {
+    "ar": "🔐 لوحة التاجر",
+    "en": "🔐 Seller dashboard"
   }
 }

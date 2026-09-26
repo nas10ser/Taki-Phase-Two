@@ -21,7 +21,7 @@ const G      = require('../lib/geo');
 const F      = require('../lib/format');
 const HRS    = require('../lib/hours');
 const I18N   = require('../lib/i18n');
-const CHATV = require('../lib/chatView');
+const CHATV = require('../lib/chatView'); const GATE = require('../lib/publishGate');   // v14.94 — بوّابة التوثيق/الإقرار قبل النشر (مشتركة مع تيليجرام)
 const GEO_EN = require('../lib/geoNames.json');
 const { getSession } = require('../lib/session');
 // v14.06 — قرار عرض التوصيل: نفس ملف تيليجرام حرفاً بحرف (البوتان توأمان)
@@ -165,7 +165,7 @@ function create(deps) {
     const row = (id, title, desc) => { const r = { id: trunc(id, 200), title: trunc(title, LIM.rowTitle) }; if (desc) r.description = trunc(desc, LIM.rowDesc); return r; };
     const menuRow = () => row('wa:menu', tr('wa_row_menu'), '');
     const menuBtn = () => ({ id: 'wa:menu', title: tr('wa_row_menu') });
-    const backBtn = id => ({ id, title: tr('wa_back') });
+    const backBtn = id => ({ id, title: tr('wa_back') });   const pubBlocked = from => GATE.blocked(rpc, aid(from), { tr, lang: I18N.lang(), notify: (b, l) => sendButtons(from, { body: `${b}\n\n${l}: ${W('/seller')}`, buttons: [backBtn('wa:s:deals'), menuBtn()] }) });   // v14.94 — بوّابة النشر؛ والرابط يُلحق بالمتن لأن واتساب بلا أزرار روابط (درس v14.71)
 
     // رفع صورة واتساب (وسيط media) → رابط عام عبر edge function (v3 يدعم مضيف واتساب + توكن).
     async function uploadWaPhoto(mediaId) {
@@ -1612,7 +1612,7 @@ function create(deps) {
         ] });
         await sendButtons(from, { body: '—', buttons: [{ id: 'wa:s:deals', title: tr('menu_seller_deals') }, menuBtn()] });
     }
-    async function toggleDeal(from, s, id, status) {
+    async function toggleDeal(from, s, id, status) { if (status === 'active' && await pubBlocked(from)) return sellerDealDetail(from, s, id);   // v14.94 — الإظهار وحده يمرّ بالبوّابة، لا الإيقاف
         const r = await rpc('bot_toggle_deal', aid(from, { p_deal_id: id, p_status: status }));
         if (r && r.error === 'no_subscription') return sendButtons(from, { body: tr('wa_publish_no_sub'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }, { id: 'wa:s:deals', title: tr('wa_back') }] });
         await sendText(from, (r && r.success) ? (status === 'active' ? tr('wa_s_deal_activated') : tr('wa_s_deal_paused')) : tr('wa_edit_fail'));
@@ -2044,7 +2044,7 @@ function create(deps) {
         if (!a || !a.name) { await sendText(from, tr('wa_session_ended')); return sellerDealsMenu(from, s); }
         if (!a.images || !a.images.length) { return askPhotos(from, s); }
         const anchor = a.startsAt || Date.now();
-        if (a.expiryType === 'date' && a.expiryEndMs && a.expiryEndMs <= anchor) { await sendText(from, tr('wa_exp_bad_date')); return askExpiry(from, s); }
+        if (a.expiryType === 'date' && a.expiryEndMs && a.expiryEndMs <= anchor) { await sendText(from, tr('wa_exp_bad_date')); return askExpiry(from, s); } if (await pubBlocked(from)) return;   // v14.94 — البوّابة قبل الإرسال؛ والمسوّدة تبقى في الجلسة فيوثّق ثم ينشر بضغطة
         const ex = computeExpiry(a.expiryType, a, anchor);
         const r = await rpc('bot_add_deal', aid(from, {
             p_item_name: a.name, p_original_price: a.orig, p_discounted_price: a.disc,

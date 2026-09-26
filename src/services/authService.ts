@@ -55,6 +55,7 @@ export type AdminPermission =
     | 'tab_buyers'
     | 'tab_sellers'
     | 'tab_reports'
+    | 'tab_verification'
     | 'tab_analytics'
     | 'tab_tools'
     | 'tab_messages'

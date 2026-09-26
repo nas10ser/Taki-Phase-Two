@@ -13,6 +13,7 @@ const C = require('../lib/catalog');
 const G = require('../lib/geo');
 const { tgId, getSession, setStep } = require('../lib/session');
 const { tr, lang } = require('../lib/i18n');   // request-scoped translation (ar/en) — v11.86
+const GATE = require('../lib/publishGate');    // v14.94 — بوّابة التوثيق/الإقرار قبل النشر
 
 const {
     md, money, fmtDay, fmtDate, DIV, isPrice, isQty,
@@ -76,6 +77,20 @@ async function reply(ctx, text, markup) {
         try { return await ctx.reply(stripMd(text), rest); } catch { /* give up silently */ }
     }
 }
+
+// ── بوّابةُ النشر: تُسأل قبل كل إظهارٍ للناس (v14.94) ──────────────────────────
+// ثلاثةُ أبوابٍ تُخرج عرضاً إلى الناس: النشرُ الأوّل، وتفعيلُ عرضٍ متوقّف،
+// وإعادةُ تفعيل عرضٍ منتهٍ. الثلاثة تمرّ من هنا فلا يبقى بابٌ خلفيّ، والقرارُ
+// كلّه في `lib/publishGate.js` (نفس الملفّ الذي يسأله واتساب — البوتان توأمان).
+// 🪤 و`md()` لازمةٌ لا تجميل: نصوص `pub_*` مشتركةٌ مع واتساب فهي **غير مهرَّبة**،
+//    ومحرفٌ محجوزٌ واحد يُسقط رسالة MarkdownV2 كاملةً (درس v11.76).
+const gateBlocked = (ctx, back) => GATE.blocked(rpc, { p_telegram_id: tgId(ctx) }, {
+    tr, lang: lang(),
+    notify: (body, label) => reply(ctx, md(body), Markup.inlineKeyboard([
+        [Markup.button.webApp(label, W('/seller'))],
+        [btn(tr('sd827_btn_back'), back)],
+    ]).reply_markup),
+});
 
 // حساب دقائق الانتهاء + تاريخ الانتهاء حسب النوع، بالنسبة لنقطة بداية (الآن أو موعد البدء).
 function computeExpiry(type, a, anchorMs) {
@@ -178,6 +193,8 @@ function register(bot, deps) {
     bot.action(/^toggle:([a-zA-Z0-9_-]+):(active|paused)$/, async ctx => {
         await ctx.answerCbQuery(tr('sd131_updating'));
         const [, id, st] = ctx.match;
+        // الإيقاف لا يحتاج إذناً — الإظهار وحده هو الذي يمرّ بالبوّابة.
+        if (st === 'active' && await gateBlocked(ctx, 'seller:deals')) return;
         const r = await rpc('bot_toggle_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_status: st });
         if (r?.success) await reply(ctx, st === 'active' ? tr('sd134_activated') : tr('sd134_paused'), toDeals());
         else if (r?.error === 'no_subscription') await reply(ctx, tr('sd752_no_subscription', DIV), Markup.inlineKeyboard([[btn(tr('sd756_subscription'), 'seller:sub')], [btn(tr('sd827_btn_back'), 'seller:deals')]]).reply_markup);
@@ -974,6 +991,8 @@ async function doPublish(ctx) {
     const anchor = a.startsAt || Date.now();
     if (a.expiryType === 'date' && a.expiryEndMs && a.expiryEndMs <= anchor)
         return reply(ctx, tr('sd739_end_after_start'), Markup.inlineKeyboard([[btn(tr('sd739_edit_end_date'), 'xp:date')], [btn(tr('sd739_cancel'), 'sd:cancel')]]).reply_markup);
+    // المسوّدة تبقى في الجلسة عمداً: يوثّق التاجر ثم يعود فينشرها بضغطة.
+    if (await gateBlocked(ctx, 'menu:back')) return;
     const ex = computeExpiry(a.expiryType, a, anchor);
     const r = await rpc('bot_add_deal', {
         p_telegram_id: tgId(ctx), p_item_name: a.name, p_original_price: a.orig, p_discounted_price: a.disc,
@@ -1094,6 +1113,7 @@ function registerEditPickers(bot) {
     bot.action('loc:tp:city', async ctx => { await ctx.answerCbQuery(); pickCityCenter(ctx); });
 }
 async function reactivate(ctx, id) {
+    if (await gateBlocked(ctx, `dedit:${id}`)) return;
     const r = await rpc('bot_update_deal', { p_telegram_id: tgId(ctx), p_deal_id: id, p_status: 'active' });
     if (r?.success) { await reply(ctx, tr('sd825_reactivated')); return openEdit(ctx, id); }
     if (r?.error === 'no_subscription') return reply(ctx, tr('sd752_no_subscription', DIV), Markup.inlineKeyboard([[btn(tr('sd827_btn_subscription'), 'seller:sub')], [btn(tr('sd827_btn_back'), `dedit:${id}`)]]).reply_markup);

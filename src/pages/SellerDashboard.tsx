@@ -15,7 +15,7 @@ const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard'
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
-import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SetupPath';
+import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 const DeliveryTrackerCard = React.lazy(() => import('../components/seller/DeliveryTrackerCard'));
 import VatStatusCard from '../components/seller/VatStatusCard';

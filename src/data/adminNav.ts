@@ -19,7 +19,7 @@
 export type AdminTabId =
     | 'overview'
     | 'buyers' | 'sellers' | 'admins'
-    | 'reports' | 'moderation' | 'messages' | 'delivery'
+    | 'reports' | 'verification' | 'moderation' | 'messages' | 'delivery'
     | 'invoices' | 'tax'
     | 'analytics' | 'analyst' | 'audience' | 'contests'
     | 'tools' | 'locations' | 'messaging' | 'launch';
@@ -72,6 +72,12 @@ export const ADMIN_TABS: AdminTabDef[] = [
         hint: 'بلاغات المستخدمين على بعضهم، وشكاوى المستخدمين للإدارة — في مكانٍ واحد.',
         permission: 'tab_reports',
         keywords: 'reports complaints بلاغ بلاغات شكوى شكاوى ابلاغ',
+    },
+    {
+        id: 'verification', label: 'توثيق التجّار', icon: '🪪', group: 'ops',
+        hint: 'طلبات التجّار لتوثيق سجلّهم قبل السماح بالنشر',
+        permission: 'tab_verification',
+        keywords: 'توثيق سجل تجاري عمل حر verification cr freelance وثيقة',
     },
     {
         id: 'moderation', label: 'الإنذارات', icon: '🛡', group: 'ops',

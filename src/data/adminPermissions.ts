@@ -35,6 +35,8 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminDashboard + RLS store_profiles/branches/subscriptions' },
     { key: 'tab_reports',   label: '🚩 البلاغات والشكاوى', description: 'مراجعة البلاغات والشكاوى والإنذارات', group: 'tabs',
       enforcedAt: 'AdminDashboard + RLS reports/complaints/warnings' },
+    { key: 'tab_verification', label: '🪪 توثيق التجّار',   description: 'مراجعة توثيق التجّار قبل السماح بالنشر', group: 'tabs',
+      enforcedAt: 'AdminDashboard + RLS store_verifications + admin_rpc_permissions(admin_*_verification*)' },
     { key: 'tab_analytics', label: '📊 التحليلات',          description: 'مؤشرات لحظية ورسوم (بلا أرقام مالية)', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
     { key: 'tab_tools',     label: '🛠️ البانرات والحملات',           description: 'الإعدادات والسجلّات وأدوات التشغيل', group: 'tabs',

@@ -12,7 +12,7 @@
  *      متاحة، فيُرى ٣–٤ منها والباقي بتمرير. تحسّنٌ حقيقيّ عن ٣ من ١٨،
  *      ولا يُدّعى أكثر ممّا قِيس.)
  *   ٢. **شريط المجموعة الحالية**: تبويباتها وحدها (٢–٤)، فالتنقّل القريب فوريّ.
- *   ٣. **لوحةٌ كاملة** بزرٍّ واحد، تعرض الثمانية عشر مرتّبةً تحت مجموعاتها —
+ *   ٣. **لوحةٌ كاملة** بزرٍّ واحد، تعرض كلَّ الشاشات مرتّبةً تحت مجموعاتها —
  *      لمن يريد الانتقال البعيد. و⌘K لمن يعرف اسم وجهته.
  *
  * والأسماء كلّها من `src/data/adminNav.ts` — مصدرٌ واحد لا اثنان.
@@ -24,6 +24,20 @@ import {
     AdminTabId, AdminGroupId, AdminTabDef,
 } from '../../data/adminNav';
 
+/**
+ * شاراتُ الانتباه — عددٌ **لكل تبويب**، لا رقمٌ واحد باسم شاشةٍ بعينها.
+ * 🪤 كانت الشارة خاصّيةً اسمها `reportsBadge` تمرّ في ثلاثة مكوّنات وتُقارَن
+ *    بـ`t.id === 'reports'` حرفياً في كلٍّ منها — أي أن أيّ شاشةٍ ثانية تحتاج
+ *    شارة تعني خاصّيةً رابعة وثلاثَ مقارناتٍ جديدة. الشارة الآن مفتاحُها هويّة
+ *    التبويب، فالمُضيف يملأ ما يعرفه والشريط يعرضه بلا أسماء مكتوبة.
+ * ولا يُملأ منها إلا ما للقارئ صلاحيةٌ عليه — فالعدد نفسه معلومة.
+ */
+export type AdminBadges = Partial<Record<AdminTabId, number>>;
+
+/** مجموع شارات مجموعةٍ ما — نقطةٌ واحدة تقول «هنا ما ينتظرك». */
+const groupBadgeCount = (g: AdminGroupId, badges: AdminBadges): number =>
+    ADMIN_TABS.reduce((sum, t) => (t.group === g ? sum + (badges[t.id] ?? 0) : sum), 0);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // شريط المجموعات
 // ═══════════════════════════════════════════════════════════════════════════
@@ -33,12 +47,13 @@ export const AdminGroupBar = memo<{
     onPick: (g: AdminGroupId) => void;
     /** المجموعات التي فيها تبويبٌ واحد مسموحٌ على الأقل */
     allowed: Set<AdminGroupId>;
-    /** عدد البلاغات المفتوحة — نقطةٌ على مجموعة التشغيل */
-    opsBadge?: number;
-}>(({ activeGroup, onPick, allowed, opsBadge = 0 }) => (
+    /** ما ينتظر المراجعة في كل شاشة — يُجمَع هنا على مستوى المجموعة */
+    badges?: AdminBadges;
+}>(({ activeGroup, onPick, allowed, badges = {} }) => (
     <div role="tablist" aria-label="أقسام لوحة الإدارة" style={{ display: 'flex', gap: 4, overflowX: 'auto' }} className="scrollbar-hide">
         {ADMIN_GROUPS.filter((g) => allowed.has(g.id)).map((g) => {
             const on = g.id === activeGroup;
+            const count = groupBadgeCount(g.id, badges);
             return (
                 <button
                     key={g.id}
@@ -64,9 +79,12 @@ export const AdminGroupBar = memo<{
                 >
                     <span aria-hidden="true">{g.icon}</span>
                     {g.label}
-                    {g.id === 'ops' && opsBadge > 0 && (
+                    {count > 0 && (
                         <span
-                            aria-label={`${opsBadge} بلاغاً مفتوحاً`}
+                            /* 🪤 لا «${n} بلاغاً»: العربية تُغيّر المعدود بالعدد
+                               (٣ بلاغات · ١١ بلاغاً). الصيغة هنا بلا معدودٍ
+                               فتصحّ لكل رقم. */
+                            aria-label={`بانتظار المراجعة: ${count}`}
                             style={{
                                 minWidth: 17, height: 17, padding: '0 4px', borderRadius: 999,
                                 background: 'var(--adm-bad-fg)', color: '#fff',
@@ -75,7 +93,7 @@ export const AdminGroupBar = memo<{
                                 fontVariantNumeric: 'tabular-nums',
                             }}
                         >
-                            {opsBadge > 99 ? '99+' : opsBadge}
+                            {count > 99 ? '99+' : count}
                         </span>
                     )}
                 </button>
@@ -93,13 +111,14 @@ export const AdminTabBar = memo<{
     tabs: AdminTabDef[];
     active: AdminTabId;
     onPick: (t: AdminTabId) => void;
-    reportsBadge?: number;
-}>(({ tabs, active, onPick, reportsBadge = 0 }) => {
+    badges?: AdminBadges;
+}>(({ tabs, active, onPick, badges = {} }) => {
     if (tabs.length <= 1) return null;
     return (
         <div role="tablist" aria-label="شاشات هذا القسم" style={{ display: 'flex', gap: 3, overflowX: 'auto' }} className="scrollbar-hide">
             {tabs.map((t) => {
                 const on = t.id === active;
+                const count = badges[t.id] ?? 0;
                 return (
                     <button
                         key={t.id}
@@ -125,8 +144,9 @@ export const AdminTabBar = memo<{
                     >
                         <span aria-hidden="true">{t.icon}</span>
                         {t.label}
-                        {t.id === 'reports' && reportsBadge > 0 && (
+                        {count > 0 && (
                             <span
+                                aria-label={`بانتظار المراجعة: ${count}`}
                                 style={{
                                     minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999,
                                     background: 'var(--adm-bad-bg)', color: 'var(--adm-bad-fg)',
@@ -135,7 +155,7 @@ export const AdminTabBar = memo<{
                                     fontVariantNumeric: 'tabular-nums',
                                 }}
                             >
-                                {reportsBadge > 99 ? '99+' : reportsBadge}
+                                {count > 99 ? '99+' : count}
                             </span>
                         )}
                     </button>
@@ -156,8 +176,8 @@ export const AdminNavPanel: React.FC<{
     active: AdminTabId;
     onPick: (t: AdminTabId) => void;
     canSee: (t: AdminTabDef) => boolean;
-    reportsBadge?: number;
-}> = ({ open, onClose, active, onPick, canSee, reportsBadge = 0 }) => {
+    badges?: AdminBadges;
+}> = ({ open, onClose, active, onPick, canSee, badges = {} }) => {
     const panelRef = useRef<HTMLDivElement>(null);
 
     // Esc يغلق، والتركيز ينتقل داخل اللوحة عند فتحها.
@@ -229,6 +249,7 @@ export const AdminNavPanel: React.FC<{
                             <div style={{ display: 'grid', gap: 2 }}>
                                 {tabs.map((t) => {
                                     const on = t.id === active;
+                                    const count = badges[t.id] ?? 0;
                                     return (
                                         <button
                                             key={t.id}
@@ -246,8 +267,9 @@ export const AdminNavPanel: React.FC<{
                                             <span style={{ flex: 1, minWidth: 0 }}>
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                     <span style={{ fontSize: '.85rem', fontWeight: on ? 900 : 700 }}>{t.label}</span>
-                                                    {t.id === 'reports' && reportsBadge > 0 && (
+                                                    {count > 0 && (
                                                         <span
+                                                            aria-label={`بانتظار المراجعة: ${count}`}
                                                             style={{
                                                                 minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999,
                                                                 background: 'var(--adm-bad-fg)', color: '#fff',
@@ -255,7 +277,7 @@ export const AdminNavPanel: React.FC<{
                                                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                                             }}
                                                         >
-                                                            {reportsBadge > 99 ? '99+' : reportsBadge}
+                                                            {count > 99 ? '99+' : count}
                                                         </span>
                                                     )}
                                                 </span>

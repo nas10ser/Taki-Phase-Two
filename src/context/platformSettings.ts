@@ -38,6 +38,11 @@ export interface PlatformSettings {
      *  الطرفان على عنوان التوصيل أصلاً. و`perHour` حارس إغراق لكل مرسِل،
      *  وهو الجدار الفعليّ بعد رفع الحدّ الأوّل. */
     chatLimits: { perBooking: number; perHour: number };
+    /** v14.95 — توثيق التجّار. `off` بلا أي أثر · `advisory` يُطلب ولا يُمنع ·
+     *  `required` يمنع نشر عرضٍ **جديد** لغير الموثّق (والعروض الحيّة لا تُمسّ).
+     *  و`vacation` يُنزِّل الأثر من `required` إلى `advisory` بضغطة — فغيابُ
+     *  المراجع الوحيد لا يُجمّد تجّاره. */
+    verification: { mode: 'off' | 'advisory' | 'required'; slaHours: number; vacation: boolean; showBadge: boolean };
     /** v14.92 — المهلة المعلنة للردّ على الشكاوى. تُقال للمشتري عند الإرسال
      *  وفي «شكاواي»، وتُضبط من الإعدادات بلا نشر — فلا يُكتب رقمُ ساعاتٍ
      *  نصّاً في أي مكان (أوّل ضبطٍ يجعله كذباً — درس v14.12). */
@@ -50,7 +55,7 @@ export const PLATFORM_SETTING_KEYS = [
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
-    'complaints_sla_hours', 'chat_limits',
+    'complaints_sla_hours', 'chat_limits', 'verification',
 ];
 
 /**
@@ -80,6 +85,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     merchantVatRate: 15,
     complaintsSlaHours: 24,
     chatLimits: { perBooking: 0, perHour: 120 },
+    verification: { mode: 'off', slaHours: 24, vacation: false, showBadge: false },
 });
 
 /**
@@ -133,6 +139,15 @@ export const applyPlatformSetting = (
                 perBooking: num((value || {}).per_booking, 0, 0, 1000),
                 perHour: num((value || {}).per_hour, 120, 1, 10000),
             } });
+        case 'verification': {
+            // v14.95 — وضعٌ غير معروف يُقرأ `off`: الافتراضُ الآمن ألّا نمنع أحداً.
+            const v: any = value || {};
+            const mode = ['off', 'advisory', 'required'].includes(v.mode) ? v.mode : 'off';
+            return prev => ({ ...prev, verification: {
+                mode, slaHours: num(v.sla_hours, 24, 1, 720),
+                vacation: v.vacation === true, showBadge: v.show_badge === true,
+            } });
+        }
         case 'banner_autoplay_seconds':
             // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
             return prev => ({ ...prev, bannerSeconds: num(value, 2, 1, 120) });

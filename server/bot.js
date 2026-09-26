@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.94.0';
+const BOT_VERSION              = '14.95.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2505,7 +2505,7 @@ async function renderChat(ctx, barcode) {
     // Task 1 — «back» returns to the booking itself; from there «back» → the list.
     btns.push([Markup.button.callback(tr('b1288_refresh'), `chat:${r.barcode}`), Markup.button.callback(tr('b1288_call'), `call:b:${r.barcode}`)]);
     btns.push([Markup.button.callback(tr('b1289_back_to_booking'), `bkOne:${r.barcode}`)]);
-    await ctx.reply(m, { parse_mode:'MarkdownV2', reply_markup: Markup.inlineKeyboard(btns).reply_markup });
+    await safeReplyMd(ctx, m, { reply_markup: Markup.inlineKeyboard(btns).reply_markup });   // v14.94 — محرفٌ محجوزٌ واحدٌ في نصّ رسالةٍ كان يُسقط بطاقة المحادثة كلّها بصمت
 
     await CHATV.sendAttachments(msgs, r, {
         sign: path => chatAttach('sign', { uid: r.uid, barcode: r.barcode, path }),

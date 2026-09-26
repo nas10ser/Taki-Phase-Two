@@ -2,7 +2,7 @@
  * AdminDashboard — قشرة لوحة الإدارة (v14.89)
  * ═══════════════════════════════════════════════════════════════════════════
  * ما تملكه هذه الشاشة: حالة التبويب، والروابط العميقة (`?tab=`)، ولوحة
- * الأوامر ⌘K، وشارة البلاغات، ونبض الجلسة، وحدّ التحميل الكسول.
+ * الأوامر ⌘K، وشارات ما ينتظر المراجعة، ونبض الجلسة، وحدّ التحميل الكسول.
  *
  * 🪤 ما استُبدل في v14.89 (وقِيس قبل استبداله):
  *   • ثمانية عشر تبويباً في شريطٍ أفقيّ واحد — على جوّال ناصر تظهر ثلاثة،
@@ -18,8 +18,10 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo, memo 
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { adminService } from '../services/adminService';
+import { verificationRepository } from '../repositories/verificationRepository';
 import { CommandPalette } from '../components/admin/CommandPalette';
 import { AdminGroupBar, AdminTabBar, AdminNavPanel } from '../components/admin/AdminNav';
+import type { AdminBadges } from '../components/admin/AdminNav';
 import { AdmCard, AdmPageHeader, AdmSkeleton } from '../components/admin/ui';
 import {
     ADMIN_TABS, ADMIN_TAB_BY_ID, ADMIN_GROUP_BY_ID,
@@ -35,6 +37,7 @@ const AdminTools      = lazy(() => import('./admin/AdminTools'));
 const AdminLocations  = lazy(() => import('./admin/AdminLocations'));
 const AdminContests   = lazy(() => import('./admin/AdminContests'));
 const AdminReports    = lazy(() => import('./admin/AdminReports'));
+const AdminVerification = lazy(() => import('./admin/AdminVerification'));
 const AdminModeration = lazy(() => import('./admin/AdminModeration'));
 const AdminLaunch     = lazy(() => import('./admin/AdminLaunch'));
 const AdminTax        = lazy(() => import('./admin/AdminTax'));
@@ -60,6 +63,7 @@ const TAB_VIEWS: Record<Exclude<AdminTabId, 'overview'>, React.ComponentType> = 
     sellers: AdminSellers,
     admins: AdminAdmins,
     reports: AdminReports,
+    verification: AdminVerification,
     moderation: AdminModeration,
     messages: AdminMessages,
     delivery: AdminDelivery,
@@ -100,7 +104,14 @@ const AdminDashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [navOpen, setNavOpen] = useState(false);
-    const [reportsBadge, setReportsBadge] = useState(0);
+    /**
+     * ما ينتظر المراجعة — عددٌ لكل شاشة، لا رقمٌ واحد باسم «البلاغات».
+     * 🪤 كان رقماً مفرداً (`reportsBadge`) يمرّ في ثلاثة مكوّنات، وكلٌّ منها
+     *    يقارن `t.id === 'reports'` حرفياً. فلمّا لزمت شارةٌ ثانية (طابور
+     *    التوثيق) كان البديل خاصّيةً رابعة وثلاثَ مقارناتٍ جديدة. المفتاح الآن
+     *    هويّةُ التبويب، والدمج جزئيّ (`prev => …`) فلا يمحو نداءٌ نتيجةَ الآخر.
+     */
+    const [badges, setBadges] = useState<AdminBadges>({});
 
     // ── الصلاحيات ────────────────────────────────────────────────────────────
     const canSee = useCallback(
@@ -202,7 +213,29 @@ const AdminDashboard: React.FC = () => {
         const load = async () => {
             try {
                 const rows = await adminService.listReports({ status: 'open', limit: 100 });
-                if (alive) setReportsBadge(Array.isArray(rows) ? rows.length : 0);
+                if (alive) setBadges((b) => ({ ...b, reports: Array.isArray(rows) ? rows.length : 0 }));
+            } catch { /* شارةٌ لا تُفشل شاشة */ }
+        };
+        load();
+        const id = setInterval(load, 60000);
+        return () => { alive = false; clearInterval(id); };
+    }, [user, hasPermission]);
+
+    // ── شارة طابور التوثيق ───────────────────────────────────────────────────
+    // 🪤 العدد من `admin_verification_stats` لا من طول قائمةٍ مقصوصة بحدٍّ:
+    //    قائمةٌ بحدّ ١٠٠ تقول «١٠٠» وهي ١٤٠. والخادم يحرس الصلاحية بنفسه
+    //    (`taki_admin_perm('tab_verification')`)، وفحصُ الواجهة هنا لتوفير
+    //    نداءٍ مرفوضٍ سلفاً لا ليكون هو الحارس.
+    useEffect(() => {
+        if (user?.user_type !== 'admin' && user?.userType !== 'admin') return;
+        if (!hasPermission('tab_verification')) return;
+        let alive = true;
+        const load = async () => {
+            try {
+                const res = await verificationRepository.adminStats();
+                if (alive && res.ok && res.stats) {
+                    setBadges((b) => ({ ...b, verification: res.stats!.pending }));
+                }
             } catch { /* شارةٌ لا تُفشل شاشة */ }
         };
         load();
@@ -304,7 +337,7 @@ const AdminDashboard: React.FC = () => {
                     activeGroup={activeGroup}
                     onPick={goGroup}
                     allowed={allowedGroups}
-                    opsBadge={reportsBadge}
+                    badges={badges}
                 />
             </div>
 
@@ -318,7 +351,7 @@ const AdminDashboard: React.FC = () => {
             <div style={{ padding: '16px 14px 90px', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr)' }}>
                 {groupTabs.length > 1 && (
                     <div style={{ borderBottom: '1px solid var(--adm-border)', paddingBottom: 2, minWidth: 0, overflow: 'hidden' }}>
-                        <AdminTabBar tabs={groupTabs} active={activeTab} onPick={goTab} reportsBadge={reportsBadge} />
+                        <AdminTabBar tabs={groupTabs} active={activeTab} onPick={goTab} badges={badges} />
                     </div>
                 )}
 
@@ -351,7 +384,7 @@ const AdminDashboard: React.FC = () => {
                 {/* 🪤 حارسُ تصييرٍ صريح — لا يُستغنى عنه بإخفاء التبويب وحده.
                     قبل v14.89 كانت كل شاشةٍ تحمل شرطها بنفسها، ثمّ صار التبويب
                     يُخفى من الشريط فقط. وإخفاءُ مدخلٍ ليس منعاً: يكفي رابطٌ
-                    عميق أو حالةٌ قديمة. هذا شرطٌ واحد يغطّي الثمانية عشر —
+                    عميق أو حالةٌ قديمة. هذا شرطٌ واحد يغطّي الجميع —
                     والقاعدة تحرس من ورائه (RLS + admin_rpc_permissions). */}
                 {!visibleTabs.some((t) => t.id === activeTab) ? (
                     <AdmCard>
@@ -374,7 +407,7 @@ const AdminDashboard: React.FC = () => {
                 active={activeTab}
                 onPick={goTab}
                 canSee={canSee}
-                reportsBadge={reportsBadge}
+                badges={badges}
             />
 
             <CommandPalette
