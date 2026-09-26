@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.93.0';
+const BOT_VERSION              = '14.94.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -2498,7 +2498,7 @@ async function renderChat(ctx, barcode) {
     const cap = Number(r.cap) || 0;   // v14.93 — من القاعدة؛ 0 = بلا حدّ
     const m = CHATV.tgBody(r, cap, { tr, md, fmtTime, statusLabel, div: DIV, keys: {
         title: 'w1273_booking_chat', with: 'w1273_with', empty: 'w1275_no_messages_yet',
-        you: 'q1279_you', yourMessages: 'w1280_your_messages',
+        you: 'q1279_you', yourMessages: 'w1280_your_messages', older: 'w_chat_older_hidden',
         finished: 'w_chat_finished', capReached: 'w1284_message_limit_reached' } });
     const btns = [];
     if (CHATV.canSend(r.status, r.my_count, cap)) btns.push([Markup.button.callback(tr('b1285_write_message'), `chatmsg:${r.barcode}`)]);

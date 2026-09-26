@@ -1,6 +1,6 @@
 {
   "name": "TAKI",
-  "version": "14.93.0",
+  "version": "14.94.0",
   "description": "TAKI — discount booking platform (React 18 + Parcel 2 + Supabase, Node 24)",
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .parcel-cache dist",
     "postinstall": "node scripts/strip-tfjs-maps.js",
-    "test": "node scripts/test-delivery-logic.js && node scripts/test-invoice-encoding.js && node scripts/test-invoice-pdf.js && node scripts/test-map-ssrf.js && node scripts/test-phone-links.js && node scripts/test-analytics-consent.js && node scripts/test-zatca-phase-disclosure.js && node scripts/test-bot-parity.js && node scripts/check-ar-plural.js"
+    "test": "node scripts/test-delivery-logic.js && node scripts/test-invoice-encoding.js && node scripts/test-invoice-pdf.js && node scripts/test-map-ssrf.js && node scripts/test-phone-links.js && node scripts/test-analytics-consent.js && node scripts/test-zatca-phase-disclosure.js && node scripts/test-bot-parity.js && node scripts/check-ar-plural.js && node scripts/test-chat-view.js"
   },
   "keywords": [],
   "author": "",

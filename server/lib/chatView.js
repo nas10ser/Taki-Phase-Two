@@ -81,19 +81,48 @@ function waBody(r, cap, bc, tr, keys) {
  * نصّ بطاقة المحادثة في تيليجرام. `md` و`fmtTime` تُمرَّران لأن التهريب
  * وتنسيق الوقت خاصّان بذلك البوت، أمّا التركيب فواحد.
  */
+/**
+ * 🔴 سقفُ رسالة تيليجرام **٤٠٩٦ حرفاً**، وتجاوزُه يردّ خطأً فتُفرَغ الشاشة
+ *    تماماً بلا أي نصّ — لا رسالة ولا تنبيه. وكان هذا مستحيلاً بالحدّ القديم
+ *    (٣+٣ رسائل ≈ ٣٢٠٠ حرفاً بالكاد)، فلمّا رُفع القيد في v14.93 صار **حتمياً**
+ *    عند الرسالة الثامنة تقريباً. أي أن رفع القيد كان سيكسر المحادثة في
+ *    تيليجرام بالضبط عند من يستعملها أكثر.
+ *    حارسان لا واحد: قصُّ القائمة إلى آخر `PAGE`، ثمّ **سقفُ طولٍ صريح**
+ *    لأن رسالةً واحدة قد تبلغ ٥٠٠ حرفٍ وحدها والترويسة والذيل فوقها.
+ */
+const TG_LIMIT = 3900;          // دون ٤٠٩٦ بهامشٍ للذيل والتهريب
+const TG_PAGE  = 12;            // آخر ١٢ رسالة تكفي لسياقٍ مفهوم
+
 function tgBody(r, cap, { tr, md, fmtTime, statusLabel, div, keys }) {
-    let m = `💬 *${tr(keys.title)}* \`${md(r.barcode)}\`\n🛍 ${md(r.deal_name)} • ${statusLabel(r.status)}\n👤 ${tr(keys.with)}: *${md(r.other_name)}*\n${div}\n\n`;
-    const msgs = r.messages || [];
-    if (!msgs.length) m += tr(keys.empty) + '\n';
-    else for (const x of msgs) {
-        const who = x.mine ? tr(keys.you) : `👤 ${md(r.other_name)}`;
-        m += `${who} _\\(${md(fmtTime(x.at))}\\)_\n${md(x.body)}\n\n`;
-    }
-    m += `${div}\n✍️ ${tr(keys.yourMessages)}: *${countLabel(r.my_count, cap)}*`;
+    const head = `💬 *${tr(keys.title)}* \`${md(r.barcode)}\`\n🛍 ${md(r.deal_name)} • ${statusLabel(r.status)}\n👤 ${tr(keys.with)}: *${md(r.other_name)}*\n${div}\n\n`;
+    const all = r.messages || [];
+    const shown = all.slice(-TG_PAGE);
+    let tail = `${div}\n✍️ ${tr(keys.yourMessages)}: *${countLabel(r.my_count, cap)}*`;
     if (!canSend(r.status, r.my_count, cap)) {
-        m += `\n${tr(isFinished(r.status) ? keys.finished : keys.capReached)}`;
+        tail += `\n${tr(isFinished(r.status) ? keys.finished : keys.capReached)}`;
     }
-    return m;
+
+    let mid = '';
+    if (!all.length) mid = tr(keys.empty) + '\n';
+    else {
+        if (all.length > shown.length) mid += `_${tr(keys.older, all.length - shown.length)}_\n\n`;
+        for (const x of shown) {
+            const who = x.mine ? tr(keys.you) : `👤 ${md(r.other_name)}`;
+            mid += `${who} _\\(${md(fmtTime(x.at))}\\)_\n${md(x.body)}\n\n`;
+        }
+    }
+
+    // حارسٌ ثانٍ: لو طالت الرسائل المعروضة نفسها، تُسقَط الأقدم منها حتى نتّسع.
+    while (head.length + mid.length + tail.length > TG_LIMIT && mid.includes('\n\n')) {
+        const cut = mid.indexOf('\n\n', mid.indexOf('\n\n') + 2);
+        if (cut < 0) break;
+        mid = mid.slice(cut + 2);
+    }
+    // وثالثٌ أخير: قصٌّ خامّ لا يترك الرسالة تتجاوز السقف بحالٍ.
+    if (head.length + mid.length + tail.length > TG_LIMIT) {
+        mid = mid.slice(0, Math.max(0, TG_LIMIT - head.length - tail.length - 4)) + '…\n\n';
+    }
+    return head + mid + tail;
 }
 
 /**
@@ -117,4 +146,4 @@ async function sendAttachments(msgs, r, { sign, send, caption, limit = 0 }) {
     }
 }
 
-module.exports = { FINISHED, isFinished, canSend, errorKey, countLabel, headArgs, sentArgs, promptArgs, waBody, tgBody, sendAttachments };
+module.exports = { TG_LIMIT, TG_PAGE, FINISHED, isFinished, canSend, errorKey, countLabel, headArgs, sentArgs, promptArgs, waBody, tgBody, sendAttachments };

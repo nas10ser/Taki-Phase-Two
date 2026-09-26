@@ -8262,5 +8262,9 @@
   "wa_chat_bad_body": {
     "ar": "⚠️ الرسالة يجب أن تكون بين حرفٍ و٥٠٠ حرف.",
     "en": "⚠️ The message must be between 1 and 500 characters."
+  },
+  "w_chat_older_hidden": {
+    "ar": "⬆️ أقدمُ {0} رسالةً مخفيّة — تُقرأ كاملةً من الموقع",
+    "en": "⬆️ {0} older messages hidden — read them all on the website"
   }
 }
