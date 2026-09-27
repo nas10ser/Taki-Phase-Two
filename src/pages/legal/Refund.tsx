@@ -23,7 +23,6 @@ const Refund: React.FC = () => {
     const isRTL = language === 'ar';
     // v14.97 — ٠ ساعة = لا نافذة ضمانٍ معلنة، فتُحذف جملةُ الوعد بدل أن تُكتب
     // «خلال ٠ ساعة». والزرّ نفسه يبقى قائماً في الحالتين.
-    const refundWindowHours = platformSettings.refundWindow.hours;
 
     return (
         <LegalLayout
@@ -143,11 +142,11 @@ const Refund: React.FC = () => {
                             <strong>الاسترداد بضغطة واحدة من التاجر:</strong> يستطيع التاجر — في أيّ وقت
                             ومن لوحته — أن يأمر بوّابة الدفع الخاصّة به بإعادة المبلغ إلى بطاقتك،
                             <strong> دون حاجة إلى موافقة TAKI ودون انتظار أيّ مدّة</strong>.
-                            {refundWindowHours > 0 && (
-                                <> وخلال <strong><RefundWindowHours /></strong> من لحظة دفعك، تضمن TAKI أن يصل
-                                طلبُ الاسترداد إلى التاجر فوراً وأن يُنفَّذ <strong>بلا أيّ خطوة موافقة</strong>.
-                                وبعد هذه المدّة يبقى الزرّ عاملاً لدى التاجر وتسري عليه سياسته المُعلَنة.</>
-                            )}
+                            {' '}<strong>والحكمُ في الاسترداد سياسةُ المتجر المُعلَنة وحدها</strong> —
+                            تقرأها في صفحة المتجر وفي صفحة العرض قبل أن تحجز، وهي المرجع بينك وبينه.
+                            و<strong>TAKI لا تفرض مدّةً ولا تبتّ ولا تُلزم تاجراً بردّ</strong>: دورُها أن
+                            تُتيح الأداة وتُسجّل ما جرى وتُبلّغ الطرفين. وبعض التجّار قد لا يُفعّلون
+                            زرّ الردّ الفوريّ أصلاً، فيبقى طريقُك إليهم طلبَ الاسترداد المعتاد أدناه.
                             {' '}وهذا ضمانٌ <strong>إجرائيّ</strong> لا ماليّ: TAKI لا تحتفظ بمالك في أيّ لحظة —
                             المبلغ في حساب التاجر لدى مزوّد الدفع، <strong>والردّ ينفّذه ذلك المزوّد لا المنصّة</strong>.
                             ومدّة وصول المبلغ إلى بطاقتك تحدّدها جهة الدفع (بنكك أو بوّابة التاجر) لا TAKI.
@@ -158,12 +157,12 @@ const Refund: React.FC = () => {
                             dashboard, the merchant can instruct their payment gateway to return the
                             amount to your card — <strong>with no approval from TAKI and no waiting
                             period</strong>.
-                            {refundWindowHours > 0 && (
-                                <> Within <strong><RefundWindowHours /></strong> of your payment, TAKI guarantees
-                                that the refund request reaches the merchant immediately and is carried out
-                                <strong> with no approval step</strong>. After that window the button still
-                                works, but the merchant's published policy governs.</>
-                            )}
+                            {' '}<strong>The merchant's published policy is what governs a refund</strong> —
+                            you can read it on the store page and on the deal page before you book, and it is
+                            the reference between you and them. <strong>TAKI sets no time limit, makes no
+                            ruling, and cannot compel a merchant to refund</strong>: its role is to provide the
+                            tool, record what happened, and notify both sides. Some merchants may not enable
+                            the one-tap refund at all, in which case the usual refund request below applies.
                             {' '}This is a <strong>procedural</strong> guarantee, not a financial one: TAKI never
                             holds your money — it sits in the merchant's account at their payment provider,
                             <strong> and the refund is executed by that provider, not by the platform</strong>.

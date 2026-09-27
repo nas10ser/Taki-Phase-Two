@@ -21,8 +21,6 @@ import { CLIENT_PAYMENT_TERMS, MERCHANT_GATEWAY_AGREEMENT } from '../../data/leg
 const Terms: React.FC = () => {
     const { language, platformSettings } = useApp();
     const isRTL = language === 'ar';
-    // v14.97 — ٠ ساعة = لا نافذة ضمانٍ معلنة ⇒ تُحذف جملةُ الوعد لا تُكتب بصفر.
-    const refundWindowHours = platformSettings.refundWindow.hours;
 
     return (
         <LegalLayout
@@ -351,12 +349,10 @@ const Terms: React.FC = () => {
                             <strong>الاسترداد بضغطة واحدة:</strong> يستطيع التاجر في أيّ وقت — ومن لوحته —
                             أن يأمر بوّابة الدفع الخاصّة به بإعادة المبلغ إلى بطاقة المشتري،
                             <strong> دون موافقة من المنصّة ودون انتظار أيّ مدّة</strong>.
-                            {refundWindowHours > 0 && (
-                                <> وخلال <strong><RefundWindowHours /></strong> من لحظة الدفع، تلتزم المنصّة
-                                بإيصال طلب الاسترداد إلى التاجر فوراً وبتنفيذه <strong>بلا أيّ خطوة موافقة</strong>؛
-                                ويلتزم التاجر بتنفيذه خلالها. وبعد هذه المدّة تبقى الخاصّية متاحة وتسري
-                                سياسة التاجر المُعلَنة.</>
-                            )}
+                            {' '}<strong>وسياسةُ الاسترداد سياسةُ التاجر المُعلَنة وحدها</strong>: هو من
+                            يكتبها وهو من يقرّر، وتُعرض للمشتري قبل الحجز. <strong>ولا تفرض المنصّة مدّةً
+                            ولا تُلزم تاجراً بردّ ولا تبتّ في نزاعٍ عليه</strong> — تُتيح الأداة وتُسجّل
+                            وتُبلّغ. وللتاجر أن يُعطّل الردّ الفوريّ من لوحته، فيبقى طلبُ الاسترداد المعتاد.
                             {' '}وهذا التزامٌ <strong>إجرائيّ</strong> لا ماليّ: المنصّة لا تُحصّل الأموال ولا تحتفظ
                             بها في أيّ لحظة — المبلغ في حساب التاجر لدى مزوّد الدفع،
                             <strong> والردّ ينفّذه ذلك المزوّد</strong>. ومدّة وصول المبلغ إلى بطاقة المشتري
@@ -369,13 +365,11 @@ const Terms: React.FC = () => {
                             merchant can instruct their payment gateway to return the amount to the
                             buyer's card — <strong>with no approval from the platform and no waiting
                             period</strong>.
-                            {refundWindowHours > 0 && (
-                                <> Within <strong><RefundWindowHours /></strong> of payment, the platform
-                                undertakes to deliver the refund request to the merchant immediately and to
-                                execute it <strong>with no approval step</strong>, and the merchant undertakes
-                                to carry it out within that window. After it, the feature remains available and
-                                the merchant's published policy governs.</>
-                            )}
+                            {' '}<strong>The merchant's published refund policy is what governs</strong>: they write it,
+                            they decide, and it is shown to the buyer before booking. <strong>The platform
+                            imposes no time limit, cannot compel a merchant to refund, and does not adjudicate
+                            disputes about it</strong> — it provides the tool, records, and notifies. A merchant
+                            may disable the one-tap refund from their dashboard, leaving the usual refund request.
                             {' '}This is a <strong>procedural</strong> undertaking, not a financial one: the
                             platform does not collect or hold funds at any moment — the amount is in the
                             merchant's account at their payment provider,

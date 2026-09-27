@@ -13,6 +13,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository } from '../../repositories/refundRepository';
 import { notifySetupGapsChanged } from './SetupPath';
+import { InstantRefundToggle } from './InstantRefundToggle';
 
 const MAX = 1500;
 
@@ -201,6 +202,9 @@ export const StorePoliciesCard: React.FC = () => {
                     </div>
                 </div>
             )}
+            {/* v15.01 — القرارُ بجانب السياسة: فصلُهما يجعل أحدهما يناقض الآخر. */}
+            <InstantRefundToggle />
+
         </div>
     );
 };

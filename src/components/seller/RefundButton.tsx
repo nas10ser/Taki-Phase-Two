@@ -19,7 +19,7 @@
  *    للتاجر لا حاجزُ أمان — وضغطتان متلاحقتان لا تُخرجان المبلغ مرّتين حتى لو
  *    سبقت إحداهما إعادةَ التصيير.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository, RefundExec } from '../../repositories/refundRepository';
 
@@ -69,6 +69,8 @@ export const RefundButton: React.FC<{
     const [exec, setExec] = useState<RefundExec | null>(null);
     const [ready, setReady] = useState(false);
     const [busy, setBusy] = useState(false);
+    /** حارسُ النقر المزدوج الحقيقي — يُكتب فوراً، بخلاف `setState`. */
+    const inFlight = useRef(false);
 
     const barcode: string = order?.barcode || '';
     const paid = !!order?.paidAt;
@@ -86,6 +88,31 @@ export const RefundButton: React.FC<{
         : (Number(order?.totalAmount) > 0 ? Number(order.totalAmount) : 0);
 
     const doRefund = async () => {
+        /**
+         * 🔴 القفل **أوّل سطر**، قبل أي حوار.
+         * كان `setBusy(true)` بعد حوارَي السؤال والتأكيد — أي أن الزرّ يبقى
+         * حيّاً طوال ثوانٍ يقرأ فيها التاجر النصّ. فنقرتان متتاليتان تفتحان
+         * سلسلتَي حوارٍ، ويؤكّد التاجر كليهما، فينطلق نداءان.
+         * والقفلُ في القاعدة يمنع الخصم المزدوج فعلاً (`ALREADY_CLAIMING`) —
+         * لكن ذلك آخرُ خطّ دفاع لا أوّلُه: أربعٌ من ستّ بوّابات بلا مفتاح
+         * تكرارٍ إطلاقاً، فلا يُترك الأمر لطبقةٍ واحدة. وطلبُ ناصر صريح:
+         * «ولا ينقر مرتين ورا بعض فيذهب المبلغ مرتين».
+         * 🪤 و`busy` في الحالة لا يكفي وحده: `setState` غيرُ متزامن، ونقرتان
+         *    في نفس الإطار تقرآن القيمةَ القديمة. فالحارسُ الحقيقي `ref`
+         *    يُكتب فوراً، والحالةُ لرسم الزرّ فقط.
+         */
+        if (inFlight.current) return;
+        inFlight.current = true;
+        setBusy(true);
+        try {
+            await runRefund();
+        } finally {
+            inFlight.current = false;
+            setBusy(false);
+        }
+    };
+
+    const runRefund = async () => {
         // ١) السبب — اختياريّ، لكنّه يُطبع على إشعار المشتري فيُسأل أوّلاً.
         const reason = await customPrompt(isRTL
             ? 'سبب ردّ المبلغ (اختياري — يراه المشتري في إشعاره):'
@@ -112,9 +139,7 @@ export const RefundButton: React.FC<{
               + `Confirm the refund?`);
         if (!ok) return;
 
-        setBusy(true);
         const res = await refundRepository.refundPaid(barcode, reason || undefined);
-        setBusy(false);
         await load();
         await onChanged?.();
 
