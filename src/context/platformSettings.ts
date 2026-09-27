@@ -47,6 +47,12 @@ export interface PlatformSettings {
      *  وفي «شكاواي»، وتُضبط من الإعدادات بلا نشر — فلا يُكتب رقمُ ساعاتٍ
      *  نصّاً في أي مكان (أوّل ضبطٍ يجعله كذباً — درس v14.12). */
     complaintsSlaHours: number;
+    /** v14.97 — نافذة الاسترداد الفوري. `hours` **ليست مهلة احتجاز**: تاكي لا
+     *  تحتفظ بالمال أصلاً (الدفع يذهب لحساب التاجر مباشرة). هي نافذةُ ضمانٍ
+     *  إجرائيّ: خلالها يصل طلبُ الاسترداد التاجرَ فوراً ويُنفَّذ **بلا خطوة
+     *  موافقة**. و`merchantButton` مفتاحُ إطفاءٍ فوريّ لزرّ «ردّ المبلغ».
+     *  🪤 و`hours = 0` تعني «لا نافذة معلنة» — فلا تُصاغ جملةُ الضمان أصلاً. */
+    refundWindow: { hours: number; merchantButton: boolean };
 }
 
 /** المفاتيح التي تُجلب عند الإقلاع — **مشتقّةٌ من فروع التطبيق أدناه**. */
@@ -55,7 +61,7 @@ export const PLATFORM_SETTING_KEYS = [
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
-    'complaints_sla_hours', 'chat_limits', 'verification',
+    'complaints_sla_hours', 'chat_limits', 'verification', 'refund_window',
 ];
 
 /**
@@ -86,6 +92,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     complaintsSlaHours: 24,
     chatLimits: { perBooking: 0, perHour: 120 },
     verification: { mode: 'off', slaHours: 24, vacation: false, showBadge: false },
+    refundWindow: { hours: 2, merchantButton: true },
 });
 
 /**
@@ -146,6 +153,17 @@ export const applyPlatformSetting = (
             return prev => ({ ...prev, verification: {
                 mode, slaHours: num(v.sla_hours, 24, 1, 720),
                 vacation: v.vacation === true, showBadge: v.show_badge === true,
+            } });
+        }
+        case 'refund_window': {
+            // v14.97 — نافذة الاسترداد المضمون + مفتاح زرّ التاجر. يطابق
+            // `taki_refund_policy()` على القاعدة قصّاً وافتراضاً (٠‑٧٢٠ ساعة).
+            // 🪤 والصفر مسموحٌ عمداً (`exclusiveLo=false`): «لا نافذة معلنة»
+            //    حالةٌ صالحة تُخفي جملة الضمان، لا قيمةٌ فاسدة تُقصّ إلى ساعتين.
+            const v: any = value || {};
+            return prev => ({ ...prev, refundWindow: {
+                hours: num(v.hours, 2, 0, 720),
+                merchantButton: typeof v.merchant_button === 'boolean' ? v.merchant_button : true,
             } });
         }
         case 'banner_autoplay_seconds':

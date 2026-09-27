@@ -15,11 +15,14 @@ import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
+import { RefundWindowHours } from '../../components/RefundWindowHours';
 import { CLIENT_PAYMENT_TERMS, MERCHANT_GATEWAY_AGREEMENT } from '../../data/legalTexts';
 
 const Terms: React.FC = () => {
-    const { language } = useApp();
+    const { language, platformSettings } = useApp();
     const isRTL = language === 'ar';
+    // v14.97 — ٠ ساعة = لا نافذة ضمانٍ معلنة ⇒ تُحذف جملةُ الوعد لا تُكتب بصفر.
+    const refundWindowHours = platformSettings.refundWindow.hours;
 
     return (
         <LegalLayout
@@ -336,6 +339,50 @@ const Terms: React.FC = () => {
                             cancellation policies or product quality or conformity — every financial dispute is resolved
                             directly between the buyer, the merchant and the payment gateway. The tax invoice is issued
                             by the merchant in their capacity as the seller.
+                        </>
+                    )}
+                </Paragraph>
+                {/* v14.97 — «ردّ المبلغ بضغطة» + نافذة الضمان. الرقم من
+                    `platform_settings.refund_window` لا نصّاً: أوّلُ ضبطٍ من
+                    اللوحة يجعل أيّ رقمٍ مكتوبٍ هنا كذباً (درس v14.12). */}
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>الاسترداد بضغطة واحدة:</strong> يستطيع التاجر في أيّ وقت — ومن لوحته —
+                            أن يأمر بوّابة الدفع الخاصّة به بإعادة المبلغ إلى بطاقة المشتري،
+                            <strong> دون موافقة من المنصّة ودون انتظار أيّ مدّة</strong>.
+                            {refundWindowHours > 0 && (
+                                <> وخلال <strong><RefundWindowHours /></strong> من لحظة الدفع، تلتزم المنصّة
+                                بإيصال طلب الاسترداد إلى التاجر فوراً وبتنفيذه <strong>بلا أيّ خطوة موافقة</strong>؛
+                                ويلتزم التاجر بتنفيذه خلالها. وبعد هذه المدّة تبقى الخاصّية متاحة وتسري
+                                سياسة التاجر المُعلَنة.</>
+                            )}
+                            {' '}وهذا التزامٌ <strong>إجرائيّ</strong> لا ماليّ: المنصّة لا تُحصّل الأموال ولا تحتفظ
+                            بها في أيّ لحظة — المبلغ في حساب التاجر لدى مزوّد الدفع،
+                            <strong> والردّ ينفّذه ذلك المزوّد</strong>. ومدّة وصول المبلغ إلى بطاقة المشتري
+                            تحدّدها جهة الدفع لا المنصّة. وللمنصّة إيقاف هذه الخاصّية لأيّ سببٍ تقنيّ دون
+                            أن يُسقط ذلك حقّ المشتري في الاسترداد وفق سياسة التاجر والأنظمة السعودية.
+                        </>
+                    ) : (
+                        <>
+                            <strong>One-tap refund:</strong> at any time, from their own dashboard, the
+                            merchant can instruct their payment gateway to return the amount to the
+                            buyer's card — <strong>with no approval from the platform and no waiting
+                            period</strong>.
+                            {refundWindowHours > 0 && (
+                                <> Within <strong><RefundWindowHours /></strong> of payment, the platform
+                                undertakes to deliver the refund request to the merchant immediately and to
+                                execute it <strong>with no approval step</strong>, and the merchant undertakes
+                                to carry it out within that window. After it, the feature remains available and
+                                the merchant's published policy governs.</>
+                            )}
+                            {' '}This is a <strong>procedural</strong> undertaking, not a financial one: the
+                            platform does not collect or hold funds at any moment — the amount is in the
+                            merchant's account at their payment provider,
+                            <strong> and the refund is executed by that provider</strong>. The time it takes to
+                            reach the buyer's card is set by the payment provider, not the platform. The
+                            platform may suspend this feature for technical reasons without prejudicing the
+                            buyer's right to a refund under the merchant's policy and Saudi law.
                         </>
                     )}
                 </Paragraph>

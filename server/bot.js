@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '14.95.0';
+const BOT_VERSION              = '15.00.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1619,8 +1619,8 @@ async function legacyCd(ctx, ms){
     await ctx.answerCbQuery(tr('cd_done_cb')).catch(()=>{});
     return safeReplyMd(ctx, tr('cd_stale_button', DIV), { reply_markup: Markup.inlineKeyboard(bookingsNavRows(s, ownsStore(s)?'s':'b')).reply_markup });
 }
-// Order matters only for clarity — an epoch-ms payload is 13 digits, a barcode
-// is 4–12 alphanumerics, so the two patterns can never both match.
+// An epoch-ms payload is 13 digits; an order code is 10 digits (v14.98) or a
+// 4–12 legacy alphanumeric — never 13+. check-order-code.js keeps it that way.
 bot.action(/^cd:(\d{13,})$/, ctx => legacyCd(ctx, +ctx.match[1]));
 bot.action(/^cd:([A-Za-z0-9]{4,12})$/, ctx => renderCountdown(ctx, ctx.match[1]));
 bot.action(/^cds:([A-Za-z0-9]{4,12})$/, ctx => renderCountdown(ctx, ctx.match[1], 's'));

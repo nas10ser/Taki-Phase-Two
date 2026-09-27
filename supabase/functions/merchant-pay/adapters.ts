@@ -7,11 +7,14 @@
  *   verifyCredentials(cfg)        → { ok, error? }
  *   confirmPayment(cfg, ref, barcode) → { paid, amountSar?, ref? }   ← نداء خادم→خادم دائماً
  *   verifyWebhook(cfg, evt)       → { sigOk, ref?, barcode? }
+ *   refundPayment(cfg, ref, amountSar, reason, barcode?) → { ok, refundRef?, reason? }  (v14.96)
  *
  * قواعد أمان مشتركة ينفذها الموجّه (index.ts) فوق هذه الطبقة:
  *  - التأكيد النهائي حصراً بنداء خادم→خادم (لا يُصدَّق رد متصفح المشتري)
  *  - مطابقة المبلغ والعملة مع الحجز قبل التعليم كمدفوع
  *  - idempotency عبر UNIQUE(provider, payment_ref) في قاعدة البيانات
+ *  - وللاسترداد: قفلٌ ذرّي في القاعدة **قبل** نداء المزوّد — فلا شيء في هذه
+ *    الطبقة يمنع نداءين من ردّ المال مرّتين (v14.96)
  *
  * إضافة مزود جديد = كائن جديد هنا + سطر في ADAPTERS. لا شيء آخر
  * (v12.83: هكذا أُضيف 'sim' التجريبي — الوعد تحقق حرفياً).
@@ -53,6 +56,20 @@ export interface WebhookEvt {
 }
 export interface WebhookCheck { sigOk: boolean; ref?: string; barcode?: string; reason?: string; }
 
+/**
+ * نتيجة استرداد لدى المزوّد (v14.96) — **عقدٌ ثلاثيّ لا ثنائيّ**، وهذا هو
+ * الفرق بين «ردّ المال مرّة» و«ردّه مرّتين»:
+ *
+ *  • `{ ok: true }`  ⇒ المزوّد **قَبِل** الاسترداد (نُفّذ، أو دخل طابور تنفيذه).
+ *                       لا يُعاد النداء بعدها أبداً.
+ *  • `{ ok: false }` ⇒ رفضٌ **قاطع**، لم يتحرّك ريالٌ واحد ⇒ يجوز فكّ القفل
+ *                       وإعادة المحاولة.
+ *  • `throw`         ⇒ النتيجة **غير معلومة** (انقطاع شبكة، أو حالة غامضة من
+ *                       المزوّد) ⇒ 🔴 لا يُفكّ القفل: فكّه يفتح باب استردادٍ
+ *                       مزدوج، والمال هنا مال التاجر لا مال تاكي.
+ */
+export interface RefundResult { ok: boolean; refundRef?: string; reason?: string; }
+
 export interface ProviderAdapter {
     createHostedPayment(cfg: GatewayCfg, ctx: PayCtx): Promise<CreatedPayment>;
     verifyCredentials(cfg: GatewayCfg): Promise<{ ok: boolean; error?: string }>;
@@ -60,6 +77,22 @@ export interface ProviderAdapter {
     verifyWebhook(cfg: GatewayCfg, evt: WebhookEvt): Promise<WebhookCheck>;
     /** payfort/hyperpay/sim: صفحة وسيطة — البقية لا تحتاجها */
     renderPage?(cfg: GatewayCfg, ctx: PayCtx): Promise<string>;
+    /**
+     * استرداد فعليّ لدى المزوّد — «يردّ التاجر المال بنقرة واحدة» (v14.96).
+     *
+     * 🪤 **الاسترداد ليس خاملَ التكرار عند أيّ مزوّد في هذا الملف**: نداءان
+     *    يعنيان استردادين. ميسر وتاب وبيتابس وهايبر باي بلا مفتاح تكرارٍ
+     *    إطلاقاً؛ وتشيك‑أوت وبيفورت وحدهما يقبلان مفتاحاً نرسله ثابتاً مشتقّاً
+     *    من رقم الطلب. فالحارس الحقيقي هو قفل القاعدة
+     *    `taki_claim_booking_refund` **قبل** النداء — لا شيء في هذه الطبقة.
+     * 🪤 و«٢٠٠ بجسمٍ فاشل» ليس نجاحاً: كل تطبيقٍ هنا يقرأ حقل الحالة نفسه.
+     *
+     * @param ref       مرجع الدفعة المخزَّن (`bookings.payment_ref`)
+     * @param amountSar المبلغ بالريال — الجزئيّ ممكنٌ ببنيته، والمنادي يرسل الكامل
+     * @param reason    سبب التاجر (يُرسل للمزوّد حيث يقبل وصفاً)
+     * @param barcode   رقم الطلب — بيفورت وبيتابس يطلبانه مرجعاً للعملية الأصلية
+     */
+    refundPayment?(cfg: GatewayCfg, ref: string, amountSar: number, reason: string, barcode?: string): Promise<RefundResult>;
 }
 
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
@@ -127,6 +160,15 @@ const sim: ProviderAdapter = {
         // لا webhooks في المحاكاة — مسار العودة الموقّع هو التأكيد الوحيد
         return { sigOk: false, reason: 'sim_no_webhooks' };
     },
+    async refundPayment(_cfg, ref, amountSar, _reason, barcode) {
+        // 🧪 **لا يتحرّك أي مال هنا — ولا ريالٌ واحد.** الدفعة نفسها كانت محاكاة
+        // (رمزاً موقّعاً بمفتاح الخادم لا خصماً من بطاقة)، فالاسترداد محاكاةٌ
+        // مثلها. تُرجع نجاحاً كي تسير بقيّة السلسلة — القفل، التسوية، السجل،
+        // الإشعار — كما تسير حرفياً مع مزوّدٍ حقيقي، فيُختبر المسار كاملاً.
+        // 🔴 ولذلك يبقى تفعيل `sim` على متجرٍ حيّ ممنوعاً: دفعٌ بلا مال ⇐
+        //    استردادٌ بلا مال، وكلاهما يكذب على التاجر والمشتري معاً.
+        return { ok: true, refundRef: `SIMRF-${barcode || ref || 'x'}-${toMinor(amountSar)}` };
+    },
 };
 
 // ============================================================
@@ -174,6 +216,52 @@ const moyasar: ProviderAdapter = {
         const ref = str(data?.invoice_id) || str(data?.id) || str(evt.body?.id);
         const meta = (data?.metadata || {}) as Record<string, unknown>;
         return { sigOk: true, ref, barcode: str(meta?.barcode) };
+    },
+    /**
+     * 📄 https://docs.moyasar.com/api/payments/05-refund-payment/
+     *    `POST /v1/payments/{id}/refund` — المبلغ بالهللات (وحذفه = استرداد كامل)،
+     *    والحالة بعده `refunded`، وحقل `refunded` يحمل المبلغ المسترَدّ فعلاً.
+     * 🪤 ومرجعنا المخزَّن **فاتورة لا دفعة** (أنشأنا `invoice` في
+     *    `createHostedPayment`) ونقطةُ الاسترداد على الدفعة — فنجلب الفاتورة
+     *    ونأخذ دفعتها المدفوعة أوّلاً:
+     *    📄 https://docs.moyasar.com/api/invoices/04-show-invoice/ (مصفوفة `payments`)
+     * 🪤 ولا مفتاح تكرار عند ميسر: نداءان = استردادان.
+     */
+    async refundPayment(cfg, ref, amountSar) {
+        const auth = basicAuth(cfg.secret_key || '');
+        let paymentId = '';
+        const inv = await fetch(`https://api.moyasar.com/v1/invoices/${encodeURIComponent(ref)}`, {
+            headers: { Authorization: auth },
+        });
+        if (inv.ok) {
+            const ij = await inv.json().catch(() => ({}));
+            const list = (Array.isArray(ij?.payments) ? ij.payments : []) as Record<string, unknown>[];
+            const paid = list.find((p) => p?.status === 'paid' || p?.status === 'captured');
+            const already = list.find((p) => p?.status === 'refunded');
+            // مسترَدّة أصلاً عند ميسر: نجاحٌ صادق لا رفضٌ يُبقي التاجر في حلقة إعادة
+            if (!paid && already) return { ok: true, refundRef: str(already.id) };
+            paymentId = str(paid?.id);
+            if (!paymentId) return { ok: false, reason: 'moyasar_no_payment_on_invoice' };
+        } else if (inv.status === 404) {
+            paymentId = ref; // المرجع دفعة مباشرة لا فاتورة
+        } else if (inv.status === 401 || inv.status === 403) {
+            return { ok: false, reason: `moyasar_auth_${inv.status}` };
+        } else {
+            // لا نعرف حال الفاتورة ⇒ لا نُقدِم، ولا يُفكّ القفل
+            throw new Error(`moyasar_invoice_lookup_${inv.status}`);
+        }
+        const r = await fetch(`https://api.moyasar.com/v1/payments/${encodeURIComponent(paymentId)}/refund`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: auth },
+            body: JSON.stringify({ amount: toMinor(amountSar) }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status >= 500) throw new Error(`moyasar_refund_${r.status}`);
+        if (!r.ok) return { ok: false, reason: `moyasar_refund_${r.status}:${str(j?.message) || str(j?.type)}`.slice(0, 160) };
+        // ٢٠٠ بجسمٍ فاشل ليس نجاحاً — الحكم على الحالة والمبلغ المسترَدّ وحدهما
+        const okBody = str(j?.status) === 'refunded' || Number(j?.refunded || 0) >= toMinor(amountSar);
+        if (!okBody) return { ok: false, reason: `moyasar_status_${str(j?.status) || 'unknown'}` };
+        return { ok: true, refundRef: str(j?.id) || paymentId };
     },
 };
 
@@ -226,6 +314,44 @@ const tap: ProviderAdapter = {
         const refObj = (evt.body?.reference || {}) as Record<string, unknown>;
         if (!id) return { sigOk: false, reason: 'no_charge_id' };
         return { sigOk: true, ref: id, barcode: str(meta?.barcode) || str(refObj?.order) };
+    },
+    /**
+     * 📄 https://developers.tap.company/reference/create-a-refund
+     *    `POST https://api.tap.company/v2/refunds` بـ `{ charge_id, amount, currency, reason }`.
+     *    والمبلغ **بوحدات كبرى عشرية** كما في إنشاء الـcharge حرفياً (الوثيقة:
+     *    «حتى منزلتين عشريتين» لغير BHD/KWD/OMR) — لا بالهللات.
+     *    و`reason` من مجموعة مغلقة: `duplicate | fraudulent | requested_by_customer`.
+     * 📄 الحالات: https://developers.tap.company/reference/refunds
+     *    REFUNDED/ACCEPTED/PENDING/IN_PROGRESS = قُبل ⇒ لا يُعاد أبداً.
+     *    DECLINED/REJECTED/FAILED/RESTRICTED = رفضٌ قاطع.
+     *    وTIMED_OUT/UNKNOWN غامضتان ⇒ استثناء يُبقي القفل (لا استرداد مزدوج).
+     * 🪤 لا مفتاح تكرار عند تاب: نداءان = استردادان.
+     */
+    async refundPayment(cfg, ref, amountSar, reason, barcode) {
+        const r = await fetch('https://api.tap.company/v2/refunds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.secret_key || ''}` },
+            body: JSON.stringify({
+                charge_id: ref,
+                amount: round2(amountSar),
+                currency: 'SAR',
+                reason: 'requested_by_customer',
+                description: reason.slice(0, 200),
+                reference: { merchant: barcode || ref },
+                metadata: { barcode: barcode || '' },
+            }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status >= 500) throw new Error(`tap_refund_${r.status}`);
+        if (!r.ok) {
+            return { ok: false, reason: `tap_refund_${r.status}:${str(j?.errors?.[0]?.description) || str(j?.message)}`.slice(0, 160) };
+        }
+        const st = str(j?.status).toUpperCase();
+        if (/^(REFUNDED|ACCEPTED|PENDING|IN_PROGRESS)$/.test(st)) return { ok: true, refundRef: str(j?.id) || ref };
+        if (/^(DECLINED|REJECTED|FAILED|RESTRICTED)$/.test(st)) {
+            return { ok: false, reason: `tap_${st}:${str(j?.response?.message)}`.slice(0, 160) };
+        }
+        throw new Error(`tap_refund_unclear_${st || 'no_status'}`);
     },
 };
 
@@ -288,6 +414,38 @@ const paytabs: ProviderAdapter = {
         const barcode = str(evt.body?.cart_id) || str(evt.body?.cartId);
         if (!ref) return { sigOk: false, reason: 'no_tran_ref' };
         return { sigOk: true, ref, barcode };
+    },
+    /**
+     * 📄 https://docs.paytabs.com/PT2-API-Endpoints/Integration-Types-Manuals/Own-Form/Own-Form-Step-7-Manage-Transactions/Own-Form-Step-7-Refund-Transaction/
+     *    نفس نقطة `/payment/request` بـ `tran_type:'refund'` و`tran_ref` = مرجع
+     *    البيع الأصلي، والمبلغ `cart_amount` **بوحدات كبرى** (ريال) كما في الإنشاء.
+     *    والنجاح `payment_result.response_status = 'A'` وحدها؛ و`'P'` قيد التنفيذ
+     *    (قُبل ⇒ لا يُعاد)، و`'H'` معلّقٌ لمراجعة ⇒ غامض فيُرفع استثناء.
+     * 🪤 لا مفتاح تكرار: نداءان = استردادان.
+     */
+    async refundPayment(cfg, ref, amountSar, reason, barcode) {
+        const r = await fetch('https://secure.paytabs.sa/payment/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: cfg.secret_key || '' },
+            body: JSON.stringify({
+                profile_id: Number(str(cfg.extra_config?.profile_id)) || undefined,
+                tran_type: 'refund',
+                tran_class: 'ecom',
+                tran_ref: ref,
+                cart_id: barcode || ref,
+                cart_currency: 'SAR',
+                cart_amount: round2(amountSar),
+                cart_description: `TAKI refund ${barcode || ref} — ${reason}`.slice(0, 90),
+            }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status >= 500) throw new Error(`paytabs_refund_${r.status}`);
+        if (!r.ok) return { ok: false, reason: `paytabs_refund_${r.status}:${str(j?.message)}`.slice(0, 160) };
+        const st = str(j?.payment_result?.response_status).toUpperCase();
+        const msg = str(j?.payment_result?.response_message) || str(j?.message);
+        if (st === 'A' || st === 'P') return { ok: true, refundRef: str(j?.tran_ref) || ref };
+        if (!st || st === 'H') throw new Error(`paytabs_refund_unclear_${st || 'no_status'}:${msg}`.slice(0, 160));
+        return { ok: false, reason: `paytabs_${st}:${msg}`.slice(0, 160) };
     },
 };
 
@@ -390,6 +548,50 @@ const payfort: ProviderAdapter = {
         if (!timingSafeEqual(calc.toLowerCase(), given.toLowerCase())) return { sigOk: false, reason: 'bad_signature' };
         return { sigOk: true, ref: str(params.fort_id) || str(params.merchant_reference), barcode: str(params.merchant_reference) };
     },
+    /**
+     * 📄 https://paymentservices.amazon.com/docs/api/managing-payments/refund
+     *    `command='REFUND'` على نفس `FortAPI/paymentApi`، والمبلغ **بأصغر وحدة**
+     *    (هللات)، والتوقيع بعبارة الطلب (SHA Request Phrase = `secret_key` عندنا،
+     *    وهي نفسها المستعملة في `PURCHASE` و`CHECK_STATUS`).
+     *    و`fort_id` أو `merchant_reference` — «واحدٌ منهما يكفي» ونرسل الاثنين.
+     * 📄 والنجاح `status = '06'`:
+     *    https://paymentservices.amazon.com/docs/managing-payments/refunding-payment
+     * ✅ `maintenance_reference` مفتاح تكرارٍ حقيقي عند المزوّد نفسه («يسمح بإعادة
+     *    المحاولة بنفس المرجع») — نشتقّه ثابتاً من رقم الطلب، فإعادةُ محاولةٍ
+     *    بنفسه لا تُنتج استرداداً ثانياً. وهو وتشيك‑أوت الوحيدان بهذه الحماية.
+     */
+    async refundPayment(cfg, ref, amountSar, _reason, barcode) {
+        const mref = barcode || ref;
+        const fields: Record<string, string> = {
+            command: 'REFUND',
+            access_code: str(cfg.extra_config?.access_code),
+            merchant_identifier: str(cfg.extra_config?.merchant_identifier),
+            merchant_reference: mref,
+            amount: String(toMinor(amountSar)),
+            currency: 'SAR',
+            language: 'ar',
+            maintenance_reference: `TKRF-${mref}`,
+            // 🪤 لا نصّ حرّ (ولا عربيّ) داخل حقلٍ **مُوقَّع**: التوقيع يُحسب على
+            //    القيمة الخام، وأي اختلاف ترميزٍ بيننا وبين المزوّد يُبطله
+            //    فيُرفض الاسترداد بلا سببٍ ظاهر. السبب محفوظ عندنا في القاعدة.
+            order_description: `TAKI refund ${mref}`.slice(0, 150),
+        };
+        if (ref && ref !== mref) fields.fort_id = ref;
+        fields.signature = await payfortSign(cfg.secret_key || '', fields);
+        const r = await fetch(`${payfortApiHost(cfg)}/FortAPI/paymentApi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fields),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status >= 500) throw new Error(`payfort_refund_${r.status}`);
+        const st = str(j?.status);
+        const msg = str(j?.response_message);
+        if (st === '06') return { ok: true, refundRef: str(j?.fort_id) || `TKRF-${mref}` };
+        // '08' استرداد فاشل · '00' طلب غير صالح — رفضٌ قاطع بلا حركة مال
+        if (st === '08' || st === '00') return { ok: false, reason: `payfort_${st}:${msg}`.slice(0, 160) };
+        throw new Error(`payfort_refund_unclear_${st || 'no_status'}:${msg}`.slice(0, 160));
+    },
 };
 
 // ============================================================
@@ -480,6 +682,43 @@ const hyperpay: ProviderAdapter = {
         const barcode = str((evt.body?.payload as Record<string, unknown>)?.merchantTransactionId);
         return { sigOk: true, ref: '', barcode };
     },
+    /**
+     * 📄 استرداد الـback‑office على منصّة OPPWA/ACI التي يقوم عليها هايبر باي:
+     *    `POST {host}/v1/payments/{paymentId}` بـ `paymentType=RF` مع `entityId`
+     *    و`amount` (وحدات كبرى بمنزلتين) و`currency` — والمصادقة `Bearer`
+     *    بالمفتاح السري، أي نفس قناة التحصيل حرفياً. (نموذج الوثيقة الرسمي:
+     *    `-d "entityId=…" -d "amount=10.00" -d "currency=…" -d "paymentType=RF"`.)
+     * 🪤 و`ref` هنا يجب أن يكون **معرّف دفعة** (يخزّنه `confirmPayment` من
+     *    `j.id`)؛ فإن كان مساراً (`resourcePath`) أو رقم الطلب نفسه فلا استرداد
+     *    ممكن — ونقولها صراحةً بدل نجاحٍ كاذب.
+     * 🪤 ولا مفتاح تكرار: نداءان = استردادان.
+     */
+    async refundPayment(cfg, ref, amountSar, _reason, barcode) {
+        if (!ref || ref.startsWith('/') || (barcode && ref === barcode)) {
+            return { ok: false, reason: 'hyperpay_no_payment_id' };
+        }
+        const host = hyperpayHost(cfg);
+        const body = new URLSearchParams({
+            entityId: str(cfg.extra_config?.entity_id),
+            amount: round2(amountSar).toFixed(2),
+            currency: 'SAR',
+            paymentType: 'RF',
+        });
+        const r = await fetch(`${host}/v1/payments/${encodeURIComponent(ref)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${cfg.secret_key || ''}` },
+            body: body.toString(),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status >= 500) throw new Error(`hyperpay_refund_${r.status}`);
+        const code = str(j?.result?.code);
+        const desc = str(j?.result?.description);
+        // نجاح، أو `000.200.*` «قيد المعالجة» — وكلاهما **قُبل** فلا يُعاد أبداً
+        if (HYPERPAY_OK.test(code) || /^000\.200/.test(code)) return { ok: true, refundRef: str(j?.id) || ref };
+        // `900.*`/`999.*` خلل اتصالٍ بالمستحوِذ ⇒ النتيجة غير معلومة
+        if (!code || /^(900\.|999\.)/.test(code)) throw new Error(`hyperpay_refund_unclear_${code || r.status}`);
+        return { ok: false, reason: `hyperpay_${code}:${desc}`.slice(0, 160) };
+    },
 };
 
 // ============================================================
@@ -541,6 +780,41 @@ const checkout: ProviderAdapter = {
         const data = (evt.body?.data || {}) as Record<string, unknown>;
         const meta = (data?.metadata || {}) as Record<string, unknown>;
         return { sigOk: true, ref: str(data?.id), barcode: str(meta?.barcode) || str(data?.reference) };
+    },
+    /**
+     * 📄 https://www.checkout.com/docs/payments/manage-payments/refund-a-payment/refund-a-payment-with-a-reference
+     *    `POST /payments/{id}/refunds` بـ `{ amount (بأصغر وحدة), reference, metadata }`
+     *    ⇒ **202** بجسم `{ action_id, reference, _links }`.
+     * 🪤 والاسترداد هنا **غير متزامن**: ٢٠٢ تعني «قُبل» لا «تمّ»، والحسم النهائي
+     *    يأتي بـwebhook. ولذلك ٢٠٢ عندنا `ok:true` — لأن إعادة النداء بعدها
+     *    تُنتج استرداداً ثانياً فعليّاً، وهذا أسوأ من انتظار تأكيد.
+     * ✅ والمزوّد الوحيد هنا بمفتاح تكرارٍ معلَن: `Cko-Idempotency-Key`
+     *    📄 https://www.checkout.com/docs/developer-resources/api/idempotency
+     *    (يُحفظ ٧٢ ساعة) — نشتقّه ثابتاً من الطلب والمرجع والمبلغ، فإعادةُ
+     *    محاولةٍ خلال المهلة تعيد نفس الجواب بلا خصمٍ ثانٍ.
+     */
+    async refundPayment(cfg, ref, amountSar, reason, barcode) {
+        const idem = (await sha256Hex(`taki-refund|${barcode || ''}|${ref}|${toMinor(amountSar)}`)).slice(0, 40);
+        const r = await fetch(`${checkoutHost(cfg)}/payments/${encodeURIComponent(ref)}/refunds`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${cfg.secret_key || ''}`,
+                'Cko-Idempotency-Key': idem,
+            },
+            body: JSON.stringify({
+                amount: toMinor(amountSar),
+                reference: barcode || ref,
+                metadata: { barcode: barcode || '', taki_reason: reason.slice(0, 120) },
+            }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 200 || r.status === 201 || r.status === 202) {
+            return { ok: true, refundRef: str(j?.action_id) || str(j?.reference) || idem };
+        }
+        if (r.status >= 500) throw new Error(`checkout_refund_${r.status}`);
+        const codes = Array.isArray(j?.error_codes) ? j.error_codes.join(',') : '';
+        return { ok: false, reason: `checkout_refund_${r.status}:${codes || str(j?.error_type)}`.slice(0, 160) };
     },
 };
 

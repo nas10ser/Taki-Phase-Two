@@ -8,11 +8,14 @@
  *   GET  ?op=page     صفحة وسيطة موقّعة HMAC (payfort/hyperpay/sim)
  *   ANY  ?op=webhook  إشعارات المزودين خادم→خادم (توقيع لكل مزود)
  *   ANY  ?op=return   عودة متصفح المشتري → تأكيد خادمي ثم تحويل للموقع
+ *   POST ?op=refund   استرداد بنقرة واحدة من لوحة التاجر (v14.96)
  *
  * v12.82 — تحصينات: مفاتيح المزودين بيد ناصر (enabled_pay_providers)،
  * أثر تدقيق لكل رابط دفع (activity_log مع قناة المصدر web/telegram/whatsapp)،
  * ومسار البوت يتحقق أن الهوية مستخدم حقيقي في القاعدة.
  * v12.83 — المزود السابع 'sim': محاكاة دفع كاملة بلا أموال (رمز موقّع خادمياً).
+ * v14.96 — استرداد فعليّ: التاجر يردّ مال المشتري بنقرة، والمال يخرج من بوابة
+ * التاجر نفسها (تاكي لا تحتفظ بريال، فلا تستطيع أن تردّ ما لا تملك).
  *
  * قواعد أمان صلبة (من المخطط المعتمد):
  *  - الأسرار تُفك حصراً هنا عبر RPC ‏_gateway_secrets (service_role فقط)
@@ -24,7 +27,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { ADAPTERS, GatewayCfg, PayCtx } from './adapters.ts';
+import { ADAPTERS, GatewayCfg, PayCtx, RefundResult } from './adapters.ts';
 import { CORS_HEADERS, hmacSha256Hex, htmlResponse, json, round2, seeOther, timingSafeEqual } from './helpers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -303,6 +306,126 @@ Deno.serve(async (req: Request) => {
             if (!result.paid) return json(200, { paid: false, reason: result.reason });
             const ok = await applyConfirmed(provider, merchantId, booking, result.ref || ref, result.amountSar);
             return json(200, { paid: ok });
+        }
+
+        // ───────── استرداد بنقرة واحدة من لوحة التاجر (v14.96) ─────────
+        /**
+         * تاكي **لا تحتفظ بمال أحد**: المشتري يدفع لبوابة التاجر مباشرة، فالردّ
+         * يخرج من حساب التاجر نفسه بنداء خادم→خادم على تلك البوابة بالذات.
+         *
+         * 🔴 الترتيب هنا ليس تفصيلاً — هو كلّ شيء: **القفل في القاعدة قبل نداء
+         *    المزوّد**. الاسترداد بلا مفتاح تكرارٍ عند أربعةٍ من ستّة مزوّدين
+         *    حقيقيّين (ميسر · تاب · بيتابس · هايبر باي)، فنقرتان سريعتان — أو
+         *    إعادةُ محاولةٍ من الشبكة — تردّان المال مرّتين.
+         *    `taki_claim_booking_refund` تُرجع `{ok:true,…}` للمنادي **الأوّل**
+         *    وحده، ثم `ALREADY_CLAIMING`/`ALREADY_REFUNDED` لمن بعده — ونمرّر
+         *    نصَّ خطئها كما هو، فلا يُكتب رمزٌ من الذاكرة هنا.
+         * 🔴 ولا يُقفل هذا المسار بمفتاح `direct_pay_enabled`: المال خرج من جيب
+         *    المشتري فعلاً، وإغلاق الدفع الجديد لا يجوز أن يحبس استرداده.
+         */
+        if (op === 'refund' && req.method === 'POST') {
+            const uid = await resolveUid(req, body);
+            if (!uid) return json(401, { error: 'AUTH_REQUIRED' });
+            if (rateLimited(`rf_${uid}`, 10)) return json(429, { error: 'RATE_LIMITED' });
+
+            const barcode = String(body.barcode || '').trim();
+            if (!barcode) return json(400, { error: 'BARCODE_REQUIRED' });
+            const booking = await loadBooking(barcode);
+            if (!booking) return json(404, { error: 'BOOKING_NOT_FOUND' });
+            // التاجر صاحب الطلب وحده — لا المشتري، ولا تاجرٌ آخر
+            if (String(booking.store_id) !== uid) return json(403, { error: 'NOT_YOUR_ORDER' });
+            if (!booking.paid_at) return json(409, { error: 'NOT_PAID' });
+            if (!String(booking.payment_ref || '')) return json(409, { error: 'NO_PAYMENT_REF' });
+
+            const reason = String(body.reason || '').trim().slice(0, 200) || 'refund_by_merchant';
+            const merchantId = String(booking.store_id);
+
+            // ① القفل أوّلاً — لا نداء للمزوّد قبل أن نملك الحقّ الحصري
+            const { data: claimRaw, error: claimErr } = await service.rpc('taki_claim_booking_refund', {
+                p_barcode: barcode,
+                p_reason: reason,
+            });
+            if (claimErr) return json(500, { error: 'CLAIM_FAILED', detail: String(claimErr.message).slice(0, 180) });
+            const claim = (claimRaw || {}) as Record<string, unknown>;
+            if (claim.ok !== true) return json(409, { error: String(claim.error || 'CLAIM_REFUSED') });
+
+            // 🪤 الباركود القانوني يأتي من القفل نفسه (القاعدة تُطبّق `upper(btrim())`)،
+            //    فلا تُخاطب التسويةُ صفّاً غير الذي قُفل.
+            const bc = String(claim.barcode || barcode);
+            const provider = String(claim.provider || booking.payment_provider || '');
+            const payRef = String(claim.ref || booking.payment_ref || '');
+            const amountSar = round2(Number(claim.amount) || 0);
+
+            /** فكّ القفل عند رفضٍ **قاطع** وحده — فالتاجر يعيد المحاولة بأمان. */
+            const release = async (why: string) => {
+                await service.rpc('taki_settle_booking_refund', {
+                    p_barcode: bc, p_ok: false, p_refund_ref: null, p_reason: why.slice(0, 200),
+                });
+            };
+
+            const adapter = ADAPTERS[provider];
+            if (!adapter) { await release('no_adapter'); return json(500, { error: 'NO_ADAPTER' }); }
+            // مهايئٌ قديم بلا استرداد: خطأ صريح — لا نجاحٌ كاذب يُوهم أن المال رُدّ
+            if (!adapter.refundPayment) { await release('refund_unsupported'); return json(501, { error: 'REFUND_NOT_SUPPORTED', provider }); }
+            if (!(amountSar > 0)) { await release('zero_amount'); return json(409, { error: 'ZERO_AMOUNT' }); }
+
+            const cfg = await gatewayCfg(merchantId);
+            if (!cfg || !cfg.secret_key) { await release('gateway_unavailable'); return json(409, { error: 'GATEWAY_UNAVAILABLE' }); }
+            // بدّل التاجر مزوّده بعد الدفع؟ مفاتيحه الجديدة لا تعرف تلك العملية.
+            if (String(cfg.provider) !== provider) {
+                await release('provider_changed');
+                return json(409, { error: 'PROVIDER_CHANGED', was: provider, now: String(cfg.provider) });
+            }
+
+            // ② نداء المزوّد
+            let res: RefundResult;
+            try {
+                res = await adapter.refundPayment(cfg, payRef, amountSar, reason, bc);
+            } catch (e) {
+                /**
+                 * 🔴 نتيجة **غير معلومة** (شبكة انقطعت، أو حالة غامضة من المزوّد):
+                 * القفل يبقى مقفلاً عمداً. فكّه هنا يعني أن نقرةً ثانية قد تردّ
+                 * المال مرّةً ثانية على مالٍ ربّما رُدّ أصلاً — وضررُ حبسِ الطلب
+                 * حتى يراجعه إنسان أهونُ من خصمٍ مزدوج من حساب التاجر.
+                 */
+                const detail = String((e as Error)?.message || e).slice(0, 180);
+                await service.from('activity_log').insert({
+                    user_id: uid, user_type: 'seller', action: 'refund_outcome_unknown',
+                    entity_type: 'booking', entity_id: bc,
+                    metadata: { provider, amount: amountSar, ref: payRef, detail, channel: requestChannel(req, body) },
+                });
+                return json(502, { error: 'REFUND_OUTCOME_UNKNOWN', detail });
+            }
+
+            // ③ التسوية — نجاحاً أو رفضاً قاطعاً
+            const { data: setRaw, error: setErr } = await service.rpc('taki_settle_booking_refund', {
+                p_barcode: bc,
+                p_ok: res.ok,
+                p_refund_ref: res.refundRef || null,
+                p_reason: res.ok ? null : (res.reason || 'provider_declined').slice(0, 200),
+            });
+            await service.from('activity_log').insert({
+                user_id: uid, user_type: 'seller',
+                action: res.ok ? 'refund_succeeded' : 'refund_declined',
+                entity_type: 'booking', entity_id: bc,
+                metadata: {
+                    provider, amount: amountSar, ref: payRef,
+                    refund_ref: res.refundRef || null, reason: res.reason || null,
+                    settle_error: setErr ? String(setErr.message).slice(0, 180) : null,
+                    channel: requestChannel(req, body),
+                },
+            });
+            if (!res.ok) return json(200, { ok: false, reason: res.reason || 'PROVIDER_DECLINED' });
+            // المال خرج فعلاً — نقولها حتى لو تعثّرت كتابة التسوية، فلا تُعاد أبداً
+            // 🪤 ورقمُ الإشعار الدائن يأتي من التسوية نفسها: إهمالُه هنا كان يجعل
+            //    شاشةَ التاجر تَعِد بإشعارٍ دائنٍ لا تعرض رقمه أبداً.
+            const settled = (setRaw || {}) as Record<string, unknown>;
+            return json(200, {
+                ok: true, refund_ref: res.refundRef || null, amount: amountSar,
+                credit_note_no: settled.credit_note_no || null,
+                order_cancelled: settled.order_cancelled ?? null,
+                settle_failed: !!setErr || settled.ok === false,
+            });
         }
 
         // ──────── الصفحة الوسيطة الموقعة (payfort نموذج / hyperpay ودجت / sim محاكاة) ────────

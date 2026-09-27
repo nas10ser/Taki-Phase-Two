@@ -3,6 +3,7 @@ import jsQR from 'jsqr';
 import { useApp } from '../context/AppContext';
 import { useBooking, Booking } from '../hooks/useBooking';
 import { thumbUrl, imgFallback } from '../utils/thumb';
+import { normalizeArabicNumerals } from '../utils/helpers';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 
@@ -230,7 +231,13 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const [searching, setSearching] = useState(false);
     const handleManualSearch = async () => {
-        const code = manualCode.trim();
+        // 🔴 v14.98 — رقم الطلب صار أرقاماً، ولوحةُ المفاتيح العربية على آيفون
+        //    تكتب «٤٨٢٧» لا «4827». والبحث في القاعدة
+        //    (`lookup_booking_by_code`) يقارن بـ`upper()` لا بـ`taki_norm`،
+        //    فرقمٌ عربيّ لا يطابق شيئاً ويردّ «لم يتم العثور على حجز» عن طلبٍ
+        //    قائم — والتاجر يقف أمام العميل. ما كان هذا ممكناً حين كان الرمز
+        //    حروفاً لاتينية؛ صار ممكناً اليوم، فيُوحَّد قبل السؤال.
+        const code = normalizeArabicNumerals(manualCode).trim();
         if (!code || searching) return;
         const local = lookupBooking(code);
         if (local) {
@@ -465,7 +472,11 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                                 <input
                                     value={manualCode}
                                     onChange={e => setManualCode(e.target.value)}
-                                    placeholder={isRTL ? 'أدخل رمز الباركود أو الرمز الاحتياطي' : 'Enter barcode or backup code'}
+                                    // v14.98 — «رقم الطلب» لا «الباركود»: الرمز صار أرقاماً فقط.
+                                    // 🪤 ويبقى الحقل نصّاً حرّاً بلا inputMode="numeric" ولا فلترة:
+                                    //    الطلبات السابقة رموزُها حروفٌ وأرقام وتبقى صالحة إلى الأبد،
+                                    //    فحقلٌ رقميّ وحده يجعل التاجر عاجزاً عن تسليم طلبٍ قديم.
+                                    placeholder={isRTL ? 'أدخل رقم الطلب أو الرمز الاحتياطي' : 'Enter order number or backup code'}
                                     style={{
                                         flex: 1, padding: '14px 16px', borderRadius: 14,
                                         border: '1.5px solid #334155',

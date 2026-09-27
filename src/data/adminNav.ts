@@ -19,7 +19,7 @@
 export type AdminTabId =
     | 'overview'
     | 'buyers' | 'sellers' | 'admins'
-    | 'reports' | 'verification' | 'moderation' | 'messages' | 'delivery'
+    | 'reports' | 'verification' | 'moderation' | 'messages' | 'delivery' | 'operations'
     | 'invoices' | 'tax'
     | 'analytics' | 'analyst' | 'audience' | 'contests'
     | 'tools' | 'locations' | 'messaging' | 'launch';
@@ -90,6 +90,15 @@ export const ADMIN_TABS: AdminTabDef[] = [
         hint: 'قراءة محادثات الطلبات بين المشتري والتاجر (قراءة فقط).',
         permission: 'tab_messages',
         keywords: 'messages chat monitor conversations رسائل محادثات مراقبة دردشة',
+    },
+    {
+        // 🪤 صلاحيّتها `tab_tools` عمداً لا مفتاحٌ جديد: سياسةُ القراءة الحيّة
+        //    على `activity_log` هي `taki_admin_perm('tab_tools')`، فمفتاحٌ ثانٍ
+        //    كان يفتح باباً ثانياً على البيان نفسه بقاعدةٍ تفترق عنه.
+        id: 'operations', label: 'إدارة العمليات', icon: '🗒', group: 'ops',
+        hint: 'كل ما جرى على المنصّة برقم مرجعه — بدل أن يصلك إشعاراً عن كل حجز.',
+        permission: 'tab_tools',
+        keywords: 'operations activity log audit عمليات سجل نشاط مرجع رقم الطلب كود حركة',
     },
     {
         id: 'delivery', label: 'التوصيل', icon: '🚚', group: 'ops',

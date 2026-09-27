@@ -16,6 +16,24 @@ import { logger } from '../utils/logger';
 
 export type RefundStatus = 'requested' | 'declined' | 'approved' | 'refunded' | 'withdrawn';
 
+/**
+ * v14.97 — حالةُ **التنفيذ** على صفّ الحجز نفسه، لا حالةُ الطلب أعلاه.
+ * `null` لم يُطلب قطّ · `claiming` نداءٌ جارٍ عند المزوّد (قفل) ·
+ * `refunded` خرج المال فعلاً · `failed` ردَّ المزوّد بالرفض (تُعاد المحاولة).
+ */
+export type RefundExecState = 'claiming' | 'refunded' | 'failed';
+
+export interface RefundExec {
+    state: RefundExecState | null;
+    claimedAt: string | null;
+    refundedAt: string | null;
+    ref: string | null;
+    amount: number | null;
+    reason: string | null;
+}
+
+const EXEC_COLS = 'refund_state, refund_claimed_at, refunded_at, refund_ref, refund_amount, refund_reason';
+
 export interface BookingRefund {
     barcode: string;
     status: RefundStatus;
@@ -117,6 +135,75 @@ export const refundRepository = {
             const d: any = data || {};
             return { ok: true, refundPolicy: d.refund_policy || undefined, storeTerms: d.store_terms || undefined };
         } catch { return { ok: false }; }
+    },
+
+    /**
+     * v14.97 — **الردّ الفعليّ بضغطة**: يأمر بوّابة التاجر نفسها بإعادة المبلغ.
+     * ═══════════════════════════════════════════════════════════════════════
+     * 🔴 وهذا غير `resolve(...,'refund')` تماماً: تلك **تسجّل** ردّاً أجراه
+     *    التاجر بيده خارج المنصّة؛ وهذه **تُجريه**. المالُ يخرج من حساب التاجر
+     *    عند مزوّده — لا من تاكي، فتاكي لا تملك ريالاً منه أصلاً.
+     *
+     * والقفلُ في القاعدة لا هنا: `taki_claim_booking_refund` تُرجع `ok` مرّةً
+     * واحدة لكلّ ردّ، فضغطتان متلاحقتان أو تبويبان لا يُخرجان المبلغ مرّتين.
+     * ودورُ هذه الدالّة أن تنقل سببَ المزوّد كما هو — لا أن تُترجمه إلى
+     * «تعذّر الاتصال» فيبقى التاجر لا يعرف لماذا رفضت بوّابته.
+     */
+    refundPaid: async (
+        barcode: string, reason?: string,
+    ): Promise<{ ok: boolean; error?: string; detail?: string; amount?: number; creditNoteNo?: string; settleFailed?: boolean }> => {
+        try {
+            const { data, error } = await supabase.functions.invoke('merchant-pay', {
+                body: { op: 'refund', barcode, reason: reason || null },
+            });
+            let payload: any = data;
+            // 🪤 دالّةُ الحافة تردّ التفاصيل في جسمٍ بحالةٍ غير 2xx، و`invoke`
+            //    تجعله `error` وتُخفي الجسم — فيُقرأ من `context` كما في
+            //    مسار «ادفع الآن» (Bookings.tsx). بدونه يضيع سببُ المزوّد.
+            if (error) {
+                try { payload = await (error as any).context?.json?.(); } catch { /* ردٌّ غير JSON */ }
+                if (!payload) return { ok: false, error: 'NETWORK', detail: error.message };
+            }
+            if (payload?.ok) {
+                return {
+                    ok: true, amount: Number(payload.amount) || undefined,
+                    creditNoteNo: payload.credit_note_no || undefined,
+                    settleFailed: !!payload.settle_failed,
+                };
+            }
+            // 🪤 رفضُ المزوّد يعود بحالة 2xx وبمفتاح `reason` لا `error` — وقراءةُ
+            //    `error` وحدها كانت تبتلعه وتعرض «REFUND_FAILED» العامّة، وهي
+            //    بالضبط الجملةُ التي بُني هذا المسار كلّه على تجنّبها.
+            const code = payload?.error || payload?.reason;
+            return { ok: false, error: code || 'REFUND_FAILED', detail: payload?.detail || undefined };
+        } catch (e) {
+            return { ok: false, error: 'NETWORK', detail: (e as Error)?.message };
+        }
+    },
+
+    /**
+     * v14.97 — حالةُ التنفيذ على صفّ الحجز. تُقرأ من الجدول مباشرةً
+     * (`bookings_select_own` تسمح للتاجر والمشتري بصفّهما وحده).
+     * 🪤 `null` هنا تعني «لم يُطلب ردٌّ قطّ» — ولا تعني «تعذّرت القراءة»:
+     *    الفشلُ يعود `null` أيضاً، ولذلك لا يُبنى عليه نفيٌ قاطع في الشاشة،
+     *    بل تبقى الأزرار كما هي (درس `storePolicies` أعلاه).
+     */
+    execState: async (barcode: string): Promise<RefundExec | null> => {
+        try {
+            const { data, error } = await supabase
+                .from('bookings').select(EXEC_COLS).eq('barcode', barcode).maybeSingle();
+            if (error) { logger.warn('refund execState:', error.message); return null; }
+            if (!data) return null;
+            const r: any = data;
+            return {
+                state: (r.refund_state as RefundExecState) ?? null,
+                claimedAt: r.refund_claimed_at ?? null,
+                refundedAt: r.refunded_at ?? null,
+                ref: r.refund_ref ?? null,
+                amount: r.refund_amount != null ? Number(r.refund_amount) : null,
+                reason: r.refund_reason ?? null,
+            };
+        } catch { return null; }
     },
 
     /** التاجر يحفظ سياسته وشروطه. */

@@ -13,7 +13,7 @@ import { dealRepository } from '../repositories/dealRepository';
 import { userRepository } from '../repositories/userRepository';
 import { bookingRepository } from '../repositories/bookingRepository';
 import { validationService } from './validationService';
-import { getDistance } from '../utils/helpers';
+import { getDistance, generateBarcode } from '../utils/helpers';
 
 // ============================================================
 // Types for bot interactions
@@ -155,15 +155,16 @@ export const botService = {
     bookDeal: async (dealId: string, userId: string): Promise<{ barcode: string; backupCode: string } | null> => {
         const deal = await dealRepository.getById(dealId);
         if (!deal || (deal.quantity !== 'unlimited' && deal.quantity <= 0)) return null;
-        // SECURITY: Use crypto.getRandomValues() instead of Math.random()
-        // to generate unpredictable barcodes resistant to brute-force.
-        const cryptoArray = new Uint8Array(10);
-        crypto.getRandomValues(cryptoArray);
-        const barcode = Array.from(cryptoArray).map(b => b.toString(36)).join('').substring(0, 10).toUpperCase();
-        const backupArray = new Uint8Array(4);
-        crypto.getRandomValues(backupArray);
-        const backupCode = `TK-${Array.from(backupArray).map(b => b.toString(36)).join('').substring(0, 6).toUpperCase()}`;
-        
+        // v14.98 — مولّدٌ واحد لا ثلاثة. كان هنا مولّدٌ ثالثٌ مستقلّ (base36
+        // بحروفٍ + رمزٌ احتياطيّ ببادئة «TK-»)، وهو ما يُسمّيه هذا المشروع
+        // «نسخةً تنحرف بصمت»: مشغّلُ القاعدة `tr_a0_order_code_numeric` يرفض
+        // اليوم كلَّ رمزٍ فيه حرف، فلو وُصِل هذا الملفّ يوماً لسقط كلُّ حجزٍ
+        // يمرّ منه. المصدر الوحيد الآن هو `generateBarcode` (وتوأمُها في
+        // القاعدة `taki_new_order_code`).
+        const barcode = generateBarcode();
+        const backupCode = generateBarcode();
+
+
         // Update quantity
         await dealRepository.save({ ...deal, quantity: deal.quantity === 'unlimited' ? 'unlimited' : deal.quantity - 1 });
         

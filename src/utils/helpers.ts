@@ -474,17 +474,43 @@ export const dealProximityTier = (
 };
 
 /**
- * Generates a random alphanumeric barcode string.
- * Excludes confusing characters (0/O, 1/I/L).
- * Uses Web Crypto API for cryptographically strong randomness.
+ * v14.98 — طول رقم الطلب. عشر خانات، وهو رقمٌ محسوب لا مختار:
+ *   • الفضاء = ٩ × ١٠⁹ (أوّل خانة ١–٩، وتسعٌ بعدها ٠–٩).
+ *   • التصادمات المتوقَّعة عند بلوغ المنصّة n طلباً ≈ n² ÷ (2 × الفضاء):
+ *     ٨ خانات ⇒ ‎~٥٥‎ تصادماً عند ١٠٠ ألف طلب · ٩ خانات ⇒ ‎~٥٫٦‎ ·
+ *     ١٠ خانات ⇒ ‎~٠٫٥٦‎ (أقلّ من واحد طوالَ العمر).
+ *   • وهو طولُ رقم الجوّال السعودي: يُقرأ على المكشوف عند الاستلام بلا عناء.
+ * 🪤 وسقفُه ١٢: زرّا العدّاد في `server/bot.js` يتقاسمان بادئة `cd:`، وأحدهما
+ *    `^cd:(\d{13,})$` لطابع الوقت — فرمزٌ من ١٣ خانةً يذهب إلى المعالج الخطأ
+ *    ويسقط بصمت. يحرس ذلك `scripts/check-order-code.js`.
  */
-export const generateBarcode = (length: number = 8): string => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const ORDER_CODE_LEN = 10;
+
+/**
+ * يولّد **رقم الطلب**: أرقامٌ فقط، بلا صفرٍ بادئ.
+ *
+ * 🪤 توأمُ هذه الدالّة في القاعدة هو `public.taki_new_order_code()`
+ *    (هجرة `supabase/JEDDAH_v14_98_numeric_order_code.sql`)، ويحرس تطابقَ
+ *    شكلِهما `scripts/check-order-code.js` فلا ينحرفان بصمت.
+ *    و**السلطةُ الحقيقية هي القاعدة**: مشغّل `tr_a0_order_code_numeric` يرفض
+ *    أيّ إدراجٍ برمزٍ فيه حرف. فهذه الدالّة تفاؤليّة (تُعرَض قبل ردّ الخادم)
+ *    لا حاكمة — ومتصفّحٌ عالقٌ على نسخةٍ قديمة سيُرفض حجزُه برسالةٍ واضحة
+ *    تطلب تحديث التطبيق، لا برمزٍ بحروفٍ يتسلّل.
+ *
+ * 🪤 ولا صفرَ بادئ: رقمٌ يبدأ بصفرٍ يفقد خانتَه أوّلَ ما يُكتب في جدول بيانات
+ *    أو حقلٍ رقميّ، فيعود العميل برمزٍ أقصرَ لا يجده أحد.
+ *
+ * 🪤 والرموز القديمة (حروف وأرقام) **تبقى صالحة إلى الأبد**: الفواتير الضريبية
+ *    ومسارات مرفقات المحادثة ورموز QR المطبوعة مبنيّة عليها. لا يُعاد كتابة رمز.
+ */
+export const generateBarcode = (length: number = ORDER_CODE_LEN): string => {
+    const firstDigits = '123456789';
+    const digits = '0123456789';
     const randomValues = new Uint32Array(length);
     crypto.getRandomValues(randomValues);
-    let barcode = '';
-    for (let i = 0; i < length; i++) {
-        barcode += chars.charAt(randomValues[i] % chars.length);
+    let barcode = firstDigits.charAt(randomValues[0] % firstDigits.length);
+    for (let i = 1; i < length; i++) {
+        barcode += digits.charAt(randomValues[i] % digits.length);
     }
     return barcode;
 };

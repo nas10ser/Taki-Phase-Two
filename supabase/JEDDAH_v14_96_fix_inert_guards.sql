@@ -187,7 +187,8 @@ BEGIN
     IF position('taki_is_system_caller' IN v_src) = 0 THEN
       RAISE EXCEPTION '❌ % لا تستعمل المميِّز الصحيح.', v_name;
     END IF;
-    IF position('current_user' IN v_src) > 0 THEN
+    -- 🪤 يُجرَّد التعليق: تعليقٌ يحذّر من \`current_user\` كان سيُتّهم بها.
+    IF position('current_user' IN regexp_replace(v_src, '--[^\n]*', '', 'g')) > 0 THEN
       RAISE EXCEPTION '❌ % ما زالت تفحص current_user.', v_name;
     END IF;
   END LOOP;

@@ -15,11 +15,15 @@ import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
+import { RefundWindowHours } from '../../components/RefundWindowHours';
 import { REFUND_PAYMENT_CLAUSE } from '../../data/legalTexts';
 
 const Refund: React.FC = () => {
-    const { language } = useApp();
+    const { language, platformSettings } = useApp();
     const isRTL = language === 'ar';
+    // v14.97 — ٠ ساعة = لا نافذة ضمانٍ معلنة، فتُحذف جملةُ الوعد بدل أن تُكتب
+    // «خلال ٠ ساعة». والزرّ نفسه يبقى قائماً في الحالتين.
+    const refundWindowHours = platformSettings.refundWindow.hours;
 
     return (
         <LegalLayout
@@ -128,6 +132,43 @@ const Refund: React.FC = () => {
                             the merchant directly through their own payment gateway and under
                             their published policy — the platform has no access to the funds
                             and no authority to return them.
+                        </>
+                    )}
+                </Paragraph>
+                {/* v14.97 — «ردّ المبلغ بضغطة»: وعدٌ ينفّذه الكود، بصياغةٍ لا
+                    توحي بأنّ المنصّة تمسك المال. الرقم من الإعداد لا نصّاً. */}
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>الاسترداد بضغطة واحدة من التاجر:</strong> يستطيع التاجر — في أيّ وقت
+                            ومن لوحته — أن يأمر بوّابة الدفع الخاصّة به بإعادة المبلغ إلى بطاقتك،
+                            <strong> دون حاجة إلى موافقة TAKI ودون انتظار أيّ مدّة</strong>.
+                            {refundWindowHours > 0 && (
+                                <> وخلال <strong><RefundWindowHours /></strong> من لحظة دفعك، تضمن TAKI أن يصل
+                                طلبُ الاسترداد إلى التاجر فوراً وأن يُنفَّذ <strong>بلا أيّ خطوة موافقة</strong>.
+                                وبعد هذه المدّة يبقى الزرّ عاملاً لدى التاجر وتسري عليه سياسته المُعلَنة.</>
+                            )}
+                            {' '}وهذا ضمانٌ <strong>إجرائيّ</strong> لا ماليّ: TAKI لا تحتفظ بمالك في أيّ لحظة —
+                            المبلغ في حساب التاجر لدى مزوّد الدفع، <strong>والردّ ينفّذه ذلك المزوّد لا المنصّة</strong>.
+                            ومدّة وصول المبلغ إلى بطاقتك تحدّدها جهة الدفع (بنكك أو بوّابة التاجر) لا TAKI.
+                        </>
+                    ) : (
+                        <>
+                            <strong>One-tap refund by the merchant:</strong> at any time, from their own
+                            dashboard, the merchant can instruct their payment gateway to return the
+                            amount to your card — <strong>with no approval from TAKI and no waiting
+                            period</strong>.
+                            {refundWindowHours > 0 && (
+                                <> Within <strong><RefundWindowHours /></strong> of your payment, TAKI guarantees
+                                that the refund request reaches the merchant immediately and is carried out
+                                <strong> with no approval step</strong>. After that window the button still
+                                works, but the merchant's published policy governs.</>
+                            )}
+                            {' '}This is a <strong>procedural</strong> guarantee, not a financial one: TAKI never
+                            holds your money — it sits in the merchant's account at their payment provider,
+                            <strong> and the refund is executed by that provider, not by the platform</strong>.
+                            The time it takes to reach your card is set by the payment provider (your bank or
+                            the merchant's gateway), not TAKI.
                         </>
                     )}
                 </Paragraph>

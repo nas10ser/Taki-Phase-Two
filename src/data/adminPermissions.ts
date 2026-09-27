@@ -39,8 +39,11 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminDashboard + RLS store_verifications + admin_rpc_permissions(admin_*_verification*)' },
     { key: 'tab_analytics', label: '📊 التحليلات',          description: 'مؤشرات لحظية ورسوم (بلا أرقام مالية)', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
-    { key: 'tab_tools',     label: '🛠️ البانرات والحملات',           description: 'الإعدادات والسجلّات وأدوات التشغيل', group: 'tabs',
-      enforcedAt: 'AdminDashboard + RLS activity_log/sessions/settings' },
+    // 🪤 ويحرس أيضاً شاشة «إدارة العمليات» (v14.99) — لا مفتاحَ جديد لها:
+    //    سياسةُ القراءة على `activity_log` نفسها `taki_admin_perm('tab_tools')`،
+    //    فمفتاحٌ ثانٍ كان بابين لبيانٍ واحد يفترقان (درس v14.71).
+    { key: 'tab_tools',     label: '🛠️ البانرات والحملات',           description: 'الإعدادات والسجلّات وأدوات التشغيل وشاشة إدارة العمليات', group: 'tabs',
+      enforcedAt: 'AdminDashboard + RLS activity_log/sessions/settings + admin_rpc_permissions(admin_operations_log)' },
     { key: 'tab_messages',  label: '💬 مراقبة المحادثات',    description: 'متابعة المحادثات (القراءة فقط)', group: 'tabs',
       enforcedAt: 'AdminDashboard + admin_rpc_permissions' },
     { key: 'tab_contests',  label: '🎁 المسابقات',          description: 'الاستبيانات والجوائز والسحب', group: 'tabs',

@@ -2472,7 +2472,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Booking logic - uses generateBarcode from helpers
     const bookDeal = useCallback((deal: Deal, quantity: number = 1, userId: string = 'anon', prepTime?: string, notes?: string, selectedOptions?: Array<{ g: string; c: string; qty?: number }>, locationId?: string | null, paymentMethod?: 'cod' | 'online', fulfillment?: 'pickup' | 'delivery', deliveryAddress?: Record<string, any> | null) => {
-        const barcode = generateBarcode(8);
+        const barcode = generateBarcode();
 
         // v14.10 — المهلة صارت من مسؤولية الخادم وحده: مشغّل `tr_ad_set_booking_hold`
         // يدهس ما نرسله هنا ويكتب المهلة الصحيحة بحسب نوع الطلب (استلام ساعتان ·

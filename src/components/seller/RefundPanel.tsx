@@ -11,14 +11,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository, mapRefundRow, BookingRefund } from '../../repositories/refundRepository';
+import RefundButton from './RefundButton';
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
 
-export const RefundPanel: React.FC<{
+type RefundPanelProps = {
     order: any;
     isRTL: boolean;
     onChanged?: () => void | Promise<void>;
-}> = ({ order, isRTL, onChanged }) => {
+};
+
+/** طلبُ الاسترداد اليدويّ (v14.18) — تسجيلُ ردٍّ أجراه التاجر بيده. */
+const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChanged }) => {
     const { customAlert, customConfirm, customPrompt } = useApp();
     const paid = !!order?.paidAt;
     const amount = Number(order?.paidAmount) > 0
@@ -212,5 +216,24 @@ export const RefundPanel: React.FC<{
         </div>
     );
 };
+
+/**
+ * v14.97 — نقطةُ التركيب الوحيدة للمسارين معاً.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * `SellerDashboard.tsx` مُسقَّفٌ بعدد أسطره (ratchet) فلا يُضاف إليه سطر،
+ * وهو ينادي `RefundPanel` وحدها — فتُركَّب بطاقةُ الردّ الفوريّ من هنا.
+ *
+ * 🪤 وهما بطاقتان لا واحدة، ولا يُدمجان: `RefundRequestPanel` **يُسجّل** ردّاً
+ *    أجراه التاجر بيده خارج المنصّة، و`RefundButton` **يُجريه** عبر بوّابته.
+ *    ولكلٍّ فروعُ عرضٍ مختلفة — أهمُّها أنّ الأولى تُخفي نفسها على طلبٍ مغلق
+ *    بلا طلب استرداد، وهي بالضبط الحالةُ التي يجب أن يظهر فيها زرُّ الردّ.
+ *    ولذلك تُصيَّران جنباً إلى جنب، وكلٌّ تحرس ظهورها بنفسها.
+ */
+export const RefundPanel: React.FC<RefundPanelProps> = (props) => (
+    <>
+        <RefundRequestPanel {...props} />
+        <RefundButton {...props} />
+    </>
+);
 
 export default RefundPanel;

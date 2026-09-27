@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { AdmStat, AdmPill, admNum, admMoney } from '../../components/admin/ui';
+import RefundWindowCard from '../../components/admin/RefundWindowCard';
 import { openPrintWindow } from '../../utils/invoice';
 import { downloadCsv } from '../../utils/csvExport';
 
@@ -307,6 +308,11 @@ const AdminInvoices: React.FC = () => {
                     {directPayOn === null ? '…' : directPayOn ? '🟢 الدفع المباشر: مفعّل — اضغط للإيقاف' : '⚪️ الدفع المباشر: موقوف — اضغط للتفعيل'}
                 </button>
             </div>
+
+            {/* 🪤 v14.97 — موضعُ الضبط حيث يُنفَّذ الوعد (درس v14.92): نافذةُ
+                الاسترداد المضمون وزرُّ التاجر يُضبطان في شاشة المدفوعات نفسها،
+                لا في درجٍ عامّ يُنسى. */}
+            <RefundWindowCard />
 
             {/* بطاقات المجاميع — تجميع على الفهارس دون جلب صفوف */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>

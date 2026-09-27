@@ -37,6 +37,7 @@ const AdminTools      = lazy(() => import('./admin/AdminTools'));
 const AdminLocations  = lazy(() => import('./admin/AdminLocations'));
 const AdminContests   = lazy(() => import('./admin/AdminContests'));
 const AdminReports    = lazy(() => import('./admin/AdminReports'));
+const AdminOperations = lazy(() => import('./admin/AdminOperations'));
 const AdminVerification = lazy(() => import('./admin/AdminVerification'));
 const AdminModeration = lazy(() => import('./admin/AdminModeration'));
 const AdminLaunch     = lazy(() => import('./admin/AdminLaunch'));
@@ -63,6 +64,7 @@ const TAB_VIEWS: Record<Exclude<AdminTabId, 'overview'>, React.ComponentType> = 
     sellers: AdminSellers,
     admins: AdminAdmins,
     reports: AdminReports,
+    operations: AdminOperations,
     verification: AdminVerification,
     moderation: AdminModeration,
     messages: AdminMessages,
