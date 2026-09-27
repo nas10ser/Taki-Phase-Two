@@ -477,7 +477,7 @@ const DealDetails: React.FC = () => {
 
     const history = useHistory();
     const {
-        deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, updateDealStock, language, toggleFollowMerchant, followedMerchants,
+        deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, language, toggleFollowMerchant, followedMerchants,
         favorites, toggleFavorite,
         customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
         storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode, platformSettings

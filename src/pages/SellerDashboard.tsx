@@ -1928,14 +1928,14 @@ const SellerDashboard: React.FC = () => {
         setShopName(deal.shopName);
         setOriginalPrice(deal.originalPrice.toString());
         setDiscountedPrice(deal.discountedPrice.toString());
-        setQuantity(deal.quantity === 'unlimited' ? '' : deal.quantity);
+        setQuantity(deal.quantity === 'unlimited' ? '' : (deal.onHand ?? deal.quantity)); // v15.02 — الكامل لا المتاح
         setIsUnlimited(deal.quantity === 'unlimited');
         setMaxPerBooking(deal.maxPerBooking || '');
         setMaxBookingsPerBuyer(deal.maxBookingsPerBuyer || '');
         setRebookCooldownMinutes(deal.rebookCooldownMinutes || 0);
         setSeasonTag(!!deal.seasonId); // v12.48 — وسم الموسم الحالي للعرض
         setOptionGroups(deal.options ? JSON.parse(JSON.stringify(deal.options)) : []); // v12.53 — نسخة قابلة للتحرير
-        setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)) : []); // v12.61 — نسخ المنتج
+        setVariants(deal.variants ? JSON.parse(JSON.stringify(deal.variants)).map((v: DealVariant) => ({ ...v, qty: v.onHand ?? v.qty })) : []); // v12.61 نسخ المنتج · v15.02 الكامل لا المتاح
         setVariantsOpen(!!(deal.variants && deal.variants.length)); // v12.92 — افتح الأقسام المعبّأة عند التعديل
         setOptionsOpen(!!(deal.options && deal.options.length));
         setPosSku(deal.posSku || ''); // v12.88 — رمز الكاشير للمنتج الأساسي
@@ -1949,7 +1949,7 @@ const SellerDashboard: React.FC = () => {
             const noVariants = !(deal.variants && deal.variants.length);
             for (const l of deal.locations) {
                 // أنواع×مواقع → variantQtys
-                const vq = (l.variantQtys && typeof l.variantQtys === 'object') ? l.variantQtys : {};
+                const vq = (l.variantOnHand && typeof l.variantOnHand === 'object') ? l.variantOnHand : ((l.variantQtys && typeof l.variantQtys === 'object') ? l.variantQtys : {}); // v15.02 — الكامل أوّلاً
                 for (const vId of Object.keys(vq)) {
                     const qv = Number((vq as Record<string, number>)[vId]);
                     if (!(qv > 0)) continue;
@@ -1959,10 +1959,10 @@ const SellerDashboard: React.FC = () => {
                     g.locs.push(l.id);
                 }
                 // v13.06 — منتج واحد×مواقع → location.quantity في مجموعة '__base__'
-                if (noVariants && deal.locQtyMode === 'per_location' && typeof l.quantity === 'number' && l.quantity > 0) {
+                if (noVariants && deal.locQtyMode === 'per_location' && Number(l.onHand ?? l.quantity) > 0) { // v15.02 — الكامل لا المتاح
                     if (!groups['__base__']) groups['__base__'] = [];
-                    let g = groups['__base__'].find(gg => gg.qty === l.quantity);
-                    if (!g) { g = { qty: l.quantity, locs: [] }; groups['__base__'].push(g); }
+                    let g = groups['__base__'].find(gg => gg.qty === Number(l.onHand ?? l.quantity));
+                    if (!g) { g = { qty: Number(l.onHand ?? l.quantity), locs: [] }; groups['__base__'].push(g); }
                     g.locs.push(l.id);
                 }
             }

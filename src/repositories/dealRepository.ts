@@ -117,6 +117,7 @@ export const DEAL_SELECT = [
     'original_price', 'discounted_price', 'discount_percentage', 'images', 'description',
     'location_id', 'custom_location_name', 'google_maps_link', 'map_lat', 'map_lng',
     'reliability_score', 'expires_in_minutes', 'quantity', 'is_unlimited', 'initial_quantity',
+    'on_hand',
     'prep_time', 'status', 'created_at', 'expiry_hijri', 'expiry_gregorian', 'updated_at',
     'city', 'region', 'expiry_type', 'expiry_date', 'views', 'clicks', 'starts_at',
     'coming_soon_notified_at', 'subscription_frozen', 'source', 'max_per_booking',
@@ -572,17 +573,35 @@ export const dealRepository = {
      * merchant's subscription happened to be expired at booking time —
      * already-published deals must remain bookable.
      */
+    /**
+     * v15.02 — إعلانُ «المخزون الكامل» لعرضٍ واحد. `newQuantity` هو ما عند
+     * التاجر فعلاً، **لا** المتاح: القاعدة تطرح المحجوز وتشتقّ المتاح.
+     *
+     * 🪤 وكانت هذه الدالّة تكتب `quantity` مباشرةً على الجدول. وبعد v15.03
+     *    صار ذلك الكتابةَ المباشرة تُفسَّر إعلاناً — فتُرسل رقماً مطلقاً من
+     *    قراءةٍ قديمة، والنتيجة مخزونٌ خاطئ بلا أيّ خطأ ظاهر. والمسار الصحيح
+     *    نداءُ `merchant_set_stock` الذي يفحص الملكية ويقفل الصفّ ويشتقّ.
+     *    (و«بلا حدّ» تبقى كتابةً مباشرة: لا مخزونَ يُشتقّ لعرضٍ بلا سقف.)
+     */
     updateQuantity: async (dealId: string, newQuantity: number | 'unlimited'): Promise<void> => {
-        const payload: Record<string, any> = {
-            quantity: newQuantity === 'unlimited' ? null : newQuantity,
-            is_unlimited: newQuantity === 'unlimited',
-        };
-        const { error } = await supabase.from('deals').update(payload).eq('id', dealId);
-        if (error) {
-            console.error('❌ Remote deal quantity update failed:', error.message);
-            throw error;
+        if (newQuantity === 'unlimited') {
+            const { error } = await supabase.from('deals')
+                .update({ quantity: null, is_unlimited: true }).eq('id', dealId);
+            if (error) { console.error('❌ unlimited toggle failed:', error.message); throw error; }
+            logger.log('✅ Deal set unlimited:', dealId);
+            return;
         }
-        logger.log('✅ Deal quantity updated remotely:', dealId, '→', newQuantity);
+        const { data, error } = await supabase.rpc('merchant_set_stock', {
+            p_deal_id: dealId, p_on_hand: newQuantity, p_variants: null, p_locations: null,
+        });
+        if (error) { console.error('❌ merchant_set_stock failed:', error.message); throw error; }
+        // 🪤 كتابةٌ ترفضها القاعدة تعود `error=null` — فلا يُقال «حُفظ» إلا بدليل.
+        if (!(data as any)?.ok) {
+            const code = (data as any)?.error || 'STOCK_WRITE_REFUSED';
+            console.error('❌ merchant_set_stock refused:', code);
+            throw new Error(code);
+        }
+        logger.log('✅ Stock declared:', dealId, '→', newQuantity, '· متاح:', (data as any).available);
     },
 
     /**
@@ -677,6 +696,9 @@ export const dealRepository = {
             reliabilityScore: Number(d.reliability_score) || 100,
             expiresInMinutes: Number(d.expires_in_minutes) || 525600,
             quantity: d.is_unlimited ? 'unlimited' : (d.quantity ?? 0),
+            // v15.02 — المخزون الكامل بجانب المتاح. يُقرأ ولا يُكتب: القاعدة
+            // تشتقّه ممّا يكتبه التاجر في `quantity` (المشغّل tr_b0_stock_declare).
+            onHand: d.is_unlimited ? null : (d.on_hand ?? null),
             initialQuantity: d.is_unlimited ? 'unlimited' : (d.initial_quantity ?? d.quantity ?? 0),
             ratings: [],
             authReal: 0,

@@ -84,7 +84,6 @@ interface AppContextType {
     isAuthReady: boolean;
     addDeal: (deal: Deal) => Promise<void>;
     updateDeal: (deal: Deal) => Promise<boolean>;
-    updateDealStock: (dealId: string, newQuantity: number | 'unlimited') => Promise<void>;
     deleteDeal: (id: string) => Promise<void>;
     user: any;
     logout: () => Promise<void>;
@@ -2075,32 +2074,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return true;
     }, [customAlert, language]);
 
-    /**
-     * Stock-only update used by the booking flow when a buyer reserves N
-     * units. Crucially this calls `dealRepository.updateQuantity` which does
-     * a partial UPDATE that does NOT touch the `status` column — so the
-     * `tr_guard_deal_publish` trigger never fires for buyers, and the
-     * SUBSCRIPTION_REQUIRED block can't accidentally cancel a booking.
-     */
-    const updateDealStock = useCallback(async (dealId: string, newQuantity: number | 'unlimited') => {
-        setDeals(prev => prev.map(d => d.id === dealId ? { ...d, quantity: newQuantity } : d));
-        try {
-            await dealRepository.updateQuantity(dealId, newQuantity);
-        } catch (error: any) {
-            console.error('Failed to update deal stock:', error);
-            // Roll back the optimistic update so the UI reflects reality
-            try {
-                const original = await dealRepository.getById(dealId);
-                if (original) {
-                    setDeals(prev => prev.map(d => d.id === original.id ? original : d));
-                }
-            } catch { /* best-effort rollback */ }
-            const msg: string = error?.message || '';
-            customAlert(language === 'ar'
-                ? `⚠️ تعذّر تحديث الكمية.${msg ? `\n(${msg})` : ''}`
-                : `⚠️ Could not update stock.${msg ? `\n(${msg})` : ''}`);
-        }
-    }, [customAlert, language]);
 
     const deleteDeal = useCallback(async (id: string) => {
         // Optimistic local removal — stash the deal for potential restoration
@@ -3429,7 +3402,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const contextValue = useMemo(() => ({
         language, setLanguage,
         geoVersion, reloadGeo,
-        deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
@@ -3458,7 +3431,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }), [
         language, setLanguage,
         geoVersion, reloadGeo,
-        deals, loading, isAuthReady, addDeal, updateDeal, updateDealStock, deleteDeal,
+        deals, loading, isAuthReady, addDeal, updateDeal, deleteDeal,
         user, logout, deleteAccount,
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,

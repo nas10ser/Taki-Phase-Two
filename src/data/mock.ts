@@ -132,7 +132,11 @@ export interface DealVariant {
     price: number;          // سعر النسخة بعد الخصم — يحل محل سعر العرض عند اختيارها
     /** السعر الأصلي للنسخة قبل الخصم — لكل نسخة خصمها الخاص (v12.62) */
     originalPrice?: number;
-    qty?: number;           // كمية هذه النسخة — مجموع الكميات = الكمية الإجمالية للعرض
+    qty?: number;           // كمية هذه النسخة **المتاحة للبيع الآن** = onHand − المحجوز
+    /** v15.02 — المخزون الكامل لهذه النسخة عند التاجر. `qty` مشتقٌّ منه، ولا
+     *  يُحرَّر مباشرة: نموذجُ التاجر يُبذَر من هنا ويكتب هنا، والقاعدة تطرح
+     *  المحجوز. (قبلها كان النموذج يكتب في `qty` فيُعيد المحجوز إلى البيع.) */
+    onHand?: number;
     imageIndex?: number;    // أي صورة من صور العرض (0-3) تمثل هذه النسخة
     gender?: GenderTarget;  // فئة مستهدفة خاصة بالنسخة (اختياري)
     /** v12.88 — رمز الكاشير (SKU) لهذا النوع: يُطبع باركوداً في الفاتورة ليمسحه الكاشير */
@@ -159,6 +163,10 @@ export interface DealLocation {
      *  مفتوحة (بلا سقف) لذلك النوع في ذلك الفرع. `quantity` يبقى = مجموع خلايا الفرع
      *  المسقوفة (للعرض والتوافق مع الخصم القائم على مستوى الفرع). */
     variantQtys?: Record<string, number>;
+    /** v15.02 — المخزون الكامل لهذا الفرع، و«لكل نوع في هذا الفرع». المتاحُ
+     *  (`quantity` و`variantQtys`) مشتقٌّ منهما بطرح المحجوز. */
+    onHand?: number;
+    variantOnHand?: Record<string, number>;
     googleMapsLink?: string | null;
 }
 
@@ -188,7 +196,12 @@ export interface Deal {
     expiresInMinutes: number;
     expiryType?: 'hours' | 'duration' | 'date' | 'stock';
     expiryDate?: string; // ISO YYYY-MM-DD (gregorian) when expiryType === 'date'
+    /** المتاح للبيع الآن (= onHand − المحجوز). هذا ما يراه المشتري «المتبقّي». */
     quantity: number | 'unlimited';
+    /** v15.02 — المخزون الكامل عند التاجر. `null` للعرض بلا حدّ.
+     *  🪤 نموذجُ التاجر يُبذَر من **هذا** لا من `quantity`: لو بُذر من المتاح
+     *  لانكمش المخزون بمقدار المحجوز عند كلّ حفظ. */
+    onHand?: number | null;
     initialQuantity?: number | 'unlimited';
     /** v12.28 — حدود التاجر للحجز (منع السوق السوداء). undefined/0 = بلا حد. */
     /** أقصى عدد قطع يحجزها المشتري في الحجز الواحد. */
