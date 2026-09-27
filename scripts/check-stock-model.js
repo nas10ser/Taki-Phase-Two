@@ -39,6 +39,13 @@ const read = (rel) => {
  */
 const code = (sql) => sql.replace(/--[^\n]*/g, '');
 
+/**
+ * 🔴 ونفسُ الفخّ في JS/TS — وقعتُ فيه مرّتين في يومٍ واحد: كسرتُ شرطَ السقف
+ *    في `stockView.js` فمرّ الحارس، لأن `initial_quantity` مكتوبةٌ في الشرح
+ *    فوق السطر الذي حذفته. تُجرَّد `//` و`/* *\/` قبل أي فحص.
+ */
+const jsCode = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
 // ── ١) الأنواع تحمل المخزون الكامل ────────────────────────────────────────
 const mock = read('src/data/mock.ts');
 for (const [needle, why] of [
@@ -86,6 +93,58 @@ for (const [needle, why] of [
     ['tr_b0_stock_declare', 'المشغّل غائب عن الهجرة — النموذج سيظلّ يدهس المخزون.'],
 ]) if (!m03.includes(needle)) fail(why);
 
+// ── ٥) البوتان يقرآن المخزون الكامل ــ وهذا ما فات v15.04 ────────────────
+// 🔴 v15.02 غيّرت دلالة الرقم، وv15.04 لاحقت الموقع **ولم تُلاحق البوتين**.
+//    فبقي التاجر في تيليجرام وواتساب يقرأ المتاح مكتوباً «الكمية الحالية»
+//    ويُعيد كتابته، فينكمش مخزونه بمقدار المحجوز عند كل تعديل. قِيس حيّاً.
+const stk = jsCode(read('server/lib/stockView.js'));
+if (!/Number\(d\.initial_quantity \|\| 0\) > 0/.test(stk)) {
+    fail('`isSoldOut` في stockView فقد شرطَ السقف — عرضٌ زمنيّ بلا سقفٍ سيُوسم «نفد» وهو لا ينفد.');
+}
+if (!/d\.on_hand/.test(stk)) fail('stockView لا يقرأ `on_hand` — فهو يعرض المتاح باسم المخزون.');
+
+for (const [f, ceiling] of [['server/flows/sellerDeals.js', null], ['server/flows/whatsapp.js', 2695]]) {
+    const src = jsCode(read(f));
+    if (!/require\('\.\.\/lib\/stockView'\)/.test(src)) {
+        fail(`«${f}» لا يستورد stockView — سيعرض للتاجر المتاحَ بدل مخزونه الكامل.`);
+    }
+    if (/is_unlimited \? tr\('(wa_unlimited|w778_qty_unlimited|sd254_unlimited)'\) : (tr\('(wa_pcs|sd254_pieces)'|md\(String)/.test(src)) {
+        fail(`«${f}» ما زال يبني سطرَ الكمّية يدوياً من \`d.quantity\` — وهو المتاح لا المخزون.`);
+    }
+    if (ceiling !== null && src.split('\n').length > ceiling) {
+        fail(`«${f}» تجاوز سقفه (${ceiling}) — السقّافة تمنع، والمنطقُ الجديد مكانه server/lib/.`);
+    }
+}
+
+// والصياغةُ تطلب الكامل صراحةً، لا «المتاح»
+const i18n = JSON.parse(read('server/lib/i18n-data.json'));
+for (const k of ['stk_full', 'stk_full_held', 'stk_short_held', 'stk_unlimited']) {
+    if (!i18n[k]) fail(`مفتاح «${k}» غائب عن i18n-data.json — سطرُ المخزون سيطبع اسم المفتاح.`);
+}
+// 🪤 ونفس المفتاح يُستعمل في تيليجرام (MarkdownV2) وواتساب (نصّ عاديّ) —
+//    فمحرفٌ محجوزٌ واحدٌ غير مهروب يُسقط رسالة تيليجرام كلَّها بصمت.
+for (const k of ['stk_full', 'stk_full_held', 'stk_short', 'stk_short_held', 'stk_unlimited']) {
+    for (const L of ['ar', 'en']) {
+        const v = String(i18n[k][L] || '');
+        const bad = v.replace(/\{\d+\}/g, '').match(/[_*[\]()~`>#+=|{}.!-]/g);
+        if (bad) fail(`«${k}.${L}» فيه محرفٌ محجوزٌ في MarkdownV2 (${bad.join(' ')}) — رسالةُ تيليجرام ستسقط بلا أثر.`);
+    }
+}
+for (const k of ['sd467_step9_qty', 'sd471_custom_qty_prompt', 'wa_add_qty', 'sd467_qty_edit', 'wa_ed_qty_cur']) {
+    const v = (i18n[k] || {}).ar || '';
+    if (/الكمية المتاحة|الكمية الحالية/.test(v)) {
+        fail(`«${k}» ما زال يقول «الكمية المتاحة/الحالية» — والرقمُ المطلوب صار المخزون الكامل. صياغةٌ تكذب أسوأ من رقمٍ خاطئ.`);
+    }
+}
+
+// ── ٦) والقاعدة لا تُحيي بضاعةً مباعة عند إعادة التفعيل ──────────────────
+const m05 = code(read('supabase/JEDDAH_v15_05_fix_bot_stock.sql'));
+for (const [needle, why] of [
+    ['IS DISTINCT FROM', 'حارسُ البيع ما زال يقارن بـ<>/= — حالةٌ NULL تُنقص المخزون.'],
+    ['COALESCE(initial_quantity, quantity)', 'رقعةُ إعادة التفعيل غائبة — أوّل إعادة تفعيلٍ من البوت تُحيي ما بيع.'],
+    ['(p_quantity = 0)', 'رقعةُ «صفر = بلا حدّ» غائبة — مفتاحُ «نفد» سيجعل العرض لا نهائياً.'],
+]) if (!m05.includes(needle)) fail(why);
+
 // ── ٥) والإثباتُ الغازي مفصولٌ عن الهجرة ──────────────────────────────────
 // (إدراجُ حجزٍ وهميّ يمرّ على ١٨ مشغّلاً ويكتب فواتير وإشعارات — لا مكانَ له
 //  في هجرةٍ تُطبَّق على الإنتاج.)
@@ -94,4 +153,4 @@ if (/INSERT INTO public\.bookings/.test(m02) || /INSERT INTO public\.bookings/.t
 }
 read('supabase/proof_v15_03_hold_survives.sql');
 
-console.log('✅ حارس المخزون: الواجهة تُبذَر بالكامل · القاعدة تشتقّ المتاح · الحجزُ لا يُفسَّر إعلاناً · والراية تُطفأ');
+console.log('✅ حارس المخزون: الواجهة والبوتان يُبذَرون بالكامل · القاعدة تشتقّ المتاح · الحجزُ لا يُفسَّر إعلاناً · والراية تُطفأ');

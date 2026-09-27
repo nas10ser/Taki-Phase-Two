@@ -3388,16 +3388,16 @@
     "en": "❌ Cancel"
   },
   "sd467_step9_qty": {
-    "ar": "*الخطوة ٩* — الكمية المتاحة{0}:",
-    "en": "*Step 9* — Available quantity{0}:"
+    "ar": "*الخطوة ٩* — كمّيتك الكاملة{0}:",
+    "en": "*Step 9* — Your FULL stock{0}:"
   },
   "sd467_qty_required": {
     "ar": " \\(إجباري لعرض الكمية\\)",
     "en": " \\(required for a stock deal\\)"
   },
   "sd471_custom_qty_prompt": {
-    "ar": "✏️ اكتب الكمية المتاحة \\(رقم\\):",
-    "en": "✏️ Type the available quantity \\(a number\\):"
+    "ar": "✏️ اكتب كمّيتك الكاملة — ما عندك فعلاً \\(رقم\\):",
+    "en": "✏️ Type your FULL stock — what you actually have \\(a number\\):"
   },
   "sd488_step10_schedule": {
     "ar": "*الخطوة ١٠* — *عرض قادم؟* \\(مجدول\\)\nهل تريد جدولة بدء العرض في وقت لاحق؟",
@@ -6540,8 +6540,8 @@
     "en": "Until {0}"
   },
   "wa_add_qty": {
-    "ar": "9️⃣ الكمية المتاحة؟",
-    "en": "9️⃣ Available quantity?"
+    "ar": "9️⃣ كم كمّيتك الكاملة؟",
+    "en": "9️⃣ What is your full stock?"
   },
   "wa_add_qty_unlimited": {
     "ar": "♾ غير محدود",
@@ -6988,12 +6988,12 @@
     "en": "✅ Real deals — voted by buyers"
   },
   "sd384_expiry_edit": {
-    "ar": "⏳ *طريقة الانتهاء الحالية:* {0}\n📦 *الكمية المتاحة:* {1}\n{2}\nكيف ينتهي العرض؟ اختر الطريقة الجديدة 👇",
-    "en": "⏳ *Current expiry:* {0}\n📦 *Available quantity:* {1}\n{2}\nHow should the deal end? Pick the new method 👇"
+    "ar": "⏳ *طريقة الانتهاء الحالية:* {0}\n📦 *مخزونك:* {1}\n{2}\nكيف ينتهي العرض؟ اختر الطريقة الجديدة 👇",
+    "en": "⏳ *Current expiry:* {0}\n📦 *Your stock:* {1}\n{2}\nHow does it end? Pick the new method 👇"
   },
   "sd467_qty_edit": {
-    "ar": "📦 *الكمية الحالية:* {0}\n{1}\nاختر الكمية الجديدة{2}:",
-    "en": "📦 *Current quantity:* {0}\n{1}\nPick the new quantity{2}:"
+    "ar": "📦 *مخزونك الآن:* {0}\n{1}\nاكتب كمّيتك الكاملة الجديدة{2} — تاكي تطرح المحجوز وحدها:",
+    "en": "📦 *Your stock now:* {0}\n{1}\nEnter your new FULL stock{2} — TAKI subtracts holds itself:"
   },
   "sd811_sched_title2": {
     "ar": "🗓 *جدولة العرض*\n*الوضع الحالي:* {0}\n{1}\nاختر 👇",
@@ -7056,8 +7056,8 @@
     "en": "Current description:\n{0}\n\nSend the new description:"
   },
   "wa_ed_qty_cur": {
-    "ar": "📦 الكمية الحالية: {0}\nاختر الكمية الجديدة:",
-    "en": "📦 Current quantity: {0}\nPick the new quantity:"
+    "ar": "📦 مخزونك الآن: {0}\nاكتب كمّيتك الكاملة الجديدة — تاكي تطرح المحجوز وحدها:",
+    "en": "📦 Your stock now: {0}\nEnter your new FULL stock — TAKI subtracts holds itself:"
   },
   "wa_ed_cat_cur": {
     "ar": "التصنيف الحالي: {0}\nاختر التصنيف الجديد 👇",
@@ -7068,8 +7068,8 @@
     "en": "⏳ Expiry"
   },
   "wa_ed_expiry_cur": {
-    "ar": "⏳ طريقة الانتهاء الحالية: {0}\n📦 الكمية المتاحة: {1}\nاختر الطريقة الجديدة 👇",
-    "en": "⏳ Current expiry: {0}\n📦 Available quantity: {1}\nPick the new method 👇"
+    "ar": "⏳ طريقة الانتهاء الحالية: {0}\n📦 مخزونك: {1}\nاختر الطريقة الجديدة 👇",
+    "en": "⏳ Current expiry: {0}\n📦 Your stock: {1}\nPick the new method 👇"
   },
   "wa_ed_loc": {
     "ar": "📍 الموقع",
@@ -7332,8 +7332,8 @@
     "en": "📦 Quantity & limits"
   },
   "wa_ed_qty_or_limits": {
-    "ar": "ماذا تريد أن تعدّل؟\n📦 الكمية المتاحة — أو — 🛡 حدود الحجز للمشتري (كمية الحجز الواحد وعدد المرات ومدة الانتظار)",
-    "en": "What would you like to edit?\n📦 Available quantity — or — 🛡 buyer booking limits"
+    "ar": "ماذا تريد أن تعدّل؟\n📦 مخزونك الكامل — أو — 🛡 حدود الحجز للمشتري (كمية الحجز الواحد وعدد المرات ومدة الانتظار)",
+    "en": "What would you like to edit?\n📦 Your full stock — or — 🛡 Buyer booking limits (per-booking qty, times, cooldown)"
   },
   "av_change_q": {
     "ar": "سبق أن صوّتّ على مصداقية هذا العرض\nتصويتك الحالي: {0}\nيمكنك تغييره الآن أو الإبقاء عليه:",
@@ -8286,5 +8286,25 @@
   "pub_open_dashboard": {
     "ar": "🔐 لوحة التاجر",
     "en": "🔐 Seller dashboard"
+  },
+  "stk_unlimited": {
+    "ar": "♾ غير محدود",
+    "en": "♾ Unlimited"
+  },
+  "stk_full": {
+    "ar": "{0} قطعة",
+    "en": "{0} pcs"
+  },
+  "stk_full_held": {
+    "ar": "{0} قطعة · محجوز {1} · متاح {2}",
+    "en": "{0} pcs · {1} held · {2} available"
+  },
+  "stk_short": {
+    "ar": "{0} قطعة",
+    "en": "{0} pcs"
+  },
+  "stk_short_held": {
+    "ar": "{0} · محجوز {1}",
+    "en": "{0} · {1} held"
   }
 }

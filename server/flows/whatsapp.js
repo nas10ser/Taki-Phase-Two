@@ -21,7 +21,7 @@ const G      = require('../lib/geo');
 const F      = require('../lib/format');
 const HRS    = require('../lib/hours');
 const I18N   = require('../lib/i18n');
-const CHATV = require('../lib/chatView'); const GATE = require('../lib/publishGate');   // v14.94 — بوّابة التوثيق/الإقرار قبل النشر (مشتركة مع تيليجرام)
+const CHATV = require('../lib/chatView'); const STK = require('../lib/stockView'); const GATE = require('../lib/publishGate');   // v14.94 — بوّابة التوثيق/الإقرار قبل النشر (مشتركة مع تيليجرام)
 const GEO_EN = require('../lib/geoNames.json');
 const { getSession } = require('../lib/session');
 // v14.06 — قرار عرض التوصيل: نفس ملف تيليجرام حرفاً بحرف (البوتان توأمان)
@@ -1591,7 +1591,7 @@ function create(deps) {
         const list0 = all.filter(d => scope === 'ended' ? d.status !== 'active' : d.status === 'active');
         if (!list0.length) return sendButtons(from, { body: tr('wa_s_deals_none'), buttons: [{ id: 'wa:s:add', title: tr('menu_add_deal') }, { id: 'wa:s:deals', title: tr('wa_back') }, menuBtn()] });
         s.temp.sdCache = {}; list0.forEach(d => { s.temp.sdCache[d.id] = d; });
-        const rows = list0.slice(0, 9).map(d => row(`wa:sd1:${d.id}`, d.item_name, tr('wa_s_deal_row', statusLabel(d.status), money(d.discounted_price), cur(), d.is_unlimited ? tr('wa_unlimited') : tr('wa_pcs', d.quantity ?? 0))));
+        const rows = list0.slice(0, 9).map(d => row(`wa:sd1:${d.id}`, d.item_name, tr('wa_s_deal_row', statusLabel(d.status), money(d.discounted_price), cur(), STK.sellerQtyShort(d))));
         rows.push(menuRow());
         await sendList(from, { header: scope === 'ended' ? tr('wa_s_deals_ended') : tr('wa_s_deals_active'), body: tr('wa_s_deals_pick'), button: tr('wa_menu_btn'), sections: [{ rows }] });
     }
@@ -1601,7 +1601,7 @@ function create(deps) {
         if (!d) d = await rpc('bot_get_seller_deal', aid(from, { p_deal_id: id }));
         if (!d) return sendButtons(from, { body: tr('wa_session_ended'), buttons: [{ id: 'wa:s:deals', title: tr('menu_seller_deals') }] });
         s.temp.sdCache = s.temp.sdCache || {}; s.temp.sdCache[id] = d;
-        const qty = d.is_unlimited ? tr('wa_unlimited') : tr('wa_pcs', d.quantity ?? 0);
+        const qty = STK.sellerQty(d); // v15.05 — مخزونه الكامل لا المتاح
         const desc = d.description ? tr('wa_desc_line', String(d.description).slice(0, 200)) : '';
         const body = tr('wa_s_deal_detail', d.item_name, statusLabel(d.status), priceBlock(d.original_price, d.discounted_price, d.discount_percentage), qty, catLabel(d.category), desc);
         const isActive = d.status === 'active';

@@ -14,6 +14,7 @@ const G = require('../lib/geo');
 const { tgId, getSession, setStep } = require('../lib/session');
 const { tr, lang } = require('../lib/i18n');   // request-scoped translation (ar/en) — v11.86
 const GATE = require('../lib/publishGate');    // v14.94 — بوّابة التوثيق/الإقرار قبل النشر
+const STK = require('../lib/stockView');       // v15.05 — الرقمُ الذي يراه التاجر هو مخزونه الكامل
 
 const {
     md, money, fmtDay, fmtDate, DIV, isPrice, isQty,
@@ -332,7 +333,7 @@ async function showDeals(ctx, scope) {
     await reply(ctx, tr('sd251_deals_header', title, list.length, (more > 0 ? tr('sd251_first_n', shown.length) : ''), DIV));
     for (let i = 0; i < shown.length; i++) {
         const d = shown[i];
-        const qty = d.is_unlimited ? tr('sd254_unlimited') : tr('sd254_pieces', (d.quantity ?? '—'));
+        const qty = STK.sellerQty(d); // v15.05 — الكامل · المحجوز · المتاح، لا «المتاح» وحده
         let m = `*${i + 1}\\.* 🏷 *${md(d.item_name)}*\n${statusLabel(d.status)}\n💵 ${money(d.original_price)} ← 🟢 *${money(d.discounted_price)}* ${tr('cm_sar')} \\(${md(d.discount_percentage)}%\\)\n📦 ${md(qty)}`;
         if (d.category) m += `  •  🗂 ${md(catLabel(d.category))}`;
         const exp = dealCardExpiry(d); if (exp) m += `\n${exp}`;
@@ -489,7 +490,7 @@ function currentExpiryText(d) {
     return r ? tr('w779_exp_remaining', md(r)) : tr('sd_exp_cur_unknown');
 }
 function currentQtyText(d) {
-    return d.is_unlimited ? tr('w778_qty_unlimited') : md(String(d.quantity ?? '—'));
+    return md(STK.sellerQty(d)); // v15.05 — التاجر يُبذَر بالكامل لا بالمتاح
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -1050,7 +1051,7 @@ async function openEdit(ctx, id) {
     if (!d) return reply(ctx, tr('sd778_deal_not_found'), Markup.inlineKeyboard([[btn(tr('sd778_my_deals'), 'seller:deals')]]).reply_markup);
     s.temp.editDealId = id; s.temp.editDeal = d; s.temp.flow = 'edit'; s.temp.edraft = {};
     s.temp.phEdit = null; s.temp.phDirty = false;   // صفّر مدير الصور عند فتح قائمة التعديل
-    const qty = d.is_unlimited ? tr('w778_qty_unlimited') : md(String(d.quantity ?? '—'));
+    const qty = md(STK.sellerQty(d)); // v15.05 — بطاقة التحرير تعرض مخزونه الكامل
     // ملخّص التعديل يعرض الطريقة المختارة (لا المتبقي الذي يصير «—» بعد الانتهاء) v12.20
     const exp = currentExpiryText(d);
     const sched = d.starts_at && Number(d.starts_at) > Date.now() ? tr('w780_sched', md(fmtDate(Number(d.starts_at)))) : '';
