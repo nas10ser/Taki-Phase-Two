@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.07.0';
+const BOT_VERSION              = '15.08.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -4073,7 +4073,7 @@ if (supabase) {
             } catch (e) { console.warn('email poll:', e.message); }
             finally { emailBusy = false; }
         };
-        setInterval(drainEmails, 45_000).unref?.();
+        setInterval(drainEmails, 45_000).unref?.(); setInterval(() => require('./lib/stockSync').drainStockEvents(rpc, (...a) => console.warn(...a)), 20_000).unref?.();   // v15.08 — طابورُ أحداث المخزون إلى أنظمة التجار (محايدُ الأسطر: bot.js عند سقف السقّافة)
         drainEmails();
         console.log(`📧 مرسل الإيميل مفعّل عبر ${mailer.via === 'resend-api' ? 'Resend API' : 'SMTP'} (${mailerFrom}) — سحب من email_outbox كل 45 ثانية`);
     } else {
