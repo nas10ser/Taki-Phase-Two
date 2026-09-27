@@ -21,6 +21,7 @@ const DeliveryTrackerCard = React.lazy(() => import('../components/seller/Delive
 import VatStatusCard from '../components/seller/VatStatusCard';
 const SellerAnalytics = React.lazy(() => import('../components/seller/SellerAnalytics'));
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
+import { isDealSoldOut } from '../utils/dealAvailability'; import { SoldOutButton } from '../components/seller/SoldOutButton';   // v15.07 — سطرٌ واحد: الملفّ عند سقف السقّافة تماماً
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
 import { useApp } from '../context/AppContext';
 import { useBookingBrowse } from '../hooks/useBookingBrowse';
@@ -2864,9 +2865,7 @@ const SellerDashboard: React.FC = () => {
     };
 
     // A deal is "sold out" only when the seller actually picked a stock cap
-    const isSoldOut = (d: any) => d.quantity !== 'unlimited'
-        && typeof d.quantity === 'number' && d.quantity <= 0
-        && typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
+    const isSoldOut = isDealSoldOut;   // v15.07 — تعريفٌ واحد في utils/dealAvailability
 
     // Filters must be strictly mutually exclusive to prevent "appearing in both"
     const activeDeals = myDeals.filter(d => 
@@ -4873,7 +4872,7 @@ const SellerDashboard: React.FC = () => {
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 12 }}>
                             {(productsTab === 'active' ? activeDeals : expiredDeals).map(deal => {
                                 const isActiveDeal = activeDeals.some(d => d.id === deal.id);
-                                const isOutOfStock = deal.quantity !== 'unlimited' && typeof deal.quantity === 'number' && deal.quantity <= 0;
+                                const isOutOfStock = isDealSoldOut(deal);   // v15.07 — كان بلا شرط السقف فيَسِم العرضَ الزمنيّ «نفد»
                                 return (
                                 <div key={deal.id} className="animate-fade-in" style={{ background: 'var(--card-bg)', backdropFilter: 'blur(10px)', borderRadius: 24, overflow: 'hidden', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow)', transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)', opacity: !isActiveDeal ? 0.7 : 1 }}>
                                     <img
@@ -4910,6 +4909,7 @@ const SellerDashboard: React.FC = () => {
                                                         <button onClick={() => togglePauseDeal(deal.id)} disabled={busyDealId === deal.id} style={{ flex: 1, minWidth: 0, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease', opacity: busyDealId === deal.id ? 0.6 : 1 }}>
                                                             {busyDealId === deal.id ? '⏳' : <>⏸️ {isRTL ? 'إيقاف' : 'Pause'}</>}
                                                         </button>
+                                                        <SoldOutButton dealId={deal.id} soldOut={deal.soldOut} />
                                                         <button onClick={() => handleDelete(deal.id)} style={{ flex: 1, minWidth: 0, background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 12, padding: '8px 2px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s ease' }}>
                                                             🗑️ {isRTL ? 'حذف' : 'Delete'}
                                                         </button>

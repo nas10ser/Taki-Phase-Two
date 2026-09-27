@@ -1655,14 +1655,14 @@ function create(deps) {
         if (field === 'price') { s.step = 'ed_orig'; return sendText(from, tr('wa_ed_orig_prompt', money(d.original_price), money(d.discounted_price))); }
         if (field === 'desc')  { s.step = 'ed_desc'; return sendText(from, tr('wa_ed_desc_prompt2', String(d.description || '—').slice(0, 300))); }
         // v12.29 — صف «الكمية وحدود الحجز» يتفرّع لخيارين (قائمة التعديل ممتلئة — سقف ١٠ صفوف)
-        if (field === 'qty') {
-            return sendButtons(from, { body: tr('wa_ed_qty_or_limits'), buttons: [
-                { id: `wa:ded:qonly:${id}`, title: tr('wa_ed_qty') },
-                { id: `wa:ded:limits:${id}`, title: tr('sd_edit_limits') },
-                { id: `wa:ded:menu:${id}`, title: tr('wa_back') },
-            ] });
+        if (field === 'qty') {   // v15.07 — الأزرارُ الثلاثة صارت قائمةً لتتّسع للدرجة ٠ (السقف ١٠ صفوف)
+            return sendList(from, { header: tr('wa_ed_qty'), body: tr('wa_ed_qty_or_limits'), button: tr('wa_menu_btn'), sections: [{ rows: [
+                row(`wa:ded:qonly:${id}`, tr('wa_ed_qty'), ''), row(`wa:ded:stock:${id}`, tr('sd_stock_btn'), ''),
+                row(`wa:so:${id}:${d.sold_out ? 0 : 1}`, d.sold_out ? tr('sd_soldout_off') : tr('sd_soldout_on'), ''),
+                row(`wa:ded:limits:${id}`, tr('sd_edit_limits'), ''), row(`wa:ded:menu:${id}`, tr('wa_back'), ''),
+            ] }] });
         }
-        if (field === 'qonly')  { s.temp.flow = 'edit'; s.temp.edraft = { expiryType: d.expiry_type }; return askQtyStep(from, s); }
+        if (field === 'qonly')  { s.temp.flow = 'edit'; s.temp.edraft = { expiryType: d.expiry_type }; return askQtyStep(from, s); } if (field === 'stock')  { const rs = STK.cells(d).slice(0, 9).map(c => row(`wa:stk:${id}:${c.kind}:${c.ix}`, `${c.label}`.slice(0, 24), `${c.full}${c.off ? ' · ' + tr('stk_off') : ''}`)); if (!rs.length) return sendText(from, tr('sd_stock_none')); rs.push(row(`wa:ded:menu:${id}`, tr('wa_back'), '')); return sendList(from, { header: tr('sd_stock_btn'), body: tr('sd_stock_head', STK.sellerQty(d)), button: tr('wa_menu_btn'), sections: [{ rows: rs }] }); }
         if (field === 'limits') { s.temp.flow = 'edit'; s.temp.edraft = {}; return askMaxPerStep(from, s); }
         if (field === 'cat')   { const rows = Object.keys(CAT).filter(k => k !== 'all').slice(0, 9).map(k => row(`wa:edcat:${k}`, catLabel(k), '')); rows.push(row(`wa:sd1:${id}`, tr('wa_back'), '')); return sendList(from, { header: tr('wa_ed_cat'), body: tr('wa_ed_cat_cur', catLabel(d.category)), button: tr('wa_menu_btn'), sections: [{ rows }] }); }
         if (field === 'expiry') { s.temp.edraft = {}; return askExpiryEdit(from, s, d); }
@@ -2363,7 +2363,7 @@ function create(deps) {
             case 'await_prep': { if (!isQty(text) || numOf(text) < 0) { await sendText(from, tr('wa_prep_bad')); return; } return setPrep(from, s, `${numOf(text)}min`); }
             case 'await_note': { s.temp.notes = text.slice(0, 300); return askFulfillment(from, s); }
             case 'await_search': return runSearch(from, s, text.slice(0, 60));
-            case 'await_chat_msg': return sendChat(from, s, text.slice(0, 500));
+            case 'await_chat_msg': return sendChat(from, s, text.slice(0, 500)); case 'wa_stock': { const pk = s.temp.stockPick; if (!pk) { s.step = null; return; } if (!isQty(text)) { await sendText(from, tr('wa_qty_bad')); return; } const dd = await rpc('bot_get_seller_deal', aid(from, { p_deal_id: pk.id })); const c = STK.cellOf(dd, pk.kind, pk.ix); if (!c) { s.step = null; return sendText(from, tr('wa_session_ended')); } const pay = STK.cellPayload(c, numOf(text)); const r = await rpc('bot_set_stock', aid(from, { p_deal_id: pk.id, p_on_hand: null, p_variants: pay.variants, p_locations: pay.locations })); s.step = null; s.temp.stockPick = null; s.temp.sdCache = {}; const fresh = await rpc('bot_get_seller_deal', aid(from, { p_deal_id: pk.id })); return sendText(from, (r && r.success) ? tr('sd_stock_saved', STK.sellerQty(fresh)) : tr('wa_err')); }
             case 'await_edit_qty': { if (!isQty(text)) { await sendText(from, tr('wa_qty_bad')); return; } const r = await rpc('bot_update_booking', aid(from, { p_barcode: s.temp.editBarcode, p_quantity: numOf(text) })); return afterEdit(from, s, r); }
             case 'await_edit_note': { const r = await rpc('bot_update_booking', aid(from, { p_barcode: s.temp.editBarcode, p_notes: text.slice(0, 300) })); return afterEdit(from, s, r); }
             case 'await_rate_comment': return submitRate(from, s, text.slice(0, 400));
@@ -2534,7 +2534,7 @@ function create(deps) {
         if (id.startsWith('wa:sd1:')) return sellerDealDetail(from, s, id.slice(7));
         if (k === 'tgl') return toggleDeal(from, s, p[2], p[3]);
         if (id.startsWith('wa:delok:')) return doDeleteDeal(from, s, id.slice(9));
-        if (id.startsWith('wa:del:')) return askDeleteDeal(from, s, id.slice(7));
+        if (id.startsWith('wa:del:')) return askDeleteDeal(from, s, id.slice(7)); if (id.startsWith('wa:so:')) { const [, , di, on] = id.split(':'); const r = await rpc('bot_set_sold_out', aid(from, { p_deal_id: di, p_on: on === '1' })); await sendText(from, (r && r.success) ? (on === '1' ? tr('sd_soldout_done') : tr('sd_restore_done')) : tr('wa_err')); s.temp.sdCache = {}; return sellerDealDetail(from, s, di); } if (id.startsWith('wa:stk:')) { const [, , di, kind, ix] = id.split(':'); const dd = sdVal(s, di) || await rpc('bot_get_seller_deal', aid(from, { p_deal_id: di })); const c = STK.cellOf(dd, kind, ix); if (!c) return sendText(from, tr('wa_session_ended')); s.temp.stockPick = { id: di, kind, ix }; s.step = 'wa_stock'; return sendText(from, tr('sd_stock_ask', c.label, String(c.full))); }
         if (k === 'ded') { if (p[2] === 'menu') return editDealMenu(from, s, p.slice(3).join(':')); return editDealField(from, s, p[2], p.slice(3).join(':')); }
         // مدير صور التعديل (v12.18)
         if (k === 'phm') {

@@ -19,6 +19,7 @@ import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 import { AVATAR } from '../utils/imageCompression';
 import { placeLink, directionsLink, coordsOf } from '../utils/mapLinks';
 import { applyPageSeo, applyJsonLd, storeJsonLd, breadcrumbJsonLd } from '../utils/seo';
+import { isDealSoldOut } from '../utils/dealAvailability';
 
 // v13.66 — خريطة فروع المتجر تُحمَّل عند الطلب فقط: مكتبة الخرائط ثقيلة ولا
 // داعي لتحميلها مع كل فتح لصفحة متجر، فأغلب الزوار لا يضغطون الزرّ.
@@ -560,9 +561,7 @@ const StoreDetails: React.FC = () => {
     // Sold-out requires a real stock cap. Without initialQuantity > 0 the
     // deal is time-based, so quantity=0 is meaningless — don't treat it
     // as sold-out.
-    const isSoldOut = (d: any) => d.quantity !== 'unlimited'
-        && typeof d.quantity === 'number' && d.quantity <= 0
-        && typeof d.initialQuantity === 'number' && d.initialQuantity > 0;
+    const isSoldOut = isDealSoldOut;   // v15.07 — تعريفٌ واحد في utils/dealAvailability
 
     const storeDeals = useMemo(() => {
         // v11.20 — Coming Soon deals stay in this tab. Buyers (and the

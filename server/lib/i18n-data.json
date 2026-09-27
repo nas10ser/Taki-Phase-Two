@@ -8306,5 +8306,53 @@
   "stk_short_held": {
     "ar": "{0} · محجوز {1}",
     "en": "{0} · {1} held"
+  },
+  "sd_soldout_on": {
+    "ar": "🚫 أوقف البيع — نفد",
+    "en": "🚫 Mark sold out"
+  },
+  "sd_soldout_off": {
+    "ar": "🔄 أعِده للبيع",
+    "en": "🔄 Put back on sale"
+  },
+  "sd_soldout_done": {
+    "ar": "✅ أُوقف البيع · كمّيتك محفوظة كما هي وتُعيده بضغطة",
+    "en": "✅ Selling stopped · your stock is untouched, one tap brings it back"
+  },
+  "sd_restore_done": {
+    "ar": "✅ عاد العرض للبيع بكمّيتك كما هي",
+    "en": "✅ Back on sale with your stock unchanged"
+  },
+  "sd_stock_btn": {
+    "ar": "📦 مخزون الأنواع والفروع",
+    "en": "📦 Variant & branch stock"
+  },
+  "sd_stock_head": {
+    "ar": "📦 *مخزونك الكامل*\n{0}\nاختر ما تريد تعديله — تاكي تطرح المحجوز وحدها:",
+    "en": "📦 *Your full stock*\n{0}\nPick what to edit — TAKI subtracts holds itself:"
+  },
+  "sd_stock_row_v": {
+    "ar": "{0} — {1}",
+    "en": "{0} — {1}"
+  },
+  "sd_stock_row_l": {
+    "ar": "📍 {0} — {1}",
+    "en": "📍 {0} — {1}"
+  },
+  "sd_stock_ask": {
+    "ar": "📦 *{0}*\nمخزونك الآن: {1}\nاكتب كمّيتك الكاملة الجديدة \\(رقم\\):",
+    "en": "📦 *{0}*\nYour stock now: {1}\nType the new FULL stock \\(a number\\):"
+  },
+  "sd_stock_saved": {
+    "ar": "✅ حُفظ · مخزونك الكامل: {0}",
+    "en": "✅ Saved · your full stock: {0}"
+  },
+  "sd_stock_none": {
+    "ar": "لا أنواع ولا فروع في هذا العرض — عدّل كمّيته من «الكمية»",
+    "en": "No variants or branches here — edit the quantity from «Quantity»"
+  },
+  "stk_off": {
+    "ar": "موقوف",
+    "en": "off"
   }
 }

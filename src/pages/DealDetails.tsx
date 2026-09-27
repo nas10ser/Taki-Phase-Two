@@ -22,6 +22,7 @@ import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
 import { holdLabel } from '../utils/bookingHold';
 import StorePolicies from '../components/StorePolicies';
 import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
+import { isDealSoldOut } from '../utils/dealAvailability';
 
 const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) => {
     const steps = [
@@ -1630,10 +1631,7 @@ const DealDetails: React.FC = () => {
     // A deal is "sold out" only when the seller actually capped the stock and
     // bookings have drained it. Time-based offers (no cap) ignore quantity.
     const hasStockCap = typeof deal.initialQuantity === 'number' && deal.initialQuantity > 0;
-    const isSoldOut = deal.quantity !== 'unlimited'
-        && typeof deal.quantity === 'number'
-        && deal.quantity <= 0
-        && hasStockCap;
+    const isSoldOut = isDealSoldOut(deal);   // v15.07 — تعريفٌ واحد، ويحترم مفتاح التاجر
     // v11.20 — Coming Soon: the deal is scheduled and not yet live. Buyer
     // can browse the full page (item info, ratings, store profile) but the
     // book CTA is locked until startsAt passes. We tick the countdown live

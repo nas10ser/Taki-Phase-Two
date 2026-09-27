@@ -182,6 +182,41 @@ function register(bot, deps) {
         await ctx.answerCbQuery(); editField(ctx, ctx.match[1], ctx.match[2]);
     });
 
+    // ════════ v15.07 — الدرجة ٠: «نفد» ومخزون الأنواع والفروع ═══════════════════
+    // 🪤 المفتاحُ غيرُ «الإيقاف»: الإيقافُ قد لا يعود لعرضٍ تجاوز فروعُه سقفَ
+    //    الباقة (tr_enforce_location_cap يفحص عند إعادة التفعيل)، وكتابةُ صفرٍ
+    //    تُتلف رقم التاجر. هذا يوقف البيع ويُبقي الرقم.
+    bot.action(/^sdso:([a-zA-Z0-9_-]+):(0|1)$/, async ctx => {
+        await ctx.answerCbQuery(tr('sd131_updating'));
+        const [, id, on] = ctx.match;
+        const r = await rpc('bot_set_sold_out', { p_telegram_id: tgId(ctx), p_deal_id: id, p_on: on === '1' });
+        if (!r || !r.success) return reply(ctx, tr('sd217_save_failed'), kbBack(`dedit:${id}`));
+        await reply(ctx, on === '1' ? md(tr('sd_soldout_done')) : md(tr('sd_restore_done')), kbBack(`dedit:${id}`));
+        return openEdit(ctx, id);
+    });
+    // قائمةُ المخزون: الأنواعُ والفروع بأرقامها **الكاملة** لا المتاحة.
+    // 🪤 والمفاتيحُ فهارسُ لا معرّفات: بياناتُ الزرّ في تيليجرام ٦٤ بايتاً،
+    //    ومعرّفُ عرضٍ (١٣) + معرّفُ صنفٍ (١٤) + بادئة تقترب من الحدّ بلا داعٍ.
+    bot.action(/^sdstk:([a-zA-Z0-9_-]+)$/, async ctx => {
+        await ctx.answerCbQuery();
+        const d = await getDeal(ctx, ctx.match[1]);
+        if (!d) return reply(ctx, tr('sd778_deal_not_found'), kbBack('seller:deals'));
+        const s2 = getSession(tgId(ctx)); s2.temp.editDeal = d; s2.temp.editDealId = d.id;
+        const rows = stockRows(d, d.id);
+        if (!rows.length) return reply(ctx, md(tr('sd_stock_none')), kbBack(`dedit:${d.id}`));
+        rows.push([btn(tr('sd465_back'), `dedit:${d.id}`)]);
+        await reply(ctx, tr('sd_stock_head', md(STK.sellerQty(d))), Markup.inlineKeyboard(rows).reply_markup);
+    });
+    bot.action(/^sdsx:([a-zA-Z0-9_-]+):(v|l):(\d+)$/, async ctx => {
+        await ctx.answerCbQuery();
+        const s2 = getSession(tgId(ctx)); const [, id, kind, ix] = ctx.match;
+        const d = s2.temp.editDeal && s2.temp.editDeal.id === id ? s2.temp.editDeal : await getDeal(ctx, id);
+        const el = stockCell(d, kind, +ix);
+        if (!el) return reply(ctx, tr('sd778_deal_not_found'), kbBack(`sdstk:${id}`));
+        s2.temp.stockPick = { id, kind, ix }; setStep(tgId(ctx), 'sd_stock');
+        await reply(ctx, tr('sd_stock_ask', md(el.label), md(String(el.full ?? '—'))), kbBack(`sdstk:${id}`));
+    });
+
     // ════════ تبديل الحالة / حذف ═════════════════════════════════════════════════════
     bot.action(/^tglAsk:([a-zA-Z0-9_-]+):(active|paused)$/, async ctx => {
         await ctx.answerCbQuery();
@@ -1044,6 +1079,18 @@ async function doPublish(ctx) {
 // ════════════════════════════════════════════════════════════════════════════════
 //  تعديل عرض (مطابق للموقع) — كل الحقول + إعادة تفعيل + معاينة
 // ════════════════════════════════════════════════════════════════════════════════
+
+// ── v15.07 — الدرجة ٠: أزرارُ مخزون الأنواع والفروع ─────────────────────────
+// 🪤 يُعرض الرقمُ **الكامل** لا المتاح: التاجر يعدّل ما عنده، وتاكي تطرح
+//    المحجوز. وعرضُ المتاح هنا هو بالضبط العيب الذي أُصلح في v15.05.
+function stockRows(d, id) {
+    return STK.cells(d).map(c => [btn(
+        (c.kind === 'v' ? tr('sd_stock_row_v', c.label, c.full) : tr('sd_stock_row_l', c.label, c.full))
+        + (c.off ? ` · ${tr('stk_off')}` : ''),
+        `sdsx:${id}:${c.kind}:${c.ix}`)]);
+}
+function stockCell(d, kind, ix) { return d ? STK.cellOf(d, kind, ix) : null; }
+
 async function getDeal(ctx, id) { return rpc('bot_get_seller_deal', { p_telegram_id: tgId(ctx), p_deal_id: id }); }
 async function openEdit(ctx, id) {
     const s = getSession(tgId(ctx)); if (!isSeller(s)) return;
@@ -1067,6 +1114,9 @@ async function openEdit(ctx, id) {
         [btn(tr('sd789_edit_sched'), `ede:sched:${id}`), btn(tr('sd789_edit_photos'), `ede:photos:${id}`)],
         [btn(tr('sd790_edit_loc'), `ede:loc:${id}`), btn(tr('sd790_edit_preview'), `ede:preview:${id}`)],
         [btn(tr('sd_edit_limits'), `ede:limits:${id}`)],   // v12.29 — حدود الحجز
+        // v15.07 — الدرجة ٠: مفتاح «نفد» (لا يمسّ الرقم) ومخزونُ الأنواع والفروع
+        [btn(d.sold_out ? tr('sd_soldout_off') : tr('sd_soldout_on'), `sdso:${id}:${d.sold_out ? 0 : 1}`)],
+        [btn(tr('sd_stock_btn'), `sdstk:${id}`)],
     ];
     if (dealEnded(d)) rows.push([btn(tr('sd792_reactivate'), `ede:reactivate:${id}`)]);
     else rows.push([btn(tr('sd793_pause'), `tglAsk:${id}:paused`)]);
@@ -1217,6 +1267,25 @@ async function handleText(ctx, s, text) {
 
     const a = s.temp.add || {}; const t = s.temp.edraft || (s.temp.edraft = {});
     // ── إضافة ──
+    // v15.07 — الدرجة ٠: رقمُ خليّة المخزون (صنفٌ أو فرع) كما كتبه التاجر.
+    // 🪤 وهو **المخزون الكامل** لا المتاح: `bot_set_stock` يمرّ من
+    //    `taki_set_on_hand` فتُطرح الحجوزاتُ الحيّة وتُشتقّ كلُّ مرآةٍ متاحة.
+    if (step === 'sd_stock') {
+        const pick = s.temp.stockPick;
+        if (!pick) { setStep(tgId(ctx), 'idle'); return true; }
+        if (!isQty(text)) { await reply(ctx, tr('sd927_send_valid_number')); return true; }
+        const d0 = s.temp.editDeal && s.temp.editDeal.id === pick.id ? s.temp.editDeal : await getDeal(ctx, pick.id);
+        const cell = STK.cellOf(d0, pick.kind, pick.ix);
+        if (!cell) { setStep(tgId(ctx), 'idle'); await reply(ctx, tr('sd778_deal_not_found'), kbBack(`dedit:${pick.id}`)); return true; }
+        const pay = STK.cellPayload(cell, normalizeDigits(text));
+        const r = await rpc('bot_set_stock', { p_telegram_id: tgId(ctx), p_deal_id: pick.id,
+            p_on_hand: null, p_variants: pay.variants, p_locations: pay.locations });
+        setStep(tgId(ctx), 'idle'); s.temp.stockPick = null;
+        if (!r || !r.success) { await reply(ctx, tr('sd217_save_failed'), kbBack(`sdstk:${pick.id}`)); return true; }
+        const fresh = await getDeal(ctx, pick.id); s.temp.editDeal = fresh;
+        await reply(ctx, md(tr('sd_stock_saved', STK.sellerQty(fresh))), kbBack(`sdstk:${pick.id}`));
+        return true;
+    }
     if (step === 'ad_name') { if (text.length < 3) { await reply(ctx, tr('sd924_name_too_short')); return true; } a.name = text.slice(0, 120); await askCategory(ctx); return true; }
     if (step === 'ad_size') { a.size = text.slice(0, 40); await askDesc(ctx); return true; }
     if (step === 'ad_desc') { a.desc = text.slice(0, 500); await askPrice(ctx); return true; }

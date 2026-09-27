@@ -117,7 +117,7 @@ export const DEAL_SELECT = [
     'original_price', 'discounted_price', 'discount_percentage', 'images', 'description',
     'location_id', 'custom_location_name', 'google_maps_link', 'map_lat', 'map_lng',
     'reliability_score', 'expires_in_minutes', 'quantity', 'is_unlimited', 'initial_quantity',
-    'on_hand',
+    'on_hand', 'sold_out',
     'prep_time', 'status', 'created_at', 'expiry_hijri', 'expiry_gregorian', 'updated_at',
     'city', 'region', 'expiry_type', 'expiry_date', 'views', 'clicks', 'starts_at',
     'coming_soon_notified_at', 'subscription_frozen', 'source', 'max_per_booking',
@@ -699,6 +699,7 @@ export const dealRepository = {
             // v15.02 — المخزون الكامل بجانب المتاح. يُقرأ ولا يُكتب: القاعدة
             // تشتقّه ممّا يكتبه التاجر في `quantity` (المشغّل tr_b0_stock_declare).
             onHand: d.is_unlimited ? null : (d.on_hand ?? null),
+            soldOut: d.sold_out === true,   // v15.07 — مفتاح «نفد» اليدويّ
             initialQuantity: d.is_unlimited ? 'unlimited' : (d.initial_quantity ?? d.quantity ?? 0),
             ratings: [],
             authReal: 0,

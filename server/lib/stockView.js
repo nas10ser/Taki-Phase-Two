@@ -81,4 +81,43 @@ function isSoldOut(d) {
     return Number(availableOf(d) || 0) <= 0;
 }
 
-module.exports = { fullOf, availableOf, heldOf, sellerQty, sellerQtyShort, isSoldOut };
+
+/**
+ * خلايا المخزون القابلة للتحرير: كلُّ صنفٍ وكلُّ فرع، برقمه **الكامل**.
+ * 🪤 تُعاد بفهرسٍ ثابت لأن بيانات زرّ تيليجرام ٦٤ بايتاً: معرّفُ عرضٍ (١٣)
+ *    + معرّفُ صنفٍ (١٤) + بادئة يقترب من الحدّ بلا داعٍ، ولا حارسَ للطول في
+ *    مصدر البوت — فالتجاوزُ يعود `BUTTON_DATA_INVALID` بلا فحصٍ محلّي.
+ */
+function cells(d) {
+    const out = [];
+    const vs = Array.isArray(d && d.variants) ? d.variants : [];
+    vs.forEach((e, ix) => {
+        if (!e || e.qty === undefined || e.qty === null) return;
+        out.push({ kind: 'v', ix, id: e.id, label: e.label || e.id,
+                   full: (e.onHand === undefined || e.onHand === null) ? e.qty : e.onHand,
+                   avail: e.qty, off: e.off === true });
+    });
+    const ls = Array.isArray(d && d.locations) ? d.locations : [];
+    if (d && d.loc_qty_mode === 'per_location') ls.forEach((e, ix) => {
+        if (!e || e.quantity === undefined || e.quantity === null) return;
+        out.push({ kind: 'l', ix, id: e.id, label: e.name || e.id,
+                   full: (e.onHand === undefined || e.onHand === null) ? e.quantity : e.onHand,
+                   avail: e.quantity, off: e.off === true });
+    });
+    return out;
+}
+
+/** خليّةٌ بعينها بفهرسها — أو `null` إن تغيّرت البنية بين العرض والضغط. */
+function cellOf(d, kind, ix) {
+    return cells(d).find(c => c.kind === kind && c.ix === Number(ix)) || null;
+}
+
+/** حمولةُ `bot_set_stock` لخليّةٍ واحدة. */
+function cellPayload(cell, value) {
+    const n = Math.max(0, Math.round(Number(value) || 0));
+    return cell.kind === 'v'
+        ? { variants: [{ id: cell.id, onHand: n }], locations: null }
+        : { variants: null, locations: [{ id: cell.id, onHand: n }] };
+}
+
+module.exports = { fullOf, availableOf, heldOf, sellerQty, sellerQtyShort, isSoldOut, cells, cellOf, cellPayload };
