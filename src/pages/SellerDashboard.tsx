@@ -4086,7 +4086,7 @@ const SellerDashboard: React.FC = () => {
                         {variants.length === 0 && !isMultiLocSel && (
                             <div style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
                                 <label style={labelStyle}>
-                                    {isRTL ? '📦 الكمية' : '📦 Quantity'}
+                                    {isRTL ? '📦 كمّيتك الكاملة' : '📦 Your full stock'}
                                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, float: isRTL ? 'left' : 'right', color: '#38bdf8', cursor: 'pointer', fontSize: '0.75rem' }}>
                                         <input type="checkbox" checked={isUnlimited} onChange={e => {
                                             setIsUnlimited(e.target.checked);
@@ -4101,7 +4101,7 @@ const SellerDashboard: React.FC = () => {
                                     if (!isUnlimited && val) setExpiryType('stock');
                                 }} />
                                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
-                                    💡 {isRTL ? 'منتج بشكل واحد؟ اكتب كميته هنا فقط وتجاهل «أنواع المنتج» بالأسفل. الكمية إلزامية فقط لو اخترت الانتهاء «بالكمية»، وإلا العرض ينتهي بالوقت.' : 'One-form product? Just enter its quantity here. Required only if you pick “by stock” expiry.'}
+                                    💡 {isRTL ? 'اكتب ما عندك كاملاً — تاكي تطرح المحجوز وتعرض المتبقّي للمشترين، فحفظُك لا يُعيد قطعةً محجوزة إلى البيع. منتج بشكل واحد؟ اكتب كميته هنا وتجاهل «أنواع المنتج». والكمية إلزامية فقط مع الانتهاء «بالكمية».' : 'Enter your FULL stock — TAKI subtracts open holds and shows buyers what is left, so saving never resells a held unit. One-form product? Just enter its quantity here. Required only with “by stock” expiry.'}
                                 </div>
                             </div>
                         )}
@@ -4225,7 +4225,7 @@ const SellerDashboard: React.FC = () => {
                                                 value={v.qty}
                                                 onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: n } : x))}
                                                 placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
-                                                title={isRTL ? 'كمية هذا النوع — المجموع يصبح الكمية الإجمالية تلقائياً' : 'Qty of this variant — the sum becomes the deal total'}
+                                                title={isRTL ? 'كمّيتك الكاملة من هذا النوع — تاكي تطرح المحجوز منه. والمجموع يصير الكمية الإجمالية تلقائياً' : 'Your FULL stock of this variant — TAKI subtracts its open holds. The sum becomes the deal total'}
                                                 style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(v.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
