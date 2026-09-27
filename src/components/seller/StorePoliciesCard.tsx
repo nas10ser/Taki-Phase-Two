@@ -14,6 +14,7 @@ import { useApp } from '../../context/AppContext';
 import { refundRepository } from '../../repositories/refundRepository';
 import { notifySetupGapsChanged } from './SetupPath';
 import { InstantRefundToggle } from './InstantRefundToggle';
+import { RefundRestockToggle } from './RefundRestockToggle';
 
 const MAX = 1500;
 
@@ -204,6 +205,7 @@ export const StorePoliciesCard: React.FC = () => {
             )}
             {/* v15.01 — القرارُ بجانب السياسة: فصلُهما يجعل أحدهما يناقض الآخر. */}
             <InstantRefundToggle />
+            <RefundRestockToggle />
 
         </div>
     );

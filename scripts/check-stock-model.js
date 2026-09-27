@@ -137,6 +137,43 @@ for (const k of ['sd467_step9_qty', 'sd471_custom_qty_prompt', 'wa_add_qty', 'sd
     }
 }
 
+// ── ٧) الاستردادُ يُعيد الكمّية — في البابين ─────────────────────────────
+// 🔴 طلبُ ناصر حرفياً: «وفي حالة الاسترداد ترجع الكميه كذلك». وقبله كان
+//    استردادُ طلبٍ **مكتمل** لا يُعيد شيئاً، والإشعار يقول «البضاعة خرجت
+//    فعلاً». والفخُّ الذي كاد يُسقط التنفيذ: **بابان لا باب** —
+//    `resolve_booking_refund` (قرارُ التاجر) و`taki_settle_booking_refund`
+//    (تسويةُ البوّابة، وهي التي تعمل في الردّ الفوريّ). رقعةُ أحدهما تُصلح
+//    باباً لا يُفتح.
+const m06 = code(read('supabase/JEDDAH_v15_06_refund_restock.sql'));
+for (const [needle, why] of [
+    ['taki_restock_booking', 'دالّةُ الإرجاع غائبة — لا شيء في القاعدة يزيد المخزون.'],
+    ['resolve_booking_refund', 'بابُ قرار التاجر غيرُ مرقوع.'],
+    ['taki_settle_booking_refund', 'بابُ تسوية البوّابة غيرُ مرقوع — وهو الذي يعمل في الردّ الفوريّ.'],
+    ['restocked_qty', 'لا سجلَّ لما أُرجع — نداءان يُضاعفان البضاعة.'],
+    ['refund_restocks', 'لا مفتاحَ للتاجر — والاستردادُ ليس دائماً إرجاعاً (خدمة · تالف · ردٌّ جزئيّ).'],
+    ['taki_set_on_hand', 'الإرجاع لا يمرّ من الكاتب المُعلَن — المرايا المتاحة لن تُعاد اشتقاقها.'],
+    ['FOR UPDATE', 'الإرجاع بلا قفل.'],
+]) if (!m06.includes(needle)) fail(why);
+
+// 🔴 ولا يُفتح حارسُ الحالة: الفاتورة الضريبية المجمّدة وتسلسلها بلا فجوات
+//    يتّكئان على أن «مكتمل» حالةٌ نهائية. وفتحُه يبدو الطريقَ الطبيعي.
+if (/guard_booking_status/.test(m06) && /CREATE OR REPLACE FUNCTION public\.guard_booking_status/.test(m06)) {
+    fail('الهجرة تُعيد بناء `guard_booking_status` — الفاتورة الضريبية المجمّدة تتّكئ على نهائيّة «مكتمل».');
+}
+// والرسالةُ تتغيّر مع السلوك: نصٌّ يقول إن البضاعة لا تعود صار كذباً
+if (!/البضاعة خرجت فعلاً/.test(read('supabase/JEDDAH_v15_06_refund_restock.sql'))) {
+    fail('الهجرة لا تُبدّل نصّ «البضاعة خرجت فعلاً» — رسالةٌ تكذب على التاجر أسوأ من صمت.');
+}
+// ومفتاحُ التاجر له شاشة: إعدادٌ بلا شاشةٍ يُعيد ناصراً إلينا
+const toggle = read('src/components/seller/RefundRestockToggle.tsx');
+if (!/merchant_set_refund_restock/.test(toggle)) {
+    fail('شاشةُ المفتاح لا تنادي `merchant_set_refund_restock`.');
+}
+if (!/refund_restocks/.test(read('src/components/seller/StorePoliciesCard.tsx'))
+    && !/RefundRestockToggle/.test(read('src/components/seller/StorePoliciesCard.tsx'))) {
+    fail('المفتاح غيرُ مركَّبٍ في بطاقة السياسات — إعدادٌ بلا شاشة.');
+}
+
 // ── ٦) والقاعدة لا تُحيي بضاعةً مباعة عند إعادة التفعيل ──────────────────
 const m05 = code(read('supabase/JEDDAH_v15_05_fix_bot_stock.sql'));
 for (const [needle, why] of [
@@ -153,4 +190,4 @@ if (/INSERT INTO public\.bookings/.test(m02) || /INSERT INTO public\.bookings/.t
 }
 read('supabase/proof_v15_03_hold_survives.sql');
 
-console.log('✅ حارس المخزون: الواجهة والبوتان يُبذَرون بالكامل · القاعدة تشتقّ المتاح · الحجزُ لا يُفسَّر إعلاناً · والراية تُطفأ');
+console.log('✅ حارس المخزون: الواجهة والبوتان بالكامل · المتاح مشتقّ · الاستردادُ يُعيد في البابين · والراية تُطفأ');
