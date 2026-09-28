@@ -30,6 +30,8 @@ interface Integration {
     id: string; provider: string; segment: string | null; label: string | null;
     api_key_last4: string; webhook_url: string | null; direction: string;
     is_enabled: boolean; last_seen_at: string | null; created_at: string;
+    field_map: { id?: string; qty?: string } | null;
+    last_payload: unknown; last_payload_at: string | null; last_note: string | null;
 }
 interface LinkRow {
     id: number; deal_id: string; variant_id: string | null; location_id: string | null;
@@ -43,6 +45,14 @@ interface SellerDeal {
 }
 
 const ENDPOINT = 'https://api.takisa.net/rest/v1/rpc/taki_stock_push';
+/**
+ * 🔴 الرابطُ الذي **نُعطيه** للتاجر ليلصقه في نظامه (v15.12).
+ * واعتراضُ ناصر هو سببُ وجوده: «لم أفهم سبب طلبك للرابط وأيّ رابط تقصد».
+ * وكان محقّاً — الأنظمةُ تُرسل ولا تستقبل، فالعنوانُ يُعطى لا يُطلب.
+ * 🪤 والمفتاح في الرابط لأن أغلب الأنظمة لا تسمح للتاجر بإضافة ترويسة؛
+ *    والتخفيف أنه يُدوَّر بضغطة من هذه الشاشة نفسها.
+ */
+const HOOK = (key: string) => `https://api.takisa.net/functions/v1/stock-webhook?k=${key}`;
 
 const box: React.CSSProperties = {
     marginTop: 14, padding: 14, borderRadius: 14,
@@ -102,12 +112,14 @@ export const StockLinkCard: React.FC = () => {
     const [locationId, setLocationId] = useState('');
     const [extId, setExtId] = useState('');
     const [extUrl, setExtUrl] = useState('');
+    const [mapId, setMapId] = useState('');
+    const [mapQty, setMapQty] = useState('');
 
     const load = useCallback(async () => {
         if (!user?.id) return;
         const { data, error } = await supabase
             .from('stock_integrations')
-            .select('id, provider, segment, label, api_key_last4, webhook_url, direction, is_enabled, last_seen_at, created_at')
+            .select('id, provider, segment, label, api_key_last4, webhook_url, direction, is_enabled, last_seen_at, created_at, field_map, last_payload, last_payload_at, last_note')
             .eq('store_id', user.id).order('created_at').limit(1);
         if (error) { logger.warn('integrations read:', error.message); setInteg(null); return; }
         const row = (data || [])[0] as Integration | undefined;
@@ -129,6 +141,7 @@ export const StockLinkCard: React.FC = () => {
     useEffect(() => { load(); }, [load]);
 
     const providers = useMemo(() => providersOfSegment(segment), [segment]);
+    const provDefOf = (id: string) => PROVIDER_SYSTEMS.find(p => p.id === id);
     const segDef = useMemo(() => PROVIDER_SEGMENTS.find(s => s.id === segment), [segment]);
     const provDef = useMemo<ProviderDef | undefined>(
         () => PROVIDER_SYSTEMS.find(p => p.id === provider), [provider]);
@@ -196,14 +209,24 @@ export const StockLinkCard: React.FC = () => {
                        '⚠️ This will not be shown again. TAKI stores only its fingerprint, so it cannot be retrieved. If lost, rotate it here for a new one.')}
                 </div>
                 <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8 }}>{freshKey}</div>
+                {/* 🔴 الأهمُّ أوّلاً: الرابطُ الجاهز الذي يلصقه التاجر — لا المفتاح. */}
+                <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
+                    📎 {t('والأهمّ: هذا رابطك — الصقه في نظامك', 'Most important: this is your URL — paste it into your system')}
+                </div>
+                <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', direction: 'ltr',
+                    textAlign: 'left', marginBottom: 8 }}>{HOOK(freshKey)}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <Copy value={HOOK(freshKey)} label={t('انسخ الرابط', 'Copy URL')} />
                     <Copy value={freshKey} label={t('انسخ المفتاح', 'Copy key')} />
-                    <Copy value={ENDPOINT} label={t('انسخ العنوان', 'Copy endpoint')} />
-                    <Copy value={sample} label={t('انسخ مثالاً جاهزاً', 'Copy a ready example')} />
+                    <Copy value={sample} label={t('انسخ مثالاً للمبرمج', 'Copy a developer example')} />
                 </div>
                 <div style={{ fontSize: '0.74rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                    {t('سلّم هذه الثلاثة لمن يدير نظامك. نظامُك يُرسل كمّياتك الكاملة بكودها، وتاكي تطرح المحجوز وحدها.',
-                       'Hand these three to whoever runs your system. It sends your FULL quantities by code; TAKI subtracts holds itself.')}
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                        {provDef ? (isRTL ? provDef.pasteHintAr : provDef.pasteHintEn) : ''}
+                    </strong>
+                    <br />
+                    {t('وبعدها: كلّما تغيّرت كمّيةُ منتجٍ عندك، يُرسل نظامُك رسالةً إلى هذا الرابط فتتحدّث تاكي وحدها. ولا تكتب شيئاً بعد اليوم.',
+                       'After that: whenever a product quantity changes, your system posts to this URL and TAKI updates itself. Nothing more to type.')}
                 </div>
                 <button type="button" style={btn(true)} onClick={() => setFreshKey(null)}>
                     ✅ {t('نسختُه — أغلِق', 'Copied — close')}
@@ -277,15 +300,24 @@ export const StockLinkCard: React.FC = () => {
                             </div>
                         )}
 
-                        <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                            {t('عنوان يستقبل أحداثنا (اختياري)', 'A URL to receive our events (optional)')}
-                            <input style={{ ...field, marginTop: 5, direction: 'ltr', textAlign: 'left' }}
+                        {/* 🔴 هذا الحقلُ هو ما أربك ناصراً — وحقُّه أن يكون متقدّماً
+                            ومشروحاً: التاجرُ العاديّ لا يملك عنواناً يستقبل، وأغلبُ
+                            الأنظمة تُرسل ولا تستقبل. الاتجاهُ الأساسيّ عكسُه. */}
+                        <details>
+                            <summary style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                ⚙️ {t('متقدّم — لمن عنده مبرمج (اختياريّ تماماً)', 'Advanced — if you have a developer (fully optional)')}
+                            </summary>
+                            <div style={{ fontSize: '0.73rem', lineHeight: 1.9, color: 'var(--text-secondary)', margin: '6px 0' }}>
+                                {t('هنا الاتجاهُ المعاكس: إن كان نظامك يستطيع أن **يستقبل**، ضع عنواناً نُرسل إليه كلّ بيعٍ وإرجاعٍ فوراً وموقَّعاً. ',
+                                   'This is the reverse direction: if your system can RECEIVE, give a URL and we post every sale and return to it, signed. ')}
+                                <strong style={{ color: 'var(--text-primary)' }}>
+                                    {t('واتركه فارغاً إن لم تفهم ما هو — لا ينقص الربطَ شيئاً.',
+                                       'Leave it empty if this means nothing to you — the link works fully without it.')}
+                                </strong>
+                            </div>
+                            <input style={{ ...field, direction: 'ltr', textAlign: 'left' }}
                                 placeholder="https://…" value={hook} onChange={e => setHook(e.target.value)} />
-                            <span style={{ display: 'block', marginTop: 4, fontWeight: 400, color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
-                                {t('يصله كلُّ بيعٍ وإرجاعٍ فوراً، موقَّعاً. اتركه فارغاً إن كان نظامك يسأل تاكي بنفسه.',
-                                   'Every sale and return reaches it at once, signed. Leave empty if your system polls TAKI instead.')}
-                            </span>
-                        </label>
+                        </details>
 
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button type="button" style={btn(true)} disabled={busy} onClick={create}>
@@ -353,6 +385,61 @@ export const StockLinkCard: React.FC = () => {
                     setBusy(false); if (d) { setLinks([]); await load(); }
                 }}>🗑 {t('احذف', 'Delete')}</button>
             </div>
+
+            {/* ── 🔴 فقدتَ الرابط؟ ───────────────────────────────────────
+                المفتاحُ جزءٌ من الرابط، وتاكي لا تحتفظ به (بصمة وlast4 فقط).
+                فلا سبيلَ لعرضه ثانيةً — والمخرجُ تدويرٌ بضغطة، لا دعمٌ فنّي. */}
+            <div style={{ fontSize: '0.73rem', lineHeight: 1.9, color: 'var(--text-secondary)',
+                padding: 9, borderRadius: 10, background: 'var(--body-bg)', marginBottom: 12 }}>
+                📎 {integ.provider && provDefOf(integ.provider)
+                    ? (isRTL ? provDefOf(integ.provider)!.pasteHintAr : provDefOf(integ.provider)!.pasteHintEn)
+                    : ''}
+                <br />
+                {t('ورابطُك يحتوي مفتاحك، وتاكي لا تحتفظ به — فإن فقدتَه اضغط «دوّر المفتاح» أعلاه وستحصل على رابطٍ جديد فوراً.',
+                   'Your URL contains your key and TAKI does not store it — if you lost it, press «Rotate key» above and you get a new URL at once.')}
+            </div>
+
+            {/* ── آخرُ رسالةٍ وصلت من نظامك ──────────────────────────────
+                🔴 ولماذا تُعرض: لم نُخمّن أسماءَ حقول أيّ نظام من وثيقته —
+                مسحُ توثيقٍ سابق في هذا المشروع أنتج اسمَ حقلٍ مختلَقاً. فالشكلُ
+                يُتعلَّم من رسالةٍ حقيقية، وهذه هي. */}
+            {integ.last_payload != null && (
+                <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
+                        📨 {t('آخر رسالة وصلت من نظامك', 'Last message from your system')}
+                        {integ.last_note === 'OK' && <span style={{ color: 'var(--primary)' }}> · {t('فُهمت وطُبّقت', 'understood & applied')}</span>}
+                        {integ.last_note === 'NOT_LINKED' && <span style={{ color: '#b45309' }}> · {t('كودُها غير مربوط بعرض', 'its code is not linked to a deal')}</span>}
+                        {integ.last_note === 'UNMAPPED' && <span style={{ color: '#b45309' }}> · {t('لم نفهم شكلها', 'shape not understood')}</span>}
+                    </div>
+                    <pre style={{ ...field, fontSize: '0.68rem', maxHeight: 120, overflow: 'auto',
+                        direction: 'ltr', textAlign: 'left', margin: 0 }}>
+                        {JSON.stringify(integ.last_payload, null, 1).slice(0, 900)}
+                    </pre>
+                    {integ.last_note === 'UNMAPPED' && (
+                        <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.9 }}>
+                                {t('اكتب مكانَ كود المنتج ومكانَ الكمّية داخل الرسالة أعلاه، بالنقاط. مثال: data.id و data.quantity',
+                                   'Enter where the product code and the quantity sit inside the message above, dotted. Example: data.id and data.quantity')}
+                            </div>
+                            <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} placeholder="data.id"
+                                value={mapId} onChange={e => setMapId(e.target.value)} />
+                            <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} placeholder="data.quantity"
+                                value={mapQty} onChange={e => setMapQty(e.target.value)} />
+                            <button type="button" style={btn(true)} disabled={busy} onClick={async () => {
+                                setBusy(true);
+                                const d = await call('merchant_set_field_map', {
+                                    p_id: integ.id, p_id_path: mapId.trim(), p_qty_path: mapQty.trim() });
+                                setBusy(false);
+                                // 🪤 لا يُقال «تمّ» إلا بدليل: القاعدة تُجرّب المسارين على
+                                //    الرسالة الحقيقية وترفض خريطةً لا تعمل، فلا تسكت بصمت.
+                                if (d) { await customAlert(t(`✅ فُهمت: الكود «${d.sample_id}» والكمّية ${d.sample_qty}`,
+                                                             `✅ Understood: code «${d.sample_id}», quantity ${d.sample_qty}`));
+                                         setMapId(''); setMapQty(''); await load(); }
+                            }}>{t('🔗 اربط الحقول', '🔗 Map the fields')}</button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* ── روابطُ المنتجات ─────────────────────────────────────── */}
             <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6 }}>

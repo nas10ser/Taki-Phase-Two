@@ -73,6 +73,16 @@ export interface ProviderDef {
     docUrl?: string;
     /** ملاحظةٌ تُعرض للتاجر كما هي. */
     noteAr?: string;
+    /**
+     * v15.12 — **أين يلصق التاجر رابطَ تاكي في نظامه.**
+     * 🔴 واعتراضُ ناصر هو سببُ وجود هذا الحقل: «لم أفهم سبب طلبك للرابط».
+     *    فالأنظمةُ تُرسل ولا تستقبل، وتاكي هي التي تُعطي العنوان. وبلا جملةٍ
+     *    تقول «من هنا بالضبط»، يبقى الرابطُ في يد التاجر بلا معنى.
+     * 🪤 وتُكتب بصيغةٍ عامّة حين لا تُفتح وثيقةُ النظام: «من إعدادات
+     *    الخطّافات/الإشعارات» أصدقُ من اسم زرٍّ لم نره.
+     */
+    pasteHintAr?: string;
+    pasteHintEn?: string;
 }
 
 /**
@@ -86,12 +96,16 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'yes', webhooks: 'yes', stockRead: 'unverified', stockWrite: 'unverified',
         docUrl: 'https://docs.salla.dev/',
         noteAr: 'واجهةُ تاجرٍ عامّة وتواقيعُ خطّافاتٍ موثَّقة. وكتابةُ الكمّية لم تُؤكَّد من وثيقةٍ رسمية بعد.',
+        pasteHintAr: 'من لوحة سلّة: الإعدادات ← المطوّرين/الخطّافات (Webhooks) ← أضف خطّافاً جديداً، والصق الرابط، واختر أحداث المنتجات.',
+        pasteHintEn: 'In Salla: Settings → Developers/Webhooks → add a webhook, paste the URL, pick product events.',
     },
     {
         id: 'zid', nameAr: 'زد', nameEn: 'Zid', segment: 'ecommerce', saudi: true,
         publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'unverified',
         docUrl: 'https://docs.zid.sa/',
         noteAr: 'قراءةُ مخزون المنتج موثَّقة. ولا يوجد خطّافٌ للمخزون — الأقربُ تحديثُ المنتج.',
+        pasteHintAr: 'من لوحة زد: الإعدادات ← التطبيقات/الخطّافات ← أضف عنوان استدعاء (Webhook) والصق الرابط، واختر أحداث المنتجات.',
+        pasteHintEn: 'In Zid: Settings → Apps/Webhooks → add a callback URL, paste it, pick product events.',
     },
     // ── نقاط بيع سعودية (مطاعم وتجزئة) ───────────────────────────────────
     {
@@ -99,11 +113,15 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'unverified', webhooks: 'unverified', stockRead: 'unverified', stockWrite: 'unverified',
         docUrl: 'https://developers.foodics.com/',
         noteAr: 'الأشهرُ في مطاعم السعودية. لم نتمكّن من فتح وثيقته الرسمية في هذا المسح — يُؤكَّد قبل أي وعد.',
+        pasteHintAr: 'من لوحة فودكس: الإعدادات ← التكاملات/الخطّافات ← أضف عنواناً والصق الرابط. (لم نفتح وثيقته، فقد تختلف التسمية.)',
+        pasteHintEn: 'In Foodics: Settings → Integrations/Webhooks → add a URL and paste it. (Docs unopened; naming may differ.)',
     },
     {
         id: 'rewaa', nameAr: 'رِواء', nameEn: 'Rewaa', segment: 'retail', saudi: true,
         publicApi: 'unverified', webhooks: 'unverified', stockRead: 'unverified', stockWrite: 'unverified',
         noteAr: 'نظامُ تجزئةٍ سعوديّ واسع الانتشار. لم تُفتح وثيقتُه في هذا المسح.',
+        pasteHintAr: 'من لوحة رِواء: الإعدادات ← التكاملات ← أضف عنوان استدعاء والصق الرابط. (لم نفتح وثيقته، فقد تختلف التسمية.)',
+        pasteHintEn: 'In Rewaa: Settings → Integrations → add a callback URL and paste it. (Docs unopened; naming may differ.)',
     },
     // ── فنادق: مصنَّفةٌ ومُعلَنٌ أنها غيرُ قابلةٍ للربط اليوم ─────────────
     {
@@ -131,6 +149,8 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'yes',
         noteAr: 'عقدُ تاكي المفتوح: نظامُك يُرسل كمّياتِك الكاملة بكودها، وتاكي تطرح المحجوز. '
               + 'ويُرسل تاكي إليك كلّ بيعٍ وإرجاعٍ فوراً. يعمل مع أي نظامٍ يستطيع نداءَ رابط.',
+        pasteHintAr: 'ابحث في إعدادات نظامك عن «Webhook» أو «خطّاف» أو «عنوان استدعاء» أو «إشعار تغيّر المخزون»، والصق الرابط هناك. وإن لم يوجد، سلّم الرابط والمفتاح لمن يبرمج نظامك.',
+        pasteHintEn: "Look in your system's settings for «Webhook», «callback URL» or «stock change notification», and paste the URL there. If none exists, hand the URL and key to whoever develops your system.",
     },
 ];
 
