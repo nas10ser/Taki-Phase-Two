@@ -11,7 +11,7 @@ import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 const WorkingHoursEditor = React.lazy(() => import('../components/WorkingHoursEditor'));
 const ReferralCard = React.lazy(() => import('../components/seller/ReferralCard'));
 const GatewayCard = React.lazy(() => import('../components/seller/GatewayCard'));
-const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard'));
+const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard')); const StockLinkCard = React.lazy(() => import('../components/seller/StockLinkCard'));   // v15.10 — ربطُ نظام التاجر (كسولةٌ ومدموجة: الحزمة ٣٠٠/٣٠٠ والسقّافة ٥٦٧٥)
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
@@ -3096,7 +3096,7 @@ const SellerDashboard: React.FC = () => {
                             ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
                         <div id="setup-vat"><VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /></div>
                         {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
-                        <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
+                        <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /> <StockLinkCard />   {/* v15.10 — اربط مخزونك بنظامك: بعد بوّابة الدفع، فكلاهما ربطٌ بنظامٍ خارجيّ */}
                         {/* v14.08 — بطاقة التوصيل نزلت إلى **آخر الصفحة** (بلاغ ناصر:
                             «المفروض يحط موقع المحل أولاً ثم يحدد أماكن التوصيل وليس
                             العكس»): نطاق التوصيل يُرسم حول موقع المحل، فرسمه قبل أن

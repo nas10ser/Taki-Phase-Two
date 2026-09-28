@@ -1,0 +1,425 @@
+/**
+ * StockLinkCard — اربط مخزون تاكي بنظامك (v15.10 · الدرجة ١)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * طلبُ ناصر: «ربط مباشر بكل الأنظمة الموجودة … ينقص بشكل أوتوماتيكي … ويستطيع
+ * ربطها بكود أو رابط أو موقع … ولها تصنيف في موقعي».
+ *
+ * 🔴 وما تقوله هذه الشاشة للتاجر بصراحة، ولا تُخفيه:
+ *    تاكي **لا تتكامل مسبقاً** مع كلّ نظام. عندها عقدٌ واحد مفتوح يتكلّمه أيُّ
+ *    نظام، وكتالوجٌ يدلّ على الشائع منها، ووسمٌ صريح لما لم نفتح وثيقته.
+ *    ومن يَعِد التاجر بتكاملٍ جاهزٍ مع نظامه دون أن يفتح وثيقته يَعِده بما
+ *    لا يُنفَّذ — وهو الفخُّ المسجَّل في v14.82.
+ *
+ * 🪤 والمفتاح يُعرض **مرّةً واحدة**: لا يُخزَّن عندنا أصلاً (sha256 وlast4)،
+ *    فمن فقده لا يستعيده — يُدوّره. والشاشة تقول ذلك قبل أن يُغلق النافذة،
+ *    لا بعدها.
+ *
+ * 🪤 وكلُّ حالةٍ تُنتجها هذه الشاشة لها مخرجٌ بضغطة: إطفاءٌ وتدويرٌ وفكُّ ربطٍ
+ *    وحذف. شاشةٌ تُنشئ ولا تُلغي تترك التاجر أمام حالةٍ بلا مخرج.
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useApp } from '../../context/AppContext';
+import { supabase } from '../../services/supabaseClient';
+import { logger } from '../../utils/logger';
+import {
+    PROVIDER_SEGMENTS, PROVIDER_SYSTEMS, providersOfSegment,
+    type ProviderSegment, type ProviderDef,
+} from '../../data/stockProviders';
+
+interface Integration {
+    id: string; provider: string; segment: string | null; label: string | null;
+    api_key_last4: string; webhook_url: string | null; direction: string;
+    is_enabled: boolean; last_seen_at: string | null; created_at: string;
+}
+interface LinkRow {
+    id: number; deal_id: string; variant_id: string | null; location_id: string | null;
+    external_id: string; external_url: string | null;
+}
+interface SellerDeal {
+    id: string; item_name: string;
+    variants: Array<{ id: string; label?: string }> | null;
+    locations: Array<{ id: string; name?: string }> | null;
+    loc_qty_mode: string | null;
+}
+
+const ENDPOINT = 'https://api.takisa.net/rest/v1/rpc/taki_stock_push';
+
+const box: React.CSSProperties = {
+    marginTop: 14, padding: 14, borderRadius: 14,
+    border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+};
+const field: React.CSSProperties = {
+    width: '100%', padding: 10, borderRadius: 10, fontSize: '0.8rem',
+    border: '1px solid var(--border-color)', background: 'var(--body-bg)',
+    color: 'var(--text-primary)',
+};
+const btn = (primary?: boolean, danger?: boolean): React.CSSProperties => ({
+    padding: '9px 14px', borderRadius: 10, fontWeight: 900, fontSize: '0.78rem',
+    cursor: 'pointer', border: `1px solid ${danger ? 'rgba(239,68,68,0.35)' : 'var(--border-color)'}`,
+    background: danger ? 'rgba(239,68,68,0.12)' : primary ? 'var(--primary)' : 'var(--card-bg)',
+    color: danger ? '#ef4444' : primary ? '#fff' : 'var(--text-primary)',
+});
+
+/** نسخٌ بضغطة، بارتدادٍ لمتصفّحات لا تملك الحافظة الآمنة. */
+const Copy: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+    const [done, setDone] = useState(false);
+    return (
+        <button type="button" style={{ ...btn(), padding: '5px 10px', fontSize: '0.72rem' }}
+            onClick={async () => {
+                try { await navigator.clipboard.writeText(value); }
+                catch {
+                    // 🪤 الحافظةُ الآمنة تحتاج سياقاً آمناً وإذناً — وبعض متصفّحات
+                    //    آيفون داخل التطبيقات ترفضها بصمت. فالارتدادُ ضروري.
+                    const t = document.createElement('textarea');
+                    t.value = value; document.body.appendChild(t); t.select();
+                    try { document.execCommand('copy'); } finally { document.body.removeChild(t); }
+                }
+                setDone(true); setTimeout(() => setDone(false), 1500);
+            }}>{done ? '✓' : `📋 ${label}`}</button>
+    );
+};
+
+export const StockLinkCard: React.FC = () => {
+    const { user, language, customAlert, customConfirm } = useApp();
+    const isRTL = language === 'ar';
+    const t = (ar: string, en: string) => (isRTL ? ar : en);
+
+    const [integ, setInteg] = useState<Integration | null | undefined>(undefined); // undefined = يُحمَّل
+    const [links, setLinks] = useState<LinkRow[]>([]);
+    const [deals, setDeals] = useState<SellerDeal[]>([]);
+    const [busy, setBusy] = useState(false);
+    const [freshKey, setFreshKey] = useState<string | null>(null);
+    const [open, setOpen] = useState(false);
+
+    // نموذجُ الإنشاء
+    const [segment, setSegment] = useState<ProviderSegment>('retail');
+    const [provider, setProvider] = useState('custom');
+    const [hook, setHook] = useState('');
+
+    // نموذجُ الربط
+    const [dealId, setDealId] = useState('');
+    const [variantId, setVariantId] = useState('');
+    const [locationId, setLocationId] = useState('');
+    const [extId, setExtId] = useState('');
+    const [extUrl, setExtUrl] = useState('');
+
+    const load = useCallback(async () => {
+        if (!user?.id) return;
+        const { data, error } = await supabase
+            .from('stock_integrations')
+            .select('id, provider, segment, label, api_key_last4, webhook_url, direction, is_enabled, last_seen_at, created_at')
+            .eq('store_id', user.id).order('created_at').limit(1);
+        if (error) { logger.warn('integrations read:', error.message); setInteg(null); return; }
+        const row = (data || [])[0] as Integration | undefined;
+        setInteg(row || null);
+        if (row) {
+            const [l, d] = await Promise.all([
+                supabase.from('stock_links')
+                    .select('id, deal_id, variant_id, location_id, external_id, external_url')
+                    .eq('integration_id', row.id).order('id'),
+                supabase.from('deals')
+                    .select('id, item_name, variants, locations, loc_qty_mode')
+                    .eq('store_id', user.id).neq('status', 'deleted').order('created_at', { ascending: false }).limit(60),
+            ]);
+            setLinks((l.data || []) as LinkRow[]);
+            setDeals((d.data || []) as SellerDeal[]);
+        }
+    }, [user?.id]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const providers = useMemo(() => providersOfSegment(segment), [segment]);
+    const segDef = useMemo(() => PROVIDER_SEGMENTS.find(s => s.id === segment), [segment]);
+    const provDef = useMemo<ProviderDef | undefined>(
+        () => PROVIDER_SYSTEMS.find(p => p.id === provider), [provider]);
+    const selectedDeal = useMemo(() => deals.find(d => d.id === dealId), [deals, dealId]);
+
+    // 🪤 كتابةٌ ترفضها RLS تعود `error=null` — فلا يُقال «تمّ» إلا بدليلٍ من الردّ.
+    const call = async (fn: string, args: Record<string, unknown>): Promise<any | null> => {
+        const { data, error } = await supabase.rpc(fn, args);
+        if (error) { await customAlert('❌ ' + error.message); return null; }
+        if (!(data as any)?.ok) {
+            await customAlert('❌ ' + ((data as any)?.error || t('لم يُحفظ — حدّث الصفحة وحاول مجدداً.', 'Not saved — refresh and retry.')));
+            return null;
+        }
+        return data;
+    };
+
+    const create = async () => {
+        if (busy) return;
+        setBusy(true);
+        const d = await call('merchant_create_integration', {
+            p_provider: provider, p_segment: segment,
+            p_label: provDef ? (isRTL ? provDef.nameAr : provDef.nameEn) : null,
+            p_webhook_url: hook.trim() || null,
+        });
+        setBusy(false);
+        if (!d) return;
+        setFreshKey(d.api_key as string);
+        await load();
+    };
+
+    const linkProduct = async () => {
+        if (busy || !integ) return;
+        if (!dealId || !extId.trim()) {
+            await customAlert(t('⚠️ اختر العرض واكتب الكود في نظامك.', '⚠️ Pick the deal and enter the code in your system.'));
+            return;
+        }
+        setBusy(true);
+        const d = await call('merchant_link_product', {
+            p_integration_id: integ.id, p_deal_id: dealId, p_external_id: extId.trim(),
+            p_variant_id: variantId || null, p_location_id: locationId || null,
+            p_external_url: extUrl.trim() || null,
+        });
+        setBusy(false);
+        if (!d) return;
+        setExtId(''); setExtUrl(''); setVariantId(''); setLocationId('');
+        await load();
+    };
+
+    if (!user?.id || integ === undefined) return null;
+
+    // ── ① المفتاح لحظةَ إصداره — مرّةً واحدة ولا رجعة ─────────────────────
+    if (freshKey) {
+        const sample = JSON.stringify({
+            p_key: freshKey, p_event_id: 'unique-per-push',
+            p_observed_at: new Date().toISOString(),
+            p_items: [{ external_id: 'SKU-123', on_hand: 20 }],
+        }, null, 2);
+        return (
+            <div style={{ ...box, border: '1px solid var(--primary)' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8 }}>
+                    🔑 {t('مفتاحك — انسخه الآن', 'Your key — copy it now')}
+                </div>
+                <div style={{ fontSize: '0.76rem', lineHeight: 1.9, color: 'var(--danger, #ef4444)', fontWeight: 800, marginBottom: 10 }}>
+                    {t('⚠️ لن يظهر مرّةً أخرى. تاكي لا تحتفظ به — تحفظ بصمتَه فقط، فلا تستطيع استرجاعه لك. إن ضاع، دوّره من هنا واحصل على غيره.',
+                       '⚠️ This will not be shown again. TAKI stores only its fingerprint, so it cannot be retrieved. If lost, rotate it here for a new one.')}
+                </div>
+                <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8 }}>{freshKey}</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <Copy value={freshKey} label={t('انسخ المفتاح', 'Copy key')} />
+                    <Copy value={ENDPOINT} label={t('انسخ العنوان', 'Copy endpoint')} />
+                    <Copy value={sample} label={t('انسخ مثالاً جاهزاً', 'Copy a ready example')} />
+                </div>
+                <div style={{ fontSize: '0.74rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                    {t('سلّم هذه الثلاثة لمن يدير نظامك. نظامُك يُرسل كمّياتك الكاملة بكودها، وتاكي تطرح المحجوز وحدها.',
+                       'Hand these three to whoever runs your system. It sends your FULL quantities by code; TAKI subtracts holds itself.')}
+                </div>
+                <button type="button" style={btn(true)} onClick={() => setFreshKey(null)}>
+                    ✅ {t('نسختُه — أغلِق', 'Copied — close')}
+                </button>
+            </div>
+        );
+    }
+
+    // ── ② لا ربط بعد ─────────────────────────────────────────────────────
+    if (!integ) {
+        return (
+            <div style={box}>
+                <div style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6 }}>
+                    🔌 {t('اربط مخزونك بنظامك', 'Link your stock to your system')}
+                </div>
+                <div style={{ fontSize: '0.75rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                    {t('بِعتَ قطعةً في المحل أو من نظامك؟ تنقص من تاكي تلقائياً. وبِعتَ عبر تاكي؟ يصل نظامَك فوراً. ',
+                       'Sold a unit in-store or from your own system? It drops in TAKI automatically. Sold through TAKI? Your system hears at once. ')}
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                        {t('ويعمل مع أيّ نظامٍ يستطيع نداءَ رابط', 'It works with any system that can call a URL')}
+                    </strong>
+                    {t(' — لا يلزم أن يكون في القائمة.', ' — it need not be in the list.')}
+                </div>
+
+                {!open ? (
+                    <button type="button" style={btn(true)} onClick={() => setOpen(true)}>
+                        🔌 {t('ابدأ الربط', 'Start linking')}
+                    </button>
+                ) : (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                        <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            {t('نوع نشاطك', 'Your segment')}
+                            <select style={{ ...field, marginTop: 5 }} value={segment}
+                                onChange={e => { const v = e.target.value as ProviderSegment; setSegment(v); setProvider('custom'); }}>
+                                {PROVIDER_SEGMENTS.map(s => (
+                                    <option key={s.id} value={s.id}>{s.icon} {isRTL ? s.nameAr : s.nameEn}</option>
+                                ))}
+                            </select>
+                        </label>
+
+                        {/* 🔴 إفصاحٌ لا يُخفى: قطاعٌ لا نستطيع تمثيله يُقال سببُه. */}
+                        {segDef && !segDef.supported && (
+                            <div style={{ fontSize: '0.74rem', lineHeight: 1.9, padding: 10, borderRadius: 10,
+                                background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#b45309' }}>
+                                ⚠️ {segDef.blockedReason}
+                            </div>
+                        )}
+
+                        <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            {t('نظامك', 'Your system')}
+                            <select style={{ ...field, marginTop: 5 }} value={provider} onChange={e => setProvider(e.target.value)}>
+                                {providers.map(p => (
+                                    <option key={p.id} value={p.id}>{isRTL ? p.nameAr : p.nameEn}</option>
+                                ))}
+                                {!providers.some(p => p.id === 'custom') && (
+                                    <option value="custom">{t('نظامٌ آخر — ربطٌ مباشر', 'Another system — direct link')}</option>
+                                )}
+                            </select>
+                        </label>
+
+                        {provDef && (
+                            <div style={{ fontSize: '0.73rem', lineHeight: 1.9, color: 'var(--text-secondary)' }}>
+                                {provDef.noteAr && isRTL ? provDef.noteAr : ''}
+                                {/* 🪤 وسمُ التحقّق حقلٌ لا نثر: ما لم نفتح وثيقته الرسمية يُقال. */}
+                                {provDef.stockWrite !== 'yes' && (
+                                    <div style={{ marginTop: 4, fontWeight: 800, color: '#b45309' }}>
+                                        {t('⚠️ قدراتُ هذا النظام لم نؤكّدها من وثيقته الرسمية بعد — يعمل الربطُ بالعقد المفتوح، ويتولّاه مطوّرك.',
+                                           '⚠️ We have not confirmed this system\'s capabilities from its official docs — linking works through the open contract, handled by your developer.')}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <label style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            {t('عنوان يستقبل أحداثنا (اختياري)', 'A URL to receive our events (optional)')}
+                            <input style={{ ...field, marginTop: 5, direction: 'ltr', textAlign: 'left' }}
+                                placeholder="https://…" value={hook} onChange={e => setHook(e.target.value)} />
+                            <span style={{ display: 'block', marginTop: 4, fontWeight: 400, color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                                {t('يصله كلُّ بيعٍ وإرجاعٍ فوراً، موقَّعاً. اتركه فارغاً إن كان نظامك يسأل تاكي بنفسه.',
+                                   'Every sale and return reaches it at once, signed. Leave empty if your system polls TAKI instead.')}
+                            </span>
+                        </label>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" style={btn(true)} disabled={busy} onClick={create}>
+                                {busy ? t('جارٍ…', 'Working…') : t('أنشئ الربط واعرض مفتاحي', 'Create link & show my key')}
+                            </button>
+                            <button type="button" style={btn()} onClick={() => setOpen(false)}>
+                                {t('إلغاء', 'Cancel')}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // ── ③ ربطٌ قائم ──────────────────────────────────────────────────────
+    const dealName = (id: string) => deals.find(d => d.id === id)?.item_name || id;
+    return (
+        <div style={box}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)' }}>
+                    🔌 {integ.label || integ.provider}
+                </span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 8px', borderRadius: 8,
+                    background: integ.is_enabled ? 'rgba(16,185,129,0.15)' : 'rgba(107,114,128,0.15)',
+                    color: integ.is_enabled ? 'var(--primary)' : 'var(--text-secondary)' }}>
+                    {integ.is_enabled ? t('يعمل', 'active') : t('موقوف', 'off')}
+                </span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    {t('المفتاح ينتهي بـ', 'key ends in ')}…{integ.api_key_last4}
+                </span>
+            </div>
+
+            <div style={{ fontSize: '0.74rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                {integ.last_seen_at
+                    ? t(`آخر اتصالٍ من نظامك: ${new Date(integ.last_seen_at).toLocaleString(isRTL ? 'ar-SA-u-ca-gregory' : 'en-GB')}`,
+                        `Last call from your system: ${new Date(integ.last_seen_at).toLocaleString('en-GB')}`)
+                    : t('لم يتّصل نظامك بعد — سلّم المفتاح والعنوان لمن يديره.',
+                        'Your system has not called yet — hand the key and endpoint to whoever runs it.')}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <Copy value={ENDPOINT} label={t('انسخ العنوان', 'Copy endpoint')} />
+                <button type="button" style={btn()} disabled={busy} onClick={async () => {
+                    setBusy(true);
+                    const d = await call('merchant_update_integration', { p_id: integ.id, p_enabled: !integ.is_enabled });
+                    setBusy(false); if (d) await load();
+                }}>{integ.is_enabled ? t('⏸ أوقِفه', '⏸ Disable') : t('▶️ شغّله', '▶️ Enable')}</button>
+                <button type="button" style={btn()} disabled={busy} onClick={async () => {
+                    const ok = await customConfirm(t(
+                        '🔑 تدوير المفتاح\n\nسيتوقّف المفتاح الحالي فوراً، ولن يعمل نظامك حتى تضع الجديد فيه.\n\nهل تريد ذلك؟',
+                        '🔑 Rotate the key\n\nThe current key stops working immediately, and your system will fail until you set the new one.\n\nProceed?'));
+                    if (!ok) return;
+                    setBusy(true);
+                    const d = await call('merchant_rotate_integration_key', { p_id: integ.id });
+                    setBusy(false); if (d) { setFreshKey(d.api_key as string); await load(); }
+                }}>🔑 {t('دوّر المفتاح', 'Rotate key')}</button>
+                <button type="button" style={btn(false, true)} disabled={busy} onClick={async () => {
+                    const ok = await customConfirm(t(
+                        `🗑 حذف الربط\n\nستُفكّ ${links.length} رابطَ منتجٍ ويتوقّف المفتاح. لا يتأثّر مخزونك الحالي في تاكي.\n\nهل تحذفه؟`,
+                        `🗑 Delete the link\n\n${links.length} product link(s) will be removed and the key stops. Your current TAKI stock is unaffected.\n\nDelete?`));
+                    if (!ok) return;
+                    setBusy(true);
+                    const d = await call('merchant_delete_integration', { p_id: integ.id });
+                    setBusy(false); if (d) { setLinks([]); await load(); }
+                }}>🗑 {t('احذف', 'Delete')}</button>
+            </div>
+
+            {/* ── روابطُ المنتجات ─────────────────────────────────────── */}
+            <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6 }}>
+                📦 {t('منتجاتك المربوطة', 'Linked products')} ({links.length})
+            </div>
+            {links.length === 0 && (
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.9 }}>
+                    {t('لا منتجَ مربوط بعد. اربط كلّ عرضٍ بكوده في نظامك — وبدون الربط لا يعرف أيُّ الطرفين أنّ المنتج واحد.',
+                       'No product linked yet. Link each deal to its code in your system — without it, neither side knows they are the same product.')}
+                </div>
+            )}
+            {links.map(l => (
+                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    padding: '7px 0', borderTop: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--text-primary)' }}>{dealName(l.deal_id)}</span>
+                    {l.variant_id && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>· {t('نوع', 'variant')}</span>}
+                    {l.location_id && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>· {t('فرع', 'branch')}</span>}
+                    <span style={{ fontSize: '0.74rem', fontFamily: 'monospace', color: 'var(--text-secondary)', direction: 'ltr' }}>
+                        ⇄ {l.external_id}
+                    </span>
+                    <button type="button" style={{ ...btn(false, true), padding: '3px 9px', fontSize: '0.7rem', marginInlineStart: 'auto' }}
+                        disabled={busy} onClick={async () => {
+                            setBusy(true);
+                            const d = await call('merchant_unlink_product', { p_link_id: l.id });
+                            setBusy(false); if (d) await load();
+                        }}>✕</button>
+                </div>
+            ))}
+
+            {/* ── اربط منتجاً ─────────────────────────────────────────── */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)', display: 'grid', gap: 8 }}>
+                <select style={field} value={dealId} onChange={e => { setDealId(e.target.value); setVariantId(''); setLocationId(''); }}>
+                    <option value="">{t('— اختر العرض —', '— pick a deal —')}</option>
+                    {deals.map(d => <option key={d.id} value={d.id}>{d.item_name}</option>)}
+                </select>
+
+                {/* 🪤 الصنفُ والفرعُ اختياريان: كودٌ واحد قد يشير إلى العرض كلّه،
+                    أو إلى صنفٍ بعينه، أو إلى فرع. والقاعدة تفرض تفرّد الكود. */}
+                {!!selectedDeal?.variants?.length && (
+                    <select style={field} value={variantId} onChange={e => setVariantId(e.target.value)}>
+                        <option value="">{t('كلّ الأنواع', 'all variants')}</option>
+                        {selectedDeal!.variants!.map(v => (
+                            <option key={v.id} value={v.id}>{v.label || v.id}</option>
+                        ))}
+                    </select>
+                )}
+                {selectedDeal?.loc_qty_mode === 'per_location' && !!selectedDeal?.locations?.length && (
+                    <select style={field} value={locationId} onChange={e => setLocationId(e.target.value)}>
+                        <option value="">{t('كلّ الفروع', 'all branches')}</option>
+                        {selectedDeal!.locations!.map(l => (
+                            <option key={l.id} value={l.id}>{l.name || l.id}</option>
+                        ))}
+                    </select>
+                )}
+
+                <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} value={extId}
+                    onChange={e => setExtId(e.target.value)}
+                    placeholder={t('الكود في نظامك (SKU / باركود / معرّف المنتج)', 'Code in your system (SKU / barcode / product id)')} />
+                <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} value={extUrl}
+                    onChange={e => setExtUrl(e.target.value)}
+                    placeholder={t('رابط المنتج عندهم (اختياري)', 'Product URL in your system (optional)')} />
+                <button type="button" style={btn(true)} disabled={busy} onClick={linkProduct}>
+                    {busy ? t('جارٍ…', 'Working…') : t('🔗 اربط هذا المنتج', '🔗 Link this product')}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export default StockLinkCard;

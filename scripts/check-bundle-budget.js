@@ -55,14 +55,32 @@ function entryBundles() {
 }
 
 /** أكبر ملفٍّ يطابق البادئة (لحزم المسارات). */
+/**
+ * أكبرُ حزمةٍ بهذه البادئة **من البناء الحالي وحده**.
+ *
+ * 🔴 ولماذا «من البناء الحالي»، وقد قِيس: Parcel لا يُنظّف `dist` بين
+ *    البناءات، فتتراكم فيه حزمُ كلّ بناءٍ سابق ببصماتها. فحارسٌ يأخذ الأكبر
+ *    من كلّ ما في المجلّد يقيس **بقيّةً من الأمس**: قال «لوحة التاجر
+ *    ٣٠٠/٣٠٠» وحزمةُ اليوم ٢٨٠ — ولو زادت البقيّة كيلوبايتاً واحداً
+ *    **لأسقط بناءً صحيحاً** ومنع تغييراً لا علاقة له به.
+ *    (وVercel تبني نظيفاً، فالإنتاج سليم — والكاذبُ هو تحقّقي المحلّي،
+ *     وهو الفخّ المسجَّل في v14.63 بعينه.)
+ *
+ * 🪤 والنافذةُ ٩٠ ثانية لا صفر: بناءٌ واحد يكتب ملفّاته على مدى ثوانٍ.
+ */
 function biggest(prefix) {
     const re = new RegExp(`^${prefix}\\.[A-Za-z0-9]+\\.js$`);
-    let best = null;
+    const mine = [];
     for (const f of files) {
         if (!re.test(f)) continue;
-        const size = fs.statSync(path.join(dist, f)).size;
-        if (!best || size > best.size) best = { file: f, size };
+        const st = fs.statSync(path.join(dist, f));
+        mine.push({ file: f, size: st.size, at: st.mtimeMs });
     }
+    if (!mine.length) return null;
+    const newest = Math.max(...mine.map((x) => x.at));
+    const fresh = mine.filter((x) => newest - x.at <= 90_000);
+    let best = null;
+    for (const f of fresh) if (!best || f.size > best.size) best = f;
     return best;
 }
 
