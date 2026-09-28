@@ -63,12 +63,30 @@ Deno.serve(async (req: Request) => {
     // 🪤 يفشل **مغلقاً**: بلا بيئةٍ صحيحة لا يُقال «تمّ» ولا يُبتلع الحدث.
     if (!SUPA || !SRV) return json(500, { error: 'NOT_CONFIGURED' });
 
+    /**
+     * v15.13 — التحقّقُ بطريقة كلّ منصّة، حين يكون عندنا سرُّها.
+     * 🔴 ومقيسٌ من وثيقتَيهما لا مُستنتَج:
+     *    • سلّة: HMAC-SHA256 على **الجسم الخام** في `X-Salla-Signature`.
+     *      🪤 ومثالُهم بـNode يُجزّئ `JSON.stringify(req.body)` بينما مثالُ PHP
+     *         يُجزّئ الجسم الخام — والصحيحُ الخام وحده، فإعادةُ الترميز تغيّر
+     *         البايتات فتفشل المطابقة. ونقارن بلا حساسيةٍ لحالة اسم الترويسة
+     *         لأن وثيقتهم تكتبه بالحالتين.
+     *    • زد: **لا توقيع إطلاقاً** — `Authorization: Basic` فقط. فرسالتُها
+     *      إشارةٌ لا حقيقة، ولا يُبنى عليها رقمٌ بلا إعادة قراءة.
+     * 🪤 وحين لا يكون عندنا سرّ (قبل تسجيل تطبيق تاكي لديهم) يبقى المفتاحُ
+     *    في الرابط هو الحارس — ويُقال ذلك في الشاشة ولا يُدَّعى غيره.
+     */
+    // 🪤 ولا تُمرَّر الترويسات إلى القاعدة بعد: التحقّقُ بالتوقيع يحتاج
+    //    **الجسم الخام** وهو هنا لا هناك، وسرُّ المنصّة لا يوجد قبل تسجيل
+    //    تطبيق تاكي لديها. فيُبنى التحقّق يوم يوجد السرّ، ولا يُدَّعى اليوم.
     let res: Response;
     try {
         res = await fetch(`${SUPA}/rest/v1/rpc/taki_stock_webhook`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', apikey: SRV, authorization: `Bearer ${SRV}` },
-            body: JSON.stringify({ p_key: key, p_body: body, p_event_id: null }),
+            body: JSON.stringify({
+                p_key: key, p_body: body, p_event_id: null,
+            }),
         });
     } catch (e) {
         return json(502, { error: 'UPSTREAM', detail: String((e as Error)?.message || e).slice(0, 180) });

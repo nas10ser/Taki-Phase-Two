@@ -83,6 +83,23 @@ export interface ProviderDef {
      */
     pasteHintAr?: string;
     pasteHintEn?: string;
+    /**
+     * v15.13 — **هل يستطيع التاجر أن يلصق الرابط بنفسه؟**
+     * 🔴 قِيس من وثيقتَي سلّة وزد: **لا**. كلتاهما تشترط تطبيقاً مسجَّلاً
+     *    (OAuth) لتسجيل خطّاف. فزدٌّ صريحة: `POST /v1/managers/webhooks`
+     *    يتطلّب مفتاحَ شريكٍ و`X-Manager-Token` من OAuth. وسلّة كذلك عبر
+     *    بوّابة الشركاء. ⇒ «الصق الرابط» لا تعمل معهما، ووعدُها كذب.
+     */
+    selfServeWebhook: 'yes' | 'no' | 'unverified';
+    /** ما الذي يلزم تاكي لتفعيله — يُقال لناصر لا يُخفى. */
+    needsAr?: string;
+    /**
+     * خريطةُ الحقول **المؤكَّدة من الوثيقة** — تُستعمل افتراضاً لهذا المزوّد
+     * بدل التخمين. `null` لمن لم تُفتح وثيقتُه.
+     */
+    fieldMap?: { id: string; qty: string; variants?: string; variantId?: string; variantQty?: string };
+    /** آليّةُ التحقّق من أن الرسالة منه فعلاً. */
+    verify?: 'hmac-sha256-raw' | 'basic-auth' | 'none' | 'unverified';
 }
 
 /**
@@ -93,19 +110,37 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
     // ── متاجر إلكترونية سعودية ───────────────────────────────────────────
     {
         id: 'salla', nameAr: 'سلّة', nameEn: 'Salla', segment: 'ecommerce', saudi: true,
-        publicApi: 'yes', webhooks: 'yes', stockRead: 'unverified', stockWrite: 'unverified',
-        docUrl: 'https://docs.salla.dev/',
-        noteAr: 'واجهةُ تاجرٍ عامّة وتواقيعُ خطّافاتٍ موثَّقة. وكتابةُ الكمّية لم تُؤكَّد من وثيقةٍ رسمية بعد.',
-        pasteHintAr: 'من لوحة سلّة: الإعدادات ← المطوّرين/الخطّافات (Webhooks) ← أضف خطّافاً جديداً، والصق الرابط، واختر أحداث المنتجات.',
-        pasteHintEn: 'In Salla: Settings → Developers/Webhooks → add a webhook, paste the URL, pick product events.',
+        publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'yes',
+        selfServeWebhook: 'unverified',
+        verify: 'hmac-sha256-raw',
+        fieldMap: { id: 'data.id', qty: 'data.quantity', variants: 'data.skus',
+                    variantId: 'id', variantQty: 'stock_quantity' },
+        docUrl: 'https://docs.salla.dev/webhooks.md',
+        noteAr: 'الكتابةُ للمخزون **مؤكَّدة**: POST /products/quantities/bulk بأنماط increment/decrement/overwrite '
+              + '\u2014 وهي غيرُ فوريّة («قد تستغرق عدّة دقائق»)، فلا يُقرأ الرقم بعد الكتابة مباشرةً. '
+              + '\u26a0\ufe0f ولا يوجد حدثٌ لتغيّر المخزون: product.updated مُهمَلةٌ عندهم، و product.quantity.low '
+              + 'لا تنطلق إلا عند حدٍّ منخفض. فالمزامنةُ الحيّة تحتاج إشارةً ثمّ إعادةَ قراءة.',
+        needsAr: 'يلزم تسجيلُ تاكي تطبيقاً في بوّابة شركاء سلّة، ثمّ يأذن التاجر بضغطة. '
+               + 'ولا يستطيع التاجر لصقَ الرابط بنفسه بحسب وثيقتهم.',
+        pasteHintAr: 'لا يُلصق الرابط يدوياً في سلّة: التسجيلُ يتمّ عبر تطبيق تاكي بعد إذنك بضغطة.',
+        pasteHintEn: 'No manual URL pasting in Salla: registration happens through the TAKI app after you approve it.',
     },
     {
         id: 'zid', nameAr: 'زد', nameEn: 'Zid', segment: 'ecommerce', saudi: true,
-        publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'unverified',
-        docUrl: 'https://docs.zid.sa/',
-        noteAr: 'قراءةُ مخزون المنتج موثَّقة. ولا يوجد خطّافٌ للمخزون — الأقربُ تحديثُ المنتج.',
-        pasteHintAr: 'من لوحة زد: الإعدادات ← التطبيقات/الخطّافات ← أضف عنوان استدعاء (Webhook) والصق الرابط، واختر أحداث المنتجات.',
-        pasteHintEn: 'In Zid: Settings → Apps/Webhooks → add a callback URL, paste it, pick product events.',
+        publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'yes',
+        selfServeWebhook: 'no',
+        verify: 'basic-auth',
+        fieldMap: { id: 'id', qty: 'quantity', variants: 'stocks',
+                    variantId: 'id', variantQty: 'available_quantity' },
+        docUrl: 'https://docs.zid.sa/webhooks.md',
+        noteAr: 'الكتابةُ للمخزون **مؤكَّدة**: PATCH /v1/products/{id}/stocks/ (مفرداً أو دفعةً). '
+              + 'ورسالتُهم تصل **بلا غلاف** \u2014 المنتجُ في جذر الرسالة لا داخل data. '
+              + '\u26a0\ufe0f ولا حدثَ للمخزون: product.update العامّ فقط. والتحقّقُ عندهم Basic Auth لا توقيعاً، '
+              + 'فتُعامَل الرسالةُ إشارةً لا حقيقة، وتُعاد القراءة من واجهتهم قبل التصرّف.',
+        needsAr: 'وثيقةُ زد صريحة: تسجيلُ الخطّاف يحتاج مفتاحَ شريكٍ ورمزَ OAuth \u2014 '
+               + 'فلا يستطيع التاجر فعلَه بنفسه. يلزم تسجيلُ تاكي تطبيقاً لدى زد.',
+        pasteHintAr: 'لا يُلصق الرابط يدوياً في زد: وثيقتُهم تشترط تطبيقاً مسجَّلاً، ويتمّ بإذنك بضغطة.',
+        pasteHintEn: 'No manual URL pasting in Zid: their docs require a registered app; it happens after you approve.',
     },
     // ── نقاط بيع سعودية (مطاعم وتجزئة) ───────────────────────────────────
     {
@@ -115,6 +150,8 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         noteAr: 'الأشهرُ في مطاعم السعودية. لم نتمكّن من فتح وثيقته الرسمية في هذا المسح — يُؤكَّد قبل أي وعد.',
         pasteHintAr: 'من لوحة فودكس: الإعدادات ← التكاملات/الخطّافات ← أضف عنواناً والصق الرابط. (لم نفتح وثيقته، فقد تختلف التسمية.)',
         pasteHintEn: 'In Foodics: Settings → Integrations/Webhooks → add a URL and paste it. (Docs unopened; naming may differ.)',
+        selfServeWebhook: 'unverified',
+        verify: 'unverified',
     },
     {
         id: 'rewaa', nameAr: 'رِواء', nameEn: 'Rewaa', segment: 'retail', saudi: true,
@@ -122,6 +159,8 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         noteAr: 'نظامُ تجزئةٍ سعوديّ واسع الانتشار. لم تُفتح وثيقتُه في هذا المسح.',
         pasteHintAr: 'من لوحة رِواء: الإعدادات ← التكاملات ← أضف عنوان استدعاء والصق الرابط. (لم نفتح وثيقته، فقد تختلف التسمية.)',
         pasteHintEn: 'In Rewaa: Settings → Integrations → add a callback URL and paste it. (Docs unopened; naming may differ.)',
+        selfServeWebhook: 'unverified',
+        verify: 'unverified',
     },
     // ── فنادق: مصنَّفةٌ ومُعلَنٌ أنها غيرُ قابلةٍ للربط اليوم ─────────────
     {
@@ -129,18 +168,24 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'yes', webhooks: 'yes', stockRead: 'unverified', stockWrite: 'unverified',
         docUrl: 'https://hotels.cloudbeds.com/api/',
         noteAr: 'خطّافاتُ إتاحةٍ موثَّقة. ولا يُربط اليوم: تاكي يبيع بالقطعة لا بالليلة.',
+        selfServeWebhook: 'unverified',
+        verify: 'unverified',
     },
     {
         id: 'mews', nameAr: 'ميوز', nameEn: 'Mews', segment: 'hotel', saudi: false,
         publicApi: 'yes', webhooks: 'yes', stockRead: 'unverified', stockWrite: 'unverified',
         docUrl: 'https://mews-systems.gitbook.io/connector-api/',
         noteAr: 'خطّافاتٌ ومقابس ويب، ويشترط ردّاً خلال خمس ثوانٍ. ولا يُربط اليوم لنفس السبب.',
+        selfServeWebhook: 'unverified',
+        verify: 'unverified',
     },
     {
         id: 'opera', nameAr: 'أوبرا كلاود (أوراكل)', nameEn: 'Oracle OPERA Cloud (OHIP)', segment: 'hotel', saudi: false,
         publicApi: 'yes', webhooks: 'unverified', stockRead: 'unverified', stockWrite: 'unverified',
         docUrl: 'https://github.com/oracle/hospitality-api-docs',
         noteAr: 'مواصفاتٌ منشورة وأحداثُ أعمال. تفاصيلُ إدارة الإتاحة لم تُؤكَّد من وثيقة أوراكل نفسها.',
+        selfServeWebhook: 'unverified',
+        verify: 'unverified',
     },
     // ── والبابُ الذي يفي بالطلب فعلاً ────────────────────────────────────
     {
@@ -151,6 +196,8 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
               + 'ويُرسل تاكي إليك كلّ بيعٍ وإرجاعٍ فوراً. يعمل مع أي نظامٍ يستطيع نداءَ رابط.',
         pasteHintAr: 'ابحث في إعدادات نظامك عن «Webhook» أو «خطّاف» أو «عنوان استدعاء» أو «إشعار تغيّر المخزون»، والصق الرابط هناك. وإن لم يوجد، سلّم الرابط والمفتاح لمن يبرمج نظامك.',
         pasteHintEn: "Look in your system's settings for «Webhook», «callback URL» or «stock change notification», and paste the URL there. If none exists, hand the URL and key to whoever develops your system.",
+        selfServeWebhook: 'yes',
+        verify: 'unverified',
     },
 ];
 

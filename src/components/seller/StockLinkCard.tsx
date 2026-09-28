@@ -211,7 +211,9 @@ export const StockLinkCard: React.FC = () => {
                 <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8 }}>{freshKey}</div>
                 {/* 🔴 الأهمُّ أوّلاً: الرابطُ الجاهز الذي يلصقه التاجر — لا المفتاح. */}
                 <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
-                    📎 {t('والأهمّ: هذا رابطك — الصقه في نظامك', 'Most important: this is your URL — paste it into your system')}
+                    📎 {provDef && provDef.selfServeWebhook === 'yes'
+                        ? t('والأهمّ: هذا رابطك — الصقه في نظامك', 'Most important: this is your URL — paste it into your system')
+                        : t('هذا رابطك — احتفظ به', 'This is your URL — keep it')}
                 </div>
                 <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', direction: 'ltr',
                     textAlign: 'left', marginBottom: 8 }}>{HOOK(freshKey)}</div>
@@ -287,6 +289,18 @@ export const StockLinkCard: React.FC = () => {
                             </select>
                         </label>
 
+                        {/* 🔴 لا يُوعَد بما لا يُنفَّذ: سلّة وزد لا تسمحان للتاجر بتسجيل
+                            رابطٍ بنفسه (وثيقةُ زد صريحة، وسلّة عبر بوّابة الشركاء).
+                            فيُقال ما يلزم فعلاً قبل أن يضغط، لا بعد أن يضغط. */}
+                        {provDef && provDef.selfServeWebhook !== 'yes' && provDef.needsAr && (
+                            <div style={{ fontSize: '0.74rem', lineHeight: 1.9, padding: 10, borderRadius: 10,
+                                background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#b45309' }}>
+                                ⚠️ <strong>{t('هذا النظام لا يقبل لصقَ رابطٍ من التاجر', 'This system does not accept a merchant-pasted URL')}</strong>
+                                <br />{isRTL ? provDef.needsAr : provDef.pasteHintEn}
+                                <br />{t('أنشئ الربط الآن على أيّ حال — سيعمل فور اكتمال التسجيل، ولن تُعيد شيئاً.',
+                                         'Create the link now anyway — it starts working once registration completes, with nothing to redo.')}
+                            </div>
+                        )}
                         {provDef && (
                             <div style={{ fontSize: '0.73rem', lineHeight: 1.9, color: 'var(--text-secondary)' }}>
                                 {provDef.noteAr && isRTL ? provDef.noteAr : ''}
@@ -394,6 +408,11 @@ export const StockLinkCard: React.FC = () => {
                 📎 {integ.provider && provDefOf(integ.provider)
                     ? (isRTL ? provDefOf(integ.provider)!.pasteHintAr : provDefOf(integ.provider)!.pasteHintEn)
                     : ''}
+                {provDefOf(integ.provider)?.selfServeWebhook !== 'yes' && provDefOf(integ.provider)?.needsAr && (
+                    <><br /><span style={{ color: '#b45309', fontWeight: 800 }}>
+                        ⚠️ {isRTL ? provDefOf(integ.provider)!.needsAr : ''}
+                    </span></>
+                )}
                 <br />
                 {t('ورابطُك يحتوي مفتاحك، وتاكي لا تحتفظ به — فإن فقدتَه اضغط «دوّر المفتاح» أعلاه وستحصل على رابطٍ جديد فوراً.',
                    'Your URL contains your key and TAKI does not store it — if you lost it, press «Rotate key» above and you get a new URL at once.')}
