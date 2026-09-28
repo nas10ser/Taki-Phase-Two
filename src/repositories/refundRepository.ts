@@ -106,7 +106,7 @@ export const refundRepository = {
     resolve: async (
         barcode: string,
         action: 'decline' | 'refund' | 'open',
-        opts: { note?: string; amount?: number; ref?: string; method?: string } = {},
+        opts: { note?: string; amount?: number; ref?: string; method?: string; restock?: boolean } = {},
     ): Promise<{ ok: boolean; error?: string; creditNoteNo?: string; orderCancelled?: boolean }> => {
         const { data, error } = await supabase.rpc('resolve_booking_refund', {
             p_barcode: barcode,
@@ -115,6 +115,8 @@ export const refundRepository = {
             p_amount: opts.amount ?? null,
             p_ref: opts.ref || null,
             p_method: opts.method || null,
+            // v15.09 — «رجعت البضاعة؟» قرارُ التاجر في هذا الطلب، لا إعدادُ متجره
+            p_restock: typeof opts.restock === 'boolean' ? opts.restock : null,
         });
         if (error) return { ok: false, error: error.message };
         const d: any = data || {};
@@ -150,11 +152,14 @@ export const refundRepository = {
      * «تعذّر الاتصال» فيبقى التاجر لا يعرف لماذا رفضت بوّابته.
      */
     refundPaid: async (
-        barcode: string, reason?: string,
+        barcode: string, reason?: string, restock?: boolean | null,
     ): Promise<{ ok: boolean; error?: string; detail?: string; amount?: number; creditNoteNo?: string; settleFailed?: boolean }> => {
         try {
             const { data, error } = await supabase.functions.invoke('merchant-pay', {
-                body: { op: 'refund', barcode, reason: reason || null },
+                // v15.09 — جوابُ التاجر لهذا الردّ بعينه. `undefined` = لم يُسأل
+                //           ⇒ يُؤخذ الجواب المقترَح من ملفّ المتجر.
+                body: { op: 'refund', barcode, reason: reason || null,
+                        ...(typeof restock === 'boolean' ? { restock } : {}) },
             });
             let payload: any = data;
             // 🪤 دالّةُ الحافة تردّ التفاصيل في جسمٍ بحالةٍ غير 2xx، و`invoke`

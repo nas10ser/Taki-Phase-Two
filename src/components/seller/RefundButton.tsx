@@ -119,15 +119,44 @@ export const RefundButton: React.FC<{
             : 'Reason for the refund (optional — the buyer sees it):');
         if (reason == null) return;      // تراجُعٌ صريح = توقّف
 
+        /**
+         * ١٫٥) 🔴 «رجعت البضاعة؟» — سؤالٌ لكل ردّ، لا إعدادٌ في ملفّ المتجر.
+         * ═══════════════════════════════════════════════════════════════════
+         * طلبُ ناصر حرفياً: «يُسأل التاجر وهو يردّ … لأن بعض التجار يعطون
+         * المشتري كهدية إذا كان فيها عيب وبنفس الوقت يردّ له المبلغ».
+         * وهو محقّ: الجوابُ **واقعةُ طلبٍ** لا سياسةُ متجر. نفسُ التاجر
+         * يستعيد قطعةً اليوم ويهدي معيبةً غداً ويردّ المال في الحالتين،
+         * فإعدادٌ واحدٌ ثابت لا يستطيع أن يصدُق في الحالتين.
+         *
+         * 🪤 ولا يُسأل إلا عن طلبٍ **مكتمل**: الطلبُ الذي لم يُستلم تعود
+         *    كمّيته دائماً لأن البضاعة لم تخرج أصلاً — وسؤالٌ جوابُه واحدٌ
+         *    دائماً ليس سؤالاً، بل خطوةٌ تُملّ التاجر فيضغط بلا قراءة.
+         */
+        const isOpenOrder = order?.status === 'pending' || order?.status === 'acknowledged';
+        let restock: boolean | undefined;
+        if (!isOpenOrder) {
+            restock = await customConfirm(isRTL
+                ? '📦 رجعت البضاعة إلى مخزونك؟\n\n'
+                  + '• **نعم** — استعدتَ القطعة، فتعود إلى مخزونك فوراً.\n'
+                  + '• **لا** — تركتَها للمشتري (هديةً أو لعيبٍ فيها) وردَدتَ المال فقط.\n\n'
+                  + 'جوابُك يخصّ هذا الطلب وحده، ولا يغيّر شيئاً في طلباتك الأخرى.'
+                : '📦 Did the goods come back to your stock?\n\n'
+                  + '• **Yes** — you got the item back, so it returns to your stock now.\n'
+                  + '• **No** — you left it with the buyer (a gift, or it was faulty) and refunded the money only.\n\n'
+                  + 'This answer applies to this order only.');
+        }
+
         // ٢) التأكيد الأخير، وفيه المبلغ بالضبط ومن أين يخرج ولا رجعة فيه.
         const ok = await customConfirm(isRTL
             ? `⚠️ ردّ ${money(amount)} ر.س إلى المشتري الآن\n\n`
               + `• المبلغ يخرج من حسابك أنت عند بوّابة الدفع — تاكي لا تحتفظ بمالك ولا تمرّ به.\n`
               + `• العملية تُنفَّذ فوراً ولا يمكن التراجع عنها.\n`
               + `• يصل المشتري إشعارٌ بالمبلغ والمرجع، ويصدر إشعار دائن على فاتورته.\n`
-              + `${order?.status === 'pending' || order?.status === 'acknowledged'
+              + `${isOpenOrder
                   ? '• وسيُلغى الطلب وتعود الكمّية للبيع.'
-                  : '• والطلب مغلق أصلاً، فلن تعود كمّيته للبيع — البضاعة خرجت.'}\n\n`
+                  : restock
+                      ? '• والطلب مكتملٌ ويبقى كذلك، وستعود كمّيته إلى مخزونك كما أجبت.'
+                      : '• والطلب مكتملٌ ويبقى كذلك، ولن تعود كمّيته إلى المخزون كما أجبت.'}\n\n`
               + `هل تؤكّد الردّ؟`
             : `⚠️ Refund ${money(amount)} SAR to the buyer now\n\n`
               + `• The money leaves your own gateway account — TAKI never holds it.\n`
@@ -135,11 +164,13 @@ export const RefundButton: React.FC<{
               + `• The buyer is notified with the amount and reference, and a credit note is issued.\n`
               + `${order?.status === 'pending' || order?.status === 'acknowledged'
                   ? '• The order will be cancelled and the stock returned.'
-                  : '• The order is already closed, so the stock will not return.'}\n\n`
+                  : restock
+                      ? '• The order stays completed, and its stock returns to you as you answered.'
+                      : '• The order stays completed, and its stock will NOT return as you answered.'}\n\n`
               + `Confirm the refund?`);
         if (!ok) return;
 
-        const res = await refundRepository.refundPaid(barcode, reason || undefined);
+        const res = await refundRepository.refundPaid(barcode, reason || undefined, restock);
         await load();
         await onChanged?.();
 

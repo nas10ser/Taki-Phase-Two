@@ -7,11 +7,12 @@
  *    شيئاً — لا المتاح ولا المخزون الكامل — وكان الإشعار يقول للتاجر صراحةً
  *    «البضاعة خرجت فعلاً». صار الافتراضُ أن تعود.
  *
- * 🪤 ولماذا يبقى المفتاح بيد التاجر رغم أن ناصراً طلب الإعادة: لأن الاسترداد
- *    ليس دائماً إرجاعاً. خدمةٌ أُدّيت، أو سلعةٌ تلفت، أو ردٌّ جزئيّ لعيبٍ —
- *    في كلّ هذه لا يعود شيءٌ إلى الرفّ. فإعادةٌ صامتة دائماً هي مرآةُ
- *    «لا إعادة أبداً» التي أُصلحت للتوّ، لا نقيضُها.
- *    الافتراضُ يُعيد (أمرُ ناصر)، ومن لا تعود بضاعته يُطفئه مرّةً واحدة.
+ * 🔴 وv15.09 صحّحت دوري: لم أعُد القرار، بل **الجوابَ الاحتياطيّ**.
+ *    قرارُ ناصر: «يُسأل التاجر وهو يردّ» — لأن بعض التجار يترك القطعة
+ *    المعيبة للمشتري هديةً **ويردّ المال**. فالجوابُ واقعةُ طلبٍ لا سياسةُ
+ *    متجر: نفسُ التاجر يستعيد قطعةً اليوم ويهدي معيبةً غداً.
+ *    فالسؤالُ يُطرح عند **كلّ** ردّ في شاشتَي الردّ، وهذا المفتاح لا يُستعمل
+ *    إلا حين لا يُسأل أحد — كفكّ الإدارة لردٍّ عالق، أو مسارٍ آليّ لاحق.
  *
  * 🪤 ومكانُه تحت سياسة الاسترداد المكتوبة مباشرةً: القرارُ يُتّخذ وعينُ
  *    التاجر على ما وعد به عملاءه — وهي نفسُ قاعدة `InstantRefundToggle`.
@@ -47,11 +48,11 @@ export const RefundRestockToggle: React.FC = () => {
         const next = !on;
         if (!next) {
             const ok = await customConfirm(t(
-                '⚠️ إيقاف إعادة الكمّية عند الاسترداد\n\n'
-                + 'حين تردّ مبلغاً لطلبٍ **مكتمل**، لن تعود قطعتُه إلى مخزونك تلقائياً.\n'
-                + 'وهذا هو الصحيح لمن يبيع خدمةً، أو لا يستعيد التالف.\n\n'
+                '⚠️ جعل الجواب الافتراضيّ «لا ترجع»\n\n'
+                + 'ستُسأل عند كلّ ردٍّ كالمعتاد — وهذا يغيّر الجواب المستعمل حين لا يُسأل أحد فقط.\n'
+                + 'وهو الصحيح لمن يبيع خدمةً، أو لا يستعيد التالف.\n\n'
                 + 'أمّا الطلب الذي لم يُستلم بعد فكمّيته تعود دائماً — لأن البضاعة لم تخرج أصلاً.\n\n'
-                + 'تُعيده متى شئت من هنا. هل تُطفئه؟',
+                + 'تُعيده متى شئت من هنا. هل تريد ذلك؟',
                 '⚠️ Turn off automatic restock on refund\n\n'
                 + 'When you refund a **completed** order, its unit will not return to your stock automatically.\n'
                 + 'That is the right setting if you sell a service, or do not take damaged goods back.\n\n'
@@ -74,10 +75,10 @@ export const RefundRestockToggle: React.FC = () => {
         }
         setOn(next);
         await customAlert(next
-            ? t('✅ ستعود الكمّية إلى مخزونك تلقائياً عند كل استرداد.',
-                '✅ Quantity will return to your stock automatically on every refund.')
-            : t('✅ أُوقفت الإعادة التلقائية. تُعيد الكمّية يدوياً متى رجعت البضاعة.',
-                '✅ Automatic restock is off. Add the quantity back yourself when goods return.'));
+            ? t('✅ الجواب الافتراضيّ صار «نعم رجعت». وستُسأل عند كلّ ردٍّ كالمعتاد.',
+                '✅ The default answer is now «yes». You are still asked on every refund.')
+            : t('✅ الجواب الافتراضيّ صار «لا لم ترجع». وستُسأل عند كلّ ردٍّ كالمعتاد.',
+                '✅ The default answer is now «no». You are still asked on every refund.'));
     };
 
     if (!user?.id || on === null) return null;
@@ -88,17 +89,17 @@ export const RefundRestockToggle: React.FC = () => {
             border: '1px solid var(--border-color)', background: 'var(--card-bg)',
         }}>
             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6 }}>
-                📦 {t('ترجع الكمّية عند الاسترداد', 'Restock on refund')}
+                📦 {t('الجواب الافتراضيّ عند الاسترداد', 'Default answer on refund')}
             </div>
             <div style={{ fontSize: '0.75rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 12 }}>
-                {t('حين تردّ مبلغ طلبٍ مكتمل، تعود قطعتُه إلى مخزونك فوراً على كل المستويات — الإجمالي والنوع والفرع. ',
-                   'When you refund a completed order, its unit returns to your stock at once on every level — total, variant and branch. ')}
+                {t('نسألك عند كلّ ردٍّ لطلبٍ مكتمل: «رجعت البضاعة إلى مخزونك؟» — لأنك قد تترك القطعة المعيبة للمشتري وتردّ المال. ',
+                   'On every refund of a completed order we ask you: «did the goods come back?» — you may leave a faulty item with the buyer and still refund. ')}
                 <strong style={{ color: 'var(--text-primary)' }}>
-                    {t('أطفئه إن كنت تبيع خدمةً أو لا تستعيد التالف',
-                       'Turn it off if you sell a service, or do not take damaged goods back')}
+                    {t('وهذا المفتاح هو الجواب الذي يُؤخذ حين لا يُسأل أحد',
+                       'This switch is the answer used when nobody is asked')}
                 </strong>
-                {t(' — والطلبُ الذي لم يُستلم تعود كمّيته دائماً.',
-                   ' — an uncollected order always returns its quantity.')}
+                {t(' — كفكّ إدارة تاكي لردٍّ عالق. والطلبُ الذي لم يُستلم تعود كمّيته دائماً.',
+                   ' — such as TAKI support unsticking a refund. An uncollected order always returns its quantity.')}
             </div>
 
             <button
@@ -113,8 +114,8 @@ export const RefundRestockToggle: React.FC = () => {
                 }}
             >
                 {busy ? t('جارٍ…', 'Saving…')
-                    : on ? t('✅ مُفعَّل — الكمّية تعود تلقائياً', '✅ On — stock returns automatically')
-                         : t('⚪️ مُطفأ — تُعيدها يدوياً', '⚪️ Off — you add it back yourself')}
+                    : on ? t('✅ الافتراضيّ: نعم رجعت', '✅ Default: yes, it came back')
+                         : t('⚪️ الافتراضيّ: لا لم ترجع', '⚪️ Default: no, it did not')}
             </button>
         </div>
     );

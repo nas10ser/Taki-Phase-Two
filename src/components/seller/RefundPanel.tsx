@@ -63,12 +63,23 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
 
     const doRefund = async (r: BookingRefund | null) => {
         const due = Number(r?.amount ?? amount);
-        // v14.21 — الطلب المكتمل لا يُلغى ولا تعود كمّيته (البضاعة خرجت فعلاً)،
-        // فلا نَعِد التاجر بما لن يحدث.
+        // v14.21 — الطلبُ المكتمل لا يُلغى (الفاتورة الضريبية المجمّدة تتّكئ
+        // على نهائيّة حالته). و v15.06/09 بدّلت النصف الثاني: كمّيتُه **تعود**
+        // إن أجاب التاجر بنعم على سؤال «رجعت البضاعة؟» أدناه.
         const stillOpen = order.status === 'pending' || order.status === 'acknowledged';
+        // v15.09 (طلب ناصر) — «رجعت البضاعة؟» يُسأل عند كلّ ردّ لطلبٍ مكتمل:
+        // بعضُ التجار يترك القطعة المعيبة للمشتري **ويردّ المال**، فالجوابُ
+        // واقعةُ طلبٍ لا سياسةُ متجر. ولا يُسأل عن طلبٍ لم يُستلم: كمّيتُه
+        // تعود دائماً لأن البضاعة لم تخرج، وسؤالٌ جوابُه واحدٌ ليس سؤالاً.
+        let restock: boolean | undefined;
+        if (!stillOpen) {
+            restock = await customConfirm(isRTL
+                ? '📦 رجعت البضاعة إلى مخزونك؟\n\n• نعم — استعدتَ القطعة فتعود إلى مخزونك.\n• لا — تركتَها للمشتري (هديةً أو لعيبٍ) وردَدتَ المال فقط.\n\nجوابُك يخصّ هذا الطلب وحده.'
+                : '📦 Did the goods come back to your stock?\n\n• Yes — you got the item back, so it returns to your stock.\n• No — you left it with the buyer (a gift, or faulty) and refunded the money only.\n\nThis answer applies to this order only.');
+        }
         const ok = await customConfirm(isRTL
-            ? `تأكيد ردّ المبلغ\n\nالمبلغ: ${money(due)} ر.س\n\nأكّد هذا فقط بعد أن ترسل المبلغ فعلاً من بوابتك أو حسابك. سيُسجَّل إشعار دائن على الفاتورة ويصل المشتري إشعار.\n\n${stillOpen ? 'وسيُلغى الطلب وتعود الكمّية للبيع.' : 'والطلب مغلق أصلاً، فلن تعود كمّيته للبيع — البضاعة خرجت.'}`
-            : `Confirm refund\n\nAmount: ${money(due)} SAR\n\nConfirm only after you actually sent the money. A credit note is recorded and the buyer is notified.\n\n${stillOpen ? 'The order will be cancelled and the stock returned.' : 'The order is already closed, so the stock will not return.'}`);
+            ? `تأكيد ردّ المبلغ\n\nالمبلغ: ${money(due)} ر.س\n\nأكّد هذا فقط بعد أن ترسل المبلغ فعلاً من بوابتك أو حسابك. سيُسجَّل إشعار دائن على الفاتورة ويصل المشتري إشعار.\n\n${stillOpen ? 'وسيُلغى الطلب وتعود الكمّية للبيع.' : restock ? 'والطلب مكتملٌ ويبقى كذلك، وستعود كمّيته إلى مخزونك كما أجبت.' : 'والطلب مكتملٌ ويبقى كذلك، ولن تعود كمّيته إلى المخزون كما أجبت.'}`
+            : `Confirm refund\n\nAmount: ${money(due)} SAR\n\nConfirm only after you actually sent the money. A credit note is recorded and the buyer is notified.\n\n${stillOpen ? 'The order will be cancelled and the stock returned.' : restock ? 'The order stays completed, and its stock returns to you as you answered.' : 'The order stays completed, and its stock will NOT return as you answered.'}`);
         if (!ok) return;
         const ref = await customPrompt(isRTL
             ? 'رقم مرجع التحويل (من بوابتك أو بنكك) — يُطبع على الفاتورة:'
@@ -87,13 +98,14 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
         setBusy(true);
         const res = await refundRepository.resolve(order.barcode, 'refund', {
             amount: due, ref: String(ref || ''), method: isRTL ? 'بوابة الدفع' : 'gateway',
+            ...(typeof restock === 'boolean' ? { restock } : {}),
         });
         setBusy(false);
         if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
         await reload(true); await onChanged?.();
         await customAlert(isRTL
-            ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}${res.orderCancelled ? '\nوأُلغي الطلب وعادت الكمّية للبيع.' : '\nوالطلب مغلق أصلاً، فلم تعد كمّيته للبيع.'}`
-            : `✅ Refund recorded. Credit note: ${res.creditNoteNo}${res.orderCancelled ? '\nThe order was cancelled and the stock returned.' : '\nThe order was already closed, so the stock did not return.'}`);
+            ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}${res.orderCancelled ? '\nوأُلغي الطلب وعادت الكمّية للبيع.' : (restock ? '\nوعادت كمّيته إلى مخزونك كما أجبت.' : '\nولم تعُد كمّيته إلى المخزون كما أجبت.')}`
+            : `✅ Refund recorded. Credit note: ${res.creditNoteNo}${res.orderCancelled ? '\nThe order was cancelled and the stock returned.' : (restock ? '\nIts stock returned to you as you answered.' : '\nIts stock did not return, as you answered.')}`);
     };
 
     // ── لا طلب بعد: التاجر يملك إلغاءً يُسجّل الدَّين عليه ─────────────────

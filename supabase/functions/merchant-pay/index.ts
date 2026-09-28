@@ -341,9 +341,15 @@ Deno.serve(async (req: Request) => {
             const merchantId = String(booking.store_id);
 
             // ① القفل أوّلاً — لا نداء للمزوّد قبل أن نملك الحقّ الحصري
+            // v15.09 — جوابُ التاجر «رجعت البضاعة أم لا؟» يُحفظ على الحجز لحظةَ
+            //          القفل، فيصمد عبر رحلة البوّابة وفكِّ الإدارة لردٍّ عالق.
+            // 🪤 `undefined` لا `null` حين لا يُرسَل: `null` صريحةٌ تعني «لم
+            //    ترجع»، والغيابُ يعني «خُذ الجواب المقترَح من ملفّ المتجر».
+            const restock = typeof body.restock === 'boolean' ? body.restock : null;
             const { data: claimRaw, error: claimErr } = await service.rpc('taki_claim_booking_refund', {
                 p_barcode: barcode,
                 p_reason: reason,
+                p_restock: restock,
             });
             if (claimErr) return json(500, { error: 'CLAIM_FAILED', detail: String(claimErr.message).slice(0, 180) });
             const claim = (claimRaw || {}) as Record<string, unknown>;

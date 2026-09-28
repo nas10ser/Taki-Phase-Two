@@ -182,6 +182,37 @@ for (const [needle, why] of [
     ['(p_quantity = 0)', 'رقعةُ «صفر = بلا حدّ» غائبة — مفتاحُ «نفد» سيجعل العرض لا نهائياً.'],
 ]) if (!m05.includes(needle)) fail(why);
 
+// ── ٩) التاجرُ يُسأل عند كلّ ردّ — لا إعدادٌ صامت ───────────────────────
+// 🔴 قرارُ ناصر: «يُسأل التاجر وهو يردّ، لأن بعضهم يعطي المشتري القطعة
+//    المعيبة كهدية ويردّ المال في الوقت نفسه». فالجوابُ **واقعةُ طلبٍ** لا
+//    سياسةُ متجر — وإعدادٌ واحدٌ ثابت لا يصدُق في الحالتين.
+const m09 = code(read('supabase/JEDDAH_v15_09_ask_merchant.sql'));
+for (const [needle, why] of [
+    ['refund_restock', 'لا عمودَ يحمل جوابَ التاجر — سيضيع في رحلة البوّابة.'],
+    ['COALESCE(v_b.refund_restock', 'التسويةُ لا تقرأ الجواب — الإعدادُ الصامت باقٍ.'],
+    ['COALESCE(p_restock', 'البابُ اليدويّ لا يقرأ الجواب.'],
+    ['v_restocked', 'لا متغيّرَ يحمل ما حدث فعلاً — والرسالةُ ستقول «أُلغي الطلب» لطلبٍ مكتملٍ لم يُلغَ.'],
+]) if (!m09.includes(needle)) fail(why);
+
+// والسؤالُ مطروحٌ في شاشتَي الردّ معاً — لا في واحدة
+for (const f of ['src/components/seller/RefundButton.tsx', 'src/components/seller/RefundPanel.tsx']) {
+    const src = jsCode(read(f));
+    if (!/رجعت البضاعة/.test(src)) {
+        fail(`«${f}» لا يسأل التاجر «رجعت البضاعة؟» — والجوابُ يخصّ كلّ طلبٍ على حدة.`);
+    }
+    if (!/restock/.test(src)) fail(`«${f}» لا يُمرّر جوابَ التاجر إلى القاعدة.`);
+}
+// ودالّةُ الحافة تنقل الجواب عبر رحلة البوّابة
+if (!/p_restock/.test(read('supabase/functions/merchant-pay/index.ts'))) {
+    fail('دالّةُ الحافة لا تُمرّر جوابَ التاجر — الزرُّ يسأل والقاعدةُ لا تسمع.');
+}
+// 🪤 والنصُّ القديم «لن تعود كمّيته — البضاعة خرجت» صار كذباً بعد v15.06
+for (const f of ['src/components/seller/RefundButton.tsx', 'src/components/seller/RefundPanel.tsx']) {
+    if (/البضاعة خرجت/.test(read(f))) {
+        fail(`«${f}» ما زال يقول للتاجر «البضاعة خرجت» — والكمّية صارت تعود إن أجاب بنعم.`);
+    }
+}
+
 // ── ٨) الربطُ بأنظمة التجار — عقدٌ يحرس نفسه ─────────────────────────────
 const m08 = code(read('supabase/JEDDAH_v15_08_integrations.sql'));
 for (const [needle, why] of [
