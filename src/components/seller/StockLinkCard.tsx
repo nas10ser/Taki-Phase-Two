@@ -35,7 +35,7 @@ interface Integration {
 }
 interface LinkRow {
     id: number; deal_id: string; variant_id: string | null; location_id: string | null;
-    external_id: string; external_url: string | null;
+    external_id: string;
 }
 interface SellerDeal {
     id: string; item_name: string;
@@ -111,7 +111,6 @@ export const StockLinkCard: React.FC = () => {
     const [variantId, setVariantId] = useState('');
     const [locationId, setLocationId] = useState('');
     const [extId, setExtId] = useState('');
-    const [extUrl, setExtUrl] = useState('');
     const [mapId, setMapId] = useState('');
     const [mapQty, setMapQty] = useState('');
 
@@ -127,7 +126,7 @@ export const StockLinkCard: React.FC = () => {
         if (row) {
             const [l, d] = await Promise.all([
                 supabase.from('stock_links')
-                    .select('id, deal_id, variant_id, location_id, external_id, external_url')
+                    .select('id, deal_id, variant_id, location_id, external_id')
                     .eq('integration_id', row.id).order('id'),
                 supabase.from('deals')
                     .select('id, item_name, variants, locations, loc_qty_mode')
@@ -182,11 +181,14 @@ export const StockLinkCard: React.FC = () => {
         const d = await call('merchant_link_product', {
             p_integration_id: integ.id, p_deal_id: dealId, p_external_id: extId.trim(),
             p_variant_id: variantId || null, p_location_id: locationId || null,
-            p_external_url: extUrl.trim() || null,
+            // 🔴 v15.14 — حُذف حقلُ «رابط المنتج عندهم»: قِيس فلم تقرأه دالّةٌ
+            //    واحدة ولا شاشة. حقلٌ نطلبه ولا نستعمله يُربك التاجر بلا مقابل،
+            //    واعتراضُ ناصر («أيّ رابط تقصد؟») كان عنه بالضبط. يُمرَّر NULL.
+            p_external_url: null,
         });
         setBusy(false);
         if (!d) return;
-        setExtId(''); setExtUrl(''); setVariantId(''); setLocationId('');
+        setExtId(''); setVariantId(''); setLocationId('');
         await load();
     };
 
@@ -251,6 +253,27 @@ export const StockLinkCard: React.FC = () => {
                         {t('ويعمل مع أيّ نظامٍ يستطيع نداءَ رابط', 'It works with any system that can call a URL')}
                     </strong>
                     {t(' — لا يلزم أن يكون في القائمة.', ' — it need not be in the list.')}
+                </div>
+
+                {/* 🔴 v15.14 — جوابُ سؤال ناصر، في الشاشة لا في رسالةٍ منّي:
+                    «لم أفهم سبب طلبك للرابط وأيّ رابط تقصد». وكان في الشاشة
+                    ثلاثةُ أشياء تُسمّى «رابط» فالتبست حتماً. فحُذف الميتُ منها،
+                    وبقي اثنان يُسمّى كلٌّ منهما باتجاهه صراحةً قبل أن يُطلب. */}
+                <div style={{ fontSize: '0.75rem', lineHeight: 2, padding: 12, borderRadius: 12,
+                    background: 'var(--body-bg)', border: '1px solid var(--border-color)', marginBottom: 10 }}>
+                    <div style={{ fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
+                        {t('ولا نقرأ مخزونك من رابط — هذا أهمُّ ما يجب أن يكون واضحاً:',
+                           'And we do not read your stock from a link — the important part:')}
+                    </div>
+                    {t('⬅️ ', '⬅️ ')}
+                    <strong style={{ color: 'var(--text-primary)' }}>{t('رابطٌ نُعطيك إيّاه', 'A URL we give you')}</strong>
+                    {t(' — تلصقه في نظامك مرّةً واحدة. ونظامُك هو الذي ينادينا كلّما تغيّرت كمّية، فنعرف الرقم منه. هذا هو الربطُ كلُّه، ولا تكتب شيئاً بعده.',
+                       ' — paste it into your system once. Your system then calls us whenever a quantity changes, and we learn the number from it. That is the whole link; nothing more to type.')}
+                    <br />
+                    {t('➡️ ', '➡️ ')}
+                    <strong style={{ color: 'var(--text-primary)' }}>{t('ورابطٌ نطلبه منك', 'And a URL we ask you for')}</strong>
+                    {t(' — اختياريٌّ تماماً وداخل «متقدّم»، ولا تحتاجه إلا إن أردتَ أن نُرسل نحن إلى نظامك كلّ بيعٍ وإرجاع. اتركه فارغاً ولا ينقص الربطَ شيء.',
+                       ' — fully optional, under «Advanced». You need it only if you want US to post every sale and return into your system. Leave it empty and the link still works fully.')}
                 </div>
 
                 {!open ? (
@@ -517,9 +540,6 @@ export const StockLinkCard: React.FC = () => {
                 <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} value={extId}
                     onChange={e => setExtId(e.target.value)}
                     placeholder={t('الكود في نظامك (SKU / باركود / معرّف المنتج)', 'Code in your system (SKU / barcode / product id)')} />
-                <input style={{ ...field, direction: 'ltr', textAlign: 'left' }} value={extUrl}
-                    onChange={e => setExtUrl(e.target.value)}
-                    placeholder={t('رابط المنتج عندهم (اختياري)', 'Product URL in your system (optional)')} />
                 <button type="button" style={btn(true)} disabled={busy} onClick={linkProduct}>
                     {busy ? t('جارٍ…', 'Working…') : t('🔗 اربط هذا المنتج', '🔗 Link this product')}
                 </button>

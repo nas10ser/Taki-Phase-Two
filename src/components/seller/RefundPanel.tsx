@@ -74,7 +74,7 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
         let restock: boolean | undefined;
         if (!stillOpen) {
             restock = await customConfirm(isRTL
-                ? '📦 رجعت البضاعة إلى مخزونك؟\n\n• نعم — استعدتَ القطعة فتعود إلى مخزونك.\n• لا — تركتَها للمشتري (هديةً أو لعيبٍ) وردَدتَ المال فقط.\n\nجوابُك يخصّ هذا الطلب وحده.'
+                ? '📦 رجعت البضاعة إلى مخزونك؟ (أي: هل تعود الكمّية أم تبقى ناقصة؟)\n\n• نعم — استعدتَ القطعة فتعود إلى مخزونك.\n• لا — تركتَها للمشتري (هديةً أو لعيبٍ) وردَدتَ المال فقط.\n\nجوابُك يخصّ هذا الطلب وحده.'
                 : '📦 Did the goods come back to your stock?\n\n• Yes — you got the item back, so it returns to your stock.\n• No — you left it with the buyer (a gift, or faulty) and refunded the money only.\n\nThis answer applies to this order only.');
         }
         const ok = await customConfirm(isRTL

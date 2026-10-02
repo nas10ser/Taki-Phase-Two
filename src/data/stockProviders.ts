@@ -97,7 +97,32 @@ export interface ProviderDef {
      * خريطةُ الحقول **المؤكَّدة من الوثيقة** — تُستعمل افتراضاً لهذا المزوّد
      * بدل التخمين. `null` لمن لم تُفتح وثيقتُه.
      */
-    fieldMap?: { id: string; qty: string; variants?: string; variantId?: string; variantQty?: string };
+    /**
+     * خريطةُ حقول رسالته.
+     * 🔴 وv15.14 صحّحتها بعد فتح الوثيقتين ثانيةً — وكانت خطأً خطيراً:
+     *    زد تُرسل `stocks[]` **لكلّ فرع** لا لكلّ صنف، والأصنافُ في
+     *    `variants[]` ولكلّ صنفٍ `stocks[]` خاصّةٌ به. فخريطتي القديمة
+     *    (`variants: 'stocks'`) كانت تقرأ ثلاثةَ فروعٍ كأنّها ثلاثةُ أصناف.
+     * 🪤 و`locations` تُفصَل عن `variants` لأنّهما محورانِ مختلفان في تاكي.
+     */
+    fieldMap?: {
+        id: string; qty: string;
+        variants?: string; variantId?: string; variantQty?: string;
+        /** مصفوفةُ الفروع، ومعرّفُ الفرع وكمّيتُه داخلها. */
+        locations?: string; locationId?: string; locationQty?: string;
+        /** الحقلُ الذي يعني «بلا حدّ» — وبوجوده تكون الكمّيةُ `null` لا صفراً. */
+        unlimitedFlag?: string;
+        /** الحقلُ الذي يقول إنّ المنتجَ أبٌ لأصناف (فجذرُه صفرٌ دائماً). */
+        parentFlag?: string;
+    };
+    /**
+     * 🔴 الرقمُ الحقيقيّ لا يُقرأ من الرسالة بل من هذا المسار.
+     *    لأن لا سلّة ولا زد تُرسل حدثاً لتغيّر المخزون: فالرسالةُ **إشارة**،
+     *    وهذا هو المصدر. وبلا هذا الحقل يصير الربطُ تخميناً.
+     */
+    truthRead?: string;
+    /** الأحداثُ التي تستحقّ إعادةَ قراءة — بأسمائها الحرفية من وثيقته. */
+    signalEvents?: string[];
     /** آليّةُ التحقّق من أن الرسالة منه فعلاً. */
     verify?: 'hmac-sha256-raw' | 'basic-auth' | 'none' | 'unverified';
 }
@@ -113,15 +138,24 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'yes',
         selfServeWebhook: 'unverified',
         verify: 'hmac-sha256-raw',
+        // 🪤 و`data.quantity` تُحلّ على `product.created` وعلى الحدثين
+        //    المُهمَلين وحدها — وعلى الأحداث الستّة الحالية لا وجودَ لها.
+        //    فالمصدرُ هو `truthRead` لا الرسالة.
         fieldMap: { id: 'data.id', qty: 'data.quantity', variants: 'data.skus',
-                    variantId: 'id', variantQty: 'stock_quantity' },
+                    variantId: 'id', variantQty: 'stock_quantity',
+                    unlimitedFlag: 'unlimited_quantity' },
+        truthRead: 'GET /products/quantities',
+        signalEvents: ['order.created', 'product.created', 'product.quantity.low',
+                       'product.status.updated'],
         docUrl: 'https://docs.salla.dev/webhooks.md',
         noteAr: 'الكتابةُ للمخزون **مؤكَّدة**: POST /products/quantities/bulk بأنماط increment/decrement/overwrite '
               + '\u2014 وهي غيرُ فوريّة («قد تستغرق عدّة دقائق»)، فلا يُقرأ الرقم بعد الكتابة مباشرةً. '
               + '\u26a0\ufe0f ولا يوجد حدثٌ لتغيّر المخزون: product.updated مُهمَلةٌ عندهم، و product.quantity.low '
               + 'لا تنطلق إلا عند حدٍّ منخفض. فالمزامنةُ الحيّة تحتاج إشارةً ثمّ إعادةَ قراءة.',
         needsAr: 'يلزم تسجيلُ تاكي تطبيقاً في بوّابة شركاء سلّة، ثمّ يأذن التاجر بضغطة. '
-               + 'ولا يستطيع التاجر لصقَ الرابط بنفسه بحسب وثيقتهم.',
+               + 'ولا يستطيع التاجر لصقَ الرابط بنفسه بحسب وثيقتهم. '
+               + '\u2705 وفي «الوضع السهل» ترسل سلّة رمزَ الدخول إلى رابطنا نفسه '
+               + '(حدث app.store.authorize) \u2014 فلا نحتاج صفحةَ عودةٍ ولا خطوةً إضافية من التاجر.',
         pasteHintAr: 'لا يُلصق الرابط يدوياً في سلّة: التسجيلُ يتمّ عبر تطبيق تاكي بعد إذنك بضغطة.',
         pasteHintEn: 'No manual URL pasting in Salla: registration happens through the TAKI app after you approve it.',
     },
@@ -130,15 +164,26 @@ export const PROVIDER_SYSTEMS: ProviderDef[] = [
         publicApi: 'yes', webhooks: 'yes', stockRead: 'yes', stockWrite: 'yes',
         selfServeWebhook: 'no',
         verify: 'basic-auth',
-        fieldMap: { id: 'id', qty: 'quantity', variants: 'stocks',
-                    variantId: 'id', variantQty: 'available_quantity' },
+        // 🔴 صُحّحت في v15.14. الخطأُ القديم كان `variants: 'stocks'` — وهو
+        //    يخلط **الفرع** بالصنف، ولمنتجٍ له أصناف (structure='parent')
+        //    يكون جذرُ الكمّية صفراً و`stocks` فارغةً، فكان سيُصفّر مخزون
+        //    التاجر. والأرقامُ الحقيقية في `variants[].stocks[]` وحدها.
+        fieldMap: { id: 'id', qty: 'quantity',
+                    locations: 'stocks', locationId: 'location.id', locationQty: 'available_quantity',
+                    variants: 'variants', variantId: 'id', variantQty: 'stocks',
+                    unlimitedFlag: 'is_infinite', parentFlag: 'structure' },
+        truthRead: 'GET /v1/products/{product_id}/stocks/',
+        signalEvents: ['product.create', 'product.update', 'product.publish', 'product.delete',
+                       'order.create', 'order.status.update'],
         docUrl: 'https://docs.zid.sa/webhooks.md',
-        noteAr: 'الكتابةُ للمخزون **مؤكَّدة**: PATCH /v1/products/{id}/stocks/ (مفرداً أو دفعةً). '
+        noteAr: 'الكتابةُ للمخزون **مؤكَّدة**: PATCH /v1/products/{id}/stocks/ \u2014 وأفضلُ منها '
+              + 'POST /v1/locations/{id}/stock-update/ لعدّة منتجاتٍ في نداءٍ واحد. '
               + 'ورسالتُهم تصل **بلا غلاف** \u2014 المنتجُ في جذر الرسالة لا داخل data. '
-              + '\u26a0\ufe0f ولا حدثَ للمخزون: product.update العامّ فقط. والتحقّقُ عندهم Basic Auth لا توقيعاً، '
-              + 'فتُعامَل الرسالةُ إشارةً لا حقيقة، وتُعاد القراءة من واجهتهم قبل التصرّف.',
-        needsAr: 'وثيقةُ زد صريحة: تسجيلُ الخطّاف يحتاج مفتاحَ شريكٍ ورمزَ OAuth \u2014 '
-               + 'فلا يستطيع التاجر فعلَه بنفسه. يلزم تسجيلُ تاكي تطبيقاً لدى زد.',
+              + '\u26a0\ufe0f ولا حدثَ للمخزون: product.update العامّ فقط. والتحقّقُ Basic Auth لا توقيعاً. '
+              + 'فتُعامَل الرسالةُ **إشارةً** ويُعاد قراءةُ الرقم من واجهتهم (٦٠ نداءً في الدقيقة للمتجر).',
+        needsAr: 'يلزم تسجيلُ تاكي تطبيقاً في لوحة شركاء زد \u2014 ولا يستطيع التاجر لصقَ الرابط بنفسه. '
+               + 'وتطبيقٌ **خاصّ** لا يحتاج اتفاقيةَ شراكةٍ ولا مراجعةً من زد، '
+               + 'لكنّ متجر التاجر يجب أن يكون على باقة Professional أو Enterprise أو مفتوحَ «API Access».',
         pasteHintAr: 'لا يُلصق الرابط يدوياً في زد: وثيقتُهم تشترط تطبيقاً مسجَّلاً، ويتمّ بإذنك بضغطة.',
         pasteHintEn: 'No manual URL pasting in Zid: their docs require a registered app; it happens after you approve.',
     },
