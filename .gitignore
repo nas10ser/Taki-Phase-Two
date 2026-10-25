@@ -32,6 +32,7 @@ npm-cache/
 *.key
 id_rsa*
 taki_oracle*
+taki_jeddah*        # 🔑 مفتاحُ الخادم الثاني (١٩ أكتوبر ٢٠٢٦)
 *.dump
 *.tar.gz
 *.zip
