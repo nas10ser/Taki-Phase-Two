@@ -53,6 +53,12 @@ export interface PlatformSettings {
      *  موافقة**. و`merchantButton` مفتاحُ إطفاءٍ فوريّ لزرّ «ردّ المبلغ».
      *  🪤 و`hours = 0` تعني «لا نافذة معلنة» — فلا تُصاغ جملةُ الضمان أصلاً. */
     refundWindow: { hours: number; merchantButton: boolean };
+    /** v15.25 — مفتاحُ إظهار بطاقة «اربط مخزونك بنظامك» للتجّار.
+     *  🔴 الافتراضُ **مطفأ** بقرار ناصر: الربطُ مبنيٌّ ومقيس، لكنّ سلّة وزد
+     *     لا يعملان قبل تسجيل تطبيقَي تاكي لديهما — وبطاقةٌ لا تُنجز شيئاً
+     *     أسوأُ من غيابها. ويبقى **ظاهراً لحساب الأدمن** ليجرّبه قبل الفتح.
+     *  🪤 وفشلٌ مغلق: غيابُ الصفّ = مخفيّ، لا ظاهر. */
+    stockLinkEnabled: boolean;
 }
 
 /** المفاتيح التي تُجلب عند الإقلاع — **مشتقّةٌ من فروع التطبيق أدناه**. */
@@ -62,6 +68,7 @@ export const PLATFORM_SETTING_KEYS = [
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
     'complaints_sla_hours', 'chat_limits', 'verification', 'refund_window',
+    'stock_link_enabled',
 ];
 
 /**
@@ -93,6 +100,8 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     chatLimits: { perBooking: 0, perHour: 120 },
     verification: { mode: 'off', slaHours: 24, vacation: false, showBadge: false },
     refundWindow: { hours: 2, merchantButton: true },
+    // 🔴 مطفأ افتراضياً: فشلٌ مغلق — غيابُ الصفّ يعني مخفيّاً لا ظاهراً.
+    stockLinkEnabled: false,
 });
 
 /**
@@ -166,6 +175,11 @@ export const applyPlatformSetting = (
                 merchantButton: typeof v.merchant_button === 'boolean' ? v.merchant_button : true,
             } });
         }
+        case 'stock_link_enabled':
+            // v15.25 — إظهارُ بطاقة ربط المخزون للتجّار، بيد ناصر.
+            // 🪤 `=== true` لا `!== false`: البوتُ «يفشل مفتوحاً» لأنه خدمةٌ
+            //    قائمة، وهذه ميزةٌ **لم تُؤكَّد بعد** فتفشل **مغلقة**.
+            return prev => ({ ...prev, stockLinkEnabled: value === true });
         case 'banner_autoplay_seconds':
             // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
             return prev => ({ ...prev, bannerSeconds: num(value, 2, 1, 120) });

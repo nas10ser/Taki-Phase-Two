@@ -100,7 +100,7 @@ const Copy: React.FC<{ value: string; label: string }> = ({ value, label }) => {
 };
 
 export const StockLinkCard: React.FC = () => {
-    const { user, language, customAlert, customConfirm } = useApp();
+    const { user, language, customAlert, customConfirm, platformSettings } = useApp();
     const isRTL = language === 'ar';
     const t = (ar: string, en: string) => (isRTL ? ar : en);
 
@@ -205,6 +205,16 @@ export const StockLinkCard: React.FC = () => {
         setExtId(''); setVariantId(''); setLocationId('');
         await load();
     };
+
+    // ── مفتاحُ ناصر: ظاهرةٌ للتجّار أم لا (v15.25) ────────────────────────
+    // 🔴 طلبُه: «زرّ تشغيلٍ وإخفاءٍ لحين التأكّد من عمليّته». والسببُ وجيه:
+    //    سلّة وزد لا يعملان قبل تسجيل تطبيقَي تاكي لديهما، وبطاقةٌ تَعِد
+    //    التاجر بربطٍ لا يتمّ أسوأُ من غيابها.
+    // 🪤 ولا تُحجب عن الأدمن: لا يستطيع أن «يتأكّد من عمليّتها» وهي محجوبةٌ
+    //    عنه. فتبقى له بوسمٍ صريحٍ يقول إنّ التجّار لا يرونها.
+    const isAdmin = user?.userType === 'admin';
+    const hiddenFromMerchants = !platformSettings.stockLinkEnabled;
+    if (hiddenFromMerchants && !isAdmin) return null;
 
     if (!user?.id || integ === undefined) return null;
 
@@ -393,8 +403,17 @@ export const StockLinkCard: React.FC = () => {
 
     // ── ③ ربطٌ قائم ──────────────────────────────────────────────────────
     const dealName = (id: string) => deals.find(d => d.id === id)?.item_name || id;
+    const hiddenBadge = hiddenFromMerchants && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 10, fontSize: '0.73rem',
+            fontWeight: 800, lineHeight: 1.8, color: '#b45309',
+            background: 'rgba(180,83,9,0.12)', border: '1px solid rgba(180,83,9,0.35)' }}>
+            🙈 {t('مخفيّةٌ عن التجّار — تراها أنت وحدك. شغّلها من: لوحة المدير ← الأدوات ← «بطاقة اربط مخزونك بنظامك».',
+                  'Hidden from merchants — only you see it. Turn it on in: Admin ← Tools ← «Stock link card».')}
+        </div>
+    );
     return (
         <div style={box}>
+            {hiddenBadge}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                 <span style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)' }}>
                     🔌 {integ.label || integ.provider}

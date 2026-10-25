@@ -6,7 +6,7 @@ export {
     AdmCard, AdmSection, AdmPageHeader,
     AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmError,
-    AdmButton,
+    AdmButton, AdmSwitch, AdmSettingRow,
     toneFg, toneBg,
     admNum, admMoney,
 } from './AdminKit';

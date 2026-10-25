@@ -32,7 +32,15 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                         <button aria-label={isRTL ? 'فتح القائمة' : 'Open menu'} onClick={() => setSidebarOpen(true)}
                             style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', fontSize: '1.3rem', width: 44, height: 44, minWidth: 44, minHeight: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>☰</button>
                         <div>
-                            <div className="navbar-logo" style={{ color: 'white', fontSize: '1.4rem', letterSpacing: '1px' }}>TAKI</div>
+                            {/* 🔴 شعارُ تاكي الحقيقي بدل كلمة TAKI (طلبُ ناصر ٢٥ أكتوبر).
+                                وكان الأصلُ عالي الدقّة في المستودع ولا يُستعمل في أيّ
+                                موضع — والموقعُ يعرض اسماً مكتوباً ومربّعاً أخضر بحرف T.
+                                🪤 و`logo-mark` شفّافةٌ عمداً: `logo192` على خلفيةٍ داكنةٍ
+                                صلبة فتظهر مربّعاً فوق الشريط المتدرّج. */}
+                            <img className="navbar-logo" src="/logo-mark.png" alt="TAKI"
+                                width={40} height={38}
+                                style={{ width: 40, height: 38, objectFit: 'contain', display: 'block',
+                                    filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.35))' }} />
                             <div style={{ fontSize: '0.75rem', color: 'rgba(200, 200, 200, 0.9)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                                 📍 {locationLabel}
                             </div>

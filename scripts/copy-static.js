@@ -36,7 +36,8 @@ if (!fs.existsSync(DIST)) {
 }
 
 /** ملفات لا يعمل الموقع بلا بعضها: غيابُها خطأٌ يُفشل البناء. */
-const REQUIRED_FILES = ['robots.txt', 'og-image.png', 'logo192.png', 'logo512.png', 'offline.html'];
+const REQUIRED_FILES = ['robots.txt', 'og-image.png', 'logo192.png', 'logo512.png',
+    'offline.html', 'apple-touch-icon.png', 'logo-mark.png'];
 /** مجلّدات اختيارية فعلاً (نماذج الفحص والصور التعريفية). */
 const OPTIONAL_DIRS = ['models', 'screenshots'];
 

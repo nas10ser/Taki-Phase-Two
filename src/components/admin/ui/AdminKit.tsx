@@ -394,3 +394,72 @@ export const AdmButton: React.FC<{
         </button>
     );
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// مفتاحُ تبديلٍ وصفُّ إعداد — نُقلا من `AdminTools` في v15.25
+// 🪤 ولماذا نُقلا: السقّافة منعت الشاشةَ من النموّ سطراً، وهي عند حدّها
+//    بالضبط (٢١٢٠/٢١٢١). والحلُّ عندها «قلّص لا ترفع السقف» — ومكوّنان
+//    عرضيّان لا حالةَ لهما مكانُهما الطقمُ المشترك أصلاً، فأيُّ شاشةٍ
+//    أخرى تحتاج مفتاحَ تبديلٍ كانت ستخترع واحداً ثانياً.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const AdmSwitch: React.FC<{
+    on: boolean;
+    onToggle: () => void | Promise<void>;
+    label: string;
+    disabled?: boolean;
+}> = ({ on, onToggle, label, disabled }) => {
+    const [busy, setBusy] = useState(false);
+    const click = async () => {
+        if (busy || disabled) return;
+        setBusy(true);
+        try { await onToggle(); } finally { setBusy(false); }
+    };
+    const locked = busy || !!disabled;
+    return (
+        <button
+            type="button" onClick={click} disabled={locked}
+            aria-pressed={on} aria-busy={busy} aria-label={label} title={label}
+            className="adm-focusable"
+            style={{
+                position: 'relative', flexShrink: 0, width: 46, height: 26, borderRadius: 999,
+                border: '1px solid var(--adm-border)',
+                background: on ? 'var(--adm-ok-fg)' : 'var(--adm-surface-3)',
+                cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? .55 : 1,
+                transition: 'background .2s',
+            }}
+        >
+            {/* 🪤 قرصٌ أبيض ثابت يختفي ليلاً: `--adm-ok-fg` أخضرُ فاتح في الوضع
+                الداكن، فالأبيض عليه بالكاد يُرى. القرص يتبع الثيم عكسَ مساره. */}
+            <span
+                style={{
+                    position: 'absolute', top: 2, insetInlineStart: on ? 22 : 2,
+                    width: 20, height: 20, borderRadius: 999,
+                    background: on ? 'var(--adm-surface)' : 'var(--adm-fg-3)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,.28)', transition: 'inset-inline-start .2s',
+                }}
+            />
+        </button>
+    );
+};
+
+/** صفّ إعداد: أيقونة + عنوان + شرحٌ بحالته الحالية + المفتاح. */
+export const AdmSettingRow: React.FC<{
+    icon: string; title: string; desc: string; note?: React.ReactNode; right: React.ReactNode;
+}> = ({ icon, title, desc, note, right }) => (
+    <div
+        style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12, padding: '13px 14px',
+            borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+            background: 'var(--adm-surface-2)',
+        }}
+    >
+        <span style={{ fontSize: '1.25rem', lineHeight: 1.2 }} aria-hidden="true">{icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '.88rem', fontWeight: 800, color: 'var(--adm-fg)' }}>{title}</div>
+            <div style={{ fontSize: '.75rem', lineHeight: 1.75, color: 'var(--adm-fg-2)', marginTop: 3 }}>{desc}</div>
+            {note}
+        </div>
+        {right}
+    </div>
+);

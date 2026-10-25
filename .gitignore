@@ -36,3 +36,8 @@ taki_jeddah*        # 🔑 مفتاحُ الخادم الثاني (١٩ أكتو
 *.dump
 *.tar.gz
 *.zip
+
+# الملصقاتُ المولَّدة (يُعيدها `node scripts/build-logo.js`) — لا تُدفع: ١٨ م.ب
+branding/taki-logo-poster-*.png
+__pycache__/
+*.pyc

@@ -1057,7 +1057,7 @@ const Register: React.FC = () => {
                 </div>
 
                 <div style={{ marginBottom: wantsTgLink ? 26 : 48, textAlign: 'center', marginTop: wantsTgLink ? 92 : 120, animation: 'fadeUp 0.8s ease-out' }}>
-                    <div style={{ fontSize: wantsTgLink ? '4rem' : '5rem', fontWeight: 900, marginBottom: 4, letterSpacing: -3, background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 50%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 2px 10px var(--primary-glow))' }}>TAKI</div>
+                    {/* 🔴 الشعار بدل كلمة TAKI (طلب ناصر ٢٥ أكتوبر): أول شاشة يراها مستخدم جديد، فالعلامة أولى من اسم مكتوب. وسطرٌ واحد لأن السقّافة تمنع نموّ هذا الملفّ. */}<img src="/logo-mark.png" alt="TAKI" style={{ width: wantsTgLink ? 136 : 168, height: 'auto', display: 'block', margin: '0 auto 10px', objectFit: 'contain', filter: 'drop-shadow(0 6px 18px rgba(0,0,0,.45))' }} />
                     <div style={{ fontSize: '1.1rem', opacity: 0.6, fontWeight: 400, letterSpacing: 1 }}>{wantsTgLink ? t('ربط حسابك بتيليجرام', 'Link your account to Telegram') : t('بوابتك للاقتصاد الذكي', 'Your Gateway to Smart Savings')}</div>
                 </div>
                 {wantsTgLink && (
