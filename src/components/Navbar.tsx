@@ -28,20 +28,38 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
             <div className="premium-bar">
                 {/* Top Row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                         <button aria-label={isRTL ? 'فتح القائمة' : 'Open menu'} onClick={() => setSidebarOpen(true)}
                             style={{ background: 'rgba(80, 80, 95, 0.2)', border: 'none', fontSize: '1.3rem', width: 44, height: 44, minWidth: 44, minHeight: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>☰</button>
+                        {/* ── هُويّةُ تاكي: شارةٌ + اسم (v15.26) ────────────────────────
+                            🔴 وأوّلُ صياغةٍ شحنتُها كانت **قصاصةً عائمة**: الرسمةُ وحدها
+                               عند ٤٠ بكسل. والقياسُ بالنظر أدانها — نقوشُ السدو تصير
+                               نقاطاً فلا يُعرف ما هي، وبلا إطارٍ تبدو مُلصقاً سقط على
+                               الشريط. ورأيُ ناصر كان «غير احترافي أبداً»، وهو محقّ.
+                            🪤 والعلاجُ هو نمطُ التطبيقات المعروف: **علامةٌ في شارة + اسم**.
+                               الشارةُ تمنح الرسمةَ إطاراً فتُقرأ شكلاً ولوناً لا تفصيلاً،
+                               والاسمُ يُعيد الهويّة — فترويسةٌ بلا اسمٍ زينةٌ لا علامة.
+                            🪤 وألوانُ الشارة **أبيضُ شفّاف** لا لونٌ ثابت: شريطُ الترويسة
+                               أخضرُ في الوضع الفاتح وأردوازيٌّ في الداكن وبنفسجيٌّ في
+                               المواسم (`--header-gradient` بثلاث قيم)، ولونٌ ثابتٌ كان
+                               سيُصادم أحدَها. */}
+                        <div style={{
+                            width: 46, height: 46, flex: 'none', borderRadius: 15,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'linear-gradient(160deg, rgba(255,255,255,.16), rgba(255,255,255,.04))',
+                            border: '1px solid rgba(255,255,255,.18)',
+                            boxShadow: '0 6px 16px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.20)',
+                        }}>
+                            <img src="/logo-mark.png" alt="TAKI" width={36} height={34}
+                                style={{ width: 36, height: 34, objectFit: 'contain', display: 'block' }} />
+                        </div>
                         <div>
-                            {/* 🔴 شعارُ تاكي الحقيقي بدل كلمة TAKI (طلبُ ناصر ٢٥ أكتوبر).
-                                وكان الأصلُ عالي الدقّة في المستودع ولا يُستعمل في أيّ
-                                موضع — والموقعُ يعرض اسماً مكتوباً ومربّعاً أخضر بحرف T.
-                                🪤 و`logo-mark` شفّافةٌ عمداً: `logo192` على خلفيةٍ داكنةٍ
-                                صلبة فتظهر مربّعاً فوق الشريط المتدرّج. */}
-                            <img className="navbar-logo" src="/logo-mark.png" alt="TAKI"
-                                width={40} height={38}
-                                style={{ width: 40, height: 38, objectFit: 'contain', display: 'block',
-                                    filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.35))' }} />
-                            <div style={{ fontSize: '0.75rem', color: 'rgba(200, 200, 200, 0.9)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <div className="navbar-logo" style={{
+                                fontSize: '1.3rem', fontWeight: 900, letterSpacing: '2.5px', lineHeight: 1,
+                                background: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
+                                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                            }}>TAKI</div>
+                            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.78)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                                 📍 {locationLabel}
                             </div>
                         </div>
