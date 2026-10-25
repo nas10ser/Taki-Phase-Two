@@ -11,7 +11,12 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const TELEGRAM = ['server/bot.js', 'server/flows/sellerDeals.js'];
+// 🪤 ويُدرَج ما استُخرج من `bot.js` إلى `server/lib/`: نقلُ عاملِ البريد
+//    هناك (v15.20، لأجل السقّافة) أخرج `bot_pull_email_outbox` و
+//    `bot_mark_email` من مدى هذا الفاحص فأعلنهما «لم تعد تُنادى من أيّ بوت».
+//    والنداءُ قائمٌ — المدى هو الذي ضاق. ⇒ يُوسَّع المدى، ولا يُستثنى النداء.
+const TELEGRAM = ['server/bot.js', 'server/flows/sellerDeals.js',
+                  'server/lib/emailOutbox.js', 'server/lib/stockSync.js'];
 const WHATSAPP = ['server/flows/whatsapp.js'];
 
 /**
@@ -36,6 +41,14 @@ const EXCEPT = {
     bot_store_contact:        'فجوة واتساب: بطاقة تواصل المتجر',
     bot_toggle_block:         'فجوة واتساب: حظر مستخدم',
     bot_vat_mode:             'فجوة واتساب: ضبط الوضع الضريبي',
+
+    // ── ليست خصائصَ قناةٍ بل عاملٌ واحدٌ مشترك (v15.20) ─────────────────────
+    // 🪤 وظهرتا هنا لحظةَ توسيع المدى إلى `server/lib/`: نداؤهما كان مخفيّاً
+    //    في `stockSync.js` خارج الفحص، فبدا التكافؤُ سليماً وهو غيرُ مقيس.
+    //    وهما **لا تُنفَّذان لكلّ قناة**: طابورُ أحداث المخزون يُسلَّم مرّةً
+    //    واحدةً من عمليّةٍ واحدة، وتكرارُه في واتساب يعني تسليماً مزدوجاً.
+    bot_pull_stock_events:    'ليست خاصّيةَ قناة: عاملٌ واحدٌ مشترك يسحب طابورَ المخزون — وتكرارُه في قناةٍ ثانية تسليمٌ مزدوجٌ لنفس الحدث',
+    bot_mark_stock_event:     'ليست خاصّيةَ قناة: تعليمُ نتيجة التسليم من نفس العامل المشترك',
 };
 
 const rpcNames = (files) => {

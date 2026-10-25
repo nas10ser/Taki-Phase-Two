@@ -25,6 +25,8 @@ import {
     PROVIDER_SEGMENTS, PROVIDER_SYSTEMS, providersOfSegment,
     type ProviderSegment, type ProviderDef,
 } from '../../data/stockProviders';
+import { describeNote, NOTE_COLOR } from '../../data/stockNotes';
+import StockConnectPanel from './StockConnectPanel';
 
 interface Integration {
     id: string; provider: string; segment: string | null; label: string | null;
@@ -32,6 +34,9 @@ interface Integration {
     is_enabled: boolean; last_seen_at: string | null; created_at: string;
     field_map: { id?: string; qty?: string } | null;
     last_payload: unknown; last_payload_at: string | null; last_note: string | null;
+    // v15.17+ — العنوانُ صار مساراً لكلّ متجر، والإذنُ حالةً لها مخرج
+    webhook_slug: string | null; webhook_rev: number | null;
+    oauth_state: string | null; oauth_expires_at: string | null; last_sync_at: string | null;
 }
 interface LinkRow {
     id: number; deal_id: string; variant_id: string | null; location_id: string | null;
@@ -49,10 +54,15 @@ const ENDPOINT = 'https://api.takisa.net/rest/v1/rpc/taki_stock_push';
  * 🔴 الرابطُ الذي **نُعطيه** للتاجر ليلصقه في نظامه (v15.12).
  * واعتراضُ ناصر هو سببُ وجوده: «لم أفهم سبب طلبك للرابط وأيّ رابط تقصد».
  * وكان محقّاً — الأنظمةُ تُرسل ولا تستقبل، فالعنوانُ يُعطى لا يُطلب.
- * 🪤 والمفتاح في الرابط لأن أغلب الأنظمة لا تسمح للتاجر بإضافة ترويسة؛
- *    والتخفيف أنه يُدوَّر بضغطة من هذه الشاشة نفسها.
+ *
+ * 🔴 و v15.17 فصلت **العنوان** عن **السرّ**: صار مساراً لكلّ متجر
+ *    (`/h/<slug>`) يُعاد إصدارُه بضغطة، والمفتاح يبقى كما هو.
+ *    والسببُ مقيسٌ من وثيقة زد: «You cannot recover a webhook by re-using the
+ *    same target_url» — فخطّافٌ عُطّل لا يُستعاد إلا بعنوانٍ جديد. وبالصيغة
+ *    القديمة كان ذلك يستلزم تدويرَ المفتاح فيكسر كلَّ نظامٍ آخر يحمله.
+ * 🪤 والصيغةُ القديمة `?k=` **تبقى تعمل** على الخادم: أنظمةٌ لا تسمح بمسار.
  */
-const HOOK = (key: string) => `https://api.takisa.net/functions/v1/stock-webhook?k=${key}`;
+const HOOK_PATH = (slug: string) => `https://api.takisa.net/functions/v1/stock-webhook/h/${slug}`;
 
 const box: React.CSSProperties = {
     marginTop: 14, padding: 14, borderRadius: 14,
@@ -99,6 +109,9 @@ export const StockLinkCard: React.FC = () => {
     const [deals, setDeals] = useState<SellerDeal[]>([]);
     const [busy, setBusy] = useState(false);
     const [freshKey, setFreshKey] = useState<string | null>(null);
+    // 🪤 الرابطُ يُعاد من القاعدة مع المفتاح: بناؤه في الواجهة من المفتاح كان
+    //    يُنتج الصيغةَ القديمة، والمسارُ لا يُشتقّ من المفتاح أصلاً.
+    const [freshHook, setFreshHook] = useState<string | null>(null);
     const [open, setOpen] = useState(false);
 
     // نموذجُ الإنشاء
@@ -118,7 +131,7 @@ export const StockLinkCard: React.FC = () => {
         if (!user?.id) return;
         const { data, error } = await supabase
             .from('stock_integrations')
-            .select('id, provider, segment, label, api_key_last4, webhook_url, direction, is_enabled, last_seen_at, created_at, field_map, last_payload, last_payload_at, last_note')
+            .select('id, provider, segment, label, api_key_last4, webhook_url, direction, is_enabled, last_seen_at, created_at, field_map, last_payload, last_payload_at, last_note, webhook_slug, webhook_rev, oauth_state, oauth_expires_at, last_sync_at')
             .eq('store_id', user.id).order('created_at').limit(1);
         if (error) { logger.warn('integrations read:', error.message); setInteg(null); return; }
         const row = (data || [])[0] as Integration | undefined;
@@ -168,6 +181,7 @@ export const StockLinkCard: React.FC = () => {
         setBusy(false);
         if (!d) return;
         setFreshKey(d.api_key as string);
+        setFreshHook((d.hook_url as string) || null);
         await load();
     };
 
@@ -218,9 +232,9 @@ export const StockLinkCard: React.FC = () => {
                         : t('هذا رابطك — احتفظ به', 'This is your URL — keep it')}
                 </div>
                 <div style={{ ...field, fontFamily: 'monospace', wordBreak: 'break-all', direction: 'ltr',
-                    textAlign: 'left', marginBottom: 8 }}>{HOOK(freshKey)}</div>
+                    textAlign: 'left', marginBottom: 8 }}>{freshHook || ''}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                    <Copy value={HOOK(freshKey)} label={t('انسخ الرابط', 'Copy URL')} />
+                    <Copy value={freshHook || ''} label={t('انسخ الرابط', 'Copy URL')} />
                     <Copy value={freshKey} label={t('انسخ المفتاح', 'Copy key')} />
                     <Copy value={sample} label={t('انسخ مثالاً للمبرمج', 'Copy a developer example')} />
                 </div>
@@ -229,8 +243,15 @@ export const StockLinkCard: React.FC = () => {
                         {provDef ? (isRTL ? provDef.pasteHintAr : provDef.pasteHintEn) : ''}
                     </strong>
                     <br />
-                    {t('وبعدها: كلّما تغيّرت كمّيةُ منتجٍ عندك، يُرسل نظامُك رسالةً إلى هذا الرابط فتتحدّث تاكي وحدها. ولا تكتب شيئاً بعد اليوم.',
-                       'After that: whenever a product quantity changes, your system posts to this URL and TAKI updates itself. Nothing more to type.')}
+                    {/* 🔴 ولا يُوعَد بالمزامنة التلقائية من لصق الرابط إلا لمن يصحّ
+                        له ذلك: سلّة وزد **لا ترسلان حدثاً لتغيّر المخزون** ولا
+                        تسمحان للتاجر بتسجيل رابطٍ بنفسه (مقيسٌ من وثيقتَيهما).
+                        فوعدُهما بذلك كذبٌ — والخطوةُ التالية لهما «اربط متجرك». */}
+                    {provDef && provDef.selfServeWebhook === 'yes'
+                        ? t('وبعدها: كلّما تغيّرت كمّيةُ منتجٍ عندك، يُرسل نظامُك رسالةً إلى هذا الرابط فتتحدّث تاكي وحدها. ولا تكتب شيئاً بعد اليوم.',
+                            'After that: whenever a product quantity changes, your system posts to this URL and TAKI updates itself. Nothing more to type.')
+                        : t('وهذه المنصّةُ لا تسمح لك بلصق الرابط بنفسك: الخطوةُ التالية زرُّ «اربط متجرك» بعد الإغلاق، وتاكي تُسجّل العنوانَ عندهم بإذنك.',
+                            'This platform does not let you paste the URL yourself: the next step is «Connect your store» after closing, and TAKI registers the URL with them once you approve.')}
                 </div>
                 <button type="button" style={btn(true)} onClick={() => setFreshKey(null)}>
                     ✅ {t('نسختُه — أغلِق', 'Copied — close')}
@@ -410,7 +431,10 @@ export const StockLinkCard: React.FC = () => {
                     if (!ok) return;
                     setBusy(true);
                     const d = await call('merchant_rotate_integration_key', { p_id: integ.id });
-                    setBusy(false); if (d) { setFreshKey(d.api_key as string); await load(); }
+                    // 🪤 والتدويرُ **لا يُغيّر العنوان** بعد v15.17: المسارُ مستقلٌّ
+                    //    عن المفتاح، فلا يُعاد بناءُ الرابط من المفتاح الجديد.
+                    setBusy(false);
+                    if (d) { setFreshKey(d.api_key as string); setFreshHook(integ.webhook_slug ? HOOK_PATH(integ.webhook_slug) : null); await load(); }
                 }}>🔑 {t('دوّر المفتاح', 'Rotate key')}</button>
                 <button type="button" style={btn(false, true)} disabled={busy} onClick={async () => {
                     const ok = await customConfirm(t(
@@ -437,8 +461,10 @@ export const StockLinkCard: React.FC = () => {
                     </span></>
                 )}
                 <br />
-                {t('ورابطُك يحتوي مفتاحك، وتاكي لا تحتفظ به — فإن فقدتَه اضغط «دوّر المفتاح» أعلاه وستحصل على رابطٍ جديد فوراً.',
-                   'Your URL contains your key and TAKI does not store it — if you lost it, press «Rotate key» above and you get a new URL at once.')}
+                {/* 🔴 وصُحّحت هذه الجملةُ في v15.17: العنوانُ لم يعد يحتوي المفتاح.
+                    فالعنوانُ يُعرض دائماً (أدناه) والمفتاحُ وحده لا يُسترجع. */}
+                {t('والعنوانُ معروضٌ لك دائماً أدناه ويمكن إعادةُ إصداره بضغطة. أمّا المفتاحُ فلا تحتفظ به تاكي — فإن فقدتَه اضغط «دوّر المفتاح» أعلاه.',
+                   'Your URL is always shown below and can be re-issued with one press. The key itself is not stored by TAKI — if you lost it, press «Rotate key» above.')}
             </div>
 
             {/* ── آخرُ رسالةٍ وصلت من نظامك ──────────────────────────────
@@ -449,10 +475,21 @@ export const StockLinkCard: React.FC = () => {
                 <div style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
                         📨 {t('آخر رسالة وصلت من نظامك', 'Last message from your system')}
-                        {integ.last_note === 'OK' && <span style={{ color: 'var(--primary)' }}> · {t('فُهمت وطُبّقت', 'understood & applied')}</span>}
-                        {integ.last_note === 'NOT_LINKED' && <span style={{ color: '#b45309' }}> · {t('كودُها غير مربوط بعرض', 'its code is not linked to a deal')}</span>}
-                        {integ.last_note === 'UNMAPPED' && <span style={{ color: '#b45309' }}> · {t('لم نفهم شكلها', 'shape not understood')}</span>}
+                        {/* 🔴 كلُّ وسمٍ تكتبه القاعدة له نصّ — وكانت الشاشةُ تعرف
+                            ثلاثةً من أكثر من عشرين، فخمسةٌ من ثمانية أوسمةٍ تُصيَّر
+                            «رسالةٌ وصلت» بلا تفسير: متجرٌ لا يُزامن شيئاً يبدو
+                            مُزامَناً. والمصدرُ الآن `stockNotes.ts` و`npm test`
+                            يرفض وسماً بلا نصّ. */}
+                        {integ.last_note && (() => {
+                            const n = describeNote(integ.last_note, isRTL);
+                            return <span style={{ color: NOTE_COLOR[n.tone] }}> · {n.text}</span>;
+                        })()}
                     </div>
+                    {integ.last_note && describeNote(integ.last_note, isRTL).todo && (
+                        <div style={{ fontSize: '0.72rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                            ← {describeNote(integ.last_note, isRTL).todo}
+                        </div>
+                    )}
                     <pre style={{ ...field, fontSize: '0.68rem', maxHeight: 120, overflow: 'auto',
                         direction: 'ltr', textAlign: 'left', margin: 0 }}>
                         {JSON.stringify(integ.last_payload, null, 1).slice(0, 900)}
@@ -480,8 +517,28 @@ export const StockLinkCard: React.FC = () => {
                             }}>{t('🔗 اربط الحقول', '🔗 Map the fields')}</button>
                         </div>
                     )}
+                    {/* 🔴 ومخرجُ الخريطة الخاطئة: المحرّرُ كان يظهر عند `UNMAPPED`
+                        وحده، فمن ربط حقلاً خاطئاً مرّةً صار وسمُه `MAPPED` ثمّ
+                        `OK` واختفى المحرّرُ **إلى الأبد** — ربطٌ معطوبٌ دائمٌ
+                        بضغطةٍ واحدة، ولا دالّةَ تُصفّره. (قاعدةُ المشروع: لكلّ
+                        حالةٍ تُنتجها المنصّة مخرجٌ بضغطة.) */}
+                    {integ.field_map && (
+                        <button type="button" style={{ ...btn(), marginTop: 6 }} disabled={busy} onClick={async () => {
+                            const ok = await customConfirm(t(
+                                '↩️ إعادةُ ربط الحقول\n\nسيُنسى ما ربطتَه، وتظهر لك الرسالةُ الحقيقية لتربط حقولها من جديد. ومخزونُك الحالي لا يتأثّر.\n\nهل تريد ذلك؟',
+                                '↩️ Re-map the fields\n\nWhat you mapped is forgotten and the real message is shown again so you can map it afresh. Your current stock is unaffected.\n\nProceed?'));
+                            if (!ok) return;
+                            setBusy(true);
+                            const d = await call('merchant_clear_field_map', { p_id: integ.id });
+                            setBusy(false);
+                            if (d) { setMapId(''); setMapQty(''); await load(); }
+                        }}>↩️ {t('أعِد ربط الحقول', 'Re-map the fields')}</button>
+                    )}
                 </div>
             )}
+
+            {/* ── الربطُ بالإذن · العنوانُ · ولماذا لم يتحرّك الرقم ───────── */}
+            <StockConnectPanel integ={integ} onChanged={load} />
 
             {/* ── روابطُ المنتجات ─────────────────────────────────────── */}
             <div style={{ fontSize: '0.8rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 6 }}>

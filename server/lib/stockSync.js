@@ -22,31 +22,18 @@
  *    الردّ ويُعلّم النتيجة، بنفس نمط طابور البريد المُجرَّب على هذا الخادم.
  */
 
-const crypto = require('crypto');
-
 const TIMEOUT_MS = 8000;
 const BATCH = 20;
 
-/** توقيعُ الجسم الخام — لا كائناً مُعاد ترتيبه، فالترتيبُ يغيّر البصمة. */
-function sign(raw, secret) {
-    return 'sha256=' + crypto.createHmac('sha256', String(secret || '')).update(raw, 'utf8').digest('hex');
-}
-
-/** جسمُ الحدث كما يصل نظامَ التاجر. */
-function body(ev) {
-    return JSON.stringify({
-        event_id: ev.id,
-        reason: ev.reason,
-        deal_id: ev.deal_id,
-        external_id: ev.external_id || null,
-        variant_id: ev.variant_id || null,
-        location_id: ev.location_id || null,
-        delta: ev.delta === undefined ? null : ev.delta,
-        on_hand: ev.on_hand === undefined ? null : ev.on_hand,
-        barcode: ev.barcode || null,
-        occurred_at: ev.occurred_at,
-    });
-}
+/**
+ * 🔴 v15.20 — لم يبقَ هنا توقيعٌ ولا بناءُ جسم، وذلك **إصلاحُ ثغرة**:
+ *    `bot_pull_stock_events` كانت تُعيد `webhook_secret` نصّاً مع **كلّ حدث**،
+ *    أي أن تسريبَ سرّ بوّابة البوت يصير قدرةً على انتحال تاكي أمام كلّ تاجر.
+ *    فصار الجسمُ يُبنى ويُوقَّع **في القاعدة**، والسرُّ لا يخرج منها إطلاقاً.
+ * 🪤 وهذا يُلغي أيضاً مصدرَي حقيقةٍ لشكل الجسم: `jsonb` لا يحفظ ترتيبَ
+ *    المفاتيح، فمطابقةُ `JSON.stringify` بايتاً ببايت كانت وهماً. والآن
+ *    كاتبٌ واحدٌ (القاعدة) ونقلٌ حرفيّ (هنا) — فالتوقيعُ فوق ما يُرسل فعلاً.
+ */
 
 /**
  * يسحب دفعةً ويُسلّمها. `rpc` هو غلافُ نداء القاعدة في البوت،
@@ -65,7 +52,15 @@ async function drainStockEvents(rpc, log) {
                 await rpc('bot_mark_stock_event', { p_id: ev.id, p_ok: true, p_error: 'no endpoint' });
                 continue;
             }
-            const raw = body(ev);
+            // 🪤 ويُرسل `body_raw` **حرفياً**: أيُّ لمسٍ له (إعادةُ ترميزٍ أو
+            //    مسافة) يُفسد التوقيعَ الذي حُسب فوقه في القاعدة.
+            const raw = ev.body_raw;
+            if (typeof raw !== 'string' || !raw || !ev.signature) {
+                // 🔴 لا يُرسل حدثٌ بلا توقيع: نظامُ التاجر يرفضه بحقّ، والإرسالُ
+                //    بلا توقيعٍ يُعلّمه أن يقبل غيرَ الموقَّع.
+                await rpc('bot_mark_stock_event', { p_id: ev.id, p_ok: false, p_error: 'no signed body' });
+                failed++; continue;
+            }
             let ok = false, err = '';
             try {
                 const ctrl = new AbortController();
@@ -74,7 +69,7 @@ async function drainStockEvents(rpc, log) {
                     method: 'POST', signal: ctrl.signal,
                     headers: {
                         'content-type': 'application/json',
-                        'x-taki-signature': sign(raw, ev.webhook_secret),
+                        'x-taki-signature': ev.signature,
                         'x-taki-event-id': String(ev.id),
                     },
                     body: raw,
@@ -94,4 +89,22 @@ async function drainStockEvents(rpc, log) {
     return { sent, failed };
 }
 
-module.exports = { drainStockEvents, sign, body, TIMEOUT_MS, BATCH };
+module.exports = { drainStockEvents, TIMEOUT_MS, BATCH };
+
+/**
+ * يُشغّل مؤقّتَ التسليم. ⚠️ ويُنادى **خارج** أيّ شرطٍ يخصّ البريد:
+ * عاملُ المخزون كان مُعشَّشاً في `if (mailer)` حتى v15.20، فمتجرٌ بلا بريدٍ
+ * مضبوط لم يكن يُسلَّم له أيُّ حدثٍ أبداً — وأحداثُه تتراكم ثمّ تموت عند
+ * ثامن محاولةٍ بلا أثر.
+ */
+function startStockWorker(rpc, log) {
+    let busy = false;
+    const tick = async () => {
+        if (busy) return;                      // لا تتداخل الدفقات
+        busy = true;
+        try { await drainStockEvents(rpc, log); } finally { busy = false; }
+    };
+    setInterval(tick, 20_000).unref?.();
+}
+
+module.exports.startStockWorker = startStockWorker;

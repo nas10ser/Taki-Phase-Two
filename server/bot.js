@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.08.0';
+const BOT_VERSION              = '15.22.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -4055,30 +4055,13 @@ if (supabase) {
     // Tell the admin tab whether email delivery is live (best-effort, on boot).
     rpc('bot_report_email_status', { p_configured: !!mailer, p_from: mailerFrom });
     if (mailer) {
-        let emailBusy = false;
-        const drainEmails = async () => {
-            if (emailBusy) return;             // never overlap polls
-            emailBusy = true;
-            try {
-                const batch = await rpc('bot_pull_email_outbox', { p_limit: 10 });
-                if (Array.isArray(batch)) for (const m of batch) {
-                    try {
-                        await mailer.sendMail({ from: `TAKI تاكي <${mailerFrom}>`, to: m.to_email, subject: m.subject, html: m.html });
-                        await rpc('bot_mark_email', { p_id: m.id, p_ok: true });
-                    } catch (e) {
-                        console.error('email send:', m.to_email, e.message);
-                        await rpc('bot_mark_email', { p_id: m.id, p_ok: false, p_error: String(e.message || e).slice(0, 300) });
-                    }
-                }
-            } catch (e) { console.warn('email poll:', e.message); }
-            finally { emailBusy = false; }
-        };
-        setInterval(drainEmails, 45_000).unref?.(); setInterval(() => require('./lib/stockSync').drainStockEvents(rpc, (...a) => console.warn(...a)), 20_000).unref?.();   // v15.08 — طابورُ أحداث المخزون إلى أنظمة التجار (محايدُ الأسطر: bot.js عند سقف السقّافة)
-        drainEmails();
+        require('./lib/emailOutbox').startEmailWorker(rpc, mailer, mailerFrom);
         console.log(`📧 مرسل الإيميل مفعّل عبر ${mailer.via === 'resend-api' ? 'Resend API' : 'SMTP'} (${mailerFrom}) — سحب من email_outbox كل 45 ثانية`);
     } else {
         console.log('📧 مرسل الإيميل غير مهيأ — اضبط SMTP_USER و SMTP_PASS في Render لتفعيله');
     }
+    // 🔴 v15.20 — خارج `if (mailer)`: كان مُعشَّشاً داخله (مُلحقاً بسطر مؤقّت البريد «محايدَ الأسطر» لأجل السقّافة)، فمتجرٌ بلا بريدٍ مضبوط لا يُسلَّم له أيُّ حدثِ مخزونٍ أبداً. ولا علاقةَ للمخزون بالبريد. والعاملان صارا في ملفَّيهما (تقليصٌ حقيقيّ لا سطرٌ مزدوج).
+    require('./lib/stockSync').startStockWorker(rpc, (...a) => console.warn(...a));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

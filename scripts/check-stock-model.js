@@ -279,9 +279,25 @@ for (const [needle, why] of [
 ]) if (!m12.includes(needle)) fail(why);
 
 // والشاشةُ تُعطي الرابط وتشرح أين يُلصق
-const card2 = jsCode(read('src/components/seller/StockLinkCard.tsx'));
-if (!/stock-webhook\?k=/.test(card2)) {
+// 🪤 وتُقرأ الشاشتان معاً: v15.17 نقلت عرضَ العنوان ومخارجَه إلى
+//    `StockConnectPanel`، فحارسٌ يقرأ ملفّاً واحداً صار يتّهم شاشةً سليمة.
+//    والعقدُ المحروس **ليس اسمَ ملفٍّ**: أن يرى التاجر عنوانَه في مكانٍ ما.
+const card2 = jsCode(read('src/components/seller/StockLinkCard.tsx'))
+            + '\n' + jsCode(read('src/components/seller/StockConnectPanel.tsx'));
+// 🔴 والعنوانُ صار مساراً لكلّ متجر (`/h/<slug>`) لأن دائرةَ زد القاطعة ترفض
+//    إعادةَ استخدام رابطٍ عُطّل. والصيغةُ القديمة `?k=` تبقى مقبولةً على
+//    الخادم، لكنّ **ما يُعرض** يجب أن يكون المسار.
+if (!/stock-webhook\/h\//.test(card2)) {
     fail('الشاشة لا تعرض رابطَ الاستقبال — فيبقى التاجر يبحث عمّا يلصقه.');
+}
+if (!/merchant_reissue_webhook_path/.test(card2)) {
+    fail('لا مخرجَ لعنوانٍ عُطّل عند المزوّد — وزد ترفض إعادةَ تشغيل نفس العنوان، فيبقى الربطُ ميتاً.');
+}
+if (!/merchant_clear_field_map/.test(card2)) {
+    fail('لا مخرجَ لخريطةِ حقولٍ خاطئة — فمن ربط حقلاً خاطئاً مرّةً يبقى ربطُه معطوباً أبداً.');
+}
+if (!/describeNote/.test(card2)) {
+    fail('الشاشة لا تشرح أوسمةَ الحالة — فمتجرٌ لا يُزامن شيئاً يبدو مُزامَناً.');
 }
 if (!/pasteHint/.test(card2)) {
     fail('الشاشة لا تقول **أين** يُلصق الرابط في نظامه — وهذا بالضبط ما لم يفهمه ناصر.');
@@ -371,7 +387,34 @@ for (const [needle, why] of [
 
 // والعاملُ لا يستعمل pg_net: نداؤه «أطلِق وانسَ» ولا يقرأ الردّ
 const sync = jsCode(read('server/lib/stockSync.js'));
-if (!/createHmac/.test(sync)) fail('أحداثُ المخزون تُرسل بلا توقيع — أيُّ أحدٍ يزعم أنه تاكي.');
+// 🔴 والتوقيعُ انتقل إلى القاعدة في v15.20، وذلك **إصلاحُ ثغرة** لا تفضيل:
+//    `bot_pull_stock_events` كانت تُعيد `webhook_secret` نصّاً مع كلّ حدث،
+//    فتسريبُ سرّ بوّابة البوت يصير قدرةً على انتحال تاكي أمام كلّ تاجر.
+//    ⇒ فالمحروسُ هو **وجودُ التوقيع**، لا موضعُ حسابه. ويُقاس في ثلاثة:
+const m20 = read('supabase/JEDDAH_v15_20_silent_six.sql');
+// 🪤 ويُقرأ **جسمُ الدالّة وحده** بعد تجريد التعليقات: أوّلُ نمطٍ كتبتُه
+//    أمسك سطرَ التحقّق في الهجرة نفسِها (`IF position('webhook_secret…')`)
+//    فاتّهم إصلاحاً سليماً. وهو ثالثُ وقوعٍ لنفس الفخّ في هذا المشروع:
+//    حارسٌ يتّهم النصَّ الذي يحرسه.
+const pullFn = (() => {
+    const a = m20.indexOf('CREATE FUNCTION public.bot_pull_stock_events');
+    if (a < 0) return '';
+    const b = m20.indexOf('$fn$;', a);
+    return m20.slice(a, b < 0 ? m20.length : b).replace(/^\s*--.*$/gm, '');
+})();
+if (!pullFn) fail('لم تُعَد كتابةُ bot_pull_stock_events — السرُّ ما زال يخرج.');
+// 🪤 والتوقيعُ يُقاس في **جسم الدالّة** لا في الملفّ: أوّلُ صياغةٍ بحثت في
+//    الملفّ كلّه فوجدت `extensions.hmac` في كتلة التحقّق — **فكسرتُها فلم
+//    تكسر**. وهو الدرسُ المسجَّل: حارسٌ لا يفشل عند الكسر حارسٌ عاجز.
+if (!/extensions\.hmac/.test(pullFn)) {
+    fail('أحداثُ المخزون تُرسل بلا توقيع — أيُّ أحدٍ يزعم أنه تاكي.');
+}
+if (/'webhook_secret'\s*,/.test(pullFn) || /createHmac/.test(sync)) {
+    fail('سرُّ توقيع التاجر يخرج من القاعدة — تسريبُ سرّ البوت يصير انتحالاً لتاكي أمام كلّ تاجر.');
+}
+if (!/x-taki-signature.{0,40}ev\.signature/s.test(sync) || !/no signed body/.test(sync)) {
+    fail('البوتُ لا يُمرّر التوقيعَ كما جاء، أو يُرسل حدثاً بلا توقيع.');
+}
 if (!/bot_mark_stock_event/.test(sync)) fail('العاملُ لا يُعلّم النتيجة — حدثٌ مسحوبٌ يبقى معلّقاً إلى الأبد.');
 if (!/catch/.test(sync)) fail('العاملُ قد يرمي داخل `setInterval` فيُسقط البوت كلَّه.');
 
