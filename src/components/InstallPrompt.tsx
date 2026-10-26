@@ -131,7 +131,7 @@ const InstallPrompt: React.FC = () => {
                 />
                 <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
-                        {isRTL ? 'ثبّت تطبيق TAKI 📲' : 'Install the TAKI app 📲'}
+                        {isRTL ? 'ثبّت تطبيق تاكي 📲' : 'Install the TAKI app 📲'}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                         {isRTL
@@ -156,7 +156,7 @@ const InstallPrompt: React.FC = () => {
                 }}>
                     {isIOS() ? (
                         isRTL ? (
-                            <>1️⃣ اضغط زر المشاركة <b>⬆️</b> بأسفل المتصفح<br />2️⃣ اختر <b>«إضافة إلى الشاشة الرئيسية ➕»</b><br />3️⃣ اضغط <b>«إضافة»</b> — وستجد TAKI بين تطبيقاتك</>
+                            <>1️⃣ اضغط زر المشاركة <b>⬆️</b> بأسفل المتصفح<br />2️⃣ اختر <b>«إضافة إلى الشاشة الرئيسية ➕»</b><br />3️⃣ اضغط <b>«إضافة»</b> — وستجد تاكي بين تطبيقاتك</>
                         ) : (
                             <>1️⃣ Tap the Share button <b>⬆️</b><br />2️⃣ Choose <b>“Add to Home Screen ➕”</b><br />3️⃣ Tap <b>Add</b> — TAKI appears with your apps</>
                         )

@@ -54,11 +54,17 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                                 style={{ width: 36, height: 34, objectFit: 'contain', display: 'block' }} />
                         </div>
                         <div>
+                            {/* 🪤 والاسمُ بلغة الواجهة (طلبُ ناصر ٢٦ أكتوبر): «تاكي» عربياً
+                                و«TAKI» إنجليزياً. 🔴 و`letterSpacing` **يُصفَّر** في
+                                العربية: الخطُّ العربيّ موصول، وتباعدُ الحروف يفكّ
+                                وصلَها فتصير «ت ا ك ي» — وهو كسرٌ للنصّ لا تنسيقٌ له.
+                                وحجمُ الخطّ أكبرُ قليلاً لأن المحارف العربية أقصر. */}
                             <div className="navbar-logo" style={{
-                                fontSize: '1.3rem', fontWeight: 900, letterSpacing: '2.5px', lineHeight: 1,
+                                fontSize: isRTL ? '1.42rem' : '1.3rem', fontWeight: 900,
+                                letterSpacing: isRTL ? 'normal' : '2.5px', lineHeight: 1.15,
                                 background: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
                                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                            }}>TAKI</div>
+                            }}>{isRTL ? 'تاكي' : 'TAKI'}</div>
                             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.78)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                                 📍 {locationLabel}
                             </div>
