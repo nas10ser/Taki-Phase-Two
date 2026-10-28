@@ -12,7 +12,7 @@ import { realtimeService } from '../services/realtimeService';
 import { dealRepository } from '../repositories/dealRepository';
 import { useBooking } from '../hooks/useBooking';
 import { dealService } from '../services/dealService';
-import { getLocation, REGIONS, CITIES } from '../data/mock';
+import { getLocation, getCity, geoName, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
@@ -569,7 +569,7 @@ const DealDetails: React.FC = () => {
         const off = deal.discountPercentage
             ? (isRTL ? ` — خصم ${deal.discountPercentage}%` : ` — ${deal.discountPercentage}% off`)
             : '';
-        const where = deal.city ? (isRTL ? ` في ${deal.city}` : ` in ${deal.city}`) : '';
+        const cityLabel = deal.city ? (geoName(getCity(deal.city), language) || deal.city) : '', where = cityLabel ? (isRTL ? ` في ${cityLabel}` : ` in ${cityLabel}`) : '';   // 🔴 `deals.city` معرّفٌ لا اسم (`khobar` لا «الخبر»)، وكان يُطبع خاماً في عنوان الصفحة ووصفها — أي في جوجل وفي كلّ رابطٍ يُشارَك. وسطرٌ واحد: السقّافة تمنع نموّ الملفّ.
         const cleanupSeo = applyPageSeo({
             title: isRTL
                 ? `${deal.itemName} بـ${price}${off} | ${deal.shopName} — TAKI`
@@ -589,7 +589,7 @@ const DealDetails: React.FC = () => {
             originalPrice: deal.originalPrice,
             shopName: deal.shopName,
             storeId: deal.storeId,
-            city: deal.city,
+            city: cityLabel || deal.city,   // 🪤 الاسمُ لا المعرّف في البيانات المنظَّمة
             category: deal.category as unknown as string,
             quantity: deal.quantity,
             expiryDate: deal.expiryDate,

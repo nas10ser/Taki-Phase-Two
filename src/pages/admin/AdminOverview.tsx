@@ -22,6 +22,7 @@ import { adminService, LiveStats, ActivityRow } from '../../services/adminServic
 import { useApp } from '../../context/AppContext';
 import { useKpiSnapshot } from '../../hooks/useKpiSnapshot';
 import { AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty, AdmSkeleton, AdmButton, admNum, admMoney } from '../../components/admin/ui';
+import SystemHealthCard from '../../components/admin/SystemHealthCard';
 import { AdminTabId } from '../../data/adminNav';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,6 +150,10 @@ const AdminOverview: React.FC<{ onNavigate: (tab: AdminTabId) => void }> = ({ on
 
     return (
         <div style={{ display: 'grid', gap: 14 }} dir="rtl">
+
+            {/* 🔴 صحّةُ النظام أوّلاً: «لا بريد» كان لا يُفرّق بين «سليم» و«مات»،
+                ولم تكن في المنصّة كلِّها شاشةٌ تعرضها. v15.28 */}
+            <SystemHealthCard />
 
             {/* ── ما يحتاج قراراً ─────────────────────────────────────────── */}
             {canSeeReports && (

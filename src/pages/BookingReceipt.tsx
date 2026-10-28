@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../services/supabaseClient';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
-import { CATEGORIES } from '../data/mock';
+import { CATEGORIES, geoName, getCity, getRegion } from '../data/mock';
 import { toHijri } from '../utils/helpers';
 
 /**
@@ -71,6 +71,11 @@ const BookingReceipt: React.FC = () => {
     const { language, user, isAuthReady } = useApp();
     const isRTL = language === 'ar';
     const t = (ar: string, en: string) => (isRTL ? ar : en);
+    /** 🔴 `bookings.city`/`region` معرّفاتٌ لا أسماء (`khobar` لا «الخبر»)،
+     *  وكانت تُطبع خاماً على الإيصال الذي يراه المشتري ويطبعه. */
+    const placeLabel = (city?: string | null, region?: string | null): string =>
+        (city ? (geoName(getCity(city), language) || city)
+              : region ? (geoName(getRegion(region), language) || region) : '');
 
     const [data, setData] = useState<ReceiptData | null>(null);
     const [state, setState] = useState<'loading' | 'ready' | 'forbidden' | 'missing' | 'network'>('loading');
@@ -240,7 +245,7 @@ const BookingReceipt: React.FC = () => {
                             {data.item_name || t('منتج غير متوفّر', 'Item unavailable')}
                         </div>
                         <div style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: '0.85rem', marginTop: 4 }}>
-                            🏪 {data.shop_name || '—'}{(data.city || data.region) ? `  •  📍 ${data.city || data.region}` : ''}
+                            🏪 {data.shop_name || '—'}{(data.city || data.region) ? `  •  📍 ${placeLabel(data.city, data.region)}` : ''}
                         </div>
                         {cat && <div style={{ display: 'inline-block', marginTop: 8, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{cat.emoji} {isRTL ? cat.ar : cat.en}</div>}
                     </div>

@@ -4,6 +4,7 @@ import SearchInput from './SearchInput';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import Sidebar from './Sidebar';
+import { geoName, getRegion, getCity, getLocation } from '../data/mock';
 
 interface NavbarProps {
     searchQuery?: string;
@@ -13,15 +14,30 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
     const history = useHistory();
     const location = useLocation();
-    const { language, user, topLocation } = useApp();
+    const { language, user, topLocation, geoVersion } = useApp();
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const isRTL = language === 'ar';
 
     const showLocation = topLocation.city || topLocation.region;
-    const locationLabel = topLocation.city
-        ? (topLocation.mall || topLocation.city)
-        : topLocation.region || (isRTL ? 'كل المناطق' : 'All Regions');
+    /**
+     * 🔴 كانت تُعرض **المعرّفاتُ الخام**: اختيارُ «منطقة الرياض» يكتب في
+     *    الترويسة `riyadh` بالإنجليزية الصغيرة — في صفحةٍ عربيّةٍ بالكامل.
+     *    والسببُ أن `topLocation` يحمل المعرّف لا الاسم، وكان يُطبع كما هو.
+     * 🪤 ويُستعمل المحوِّلُ القائم (`geoName` + `getRegion/getCity/getLocation`)
+     *    لا نسخةٌ ثانية: قائمةُ المولات تُحمَّل من القاعدة وتُبدَّل في مكانها،
+     *    فجدولُ أسماءٍ خاصٌّ بالترويسة كان سينحرف عنها بصمت.
+     * 🪤 و`geoVersion` مقروءٌ عمداً: المولاتُ تصل بعد الإقلاع، وبلا قراءته
+     *    تبقى الترويسةُ على الاسم المُجمَّع حتى أوّل إعادة تصيير لسببٍ آخر.
+     */
+    void geoVersion;
+    const locationLabel = topLocation.mall
+        ? (geoName(getLocation(topLocation.mall), language) || topLocation.mall)
+        : topLocation.city
+            ? (geoName(getCity(topLocation.city), language) || topLocation.city)
+            : topLocation.region
+                ? (geoName(getRegion(topLocation.region), language) || topLocation.region)
+                : (isRTL ? 'كل المناطق' : 'All Regions');
 
     return (
         <>
