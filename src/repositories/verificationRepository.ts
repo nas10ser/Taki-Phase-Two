@@ -118,21 +118,30 @@ export interface VerificationStats {
  * 🪤 `hint` مرشِّحُ أخطاءٍ مطبعية **لا إثبات**: لا خانة تدقيق منشورة لأي سجلٍّ
  *    سعودي. والقاعدة هي الحَكَم (`merchant_submit_verification` تُعيد
  *    `BAD_NUMBER`) — فما هنا نسخةٌ للعرض تُوفّر على التاجر نداءً فاشلاً.
+ *
+ * 🔴 **رابطان لا رابط** (v15.29): كان الحقل `url` واحداً يخدم جمهورين —
+ *    التاجرَ الذي يسأل «من أين أجلب الرقم؟» والمراجعَ الذي يسأل «أين
+ *    أتحقّق منه؟» — وهما وجهتان مختلفتان. وثمنُ دمجهما أن `cr.mc.gov.sa`
+ *    بقي في الشاشتين **وهو ميت**: قِيس من ثلاثة محلِّلات أسماء (المحلّي
+ *    و8.8.8.8 و1.1.1.1) فلا سجلّ له إطلاقاً، بينما `mc.gov.sa` يعمل.
+ *    فصار `url` للتاجر و`verifyUrl` للمراجع، وكلاهما مقيسٌ حيّاً.
  */
 export const DOC_KINDS: {
-    kind: DocKind; ar: string; en: string; url: string;
+    kind: DocKind; ar: string; en: string; url: string; verifyUrl: string;
     hintAr: string; hintEn: string; test: (n: string) => boolean;
 }[] = [
     {
         kind: 'business_sa', ar: 'منصّة الأعمال', en: 'Business Center',
         url: 'https://business.sa',
+        verifyUrl: 'https://eauthenticate.saudibusiness.gov.sa/inquiry',
         hintAr: 'رقم المنشأة كما يظهر في منصّة الأعمال (٥–١٤ رقماً).',
         hintEn: 'Establishment number as shown on the Business Center (5–14 digits).',
         test: (n) => /^[0-9]{5,14}$/.test(n.trim()),
     },
     {
         kind: 'cr', ar: 'السجل التجاري', en: 'Commercial Registration',
-        url: 'https://cr.mc.gov.sa',
+        url: 'https://business.sa',
+        verifyUrl: 'https://mc.gov.sa/ar/eservices/Pages/Commercial-data.aspx',
         hintAr: 'رقم السجل التجاري — عشرة أرقام.',
         hintEn: 'Commercial registration number — 10 digits.',
         test: (n) => /^[0-9]{10}$/.test(n.trim()),
@@ -140,6 +149,7 @@ export const DOC_KINDS: {
     {
         kind: 'freelance', ar: 'وثيقة العمل الحر', en: 'Freelance document',
         url: 'https://freelance.sa',
+        verifyUrl: 'https://eauthenticate.saudibusiness.gov.sa/inquiry',
         hintAr: 'رقم وثيقة العمل الحر كما يظهر في المنصّة.',
         hintEn: 'Freelance document number as shown on the platform.',
         test: (n) => n.trim().length >= 4,

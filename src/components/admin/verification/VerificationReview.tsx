@@ -180,10 +180,12 @@ export const VerificationReview: React.FC<{
                 <div style={{ fontSize: '.76rem', lineHeight: 1.8, color: 'var(--adm-fg-2)', fontWeight: 600 }}>
                     {reg.howAr}
                 </div>
-                {!reg.lookup && (
+                {/* 🪤 معلَّقٌ على درجة الإسناد لا على وجود خانة البحث (v15.29):
+                    لوثيقة العمل الحر خانةُ بحثٍ عامّة الآن، ومع ذلك يبقى الإسناد
+                    بإقرارٍ لأن الخانة تُثبت المتجر لا الشخص. */}
+                {reg.assurance === 'declared' && reg.caveatAr && (
                     <div style={{ fontSize: '.76rem', lineHeight: 1.8, color: 'var(--adm-warn-fg)', fontWeight: 700 }}>
-                        هذه الوثيقة لا يوجد لها سجلٌّ عامّ يُتحقَّق منه — فالاعتماد هنا يستند إلى الرقم
-                        والاسم وحدهما، ويُسجَّل «إسناداً بإقرار صاحبه» لا «إسناداً من سجلّ».
+                        {reg.caveatAr}
                     </div>
                 )}
             </div>

@@ -38,10 +38,18 @@ const tsPath = path.join(root, 'src', 'utils', 'arPlural.ts');
 let ts;
 try { ts = fs.readFileSync(tsPath, 'utf8'); } catch { fail('src/utils/arPlural.ts غير موجود.'); }
 
+// 🪤 `DAYS` لا يسكن `arPlural.ts` بل شاشةَ المراجعة — فالبحث في الملفّين معاً،
+//    وإلّا صرخ الحارسُ كذباً على صيغةٍ موجودة (قاعدةُ المشروع: صراخٌ كاذب أسوأ
+//    من غياب الحارس).
+const verPath = path.join(root, 'src', 'components', 'admin', 'verification', 'verificationStatus.ts');
+let verSrc = '';
+try { verSrc = fs.readFileSync(verPath, 'utf8'); } catch { verSrc = ''; }
+
 /** يستخرج كائن صيغةٍ من مصدر TypeScript بلا تنفيذ. */
 const formsFromTs = (name) => {
-    const m = ts.match(new RegExp(`export const ${name}: ArForms = \\{([\\s\\S]*?)\\};`));
-    if (!m) fail(`لم أجد الصيغة «${name}» في ${path.relative(root, tsPath)}.`);
+    const re = new RegExp(`export const ${name}: ArForms = \\{([\\s\\S]*?)\\};`);
+    const m = ts.match(re) || verSrc.match(re);
+    if (!m) fail(`لم أجد الصيغة «${name}» في ${path.relative(root, tsPath)} ولا في ${path.relative(root, verPath)}.`);
     const out = {};
     for (const [, k, v] of m[1].matchAll(/(\w+)\s*:\s*'([^']*)'/g)) out[k] = v;
     return out;
@@ -112,6 +120,35 @@ if (shared.arCount(0.5, 'hours') !== '0.5 ساعة' || shared.arCount(0.25, 'hou
 }
 
 // ── ٦) لا نصَّ عددٍ مثبَّتاً في سلاسل البوت ────────────────────────────────
+// ── ٥٫٥) «يوم» في القاعدة ↔ «يوم» في الواجهة (v15.29) ──────────────────────
+// 🪤 `taki_expire_verifications` تبني نصَّ التنبيه بـ`taki_ar_days()` داخل
+//    القاعدة، وشاشةُ المراجعة تبني نصَّها بـ`DAYS` في TypeScript. بيئتان لا
+//    تستوردان بعضهما — وهو بالضبط الوضعُ الذي أنتج «٦ ساعة» و«٣ رسالة».
+//    فالحارسُ يقرأ الصيغ من ملفّ الهجرة نفسه ويقارنها حرفاً بحرف.
+const migPath = path.join(root, 'supabase', 'JEDDAH_v15_29_verification_clock.sql');
+let mig;
+try { mig = fs.readFileSync(migPath, 'utf8'); } catch { fail(`${path.relative(root, migPath)} غير موجود — نسخةُ القاعدة من جمع «يوم» مفقودة.`); }
+
+const sqlDays = {};
+{
+    const body = mig.match(/CREATE OR REPLACE FUNCTION public\.taki_ar_days[\s\S]*?\$fn\$([\s\S]*?)\$fn\$/);
+    if (!body) fail('لم أجد نصّ `taki_ar_days` في ملفّ الهجرة.');
+    const b = body[1];
+    const one = b.match(/p_n = 1 THEN '([^']*)'/);
+    const two = b.match(/p_n = 2 THEN '([^']*)'/);
+    const few = b.match(/BETWEEN 3 AND 10 THEN p_n::text \|\| ' ([^']*)'/);
+    const many = b.match(/ELSE p_n::text \|\| ' ([^']*)'/);
+    if (!one || !two || !few || !many) fail('نصُّ `taki_ar_days` لا يطابق الشكل المتوقَّع — راجعه يدوياً.');
+    Object.assign(sqlDays, { one: one[1], two: two[1], few: few[1], many: many[1] });
+}
+
+const tsDays = formsFromTs('DAYS');
+for (const k of ['one', 'two', 'few', 'many']) {
+    if (tsDays[k] !== sqlDays[k]) {
+        fail(`صيغة «days.${k}» مختلفة:\n     الواجهة: ${JSON.stringify(tsDays[k])}\n     القاعدة : ${JSON.stringify(sqlDays[k])}`);
+    }
+}
+
 const i18nPath = path.join(root, 'server', 'lib', 'i18n-data.json');
 let i18n;
 try { i18n = JSON.parse(fs.readFileSync(i18nPath, 'utf8')); } catch (e) { fail(`i18n-data.json — ${e.message}`); }
@@ -131,4 +168,4 @@ if (offenders.length) {
     fail('سلاسل تُثبّت العدد أو تجمعه نصّاً — تُمرَّر العبارة مصوغة من الكود:\n     ' + offenders.join('\n     '));
 }
 
-console.log(`✅ الجمع العربي: نسختان متطابقتان (${checked} مقارنة) · سلاسل البوت بلا عددٍ مثبَّت`);
+console.log(`✅ الجمع العربي: نسختان متطابقتان (${checked} مقارنة) · «يوم» في القاعدة = «يوم» في الواجهة · سلاسل البوت بلا عددٍ مثبَّت`);
