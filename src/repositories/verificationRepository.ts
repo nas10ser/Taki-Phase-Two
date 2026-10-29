@@ -445,3 +445,75 @@ export const verificationRepository = {
         };
     },
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// واثق — سجلُّ وزارة التجارة (v15.30)
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * 🪤 كلُّ هذه الدوالّ تُرجع `ok:false` **بـ`error=null` من PostgREST** حين
+ *    ترفض القاعدةُ الصلاحية — فمن يفحص `error` وحده يرى «نجاحاً». ولذلك
+ *    يُقرأ الحقلُ `ok` من الحمولة دائماً (قاعدةُ «الأزرار الصامتة»).
+ */
+export interface WathqState {
+    subscribed: boolean;
+    env: 'production' | 'sandbox';
+    last4: string | null;
+    setAt: string | null;
+    checkOwners: boolean;
+    convertCr: boolean;
+    monthlyCapSar: number;
+    spentThisMonthSar: number;
+    queue: Record<string, number>;
+}
+
+const mapWathqState = (d: any): WathqState => ({
+    subscribed: d?.subscribed === true,
+    env: d?.env === 'sandbox' ? 'sandbox' : 'production',
+    last4: d?.last4 ?? null,
+    setAt: d?.set_at ?? null,
+    checkOwners: d?.check_owners === true,
+    convertCr: d?.convert_cr === true,
+    monthlyCapSar: Number(d?.monthly_cap_sar ?? 0),
+    spentThisMonthSar: Number(d?.spent_this_month_sar ?? 0),
+    queue: (d?.queue && typeof d.queue === 'object') ? d.queue : {},
+});
+
+export const wathqRepository = {
+    state: async (): Promise<{ ok: boolean; state?: WathqState; error?: string }> => {
+        const { data, error } = await supabase.rpc('admin_wathq_state');
+        if (error) { logger.warn('admin_wathq_state:', error.message); return { ok: false, error: error.message }; }
+        const d: any = data || {};
+        if (!d.ok) return { ok: false, error: d.error || 'FAILED' };
+        return { ok: true, state: mapWathqState(d) };
+    },
+
+    /** 🔴 المفتاحُ يُمرَّر ولا يُحفظ في أي حالةٍ محليّة ولا يُطبع في أي سجلّ. */
+    setKey: async (key: string, env: 'production' | 'sandbox'): Promise<{ ok: boolean; error?: string }> => {
+        const { data, error } = await supabase.rpc('admin_set_wathq_key', { p_key: key, p_env: env });
+        if (error) { logger.warn('admin_set_wathq_key failed'); return { ok: false, error: error.message }; }
+        const d: any = data || {};
+        return d.ok ? { ok: true } : { ok: false, error: d.error || 'FAILED' };
+    },
+
+    setOptions: async (o: { checkOwners?: boolean; convertCr?: boolean; monthlyCap?: number }):
+        Promise<{ ok: boolean; state?: WathqState; error?: string }> => {
+        const { data, error } = await supabase.rpc('admin_set_wathq_options', {
+            p_check_owners: o.checkOwners ?? null,
+            p_convert_cr: o.convertCr ?? null,
+            p_monthly_cap: o.monthlyCap ?? null,
+        });
+        if (error) { logger.warn('admin_set_wathq_options:', error.message); return { ok: false, error: error.message }; }
+        const d: any = data || {};
+        if (!d.ok) return { ok: false, error: d.error || 'FAILED' };
+        return { ok: true, state: mapWathqState(d) };
+    },
+
+    /** ما قالته واثق عن طلبٍ بعينه — دليلٌ للمراجع، لا حُكمٌ نيابةً عنه. */
+    registry: async (verId: string): Promise<{ ok: boolean; data?: any; error?: string }> => {
+        const { data, error } = await supabase.rpc('admin_verification_registry', { p_ver_id: verId });
+        if (error) { logger.warn('admin_verification_registry:', error.message); return { ok: false, error: error.message }; }
+        const d: any = data || {};
+        if (!d.ok) return { ok: false, error: d.error || 'FAILED' };
+        return { ok: true, data: d };
+    },
+};

@@ -23,6 +23,7 @@ import { CopyButton } from '../CopyButton';
 import { AdmPill, AdmButton, toneBg, toneFg } from '../ui';
 import type { Tone } from '../ui';
 import { VerificationPill } from './VerificationPill';
+import { RegistryPanel } from './RegistryPanel';
 import {
     REJECT_REASONS, kindLabel, registryUrl, registryMeta, sameName, fmtDate,
 } from './verificationStatus';
@@ -189,6 +190,10 @@ export const VerificationReview: React.FC<{
                     </div>
                 )}
             </div>
+
+            {/* ٢-ب) ماذا يقول السجلُّ الرسميّ — قبل زرّ «افتحه بنفسك» لا بعده:
+                فما جاء من السجل آلياً يسبق ما يجب فتحُه يدوياً. */}
+            <RegistryPanel verId={row.id} docKind={row.docKind} />
 
             {/* ٣) أين يُتحقَّق */}
             {url && (
