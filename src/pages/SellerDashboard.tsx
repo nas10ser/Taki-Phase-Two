@@ -14,6 +14,8 @@ const GatewayCard = React.lazy(() => import('../components/seller/GatewayCard'))
 const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard')); const StockLinkCard = React.lazy(() => import('../components/seller/StockLinkCard'));   // v15.10 — ربطُ نظام التاجر (كسولةٌ ومدموجة: الحزمة ٣٠٠/٣٠٠ والسقّافة ٥٦٧٥)
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
+import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText } from '../utils/locationQty';
+import LocationQtyGroups from '../components/seller/LocationQtyGroups';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
 import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
@@ -859,9 +861,9 @@ const SellerDashboard: React.FC = () => {
     const variantsDriving = completeVariants.length > 0;
     const variantQtySum = (() => {
         if (!variantsDriving) return null;
-        const withQty = completeVariants.filter(v => Number(v.qty) > 0);
+        const withQty = completeVariants.filter(v => qtyGiven(v.qty));
         if (withQty.length === 0 || withQty.length !== completeVariants.length) return null;
-        return withQty.reduce((s, v) => s + Number(v.qty), 0);
+        return withQty.reduce((s, v) => s + qtyNum(v.qty), 0);
     })();
     useEffect(() => {
         if (!variantsDriving) return;
@@ -1494,7 +1496,9 @@ const SellerDashboard: React.FC = () => {
     // كمية نوعٍ في فرعٍ مشتقّة من مجموعاته (>0)، أو undefined = مفتوح في ذلك الفرع
     const cellFromGroups = (vId: string, branchKey: string): number | undefined => {
         for (const g of (variantLocGroups[vId] || [])) {
-            if (g.locs.includes(branchKey) && Number(g.qty) > 0) return Number(g.qty);
+            // v15.33 — كان `Number(g.qty) > 0`: مجموعةُ الصفر تُعامَل كأنها غير
+            // موجودة ⇒ الموقعُ «مفتوح» والشاشةُ تقول «✅ كل المواقع محدّدة».
+            if (g.locs.includes(branchKey) && qtyGiven(g.qty)) return Number(g.qty);
         }
         return undefined;
     };
@@ -2113,15 +2117,40 @@ const SellerDashboard: React.FC = () => {
         const hasDate = expiryType === 'date' && expiryDate;
         const hasHours = expiryType === 'hours' && finalHours > 0;
         const hasDuration = expiryType === 'duration' && finalDays > 0;
-        const hasStock = expiryType === 'stock' && !isUnlimited && Number(finalQuantity) > 0;
+        // v15.33 — `hasStock` تُحسب بعد قرار الإسقاط (أسفل)، لأن الإسقاط قد
+        // ينقل كمّيةَ المجموعة إلى الكمّية العامّة.
 
         // v12.91/93 — عرض متعدد المواقع بكمية لكل فرع: كل فرع كميته المستقلة أو
         // «مفتوح» (فارغ = بلا حد). لو كل الفروع مسقوفة فمجموعها مخزون العرض
         // (إشارة انتهاء صالحة)؛ لو فيها فرع مفتوح فالعرض ينتهي بالوقت وكل فرع
         // مسقوف يفرض سقفه وحده. الكميات اختيارية ما لم يكن الانتهاء «بالكمية».
-        const _multiOthersEarly = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+        const _multiOthersRaw = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+
+        // v15.33 · قاعدة ناصر (ج) — المنطق في `utils/locationQty.ts` (مع شرحه).
+        // هنا السؤالُ وتحديثُ الحالة وحدهما.
+        const _droppedLocKeys = new Set<string>();
+        let _qtyOverride: number | undefined;
+        const _varQtyOverride: Record<string, number> = {};
+        const _plan = expiryType === 'stock'
+            ? planLocationDrop({ extras: _multiOthersRaw.map(c => ({ key: c.branchId || c.key, label: c.label })), variantIds: completeVariants.map(v => v.id), cell: cellFromGroups })
+            : null;
+        if (_plan) {
+            if (!(await customConfirm(dropAskText(_plan.names, isRTL)))) { await customAlert(dropKeepText(isRTL)); return; }
+            _plan.dropKeys.forEach(k => _droppedLocKeys.add(k));
+            if (_plan.qtyOverride !== undefined) { _qtyOverride = _plan.qtyOverride; setQuantity(_plan.qtyOverride); }
+            Object.assign(_varQtyOverride, _plan.varQtyOverride);
+            if (Object.keys(_varQtyOverride).length) setVariants(prev => prev.map(v => (_varQtyOverride[v.id] !== undefined ? { ...v, qty: _varQtyOverride[v.id] } : v)));
+            setExtraLocKeys(prev => prev.filter(k => !_droppedLocKeys.has(k)));
+        }
+
+        const _multiOthersEarly = _multiOthersRaw.filter(c => !_droppedLocKeys.has(c.branchId || c.key));
         const _isMultiLocEarly = _multiOthersEarly.length > 0;
         const _multiKeysEarly = ['primary', ..._multiOthersEarly.map(c => c.branchId || c.key)];
+        // الكمّيةُ العامّة بعد الإسقاط: ما نُقل من المجموعة إن نُقل، وإلا الحقل كما هو.
+        const _effBaseQty: number | 'unlimited' = _qtyOverride !== undefined ? _qtyOverride : finalQuantity;
+        const _varQty = (v: { id: string; qty?: number }): number | undefined =>
+            _varQtyOverride[v.id] !== undefined ? _varQtyOverride[v.id] : (qtyGiven(v.qty) ? Number(v.qty) : undefined);
+        const hasStock = expiryType === 'stock' && !isUnlimited && Number(_effBaseQty) > 0;
         // v13.03/06 — «مجموعات الكمية»: أنواع×مواقع (variantQtys) أو منتج واحد×مواقع
         // (__base__ → location.quantity). «كل مسقوف» = لكل خلية/فرع كمية؛ والمجموع = مجموعها.
         const _varIdsEarly = completeVariants.map(v => v.id);
@@ -2182,7 +2211,7 @@ const SellerDashboard: React.FC = () => {
                     : `⛔ Version "${badPrice.label}": set an original price higher than its discounted price (${badPrice.price}).`);
                 return;
             }
-            const withQty = completeVariants.filter(v => Number(v.qty) > 0);
+            const withQty = completeVariants.filter(v => qtyGiven(v.qty));
             // v12.63 (قاعدة ناصر): انتهاء «بالكمية» = كمية كل نسخة إلزامية (المجموع
             // = الكمية الإجمالية). v12.87 (تصويب ناصر): مع انتهاء بالساعات/الأيام/
             // التاريخ الكميات اختيارية وحرّة تماماً — يُقبل أن يضع كمية لنوع ويترك
@@ -2209,7 +2238,7 @@ const SellerDashboard: React.FC = () => {
         }
 
         // 2. If Stock-based -> MUST have quantity
-        if (expiryType === 'stock' && !isUnlimited && !finalQuantity && !_hasMultiStock) {
+        if (expiryType === 'stock' && !isUnlimited && !_effBaseQty && !_hasMultiStock) {
             await customAlert(isRTL ? '⚠️ يرجى تحديد الكمية المتوفرة' : '⚠️ Please specify available quantity');
             return;
         }
@@ -2464,7 +2493,10 @@ const SellerDashboard: React.FC = () => {
         // الفروع المختارة). في وضع «كمية لكل موقع» كل فرع كميته أو «مفتوح» (بلا
         // حقل كمية = بلا حد). لو كل الفروع مسقوفة → الكمية الإجمالية = مجموعها؛ لو
         // فيها مفتوح → الإجمالي «غير محدود» (ينتهي بالوقت) والفروع المسقوفة تفرض سقفها.
-        const multiOthers = mergedLocationChips.filter(c => c.key !== currentCandidateKey && extraLocKeys.includes(c.branchId || c.key));
+        // v15.33 — `setExtraLocKeys` لا تُحدّث المُغلِقَ داخل نفس النداء، فالإسقاط
+        // يُطبَّق هنا صراحةً وإلا حُفظ الموقعُ الذي وافق التاجر على حذفه.
+        const multiOthers = mergedLocationChips.filter(c => c.key !== currentCandidateKey
+            && extraLocKeys.includes(c.branchId || c.key) && !_droppedLocKeys.has(c.branchId || c.key));
         const isMultiLoc = multiOthers.length > 0;
         const allBranchKeys = ['primary', ...multiOthers.map(c => c.branchId || c.key)];
         // v13.03 — «مجموعات الكمية»: مصفوفة نوع×فرع مصدرها variantLocGroups (لا الشبكة).
@@ -2492,12 +2524,14 @@ const SellerDashboard: React.FC = () => {
                 const qty = branchAllCappedSave(k) ? branchCellSum(k) : undefined;
                 return {
                     ...(vq ? { variantQtys: vq } : {}),
-                    ...(qty !== undefined && qty > 0 ? { quantity: qty, initialQuantity: qty } : {}),
+                    // v15.33 — صفرٌ يُكتب. حذفُ المفتاح يعني «مفتوح» في حارس القاعدة
+                    // (`e ? 'variantQtys'`)، فإسقاطُ الصفر كان يفتح الفرع بلا حدّ.
+                    ...(qty !== undefined ? { quantity: qty, initialQuantity: qty } : {}),
                 };
             }
             if (baseGroupsActive) {
                 const q = baseCellOf(k);
-                return (q !== undefined && q > 0) ? { quantity: q, initialQuantity: q } : {}; // غير مُغطّى = مفتوح
+                return (q !== undefined) ? { quantity: q, initialQuantity: q } : {}; // غير مُغطّى = مفتوح · والصفر مُغطّى (v15.33)
             }
             return {}; // منتج واحد متعدد المواقع بلا مجموعات = مخزون مشترك عام
         };
@@ -2542,7 +2576,7 @@ const SellerDashboard: React.FC = () => {
             ? (multiAllCapped ? allBranchKeys.reduce((s, k) => s + branchCellSum(k), 0) : 'unlimited')
             : baseGroupsActive
                 ? (multiAllCapped ? allBranchKeys.reduce((s, k) => s + (baseCellOf(k) || 0), 0) : 'unlimited')
-                : finalQuantity;
+                : _effBaseQty;
 
         const newDeal: Deal = {
             id: editingDealId || Date.now().toString(),
@@ -2609,7 +2643,7 @@ const SellerDashboard: React.FC = () => {
                         ...g,
                         title: g.title.trim(),
                         choices: g.choices
-                            .map(c => ({ ...c, label: c.label.trim(), qty: Number(c.qty) > 0 ? Number(c.qty) : undefined, posSku: (c.posSku || '').trim() || undefined }))
+                            .map(c => ({ ...c, label: c.label.trim(), qty: qtyGiven(c.qty) ? Number(c.qty) : undefined, posSku: (c.posSku || '').trim() || undefined }))
                             .filter(c => c.label),
                     }))
                     .filter(g => g.title && g.choices.length > 0);
@@ -2633,7 +2667,7 @@ const SellerDashboard: React.FC = () => {
                             ? (allBranchKeys.every(k => cellSave(k, v.id) !== undefined)
                                 ? allBranchKeys.reduce((s, k) => s + (cellSave(k, v.id) || 0), 0)
                                 : undefined)
-                            : (Number(v.qty) > 0 ? Number(v.qty) : undefined),
+                            : _varQty(v),
                         imageIndex: (typeof v.imageIndex === 'number' && v.imageIndex >= 0 && v.imageIndex < images.length) ? v.imageIndex : undefined,
                         posSku: (v.posSku || '').trim() || undefined, // v12.88 — رمز الكاشير
                     }))
@@ -4104,59 +4138,16 @@ const SellerDashboard: React.FC = () => {
                                 </div>
                             </div>
                         )}
-                        {variants.length === 0 && isMultiLocSel && (() => {
-                            const bkey = '__base__';
-                            const groups = variantLocGroups[bkey] || [];
-                            const coveredKeys = new Set<string>(groups.flatMap(g => g.locs));
-                            const openBranches = selectedBranches.filter(b => !coveredKeys.has(b.key));
-                            return (
-                                <div style={{ marginBottom: 20, background: 'var(--gray-50)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14 }}>
-                                    <div style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        📦 {isRTL ? 'الكمية لكل موقع' : 'Quantity per branch'}
-                                    </div>
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
-                                        💡 {isRTL ? 'اخترت عدة مواقع. أضف كمية واختر المواقع التي تشترك فيها، واضغط «➕ أضف كمية» لكمية مختلفة لمواقع أخرى. المواقع غير المحدّدة تبقى مفتوحة. (لكمية موحّدة: أضف كمية واحدة واختر كل المواقع.)' : 'Add a quantity and pick which branches share it. “➕ Add quantity” for a different amount at other branches. Unpicked branches stay open.'}
-                                    </div>
-                                    {groups.map((g, gi) => {
-                                        const usedElsewhere = branchesUsedElsewhere(bkey, gi);
-                                        return (
-                                            <div key={gi} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 8, marginBottom: 8, background: 'var(--card-bg)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                    <NumericField integer value={g.qty} onChange={n => setVarGroupQty(bkey, gi, n)} placeholder={isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : 'qty'}
-                                                        style={{ width: 92, padding: '8px 9px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(g.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--body-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }} />
-                                                    <span style={{ flex: 1, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
-                                                    <button type="button" onClick={() => removeVarGroup(bkey, gi)} aria-label={isRTL ? 'حذف المجموعة' : 'Remove group'}
-                                                        style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 9, padding: '5px 9px', fontWeight: 900, cursor: 'pointer', flexShrink: 0 }}>✕</button>
-                                                </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                    {selectedBranches.map(b => {
-                                                        const on = g.locs.includes(b.key);
-                                                        const blocked = usedElsewhere.has(b.key) && !on;
-                                                        return (
-                                                            <button key={b.key} type="button" disabled={blocked}
-                                                                onClick={() => toggleVarGroupLoc(bkey, gi, b.key)}
-                                                                title={blocked ? (isRTL ? 'مستخدم في مجموعة أخرى' : 'used in another group') : undefined}
-                                                                style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.75rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
-                                                                {on ? '✅' : '➕'} {b.label}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    <button type="button" onClick={() => addVarGroup(bkey)}
-                                        style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 900, cursor: 'pointer' }}>
-                                        {isRTL ? '➕ أضف كمية' : '➕ Add quantity'}
-                                    </button>
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
-                                        {openBranches.length
-                                            ? `🔓 ${isRTL ? 'مواقع مفتوحة (بلا حد)' : 'Open branches'}: ${openBranches.map(b => b.label).join('، ')}`
-                                            : `✅ ${isRTL ? 'كل المواقع محدّدة بكمية' : 'All branches have a quantity'}`}
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                        {variants.length === 0 && isMultiLocSel && (
+                            <LocationQtyGroups
+                                groups={variantLocGroups['__base__'] || []} branches={selectedBranches} isRTL={isRTL}
+                                requireQty={expiryType === 'stock'} tone="base"
+                                title={`📦 ${isRTL ? 'الكمية لكل موقع' : 'Quantity per branch'}`}
+                                hint={`💡 ${isRTL ? 'اخترت عدة مواقع. أضف كمية واختر المواقع التي تشترك فيها، واضغط «➕ أضف كمية» لكمية مختلفة لمواقع أخرى. و«صفر» مقبول ويعني «لا يوجد في هذا الموقع». أمّا الموقع الذي لا تضع له أي مجموعة فيبقى مفتوحاً بلا حد.' : 'Pick a quantity and the branches that share it; “➕ Add quantity” for a different amount elsewhere. 0 is allowed and means “none at this branch”. A branch in no group stays open.'}`}
+                                usedElsewhere={gi => branchesUsedElsewhere('__base__', gi)}
+                                onQty={(gi, n) => setVarGroupQty('__base__', gi, n)} onToggle={(gi, k) => toggleVarGroupLoc('__base__', gi, k)}
+                                onRemove={gi => removeVarGroup('__base__', gi)} onAdd={() => addVarGroup('__base__')} />
+                        )}
 
                         {/* v12.61 — «نسخ المنتج» (تجريبي — طلب ناصر): نفس المنتج بأحجام
                             لكل واحدة سعرها وكميتها وصورتها وفئتها. يظهر للمشتري كأزرار
@@ -4225,65 +4216,21 @@ const SellerDashboard: React.FC = () => {
                                                 onChange={n => setVariants(prev => prev.map((x, i) => i === vi ? { ...x, qty: n } : x))}
                                                 placeholder={isRTL ? 'مثال: 15' : 'e.g. 15'}
                                                 title={isRTL ? 'كمّيتك الكاملة من هذا النوع — تاكي تطرح المحجوز منه. والمجموع يصير الكمية الإجمالية تلقائياً' : 'Your FULL stock of this variant — TAKI subtracts its open holds. The sum becomes the deal total'}
-                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(v.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
+                                                style={{ width: '100%', padding: '9px 8px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !qtyGiven(v.qty) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}
                                             />
                                         </div>
                                         )}
                                     </div>
-                                    {/* v13.03 — «مجموعات الكمية» لهذا النوع عند تعدّد المواقع:
-                                        كل مجموعة = كمية + مواقع تشترك فيها. المواقع غير المُغطّاة = مفتوحة. */}
-                                    {multiLocPerLocActive && (() => {
-                                        const groups = variantLocGroups[v.id] || [];
-                                        const coveredKeys = new Set<string>(groups.flatMap(g => g.locs));
-                                        const openBranches = selectedBranches.filter(b => !coveredKeys.has(b.key));
-                                        return (
-                                        <div style={{ marginBottom: 8, background: 'var(--card-bg)', border: '1px dashed var(--primary)', borderRadius: 12, padding: 10 }}>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>
-                                                📍 {isRTL ? `كميات المواقع لنوع «${v.label || `النوع ${vi + 1}`}»` : `Per-location quantities for "${v.label || `Variant ${vi + 1}`}"`}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>
-                                                {isRTL ? 'أضف كمية واختر المواقع التي تشترك فيها. اضغط «➕ أضف كمية» لكمية أخرى لمواقع أخرى (نفس النوع). المواقع غير المحدّدة تبقى مفتوحة.' : 'Add a quantity and pick which branches share it. “➕ Add quantity” for another set. Unpicked branches stay open.'}
-                                            </div>
-                                            {groups.map((g, gi) => {
-                                                const usedElsewhere = branchesUsedElsewhere(v.id, gi);
-                                                return (
-                                                    <div key={gi} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 8, marginBottom: 8, background: 'var(--gray-50)' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                            <NumericField integer value={g.qty} onChange={n => setVarGroupQty(v.id, gi, n)} placeholder={isRTL ? `الكمية${expiryType === 'stock' ? ' *' : ''}` : 'qty'}
-                                                                style={{ width: 92, padding: '8px 9px', borderRadius: 10, border: `1px solid ${expiryType === 'stock' && !(Number(g.qty) > 0) ? 'var(--danger)' : 'var(--border-color)'}`, background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 800, textAlign: 'center' }} />
-                                                            <span style={{ flex: 1, fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)' }}>{isRTL ? 'لهذه المواقع:' : 'for these branches:'}</span>
-                                                            <button type="button" onClick={() => removeVarGroup(v.id, gi)} aria-label={isRTL ? 'حذف المجموعة' : 'Remove group'}
-                                                                style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: 'none', borderRadius: 9, padding: '5px 9px', fontWeight: 900, cursor: 'pointer', flexShrink: 0 }}>✕</button>
-                                                        </div>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                            {selectedBranches.map(b => {
-                                                                const on = g.locs.includes(b.key);
-                                                                const blocked = usedElsewhere.has(b.key) && !on;
-                                                                return (
-                                                                    <button key={b.key} type="button" disabled={blocked}
-                                                                        onClick={() => toggleVarGroupLoc(v.id, gi, b.key)}
-                                                                        title={blocked ? (isRTL ? 'مستخدم في مجموعة أخرى لهذا النوع' : 'used in another group') : undefined}
-                                                                        style={{ background: on ? 'var(--primary)' : 'var(--body-bg)', color: on ? '#fff' : 'var(--text-primary)', border: `1.5px solid ${on ? 'var(--primary)' : 'var(--gray-200)'}`, borderRadius: 999, padding: '6px 11px', fontSize: '0.75rem', fontWeight: 800, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1, WebkitTapHighlightColor: 'transparent' }}>
-                                                                        {on ? '✅' : '➕'} {b.label}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                            <button type="button" onClick={() => addVarGroup(v.id)}
-                                                style={{ width: '100%', padding: '9px', borderRadius: 10, border: '1.5px dashed var(--primary)', background: 'var(--notif-unread-bg)', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 900, cursor: 'pointer' }}>
-                                                {isRTL ? '➕ أضف كمية' : '➕ Add quantity'}
-                                            </button>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: openBranches.length ? 'var(--secondary)' : 'var(--primary)', marginTop: 7, lineHeight: 1.6 }}>
-                                                {openBranches.length
-                                                    ? `🔓 ${isRTL ? 'مواقع مفتوحة (بلا حد)' : 'Open branches'}: ${openBranches.map(b => b.label).join('، ')}`
-                                                    : `✅ ${isRTL ? 'كل المواقع محدّدة بكمية' : 'All branches have a quantity'}`}
-                                            </div>
-                                        </div>
-                                        );
-                                    })()}
+                                    {multiLocPerLocActive && (
+                                        <LocationQtyGroups
+                                            groups={variantLocGroups[v.id] || []} branches={selectedBranches} isRTL={isRTL}
+                                            requireQty={expiryType === 'stock'} tone="variant"
+                                            title={`📍 ${isRTL ? `كميات المواقع لنوع «${v.label || `النوع ${vi + 1}`}»` : `Per-location quantities for "${v.label || `Variant ${vi + 1}`}"`}`}
+                                            hint={isRTL ? 'أضف كمية واختر المواقع التي تشترك فيها، و«➕ أضف كمية» لكمية أخرى لمواقع أخرى (نفس النوع). و«صفر» مقبول ويعني «لا يوجد هذا النوع في ذلك الموقع». والموقع بلا أي مجموعة يبقى مفتوحاً بلا حد.' : 'Pick a quantity and the branches that share it; “➕ Add quantity” for another set. 0 is allowed and means “not available at that branch”. A branch in no group stays open.'}
+                                            usedElsewhere={gi => branchesUsedElsewhere(v.id, gi)}
+                                            onQty={(gi, n) => setVarGroupQty(v.id, gi, n)} onToggle={(gi, k) => toggleVarGroupLoc(v.id, gi, k)}
+                                            onRemove={gi => removeVarGroup(v.id, gi)} onAdd={() => addVarGroup(v.id)} />
+                                    )}
                                     {Number(v.originalPrice) > 0 && Number(v.price) > 0 && Number(v.originalPrice) > Number(v.price) && (
                                         <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
                                             {isRTL

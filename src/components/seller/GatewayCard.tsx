@@ -74,6 +74,9 @@ const ERRORS: Record<string, TxT> = {
     VERIFY_REQUIRED: { ar: 'اضغط «اختبار الاتصال» بنجاح قبل التفعيل', en: 'Run “Test connection” successfully before enabling' },
     NO_GATEWAY: { ar: 'احفظ بيانات البوابة أولاً', en: 'Save the gateway details first' },
     BAD_PROVIDER: { ar: 'مزود غير معروف', en: 'Unknown provider' },
+    // v15.33 — المحاكاة تختم الطلبَ «مدفوعاً» بلا ريال. حُرست ثلاثةُ أبوابٍ
+    // لا بابٌ واحد: الحفظ (v15.31) و«اختبار الاتصال» و«تفعيل البوابة».
+    SIM_NOT_ALLOWED: { ar: 'مزود «المحاكاة» للاختبار الداخلي فقط ولا يُحصّل مالاً — اختر مزوّدك الحقيقي (ميسر/تاب/باي‑تابس)', en: '“Simulation” is for internal testing only and collects no money — pick your real provider (Moyasar/Tap/PayTabs)' },
     SELLER_ONLY: { ar: 'هذه الخاصية لحسابات المتاجر فقط', en: 'This feature is for merchant accounts only' },
 };
 const errMsg = (e: unknown, isRTL: boolean): string => {

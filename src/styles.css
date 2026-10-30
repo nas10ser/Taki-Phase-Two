@@ -1571,6 +1571,33 @@ input[type="time"]:focus + .time-hint {
   opacity: 0;
 }
 
+/* v15.33 — نفسُ عيب v12.56 في حقل التاريخ، ولم يُعالَج معه.
+   قِيس على WebKit حقيقيّ (محاكي iOS 16، عرض الشاشة 393): بطاقةٌ عرضها
+   الداخليّ ٣٢٩ بكسلاً، حقلُ النصّ فيها ٣٢٧ ✅، وحقلُ `type=date` **١١٥**
+   — أي أنه يتجاهل `width:100%` تماماً ويرسم نفسه بمقاسه الأصليّ. وبعد
+   هذه القاعدة صار ٣٢٧، مطابقاً لحقل النصّ.
+   🪤 واتجاهُ الخطأ يختلف بنسخة iOS: جهازُ ناصر أظهره **أعرضَ** من البطاقة
+   يتجاوز حافّتها، والمحاكي أظهره أضيق. والسبب واحد (المقاس الأصليّ)،
+   ولذلك تلزم الثلاثة معاً: `appearance:none` يُسقط المقاس الأصليّ،
+   و`width:100%` القائم في النمط يملأ، و`max-width:100%` يمنع التجاوز.
+   وتشمل القاعدة أخوات التاريخ الأربع — ٣٠ حقلاً في الواجهة. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  -webkit-appearance: none;
+  appearance: none;
+  max-width: 100%;
+  min-width: 0;
+}
+/* الحقلُ الفارغ على iOS يرسم القيمة محاذاةً لليسار داخل صندوقٍ ممتدّ —
+   والوسيطة تُعيدها إلى مكانها فلا يبدو الحقل فارغاً وهو ليس كذلك. */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
+  margin: 0;
+  text-align: inherit;
+}
+
 /* ---------------------------------------------------------------------
  * PWA STANDALONE MODE — when launched from home screen, lean into
  * native-app feel.
