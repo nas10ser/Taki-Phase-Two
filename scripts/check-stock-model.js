@@ -92,7 +92,11 @@ for (const [re, why] of [
     [/setQuantity\([^)]*deal\.onHand\s*\?\?\s*deal\.quantity/, 'الإجمالي يُبذَر من `deal.quantity` (المتاح) — سينكمش المخزون بمقدار المحجوز عند كلّ حفظ.'],
     [/qty:\s*v\.onHand\s*\?\?\s*v\.qty/, 'الأصناف تُبذَر من `qty` (المتاح) — كلُّ حفظٍ يقضم من مخزون الصنف.'],
     [/l\.variantOnHand\s*&&/, 'خلايا «صنف×فرع» تُبذَر من `variantQtys` (المتاح) لا من `variantOnHand`.'],
-    [/Number\(l\.onHand\s*\?\?\s*l\.quantity\)/, 'كمّية الفرع تُبذَر من `l.quantity` (المتاح) لا من `l.onHand`.'],
+    // 🪤 v15.34 — المرساةُ كانت تشترط `Number(l.onHand ?? l.quantity)` حرفياً،
+    //    فانكسرت حين فُصلت القيمةُ إلى متغيّر (`const rawB = l.onHand ?? l.quantity`)
+    //    والمعنى لم يتغيّر. والحارسُ يحرس **البذرة** لا شكلَ كتابتها: يكفي أن
+    //    يسبق `l.onHand` كلَّ `l.quantity` في تعبير الاختيار نفسه.
+    [/l\.onHand\s*\?\?\s*l\.quantity/, 'كمّية الفرع تُبذَر من `l.quantity` (المتاح) لا من `l.onHand`.'],
 ]) if (!re.test(dash)) fail(why);
 
 // ── ٤) والقاعدة: الهجرتان تحملان ما يُشتقّ به ─────────────────────────────
@@ -434,5 +438,34 @@ if (/INSERT INTO public\.bookings/.test(m02) || /INSERT INTO public\.bookings/.t
     fail('هجرةٌ تُدرج حجزاً في `bookings` — الاختبارُ الغازي مكانُه `supabase/proof_v15_03_hold_survives.sql` داخل معاملةٍ تُلغى.');
 }
 read('supabase/proof_v15_03_hold_survives.sql');
+
+// ── ٦) 🔴 `jsonb_set` بمسارٍ مركّب: الأبُ الغائب = كتابةٌ صامتة (v15.34) ────
+// `jsonb_set(x, ARRAY['أب','ابن'], v, true)` تُنشئ **المفتاح الأخير وحده**؛
+// فإن غاب الأبُ أعادت `x` كما هو **بلا خطأ**. وقِيس على الإنتاج أن مفتاحين
+// لم يُكتبا ولا مرّة: `variantOnHand` (فانكمش المخزونُ المعلَن كلَّ حفظ) و
+// `variantOff` (فزرُّ «نفد هذا النوع في هذا الفرع» لم يعمل منذ v15.07).
+// والصوابُ كان مكتوباً في `_taki_loc_seed` ولم يُنسخ إلى أخواته الثلاث.
+// 🪤 ويُجرَّد التعليقُ قبل الفحص، وإلّا اتّهم الحارسُ هذا الشرحَ نفسه.
+{
+    // استثناءان معلَّلان: ملفّا الهجرة التاريخيّان يحملان النصَّ **قبل** الإصلاح،
+    // وتُصحّحهما `JEDDAH_v15_34_jsonb_parent.sql` على الخادم. لا يُعاد كتابةُ
+    // هجرةٍ طُبِّقت — يُشحن تصحيحُها في هجرةٍ تالية.
+    const ALLOW = new Set(['supabase/JEDDAH_v15_07_tier0_soldout.sql', 'supabase/JEDDAH_v15_03_declare_stock.sql']);
+    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
+        e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+    const base = path.join(__dirname, '..');
+    for (const abs of walk(path.join(base, 'supabase')).filter(f => f.endsWith('.sql'))) {
+        const rel = path.relative(base, abs).split(path.sep).join('/');
+        if (ALLOW.has(rel)) continue;
+        const body = fs.readFileSync(abs, 'utf8').replace(/--[^\n]*/g, '');
+        for (const m of body.matchAll(/jsonb_set\([^,]{0,40},\s*ARRAY\['([A-Za-z_]+)'/g)) {
+            const par = m[1];
+            const guarded = new RegExp(`jsonb_set\\([^,]{0,40},\\s*'\\{${par}\\}'`).test(body)
+                || new RegExp(`\\?\\s*'${par}'`).test(body)
+                || new RegExp(`->'${par}'`).test(body);
+            if (!guarded) fail(`${rel}: يكتب «${par}.…» بمسارٍ مركّب بلا ضمانٍ لوجود الأب — الكتابةُ تُهمَل بصمت.`);
+        }
+    }
+}
 
 console.log('✅ حارس المخزون: الواجهة والبوتان بالكامل · المتاح مشتقّ · الاستردادُ يُعيد في البابين · والراية تُطفأ');

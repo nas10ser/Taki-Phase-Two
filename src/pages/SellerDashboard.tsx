@@ -14,7 +14,7 @@ const GatewayCard = React.lazy(() => import('../components/seller/GatewayCard'))
 const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard')); const StockLinkCard = React.lazy(() => import('../components/seller/StockLinkCard'));   // v15.10 — ربطُ نظام التاجر (كسولةٌ ومدموجة: الحزمة ٣٠٠/٣٠٠ والسقّافة ٥٦٧٥)
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
-import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText } from '../utils/locationQty';
+import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText, allZeroText } from '../utils/locationQty';
 import LocationQtyGroups from '../components/seller/LocationQtyGroups';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
 import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
@@ -837,14 +837,12 @@ const SellerDashboard: React.FC = () => {
     const [variants, setVariants] = useState<DealVariant[]>([]);
     // v12.88 — رمز الكاشير (SKU) للمنتج الأساسي (لمطابقة الباركود مع نظام الكاشير)
     const [posSku, setPosSku] = useState('');
-    // v12.91 — العرض الواحد في عدة مواقع: مفاتيح الفروع الإضافية المختارة (بجانب
-    // الموقع الأساسي) + وضع الكمية + كمية كل فرع (per_location).
+    // v12.91 — العرض الواحد في عدة مواقع: مفاتيح الفروع الإضافية المختارة.
+    // 🪤 v15.34 — حُذفت معها ثلاثُ حالاتٍ (`locQtyMode`/`locQtys`/`locVarQtys`):
+    //    بقايا شبكةِ v12.91/12.97 التي حلّت محلّها `variantLocGroups` في v13.03.
+    //    كانت **تُكتب في ستّة مواضع ولا تُقرأ في واحد** (سمّاها ESLint بالاسم)،
+    //    وخاصّيةُ الحفظ `locQtyMode` تُحسب من `matrixActive` لا منها.
     const [extraLocKeys, setExtraLocKeys] = useState<string[]>([]);
-    const [locQtyMode, setLocQtyMode] = useState<'shared' | 'per_location'>('per_location');
-    const [locQtys, setLocQtys] = useState<Record<string, number | undefined>>({});
-    // v12.97 — مصفوفة نوع×فرع: كمية كل نوع في كل فرع (branchKey → variantId → qty).
-    // تظهر بدل حقل الكمية المفرد للفرع عند وجود أنواع + وضع «كمية لكل موقع».
-    const [locVarQtys, setLocVarQtys] = useState<Record<string, Record<string, number | undefined>>>({});
     // v13.03 — «مجموعات الكمية» لكل نوع (طلب ناصر): variantId → قائمة مجموعات، كل
     // مجموعة = كمية + مجموعة مفاتيح مواقع تشترك فيها. تُسطَّح عند الحفظ إلى
     // locations[branch].variantQtys[variant] (نفس نموذج v12.97). المواقع غير المُغطّاة
@@ -1892,9 +1890,6 @@ const SellerDashboard: React.FC = () => {
         setVariants([]);
         setPosSku('');
         setExtraLocKeys([]);
-        setLocQtyMode('per_location');
-        setLocQtys({});
-        setLocVarQtys({});
         setVariantLocGroups({});
         setVariantsOpen(false);
         setOptionsOpen(false);
@@ -1946,7 +1941,6 @@ const SellerDashboard: React.FC = () => {
         setPosSku(deal.posSku || ''); // v12.88 — رمز الكاشير للمنتج الأساسي
         // v12.91/13.03 — استعادة مواقع العرض المتعددة (المفاتيح = معرّفات المواقع نفسها)
         if (deal.locations && deal.locations.length > 1) {
-            setLocQtyMode(deal.locQtyMode === 'shared' ? 'shared' : 'per_location');
             setExtraLocKeys(deal.locations.filter(l => l.id !== 'primary').map(l => l.id));
             // v13.03 — إعادة بناء «مجموعات الكمية» من خلايا variantQtys: لكل نوع، تُجمَّع
             // الفروع ذات الكمية المتساوية في مجموعة واحدة (فرع بلا خلية = مفتوح، لا يدخل).
@@ -1956,25 +1950,29 @@ const SellerDashboard: React.FC = () => {
                 // أنواع×مواقع → variantQtys
                 const vq = (l.variantOnHand && typeof l.variantOnHand === 'object') ? l.variantOnHand : ((l.variantQtys && typeof l.variantQtys === 'object') ? l.variantQtys : {}); // v15.02 — الكامل أوّلاً
                 for (const vId of Object.keys(vq)) {
-                    const qv = Number((vq as Record<string, number>)[vId]);
-                    if (!(qv > 0)) continue;
+                    // 🔴 v15.34 — كان `qv > 0` فيُسقط الصفرَ المحفوظ عند فتح
+                    //    العرض ⇒ يعود الفرعُ «بلا حدّ» (الشرحُ في utils/locationQty.ts).
+                    const rawV = (vq as Record<string, unknown>)[vId];
+                    if (!qtyGiven(rawV)) continue;
+                    const qv = Number(rawV);
                     if (!groups[vId]) groups[vId] = [];
                     let g = groups[vId].find(gg => gg.qty === qv);
                     if (!g) { g = { qty: qv, locs: [] }; groups[vId].push(g); }
                     g.locs.push(l.id);
                 }
                 // v13.06 — منتج واحد×مواقع → location.quantity في مجموعة '__base__'
-                if (noVariants && deal.locQtyMode === 'per_location' && Number(l.onHand ?? l.quantity) > 0) { // v15.02 — الكامل لا المتاح
+                const rawB = l.onHand ?? l.quantity; // v15.02 — الكامل لا المتاح
+                if (noVariants && deal.locQtyMode === 'per_location' && qtyGiven(rawB)) { // v15.34 — والصفرُ منها
+                    const bq = Number(rawB);
                     if (!groups['__base__']) groups['__base__'] = [];
-                    let g = groups['__base__'].find(gg => gg.qty === Number(l.onHand ?? l.quantity));
-                    if (!g) { g = { qty: Number(l.onHand ?? l.quantity), locs: [] }; groups['__base__'].push(g); }
+                    let g = groups['__base__'].find(gg => gg.qty === bq);
+                    if (!g) { g = { qty: bq, locs: [] }; groups['__base__'].push(g); }
                     g.locs.push(l.id);
                 }
             }
             setVariantLocGroups(groups);
-            setLocQtys({}); setLocVarQtys({});
         } else {
-            setExtraLocKeys([]); setLocQtyMode('per_location'); setLocQtys({}); setLocVarQtys({}); setVariantLocGroups({});
+            setExtraLocKeys([]); setVariantLocGroups({});
         }
 
         // Prefer the seller's original choice (stored on the row) so the
@@ -2238,6 +2236,7 @@ const SellerDashboard: React.FC = () => {
         }
 
         // 2. If Stock-based -> MUST have quantity
+        if (expiryType === 'stock' && _multiAllCapped && _multiSumEarly === 0) { await customAlert(allZeroText(isRTL)); return; } // v15.34
         if (expiryType === 'stock' && !isUnlimited && !_effBaseQty && !_hasMultiStock) {
             await customAlert(isRTL ? '⚠️ يرجى تحديد الكمية المتوفرة' : '⚠️ Please specify available quantity');
             return;

@@ -3,7 +3,7 @@
   "src/context/AppContext.tsx": 3948,
   "src/pages/DealDetails.tsx": 3844,
   "src/pages/Register.tsx": 1706,
-  "src/pages/SellerDashboard.tsx": 5622,
+  "src/pages/SellerDashboard.tsx": 5621,
   "src/pages/admin/AdminAnalyst.tsx": 1591,
   "src/pages/admin/AdminTools.tsx": 2059,
   "server/bot.js": 4144,

@@ -43,5 +43,13 @@ print('true' if d.get('status')=='active' and s.get('telegram') is True and s.ge
 fi
 [ "$BOT_SQL" = "true" ] || [ "$BOT_SQL" = "false" ] || BOT_SQL=false
 
+# 🔴 v15.34 — فرعُ «لم يُفحص» (NULL) في `taki_write_heartbeat` كان **ميّتاً**:
+# السكربتُ لا يُمرّر NULL أبداً، فكلُّ تعذّرِ اتصالٍ يُتَّهم به البوت. وتعليقُ
+# الدالّة يَعِد بشبكةِ أمانٍ لم تعمل قطّ — ووعدٌ لا يُنفَّذ أسوأ من لا وعد.
+# والتمييزُ متاحٌ بشاهد: الموقعُ على Vercel وشبكةٍ أخرى تماماً. فإن سقط
+# الاتّصالُ بالاثنين معاً فالأرجحُ شبكتُنا لا البوت ⇒ «لا أعرف» لا «ساقط».
+# 🪤 ويبقى الموقعُ نفسُه مُبلَّغاً عنه (000) فلا يُكتم عطلٌ حقيقيّ.
+if [ -z "$BOT_JSON" ] && [ "$SITE" = "000" ]; then BOT_SQL=NULL; fi
+
 docker exec supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -At \
   -c "SELECT public.taki_write_heartbeat(${DISK}, ${MEM}, ${AGE}, ${SITE_SQL}, ${BOT_SQL});"
