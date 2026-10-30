@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v15.31';
+const CACHE_NAME = 'taki-cache-v15.32';
 // 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
 // manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
 // واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
@@ -35,7 +35,9 @@ const isAsset = url => /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|gif|ico
 const isNavigation = req => req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
 // v13.72 — 🔴 كان: `url.hostname.endsWith('supabase.co')` فقط.
 //
-// بعد نقل الخادم إلى جدة (v13.55) صار عنوان القاعدة `141-147-142-147.sslip.io`
+// (v15.32) أُسقط الاسمُ القديم `141-147-142-147.sslip.io`: قِيس أن صفر عرضٍ
+// من ٢١ يستعمله، وعنوانُه يشير إلى خادمٍ لم يعد لنا.
+// وبعد نقل الخادم إلى جدة (v13.55) كان عنوان القاعدة ذاك الاسم
 // **ولا ينتهي بـsupabase.co** — فسقط كل نداء بيانات من هذا الشرط، ونزل إلى
 // الفرع الأخير «stale-while-revalidate»: أي أن استعلامات GET (العروض،
 // الحجوزات، الملفات) صارت تُقدَّم **من ذاكرة المتصفح أولاً** ثم تُحدَّث بعدها.
@@ -49,7 +51,7 @@ const API_PATHS = ['/rest/v1', '/auth/v1', '/realtime/v1', '/functions/v1', '/gr
 /** خادمنا نحن (القاعدة والتخزين) — يبقى على معالجته القديمة. وما عداه من
  *  مضيفين (بلاطات الخرائط، الخطوط، تيليجرام) يذهب للمتصفّح مباشرةً. */
 const isOwnBackend = h =>
-  h === 'api.takisa.net' || h === '141-147-142-147.sslip.io' || h.endsWith('supabase.co');
+  h === 'api.takisa.net' || h.endsWith('supabase.co');
 
 const isApi = url =>
   API_PATHS.some(p => url.pathname.startsWith(p)) ||

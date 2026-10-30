@@ -67,7 +67,6 @@ for (const m of policy.match(/\bws:\/\/\S+/gi) || []) {
  */
 const INDIRECT = {
     'fonts.gstatic.com': 'ملفّات الخطّ يطلبها ملفّ fonts.googleapis.com بنفسه، فلا يظهر اسمها في كودنا',
-    '141-147-142-147.sslip.io': 'الاسم القديم للقاعدة — صور العروض القديمة مخزَّنة بعنوانه الكامل',
     '*.supabase.co': 'قاعدة المعاينة (VERCEL_ENV=preview) تُحقن وقت البناء لا في الكود',
     '*.sentry.io': 'يُبنى العنوان داخل حزمة Sentry من الـDSN',
     'challenges.cloudflare.com': 'Turnstile يجلب موارده بنفسه بعد تحميل السكربت',
