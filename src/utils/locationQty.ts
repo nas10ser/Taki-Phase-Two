@@ -93,6 +93,23 @@ export const planLocationDrop = (args: {
     return plan;
 };
 
+/**
+ * هل في هذا الفرع شيءٌ يُباع؟ (v15.34)
+ *
+ * صارت الكمّية صفراً **قيمةً صالحة** («لا يوجد في هذا الفرع»)، فاختيارُ
+ * الفرع الأقرب وحده صار يفتح صفحةَ العرض على فرعٍ كلُّ أنواعه رمادية —
+ * فيبدو المنتجُ نافداً وهو متوفّرٌ في الفرع المجاور.
+ * 🪤 ولا يُحجب الفرعُ النافد: إن نفدت الفروعُ كلُّها يُختار الأقرب كما كان،
+ *    فلا تُفتح الصفحةُ بلا فرعٍ أصلاً.
+ * 🪤 والخانةُ **الغائبة** مفتوحةٌ بلا سقف ⇒ فيها شيء. فلا يُسأل «> 0» بل
+ *    «ليست صفراً» — وهي نفسُ قاعدة [[qtyGiven]] من الجهة الأخرى.
+ */
+export const branchHasStock = (l: { quantity?: number; variantQtys?: Record<string, number> }): boolean => {
+    const vq = l.variantQtys;
+    if (vq && Object.keys(vq).length) return Object.values(vq).some(n => Number(n) !== 0);
+    return Number(l.quantity) !== 0;
+};
+
 export const dropAskText = (names: string[], isRTL: boolean): string => {
     const n = names.join(isRTL ? '، ' : ', ');
     return isRTL

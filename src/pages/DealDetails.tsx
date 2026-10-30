@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStoreReviews } from '../hooks/useStoreReviews';
-import { goRegister } from '../utils/returnTo';
+import { goRegister } from '../utils/returnTo'; import { branchHasStock } from '../utils/locationQty';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 // v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
@@ -735,8 +735,8 @@ const DealDetails: React.FC = () => {
         if (!deal?.locations || deal.locations.length <= 1) return;
         // بلا ?loc= صريح → اختر الأقرب تلقائياً؛ وإلا تحقّق من صلاحية المختار.
         if (!deal.locations.some(l => l.id === selectedLocId)) {
-            const nearest = sortedLocations && sortedLocations[0];
-            setSelectedLocId((nearest?.id) || deal.locations[0].id);
+            const list = (sortedLocations?.length ? sortedLocations : deal.locations) as typeof deal.locations; // v15.34 — الأقربُ الذي فيه شيء
+            setSelectedLocId((list.find(branchHasStock) || list[0])?.id || deal.locations[0].id);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deal?.id, sortedLocations]);

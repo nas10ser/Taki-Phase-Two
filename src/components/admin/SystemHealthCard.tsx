@@ -127,11 +127,22 @@ export const SystemHealthCard: React.FC = () => {
             </AdmStatGrid>
 
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 10 }}>
-                <AdmPill tone={met.bot_ok ? 'ok' : 'bad'}>
-                    {t('البوت', 'Bot')} {met.bot_ok ? '✓' : '✕'}
-                </AdmPill>
-                <AdmPill tone={met.site_code === 200 ? 'ok' : 'bad'}>
-                    {t('الموقع', 'Site')} {met.site_code ?? '—'}
+                {/* v15.34 — ثلاثُ حالاتٍ لا اثنتان. كان `bot_ok ? ok : bad` يخلط
+                    **ثلاثة** معانٍ في لونين: حيّ · ساقط · **ولم يُفحص** (null).
+                    🔴 وبعد ارتداد v15.33 صار الخلطُ مربكاً فعلاً: نبضةٌ واحدة
+                    فاشلة لا ترفع الحالةَ إلى «حرج» (وهذا مقصود) — فكانت
+                    البطاقةُ تُظهر «البوت ✕» أحمرَ تحت ترويسةٍ خضراء بلا تفسير.
+                    والعدّادُ `bot_fail_streak` كان يُكتب ولا يُقرأ. */}
+                {(() => {
+                    const n = Number(met.bot_fail_streak ?? 0);
+                    const [tone, mark, note] = met.bot_ok === true ? ['ok', '✓', '']
+                        : met.bot_ok == null ? ['warn', '؟', t(' — لم يُفحص', ' — not probed')]
+                        : n >= 2 ? ['bad', '✕', t(` — ${n} نبضات متتالية`, ` — ${n} consecutive misses`)]
+                        : ['warn', '✕', t(' — نبضة واحدة، يُعاد الفحص بعد ١٠ دقائق', ' — one miss, re-checked in 10 min')];
+                    return <AdmPill tone={tone as 'ok' | 'warn' | 'bad'}>{t('البوت', 'Bot')} {mark}{note}</AdmPill>;
+                })()}
+                <AdmPill tone={met.site_code === 200 ? 'ok' : met.site_code == null ? 'warn' : 'bad'}>
+                    {t('الموقع', 'Site')} {met.site_code ?? t('لم يُفحص', 'not probed')}
                 </AdmPill>
                 {cron.alive_since && (
                     <AdmPill tone="ok">
