@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStoreReviews } from '../hooks/useStoreReviews';
-import { goRegister } from '../utils/returnTo'; import { branchHasStock } from '../utils/locationQty';
+import { goRegister } from '../utils/returnTo'; import { branchHasStock } from '../utils/locationQty'; import { bookingPreflight, preflightMessage, deliveryBlockReason } from '../utils/bookingPreflight';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 // v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
@@ -502,6 +502,8 @@ const DealDetails: React.FC = () => {
     const [selectedQuantity, setSelectedQuantity] = useState(1);
     // v12.91 — الفرع المختار للعرض متعدد المواقع (من رابط حولي ?loc= أو الأقرب).
     const [selectedLocId, setSelectedLocId] = useState<string>(() => queryParams.get('loc') || '');
+    /** رفعها نقرُ المشتري على فرع (أو `?loc=`) ⇒ لا يُعاد الاختيارُ التلقائيّ فوقه. */
+    const locChosen = React.useRef<boolean>(!!queryParams.get('loc'));
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
@@ -698,18 +700,6 @@ const DealDetails: React.FC = () => {
         return null;
     }, [liveLocation?.lat, liveLocation?.lng, sortedLocations, deal?.mapLocation?.lat, deal?.mapLocation?.lng]);
 
-    /**
-     * الحارس المبكر: يُنادى عند «احجز الآن» قبل فتح ورقة الحجز. لو كان **أقرب**
-     * فرع أبعد من ١٠٠ كم فلا خيار داخل الورقة يُصلح ذلك — نقولها فوراً بدل أن
-     * يملأ الكميات والملاحظات ثم يُصدم عند التأكيد النهائي.
-     */
-    const blockedByDistance = React.useCallback(async (): Promise<boolean> => {
-        if (nearestDistanceKm == null || nearestDistanceKm <= 100) return false;
-        await customAlert(isRTL
-            ? `⛔ أقرب فرع لهذا العرض يبعد عنك ${Math.round(nearestDistanceKm)} كم (أكثر من ١٠٠ كم).\n\nمهلة الاستلام ساعتان فقط، ولن تصل خلالها فيُلغى الحجز تلقائياً. ابحث عن عرض أقرب لك.`
-            : `⛔ The nearest branch for this deal is ${Math.round(nearestDistanceKm)} km away (over 100 km).\n\nThe pickup window is 2 hours and the booking would auto-cancel. Please pick a closer deal.`);
-        return true;
-    }, [nearestDistanceKm, isRTL, customAlert]);
 
     const activeLoc = dealLocations
         ? (dealLocations.find(l => l.id === selectedLocId) || dealLocations[0])
@@ -734,9 +724,15 @@ const DealDetails: React.FC = () => {
     React.useEffect(() => {
         if (!deal?.locations || deal.locations.length <= 1) return;
         // بلا ?loc= صريح → اختر الأقرب تلقائياً؛ وإلا تحقّق من صلاحية المختار.
-        if (!deal.locations.some(l => l.id === selectedLocId)) {
+        // 🔴 v15.36 — الاختيارُ يقع قبل وصول موقع المشتري (المسافاتُ null فالترتيبُ
+        // كما هو) فيُختار أوّلُ فرع؛ ثمّ يصل الموقعُ ويُعاد الترتيب ولا يُعاد الاختيار
+        // لأن المختارَ صار «صالحاً» ⇒ «📍 الأقرب» على فرعٍ والمختارُ على ١١٢٩ كم.
+        // 🪤 ولا يُدهَس اختيارُ المشتري: `locChosen` يرتفع بنقره، و`?loc=` يُثبّت.
+        const valid = deal.locations.some(l => l.id === selectedLocId);
+        if (!valid || !(locChosen.current || variantPiecesTotal > 0)) {
             const list = (sortedLocations?.length ? sortedLocations : deal.locations) as typeof deal.locations; // v15.34 — الأقربُ الذي فيه شيء
-            setSelectedLocId((list.find(branchHasStock) || list[0])?.id || deal.locations[0].id);
+            const next = (list.find(branchHasStock) || list[0])?.id || deal.locations[0].id;
+            if (next !== selectedLocId) setSelectedLocId(next);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deal?.id, sortedLocations]);
@@ -1160,27 +1156,30 @@ const DealDetails: React.FC = () => {
     const dlvBelowMin = dlvMinOrder > 0 && bookingTotal < dlvMinOrder;
     const dlvOn = !!dlvStore?.enabled;
     const dlvCanChoose = dlvOn && !!dlvQuote?.available && !!buyerAddress && dlvGateReady && !dlvBelowMin;
-    const dlvBlockReason: string | null = !dlvOn ? null
-        : !buyerAddress
-            ? (isRTL ? '📍 أضِف عنوان التوصيل في «حسابي ← الإعدادات» ليظهر لك خيار التوصيل.'
-                     : '📍 Add your delivery address in “My account → Settings” to unlock delivery.')
-            : dlvLoading
-                ? (isRTL ? '⏳ جاري التحقق من نطاق التوصيل لهذا الفرع…' : '⏳ Checking this branch’s delivery area…')
-                : !dlvQuote?.available
-                    // `no_zones` ≠ `out_of_zone`: الأول يعني أن هذا الفرع لم يرسم
-                    // نطاقاً أصلاً، فنصيحة «اختر عنواناً آخر» فيه عبثٌ يُتعب المشتري.
-                    ? (dlvQuote?.reason === 'no_zones'
-                        ? (isRTL ? '🚫 هذا الفرع لم يحدّد نطاق توصيل بعد — جرّب فرعاً آخر، والاستلام من المتجر متاح.'
-                                 : '🚫 This branch has no delivery area yet — try another branch; pickup is available.')
-                        : (isRTL ? '🚫 هذا العنوان خارج نطاق توصيل الفرع المختار — اختر عنواناً آخر أو فرعاً أقرب، والاستلام من المتجر متاح.'
-                                 : '🚫 This address is outside the selected branch’s delivery area — pick another address or branch; pickup is available.'))
-                    : !dlvGateReady
-                        ? (isRTL ? '💳 هذا المتجر يوصّل بالبطاقة فقط ولم يُفعّل بوابة الدفع بعد — التوصيل غير متاح حالياً.'
-                                 : '💳 This store delivers card-only but has no active payment gateway yet — delivery is unavailable.')
-                        : dlvBelowMin
-                            ? (isRTL ? `🚚 الحد الأدنى لطلب التوصيل ${dlvMinOrder} ر.س — أضِف ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} ر.س ليصبح التوصيل متاحاً.`
-                                     : `🚚 Delivery minimum is ${dlvMinOrder} SAR — add ${Math.round((dlvMinOrder - bookingTotal) * 100) / 100} SAR to unlock it.`)
-                            : null;
+    const dlvBlockReason = deliveryBlockReason({ isRTL, on: dlvOn, hasAddress: !!buyerAddress, loading: dlvLoading,
+        available: !!dlvQuote?.available, reason: dlvQuote?.reason, gateReady: dlvGateReady,
+        belowMin: dlvBelowMin, minOrder: dlvMinOrder, total: bookingTotal }); // v15.36 — النصّ في utils/bookingPreflight
+
+    /**
+     * v15.36 (بلاغ ناصر) — كلُّ ما يمنع الحجز يُقال **على صفحة العرض** قبل فتح
+     * الورقة، مجموعاً في رسالةٍ واحدة. وكان «اختر مقاساً» في التأكيد النهائي،
+     * وحارسُ المسافة يسأل عن **أقرب** فرعٍ لا عن **المختار** (١٢ مقابل ١١٢٩ فيمرّ).
+     * 🪤 وموضعُها هنا لا أعلى: تعتمد `variantCapHere` و`dlvCanChoose`، ووضعُها
+     *    قبلهما يرفعه TypeScript ويسقط حيّاً بـTDZ في مصفوفة التبعيات.
+     */
+    const preflightStop = React.useCallback((): string[] => {
+        const sel = sortedLocations?.find(l => l.id === (selectedLocId || dealLocations?.[0]?.id)) as any;
+        const near = sortedLocations?.[0] as any;
+        const num = (x: unknown) => (typeof x === 'number' ? x : null);
+        return bookingPreflight({
+            isRTL, hasVariants: variants.length > 0, variantPiecesTotal,
+            picks: variants.map(v => ({ label: v.label, sel: varSel[v.id] || 0, cap: variantCapHere(v) })),
+            selectedKm: sortedLocations ? num(sel?.distance) : nearestDistanceKm,
+            selectedName: sel?.name, nearestKm: num(near?.distance), nearestName: near?.name,
+            deliveryPossible: dlvCanChoose, holdText: holdLabel(holdHours.pickup, isRTL),
+        });
+    }, [sortedLocations, selectedLocId, dealLocations, isRTL, variants, variantPiecesTotal, varSel,
+        variantCapHere, nearestDistanceKm, dlvCanChoose, holdHours.pickup]);
     // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى، أو فرعٌ جديد لا
     // يخدم العنوان) يعود للاستلام من نفسه — فلا يُرسَل حجز توصيل يرفضه الخادم.
     // ولا نُعيده أثناء التسعير، وإلا ضاع اختيارُه بمجرد تبديل الفرع.
@@ -2478,8 +2477,8 @@ const DealDetails: React.FC = () => {
                                             role="radio"
                                             aria-checked={picked}
                                             tabIndex={0}
-                                            onClick={() => { if (!out) setSelectedLocId(l.id); }}
-                                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !out) { e.preventDefault(); setSelectedLocId(l.id); } }}
+                                            onClick={() => { if (!out) { locChosen.current = true; setSelectedLocId(l.id); } }}
+                                            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !out) { e.preventDefault(); locChosen.current = true; setSelectedLocId(l.id); } }}
                                             style={{
                                                 display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14,
                                                 cursor: out ? 'not-allowed' : 'pointer', opacity: out ? 0.5 : 1,
@@ -3054,8 +3053,9 @@ const DealDetails: React.FC = () => {
                                             // v13.13 (طلب ناصر): تنبيه حدود الحجز يظهر هنا — عند
                                             // «احجز الآن» — لا عند «تأكيد الحجز النهائي» فقط.
                                             if (!(await checkBookingLimits())) return;
-                                            // v13.71 — حدّ المسافة قبل فتح الورقة، لا بعد تعبئتها.
-                                            if (await blockedByDistance()) return;
+                                            // v15.36 — كلُّ الموانع قبل فتح الورقة، مجموعةً في رسالةٍ واحدة.
+                                            const stop = preflightStop();
+                                            if (stop.length) { await customAlert(preflightMessage(stop, isRTL)); return; }
                                             setShowBookingModal(true);
                                         }}
                                         disabled={isSoldOut && !booked}
