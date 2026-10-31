@@ -860,12 +860,22 @@ textarea:focus {
   z-index: 40;
 }
 
+/* 🔴 v15.36 — كان: `linear-gradient(var(--dark), var(--gray-900))` ونصٌّ
+   بـ`var(--white)`. والرمزان **يُقلبان** في الوضع الليليّ لأنهما رمزا **نصّ**
+   لا خلفية: `--gray-900` يصير `#ffffff` و`--white` يصير `#1a1a1a`.
+   فكان أهمُّ زرٍّ في التطبيق يُرسم تدرّجاً أردوازياً ← **أبيض** بنصٍّ شبه
+   أسود، تباينُه عند الطرف الأردوازيّ **١٫٦٨** (المطلوب ≥ ٤٫٥) — فيبدو
+   معطَّلاً لا رئيسياً، وهو ما صوّره ناصر.
+   و`--primary` يقلب نفسه **صحيحاً** (أردوازيّ فاتحاً · أخضر ليلاً · بنفسجيّ
+   موسمياً) فالوضعُ الفاتح يبقى كما هو حرفياً، ويُصلَح الليليُّ والموسميّ معاً.
+   🪤 والنصُّ `#fff` ثابتاً لا `var(--white)`: لونٌ فوق خلفيةٍ ثابتة يُكتب
+   ثابتاً ولا يتبع الثيم (درس v14.64). */
 .book-btn {
   width: 100%;
   padding: 14px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--dark), var(--gray-900));
-  color: var(--white);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
   font-size: 1.05rem;
   font-weight: 700;
   display: flex;
