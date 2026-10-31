@@ -60,13 +60,22 @@ const QrImage: React.FC<QrImageProps> = ({
         if (!value) { setSrc(''); setFailed(false); return; }
         setFailed(false);
         (async () => {
-            // 🔴 v15.38 — `import('qrcode')` **طلبٌ شبكيّ**: المولّد في حزمةٍ
-            //    كسولة مستقلّة (قِيست ٢٨ ك.ب) لا في حزمة الصفحة. فتعثّرٌ لحظيّ
-            //    واحد — إشارةٌ ضعيفة عند باب المتجر، نفقٌ، شبكةُ ضيافة تطلب
-            //    تسجيلاً — كان يُسقط الرمز **نهائياً**: لا إعادة محاولة، فيبقى
-            //    «تعذّر رسم الرمز» حتى تُعاد الصفحة كلُّها. والمشتري واقفٌ أمام
-            //    الكاشير. ⇒ ثلاث محاولات بتراجعٍ متزايد، ثمّ نقرةٌ تُعيد الكرّة.
-            // 🪤 والرقمُ يبقى ظاهراً في كل الحالات — هو ما يُتمّ الاستلام.
+            // 🔴🔴 v15.39 — **الرمزُ لم يُرسم ولا مرّة منذ v14.79**، والسببُ سطرٌ
+            //    واحد: `(await import('qrcode')).default`. وحزمة `qrcode`
+            //    **CommonJS**، وParcel يُسجّلها في الحزمة مُصدِّرةً
+            //    `create · toCanvas · toDataURL · toString` **بلا `default`**
+            //    (قِيس في `dist`: `e(t.exports,"toDataURL",…)` وصفرُ `default`).
+            //    فـ`.default` تساوي `undefined`، و`undefined.toDataURL(...)`
+            //    ترمي **دائماً** — فيُلتقط الاستثناء ويُعرض الرقمُ بديلاً.
+            //    والعطلُ كان صامتاً تماماً: لا خطأ على الشاشة، والبديلُ مصمَّمٌ
+            //    ليبدو معقولاً، والاختبارُ الوحيد الممكن هو النظر إلى الرمز.
+            // 🪤 ولا تُقرأ `.default` وحدها من وحدةٍ قد تكون CJS: الاستيرادُ
+            //    الساكن (`import QRCode from 'qrcode'` في `utils/zatcaQr.ts`)
+            //    يمرّ بمُهايئ Parcel فيعمل، والديناميكيُّ **لا يمرّ به**.
+            // 🪤 و`import()` هنا ليس طلباً شبكياً أصلاً: Parcel يُصرّفه إلى
+            //    `Promise.resolve(require(...))` من حزمةٍ محمَّلة. فإعادةُ
+            //    المحاولة لا تُصلح عطلاً برمجياً — تبقى شبكةَ أمانٍ لتحميلٍ
+            //    فاشلٍ حقيقيّ وحده، ولا تؤخّر الحالة السليمة (أوّل محاولة فوراً).
             const tries = [0, 400, 1200];
             let lastErr: unknown;
             for (let i = 0; i < tries.length; i++) {
@@ -74,7 +83,11 @@ const QrImage: React.FC<QrImageProps> = ({
                 if (tries[i]) await new Promise(r => setTimeout(r, tries[i]));
                 if (!alive) return;
                 try {
-                    const QRCode = (await import('qrcode')).default;
+                    // 🪤 ولهذا كان العطلُ خفيّاً تماماً: `@types/qrcode` تُصرّح
+                    //    بـ`default` (بحكم esModuleInterop) بينما Parcel لا
+                    //    يُصدّرها — ففحصُ الأنواع كان **يُبرّئ السطرَ المعطوب**.
+                    const mod = await import('qrcode');
+                    const QRCode = (mod as unknown as { default?: typeof mod }).default ?? mod;
                     const url = await QRCode.toDataURL(String(value), {
                         errorCorrectionLevel: 'M',
                         margin,
