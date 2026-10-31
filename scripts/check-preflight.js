@@ -57,13 +57,24 @@ check('سالك: التوصيلُ متاح ⇒ المسافةُ ليست مان�
     run({ selectedKm: 1129, nearestKm: 12, deliveryPossible: true }).length === 0);
 
 // ── ٤) السقفُ والنفادُ في الفرع المختار ────────────────────────────────────
-check('يُمنع: نوعٌ نفد في هذا الفرع (cap = 0)',
-    has(run({ hasVariants: true, variantPiecesTotal: 1, picks: [{ label: 'كبير', sel: 1, cap: 0 }] }), 'غير متوفر في الفرع المختار'));
+check('يُمنع: نوعٌ نفد — وبذكر الفرع حين تتعدّد الفروع',
+    has(run({ hasVariants: true, variantPiecesTotal: 1, multiBranch: true, picks: [{ label: 'كبير', sel: 1, cap: 0 }, { label: 'صغير', sel: 0, cap: 5 }] }), 'غير متوفر في الفرع المختار'));
+// 🪤 v15.38 — عرضٌ بموقعٍ واحد لا «فرعَ مختارَ» فيه، فقولُها كذبٌ يُربك المشتري.
+check('ولا تُذكر «الفرع المختار» لعرضٍ بموقعٍ واحد',
+    !has(run({ hasVariants: true, variantPiecesTotal: 1, picks: [{ label: 'كبير', sel: 1, cap: 0 }] }), 'الفرع المختار'));
 check('يُمنع: الكمّيةُ تتجاوز سقفَ الفرع',
     has(run({ hasVariants: true, variantPiecesTotal: 9, picks: [{ label: 'كبير', sel: 9, cap: 3 }] }), 'خفّف الكمية'));
 check('ولا يُتّهم نوعٌ لم يُختر (sel = 0) وإن نفد',
     run({ hasVariants: true, variantPiecesTotal: 1,
           picks: [{ label: 'كبير', sel: 0, cap: 0 }, { label: 'صغير', sel: 1, cap: 5 }] }).length === 0);
+
+// ── ٤ب) نصيحةٌ مستحيلة: «اضغط + أضف» وكلُّ الأنواع نفدت هنا ─────────────────
+const allOut = run({ hasVariants: true, variantPiecesTotal: 0, multiBranch: true,
+                     picks: [{ label: 'كبير', sel: 0, cap: 0 }, { label: 'صغير', sel: 0, cap: 0 }] });
+check('كلُّ الأنواع نفدت ⇒ «اختر فرعاً آخر» لا «اضغط + أضف»',
+    has(allOut, 'كل الأنواع نفدت') && !has(allOut, 'أضف'), JSON.stringify(allOut));
+check('وبعضُها متاح ⇒ تبقى النصيحةُ «اضغط + أضف»',
+    has(run({ hasVariants: true, variantPiecesTotal: 0, picks: [{ label: 'كبير', sel: 0, cap: 0 }, { label: 'صغير', sel: 0, cap: 4 }] }), 'أضف'));
 
 // ── ٥) الأسبابُ تُجمع في رسالةٍ واحدة (لا واحدةً تلو أخرى) ──────────────────
 const both = run({ hasVariants: true, variantPiecesTotal: 0, selectedKm: 1129.6,
@@ -101,8 +112,22 @@ const page = fs.readFileSync(path.join(__dirname, '..', 'src/pages/DealDetails.t
 check('الزرُّ يفحص **قبل** فتح الورقة',
     /const stop = preflightStop\(\);\s*if \(stop\.length\)[\s\S]{0,160}?return; \}\s*setShowBookingModal\(true\)/.test(page));
 check('ولم يبقَ حارسُ المسافة القديم وحده', !/blockedByDistance/.test(page));
-check('والاختيارُ التلقائيّ يُعاد عند وصول المسافات',
-    /locChosen\.current \|\| variantPiecesTotal > 0/.test(page) && /locChosen\.current = true/.test(page));
+// 🪤 منتقي الفروع يُعطّل الفرعَ النافد — فاقتراحُه نصيحةٌ لا تُنفَّذ.
+check('والفرعُ المقترَح يُفحص أنه يبيع فعلاً', /\.find\(l => branchHasStock\(l\)/.test(page));
+check('والتأكيدُ يشارك نفسَ القاعدة (لا نصٌّ ثانٍ ينحرف)',
+    /preflightStop\(\{ deliveryPossible: fulfillment === 'delivery'/.test(page));
+check('ولا رقمَ ساعاتٍ مثبَّتٌ في فحوص المسافة', !/مهلة الاستلام \(ساعتان\)|2-hour pickup window/.test(page));
+// 🔴 v15.38 — النمطُ القديم كان `locChosen.current || variantPiecesTotal > 0`،
+//    و«قطعةٌ مختارة» تتحقّق فوراً لأن فتحَ العرض يختار أوّلَ نوعٍ تلقائياً ⇒
+//    إعادةُ الاختيار كانت **ميّتة** في كلّ عرضٍ له أنواع. فالعقدُ الآن:
+//    تُعاد مرّةً واحدة · حين تصل المسافات · ما لم يختر المشتري · ولا والورقةُ مفتوحة.
+check('إعادةُ الاختيار حيّة: مرّةً واحدة عند وصول المسافات',
+    /const haveKm = [\s\S]{0,120}?distance != null/.test(page)
+    && /!locChosen\.current && !showBookingModal && haveKm && !locAutoDone\.current/.test(page)
+    && /locAutoDone\.current = true/.test(page));
+check('ولا تُعفى بمجرّد وجود نوعٍ مختار (العيبُ القديم)',
+    !/locChosen\.current \|\| variantPiecesTotal > 0/.test(page));
+check('ونقرُ المشتري يُثبّت الفرع', /locChosen\.current = true/.test(page));
 
 console.log(fail === 0
     ? `✅ ما يمنع الحجز: ${pass} فحصاً — يُقال على صفحة العرض، ومجموعاً، وبالفرع المختار`

@@ -504,6 +504,8 @@ const DealDetails: React.FC = () => {
     const [selectedLocId, setSelectedLocId] = useState<string>(() => queryParams.get('loc') || '');
     /** رفعها نقرُ المشتري على فرع (أو `?loc=`) ⇒ لا يُعاد الاختيارُ التلقائيّ فوقه. */
     const locChosen = React.useRef<boolean>(!!queryParams.get('loc'));
+    /** إعادةُ الاختيار عند وصول المسافات تقع **مرّةً واحدة** لكلّ عرض. */
+    const locAutoDone = React.useRef(false);
     const [selectedPrepTime, setSelectedPrepTime] = useState('arrival');
     const [bookingNotes, setBookingNotes] = useState('');
     const [showBookingModal, setShowBookingModal] = useState(false);
@@ -727,9 +729,16 @@ const DealDetails: React.FC = () => {
         // 🔴 v15.36 — الاختيارُ يقع قبل وصول موقع المشتري (المسافاتُ null فالترتيبُ
         // كما هو) فيُختار أوّلُ فرع؛ ثمّ يصل الموقعُ ويُعاد الترتيب ولا يُعاد الاختيار
         // لأن المختارَ صار «صالحاً» ⇒ «📍 الأقرب» على فرعٍ والمختارُ على ١١٢٩ كم.
-        // 🪤 ولا يُدهَس اختيارُ المشتري: `locChosen` يرتفع بنقره، و`?loc=` يُثبّت.
+        // 🔴 v15.38 — كان الشرط يُعفي أيضاً حين `variantPiecesTotal > 0`، وهي
+        // **تتحقّق فوراً**: فتحُ العرض يختار أوّلَ نوعٍ بكمّية ١ تلقائياً. فكان
+        // الإصلاحُ ميّتاً في كلّ عرضٍ له أنواع — ومنه عرضُ ناصر نفسه.
+        // 🪤 والبديلُ ليس إلغاءَ الحارس: الاختيارُ يُعاد **مرّةً واحدة** حين تصل
+        //    المسافات، ولا يُعاد والورقةُ مفتوحة (تبديلُ الفرع يقلّم ما اختاره).
         const valid = deal.locations.some(l => l.id === selectedLocId);
-        if (!valid || !(locChosen.current || variantPiecesTotal > 0)) {
+        const haveKm = !!sortedLocations?.some(l => (l as any).distance != null);
+        const mayAuto = !locChosen.current && !showBookingModal && haveKm && !locAutoDone.current;
+        if (!valid || mayAuto) {
+            if (haveKm) locAutoDone.current = true;
             const list = (sortedLocations?.length ? sortedLocations : deal.locations) as typeof deal.locations; // v15.34 — الأقربُ الذي فيه شيء
             const next = (list.find(branchHasStock) || list[0])?.id || deal.locations[0].id;
             if (next !== selectedLocId) setSelectedLocId(next);
@@ -1167,19 +1176,21 @@ const DealDetails: React.FC = () => {
      * 🪤 وموضعُها هنا لا أعلى: تعتمد `variantCapHere` و`dlvCanChoose`، ووضعُها
      *    قبلهما يرفعه TypeScript ويسقط حيّاً بـTDZ في مصفوفة التبعيات.
      */
-    const preflightStop = React.useCallback((): string[] => {
-        const sel = sortedLocations?.find(l => l.id === (selectedLocId || dealLocations?.[0]?.id)) as any;
-        const near = sortedLocations?.[0] as any;
+    const preflightStop = React.useCallback((o?: { deliveryPossible?: boolean }): string[] => {
+        const sel = sortedLocations?.find(l => l.id === (activeLoc?.id || selectedLocId)) as any;
+        // 🪤 v15.38 — الفرعُ المقترَح يجب أن يكون **صالحاً للحجز**: منتقي الفروع
+        //    يُعطّل الفرعَ النافد، فاقتراحُه نصيحةٌ لا تُنفَّذ.
+        const near = (sortedLocations || []).find(l => branchHasStock(l) && typeof (l as any).distance === 'number') as any;
         const num = (x: unknown) => (typeof x === 'number' ? x : null);
         return bookingPreflight({
-            isRTL, hasVariants: variants.length > 0, variantPiecesTotal,
+            isRTL, hasVariants: variants.length > 0, variantPiecesTotal, multiBranch: !!dealLocations,
             picks: variants.map(v => ({ label: v.label, sel: varSel[v.id] || 0, cap: variantCapHere(v) })),
             selectedKm: sortedLocations ? num(sel?.distance) : nearestDistanceKm,
             selectedName: sel?.name, nearestKm: num(near?.distance), nearestName: near?.name,
-            deliveryPossible: dlvCanChoose, holdText: holdLabel(holdHours.pickup, isRTL),
+            deliveryPossible: o?.deliveryPossible, holdText: holdLabel(holdHours.pickup, isRTL),
         });
-    }, [sortedLocations, selectedLocId, dealLocations, isRTL, variants, variantPiecesTotal, varSel,
-        variantCapHere, nearestDistanceKm, dlvCanChoose, holdHours.pickup]);
+    }, [sortedLocations, activeLoc, selectedLocId, dealLocations, isRTL, variants, variantPiecesTotal,
+        varSel, variantCapHere, nearestDistanceKm, holdHours.pickup]);
     // خيارٌ صار غير متاح بعد اختياره (نقص الكمية تحت الحد الأدنى، أو فرعٌ جديد لا
     // يخدم العنوان) يعود للاستلام من نفسه — فلا يُرسَل حجز توصيل يرفضه الخادم.
     // ولا نُعيده أثناء التسعير، وإلا ضاع اختيارُه بمجرد تبديل الفرع.
@@ -1735,37 +1746,12 @@ const DealDetails: React.FC = () => {
 
         // v12.64 — نسخ المنتج: لا حجز بلا قطعة واحدة على الأقل، وكل نسخة
         // مسقوفة بكميتها المتاحة.
-        if (variants.length) {
-            if (variantPiecesTotal <= 0) {
-                customAlert(isRTL
-                    ? '🧬 اختر مقاساً واحداً على الأقل (اضغط «+ أضف» على المقاس المطلوب).'
-                    : '🧬 Pick at least one version (tap "+ Add" on the size you want).');
-                return;
-            }
-            // v12.97 — في مصفوفة نوع×فرع السقف يأتي من كمية النوع في الفرع المختار.
-            const over = variants.find(v => {
-                const sel = varSel[v.id] || 0;
-                if (sel <= 0) return false;
-                const cap = variantCapHere(v);
-                return typeof cap === 'number' && sel > cap;
-            });
-            if (over) {
-                const cap = variantCapHere(over) ?? over.qty;
-                customAlert(isRTL
-                    ? (matrixMode
-                        ? `⛔ المتاح من «${over.label}» في هذا الفرع ${cap} فقط — خفّف الكمية أو اختر فرعاً آخر.`
-                        : `⛔ المتاح من «${over.label}» ${cap} فقط — خفّف الكمية.`)
-                    : `⛔ Only ${cap} available in "${over.label}"${matrixMode ? ' at this branch' : ''}.`);
-                return;
-            }
-            // v12.97 — منع حجز نوعٍ نفد في الفرع المختار (خانة = 0)
-            const soldHere = variants.find(v => (varSel[v.id] || 0) > 0 && isVariantSoldOutHere(v.id));
-            if (soldHere) {
-                customAlert(isRTL
-                    ? `⛔ «${soldHere.label}» غير متوفر في هذا الفرع — اختر فرعاً آخر أو نوعاً متوفراً.`
-                    : `⛔ "${soldHere.label}" is unavailable at this branch — pick another branch or variant.`);
-                return;
-            }
+        // v15.38 — نفسُ قاعدة صفحة العرض، وبقيمٍ حيّة: الورقةُ تحمل مُدرِّجاً
+        // بلا سقف يستطيع إعادةَ الكمّيات إلى صفر بعد فتحها، فالفحصُ يُعاد هنا
+        // **بنصٍّ واحد** لا بنسخةٍ ثانية تنحرف. وهنا وحده يُعرف اختيارُ التوصيل.
+        {
+            const stop = preflightStop({ deliveryPossible: fulfillment === 'delivery' && !dlvLoading });
+            if (stop.length) { customAlert(preflightMessage(stop, isRTL)); return; }
         }
 
         // v12.66/v12.87 — «اختيارات لكل قطعة» + عرض مجمّع واضح (طلب ناصر):
@@ -1893,12 +1879,9 @@ const DealDetails: React.FC = () => {
             const aSorted = (sortedLocations || []).find(l => l.id === activeLoc.id) as any;
             const d = aSorted && typeof aSorted.distance === 'number' ? aSorted.distance : null;
             if (typeof d === 'number') {
-                if (d > 100) {
-                    customAlert(isRTL
-                        ? `⛔ «${activeLoc.name || 'هذا الفرع'}» يبعد ${Math.round(d)} كم عنك (أكثر من 100 كم). لن تصل خلال مهلة الاستلام (ساعتان) وسيُلغى الحجز تلقائياً — اختر فرعاً أقرب.`
-                        : `⛔ "${activeLoc.name || 'this branch'}" is ${Math.round(d)} km away (over 100 km). You can't arrive within the 2-hour pickup window and the booking would auto-cancel — pick a closer branch.`);
-                    return;
-                }
+                // v15.38 — حظرُ الـ١٠٠ كم حُذف من هنا: `preflightStop` أعلاه يفرضه
+                // بنفس القاعدة وبنصّ مهلةٍ يُقرأ من الإعدادات. وكان هنا نصٌّ ثانٍ
+                // يُثبّت «ساعتان» يدوياً خلافاً لقاعدة v14.10.
                 const nearest = (sortedLocations || [])[0] as any;
                 if (nearest && nearest.id !== activeLoc.id && typeof nearest.distance === 'number' && nearest.distance < d - 0.05) {
                     // v14.09 — `fmtKm` هو نفسه المنسّق الذي كان معرَّفاً هنا حرفياً:

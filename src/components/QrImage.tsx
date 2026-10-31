@@ -48,6 +48,8 @@ const QrImage: React.FC<QrImageProps> = ({
 }) => {
     const [src, setSrc] = useState('');
     const [failed, setFailed] = useState(false);
+    /** v15.38 — يُزاد بالنقر على صندوق الفشل فيُعاد التوليد. */
+    const [attempt, setAttempt] = useState(0);
     // 🪤 `onReady` قد يكون دالّةً جديدة كل تصيير، فوضعُها في مصفوفة الاعتماد
     //    يُعيد التوليد بلا نهاية. تُقرأ من مرجعٍ ثابت.
     const readyRef = useRef(onReady);
@@ -58,24 +60,38 @@ const QrImage: React.FC<QrImageProps> = ({
         if (!value) { setSrc(''); setFailed(false); return; }
         setFailed(false);
         (async () => {
-            try {
-                const QRCode = (await import('qrcode')).default;
-                const url = await QRCode.toDataURL(String(value), {
-                    errorCorrectionLevel: 'M',
-                    margin,
-                    width: size,
-                });
+            // 🔴 v15.38 — `import('qrcode')` **طلبٌ شبكيّ**: المولّد في حزمةٍ
+            //    كسولة مستقلّة (قِيست ٢٨ ك.ب) لا في حزمة الصفحة. فتعثّرٌ لحظيّ
+            //    واحد — إشارةٌ ضعيفة عند باب المتجر، نفقٌ، شبكةُ ضيافة تطلب
+            //    تسجيلاً — كان يُسقط الرمز **نهائياً**: لا إعادة محاولة، فيبقى
+            //    «تعذّر رسم الرمز» حتى تُعاد الصفحة كلُّها. والمشتري واقفٌ أمام
+            //    الكاشير. ⇒ ثلاث محاولات بتراجعٍ متزايد، ثمّ نقرةٌ تُعيد الكرّة.
+            // 🪤 والرقمُ يبقى ظاهراً في كل الحالات — هو ما يُتمّ الاستلام.
+            const tries = [0, 400, 1200];
+            let lastErr: unknown;
+            for (let i = 0; i < tries.length; i++) {
                 if (!alive) return;
-                setSrc(url);
-                readyRef.current?.(url);
-            } catch (e) {
+                if (tries[i]) await new Promise(r => setTimeout(r, tries[i]));
                 if (!alive) return;
-                console.warn('QrImage: تعذّر توليد الرمز', e);
-                setFailed(true);
+                try {
+                    const QRCode = (await import('qrcode')).default;
+                    const url = await QRCode.toDataURL(String(value), {
+                        errorCorrectionLevel: 'M',
+                        margin,
+                        width: size,
+                    });
+                    if (!alive) return;
+                    setSrc(url);
+                    readyRef.current?.(url);
+                    return;
+                } catch (e) { lastErr = e; }
             }
+            if (!alive) return;
+            console.warn('QrImage: تعذّر توليد الرمز بعد ٣ محاولات', lastErr);
+            setFailed(true);
         })();
         return () => { alive = false; };
-    }, [value, size, margin]);
+    }, [value, size, margin, attempt]);
 
     if (failed || !src) {
         // مربّع محجوز بنفس المقاس فلا تقفز الصفحة.
@@ -92,17 +108,22 @@ const QrImage: React.FC<QrImageProps> = ({
                     color: 'var(--text-secondary)', fontSize: '0.6rem',
                     fontWeight: 800, textAlign: 'center', padding: 6,
                     overflowWrap: 'anywhere', lineHeight: 1.5,
+                    cursor: failed ? 'pointer' : undefined,
                     ...style,
                 }}
-                role={failed ? 'img' : undefined}
-                aria-label={failed ? `${alt}: ${value}` : undefined}
+                role={failed ? 'button' : undefined}
+                tabIndex={failed ? 0 : undefined}
+                aria-label={failed ? `${alt}: ${value} — اضغط لإعادة المحاولة` : undefined}
                 aria-hidden={!failed}
+                onClick={failed ? () => { setFailed(false); setAttempt(n => n + 1); } : undefined}
+                onKeyDown={failed ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFailed(false); setAttempt(n => n + 1); } } : undefined}
             >
                 {failed && (
                     <>
                         <span style={{ fontSize: '0.9rem' }}>⚠️</span>
                         <span dir="ltr" style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'var(--text-primary)' }}>{value}</span>
                         <span>تعذّر رسم الرمز — استعمل هذا الرقم</span>
+                        <span style={{ color: 'var(--primary)', fontWeight: 900 }}>↻ اضغط لإعادة المحاولة</span>
                     </>
                 )}
             </div>

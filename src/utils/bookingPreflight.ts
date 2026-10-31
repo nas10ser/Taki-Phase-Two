@@ -17,6 +17,11 @@
  *
  * 🪤 ولا تُحجب حالةُ التوصيل بالمسافة: مَن يصله الطلبُ إلى بابه لا يعنيه بُعدُ
  *    الفرع، ونطاقُ التوصيل هو الحاكم هناك (`delivery_quote` في القاعدة).
+ * 🔴 **و`deliveryPossible` لا تُعرف عند أوّل ضغطة** (v15.38): سعرُ التوصيل لا
+ *    يُطلب إلا بعد فتح الورقة، فالقيمةُ قبلها `false` حتماً. فتُترك غائبةً
+ *    هناك — والفحصُ الأوّل فحصُ **استلام** لأن الاستلام هو الوضع الافتراضيّ —
+ *    وتُمرَّر صادقةً عند التأكيد حيث يكون الاختيارُ معروفاً.
+ *    (وكانت الوحدة تَعِد بإعفاءٍ لا يقع أبداً — ووعدٌ لا يُنفَّذ أسوأ من لا وعد.)
  * 🪤 ونصُّ المهلة **يُمرَّر ولا يُكتب هنا**: قاعدة v14.10 — لا رقمَ ساعاتٍ
  *    مكتوبٌ في نصّ، مصدرُه `utils/bookingHold.ts` وحده.
  * 🪤 والوحدةُ **نقيّة** بلا React: تُختبر بالقيم في `scripts/check-preflight.js`.
@@ -40,8 +45,11 @@ export interface PreflightInput {
     /** الأنواعُ وما اختاره المشتري منها وسقفُها في الفرع المختار
      *  (`cap === 0` نفد هنا · `undefined` مفتوحٌ بلا سقف) */
     picks?: Array<{ label: string; sel: number; cap: number | undefined }>;
-    /** التوصيل متاحٌ فعلاً لهذا المشتري ⇒ المسافةُ ليست مانعاً */
+    /** التوصيل متاحٌ فعلاً لهذا المشتري ⇒ المسافةُ ليست مانعاً.
+     *  🪤 تُترك غائبةً قبل فتح الورقة — لا تُعرف هناك. */
     deliveryPossible?: boolean;
+    /** للعرض فروعٌ متعدّدة ⇒ يصحّ قولُ «في الفرع المختار». وإلّا فلا فرعَ أصلاً. */
+    multiBranch?: boolean;
     /** نصّ مهلة الاستلام جاهزاً («ساعتان» / «two hours») */
     holdText: string;
 }
@@ -56,25 +64,35 @@ export const bookingPreflight = (i: PreflightInput): string[] => {
     const out: string[] = [];
     const ar = i.isRTL;
 
+    const picks = i.picks || [];
+    // 🔴 v15.38 — «اضغط + أضف» نصيحةٌ مستحيلة حين تكون كلُّ الأنواع صفراً في
+    //    الفرع المختار: لا شيء يُضاف. وهذا يقع فعلاً بعد اختيار فرعٍ نفد فيه
+    //    كلُّ شيء — فالرسالةُ تقول ما يُفعل حقاً: بدّل الفرع.
+    const everyPickOut = picks.length > 0 && picks.every(p => p.cap === 0);
     if (i.hasVariants && i.variantPiecesTotal <= 0) {
-        out.push(ar
-            ? '🧬 لم تختر الحجم أو النوع — اضغط «+ أضف» على ما تريده من القائمة أعلاه.'
-            : '🧬 No size/variant selected — tap “+ Add” on the one you want above.');
+        out.push(everyPickOut
+            ? (ar
+                ? `⛔ كل الأنواع نفدت${i.multiBranch ? ' في الفرع المختار' : ''} — ${i.multiBranch ? 'اختر فرعاً آخر من قائمة المواقع أعلاه.' : 'لا يمكن الحجز الآن.'}`
+                : `⛔ Every variant is sold out${i.multiBranch ? ' at the selected branch' : ''} — ${i.multiBranch ? 'pick another branch above.' : 'booking is not possible right now.'}`)
+            : (ar
+                ? '🧬 لم تختر الحجم أو النوع — اضغط «+ أضف» على ما تريده من القائمة أعلاه.'
+                : '🧬 No size/variant selected — tap “+ Add” on the one you want above.'));
     }
 
-    const chosen = (i.picks || []).filter(p => p.sel > 0);
+    const where = i.multiBranch ? (ar ? ' في الفرع المختار' : ' at the selected branch') : '';
+    const chosen = picks.filter(p => p.sel > 0);
     const soldOut = chosen.find(p => p.cap === 0);
     if (soldOut) {
         out.push(ar
-            ? `⛔ «${soldOut.label}» غير متوفر في الفرع المختار — اختر نوعاً آخر أو فرعاً آخر.`
-            : `⛔ “${soldOut.label}” is unavailable at the selected branch — pick another variant or branch.`);
+            ? `⛔ «${soldOut.label}» غير متوفر${where} — اختر نوعاً آخر${i.multiBranch ? ' أو فرعاً آخر' : ''}.`
+            : `⛔ “${soldOut.label}” is unavailable${where} — pick another variant${i.multiBranch ? ' or branch' : ''}.`);
     }
 
     const over = chosen.find(p => typeof p.cap === 'number' && p.cap > 0 && p.sel > p.cap);
     if (over) {
         out.push(ar
-            ? `⛔ المتاح من «${over.label}» في الفرع المختار ${over.cap} فقط — خفّف الكمية.`
-            : `⛔ Only ${over.cap} of “${over.label}” left at the selected branch — reduce the quantity.`);
+            ? `⛔ المتاح من «${over.label}»${where} ${over.cap} فقط — خفّف الكمية.`
+            : `⛔ Only ${over.cap} of “${over.label}” left${where} — reduce the quantity.`);
     }
 
     // المسافة: الفرعُ **المختار** هو الذي سيستلم منه، لا الأقرب.
