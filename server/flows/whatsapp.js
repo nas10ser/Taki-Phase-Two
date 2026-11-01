@@ -874,10 +874,9 @@ function create(deps) {
         await sendButtons(from, { body: '—', buttons: row3.slice(0, 3) });
         // v14.10 — «استلمت طلبي» في صفٍّ مستقلّ: الصفّ أعلاه ممتلئ بثلاثة أزرار
         // وواتساب يبتر الرابع **بصمت**، فوضعه هناك يعني ميزةً لا تظهر أبداً.
-        // ولا يظهر إلا بعد أن يعلن التاجر انطلاق المندوب — والقاعدة تفرض الشرط نفسه.
-        if (b.fulfillment === 'delivery'
-            && (b.status === 'pending' || b.status === 'acknowledged')
-            && WA_DLV_DISPATCHED.includes(String(b.dlv_status || ''))) {
+        // v15.41 — لكلّ طلبٍ حيّ؛ وانطلاقُ المندوب شرطٌ للتوصيل وحده (والقاعدة تفرضه).
+        if ((b.status === 'pending' || b.status === 'acknowledged')
+            && (b.fulfillment !== 'delivery' || WA_DLV_DISPATCHED.includes(String(b.dlv_status || '')))) {
             await sendButtons(from, {
                 body: tr('b_confirm_receipt_ask', bc).replace(/\\/g, ''),
                 buttons: [{ id: `wa:rcv:${bc}`, title: trunc(tr('b_confirm_receipt'), LIM.btnTitle) },
@@ -2225,6 +2224,7 @@ function create(deps) {
         }
         // v12.50 — رفض القاعدة في الوضع المجاني.
         if (r && r.error === 'free_mode') return sendButtons(from, { body: tr('wa_sub_free_mode'), buttons: [menuBtn()] });
+        if (r && r.error === 'payment_not_confirmed') return sendButtons(from, { body: tr('wa_sub_unpaid'), buttons: [menuBtn()] }); // v15.40
         await sendButtons(from, { body: tr('wa_sub_fail'), buttons: [{ id: 'wa:s:sub', title: tr('menu_subscription') }] });
     }
     async function showStoreProfile(from, s) {

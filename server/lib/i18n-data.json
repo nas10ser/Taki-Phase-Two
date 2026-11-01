@@ -8354,5 +8354,13 @@
   "stk_off": {
     "ar": "موقوف",
     "en": "off"
+  },
+  "b2081_subscribe_unpaid": {
+    "ar": "💳 *لم تصل دفعةُ الاشتراك بعد*\\.\nأكمِل الدفع من صفحة الاشتراك في الموقع، ثمّ أعد المحاولة هنا\\.",
+    "en": "💳 *No subscription payment received yet*\\.\nComplete the payment on the website’s subscription page, then try again here\\."
+  },
+  "wa_sub_unpaid": {
+    "ar": "💳 لم تصل دفعةُ الاشتراك بعد. أكمِل الدفع من صفحة الاشتراك في الموقع ثمّ أعد المحاولة.",
+    "en": "💳 No subscription payment received yet. Complete the payment on the website’s subscription page, then try again."
   }
 }

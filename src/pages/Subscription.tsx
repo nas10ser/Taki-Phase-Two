@@ -197,14 +197,10 @@ const Subscription: React.FC = () => {
                         + (subErr?.message || applied?.error || t('خطأ غير معروف', 'unknown error')));
                     return;
                 }
-                // تسجيل الدفعة → تصدر الفاتورة ويصل الإشعار تلقائياً (تريغر v12.17). best-effort.
-                // الأرقام من ردّ الخادم لا من الواجهة، فتطابق الفاتورةُ ما فُعِّل فعلاً.
-                try {
-                    await supabase.rpc('record_subscription_payment', {
-                        p_amount: applied.amount, p_days: applied.days,
-                        p_max: applied.max_branches, p_plan_label: selected.ar,
-                    });
-                } catch { /* الفاتورة لا تعطّل الاشتراك */ }
+                // 🔴 v15.40 — حُذف نداءُ `record_subscription_payment`: كان ممنوحاً
+                // لكلّ موثَّق ويُدرج صفّاً «مدفوعة» بلا سقف — فأيُّ تاجرٍ يحقن
+                // إيراداً وهمياً ويحرق أرقامَ فواتير ضريبية. صار للخادم وحده،
+                // وفاتورةُ الاشتراك تُكتب من خطّاف البوّابة بمرجعٍ حقيقيّ.
                 await customAlert(t(
                     '✅ تم الاشتراك بنجاح! شكراً لثقتك في تاكي. 🧾 فاتورتك جاهزة أسفل هذه الصفحة.',
                     '✅ Subscribed successfully! Thank you for trusting TAKI. 🧾 Your invoice is ready at the bottom of this page.',

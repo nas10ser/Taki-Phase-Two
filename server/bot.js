@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.28.0';
+const BOT_VERSION              = '15.41.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1982,9 +1982,9 @@ async function showBuyerBookings(ctx, scope='current') {
         if (b.store_id) row2.push(Markup.button.callback(tr('b1202_store'), `store:${b.store_id}`));
         if (row2.length) rows.push(row2);
         const row3 = [];
-        // v14.10 — «استلمت طلبي»: لا يظهر إلا بعد أن يعلن التاجر انطلاق المندوب،
-        // والقاعدة تفرض الشرط نفسه (`not_dispatched`) فلا زرّ يعرضه البوت ويرفضه الخادم.
-        if (active && String(b.fulfillment||'pickup')==='delivery' && DLV_DISPATCHED.includes(String(b.dlv_status||'')))
+        // v14.10/v15.41 — «استلمت طلبي» لكلّ طلبٍ حيّ؛ وشرطُ انطلاق المندوب للتوصيل
+        // وحده، والقاعدة تفرض الشرط نفسه فلا زرّ يعرضه البوت ويرفضه الخادم.
+        if (active && (String(b.fulfillment||'pickup')!=='delivery' || DLV_DISPATCHED.includes(String(b.dlv_status||''))))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
         // v14.18/v14.21 — حالة الاسترداد على البطاقة نفسها، فلا يبقى المشتري
         // ينتظر جواباً لا يراه. الحقول تأتي من `bot_get_my_bookings`/الفاتورة.
@@ -3384,7 +3384,7 @@ bot.action(/^subgo:(\d+)$/, async ctx => {
         const e=r?.error;
         // v12.50 — القاعدة ترفض الاشتراك في الوضع المجاني (حزام أمان خلف إخفاء الشاشات).
         if (e==='free_mode') return safeReplyMd(ctx, tr('pkg_free_mode', DIV), { reply_markup: KB_BACK().reply_markup });
-        const msg = e==='not_seller' ? tr('b2081_sellers_only') : e==='bad_package' ? tr('b2081_package_unavailable') : tr('b2081_subscribe_failed');
+        const msg = e=='not_seller' ? tr('b2081_sellers_only') : e==='bad_package' ? tr('b2081_package_unavailable') : e==='payment_not_confirmed' ? tr('b2081_subscribe_unpaid') : tr('b2081_subscribe_failed'); // v15.40 — رمزٌ يجهله البوت يسقط إلى «تعذّر» العامّ (درس v14.96)
         return ctx.reply(msg, { parse_mode:'MarkdownV2', reply_markup: KB_BACK().reply_markup });
     }
     const doneVat = Number(r.vat) > 0

@@ -741,9 +741,15 @@ const Bookings: React.FC = () => {
                                                     للمخزون فتُباع لشخص آخر. الزرّ لا يظهر إلا بعد أن يعلن
                                                     التاجر انطلاق المندوب — والقاعدة تفرض الشرط نفسه، فالواجهة
                                                     مرآةٌ لا حارس. */}
-                                                {booking.fulfillment === 'delivery'
-                                                  && (booking.status === 'pending' || booking.status === 'acknowledged')
-                                                  && DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || '')) && (
+                                                {/* 🔴 v15.41 (أمرُ ناصر) — كان الزرُّ لطلبات التوصيل وحدها،
+                                                    وطلبُ الاستلام من المتجر لا يملك المشتري إغلاقَه أبداً.
+                                                    وعلّةُ v14.10 نفسُها قائمةٌ فيه: طلبٌ سُلِّم ونسي التاجرُ
+                                                    ختمَه ينقلب «ملغى» وتُباع كمّيتُه مرّةً ثانية. والاستلام
+                                                    هو الوضعُ الافتراضيّ — وكلُّ طلبات المنصّة اليوم منه.
+                                                    🪤 وشرطُ انطلاق المندوب باقٍ للتوصيل وحده. */}
+                                                {(booking.status === 'pending' || booking.status === 'acknowledged')
+                                                  && (booking.fulfillment !== 'delivery'
+                                                      || DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || ''))) && (
                                                     <button
                                                         disabled={confirmingBarcode === booking.barcode}
                                                         onClick={async (e) => {
