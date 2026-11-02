@@ -424,6 +424,19 @@ export const bookingRepository = {
         logger.log('✅ Buyer confirmed receipt:', barcode);
     },
 
+    /**
+     * v15.42 — اختصارُ التاجر: ختمُ الطلب **بلا كود**، للتاجر وحده وبعد
+     * مهلة `self_close_minutes` (P0028 من القاعدة إن سبق وقتَه).
+     * 🪤 ولا تُستعمل مكان `completeBooking`: مسارُ الكود هو الأصل، وهو فوريٌّ
+     *    بلا مهلة — فعميلٌ واقفٌ عند الصندوق لا يُؤذَى بانتظار.
+     */
+    merchantHandover: async (barcode: string): Promise<void> => {
+        const { data, error } = await supabase.rpc('merchant_handover_booking', { p_barcode: barcode });
+        if (error) throw error;
+        if (!data) throw new Error('RPC returned no row');
+        logger.log('✅ Merchant handover (no code):', barcode);
+    },
+
     remove: async (barcode: string): Promise<void> => {
         // v13.71 — كان يبتلع كل شيء: لا يقرأ `error` العائد أصلاً، ولا يميّز
         // حذفاً رفضته RLS (يعود بصفر صفوف و`error=null`). أي نداء مستقبلي كان

@@ -17,6 +17,7 @@ import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 import { clickable } from '../utils/clickable';
 import QrImage from '../components/QrImage';
+import SelfCloseNotice from '../components/SelfCloseNotice';
 
 const BookingTimer: React.FC<{ expiry: number, onExpire: () => void }> = ({ expiry, onExpire }) => {
     const [timeLeft, setTimeLeft] = useState(Math.max(0, expiry - Date.now()));
@@ -747,9 +748,19 @@ const Bookings: React.FC = () => {
                                                     ختمَه ينقلب «ملغى» وتُباع كمّيتُه مرّةً ثانية. والاستلام
                                                     هو الوضعُ الافتراضيّ — وكلُّ طلبات المنصّة اليوم منه.
                                                     🪤 وشرطُ انطلاق المندوب باقٍ للتوصيل وحده. */}
+                                                {/* 🔴 v15.42 (أمرُ ناصر) — ولا يظهر لحظةَ الحجز: مشترٍ يضغطه
+                                                    من بيته يُختم طلبُه «مكتملاً» فتُصدَر فاتورتُه الضريبيّة
+                                                    ويُخصم المخزون ويفقد حقَّ الإلغاء — وهو لم يذهب أصلاً.
+                                                    والمهلةُ من `booked_at`، والقاعدة تفرضها بـP0028. */}
                                                 {(booking.status === 'pending' || booking.status === 'acknowledged')
                                                   && (booking.fulfillment !== 'delivery'
                                                       || DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || ''))) && (
+                                                  <SelfCloseNotice
+                                                    bookedAt={booking.bookedAt}
+                                                    waiting={left => (isRTL
+                                                        ? `زرّ «استلمت طلبي» يُفتح بعد ${left} من وقت الحجز`
+                                                        : `“I received my order” unlocks ${left} after booking`)}
+                                                  >
                                                     <button
                                                         disabled={confirmingBarcode === booking.barcode}
                                                         onClick={async (e) => {
@@ -784,6 +795,7 @@ const Bookings: React.FC = () => {
                                                             ? (isRTL ? '⏳ جارٍ التأكيد…' : '⏳ Confirming…')
                                                             : (isRTL ? '✅ استلمت طلبي' : '✅ I received my order')}
                                                     </button>
+                                                  </SelfCloseNotice>
                                                 )}
 
                                                 {/* Buyer↔Seller chat thread (3+3 cap). Hidden once the

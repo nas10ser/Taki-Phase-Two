@@ -27,8 +27,14 @@ export interface PlatformSettings {
     sponsorLayout: SponsorLayout;
     bannerSeconds: number;
     /** v14.10 — مهلة الحجز بالساعات، مصدرها الوحيد صفّ `booking_holds`.
-     *  الافتراضات هنا للعرض حتى يصل الصفّ، والقاعدة هي الحَكَم دائماً. */
-    bookingHolds: { pickupHours: number; deliveryHours: number };
+     *  الافتراضات هنا للعرض حتى يصل الصفّ، والقاعدة هي الحَكَم دائماً.
+     *  v15.42 — و`selfCloseMinutes` كم دقيقةً بعد الحجز قبل أن يُسمح بالختم
+     *  **بلا كود**: «استلمتُ طلبي» للمشتري، واختصارُ التسليم للتاجر. و٠ تعني
+     *  «بلا مهلة» — فهي قيمةٌ صالحة لا عطل، ولذلك أرضيّتُها ٠ لا ٠٫٢٥.
+     *  🪤 وحقلٌ داخل `booking_holds` لا مفتاحٌ جديد: المفتاحُ الجديد يحتاج
+     *  ثلاثةَ مواضع (فرعٌ · جلبٌ · قائمةُ سماح RLS) ونسيانُ الثالث يُعيد
+     *  `SELECT` بصفر صفوفٍ لا بخطأ (v14.92 · v15.25). */
+    bookingHolds: { pickupHours: number; deliveryHours: number; selfCloseMinutes: number };
     /** v14.17 — نسبة ضريبة **طلبات التجار** من مصدرها الوحيد
      *  (`platform_settings.merchant_vat`). لا تُثبَّت في الكود: كانت مثبّتة
      *  في الموقع ومقروءة من القاعدة في البوتين، فاختلف الرقمان. */
@@ -94,7 +100,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     seasonCampaign: null,
     sponsorLayout: DEFAULT_SPONSOR_LAYOUT,
     bannerSeconds: 2,
-    bookingHolds: { pickupHours: 2, deliveryHours: 6 },
+    bookingHolds: { pickupHours: 2, deliveryHours: 6, selfCloseMinutes: 10 },
     merchantVatRate: 15,
     complaintsSlaHours: 24,
     chatLimits: { perBooking: 0, perHour: 120 },
@@ -140,6 +146,9 @@ export const applyPlatformSetting = (
             return prev => ({ ...prev, bookingHolds: {
                 pickupHours: num((value || {}).pickup_hours, 2, 0, 8760, true),
                 deliveryHours: num((value || {}).delivery_hours, 6, 0, 8760, true),
+                // v15.42 — صفرٌ مقبولٌ هنا (يُعطّل المهلة عمداً)، فـ`exclusiveLo`
+                // مُطفأة — عكسَ الساعات حيث صفرٌ مهلةٌ منتهيةٌ قبل أن تبدأ.
+                selfCloseMinutes: num((value || {}).self_close_minutes, 10, 0, 1440),
             } });
         case 'merchant_vat':
             // v14.17 — نسبة ضريبة طلبات التجار. للعرض فقط (حاسبة التاجر)؛

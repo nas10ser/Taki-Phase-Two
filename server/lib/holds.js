@@ -17,9 +17,12 @@
  * فالتخزين المؤقت واحدٌ للقناتين (كل تعديل على البوت يمسّ الملفين معاً).
  */
 
+const { arCount, enCount } = require('../../shared/arPlural');
+
 // الافتراضات تطابق `taki_booking_hold_hours` على القاعدة حرفياً، كي لا يَعِد
 // البوت برقم لا تُطبّقه القاعدة لو تعذّرت القراءة لحظةً.
-const FALLBACK = { pickup: 2, delivery: 6, safety: 72 };
+// v15.42 — و`selfClose` بالدقائق: كم بعد الحجز قبل أن يُسمح بالختم بلا كود.
+const FALLBACK = { pickup: 2, delivery: 6, safety: 72, selfClose: 10 };
 const TTL_MS = 60_000;
 
 let _client = null;
@@ -28,6 +31,11 @@ let _at = 0;
 
 /** يُنادى مرّة واحدة من bot.js بعد إنشاء عميل Supabase. */
 function init(client) { _client = client; }
+
+const saneMinutes = (x, d) => {
+    const n = typeof x === 'number' ? x : parseFloat(String(x == null ? '' : x));
+    return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : d;
+};
 
 const sane = (x, d) => {
     const n = typeof x === 'number' ? x : parseFloat(String(x == null ? '' : x));
@@ -47,6 +55,9 @@ async function get() {
             pickup:   sane(v.pickup_hours, FALLBACK.pickup),
             delivery: sane(v.delivery_hours, FALLBACK.delivery),
             safety:   sane(v.in_progress_hours, FALLBACK.safety),
+            // 🪤 بمدى خاصّ: صفرٌ قيمةٌ صالحة تعني «بلا مهلة»، و`sane` ترفض ما
+            //    دون ربع الساعة — فهي لا تصلح للدقائق.
+            selfClose: saneMinutes(v.self_close_minutes, FALLBACK.selfClose),
         };
     } catch { /* أبقِ آخر قيمة معروفة */ }
     return _cache;
@@ -64,4 +75,45 @@ function labelGen(n, lang) {
     return n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتين' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
 }
 
-module.exports = { init, get, label, labelGen, FALLBACK };
+/**
+ * v15.42 — المتبقّي من مهلة «الختم بلا كود» مصوغاً، أو `null` إن انتهت.
+ * 🪤 ولا تُصاغ الدقائق بـ`${n} دقائق`: العربية تحتاج خمس صيغ للمعدود،
+ *    والمحرّك `shared/arPlural.js` وحده (ويقارنه `check-ar-plural.js`).
+ * 🪤 ويُجبَر على دقيقة واحدة ما بقيت ثانية: «بعد ٠ دقائق» ثم رفضٌ = كذب.
+ */
+async function selfCloseLeft(bookedAt, lang, nowMs) {
+    const h = await get();
+    if (!(h.selfClose > 0)) return null;
+    const left = Math.round((Number(bookedAt || 0) + h.selfClose * 60000 - (nowMs || Date.now())) / 1000);
+    if (!(left > 0)) return null;
+    return { seconds: left, label: waitLabel(left, lang) };
+}
+
+/**
+ * ثوانٍ متبقّية ⇒ نصٌّ مصوغ. يستعملها مَن يعرف الثواني من القاعدة
+ * (`too_soon` تُرجع `wait_seconds`) ومَن يحسبها من `booked_at` معاً.
+ * 🪤 ودقيقةٌ واحدة أرضيّةٌ ما بقيت ثانية: «بعد ٠ دقائق» ثم رفضٌ = كذب.
+ */
+function waitLabel(seconds, lang) {
+    const mins = Math.max(1, Math.ceil(Number(seconds || 0) / 60));
+    return lang === 'en'
+        ? enCount(mins, 'minute', 'minutes')
+        : arCount(mins, 'minutes', true);   // المجرور: «بعد دقيقتين» لا «دقيقتان»
+}
+
+/**
+ * مفردات رفض «استلمتُ طلبي» — موضعٌ واحد للقناتين.
+ * 🪤 كان السلّم مكتوباً في `bot.js` و`flows/whatsapp.js` معاً، وهو بالضبط
+ *    نوعُ الازدواج الذي أسكت البوتين عن أخطاء المحادثة من v12.22 إلى v14.96:
+ *    رمزٌ يُضاف في القاعدة ويُنسى في إحدى النسختين.
+ */
+function receiptErrKey(error) {
+    return ({
+        too_soon: 'b_confirm_receipt_too_soon',
+        not_dispatched: 'b_confirm_receipt_not_sent',
+        not_delivery: 'b_confirm_receipt_pickup',
+        closed: 'b_confirm_receipt_closed',
+    })[String(error || '')] || 'b_confirm_receipt_failed';
+}
+
+module.exports = { init, get, label, labelGen, selfCloseLeft, waitLabel, receiptErrKey, FALLBACK };

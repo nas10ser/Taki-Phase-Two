@@ -42,6 +42,7 @@ import { splitInclusive, fmtSAR } from '../utils/vat';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
+import OrderCloseActions from '../components/seller/OrderCloseActions';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 const StoreLocationPicker = React.lazy(() => import('../components/seller/StoreLocationPicker'));
 
@@ -5205,51 +5206,22 @@ const SellerDashboard: React.FC = () => {
                                         </div>
                                     )}
 
-                                    <button onClick={() => setScannerOpen(true)} style={{ flex: 1, padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px solid var(--border-color)', fontWeight: 800, color: 'var(--text-primary)', transition: 'all 0.2s', cursor: 'pointer' }}>
-                                        {isRTL ? '📷 مسح الكود' : '📷 Scan'}
-                                    </button>
-                                    <div style={{ display: 'flex', flex: 2, gap: 8 }}>
-                                        <input
-                                            placeholder={isRTL ? "الرمز المرجعي.." : "Enter code.."}
-                                            style={{...fieldInputStyle, padding: '12px', flex: 1, minWidth: 100, marginBottom: 0}}
-                                            value={manualCodes[order.barcode] || ''}
-                                            onChange={e => setManualCodes({...manualCodes, [order.barcode]: e.target.value})}
-                                            onKeyDown={async e => {
-                                                if (e.key === 'Enter') {
-                                                    const enteredCode = normalizeArabicNumerals(manualCodes[order.barcode]?.trim().toUpperCase() || '');
-                                                    const targetBarcode = order.barcode?.trim().toUpperCase();
-                                                    const targetBackup = order.backupCode?.trim().toUpperCase();
-                                                    if ((enteredCode === targetBarcode || enteredCode === targetBackup) && enteredCode) {
-                                                        if (await customConfirm(isRTL ? 'هل تم استلام المنتج؟' : 'Product received?')) {
-                                                            await completeBooking(order.barcode);
-                                                            setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
-                                                            await refreshOrderLists();
-                                                        }
-                                                    } else {
-                                                        await customAlert(isRTL ? 'رمز غير صحيح!' : 'Invalid code!');
-                                                    }
-                                                }
-                                            }}
-                                        />
-                                        <button onClick={async () => {
-                                            const rawInput = manualCodes[order.barcode] || '';
-                                            const enteredCode = normalizeArabicNumerals(rawInput.trim().toUpperCase());
-                                            const targetBarcode = (order.barcode || '').trim().toUpperCase();
-                                            const targetBackup = (order.backupCode || '').trim().toUpperCase();
-                                            if ((enteredCode === targetBarcode || enteredCode === targetBackup) && enteredCode) {
-                                                if (await customConfirm(isRTL ? 'هل تم استلام المنتج؟' : 'Product received?')) {
-                                                    await completeBooking(order.barcode);
-                                                    setManualCodes(prev => { const n = { ...prev }; delete n[order.barcode]; return n; });
-                                                    await refreshOrderLists();
-                                                }
-                                            } else {
-                                                await customAlert(isRTL ? 'رمز غير صحيح!' : 'Invalid code!');
-                                            }
-                                        }}
-                                            style={{ width: 60, height: 48, borderRadius: 12, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900, cursor: 'pointer' }}>
-                                            {isRTL ? 'تحقق' : 'Go'}
-                                        </button>
-                                    </div>
+                                    {/* v15.42 — خرجت طرقُ الإغلاق الثلاث إلى ملفٍّ واحد
+                                        (`seller/OrderCloseActions`): مسحٌ · كودٌ يدويّ ·
+                                        واختصارُ تسليمٍ بلا كود بعد المهلة (أمرُ ناصر).
+                                        والسقّافة هي ما أجبر على التقليص — وهو الصواب. */}
+                                    <OrderCloseActions
+                                        order={order}
+                                        isRTL={isRTL}
+                                        manualCode={manualCodes[order.barcode] || ''}
+                                        onManualCodeChange={v => setManualCodes(prev => ({ ...prev, [order.barcode]: v }))}
+                                        inputStyle={fieldInputStyle}
+                                        onScan={() => setScannerOpen(true)}
+                                        completeBooking={completeBooking}
+                                        refresh={refreshOrderLists}
+                                        customAlert={customAlert}
+                                        customConfirm={customConfirm}
+                                    />
                                 </div>
                                 {/* v14.18 — الطلب المدفوع له لوحته: القاعدة ترفض إلغاءه
                                     بضغطة (المال في حساب التاجر)، والبديل مسارٌ موثّق

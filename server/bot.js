@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.41.0';
+const BOT_VERSION              = '15.42.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1984,7 +1984,10 @@ async function showBuyerBookings(ctx, scope='current') {
         const row3 = [];
         // v14.10/v15.41 — «استلمت طلبي» لكلّ طلبٍ حيّ؛ وشرطُ انطلاق المندوب للتوصيل
         // وحده، والقاعدة تفرض الشرط نفسه فلا زرّ يعرضه البوت ويرفضه الخادم.
-        if (active && (String(b.fulfillment||'pickup')!=='delivery' || DLV_DISPATCHED.includes(String(b.dlv_status||''))))
+        // v15.42 — ولا قبل مضيّ المهلة: القاعدة ترفض بـP0028، فالسطرُ يقول الشرط.
+        const rcvWait = active ? await HOLDS.selfCloseLeft(b.booked_at, I18N.lang()) : null;
+        if (rcvWait) m += `\n${md(tr('b_confirm_receipt_soon', rcvWait.label))}`;
+        else if (active && (String(b.fulfillment||'pickup')!=='delivery' || DLV_DISPATCHED.includes(String(b.dlv_status||''))))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
         // v14.18/v14.21 — حالة الاسترداد على البطاقة نفسها، فلا يبقى المشتري
         // ينتظر جواباً لا يراه. الحقول تأتي من `bot_get_my_bookings`/الفاتورة.
@@ -2066,12 +2069,9 @@ bot.action(/^doRcv:(.+)$/, async ctx => {
             [Markup.button.callback(tr('b1223_menu'),'menu:back')]
         ]).reply_markup });
     } else {
-        // كل سبب رفض له رسالته — لا زرّ صامت.
-        const key = result?.error === 'not_dispatched' ? 'b_confirm_receipt_not_sent'
-                  : result?.error === 'not_delivery'   ? 'b_confirm_receipt_pickup'
-                  : result?.error === 'closed'         ? 'b_confirm_receipt_closed'
-                  : 'b_confirm_receipt_failed';
-        await safeReplyMd(ctx, tr(key), { reply_markup: KB_BACK().reply_markup });
+        // كل سبب رفضٍ له رسالته — والمفرداتُ في `lib/holds` وحده لا نسختين تنحرفان.
+        const e = result?.error;
+        await safeReplyMd(ctx, tr(HOLDS.receiptErrKey(e), e === 'too_soon' ? HOLDS.waitLabel(result.wait_seconds, I18N.lang()) : undefined), { reply_markup: KB_BACK().reply_markup });
     }
 });
 

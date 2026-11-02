@@ -8362,5 +8362,13 @@
   "wa_sub_unpaid": {
     "ar": "💳 لم تصل دفعةُ الاشتراك بعد. أكمِل الدفع من صفحة الاشتراك في الموقع ثمّ أعد المحاولة.",
     "en": "💳 No subscription payment received yet. Complete the payment on the website’s subscription page, then try again."
+  },
+  "b_confirm_receipt_too_soon": {
+    "ar": "⏳ لم تمضِ المهلة بعد — يُفتح الزرّ بعد {0} من وقت الحجز\\.",
+    "en": "⏳ Not yet — the button unlocks in {0} after booking\\."
+  },
+  "b_confirm_receipt_soon": {
+    "ar": "⏳ «استلمت طلبي» بعد {0}\n",
+    "en": "⏳ “I received it” in {0}\n"
   }
 }

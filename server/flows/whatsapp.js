@@ -875,8 +875,10 @@ function create(deps) {
         // v14.10 — «استلمت طلبي» في صفٍّ مستقلّ: الصفّ أعلاه ممتلئ بثلاثة أزرار
         // وواتساب يبتر الرابع **بصمت**، فوضعه هناك يعني ميزةً لا تظهر أبداً.
         // v15.41 — لكلّ طلبٍ حيّ؛ وانطلاقُ المندوب شرطٌ للتوصيل وحده (والقاعدة تفرضه).
-        if ((b.status === 'pending' || b.status === 'acknowledged')
-            && (b.fulfillment !== 'delivery' || WA_DLV_DISPATCHED.includes(String(b.dlv_status || '')))) {
+        // v15.42 — ولا قبل مضيّ مهلة الختم: سطرٌ يقول متى، بدل زرٍّ يرفضه الخادم.
+        const rcvWait = (b.status === 'pending' || b.status === 'acknowledged') ? await HOLDS.selfCloseLeft(b.booked_at, I18N.lang()) : null;
+        if (rcvWait) await sendText(from, tr('b_confirm_receipt_soon', rcvWait.label).replace(/\\/g, ''));
+        else if ((b.status === 'pending' || b.status === 'acknowledged') && (b.fulfillment !== 'delivery' || WA_DLV_DISPATCHED.includes(String(b.dlv_status || '')))) {
             await sendButtons(from, {
                 body: tr('b_confirm_receipt_ask', bc).replace(/\\/g, ''),
                 buttons: [{ id: `wa:rcv:${bc}`, title: trunc(tr('b_confirm_receipt'), LIM.btnTitle) },
@@ -991,11 +993,9 @@ function create(deps) {
         if (r && r.success) {
             await sendText(from, tr('b_confirm_receipt_done').replace(/\\/g, '').replace(/\*/g, ''));
         } else {
-            const key = (r && r.error) === 'not_dispatched' ? 'b_confirm_receipt_not_sent'
-                      : (r && r.error) === 'not_delivery'   ? 'b_confirm_receipt_pickup'
-                      : (r && r.error) === 'closed'         ? 'b_confirm_receipt_closed'
-                      : 'b_confirm_receipt_failed';
-            await sendText(from, tr(key).replace(/\\/g, ''));
+            // v15.42 — المفرداتُ في `lib/holds` وحده (توأمُ تيليجرام يقرأ نفسَها).
+            const e = r && r.error;
+            await sendText(from, tr(HOLDS.receiptErrKey(e), e === 'too_soon' ? HOLDS.waitLabel(r.wait_seconds, I18N.lang()) : undefined).replace(/\\/g, ''));
         }
         return buyerBookingsMenu(from, s);
     }
