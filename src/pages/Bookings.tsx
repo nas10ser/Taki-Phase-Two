@@ -756,10 +756,13 @@ const Bookings: React.FC = () => {
                                                   && (booking.fulfillment !== 'delivery'
                                                       || DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || ''))) && (
                                                   <SelfCloseNotice
-                                                    bookedAt={booking.bookedAt}
+                                                    booking={booking}
+                                                    beforeAck={left => (isRTL
+                                                        ? `بانتظار أن يؤكّد المتجر استلام طلبك — ومن تلك اللحظة يبدأ العدّ. وإن لم يؤكّد، يُفتح الزرّ بعد ${left}`
+                                                        : `Waiting for the store to confirm — the countdown starts then. If it never does, the button opens in ${left}`)}
                                                     waiting={left => (isRTL
-                                                        ? `زرّ «استلمت طلبي» يُفتح بعد ${left} من وقت الحجز`
-                                                        : `“I received my order” unlocks ${left} after booking`)}
+                                                        ? `زرّ «استلمت طلبي» يُفتح بعد ${left} من تأكيد المتجر`
+                                                        : `“I received my order” unlocks ${left} after the store confirmed`)}
                                                   >
                                                     <button
                                                         disabled={confirmingBarcode === booking.barcode}

@@ -30,72 +30,71 @@ const check = (name, ok, detail) => {
     ok ? pass++ : fail++;
 };
 
-// ── ١) الحسابُ يُقاس تنفيذاً: نسخةُ الموقع (TS) تُستخرج وتُنفَّذ ───────────
+// ── ١) الحسابُ يُقاس تنفيذاً ───────────────────────────────────────────────
+// 🪤 v15.44 نقلت المرساةَ إلى **تأكيد التاجر** ومعها فتحةٌ احتياطيّة؛ وتفصيلُها
+//    في `check-ack-anchor.js`. وهنا ما بقي خاصّاً بالمهلة نفسِها.
 const holdSrc = R('src/utils/bookingHold.ts');
-const m = holdSrc.match(/export const selfCloseLeft = \(([\s\S]*?)\n\};/);
-if (!m) { console.log('❌ لم يُعثر على selfCloseLeft في src/utils/bookingHold.ts'); process.exit(1); }
-const tsBody = ('(' + m[1] + '\n}')
-    .replace(/:\s*number\s*\|\s*null\s*\|\s*undefined/g, '')
-    .replace(/:\s*\{\s*seconds: number; label: \(isRTL: boolean\) => string\s*\}\s*\|\s*null/g, '')
-    .replace(/\(isRTL:\s*boolean\)/g, '(isRTL)')
-    .replace(/:\s*number/g, '')
-    .replace(/:\s*boolean/g, '');
-// 🪤 ويُنفَّذ بمحرّك الجمع نفسِه لا ببديلٍ مزيَّف: الصياغةُ جزءٌ من العقد.
+const ms = holdSrc.match(/export const selfCloseState = \([\s\S]*?\n\): SelfCloseState => \{([\s\S]*?)\n\};/);
+const mo = holdSrc.match(/export const selfCloseOpensAt = \(b: SelfCloseInput, minutes: number\): number => \{([\s\S]*?)\n\};/);
+const mi = holdSrc.match(/export const isAcknowledged = \(b: SelfCloseInput\): boolean =>\n([\s\S]*?);\n/);
+if (!ms || !mo || !mi) { console.log('❌ لم يُعثر على دوالّ الحالة في bookingHold.ts'); process.exit(1); }
 const { arCount, enCount } = require('../shared/arPlural');
 const minutesLabelGen = (n, isRTL) => (isRTL ? arCount(n, 'minutes', true) : enCount(n, 'minute', 'minutes'));
-let selfCloseLeft;
+let selfCloseState;
 try {
     // eslint-disable-next-line no-eval
-    selfCloseLeft = eval(`(minutesLabelGen) => ${tsBody}`)(minutesLabelGen);
+    selfCloseState = eval(`(minutesLabelGen) => {
+        const isAcknowledged = (b) => ${mi[1].trim()};
+        const selfCloseOpensAt = (b, minutes) => {${mo[1]}
+        };
+        return (b, minutes, nowMs) => {${ms[1].replace(/\(isRTL: boolean\)/g, '(isRTL)')}
+        };
+    }`)(minutesLabelGen);
 } catch (e) {
-    console.log('❌ تعذّر تنفيذ selfCloseLeft المستخرجة: ' + e.message);
+    console.log('❌ تعذّر تنفيذ selfCloseState المستخرجة: ' + e.message);
     process.exit(1);
 }
 
 const NOW = 1_700_000_000_000;
+// 🪤 الحجزُ يسبق التأكيد دائماً — وإلّا ردّت الأرضيّةُ حالةً مستحيلة فبدا
+//    الكودُ مكسوراً وهو سليم.
+const ACK = (at) => ({ status: 'acknowledged', acknowledgedAt: at, bookedAt: at - 60000, expiryTime: NOW + 7200000 });
 const CASES = [
-    ['لحظةَ الحجز: محجوب', NOW, 10, NOW, 600],
-    ['بعد ٩ دقائق: محجوبٌ بدقيقة', NOW - 9 * 60000, 10, NOW, 60],
-    ['بعد ١٠ دقائق بالضبط: مفتوح', NOW - 10 * 60000, 10, NOW, null],
-    ['بعد ساعة: مفتوح', NOW - 3600000, 10, NOW, null],
-    ['مهلةُ صفر تُعطّل الحارس (قيمةٌ صالحة)', NOW, 0, NOW, null],
-    ['مهلةٌ سالبة لا تحجب', NOW, -5, NOW, null],
-    ['مهلةٌ غير رقمية لا تحجب', NOW, NaN, NOW, null],
-    // 🪤 فشلٌ **مفتوح** مقصود وموثَّق: `booked_at` غائبة ⇒ لا حجب. وهي لا
-    //    تغيب فعلاً (قِيس على جدّة: ٠ من ١١٢)، والقاعدة تُعامل الغيابَ
-    //    بـ`COALESCE(...,0)` بنفس النتيجة — فالطرفان متّفقان لا منحرفان.
-    ['غيابُ booked_at: لا حجب (مطابقٌ للقاعدة)', null, 10, NOW, null],
+    ['لحظةَ التأكيد: محجوب', ACK(NOW), 10, 600],
+    ['بعد ٩ دقائق: محجوبٌ بدقيقة', ACK(NOW - 9 * 60000), 10, 60],
+    ['بعد ١٠ دقائق بالضبط: مفتوح', ACK(NOW - 10 * 60000), 10, null],
+    ['بعد ساعة: مفتوح', ACK(NOW - 3600000), 10, null],
+    ['مهلةُ صفر تُعطّل الحارس (قيمةٌ صالحة)', ACK(NOW), 0, null],
+    ['مهلةٌ سالبة لا تحجب', ACK(NOW), -5, null],
+    ['مهلةٌ غير رقمية لا تحجب', ACK(NOW), NaN, null],
 ];
-for (const [name, bookedAt, mins, now, wantSec] of CASES) {
-    const r = selfCloseLeft(bookedAt, mins, now);
-    const got = r ? r.seconds : null;
-    check(name, got === wantSec, `المتوقّع ${wantSec} والناتج ${got}`);
+for (const [name, b, mins, wantSec] of CASES) {
+    const r = selfCloseState(b, mins, NOW);
+    check(name, (r ? r.seconds : null) === wantSec, `المتوقّع ${wantSec} والناتج ${r && r.seconds}`);
 }
+check('طلبٌ لم يؤكّده التاجر: محجوبٌ بسببٍ آخر، لا للأبد',
+    (() => { const r = selfCloseState({ status: 'pending', bookedAt: NOW, expiryTime: NOW + 7200000 }, 10, NOW);
+             return !!r && r.acknowledged === false && r.seconds === 6600; })());
 
 // ── ٢) الموقعُ والبوتان يحسبان **نفسَ** الشيء ──────────────────────────────
-// 🪤 نسختان للحساب ضرورةٌ لا ترف (لا يستورد البوت TypeScript) — والخطرُ
-//    انحرافُهما. ولذلك تُقارن ثانيةً بثانية على مدى ساعة.
 (async () => {
     let drift = null;
     for (let s = 1; s <= 3600; s += 7) {
-        const bookedAt = NOW - s * 1000;
-        const web = selfCloseLeft(bookedAt, 10, NOW);
-        const bot = await HOLDS.selfCloseLeft(bookedAt, 'ar', NOW);
+        const ackAt = NOW - s * 1000;
+        const web = selfCloseState(ACK(ackAt), 10, NOW);
+        const bot = await HOLDS.selfCloseState({ status: 'acknowledged', ack_at_ms: ackAt, booked_at_ms: ackAt - 60000, expiry_time: NOW + 7200000 }, 'ar', NOW);
         const a = web ? web.seconds : null;
         const b = bot ? bot.seconds : null;
         if (a !== b) { drift = `عند ${s}ث: الموقع ${a} والبوت ${b}`; break; }
     }
     check('الموقعُ والبوتُ يتّفقان ثانيةً بثانية على مدى ساعة', drift === null, drift);
 
-    // والصياغةُ كذلك — «بعد ٠ دقائق» ثم رفضٌ = شاشةٌ تكذب.
-    const near = await HOLDS.selfCloseLeft(NOW - (10 * 60000 - 1000), 'ar', NOW);
-    check('ثانيةٌ متبقّية تُصاغ «دقيقة واحدة» لا «٠»',
-        !!near && near.label === 'دقيقة واحدة', near && near.label);
-    const webNear = selfCloseLeft(NOW - (10 * 60000 - 1000), 10, NOW);
-    check('ونسخةُ الموقع تقول الشيء نفسه',
-        !!webNear && webNear.label(true) === 'دقيقة واحدة', webNear && webNear.label(true));
+    const near = await HOLDS.selfCloseState({ status: 'acknowledged', ack_at_ms: NOW - (10 * 60000 - 1000), booked_at_ms: NOW - 10 * 60000, expiry_time: NOW + 7200000 }, 'ar', NOW);
+    check('ثانيةٌ متبقّية تُصاغ «دقيقة واحدة» لا «٠»', !!near && near.label === 'دقيقة واحدة', near && near.label);
+    const webNear = selfCloseState(ACK(NOW - (10 * 60000 - 1000)), 10, NOW);
+    check('ونسخةُ الموقع تقول الشيء نفسه', !!webNear && webNear.label(true) === 'دقيقة واحدة', webNear && webNear.label(true));
 
-    // ── ٣) البنية: لا رقمَ مكتوبٌ نصّاً، والمصدرُ واحد ────────────────────
+// ── ٣) البنية: لا رقمَ مكتوبٌ نصّاً، والمصدرُ واحد ────────────────────
     const notice = strip(R('src/components/SelfCloseNotice.tsx'));
     check('بوّابةُ الواجهة تقرأ الرقمَ من الإعدادات لا من ثابت',
         /platformSettings\.bookingHolds\.selfCloseMinutes/.test(notice));
@@ -123,7 +122,8 @@ for (const [name, bookedAt, mins, now, wantSec] of CASES) {
     // ── ٤) البوتان معاً — لا ميزةٌ في قناةٍ دون أخرى (قاعدةُ v14.71) ──────
     for (const f of ['server/bot.js', 'server/flows/whatsapp.js']) {
         const src = strip(R(f));
-        check(`${f.split('/').pop()}: يحجب الزرَّ قبل المهلة`, /selfCloseLeft/.test(src));
+        // v15.44 — صار الاسمُ `selfCloseState` (ثلاثُ حالات بعد نقل المرساة).
+        check(`${f.split('/').pop()}: يحجب الزرَّ قبل المهلة`, /selfCloseState/.test(src));
         check(`${f.split('/').pop()}: مفرداتُ الرفض من المصدر المشترك`, /receiptErrKey/.test(src));
     }
     const i18n = JSON.parse(R('server/lib/i18n-data.json'));

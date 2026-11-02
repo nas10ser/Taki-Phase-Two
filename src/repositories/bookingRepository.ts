@@ -53,6 +53,8 @@ export interface Booking {
     backupCode: string;
     expiryTime: number;
     bookedAt: number;
+    /** v15.44 — لحظةُ تأكيد التاجر (مللي)، أو `undefined` إن لم يؤكّد بعد. */
+    acknowledgedAt?: number;
     /** Epoch ms when the booking was marked completed (DB trigger sets
      *  `completed_at` on status flip to 'completed'). Used by v11.19 to
      *  hide the buyer's phone call button 2 hours after completion. */
@@ -145,6 +147,8 @@ export const mapBookingRow = (b: any, deal?: any): Booking => ({
     merchantNote: b.merchant_note,
     status: b.status,
     bookedAt: b.booked_at,
+    // v15.44 — لحظةُ ضغط التاجر «تأكيد استلام الطلب»: منها تبدأ مهلةُ الختم بلا كود.
+    acknowledgedAt: b.acknowledged_at ? new Date(b.acknowledged_at).getTime() : undefined,
     completedAt: b.completed_at ? new Date(b.completed_at).getTime() : undefined,
     paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
     paymentProvider: b.payment_provider || undefined,
@@ -255,6 +259,7 @@ export const bookingRepository = {
                     merchantNote: b.merchant_note,
                     status: b.status as Booking['status'],
                     bookedAt: b.booked_at,
+                    acknowledgedAt: b.acknowledged_at ? new Date(b.acknowledged_at).getTime() : undefined,
                     completedAt: b.completed_at ? new Date(b.completed_at).getTime() : undefined,
                     paidAt: b.paid_at ? new Date(b.paid_at).getTime() : undefined,
                     paymentProvider: b.payment_provider || undefined,
@@ -306,6 +311,7 @@ export const bookingRepository = {
                     merchantNote: data.merchant_note,
                     status: data.status as Booking['status'],
                     bookedAt: data.booked_at,
+                acknowledgedAt: data.acknowledged_at ? new Date(data.acknowledged_at).getTime() : undefined,
                     completedAt: data.completed_at ? new Date(data.completed_at).getTime() : undefined,
                     paidAt: data.paid_at ? new Date(data.paid_at).getTime() : undefined,
                     paymentProvider: data.payment_provider || undefined,

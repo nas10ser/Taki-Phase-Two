@@ -876,8 +876,8 @@ function create(deps) {
         // وواتساب يبتر الرابع **بصمت**، فوضعه هناك يعني ميزةً لا تظهر أبداً.
         // v15.41 — لكلّ طلبٍ حيّ؛ وانطلاقُ المندوب شرطٌ للتوصيل وحده (والقاعدة تفرضه).
         // v15.42 — ولا قبل مضيّ مهلة الختم: سطرٌ يقول متى، بدل زرٍّ يرفضه الخادم.
-        const rcvWait = (b.status === 'pending' || b.status === 'acknowledged') ? await HOLDS.selfCloseLeft(b.booked_at, I18N.lang()) : null;
-        if (rcvWait) await sendText(from, tr('b_confirm_receipt_soon', rcvWait.label).replace(/\\/g, ''));
+        const rcvW = (b.status === 'pending' || b.status === 'acknowledged') ? await HOLDS.selfCloseState(b, I18N.lang()) : null;
+        if (rcvW) await sendText(from, tr(rcvW.acknowledged ? 'b_confirm_receipt_soon' : 'b_confirm_receipt_before_ack', rcvW.label).replace(/\\/g, ''));
         else if ((b.status === 'pending' || b.status === 'acknowledged') && (b.fulfillment !== 'delivery' || WA_DLV_DISPATCHED.includes(String(b.dlv_status || '')))) {
             await sendButtons(from, {
                 body: tr('b_confirm_receipt_ask', bc).replace(/\\/g, ''),

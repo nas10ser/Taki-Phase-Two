@@ -1,9 +1,10 @@
 /**
  * SelfCloseNotice — بوّابةُ «الختم بلا كود» (v15.42)
  * ═══════════════════════════════════════════════════════════════════════════
- * أمرُ ناصر: «استلمتُ طلبي أظهرها بعد استلام الطلب من المتجر ١٠ دقائق ولا
- * تظهرها مباشرة». فهذا المكوّن يلفّ الزرّ: ما بقيت المهلةُ يعرض سطراً هادئاً
- * يقول متى يُفتح، وبعدها يعرض الزرّ نفسَه بلا أي تغيير فيه.
+ * أمرُ ناصر (v15.42 ثمّ v15.44): «استلمتُ طلبي أظهرها بعد ١٠ دقائق **من بعد ما
+ * يستلم التاجر الطلب ويضغط تم الاستلام**، لا من بداية إرسال الطلب». فهذا
+ * المكوّن يلفّ الزرّ، وله ثلاثُ حالات: قبل تأكيد التاجر (الساعةُ لم تبدأ)،
+ * وأثناء العدّ، وبعده يُعرض الزرّ نفسُه بلا أي تغيير فيه.
  *
  * 🪤 ولماذا سطرٌ لا زرٌّ معطَّل: زرٌّ ظاهرٌ يرفضه الخادمُ يصنع فشلاً بلا سبب
  *    مفهوم (درس v14.08) — والسطرُ يقول الشرطَ قبل أن يُحاول أحدٌ.
@@ -16,32 +17,35 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { selfCloseLeft } from '../utils/bookingHold';
+import { selfCloseState, SelfCloseInput } from '../utils/bookingHold';
 
 interface Props {
-    /** لحظةُ وصول الطلب إلى المتجر (مللي ثانية) — `bookings.booked_at`. */
-    bookedAt: number | null | undefined;
-    /** نصُّ السطر الهادئ أثناء الانتظار؛ يستقبل المدّة المتبقّية مصوغة. */
+    /** الطلبُ كما تعرفه الشاشة — منه تُشتقّ لحظةُ فتح الزرّ. */
+    booking: SelfCloseInput;
+    /** نصُّ الانتظار بعد بدء الساعة؛ يستقبل المدّة المتبقّية مصوغة. */
     waiting: (left: string) => string;
+    /** نصُّ ما قبل تأكيد التاجر — المنتظَرُ شخصٌ لا وقت (ومعه المدّةُ الاحتياطيّة). */
+    beforeAck: (left: string) => string;
     children: React.ReactNode;
 }
 
-export const SelfCloseNotice: React.FC<Props> = ({ bookedAt, waiting, children }) => {
+export const SelfCloseNotice: React.FC<Props> = ({ booking, waiting, beforeAck, children }) => {
     const { language, platformSettings } = useApp();
     const isRTL = language === 'ar';
     const minutes = platformSettings.bookingHolds.selfCloseMinutes;
     const [now, setNow] = useState(() => Date.now());
 
-    const left = selfCloseLeft(bookedAt, minutes, now);
+    const state = selfCloseState(booking, minutes, now);
+    const ticking = !!state;
 
-    // النبضُ يتوقّف من تلقاء نفسه حين لا يبقى ما يُعدّ — فلا مؤقّتٌ أبديّ.
+    // النبضُ يعمل ما دام هناك ما يُعدّ، ويتوقّف من تلقاء نفسه بعده.
     useEffect(() => {
-        if (!left) return;
+        if (!ticking) return;
         const t = setInterval(() => setNow(Date.now()), 15000);
         return () => clearInterval(t);
-    }, [!!left]);
+    }, [ticking]);
 
-    if (!left) return <>{children}</>;
+    if (!state) return <>{children}</>;
 
     return (
         <div style={{
@@ -50,7 +54,9 @@ export const SelfCloseNotice: React.FC<Props> = ({ bookedAt, waiting, children }
             color: 'var(--text-secondary)', fontWeight: 800, fontSize: '0.8rem',
             textAlign: 'center',
         }}>
-            ⏳ {waiting(left.label(isRTL))}
+            {state.acknowledged
+                ? <>⏳ {waiting(state.label(isRTL))}</>
+                : <>🕓 {beforeAck(state.label(isRTL))}</>}
         </div>
     );
 };

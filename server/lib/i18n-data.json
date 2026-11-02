@@ -8370,5 +8370,13 @@
   "b_confirm_receipt_soon": {
     "ar": "⏳ «استلمت طلبي» بعد {0}\n",
     "en": "⏳ “I received it” in {0}\n"
+  },
+  "b_confirm_receipt_not_acked": {
+    "ar": "🕓 لم يؤكّد المتجر استلام طلبك بعد — وإلّا يُفتح الزرّ بعد {0}\\.",
+    "en": "🕓 The store hasn’t confirmed yet — otherwise the button opens in {0}\\."
+  },
+  "b_confirm_receipt_before_ack": {
+    "ar": "🕓 بانتظار تأكيد المتجر لطلبك — وإلّا يُفتح «استلمت طلبي» بعد {0}\n",
+    "en": "🕓 Waiting for the store to confirm — otherwise “I received it” opens in {0}\n"
   }
 }

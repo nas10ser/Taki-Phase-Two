@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.43.0';
+const BOT_VERSION              = '15.44.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1984,9 +1984,9 @@ async function showBuyerBookings(ctx, scope='current') {
         const row3 = [];
         // v14.10/v15.41 — «استلمت طلبي» لكلّ طلبٍ حيّ؛ وشرطُ انطلاق المندوب للتوصيل
         // وحده، والقاعدة تفرض الشرط نفسه فلا زرّ يعرضه البوت ويرفضه الخادم.
-        // v15.42 — ولا قبل مضيّ المهلة: القاعدة ترفض بـP0028، فالسطرُ يقول الشرط.
-        const rcvWait = active ? await HOLDS.selfCloseLeft(b.booked_at, I18N.lang()) : null;
-        if (rcvWait) m += `\n${md(tr('b_confirm_receipt_soon', rcvWait.label))}`;
+        // v15.42/44 — الزرُّ بعد تأكيد التاجر بعشر دقائق؛ وقبله سطرٌ يقول الشرط.
+        const rcvW = active ? await HOLDS.selfCloseState(b, I18N.lang()) : null;
+        if (rcvW) m += `\n${md(tr(rcvW.acknowledged ? 'b_confirm_receipt_soon' : 'b_confirm_receipt_before_ack', rcvW.label))}`;
         else if (active && (String(b.fulfillment||'pickup')!=='delivery' || DLV_DISPATCHED.includes(String(b.dlv_status||''))))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
         // v14.18/v14.21 — حالة الاسترداد على البطاقة نفسها، فلا يبقى المشتري

@@ -112,17 +112,45 @@ function labelGen(n, lang) {
 }
 
 /**
- * v15.42 — المتبقّي من مهلة «الختم بلا كود» مصوغاً، أو `null` إن انتهت.
- * 🪤 ولا تُصاغ الدقائق بـ`${n} دقائق`: العربية تحتاج خمس صيغ للمعدود،
- *    والمحرّك `shared/arPlural.js` وحده (ويقارنه `check-ar-plural.js`).
- * 🪤 ويُجبَر على دقيقة واحدة ما بقيت ثانية: «بعد ٠ دقائق» ثم رفضٌ = كذب.
+ * v15.44 — حالةُ «الختم بلا كود» لطلبٍ، بمرساةٍ مزدوجة.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * أمرُ ناصر: الساعةُ من **تأكيد التاجر**. ومعها فتحةٌ احتياطيّة في آخر المهلة
+ * لأن «لا تأكيدَ ⇒ لا زرَّ أبداً» تُسقط المشتري (قِيس: ١٤٪ من الطلبات المكتملة
+ * لم تُؤكَّد قطّ). وتُعيد `null` حين يُفتح الزرّ، وإلّا `{seconds, acknowledged}`.
+ *
+ * 🔴 والمرساةُ تُقرأ من `ack_at_ms`/`booked_at_ms`/`expiry_time` لا من
+ *    `booked_at`: الأخيرةُ **نصُّ وقتٍ** في ردّ `bot_get_my_bookings`
+ *    (`to_timestamp`) و`Number()` عليها NaN — وهذا ما جعل بوّابةَ v15.42
+ *    ميّتةً في القناتين. مفتاحٌ موجودٌ بالاسم ليس مفتاحاً صالحاً بالقيمة.
  */
-async function selfCloseLeft(bookedAt, lang, nowMs) {
+function isAcknowledged(b) {
+    return !!(b && (Number.isFinite(Number(b.ack_at_ms)) && Number(b.ack_at_ms) > 0
+                    || b.status === 'acknowledged'));
+}
+
+// 🔴 والسقفُ (`expiry − دقيقة`) لازم: بدونه مهلةٌ قصيرة مع تأكيدٍ متأخّر
+//    تُنتج نافذةً خالية — الزرُّ يُفتح بعد أن يُلغى الطلب.
+function selfCloseOpensAt(b, minutes) {
+    const ms = minutes * 60000;
+    const bk = Number(b && b.booked_at_ms);
+    const booked = Number.isFinite(bk) ? bk : 0;
+    const ex = Number(b && b.expiry_time);
+    const expiry = Number.isFinite(ex) ? ex : 0;
+    const ack = Number(b && b.ack_at_ms);
+    const raw = (Number.isFinite(ack) && ack > 0)
+        ? Math.max(booked + ms, ack + ms)
+        : (b && b.status === 'acknowledged')
+            ? booked + ms
+            : Math.max(booked + ms, expiry - ms);
+    return expiry > 0 ? Math.min(raw, expiry - 60000) : raw;
+}
+
+async function selfCloseState(booking, lang, nowMs) {
     const h = await get();
     if (!(h.selfClose > 0)) return null;
-    const left = Math.round((Number(bookedAt || 0) + h.selfClose * 60000 - (nowMs || Date.now())) / 1000);
+    const left = Math.round((selfCloseOpensAt(booking, h.selfClose) - (nowMs || Date.now())) / 1000);
     if (!(left > 0)) return null;
-    return { seconds: left, label: waitLabel(left, lang) };
+    return { kind: 'waiting', seconds: left, acknowledged: isAcknowledged(booking), label: waitLabel(left, lang) };
 }
 
 /**
@@ -146,10 +174,11 @@ function waitLabel(seconds, lang) {
 function receiptErrKey(error) {
     return ({
         too_soon: 'b_confirm_receipt_too_soon',
+        not_acknowledged: 'b_confirm_receipt_not_acked',
         not_dispatched: 'b_confirm_receipt_not_sent',
         not_delivery: 'b_confirm_receipt_pickup',
         closed: 'b_confirm_receipt_closed',
     })[String(error || '')] || 'b_confirm_receipt_failed';
 }
 
-module.exports = { init, get, forStore, label, labelGen, selfCloseLeft, waitLabel, receiptErrKey, FALLBACK };
+module.exports = { init, get, forStore, label, labelGen, isAcknowledged, selfCloseOpensAt, selfCloseState, waitLabel, receiptErrKey, FALLBACK };

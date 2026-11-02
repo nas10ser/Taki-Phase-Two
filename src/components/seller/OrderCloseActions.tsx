@@ -22,7 +22,8 @@ import { bookingRepository } from '../../repositories/bookingRepository';
 import { normalizeArabicNumerals } from '../../utils/helpers';
 
 interface Props {
-    order: { barcode: string; backupCode?: string; bookedAt?: number | null };
+    order: { barcode: string; backupCode?: string; bookedAt?: number | null;
+             acknowledgedAt?: number | null; expiryTime?: number | null; status?: string };
     isRTL: boolean;
     manualCode: string;
     onManualCodeChange: (v: string) => void;
@@ -79,10 +80,13 @@ export const OrderCloseActions: React.FC<Props> = ({
             {/* ٣) اختصارُ التسليم بلا كود — أمرُ ناصر، وبعد المهلة وحدها. */}
             <div style={{ width: '100%', marginTop: 8 }}>
                 <SelfCloseNotice
-                    bookedAt={order.bookedAt}
+                    booking={order}
+                    beforeAck={left => (isRTL
+                        ? `اضغط «تأكيد استلام الطلب» أوّلاً — ومن تلك اللحظة يبدأ العدّ (وإلّا فبعد ${left}). والكود يعمل الآن`
+                        : `Press “Confirm receipt” first — the countdown starts then (otherwise in ${left}). The code works now`)}
                     waiting={left => (isRTL
-                        ? `زرّ «تم التسليم» بلا كود يُفتح بعد ${left} من وقت الحجز — والكود يعمل الآن`
-                        : `Code-free handover unlocks ${left} after booking — the code works now`)}
+                        ? `زرّ «تم التسليم» بلا كود يُفتح بعد ${left} من تأكيدك — والكود يعمل الآن`
+                        : `Code-free handover unlocks ${left} after you confirmed — the code works now`)}
                 >
                     <button onClick={async () => {
                         if (!(await customConfirm(isRTL

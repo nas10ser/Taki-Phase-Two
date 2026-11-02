@@ -90,14 +90,13 @@ const PaymentDeclarationCard: React.FC<{ userId: string; isRTL: boolean; onAlert
     const [snap, setSnap] = useState<Snapshot | null>(cached);
     const [settled, setSettled] = useState(!!cached);
     const [saving, setSaving] = useState<'cod' | 'card' | null>(null);
-    const [editing, setEditing] = useState(false);
     // فشل القراءة بلا كاش: لا نُخفي البطاقة بصمت — إخفاء شرطٍ يمنع كل الحجوزات
     // أسوأ من سطر يقول «تعذّر التحقق». ولا نصرخ تحذيراً كاذباً على انقطاع شبكة.
     const [failed, setFailed] = useState(false);
 
     // درجتان لكل لون دلالي — ثابتُ اللون يختفي على خلفية الوضع الليلي.
+    // (v15.44 — سقط `good` مع سطر «أقرّ فعلاً»: البطاقةُ لم تعد تظهر بعد الإقرار.)
     const warn = darkMode ? '#fbbf24' : '#b45309';
-    const good = darkMode ? '#34d399' : '#059669';
 
     // البطاقة قد تُفكَّك أثناء الطلب (تبديل تبويب) — فنحرس كل setState بعده.
     const alive = useRef(true);
@@ -130,7 +129,7 @@ const PaymentDeclarationCard: React.FC<{ userId: string; isRTL: boolean; onAlert
             if (!next) { await load(); throw new Error(isRTL ? 'ردّ غير متوقّع من الخادم' : 'Unexpected server response'); }
             writeCache(userId, next);
             notifySetupGapsChanged();
-            if (alive.current) { setSnap(next); setEditing(false); }
+            if (alive.current) setSnap(next);
             onAlert(acceptsCod
                 ? (isRTL ? '✅ تم الحفظ — متجرك يقبل الدفع عند الاستلام، والحجز مفتوح لعملائك.' : '✅ Saved — your store accepts cash on delivery and bookings are open.')
                 : (isRTL ? '✅ تم الحفظ — متجرك يبيع بالبطاقة فقط، ولن يُقبل أي طلب نقدي.' : '✅ Saved — card-only; cash orders will be rejected.'));
@@ -247,36 +246,24 @@ const PaymentDeclarationCard: React.FC<{ userId: string; isRTL: boolean; onAlert
         );
     }
 
-    // ── أقرّ فعلاً: سطر مصغّر يعرض الحالة، والتغيير بضغطة ──
-    const current = snap.acceptsCod
-        ? (snap.online
-            ? (isRTL ? 'الدفع عند الاستلام + البطاقة' : 'Cash on delivery + card')
-            : (isRTL ? 'الدفع عند الاستلام' : 'Cash on delivery'))
-        : (isRTL ? 'البطاقة فقط' : 'Card only');
+    // ── أقرّ فعلاً ⇒ لا بطاقة إطلاقاً (أمرُ ناصر v15.44) ──────────────────
+    // كان هنا سطرٌ مصغّر «طريقة الحساب: … | تغيير»، وهو **ثالثُ** موضعٍ يعرض
+    // طريقةَ الدفع في اللوحة بعد «طرق الدفع المتاحة لعملائك» (بطاقة البوّابة)
+    // و«طريقة الدفع لطلبات التوصيل» (بطاقة التوصيل). ثلاثةُ مواضع لسؤالٍ واحد
+    // تجعل التاجرَ يظنّ أنها ثلاثةُ إعدادات.
+    //
+    // 🔴 والحذفُ **مشروطٌ بما سبقه في v15.44**: صارت `merchant_set_payment_modes`
+    //    تُزامن `accepts_cod` عبر مشغّلٍ على القاعدة، وصار حارسُ النقد يقرأ
+    //    `deal_payment_mode` — أي ما يراه المشتري. فلم يَعُد ثَمّ تناقضٌ يحتاج
+    //    هذه البطاقةَ لإصلاحه. قبل ذلك كان حذفُها يترك متجرَ ناصر على حاله:
+    //    يعرض «الدفع عند الاستلام» والقاعدةُ ترفضه، بلا شاشةٍ تُصلحه.
+    // 🪤 ولا تُحذف البطاقةُ كلُّها: فرعُ «لم يُقرّ بعد» أعلاه هو **الطريق
+    //    الوحيد** لإقرارٍ بلا بوّابة (`payment_declared_at` لا يكتبها سواه،
+    //    و«طرق الدفع» لا تظهر إلا بعد ضبط بوّابة) — وحذفُه يعني متجراً نقدياً
+    //    لا يستطيع البيع أبداً. ويبقى `<div id="setup-pay">` مرساةً لقائمة
+    //    الانطلاق في `SetupPath`.
+    if (snap.ok) return null;
 
-    return (
-        <section style={{ ...box, padding: editing ? 18 : '13px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
-                        {snap.acceptsCod ? '💵' : '💳'} {isRTL ? 'طريقة الحساب:' : 'Payment method:'}{' '}
-                        <span style={{ color: good }}>{current}</span>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 3 }}>
-                        {isRTL ? '✅ متجرك يستقبل الحجوزات.' : '✅ Your store is accepting bookings.'}
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => setEditing(v => !v)}
-                    style={{ background: 'var(--gray-100)', color: 'var(--text-primary)', border: 'none', borderRadius: 10, padding: '8px 14px', fontWeight: 800, fontSize: '0.76rem', fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}
-                >
-                    {editing ? (isRTL ? 'إغلاق' : 'Close') : (isRTL ? 'تغيير' : 'Change')}
-                </button>
-            </div>
-            {editing && <div style={{ marginTop: 14 }}>{choiceButtons}</div>}
-        </section>
-    );
 };
 
 export default PaymentDeclarationCard;

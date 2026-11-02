@@ -46,18 +46,69 @@ export const minutesLabelGen = (n: number, isRTL: boolean): string =>
     isRTL ? arMinutesGen(n) : enMinutes(n);
 
 /**
- * المتبقّي من مهلة الختم الذاتيّ لطلبٍ، نصّاً جاهزاً — أو `null` إن انتهت.
- * 🪤 ويُجبَر على دقيقةٍ واحدة على الأقلّ ما بقي ثانيةٌ: «بعد ٠ دقائق» ثم زرٌّ
- *    لا يظهر = شاشةٌ تكذب. والثواني لا تُعرض — عدّادٌ بالثواني يطلب تحديثاً
- *    كلَّ ثانية بلا فائدة.
+ * حالةُ «الختم بلا كود» لطلبٍ (v15.44).
+ * ═══════════════════════════════════════════════════════════════════════════
+ * أمرُ ناصر: الساعةُ تبدأ من **تأكيد التاجر** لا من لحظة الحجز.
+ *
+ * 🔴 ومعها فتحةٌ احتياطيّة، لأن «لا تأكيدَ ⇒ لا زرَّ أبداً» تُسقط المشتري في
+ *    الهاوية — وقِيس على جدّة: **١٤٪ من الطلبات المكتملة لم تُؤكَّد قطّ**،
+ *    وواحدٌ من الختمين الذاتيّين اللذين وقعا أصلاً كان على طلبٍ غير مؤكَّد.
+ *    فالزرُّ يُفتح عند الأسبقِ المعقول: بعد المهلة من التأكيد، أو — إن لم
+ *    يؤكّد — في آخر المهلة من عمر الحجز، ولا قبل المهلة من لحظة الحجز أبداً.
+ * 🪤 والسببُ يُقال كما هو: المشتري ينتظر **شخصاً** لا **وقتاً**، ورسالةٌ
+ *    واحدة لهما تكذب. ولذلك `acknowledged` في الحالة.
+ * 🪤 ويطابق `taki_self_close_opens_at` على القاعدة حرفاً بحرف، وحارسُ البناء
+ *    يقارن التنفيذين.
  */
-export const selfCloseLeft = (
-    bookedAt: number | null | undefined, minutes: number, nowMs: number,
-): { seconds: number; label: (isRTL: boolean) => string } | null => {
+export interface SelfCloseWaiting {
+    kind: 'waiting';
+    seconds: number;
+    /** هل أكّد التاجرُ الاستلام؟ منه تُختار الجملة. */
+    acknowledged: boolean;
+    label: (isRTL: boolean) => string;
+}
+export type SelfCloseState = SelfCloseWaiting | null;
+
+export interface SelfCloseInput {
+    acknowledgedAt?: number | null;
+    bookedAt?: number | null;
+    expiryTime?: number | null;
+    status?: string;
+}
+
+/** هل أكّد التاجر؟ (الصفُّ القديم المؤكَّد قبل v15.44 يُعدّ مؤكَّداً.) */
+export const isAcknowledged = (b: SelfCloseInput): boolean =>
+    b.acknowledgedAt != null || b.status === 'acknowledged';
+
+/**
+ * لحظةُ فتح الزرّ بالمللي — توأمُ `taki_self_close_opens_at`، ولا تكون عدماً.
+ * 🔴 والسقفُ (`expiry − دقيقة`) ليس تجميلاً: بدونه مهلةُ ١٥ دقيقة مع تأكيدٍ
+ *    بعد ٦ تُنتج فتحةً عند +١٦ ومهلةً تنتهي عند +١٥ ⇒ **نافذةٌ خالية**.
+ *    وقِيس أن ٩٫١٪ من التأكيدات تقع بعد خمس دقائق.
+ */
+export const selfCloseOpensAt = (b: SelfCloseInput, minutes: number): number => {
+    const ms = minutes * 60000;
+    const booked = Number(b.bookedAt ?? 0);
+    const expiry = Number(b.expiryTime ?? 0);
+    const raw = (b.acknowledgedAt != null && Number.isFinite(Number(b.acknowledgedAt)))
+        ? Math.max(booked + ms, Number(b.acknowledgedAt) + ms)
+        : b.status === 'acknowledged'
+            ? booked + ms
+            : Math.max(booked + ms, expiry - ms);
+    return expiry > 0 ? Math.min(raw, expiry - 60000) : raw;
+};
+
+export const selfCloseState = (
+    b: SelfCloseInput, minutes: number, nowMs: number,
+): SelfCloseState => {
     if (!Number.isFinite(minutes) || minutes <= 0) return null;
-    const ready = Number(bookedAt ?? 0) + minutes * 60000;
-    const left = Math.round((ready - nowMs) / 1000);
+    const left = Math.round((selfCloseOpensAt(b, minutes) - nowMs) / 1000);
     if (!(left > 0)) return null;
     const mins = Math.max(1, Math.ceil(left / 60));
-    return { seconds: left, label: (isRTL: boolean) => minutesLabelGen(mins, isRTL) };
+    return {
+        kind: 'waiting',
+        seconds: left,
+        acknowledged: isAcknowledged(b),
+        label: (isRTL: boolean) => minutesLabelGen(mins, isRTL),
+    };
 };

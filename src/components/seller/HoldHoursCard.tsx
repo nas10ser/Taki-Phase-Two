@@ -106,26 +106,51 @@ export const HoldHoursCard: React.FC = () => {
     return (
         <div style={box}>
             <div style={{ fontWeight: 900, fontSize: '0.9rem', marginBottom: 4 }}>
-                ⏳ {isRTL ? 'مهلة الحجز والاستلام' : 'Booking & pickup window'}
+                ⏳ {isRTL ? 'كم تنتظر المشتري؟' : 'How long do you wait for the buyer?'}
+            </div>
+            {/* شرحٌ لتاجرٍ يسجّل أوّل مرّة (أمرُ ناصر): ماذا يفعل الرقمُ في يومه،
+                ومثالٌ يعرفه، وماذا يخسر إن قصّر أو أطال، ومعنى الفراغ.
+                🪤 والمثالُ بلا أرقام عمداً: «نصف ساعة/يومان» تصير كذباً لو خفّض
+                   المديرُ السقفَ تحتها، والسطرُ الذي يذكر المدى تحته مباشرة. */}
+            <div style={hint}>
+                {isRTL
+                    ? 'المشتري يحجز، فتُحجز الكمّية باسمه ولا يشتريها غيره. وإن لم يستلم خلال المدّة التي تكتبها هنا، يُلغى طلبه وحده وترجع الكمّية للبيع.'
+                    : 'When a buyer books, the quantity is held in his name and nobody else can buy it. If he does not collect within the window you set here, his order cancels itself and the quantity goes back on sale.'}
             </div>
             <div style={hint}>
                 {isRTL
-                    ? 'كم يبقى الطلب محجوزاً باسم المشتري قبل أن يُلغى تلقائياً وتعود الكمّية للبيع. اتركه فارغاً لتتبع افتراضي تاكي.'
-                    : 'How long an order stays reserved for the buyer before it is auto-cancelled and the quantity returns to sale. Leave empty to follow the TAKI default.'}
+                    ? 'المخبز يكتب مدّة قصيرة لأن الخبز يبرد، ومعرض الأثاث مدّة أطول لأن المشتري يجيب سيّارة نقل.'
+                    : 'A bakery sets a short window because bread goes cold; a furniture shop sets a longer one because the buyer brings a truck.'}
+            </div>
+            <div style={hint}>
+                {isRTL
+                    ? 'القصيرة تُلغي طلبات مشترين هم في طريقهم إليك، والطويلة تحبس بضاعتك عند من قد لا يأتي.'
+                    : 'Too short cancels on buyers who are on their way; too long locks your stock up for someone who may never come.'}
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+            {/* 🪤 `alignItems:'flex-end'` ليست تجميلاً. العنوان «الاستلام من المتجر
+                (ساعات)» يحتاج ١٦٥٫٥px بخطّ Tajawal عند 0.78rem/900 والحقلُ ١٤٠–١٦٥٫٥px
+                في نطاق العرض ٣٨٩–٤٣٩pt — وجهازُ ناصر داخله (١٢٨٤/٣ = ٤٢٨pt) — فينكسر
+                إلى سطرين بينما «التوصيل (ساعات)» (١٠٤٫٧px) يبقى سطراً، و`stretch`
+                الافتراضيّة تُسوّي **الغلافين** لا الحقلين ⇒ فارقٌ ١٩٫٩٧px.
+                والمحاذاةُ على المحور المتقاطع (الرأسيّ) لا تنعكس مع RTL — ينعكس
+                `justify-content` وحده — فسطرٌ واحد يكفي اللغتين، ويبقى صحيحاً عند
+                ثلاثة أسطر، ولا أثر له حين يتكدّس الحقلان (قِيس: نفسُ الارتفاع).
+                🔴 وأوّلُ قياسين عندي **برّآ الكودَ كذباً** (١٣٦٫٦px، بلا كسر) لأن خطّ
+                   التطبيق لم يكن محمّلاً والاحتياطيُّ أضيقُ ٢١٪. أيُّ إعادة قياسٍ
+                   لهذه البطاقة تشترط `document.fonts.check(...)` قبل تصديق أيّ عرض. */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div style={{ flex: 1, minWidth: 140 }}>
-                    <span style={label}>{isRTL ? 'الاستلام من المتجر (ساعات)' : 'Store pickup (hours)'}</span>
+                    <span style={label}>{isRTL ? 'الاستلام (ساعات)' : 'Pickup (hours)'}</span>
                     <input style={input} value={pickup} inputMode="decimal"
                         onChange={e => setPickup(e.target.value)}
-                        placeholder={isRTL ? `افتراضي تاكي: ${platP}` : `TAKI default: ${platP}`} />
+                        placeholder={isRTL ? `فارغ = ${holdLabel(platP, true)}` : `empty = ${holdLabel(platP, false)}`} />
                 </div>
                 <div style={{ flex: 1, minWidth: 140 }}>
                     <span style={label}>{isRTL ? 'التوصيل (ساعات)' : 'Delivery (hours)'}</span>
                     <input style={input} value={delivery} inputMode="decimal"
                         onChange={e => setDelivery(e.target.value)}
-                        placeholder={isRTL ? `افتراضي تاكي: ${platD}` : `TAKI default: ${platD}`} />
+                        placeholder={isRTL ? `فارغ = ${holdLabel(platD, true)}` : `empty = ${holdLabel(platD, false)}`} />
                 </div>
             </div>
 
