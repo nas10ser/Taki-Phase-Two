@@ -20,6 +20,7 @@ import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealCo
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg } from '../utils/thumb';
 import { holdLabel } from '../utils/bookingHold';
+import { useStoreHold } from '../hooks/useStoreHold';
 import StorePolicies from '../components/StorePolicies';
 import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
 import { isDealSoldOut } from '../utils/dealAvailability';
@@ -485,15 +486,6 @@ const DealDetails: React.FC = () => {
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
-    // v14.10 — مهلة الحجز في ورقة الحجز تُقرأ من صفّ الإعدادات لا من نصّ مكتوب،
-    // فلا يَعِد النصُّ بساعتين والقاعدة تعطي ستّاً (أو العكس بعد أي ضبط).
-    const holdHours = useMemo(() => {
-        const p = platformSettings.bookingHolds.pickupHours;
-        const d = platformSettings.bookingHolds.deliveryHours;
-        // v14.12 — الصياغة في `utils/bookingHold.ts` وحده، تستعملها هذه الورقة
-        // والصفحات القانونية الثلاث معاً — فلا تفترق جملةٌ عن أختها بعد ضبط.
-        return { pickup: p, delivery: d, pickupLabelAr: holdLabel(p, true), deliveryLabelAr: holdLabel(d, true) };
-    }, [platformSettings.bookingHolds.pickupHours, platformSettings.bookingHolds.deliveryHours]);
 
     const [reviewScore, setReviewScore] = useState(5);
     const [reviewComment, setReviewComment] = useState('');
@@ -560,6 +552,14 @@ const DealDetails: React.FC = () => {
     }, [id, ingestDeals]);
 
     const deal = deals.find(d => d.id === id);
+
+    // v14.10/v15.43 — مهلةُ الحجز تُقرأ من مصدرها لا من نصٍّ مكتوب، ومصدرُها
+    // صار **مهلةَ هذا المتجر** (أمرُ ناصر: التاجر يحدّدها): يجلبها الخطّاف من
+    // `store_policies` محسوبةً بنفس دالّةِ مشغّل الحجز — فما يُعرض هو ما
+    // سيُطبَّق. وافتراضُ المنصّة يظهر حتى يصل الجواب، والصياغةُ في الخطّاف.
+    // 🪤 وموضعُه **بعد** `deal` لا قبله: خطّافٌ يقرأ متغيّراً يُعرَّف بعده
+    //    يُسقط الشجرة بـTDZ عند أوّل render (أمسكه typecheck هذه المرّة).
+    const holdHours = useStoreHold((deal as any)?.storeId);
 
     // v13.94 — SEO: عنوان ووصف وبيانات مهيكلة خاصة بهذا العرض. بدونها تظهر كل
     // صفحات العروض في جوجل بعنوان الموقع العام نفسه — أي أنها تتنافس على نفس

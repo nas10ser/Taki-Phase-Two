@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.42.0';
+const BOT_VERSION              = '15.43.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1801,7 +1801,7 @@ async function bookConfirm(ctx, s) {
     // بينما القاعدة تعطيه ستّاً، فصار الوعد مخالفاً للواقع في الاتجاهين.
     // v14.12 — الرقم من `platform_settings.booking_holds` لا من نصّ مكتوب:
     // ضبطُه من لوحة المدير يصل هنا خلال دقيقة بلا إعادة نشر.
-    const HH = await HOLDS.get();
+    const HH = await HOLDS.forStore(d.store_id);   // v15.43 — مهلةُ هذا المتجر
     const hLang = I18N.lang();
     const hNom = md(HOLDS.label(isDlv ? HH.delivery : HH.pickup, hLang));
     m += isDlv ? tr('dlv_duration_disclaimer', hNom, DIV)

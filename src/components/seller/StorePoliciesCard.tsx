@@ -14,6 +14,7 @@ import { useApp } from '../../context/AppContext';
 import { refundRepository } from '../../repositories/refundRepository';
 import { notifySetupGapsChanged } from './SetupPath';
 import { InstantRefundToggle } from './InstantRefundToggle';
+import { HoldHoursCard } from './HoldHoursCard';
 
 const MAX = 1500;
 
@@ -204,6 +205,10 @@ export const StorePoliciesCard: React.FC = () => {
             )}
             {/* v15.01 — القرارُ بجانب السياسة: فصلُهما يجعل أحدهما يناقض الآخر. */}
             <InstantRefundToggle />
+            {/* v15.43 — ومهلةُ الحجز من عائلتهما: شرطٌ مُعلَنٌ للمشتري يضبطه
+                التاجر. وموضعُها هنا لا في لوحةٍ أخرى يُبقي «سياساتُ متجري»
+                مكاناً واحداً يُفتح — ولا يُنمّي `SellerDashboard` سطراً. */}
+            <HoldHoursCard />
 
         </div>
     );

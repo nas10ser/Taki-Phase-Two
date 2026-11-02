@@ -661,7 +661,7 @@ function create(deps) {
         if (os && os.configured && os.open && os.closes_in_min != null && os.closes_in_min <= HRS.CLOSING_SOON_MIN) m += tr('wa_confirm_closing', HRS.fmtMins(os.closes_in_min));
         // v14.12 — المهلة الحقيقية بالأرقام (كانت القناة تكتفي بإقرار عامّ بلا
         // رقم، فلا يعرف مشتري واتساب كم أمامه). الرقم من صفّ الإعدادات نفسه.
-        const HH = await HOLDS.get();
+        const HH = await HOLDS.forStore(d.store_id);   // v15.43 — مهلةُ هذا المتجر
         const hLang = I18N.lang();
         m += isDlv ? tr('wa_hold_delivery', HOLDS.label(HH.delivery, hLang))
                    : tr('wa_hold_pickup', HOLDS.label(HH.pickup, hLang));

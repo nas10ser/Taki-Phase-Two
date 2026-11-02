@@ -68,6 +68,22 @@ export const mapRefundRow = (r: any): BookingRefund | null => r ? ({
     creditNoteNo: r.credit_note_no ?? null,
 }) : null;
 
+/** نتيجةُ `store_policies` — نصُّ السياسة ومهلةُ المتجر الفعّالة معاً. */
+export interface StorePoliciesResult {
+    /** `false` = تعذّرت القراءة، لا «لا شيء» (درس v14.18). */
+    ok: boolean;
+    refundPolicy?: string;
+    storeTerms?: string;
+    /** المهلةُ الفعّالة لهذا المتجر — محسوبةٌ على القاعدة. */
+    holdPickupHours?: number;
+    holdDeliveryHours?: number;
+    /** الخامُ: `undefined` = يتبع افتراضَ المنصّة. لشاشةِ التاجر وحدها. */
+    holdPickupCustom?: number;
+    holdDeliveryCustom?: number;
+    /** أقصى ما يملك التاجرُ اختيارَه (يضبطه المدير). */
+    holdMaxHours?: number;
+}
+
 export const refundRepository = {
     /** حالة الاسترداد لطلبٍ واحد — null إن لم يُفتح طلب بعد. */
     get: async (barcode: string): Promise<BookingRefund | null> => {
@@ -130,13 +146,44 @@ export const refundRepository = {
      * يُترجَم على الشاشة «لم يُعلن هذا المتجر سياسة استرداد» — نفيٌ قاطع عن
      * تاجرٍ أعلنها. `ok:false` تعني «تعذّرت القراءة»، لا «لا شيء».
      */
-    storePolicies: async (storeId: string): Promise<{ ok: boolean; refundPolicy?: string; storeTerms?: string }> => {
+    storePolicies: async (storeId: string): Promise<StorePoliciesResult> => {
         try {
             const { data, error } = await supabase.rpc('store_policies', { p_store_id: storeId });
             if (error) { logger.warn('store_policies:', error.message); return { ok: false }; }
             const d: any = data || {};
-            return { ok: true, refundPolicy: d.refund_policy || undefined, storeTerms: d.store_terms || undefined };
+            // v15.43 — ومعها مهلةُ **هذا المتجر** محسوبةً على القاعدة (استثناؤه
+            // إن وُجد، وإلّا افتراضُ المنصّة). 🪤 ولا تُحسب هنا: سلسلةُ الارتداد
+            // لو كُتبت في الواجهة لصارت نسخةً ثانية تنحرف عن القاعدة.
+            const n = (x: any): number | undefined =>
+                (x == null || x === '' || !Number.isFinite(Number(x))) ? undefined : Number(x);
+            return {
+                ok: true,
+                refundPolicy: d.refund_policy || undefined,
+                storeTerms: d.store_terms || undefined,
+                holdPickupHours: n(d.hold_pickup_hours),
+                holdDeliveryHours: n(d.hold_delivery_hours),
+                holdPickupCustom: n(d.hold_pickup_custom),
+                holdDeliveryCustom: n(d.hold_delivery_custom),
+                holdMaxHours: n(d.hold_max_hours),
+            };
         } catch { return { ok: false }; }
+    },
+
+    /**
+     * v15.43 — التاجر يضبط مهلة حجزه. `null` = «اتبع افتراضي المنصّة».
+     * 🪤 والقاعدة **ترفض** ما خرج عن المدى ولا تقصّه بصمت: التاجرُ كتب رقماً،
+     *    فتغييرُه تحت يده دون أن يُقال كذبٌ هادئ. ولذلك تُعاد الحدود مع الخطأ.
+     */
+    saveBookingHolds: async (
+        pickup: number | null, delivery: number | null,
+    ): Promise<{ ok: boolean; error?: string; min?: number; max?: number }> => {
+        const { data, error } = await supabase.rpc('merchant_set_booking_holds', {
+            p_pickup: pickup, p_delivery: delivery,
+        });
+        if (error) return { ok: false, error: error.message };
+        const d: any = data || {};
+        return d.ok ? { ok: true }
+                    : { ok: false, error: d.error || 'FAILED', min: d.min, max: d.max };
     },
 
     /**

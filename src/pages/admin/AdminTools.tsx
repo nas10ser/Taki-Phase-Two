@@ -51,6 +51,7 @@ import { BANNER } from '../../utils/imageCompression';
 import { normalizeArabicNumerals } from '../../utils/helpers';
 import ImageOptimizer from '../../components/admin/ImageOptimizer';
 import StockLinkSwitch from '../../components/admin/StockLinkSwitch';
+import BookingHoldsCard from '../../components/admin/BookingHoldsCard';
 import {
     AdmCard, AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmError, AdmButton,
     AdmSwitch as Sw, AdmSettingRow as SettingRow,
@@ -1029,10 +1030,6 @@ const AdminTools: React.FC = () => {
     const [bannerSeconds, setBannerSeconds] = useState('2');
     const [savingBannerSeconds, setSavingBannerSeconds] = useState(false);
     // v14.12 — مهلة الحجز بالساعات: استلام · توصيل · شبكة أمان الطلب المنطلق.
-    const [holdPickup, setHoldPickup] = useState('2');
-    const [holdDelivery, setHoldDelivery] = useState('6');
-    const [holdSafety, setHoldSafety] = useState('72');
-    const [savingHolds, setSavingHolds] = useState(false);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [bannerModalOpen, setBannerModalOpen] = useState(false);
     const [bannerEdit, setBannerEdit] = useState<any | null>(null); // null = بانر جديد
@@ -1047,7 +1044,7 @@ const AdminTools: React.FC = () => {
         setLoadErr('');
         // 🪤 الجدول `platform_settings` والمفتاح `payment_gateway_enabled`
         // والقيمة jsonb منطقية (لا نصّ) — وكان الكود يسأل جدولاً غير موجود.
-        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes, holdsRes] = await Promise.all([
+        const [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes] = await Promise.all([
             supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'telegram_bot_enabled').maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', 'whatsapp_bot_enabled').maybeSingle(),
@@ -1058,10 +1055,9 @@ const AdminTools: React.FC = () => {
             supabase.from('banners').select('*').order('display_order', { ascending: true }),
             supabase.from('promotional_campaigns').select('*').order('created_at', { ascending: false }).limit(20),
             supabase.from('platform_settings').select('value').eq('key', 'banner_autoplay_seconds').maybeSingle(),
-            supabase.from('platform_settings').select('value').eq('key', 'booking_holds').maybeSingle(),
         ]);
 
-        const firstErr = [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes, holdsRes]
+        const firstErr = [paymentRes, botRes, waBotRes, waNumRes, seasonThemeRes, seasonCampRes, eventDatesRes, bannerRes, campaignRes, bannerSecRes]
             .map((r: any) => r?.error?.message).find(Boolean);
 
         setPaymentEnabled(paymentRes.data?.value === true);
@@ -1093,16 +1089,6 @@ const AdminTools: React.FC = () => {
         setCampaigns(campaignRes.data ?? []);
         const bs = Number(bannerSecRes.data?.value);
         setBannerSeconds(Number.isFinite(bs) && bs >= 1 && bs <= 120 ? String(bs) : '2');
-        // v14.12 — الافتراضات هنا تطابق `taki_booking_hold_hours` حرفياً كي لا
-        // يعرض الحقل رقماً لا يُطبَّق.
-        const hv = (holdsRes.data?.value ?? {}) as any;
-        const hnum = (x: any, d: number) => {
-            const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
-            return Number.isFinite(n) && n >= 0.25 && n <= 8760 ? String(n) : String(d);
-        };
-        setHoldPickup(hnum(hv.pickup_hours, 2));
-        setHoldDelivery(hnum(hv.delivery_hours, 6));
-        setHoldSafety(hnum(hv.in_progress_hours, 72));
         if (firstErr) setLoadErr(firstErr);
         setLoading(false);
     }, []);
@@ -1180,26 +1166,6 @@ const AdminTools: React.FC = () => {
             : '✅ تم مسح رقم واتساب — زر الربط سيبقى مخفياً حتى تُدخل رقماً.');
     };
 
-    // ── مهلة الحجز ──────────────────────────────────────────────────────────
-
-    const saveHolds = async () => {
-        const num = (t: string) => parseFloat(normalizeArabicNumerals(t));
-        const p = num(holdPickup), d = num(holdDelivery), sfy = num(holdSafety);
-        if ([p, d, sfy].some(n => !Number.isFinite(n) || n < 0.25 || n > 8760)) {
-            await customAlert('⚠️ كل مهلة يجب أن تكون بين ربع ساعة و8760 ساعة (سنة).');
-            return;
-        }
-        // التوصيل أقصر من الاستلام وعدٌ أقلّ لطلبٍ طريقُه أطول — نسأل ولا نمنع.
-        if (d < p && !(await customConfirm(`⚠️ مهلة التوصيل (${d}) أقصر من مهلة الاستلام (${p}).\nطلب التوصيل يحتاج تجهيزاً وطريقاً، فالأقصر يُلغي طلبات صحيحة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
-        if (sfy < d && !(await customConfirm(`⚠️ شبكة الأمان (${sfy}) أقصر من مهلة التوصيل (${d}).\nمعناها أن طلباً انطلق مندوبه قد يُلغى قبل انتهاء مهلته الأصلية.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
-        setSavingHolds(true);
-        const err = await writeSetting('booking_holds',
-            { pickup_hours: p, delivery_hours: d, in_progress_hours: sfy },
-            'مهلة الحجز بالساعات: الاستلام · التوصيل · شبكة أمان الطلب المنطلق');
-        setSavingHolds(false);
-        if (err) { await customAlert('❌ ' + err); return; }
-        await customAlert(`✅ تم الحفظ — استلام ${p} ساعة · توصيل ${d} ساعة · شبكة أمان ${sfy} ساعة.\nيسري على الطلبات الجديدة فوراً.`);
-    };
 
     // ── الموسم ──────────────────────────────────────────────────────────────
 
@@ -1784,53 +1750,10 @@ const AdminTools: React.FC = () => {
             </AdmSection>
 
             {/* ═══ ٤ — مهلة الحجز ═══ */}
-            <AdmSection
-                title="مهلة الحجز"
-                icon="⏳"
-                desc="كم يبقى الطلب محجوزاً قبل أن يُلغى تلقائياً وتعود الكمّية للبيع. الرقم الوحيد في المنصّة: تقرؤه القاعدة والموقع والبوتان والصفحات القانونية معاً."
-                collapsible
-                defaultOpen={false}
-            >
-                {loading ? <AdmSkeleton rows={3} height={92} /> : !settingsReady ? (
-                    <AdmError message="لم تصل المهل الحالية — لا تُعرض الحقول حتى لا تُحفظ أرقامٌ افتراضية فوق الحقيقية." onRetry={fetchAll} />
-                ) : (
-                    <>
-                        <p style={{ fontSize: '.78rem', lineHeight: 1.85, color: 'var(--adm-fg-2)', margin: '0 0 12px' }}>
-                            يسري فوراً على الطلبات الجديدة، ويتغيّر معه نصّ ورقة الحجز وصفحات الشروط والاسترداد والأسئلة الشائعة والبوتان في اللحظة نفسها.
-                            <br />
-                            <strong style={{ color: 'var(--adm-fg)' }}>ولا يمسّ الطلبات القائمة</strong> — كل طلبٍ يحتفظ بالمهلة التي وُعد بها وقت حجزه.
-                        </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
-                            {([
-                                { key: 'pickup',   icon: '🏪', label: 'استلام من المتجر', value: holdPickup,   set: setHoldPickup,   hint: 'المشتري يذهب للمتجر — المخزون محبوس طوال المهلة، فالإطالة تعني بيعاً أقلّ.' },
-                                { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', value: holdDelivery, set: setHoldDelivery, hint: 'التجهيز والطريق. تتوقّف المهلة بمجرّد انطلاق المندوب.' },
-                                { key: 'safety',   icon: '🛟', label: 'شبكة أمان الطلب المنطلق', value: holdSafety, set: setHoldSafety, hint: 'حدٌّ أقصى لطلبٍ انطلق مندوبه ولم يُغلقه التاجر — كي لا يُحبس المخزون للأبد.' },
-                            ] as const).map(f => (
-                                <div key={f.key} style={{ padding: 12, borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)', background: 'var(--adm-surface-2)' }}>
-                                    <div style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', marginBottom: 7 }}>{f.icon} {f.label}</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <input
-                                            type="number" min={0.25} max={8760} step={0.25} inputMode="decimal" dir="ltr"
-                                            value={f.value}
-                                            onChange={(e) => f.set(normalizeArabicNumerals(e.target.value))}
-                                            aria-label={f.label}
-                                            className="adm-focusable"
-                                            style={{ ...fieldStyle, width: 92, textAlign: 'center', fontWeight: 800, background: 'var(--adm-surface)' }}
-                                        />
-                                        <span style={{ fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>ساعة</span>
-                                    </div>
-                                    <div style={{ fontSize: '.7rem', lineHeight: 1.8, color: 'var(--adm-fg-3)', marginTop: 8 }}>{f.hint}</div>
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                            <AdmButton variant="primary" onClick={saveHolds} disabled={savingHolds}>
-                                {savingHolds ? 'جاري الحفظ...' : '💾 حفظ المهل'}
-                            </AdmButton>
-                        </div>
-                    </>
-                )}
-            </AdmSection>
+            {/* v15.43 — خرجت البطاقةُ بكاملها إلى ملفّها: احتاجت حقلين
+                جديدين (سقفُ اختيار التاجر · مهلةُ الختم بلا كود) وهذا الملفّ
+                عند سقفه — فالصواب تقليصٌ لا رفعُ سقف. */}
+            <BookingHoldsCard />
 
             {/* ═══ ٥ — الموسم (هوية + حملة موحّدة) ═══
                 v12.57 — لا تفعيل يدوي: القاعدة تشتقّ `seasonal_theme` من النافذة

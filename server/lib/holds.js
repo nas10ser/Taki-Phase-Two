@@ -63,6 +63,42 @@ async function get() {
     return _cache;
 }
 
+/**
+ * v15.43 — مهلةُ **متجرٍ بعينه**: استثناؤه إن وُجد، وإلّا افتراضُ المنصّة.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * صارت المهلةُ بيد التاجر (أمرُ ناصر)، فلم يَعُد رقمُ المنصّة صحيحاً لكلّ متجر.
+ *
+ * 🪤 والحسابُ على القاعدة لا هنا: `store_policies` تُعيد المهلةَ **الفعّالة**
+ *    محسوبةً بـ`taki_booking_hold_hours(kind, store)` — وهي نفسُها الدالّةُ
+ *    التي يستعملها مشغّلُ الحجز. فما يَعِد به البوتُ هو ما سيُطبَّق حرفاً بحرف.
+ *    ولو حُسبت هنا لصارت نسخةً ثانية تنحرف — وهو العيبُ الذي بُني كلُّ هذا
+ *    الملفّ على منعه (v14.12).
+ * 🪤 وعند أيّ فشلٍ عابر تُعاد قيمةُ المنصّة لا صفرٌ ولا خطأ: وعدٌ تقريبيٌّ
+ *    أهونُ من شاشةِ حجزٍ لا تُفتح.
+ * 🪤 والتخزينُ دقيقةٌ واحدة لكلّ متجر — كحال قيم المنصّة بالضبط.
+ */
+const _storeCache = new Map();
+
+async function forStore(storeId) {
+    const base = await get();
+    const id = String(storeId || '').trim();
+    if (!id || !_client) return base;
+    const now = Date.now();
+    const hit = _storeCache.get(id);
+    if (hit && now - hit.at < TTL_MS) return hit.v;
+    try {
+        const { data } = await _client.rpc('store_policies', { p_store_id: id });
+        const d = data || {};
+        const v = {
+            ...base,
+            pickup:   sane(d.hold_pickup_hours,   base.pickup),
+            delivery: sane(d.hold_delivery_hours, base.delivery),
+        };
+        _storeCache.set(id, { v, at: now });
+        return v;
+    } catch { return base; }
+}
+
 /** «ساعتان» / «two hours» — صيغة الرفع. */
 function label(n, lang) {
     if (lang === 'en') return n === 1 ? 'one hour' : n === 2 ? 'two hours' : `${n} hours`;
@@ -116,4 +152,4 @@ function receiptErrKey(error) {
     })[String(error || '')] || 'b_confirm_receipt_failed';
 }
 
-module.exports = { init, get, label, labelGen, selfCloseLeft, waitLabel, receiptErrKey, FALLBACK };
+module.exports = { init, get, forStore, label, labelGen, selfCloseLeft, waitLabel, receiptErrKey, FALLBACK };
