@@ -351,8 +351,12 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     onChange={(e) => setProvider(e.target.value)}
                                     style={{ ...inputStyle, direction: isRTL ? 'rtl' : 'ltr', textAlign: isRTL ? 'right' : 'left', cursor: 'pointer' }}
                                 >
+                                    {/* v15.45 — المزوّدُ الموقوف يبقى **مرئياً** ليعرف التاجرُ ما
+                                        عنده، و**غيرَ قابلٍ للاختيار** لأن القاعدة ترفضه بأربعة
+                                        أقفال. وإخفاؤه كان سيترك خانةً فارغةً بلا تفسير، وتركُه
+                                        قابلاً للاختيار كان سيصنع طريقاً مسدوداً. */}
                                     {visibleProviders.map(p => (
-                                        <option key={p.id} value={p.id}>
+                                        <option key={p.id} value={p.id} disabled={!enabledIds.includes(p.id)}>
                                             {L(p.name)}{!enabledIds.includes(p.id) ? t(' — ⏸ موقوف من الإدارة', ' — ⏸ paused by the platform') : ''}
                                         </option>
                                     ))}
@@ -366,13 +370,18 @@ const GatewayCard: React.FC<{ userId: string; isRTL: boolean; onAlert: (msg: str
                                     {isRTL ? (
                                         <>🧪 <b>وضع تجريبي كامل:</b> لا يحتاج أي مفاتيح أو حساب بنكي — كل خطوات الدفع تعمل
                                         (صفحة دفع، تأكيد، سجل، إشعارات) لكن <b>لا يُخصم أي ريال حقيقي</b>، وكل الرسائل
-                                        تصرّح أنها محاكاة. مناسب لتجربة النظام قبل ربط بوابة حقيقية.
-                                        فقط اضغط «حفظ البيانات» ثم «اختبار الاتصال» ثم «تفعيل».</>
+                                        تصرّح أنها محاكاة.
+                                        {' '}<b>⛔ وهو موقوف على المنصّة الحيّة (v15.45):</b> لأنه يختم الطلب «مدفوعاً»
+                                        بلا أن يمرّ ريال، فأيّ زائر كان يستطيع الشراء مجّاناً. يعمل على قاعدة التجربة
+                                        وحدها، واختياره هنا سيُرفض. اربط بوابة حقيقية (ميسر · تاب · باي‑تابس).</>
                                     ) : (
                                         <>🧪 <b>Full test mode:</b> no keys and no bank account needed — every payment step works
                                         (checkout page, confirmation, history, notifications) but <b>no real money is charged</b>, and every
-                                        message says it is a simulation. Good for trying the system before connecting a real gateway.
-                                        Just tap “Save details”, then “Test connection”, then “Enable”.</>
+                                        message says it is a simulation.
+                                        {' '}<b>⛔ It is switched off on the live platform (v15.45):</b> it stamps an order “paid”
+                                        without a single riyal moving, so any visitor could buy for free. It works on the test
+                                        database only, and choosing it here will be refused. Connect a real gateway
+                                        (Moyasar · Tap · PayTabs).</>
                                     )}
                                 </div>
                             )}
