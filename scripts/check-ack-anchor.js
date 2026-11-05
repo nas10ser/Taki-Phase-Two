@@ -35,6 +35,17 @@ const m = hold.match(/export const selfCloseOpensAt = \(b: SelfCloseInput, minut
 if (!m) { console.log('❌ لم يُعثر على selfCloseOpensAt في bookingHold.ts'); process.exit(1); }
 // eslint-disable-next-line no-eval
 const webOpens = eval(`(b, minutes) => {${m[1]}\n}`);
+// وحالةُ الانتظار نفسُها (للتحقّق من دلالة الصفر في البيئات الثلاث)
+const msState = hold.match(/export const selfCloseState = \([\s\S]*?\n\): SelfCloseState => \{([\s\S]*?)\n\};/);
+const miAck = hold.match(/export const isAcknowledged = \(b: SelfCloseInput\): boolean =>\n([\s\S]*?);\n/);
+if (!msState || !miAck) { console.log('❌ لم يُعثر على selfCloseState/isAcknowledged'); process.exit(1); }
+// eslint-disable-next-line no-eval
+const selfCloseState = eval(`(webOpens) => {
+    const isAcknowledged = (b) => ${miAck[1].trim()};
+    const selfCloseOpensAt = webOpens;
+    return (b, minutes, nowMs) => {${msState[1].replace(/\(isRTL: boolean\)/g, '(isRTL)')}
+    };
+}`)(webOpens);
 
 const NOW = 1_700_000_000_000;
 const M = 10, MS = M * 60000;
@@ -51,11 +62,11 @@ const CASES = [
      { status: 'pending', bookedAt: NOW, expiryTime: NOW + 15 * 60000 }, NOW + MS],
     ['لم يؤكّد · حجزٌ قديم ومهلةٌ توشك ⇒ مفتوحٌ الآن',
      { status: 'pending', bookedAt: NOW - 20 * 60000, expiryTime: NOW + 9 * 60000 }, NOW - 60000],
-    // 🔴 الحالةُ التي أسقطت الصيغةَ الثانية: مهلةُ ١٥ دقيقة وتأكيدٌ بعد ٦ ⇒
-    //    بلا سقفٍ تُفتح عند +١٦ وتنتهي المهلةُ عند +١٥ = **نافذةٌ خالية**.
-    ['أكّد متأخّراً على مهلةٍ قصيرة ⇒ قبل الانتهاء بدقيقة',
+    // 🔴 v15.47 — والتأكيدُ المتأخّر لا يؤجّل: تُؤخذ الأسبقُ من المرساتين.
+    //    هنا الاحتياطيّةُ (الحجز+١٠د = +٤د) أسبقُ من مرساة التأكيد (+١٠د).
+    ['أكّد متأخّراً ⇒ تُؤخذ الأسبق (الاحتياطيّة)',
      { status: 'acknowledged', acknowledgedAt: NOW, bookedAt: NOW - 6 * 60000, expiryTime: NOW + 9 * 60000 },
-     NOW + 9 * 60000 - 60000],
+     NOW + 4 * 60000],
 ];
 for (const [name, b, want] of CASES) {
     const got = webOpens(b, M);
@@ -86,6 +97,19 @@ check('ونصُّ وقتٍ مكان الرقم لا يُقبل صامتاً',
     check('بعد الفتح ⇒ الزرّ',
         (await st({ status: 'acknowledged', acknowledgedAt: NOW - 11 * 60000,
                     bookedAt: NOW - 12 * 60000, expiryTime: NOW + 7200000 })) === null);
+    // 🔴 الرتابة: التأكيدُ لا يؤخّر الفتحَ أبداً — كان يسحب زرّاً من يد
+    //    المشتري (عيبُ v15.44، كشفه الفحصُ المستقلّ).
+    let regressed = null;
+    for (let holdMin = 15; holdMin <= 135 && !regressed; holdMin += 6) {
+        for (let ackMin = 0; ackMin <= holdMin; ackMin += 3) {
+            const base = { bookedAt: NOW, expiryTime: NOW + holdMin * 60000 };
+            const before = webOpens({ ...base, status: 'pending' }, M);
+            const after = webOpens({ ...base, status: 'acknowledged', acknowledgedAt: NOW + ackMin * 60000 }, M);
+            if (after > before) { regressed = `مهلة ${holdMin}د وتأكيدٌ بعد ${ackMin}د: ${before} ⇐ ${after}`; break; }
+        }
+    }
+    check('التأكيدُ يُعجّل الفتحَ ولا يؤجّله (كلُّ تركيبة)', regressed === null, regressed);
+
     // 🔴 العقدُ الحاسم: لحظةُ الفتح **قبل** انتهاء المهلة دائماً، مهما كان
     //    طولُ المهلة ولا متى أكّد التاجر. تُجرَّب ٤٠٠ تركيبة.
     let empty = null;
@@ -97,6 +121,19 @@ check('ونصُّ وقتٍ مكان الرقم لا يُقبل صامتاً',
         }
     }
     check('النافذةُ موجودةٌ في كلّ تركيبةِ مهلةٍ وتأكيد (٤٠٠ حالة)', empty === null, empty);
+
+    // 🔴 v15.46 — صفرُ المهلة يعني «بلا مهلة» في البيئات الثلاث جميعاً.
+    //    كان الموقعُ والبوت يُرجعان «مفتوح» عند الصفر بينما القاعدةُ تحسب
+    //    `GREATEST(booked, expiry)` فتُنتج **أطولَ انتظارٍ ممكن** — فتعرض
+    //    الشاشةُ زرّاً يرفضه الخادم.
+    check('صفرُ المهلة: الموقعُ يفتح فوراً', selfCloseState({ status: 'pending', bookedAt: NOW, expiryTime: NOW + 7200000 }, 0, NOW) === null);
+    // 🪤 ونسخةُ البوت تقرأ الدقائقَ من إعدادات المنصّة لا من وسيط، فلا تُمرَّر
+    //    لها صفراً في اختبار. يُفحص فرعُها نصّاً — وهو الممكنُ الصادق هنا.
+    check('صفرُ المهلة: وفرعُ البوت موجود',
+        /if \(!\(h\.selfClose > 0\)\) return null;/.test(strip(R('server/lib/holds.js'))));
+    check('والهجرةُ تجعل القاعدةَ توافقهما',
+        /taki_self_close_minutes\(\) <= 0/.test(stripSql(R('supabase/JEDDAH_v15_46_store_profile_column_guard.sql'))),
+        'بدونها يختلف الخادمُ عن الشاشة عند الصفر');
 
     check('ولا يبقى طلبٌ بلا مخرجٍ أبداً',
         (await st({ status: 'pending', bookedAt: NOW - 20 * 60000, expiryTime: NOW + 9 * 60000 })) === null);

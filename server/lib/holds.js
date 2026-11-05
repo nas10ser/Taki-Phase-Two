@@ -137,11 +137,13 @@ function selfCloseOpensAt(b, minutes) {
     const ex = Number(b && b.expiry_time);
     const expiry = Number.isFinite(ex) ? ex : 0;
     const ack = Number(b && b.ack_at_ms);
-    const raw = (Number.isFinite(ack) && ack > 0)
+    // 🔴 v15.47 — الأسبقُ من المرساتين: التأكيدُ يُعجّل الفتحَ ولا يؤجّله.
+    if (!(minutes > 0)) return booked;
+    const ackAt = (Number.isFinite(ack) && ack > 0)
         ? Math.max(booked + ms, ack + ms)
-        : (b && b.status === 'acknowledged')
-            ? booked + ms
-            : Math.max(booked + ms, expiry - ms);
+        : (b && b.status === 'acknowledged') ? booked + ms : Number.POSITIVE_INFINITY;
+    const fallback = Math.max(booked + ms, (expiry > 0 ? expiry : Number.POSITIVE_INFINITY) - ms);
+    const raw = Math.min(ackAt, fallback);
     return expiry > 0 ? Math.min(raw, expiry - 60000) : raw;
 }
 

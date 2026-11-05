@@ -37,13 +37,18 @@ export const HoldHoursCard: React.FC = () => {
     const [max, setMax] = useState(72);
     const [busy, setBusy] = useState(false);
     const [ready, setReady] = useState(false);
+    const [failed, setFailed] = useState(false);
 
     const load = useCallback(async () => {
         if (!user?.id) return;
         const r = await refundRepository.storePolicies(user.id);
         // تعذّرت القراءة ⇒ لا تُفرَّغ الحقول: فراغٌ هنا يعني «اتبع المنصّة»،
         // فحفظٌ بعده يمحو اختيارَ التاجر بلا أن يقصد (درس v14.71).
-        if (!r.ok) return;
+        // 🔴 v15.47 — وكان ذلك يصنع طريقاً مسدوداً: البطاقةُ تعرض افتراضَ
+        //    المنصّة كأنّه مهلتُه، والزرُّ يبقى معطَّلاً إلى الأبد بلا سبب
+        //    ظاهر. فالآن تقول ما جرى وتعرض إعادةَ المحاولة.
+        if (!r.ok) { setFailed(true); return; }
+        setFailed(false);
         const p = r.holdPickupCustom != null ? String(r.holdPickupCustom) : '';
         const d = r.holdDeliveryCustom != null ? String(r.holdDeliveryCustom) : '';
         setPickup(p); setDelivery(d); setSaved({ p, d });
@@ -102,6 +107,29 @@ export const HoldHoursCard: React.FC = () => {
         fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)',
         marginTop: 4, lineHeight: 1.7,
     };
+
+    if (failed) {
+        return (
+            <div style={box}>
+                <div style={{ fontWeight: 900, fontSize: '0.9rem', marginBottom: 6 }}>
+                    ⏳ {isRTL ? 'كم تنتظر المشتري؟' : 'How long do you wait for the buyer?'}
+                </div>
+                <div style={hint}>
+                    {isRTL
+                        ? 'تعذّر جلب مهلتك الحالية — لا نعرضها حتى لا نُريك رقماً ليس رقمك. تحقّق من اتصالك ثم أعد المحاولة.'
+                        : 'Could not load your current window — we will not show a number that may not be yours. Check your connection and retry.'}
+                </div>
+                <button onClick={() => { setFailed(false); void load(); }}
+                    style={{
+                        marginTop: 10, width: '100%', padding: '11px', borderRadius: 14, border: 'none',
+                        background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff',
+                        fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer',
+                    }}>
+                    {isRTL ? '↻ إعادة المحاولة' : '↻ Retry'}
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div style={box}>

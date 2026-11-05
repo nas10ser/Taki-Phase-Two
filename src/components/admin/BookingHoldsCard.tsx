@@ -49,7 +49,7 @@ const FIELDS: readonly FieldDef[] = [
     // 🪤 والسقفُ ١٢٠ لا ١٤٤٠: مهلةُ الحجز نفسُها ساعتان افتراضاً، فرقمٌ أكبر
     //    منها يُقفل الميزةَ على المنصّة كلّها بلا أن يقول أحدٌ شيئاً.
     { key: 'selfClose', icon: '✅', label: 'قبل الختم بلا كود', unit: 'min', min: 0, max: 120, step: 1,
-      hint: 'بالدقائق: كم بعد **تأكيد التاجر** لاستلام الطلب قبل أن يظهر «استلمت طلبي» للمشتري و«تم التسليم بدون كود» للتاجر. وإن لم يؤكّد التاجر، يُفتح الزرّ في آخر هذه المدّة من المهلة كي لا يبقى المشتري بلا مخرج. ومسحُ الكود فوريٌّ دائماً. و٠ تُعطّل المهلة.' },
+      hint: 'بالدقائق، ويجب أن تبقى أقصرَ من أقصر مهلةِ حجزٍ (١٥ دقيقة). و٠ تعني بلا مهلة: الزرُّ يُفتح فوراً. كم بعد **تأكيد التاجر** لاستلام الطلب قبل أن يظهر «استلمت طلبي» للمشتري و«تم التسليم بدون كود» للتاجر. وإن لم يؤكّد التاجر، يُفتح الزرّ في آخر هذه المدّة من المهلة كي لا يبقى المشتري بلا مخرج. ومسحُ الكود فوريٌّ دائماً. و٠ تُعطّل المهلة.' },
 ];
 
 const DEFAULTS: Record<Key, number> = { pickup: 2, delivery: 6, safety: 72, maxHold: 72, selfClose: 10 };
@@ -61,6 +61,9 @@ const JSON_KEY: Record<Key, string> = {
 export const BookingHoldsCard: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [vals, setVals] = useState<Record<Key, string> | null>(null);
+    // 🪤 ويُحتفظ بالصفّ كما هو: الحفظُ يستبدل الكائنَ كلَّه، فأيُّ مفتاحٍ
+    //    يضيفه إصدارٌ لاحق كان يُمحى بصمت عند أوّل حفظٍ للمدير.
+    const [rawValue, setRawValue] = useState<Record<string, unknown>>({});
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState('');
     const [saving, setSaving] = useState(false);
@@ -71,6 +74,7 @@ export const BookingHoldsCard: React.FC = () => {
             .from('platform_settings').select('value').eq('key', 'booking_holds').maybeSingle();
         if (error) { setErr(error.message); setLoading(false); return; }
         const v = (data?.value ?? {}) as any;
+        setRawValue(v && typeof v === 'object' ? v : {});
         const next = {} as Record<Key, string>;
         for (const f of FIELDS) {
             const raw = v[JSON_KEY[f.key]];
@@ -105,8 +109,22 @@ export const BookingHoldsCard: React.FC = () => {
         if (n.maxHold < Math.max(n.pickup, n.delivery) && !(await customConfirm(
             `⚠️ أقصى ما يختاره التاجر (${n.maxHold}) أقصر من افتراضك (${Math.max(n.pickup, n.delivery)}).\nالتاجر الذي يريد مهلةً كافتراضك لن يستطيع اختيارها.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
 
+        // 🔴 v15.46 — مهلةُ الختم تُقاس بالدقائق والمهلةُ بالساعات، وأرضيّةُ
+        //    مهلة التاجر **ربعُ ساعة**. فكلُّ قيمةٍ تقترب من ١٥ دقيقة تُفرّغ
+        //    نافذةَ كلِّ متجرٍ على الأرضيّة إلى الدقيقة الواحدة التي يضمنها
+        //    السقف. (قِيس: مهلة ١٥د + ختمٌ ٣٠د ⇒ المشتري ينتظر ١٤ دقيقة ثم
+        //    نافذةٌ ٦٠ ثانية.) نسأل ولا نمنع — القرارُ قرارُه.
+        if (n.selfClose >= 14 && !(await customConfirm(
+            `⚠️ «قبل الختم بلا كود» = ${n.selfClose} دقيقة، وأقصرُ مهلةٍ يملك التاجرُ اختيارها ١٥ دقيقة.\n`
+            + `في تلك المتاجر لن يبقى للمشتري إلا دقيقةٌ واحدة ليضغط «استلمت طلبي».\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+        // ومثلُها لو تجاوزت افتراضَ المنصّة نفسَه.
+        if (n.selfClose >= n.pickup * 60 && !(await customConfirm(
+            `⚠️ «قبل الختم بلا كود» (${n.selfClose} دقيقة) أطولُ من مهلة الاستلام نفسِها (${n.pickup} ساعة).\n`
+            + `الزرُّ لن يُفتح إلا قبل انتهاء الطلب بدقيقة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+
         setSaving(true);
         const e = await writePlatformSetting('booking_holds', {
+            ...rawValue,
             pickup_hours: n.pickup, delivery_hours: n.delivery, in_progress_hours: n.safety,
             max_hold_hours: n.maxHold, self_close_minutes: n.selfClose,
         }, 'مهلة الحجز: الاستلام · التوصيل · شبكة الأمان · سقف اختيار التاجر · مهلة الختم بلا كود');

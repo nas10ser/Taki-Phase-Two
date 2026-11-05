@@ -90,11 +90,14 @@ export const selfCloseOpensAt = (b: SelfCloseInput, minutes: number): number => 
     const ms = minutes * 60000;
     const booked = Number(b.bookedAt ?? 0);
     const expiry = Number(b.expiryTime ?? 0);
-    const raw = (b.acknowledgedAt != null && Number.isFinite(Number(b.acknowledgedAt)))
+    // 🔴 v15.46/47 — صفرٌ يعني «بلا مهلة»، واللحظةُ لا ترجع إلى الوراء:
+    //    تأكيدٌ متأخّر كان يسحب زرّاً صار في يد المشتري.
+    if (!(minutes > 0)) return booked;
+    const ackAt = (b.acknowledgedAt != null && Number.isFinite(Number(b.acknowledgedAt)))
         ? Math.max(booked + ms, Number(b.acknowledgedAt) + ms)
-        : b.status === 'acknowledged'
-            ? booked + ms
-            : Math.max(booked + ms, expiry - ms);
+        : b.status === 'acknowledged' ? booked + ms : Number.POSITIVE_INFINITY;
+    const fallback = Math.max(booked + ms, (expiry > 0 ? expiry : Number.POSITIVE_INFINITY) - ms);
+    const raw = Math.min(ackAt, fallback);
     return expiry > 0 ? Math.min(raw, expiry - 60000) : raw;
 };
 
