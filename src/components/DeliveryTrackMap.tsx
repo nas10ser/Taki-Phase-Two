@@ -64,6 +64,8 @@ type TrackData = {
     destination?: TrackPoint | null;
     store?: TrackPoint | null;
     booking_status?: string | null;
+    /** 🔴 v15.49 — «غادرت البضاعةُ المتجر»؛ حقيقةٌ دائمة لا حالةٌ لحظيّة. */
+    dispatched?: boolean;
 };
 
 interface Props {
@@ -310,6 +312,13 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
     }, [fetchOnce, retrySeq]);
 
     const status = data?.status || null;
+    /**
+     * 🔴 v15.49 — `cancelled` معنيان: إلغاءُ التاجر، **وتنظيفُ بثٍّ بائت** بعد
+     * ساعةٍ من صمت هاتف المندوب (كرونٌ كلَّ ربع ساعة). ومع مرساةِ الانطلاق نعرف الفرق:
+     * فمشترٍ استلم بضاعته كان يُقرأ له «⛔ أُلغي التوصيل» وطلبُه قائمٌ وزرُّ
+     * التأكيد في يده. والطلبُ حالتُه `booking_status` لا حالةُ المسار.
+     */
+    const trackingStopped = status === 'cancelled' && data?.dispatched === true;
     const live = data?.live === true;
 
     const courier = useMemo<LatLng | null>(
@@ -368,6 +377,15 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
                 title: t('سُلِّم الطلب', 'Order delivered'),
                 sub: t('وصلك الطلب وانتهى التوصيل.', 'Your order arrived and delivery is complete.'),
                 tone: tone('green'),
+            };
+        }
+        if (trackingStopped) {
+            return {
+                icon: '📴',
+                title: t('توقّف تتبّع المندوب', 'Courier tracking stopped'),
+                sub: t('طلبك ما زال قائماً وقد غادر المتجر — إن وصلك فأكّد الاستلام، وإن لم يصل فراسل المتجر من داخل الطلب.',
+                       'Your order is still open and has left the store — confirm receipt if it arrived, or message the store from the order.'),
+                tone: tone('amber'),
             };
         }
         if (status === 'cancelled') {

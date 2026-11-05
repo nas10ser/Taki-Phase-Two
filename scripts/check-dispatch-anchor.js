@@ -142,6 +142,24 @@ check('واتساب: dlv_dispatched هي الأصل والقائمةُ ارتد�
 check('واتساب: waHoldRunning يقرأ hold_running',
     /function waHoldRunning\(b\) \{[\s\S]{0,280}?typeof b\.hold_running === 'boolean'\) return b\.hold_running/.test(wa));
 
+// ── ٦) وما تقوله الشاشتان عن مسارٍ أُلغي بثُّه ─────────────────────────────
+// 🪤 الإصلاحُ بلا هذا نصفُ إصلاح: الزرُّ يعود والشاشةُ تقول «⛔ أُلغي التوصيل»
+//    لمشترٍ يحمل بضاعته، والتاجرُ يفقد «تم التسليم» و«بدء التوصيل» معاً.
+const map = stripJs(R('src/components/DeliveryTrackMap.tsx'));
+check('خريطةُ المشتري تفرّق بين الإلغاء وانقطاع البثّ',
+    /const trackingStopped = status === 'cancelled' && data\?\.dispatched === true/.test(map)
+    && map.indexOf('if (trackingStopped)') > 0
+    && map.indexOf('if (trackingStopped)') < map.indexOf("if (status === 'cancelled')"),
+    'فرعُ انقطاعِ البثّ غائبٌ أو بعد فرعِ الإلغاء فلا يُصاب أبداً');
+
+const card = stripJs(R('src/components/seller/DeliveryTrackerCard.tsx'));
+check('بطاقةُ التاجر لا تُحبسه عند انقطاع البثّ',
+    /const trackingStopped = status === 'cancelled' && track\?\.dispatched === true/.test(card)
+    && /const finished = \(status === 'delivered' \|\| status === 'cancelled'\) && !trackingStopped/.test(card),
+    '`finished` يسحب «تم التسليم» و«بدء التوصيل» فيبقى التاجرُ بلا مخرج');
+check('وكلتاهما تقرأ dispatched من الردّ',
+    /dispatched\?: boolean/.test(map) && /dispatched: d\.dispatched === true/.test(card));
+
 console.log(fail === 0
     ? `\n✅ مرساةُ الانطلاق محروسة (${pass} فحصاً)`
     : `\n❌ ${fail} فحصاً سقط من ${pass + fail}`);

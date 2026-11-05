@@ -42,6 +42,8 @@ interface TrackState {
     etaMin: number | null;
     ageSec: number | null;
     startedAt: string | null;
+    /** 🔴 v15.49 — «غادرت البضاعةُ المتجر»: حقيقةٌ دائمة لا حالةٌ لحظيّة. */
+    dispatched: boolean;
 }
 
 interface Fix {
@@ -168,7 +170,7 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
                 const reason = String(d.reason || '');
                 // «لا صفّ بعد» ليست خطأً: الطلب لم يبدأ توصيله قط — نعرضه «قيد التجهيز».
                 if (reason === 'not_found') {
-                    setTrack({ status: 'preparing', live: false, remainingKm: null, etaMin: null, ageSec: null, startedAt: null });
+                    setTrack({ status: 'preparing', live: false, remainingKm: null, etaMin: null, ageSec: null, startedAt: null, dispatched: false });
                     setLoadErr(null);
                     return 'preparing' as TrackStatus;
                 }
@@ -187,6 +189,7 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
                 etaMin: num(d.eta_min),
                 ageSec: num(d.age_sec),
                 startedAt: typeof d.started_at === 'string' ? d.started_at : null,
+                dispatched: d.dispatched === true,
             });
             setLoadErr(null);
             if (!silent) setNote(null);
@@ -236,6 +239,8 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
                 etaMin: num(d.eta_min),
                 ageSec: 0,
                 startedAt: prev?.startedAt ?? null,
+                // نبضةٌ ناجحة تعني أن المندوب منطلقٌ قطعاً — والقاعدة طبعت المرساة.
+                dispatched: true,
             }));
         } catch (e) {
             const key = errKey(e);
@@ -377,9 +382,19 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
     if (!isDelivery) return null;
 
     const status: TrackStatus = track?.status || 'preparing';
-    const ui = STATUS_UI[status];
+    /**
+     * 🔴 v15.49 — `cancelled` معنيان: إلغاءُ التاجر، **وتنظيفُ بثٍّ بائت** بعد
+     * ساعةٍ من صمت الهاتف. وبلا التفرقة كان التاجرُ يُحبس: الشارةُ تقول «أُلغي
+     * التوصيل»، و`finished` يسحب «بدء التوصيل» و«تم التسليم» معاً فلا يبقى له
+     * إلا «تحديث الحالة» — وبضاعتُه سُلّمت فعلاً. ومرساةُ الانطلاق تفرّق.
+     */
+    const trackingStopped = status === 'cancelled' && track?.dispatched === true;
+    const ui = trackingStopped
+        ? { icon: '📴', ar: 'توقّف بثّ الموقع', en: 'Location sharing stopped',
+            color: '#b45309', bg: 'rgba(245,158,11,0.16)' }
+        : STATUS_UI[status];
     const shipping = status === 'on_the_way' || status === 'arrived';
-    const finished = status === 'delivered' || status === 'cancelled';
+    const finished = (status === 'delivered' || status === 'cancelled') && !trackingStopped;
     const km = track?.remainingKm;
     const eta = track?.etaMin;
 
