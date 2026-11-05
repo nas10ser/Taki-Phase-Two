@@ -147,9 +147,24 @@ check('ونصُّ وقتٍ مكان الرقم لا يُقبل صامتاً',
         check(`${f.split('/').pop()}: يمرّر نصَّ ما قبل التأكيد`, /beforeAck=/.test(src));
         check(`${f.split('/').pop()}: يمرّر الطلبَ لا لحظةَ الحجز`, /booking=\{|booking=\{order\}/.test(src) && !/bookedAt=\{/.test(src));
     }
-    check('مُحوِّلُ الصفوف يقرأ لحظةَ التأكيد ونهايةَ المهلة',
-        /acknowledgedAt: b\.acknowledged_at/.test(strip(R('src/repositories/bookingRepository.ts')))
-        && /expiryTime: b\.expiry_time/.test(strip(R('src/repositories/bookingRepository.ts'))));
+    // 🔴 والقيمةُ **رقمُ مللي** لا اسمٌ فقط: عيبُ v15.42 كان مفتاحاً موجوداً
+    //    بالاسم يحمل **نصَّ وقت**، و`Number()` عليه NaN. فحصٌ يسأل عن الاسم
+    //    وحده كان سيمرّ على ذلك العيب بعينه.
+    const repo = strip(R('src/repositories/bookingRepository.ts'));
+    // 🪤 و**كلُّ** موضعٍ لا موضعٌ واحد: المُحوِّل مكرَّرٌ ثلاث مرّات في الملفّ
+    //    (الصفحةُ · الترقيم · الصفُّ المفرد)، وكسرُ واحدٍ منها كان يمرّ لأن
+    //    الباقي يُرضي النمط. يُعدّ الاسمُ ويُعدّ التحويلُ ويُشترط تساويهما.
+    const named = (repo.match(/acknowledgedAt:\s*\w+\.acknowledged_at/g) || []).length;
+    const converted = (repo.match(/acknowledgedAt:\s*\w+\.acknowledged_at \? new Date\([^)]*\)\.getTime\(\)/g) || []).length;
+    check('كلُّ مُحوِّلٍ يُرجع **رقمَ مللي** لا نصَّ وقت',
+        named > 0 && named === converted,
+        `مواضعُ الاسم ${named} · المحوَّلةُ منها ${converted} — الفارقُ NaN صامت`);
+    check('ونهايةُ المهلة رقمٌ كذلك', /expiryTime: b\.expiry_time/.test(repo));
+    // وفي ردّ البوتين: مفتاحٌ رقميٌّ صريح لا `to_timestamp`
+    const migAck = stripSql(R('supabase/JEDDAH_v15_44_ack_anchor_and_pay_truth.sql'));
+    check('وردُّ البوتين يحمل مللي صريحة لا نصَّ وقت',
+        /'ack_at_ms',\s*CASE WHEN b\.acknowledged_at IS NULL THEN NULL[\s\S]{0,120}EXTRACT\(EPOCH FROM b\.acknowledged_at\)\*1000/.test(migAck),
+        'المفتاحُ موجودٌ بالاسم لا يكفي — تُقاس القيمة');
 
     // ── ٤) البوتان معاً ─────────────────────────────────────────────────────
     for (const f of ['server/bot.js', 'server/flows/whatsapp.js']) {
@@ -174,6 +189,10 @@ check('ونصُّ وقتٍ مكان الرقم لا يُقبل صامتاً',
     const migBodies = mig.slice(0, mig.indexOf('DO $verify$'));
     check('الهجرة: عمودُ لحظة التأكيد', /ADD COLUMN IF NOT EXISTS acknowledged_at/.test(mig));
     check('الهجرة: مشغّلٌ يختمها ويحفظ القديمة', /tr_ag_stamp_ack/.test(migBodies) && /OLD\.acknowledged_at/.test(migBodies));
+    // 🪤 ولا يُقارَن توقيتان مختلفان: `tr_af_…` مشغّلُ AFTER وهذا BEFORE،
+    //    والترتيبُ الأبجديّ يسري داخل كلِّ توقيتٍ وحده. (تعليقٌ خاطئ صُحِّح.)
+    check('ولا يدّعي ترتيباً بين توقيتين مختلفين',
+        !/بعد\*\*\s*`tr_af_order_invoice_draft`/.test(mig) && !/ليقع \*\*بعد\*\* `tr_af_order_invoice_draft`/.test(mig));
     check('الهجرة: لحظةُ الفتح دالّةٌ واحدة', /taki_self_close_opens_at/.test(migBodies));
     // 🪤 ويُستثنى نصُّ كتلة التحقّق نفسِها: هي تبحث عن العبارة فتعدّ نفسَها
     //    رابعةً — وهو نفسُ فخّ «الحارسُ يقرأ تعليقَه» بثوبٍ آخر.

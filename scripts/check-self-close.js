@@ -23,6 +23,22 @@ const strip = (src) => src
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');
 
+
+// 🔴 مستخرجُ جسمِ دالّةٍ بعينها من نصّ الهجرة.
+//    كشف الفحصُ المستقلّ أن أنماطاً مثل `/fn[\s\S]*?token/` **تمتدّ عبر
+//    الملفّ كلِّه**: يكفي أن يرد الرمزُ في أيّ موضعٍ لاحق — ولو في دالّةٍ
+//    أخرى أو في كتلة التحقّق — فيمرّ الفحصُ وجسمُ الدالّة فارغٌ تماماً.
+//    (قِيس: حُذفت مهلةُ الختم كلُّها من الثلاث ومرّ الحارسُ أخضر.)
+const fnBody = (sql, name) => {
+    const re = new RegExp('CREATE OR REPLACE FUNCTION public\\.' + name + '\\s*\\(', 'g');
+    const m = re.exec(sql);
+    if (!m) return '';
+    const rest = sql.slice(m.index);
+    // جسمُ الدالّة ينتهي عند `$function$;` أو `$$;` — أوّلُ إغلاقٍ بعدها.
+    const end = rest.search(/\$function\$\s*;|\$\$\s*;/);
+    return end > 0 ? rest.slice(0, end) : rest;
+};
+
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => {
     console.log(`${ok ? '  ✓' : '  ✗'} ${name}`);
@@ -140,11 +156,17 @@ check('طلبٌ لم يؤكّده التاجر: محجوبٌ بسببٍ آخر،
     // ── ٥) القاعدةُ هي الحَكَم: الهجرةُ تحمل الحارسَ لا الواجهةُ وحدها ────
     const mig = R('supabase/JEDDAH_v15_42_self_close_delay.sql')
         .replace(/^--[^\n]*$/gm, '').replace(/--[^\n]*$/gm, '');
-    for (const [name, re] of [
-        ['buyer_confirm_receipt', /buyer_confirm_receipt[\s\S]*?taki_self_close_minutes/],
-        ['bot_buyer_confirm_receipt', /bot_buyer_confirm_receipt[\s\S]*?too_soon/],
-        ['merchant_handover_booking', /merchant_handover_booking[\s\S]*?taki_self_close_minutes/],
-    ]) check(`الهجرة: ${name} يحمل المهلة`, re.test(mig));
+    // ويُفحص **جسمُ كلّ دالّةٍ وحده** لا الملفُّ كلُّه.
+    for (const [name, token] of [
+        ['buyer_confirm_receipt', 'taki_self_close_minutes'],
+        ['bot_buyer_confirm_receipt', 'too_soon'],
+        ['merchant_handover_booking', 'taki_self_close_minutes'],
+    ]) {
+        const body = fnBody(mig, name);
+        check(`الهجرة: ${name} يحمل المهلة`,
+            body.length > 0 && body.includes(token),
+            body.length === 0 ? 'لم يُعثر على جسم الدالّة' : 'الجسمُ موجودٌ بلا الرمز');
+    }
     check('الهجرة: ثُلمةُ المشتري في complete_booking مسدودة',
         /complete_booking[\s\S]*?AND caller = store_id/.test(mig)
         && !/caller = store_id OR caller = user_id/.test(mig));

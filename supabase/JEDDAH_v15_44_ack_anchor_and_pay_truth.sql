@@ -60,9 +60,12 @@ BEGIN
 END;
 $function$;
 
--- الاسم `tr_ag_` ليقع **بعد** `tr_af_order_invoice_draft` وبعد حارس التجميد
--- `tr_ab_guard_booking_integrity`: مشغّلٌ يسبق الحارسَ ويغيّر عموداً مجمَّداً
--- يجعل الحارسَ يرفض كتابتَنا نحن.
+-- الاسم `tr_ag_` ليقع **بعد حارس التجميد** `tr_ab_guard_booking_integrity`
+-- في ترتيب مشغّلات `BEFORE` (وهو أبجديّ): مشغّلٌ يسبق الحارسَ ويغيّر عموداً
+-- مجمَّداً يجعل الحارسَ يرفض كتابتَنا نحن.
+-- 🪤 وصُحِّح ادّعاءٌ في هذا التعليق كشفه الفحصُ المستقلّ: لا يُقارَن بـ
+--    `tr_af_order_invoice_draft` أصلاً — ذاك `AFTER` وهذا `BEFORE`، ولا
+--    ترتيبَ بينهما. الترتيبُ الأبجديّ يسري داخل كلِّ توقيتٍ على حدة.
 DROP TRIGGER IF EXISTS tr_ag_stamp_ack ON public.bookings;
 CREATE TRIGGER tr_ag_stamp_ack
   BEFORE INSERT OR UPDATE ON public.bookings

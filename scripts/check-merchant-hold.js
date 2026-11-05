@@ -21,6 +21,22 @@ const strip = (src) => src
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');
 const stripSql = (src) => src.replace(/^--[^\n]*$/gm, '').replace(/--[^\n]*$/gm, '');
 
+
+// 🔴 مستخرجُ جسمِ دالّةٍ بعينها من نصّ الهجرة.
+//    كشف الفحصُ المستقلّ أن أنماطاً مثل `/fn[\s\S]*?token/` **تمتدّ عبر
+//    الملفّ كلِّه**: يكفي أن يرد الرمزُ في أيّ موضعٍ لاحق — ولو في دالّةٍ
+//    أخرى أو في كتلة التحقّق — فيمرّ الفحصُ وجسمُ الدالّة فارغٌ تماماً.
+//    (قِيس: حُذفت مهلةُ الختم كلُّها من الثلاث ومرّ الحارسُ أخضر.)
+const fnBody = (sql, name) => {
+    const re = new RegExp('CREATE OR REPLACE FUNCTION public\\.' + name + '\\s*\\(', 'g');
+    const m = re.exec(sql);
+    if (!m) return '';
+    const rest = sql.slice(m.index);
+    // جسمُ الدالّة ينتهي عند `$function$;` أو `$$;` — أوّلُ إغلاقٍ بعدها.
+    const end = rest.search(/\$function\$\s*;|\$\$\s*;/);
+    return end > 0 ? rest.slice(0, end) : rest;
+};
+
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => {
     console.log(`${ok ? '  ✓' : '  ✗'} ${name}`);
@@ -103,7 +119,11 @@ check('إصدارُ الوثائق تغيّر (أي تعديلٍ قانونيّ 
 const mig = stripSql(R('supabase/JEDDAH_v15_43_merchant_booking_hold.sql'));
 check('الهجرة: المُحكّم بمعاملين (نوعٌ ومتجر)',
     /taki_booking_hold_hours\(p_fulfillment text, p_store_id text\)/.test(mig));
-check('الهجرة: المشغّل يمرّر متجرَ الحجز', /NEW\.store_id/.test(mig));
+// 🪤 وفي جسم المشغّل وحده: كتلةُ التحقّق في الهجرة تبحث عن نفس الرمز،
+//    فكانت تُبقيه حيّاً في النصّ ولو سقط المعاملُ من المشغّل فعلاً.
+check('الهجرة: المشغّل يمرّر متجرَ الحجز',
+    fnBody(mig, 'tr_ad_set_booking_hold').includes('NEW.store_id'),
+    'المعاملُ غائبٌ عن جسم المشغّل — المهلةُ تعود واحدةً للمنصّة');
 check('الهجرة: قراءةُ الزائر تُعيد المهلةَ الفعّالة',
     /store_policies[\s\S]*?hold_pickup_hours[\s\S]*?taki_booking_hold_hours/.test(mig));
 check('الهجرة: نسخةُ المعامل الواحد باقية (لا يُكسر منادٍ قديم)',
