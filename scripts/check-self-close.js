@@ -120,9 +120,19 @@ check('طلبٌ لم يؤكّده التاجر: محجوبٌ بسببٍ آخر،
     check('ومفتاحُ booking_holds في قائمة الجلب (فخّ v14.92)',
         /PLATFORM_SETTING_KEYS[\s\S]*'booking_holds'/.test(ps));
 
+    // 🔴 v15.49 — كان هذا `/SelfCloseNotice/.test(file)`: **ورودُ الاسم** وحده.
+    //    فاستيرادٌ غير مستعمل، أو بوّابةٌ **شقيقةٌ** للزرّ بدل غلافٍ له، كانا
+    //    يمرّان أخضرَين والزرُّ مكشوف. فيُقاس أن الزرَّ **ابنٌ** للبوّابة:
+    //    وسمُ فتحٍ ووسمُ إغلاقٍ وبينهما `<button`.
     for (const f of ['src/pages/Bookings.tsx', 'src/components/seller/OrderCloseActions.tsx']) {
-        check(`${f.split('/').pop()} يلفّ زرَّه بالبوّابة`,
-            /SelfCloseNotice/.test(strip(R(f))));
+        const src = strip(R(f));
+        const open = src.indexOf('<SelfCloseNotice');
+        const close = src.indexOf('</SelfCloseNotice>', open + 1);
+        check(`${f.split('/').pop()} يلفّ زرَّه بالبوّابة (ابنٌ لا شقيق)`,
+            open > 0 && close > open && src.slice(open, close).includes('<button'),
+            open < 0 ? 'لا وسمَ بوّابةٍ إطلاقاً'
+                : close < 0 ? 'وسمُ فتحٍ بلا إغلاق — الزرُّ ليس داخلها'
+                : 'لا زرَّ بين وسمَي البوّابة');
     }
     check('اختصارُ التاجر ينادي merchant_handover_booking لا complete_booking',
         /merchantHandover/.test(strip(R('src/components/seller/OrderCloseActions.tsx')))
@@ -136,10 +146,21 @@ check('طلبٌ لم يؤكّده التاجر: محجوبٌ بسببٍ آخر،
         codeIdx > 0 && gateIdx > 0 && oca.indexOf('closeByCode', oca.indexOf('return (')) < gateIdx);
 
     // ── ٤) البوتان معاً — لا ميزةٌ في قناةٍ دون أخرى (قاعدةُ v14.71) ──────
+    // 🔴 v15.49 — وكان فحصُ القناتين `/selfCloseState/.test(src)`: اسمٌ يَرِد
+    //    في أيّ موضعٍ من الملفّ يُرضيه، ولو كان في دالّةٍ أخرى لا تحجب شيئاً.
+    //    فيُقاس **موضعُ القرار**: زرُّ «استلمت طلبي» يُدفع في فرع `else` تابعٍ
+    //    لنتيجةِ البوّابة — فلو خرج منها صار الزرُّ بلا مهلة.
     for (const f of ['server/bot.js', 'server/flows/whatsapp.js']) {
         const src = strip(R(f));
-        // v15.44 — صار الاسمُ `selfCloseState` (ثلاثُ حالات بعد نقل المرساة).
-        check(`${f.split('/').pop()}: يحجب الزرَّ قبل المهلة`, /selfCloseState/.test(src));
+        const push = src.indexOf("'b_confirm_receipt'");
+        const win = push > 0 ? src.slice(Math.max(0, push - 700), push) : '';
+        const gate = win.lastIndexOf('selfCloseState');
+        check(`${f.split('/').pop()}: الزرُّ يُدفع في فرعِ البوّابة لا بجانبها`,
+            push > 0 && gate >= 0 && /\bif \(rcvW\)/.test(win.slice(gate))
+            && /\belse\b/.test(win.slice(gate)),
+            push < 0 ? 'لم يُعثر على موضع دفع الزرّ'
+                : gate < 0 ? 'الزرُّ يُدفع بلا نداءِ بوّابةٍ قبله — بلا مهلة'
+                : 'نداءُ البوّابة موجودٌ لكنّ الزرَّ خارج فرعِها');
         check(`${f.split('/').pop()}: مفرداتُ الرفض من المصدر المشترك`, /receiptErrKey/.test(src));
     }
     const i18n = JSON.parse(R('server/lib/i18n-data.json'));
