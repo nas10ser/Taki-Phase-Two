@@ -90,13 +90,29 @@ const DELIVERY_STARTED = ['on_the_way', 'arrived', 'delivered'];
  * مندوبه توقّف عدّاده. أي عدّاد يُعرض خارج هذه الحالة يكذب.
  */
 const HOLD_STOPPED_STAGES = ['preparing', 'on_the_way', 'arrived', 'delivered'];
-const holdRunning = (b: any, deliveryStage?: string | null): boolean => {
+const holdRunning = (b: any, snap?: DlvSnap | null): boolean => {
     if (!b) return false;
     if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
     if (b.paidAt) return false;
-    if (HOLD_STOPPED_STAGES.includes(String(deliveryStage || ''))) return false;
-    return true;
+    return !snap?.holdStopped;
 };
+
+/**
+ * 🔴 v15.49 — لقطةُ التتبّع ثلاثُ حقائق لا حالةٌ واحدة.
+ * `status` حالةٌ **لحظيّة** يكتبها منظّفُ الخادم `cancelled` بعد ساعةٍ من صمت
+ * هاتف المندوب — وهو مسحُ بثٍّ بائت لا رجوعٌ عن الانطلاق. ومطابقتُها بقائمةٍ
+ * كانت تسحب زرّ «استلمت طلبي» من مشترٍ استلم بضاعته فعلاً، ثمّ يُلغى طلبُه
+ * تلقائياً وتعود بضاعتُه للبيع. فالقاعدةُ تقول الجواب صريحاً الآن، والقائمتان
+ * أدناه ارتدادٌ لخادمٍ لم تصله الهجرة وحده.
+ */
+type DlvSnap = { stage: string; dispatched: boolean; holdStopped: boolean };
+const dlvSnapOf = (d: any): DlvSnap | null => (d?.ok ? {
+    stage: String(d.status || ''),
+    dispatched: typeof d.dispatched === 'boolean'
+        ? d.dispatched : DELIVERY_STARTED.includes(String(d.status || '')),
+    holdStopped: typeof d.hold_stopped === 'boolean'
+        ? d.hold_stopped : HOLD_STOPPED_STAGES.includes(String(d.status || '')),
+} : null);
 
 /**
  * v14.08 (بلاغ ناصر ٧) — شريط مراحل الطلب.
@@ -108,12 +124,12 @@ const holdRunning = (b: any, deliveryStage?: string | null): boolean => {
  *
  * والإلغاء نهائي: الشريط كله أحمر بعلامات ✕ بدل ✓ خضراء عالقة عند «مؤكد».
  */
-const OrderStages: React.FC<{ booking: any; isRTL: boolean; deliveryStage?: string | null }> = ({ booking, isRTL, deliveryStage }) => {
+const OrderStages: React.FC<{ booking: any; isRTL: boolean; snap?: DlvSnap | null }> = ({ booking, isRTL, snap }) => {
     const cancelled = booking.status === 'cancelled';
     const ack = booking.status === 'acknowledged' || booking.status === 'completed';
     const done = booking.status === 'completed';
-    const showDelivery = booking.fulfillment === 'delivery' && !!deliveryStage;
-    const started = done || DELIVERY_STARTED.includes(String(deliveryStage || ''));
+    const showDelivery = booking.fulfillment === 'delivery' && !!snap;
+    const started = done || !!snap?.dispatched;
     const steps: Array<{ label: string; filled: boolean }> = [
         { label: isRTL ? 'مؤكد' : 'Confirmed', filled: true },
         { label: isRTL ? 'استلمه التاجر' : 'S. Received', filled: ack },
@@ -297,7 +313,7 @@ const Bookings: React.FC = () => {
      * و`ok:false` (لم يبدأ التتبّع، أو مُحي بعد التسليم) يُخزَّن كـ`null` فيعود
      * الشريط ثلاث مراحل بلا أي رسالة خطأ في وجه المشتري.
      */
-    const [dlvStage, setDlvStage] = useState<Record<string, string | null>>({});
+    const [dlvStage, setDlvStage] = useState<Record<string, DlvSnap | null>>({});
     const [confirmingBarcode, setConfirmingBarcode] = useState<string | null>(null);
     /**
      * ما سبق جلبه، مفتاحه «الباركود|حالة الحجز». ربطُه بالحالة مقصود: انتقال
@@ -330,7 +346,7 @@ const Bookings: React.FC = () => {
                 const { data, error } = await supabase.rpc('delivery_track_get', { p_barcode: barcode });
                 if (!alive) return;
                 const d: any = error ? null : data;
-                setDlvStage(prev => ({ ...prev, [barcode]: d?.ok ? String(d.status || '') : null }));
+                setDlvStage(prev => ({ ...prev, [barcode]: dlvSnapOf(d) }));
             } catch {
                 // شبكة متعثّرة ⇒ لا مرحلة رابعة ولا إزعاج للمشتري، لكن نُلغي الختم
                 // حتى تُعاد المحاولة عند إعادة الفتح بدل تجميد الشريط إلى الأبد.
@@ -653,7 +669,7 @@ const Bookings: React.FC = () => {
 
                                                 {/* Tracker */}
                                                 <div style={{ background: 'var(--body-bg)', padding: 20, borderRadius: 20, marginBottom: 24, border: '1px solid var(--border-color)' }}>
-                                                    <OrderStages booking={booking} isRTL={isRTL} deliveryStage={dlvStage[booking.barcode]} />
+                                                    <OrderStages booking={booking} isRTL={isRTL} snap={dlvStage[booking.barcode]} />
                                                     {/* Seller message — always present so the buyer never wonders
                                                         whether the seller saw the order. If the seller wrote a real
                                                         note we show it; otherwise we narrate the order status.
@@ -667,7 +683,7 @@ const Bookings: React.FC = () => {
                                                             } else if (booking.status === 'acknowledged') {
                                                                 // v14.08 — طلب توصيل غادر المتجر فعلاً لا يُقال عنه «قيد التجهيز»:
                                                                 // نفس اللقطة التي بنى عليها شريط المراحل، فلا يتناقض السطران.
-                                                                const st = booking.fulfillment === 'delivery' ? dlvStage[booking.barcode] : null;
+                                                                const st = booking.fulfillment === 'delivery' ? dlvStage[booking.barcode]?.stage : null;
                                                                 fallback = st === 'arrived'
                                                                     ? (isRTL ? '📍 وصل المندوب إلى عنوانك.' : '📍 The courier has arrived at your address.')
                                                                     : st === 'on_the_way'
@@ -754,7 +770,7 @@ const Bookings: React.FC = () => {
                                                     والمهلةُ من `booked_at`، والقاعدة تفرضها بـP0028. */}
                                                 {(booking.status === 'pending' || booking.status === 'acknowledged')
                                                   && (booking.fulfillment !== 'delivery'
-                                                      || DELIVERY_STARTED.includes(String(dlvStage[booking.barcode] || ''))) && (
+                                                      || !!dlvStage[booking.barcode]?.dispatched) && (
                                                   <SelfCloseNotice
                                                     booking={booking}
                                                     beforeAck={left => (isRTL
@@ -939,7 +955,7 @@ const Bookings: React.FC = () => {
                                                     <h4 style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--primary)', marginBottom: 16, marginTop: 0, textAlign: isRTL ? 'right' : 'left' }}>
                                                         {booking.status === 'completed' ? (isRTL ? '🎊 تم الاستلام بنجاح!' : '🎊 Delivery Successful!') : (isRTL ? 'تفاصيل حالة الحجز:' : 'Booking Status Details:')}
                                                     </h4>
-                                                    <OrderStages booking={booking} isRTL={isRTL} deliveryStage={dlvStage[booking.barcode]} />
+                                                    <OrderStages booking={booking} isRTL={isRTL} snap={dlvStage[booking.barcode]} />
                                                     {booking.status === 'completed' && (
                                                         <div style={{ marginTop: 16, textAlign: 'center', padding: '10px', background: 'var(--gray-100)', borderRadius: 12 }}>
                                                             <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--primary)' }}>
@@ -1029,7 +1045,7 @@ const Bookings: React.FC = () => {
                         try {
                             const { data, error } = await supabase.rpc('delivery_track_get', { p_barcode: bc });
                             const d: any = error ? null : data;
-                            setDlvStage(prev => ({ ...prev, [bc]: d?.ok ? String(d.status || '') : null }));
+                            setDlvStage(prev => ({ ...prev, [bc]: dlvSnapOf(d) }));
                         } catch { /* تعذّر التحديث ⇒ يبقى الشريط على آخر لقطة معروفة */ }
                     })();
                 }}

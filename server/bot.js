@@ -95,7 +95,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.48.0';
+const BOT_VERSION              = '15.49.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -1544,14 +1544,14 @@ function refundStatusLabel(st) {
         refunded: 'rf_st_refunded', withdrawn: 'rf_st_withdrawn',
     }[String(st || '')] || 'rf_st_requested');
 }
-const HOLD_STOPPED = ['preparing','on_the_way','arrived','delivered'];
-const DLV_DISPATCHED = ['on_the_way','arrived','delivered'];
+// v15.49 — «توقّف العدّاد» و«غادرت البضاعة» حقيقتان تقولهما القاعدة لا حالتان تُطابَقان
+// بقائمة: المنظّفُ يكتب `cancelled` بعد ساعةٍ من صمت الهاتف. والقوائمُ ارتدادٌ لخادمٍ قديم.
+const dlvDispatched = (b) => typeof b?.dlv_dispatched === 'boolean' ? b.dlv_dispatched : ['on_the_way','arrived','delivered'].includes(String(b?.dlv_status || ''));
 function holdRunning(b){
     if (!b) return false;
+    if (typeof b.hold_running === 'boolean') return b.hold_running;
     if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
-    if (b.paid) return false;
-    if (HOLD_STOPPED.includes(String(b.dlv_status || ''))) return false;
-    return true;
+    return !b.paid && !['preparing','on_the_way','arrived','delivered'].includes(String(b.dlv_status || ''));
 }
 // v12.22 — the countdown is LIVE: the button now carries the BARCODE (not the
 // timestamp), and every refresh re-reads the booking from the DB. A completed/
@@ -1970,7 +1970,7 @@ async function showBuyerBookings(ctx, scope='current') {
         const running = holdRunning(b);
         if (running && b.expiry_time) m += `\n⏰ *${tr('w1191_booking_expires')}:* ${md(fmtDate(b.expiry_time))}\n${countdownBlock(Number(b.expiry_time))}`;
         else if (active && b.paid) m += `\n${md(tr('hold_paid_no_deadline'))}`;
-        else if (active && HOLD_STOPPED.includes(String(b.dlv_status || ''))) m += `\n${md(tr('hold_paused_preparing'))}`;
+        else if (active && !b.paid && !running) m += `\n${md(tr('hold_paused_preparing'))}`;
         if (b.notes) m += `\n📝 _${md(b.notes)}_`;
         const chatLabel = b.unread>0 ? tr('cm_chat_n', b.unread) : tr('cm_chat');
         const row = [Markup.button.callback(chatLabel, `chat:${b.barcode}`), Markup.button.callback(tr('cm_call'), `call:b:${b.barcode}`)];
@@ -1987,7 +1987,7 @@ async function showBuyerBookings(ctx, scope='current') {
         // v15.42/44 — الزرُّ بعد تأكيد التاجر بعشر دقائق؛ وقبله سطرٌ يقول الشرط.
         const rcvW = active ? await HOLDS.selfCloseState(b, I18N.lang()) : null;
         if (rcvW) m += `\n${md(tr(rcvW.acknowledged ? 'b_confirm_receipt_soon' : 'b_confirm_receipt_before_ack', rcvW.label))}`;
-        else if (active && (String(b.fulfillment||'pickup')!=='delivery' || DLV_DISPATCHED.includes(String(b.dlv_status||''))))
+        else if (active && (String(b.fulfillment||'pickup')!=='delivery' || dlvDispatched(b)))
             row3.push(Markup.button.callback(tr('b_confirm_receipt'), `rcv:${b.barcode}`));
         // v14.18/v14.21 — حالة الاسترداد على البطاقة نفسها، فلا يبقى المشتري
         // ينتظر جواباً لا يراه. الحقول تأتي من `bot_get_my_bookings`/الفاتورة.

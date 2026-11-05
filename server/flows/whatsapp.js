@@ -781,14 +781,14 @@ function create(deps) {
     // v14.10 — توأم `holdRunning` في bot.js، ومرآةٌ لقاعدة `expire_due_bookings`:
     // المدفوع إلكترونياً لا يُلغى تلقائياً أبداً، وطلبُ توصيلٍ انطلق مندوبه
     // توقّف عدّاده. عدّادٌ يتناقص عليهما يكذب على المشتري.
-    const WA_HOLD_STOPPED = ['preparing', 'on_the_way', 'arrived', 'delivered'];
-    const WA_DLV_DISPATCHED = ['on_the_way', 'arrived', 'delivered'];
+    // v15.49 — حقيقتان تقولهما القاعدة لا حالتان تُطابَقان بقائمة: المنظّفُ يكتب
+    // `cancelled` بعد ساعةٍ من صمت الهاتف. والقوائمُ ارتدادٌ لخادمٍ لم تصله الهجرة.
+    const waDispatched = (b) => typeof b?.dlv_dispatched === 'boolean' ? b.dlv_dispatched : ['on_the_way', 'arrived', 'delivered'].includes(String(b?.dlv_status || ''));
     function waHoldRunning(b) {
         if (!b) return false;
+        if (typeof b.hold_running === 'boolean') return b.hold_running;
         if (b.status !== 'pending' && b.status !== 'acknowledged') return false;
-        if (b.paid) return false;
-        if (WA_HOLD_STOPPED.includes(String(b.dlv_status || ''))) return false;
-        return true;
+        return !b.paid && !['preparing', 'on_the_way', 'arrived', 'delivered'].includes(String(b.dlv_status || ''));
     }
     function bkStatusLines(b) {
         let extra = '';
@@ -878,7 +878,7 @@ function create(deps) {
         // v15.42 — ولا قبل مضيّ مهلة الختم: سطرٌ يقول متى، بدل زرٍّ يرفضه الخادم.
         const rcvW = (b.status === 'pending' || b.status === 'acknowledged') ? await HOLDS.selfCloseState(b, I18N.lang()) : null;
         if (rcvW) await sendText(from, tr(rcvW.acknowledged ? 'b_confirm_receipt_soon' : 'b_confirm_receipt_before_ack', rcvW.label).replace(/\\/g, ''));
-        else if ((b.status === 'pending' || b.status === 'acknowledged') && (b.fulfillment !== 'delivery' || WA_DLV_DISPATCHED.includes(String(b.dlv_status || '')))) {
+        else if ((b.status === 'pending' || b.status === 'acknowledged') && (b.fulfillment !== 'delivery' || waDispatched(b))) {
             await sendButtons(from, {
                 body: tr('b_confirm_receipt_ask', bc).replace(/\\/g, ''),
                 buttons: [{ id: `wa:rcv:${bc}`, title: trunc(tr('b_confirm_receipt'), LIM.btnTitle) },
