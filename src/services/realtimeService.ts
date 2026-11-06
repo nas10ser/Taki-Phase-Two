@@ -373,10 +373,21 @@ function setupChannels(config: RealtimeConfig) {
     });
 
     // Notifications: DELETE
+    // 🔴 v15.57 — كان هذا الاشتراك **بلا `filter`** بينما جاراه (INSERT و
+    //    UPDATE) مُرشَّحان على `user_id`. أي أن خادم الريل‑تايم كان يُقيّم
+    //    **كلّ** حذفِ إشعارٍ في المنصّة أمام **كلّ** متّصل. ولم يكن ذلك ظاهراً
+    //    لأن لا شيء كان يحذف الإشعارات أصلاً — والمنظّفُ الجديد
+    //    (`taki_prune_notifications`) كان سيكشفه فجأةً: ٩٥٩ صفّاً مرشّحاً
+    //    للحذف ⇒ ٩٥٩ حدثاً × كلّ جهازٍ مفتوح. (نفسُ العيب الذي أُصلح على
+    //    `bookings` في v13.80 — انظر التعليق أسفله.)
+    // 🪤 والمرشّح يعمل على الحذف **لأن** `notifications` بـREPLICA IDENTITY
+    //    FULL (مقيس)، فالصفُّ القديم يصل كاملاً ومعه `user_id`. ولو أُنزلت
+    //    هويّةُ النسخ إلى DEFAULT يوماً، صار هذا المرشّح يحجب كلّ حدثِ حذف.
     userChannel.on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
-        table: 'notifications'
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`
     }, (payload) => {
         lastActivityAt = Date.now();
         config.onNotificationUpdate(payload);
