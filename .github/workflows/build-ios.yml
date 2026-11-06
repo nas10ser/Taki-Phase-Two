@@ -121,6 +121,7 @@ jobs:
           xcodebuild -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -skipPackagePluginValidation -skipMacroValidation \
             DEVELOPMENT_TEAM="$TEAM" \
             -allowProvisioningUpdates archive
           cat > "$RUNNER_TEMP/export.plist" <<PLIST
@@ -144,13 +145,30 @@ jobs:
           cd ios/App
           # 🪤 بلا شهادةٍ لا يُمكن الأرشفة، لكن **التجميعَ** ممكن — وهو ما
           #    يُثبت أن المشروعَ والإضافاتِ سليمةٌ فعلاً.
+          # 🪤 و`CODE_SIGN_ENTITLEMENTS=""` إلزاميّ هنا: المشروعُ يُعلن ملفَّ
+          #    صلاحيّات (الإشعاراتُ والروابط)، وتطبيقُ الصلاحيّات **يتطلّب
+          #    توقيعاً**. فبلا تصفيرها يفشل البناءُ غيرُ الموقَّع بخطأٍ عن
+          #    الصلاحيّات لا عن التوقيع — ويُضلّل تماماً.
+          # 🪤 و`-skipPackagePluginValidation` لأن Capacitor 8 يستعمل SPM،
+          #    والمنصّةُ النظيفة تسأل عن الثقة في الحزم تفاعلياً وتعلق.
           xcodebuild -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
             build
 
       # ── عقودٌ تُفحص في الناتج ───────────────────────────────────────────
+      # 🪤 وسجلُّ الفشل يُطبع هنا: لا يمكن قراءةُ سجلّات GitHub بلا توكن،
+      #    فآخرُ خمسين سطراً في مخرجات السير نفسِها هي الدليلُ الوحيد.
+      - name: أثرُ الفشل (إن وقع)
+        if: failure()
+        run: |
+          echo "── المخطّطات المتاحة:"; xcodebuild -project ios/App/App.xcodeproj -list 2>&1 | tail -20
+          echo "── آخرُ سجلّات البناء:"; find "$RUNNER_TEMP" -name '*.log' -maxdepth 3 2>/dev/null | head -3
+          ls -la ios/App/App.xcodeproj/xcshareddata/xcschemes/ 2>&1 || echo "لا مخطّطَ مشارَك"
+
       - name: التحقّقُ من الحزمة
         run: |
           set -euo pipefail
