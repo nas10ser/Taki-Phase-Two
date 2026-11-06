@@ -63,8 +63,7 @@ import { BANNER } from '../../utils/imageCompression';
 import { normalizeArabicNumerals } from '../../utils/helpers';
 import ImageOptimizer from '../../components/admin/ImageOptimizer';
 import StockLinkSwitch from '../../components/admin/StockLinkSwitch';
-import BookingHoldsCard from '../../components/admin/BookingHoldsCard';
-import CapacityCard from '../../components/admin/CapacityCard';
+import BookingHoldsCard from '../../components/admin/BookingHoldsCard';import CapacityCard from '../../components/admin/CapacityCard';
 import {
     AdmCard, AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmError, AdmButton,
     AdmSwitch as Sw, AdmSettingRow as SettingRow,
@@ -1341,8 +1340,7 @@ const AdminTools: React.FC = () => {
             {/* v15.43 — خرجت البطاقةُ بكاملها إلى ملفّها: احتاجت حقلين
                 جديدين (سقفُ اختيار التاجر · مهلةُ الختم بلا كود) وهذا الملفّ
                 عند سقفه — فالصواب تقليصٌ لا رفعُ سقف. */}
-            {/* v15.54 (أمرُ ناصر) — طاقةُ المنصّة قبل أن يصرخ الإنذار. */}
-            <CapacityCard />
+            <CapacityCard /> {/* v15.54 (أمرُ ناصر) — الطاقة قبل أن يصرخ الإنذار */}
             <BookingHoldsCard />
 
             {/* ═══ ٥ — الموسم (هوية + حملة موحّدة) ═══
