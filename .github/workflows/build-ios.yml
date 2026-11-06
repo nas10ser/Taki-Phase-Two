@@ -151,13 +151,17 @@ jobs:
           #    الصلاحيّات لا عن التوقيع — ويُضلّل تماماً.
           # 🪤 و`-skipPackagePluginValidation` لأن Capacitor 8 يستعمل SPM،
           #    والمنصّةُ النظيفة تسأل عن الثقة في الحزم تفاعلياً وتعلق.
+          # 🪤 والمخرجاتُ تُحفظ: سجلّاتُ GitHub تحتاج صلاحيةَ مدير (قِيس: 403
+          #    بلا توكن)، فالخطوةُ التالية تُخرج آخرَ الأسطر كـ`::error::`
+          #    — والتنبيهاتُ تُقرأ من واجهة البرمجة **بلا أيّ توكن**.
+          set -o pipefail
           xcodebuild -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/dd" \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | tail -40
 
       # ── عقودٌ تُفحص في الناتج ───────────────────────────────────────────
       # 🪤 وسجلُّ الفشل يُطبع هنا: لا يمكن قراءةُ سجلّات GitHub بلا توكن،
@@ -165,9 +169,23 @@ jobs:
       - name: أثرُ الفشل (إن وقع)
         if: failure()
         run: |
-          echo "── المخطّطات المتاحة:"; xcodebuild -project ios/App/App.xcodeproj -list 2>&1 | tail -20
-          echo "── آخرُ سجلّات البناء:"; find "$RUNNER_TEMP" -name '*.log' -maxdepth 3 2>/dev/null | head -3
+          echo "── المخطّطات المتاحة:"
+          xcodebuild -project ios/App/App.xcodeproj -list 2>&1 | tail -20
           ls -la ios/App/App.xcodeproj/xcshareddata/xcschemes/ 2>&1 || echo "لا مخطّطَ مشارَك"
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          if [ -f "$LOG" ]; then
+            echo "── أسطرُ الخطأ:"
+            grep -nE "error:|error$|BUILD FAILED|fatal|Missing|unable to|cannot" "$LOG" | tail -25 | tee /tmp/errs.txt
+            # 🔴 كلُّ سطرٍ يُخرج كتنبيهِ خطأ: التنبيهاتُ تُقرأ من
+            #    /check-runs/<id>/annotations **بلا توكن** على مستودعٍ عامّ،
+            #    والسجلُّ نفسُه لا يُقرأ إلا بصلاحية مدير.
+            while IFS= read -r line; do
+              clean=$(printf '%s' "$line" | tr '\n\r' '  ' | cut -c1-300)
+              echo "::error title=iOS::${clean}"
+            done < /tmp/errs.txt
+          else
+            echo "::error title=iOS::لا سجلَّ بناءٍ — الفشلُ قبل xcodebuild"
+          fi
 
       - name: التحقّقُ من الحزمة
         run: |
