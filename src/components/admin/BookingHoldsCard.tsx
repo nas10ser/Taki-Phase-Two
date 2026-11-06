@@ -22,9 +22,11 @@ import { supabase } from '../../services/supabaseClient';
 import { writePlatformSetting } from '../../services/platformSettingWrite';
 import { useApp } from '../../context/AppContext';
 import { normalizeArabicNumerals } from '../../utils/helpers';
+// v15.50 — كلُّ عبارةِ ساعاتٍ أو دقائقَ من هنا وحده (قاعدةُ v14.92).
+import { holdLabel, minutesLabel, minutesLabelGen } from '../../utils/bookingHold';
 import { AdmSection, AdmSkeleton, AdmError, AdmButton } from './ui';
 
-type Key = 'pickup' | 'delivery' | 'safety' | 'maxHold' | 'selfClose';
+type Key = 'minHold' | 'pickup' | 'delivery' | 'safety' | 'maxHold' | 'selfClose';
 
 interface FieldDef {
     key: Key;
@@ -38,22 +40,27 @@ interface FieldDef {
 }
 
 const FIELDS: readonly FieldDef[] = [
-    { key: 'pickup', icon: '🏪', label: 'استلام من المتجر', unit: 'h', min: 0.25, max: 8760, step: 0.25,
+    // 🔴 v15.50 (أمرُ ناصر) — «أقلّ مدّةٍ يضعها التاجر ساعة»، وقابلةً لضبطه.
+    //    وكانت ٠٫٢٥ مكتوبةً في خمسة أجسامٍ على القاعدة وأربعةِ مواضعَ هنا.
+    { key: 'minHold', icon: '⏱', label: 'أقلّ ما يختاره التاجر', unit: 'h', min: 1, max: 8760, step: 1,
+      hint: 'أرضيّتُك على اختيار التاجر. مهلةٌ أقصر من ساعةٍ تُلغي طلبات عملاءٍ في الطريق إلى المتجر، فهذا هو الحدُّ الذي لا ينزل تحته. والقاعدةُ تفرضه، فلا يُكتب رقمُه في أيّ نصّ.' },
+    { key: 'pickup', icon: '🏪', label: 'استلام من المتجر', unit: 'h', min: 1, max: 8760, step: 1,
       hint: 'افتراضُ المنصّة. المخزون محبوس طوال المهلة، فالإطالة تعني بيعاً أقلّ. ويجوز للتاجر اختيار مهلةٍ أخرى من لوحته.' },
-    { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', unit: 'h', min: 0.25, max: 8760, step: 0.25,
+    { key: 'delivery', icon: '🚚', label: 'توصيل إلى العنوان', unit: 'h', min: 1, max: 8760, step: 1,
       hint: 'افتراضُ المنصّة. التجهيز والطريق، وتتوقّف المهلة بمجرّد انطلاق المندوب. ويجوز للتاجر تغييرها.' },
-    { key: 'safety', icon: '🛟', label: 'شبكة أمان الطلب المنطلق', unit: 'h', min: 0.25, max: 8760, step: 0.25,
+    { key: 'safety', icon: '🛟', label: 'شبكة أمان الطلب المنطلق', unit: 'h', min: 1, max: 8760, step: 1,
       hint: 'حدٌّ أقصى لطلبٍ انطلق مندوبه ولم يُغلقه التاجر — كي لا يُحبس المخزون للأبد. لا يملك التاجر تغييرها.' },
-    { key: 'maxHold', icon: '🚧', label: 'أقصى ما يختاره التاجر', unit: 'h', min: 0.25, max: 8760, step: 1,
+    { key: 'maxHold', icon: '🚧', label: 'أقصى ما يختاره التاجر', unit: 'h', min: 1, max: 8760, step: 1,
       hint: 'سقفُك على اختيار التاجر. مهلةُ أسبوعٍ تُجمّد مخزوناً وتُفرّغ العرض، فهذا هو الحدّ الذي لا يتجاوزه.' },
     // 🪤 والسقفُ ١٢٠ لا ١٤٤٠: مهلةُ الحجز نفسُها ساعتان افتراضاً، فرقمٌ أكبر
     //    منها يُقفل الميزةَ على المنصّة كلّها بلا أن يقول أحدٌ شيئاً.
     { key: 'selfClose', icon: '✅', label: 'قبل الختم بلا كود', unit: 'min', min: 0, max: 120, step: 1,
-      hint: 'بالدقائق، ويجب أن تبقى أقصرَ من أقصر مهلةِ حجزٍ (١٥ دقيقة). و٠ تعني بلا مهلة: الزرُّ يُفتح فوراً. كم بعد **تأكيد التاجر** لاستلام الطلب قبل أن يظهر «استلمت طلبي» للمشتري و«تم التسليم بدون كود» للتاجر. وإن لم يؤكّد التاجر، يُفتح الزرّ في آخر هذه المدّة من المهلة كي لا يبقى المشتري بلا مخرج. ومسحُ الكود فوريٌّ دائماً. و٠ تُعطّل المهلة.' },
+      hint: 'بالدقائق، ويجب أن تبقى أقصرَ من أقصر مهلةِ حجزٍ يستطيع التاجرُ اختيارها (الصفُّ الأوّل أعلاه). و٠ تعني بلا مهلة: الزرُّ يُفتح فوراً. كم بعد **تأكيد التاجر** لاستلام الطلب قبل أن يظهر «استلمت طلبي» للمشتري و«تم التسليم بدون كود» للتاجر. وإن لم يؤكّد التاجر، يُفتح الزرّ في آخر هذه المدّة من المهلة كي لا يبقى المشتري بلا مخرج. ومسحُ الكود فوريٌّ دائماً. و٠ تُعطّل المهلة.' },
 ];
 
-const DEFAULTS: Record<Key, number> = { pickup: 2, delivery: 6, safety: 72, maxHold: 72, selfClose: 10 };
+const DEFAULTS: Record<Key, number> = { minHold: 1, pickup: 2, delivery: 6, safety: 72, maxHold: 72, selfClose: 10 };
 const JSON_KEY: Record<Key, string> = {
+    minHold: 'min_hold_hours',
     pickup: 'pickup_hours', delivery: 'delivery_hours', safety: 'in_progress_hours',
     maxHold: 'max_hold_hours', selfClose: 'self_close_minutes',
 };
@@ -94,7 +101,9 @@ export const BookingHoldsCard: React.FC = () => {
         for (const f of FIELDS) {
             const x = parseFloat(normalizeArabicNumerals(vals[f.key]));
             if (!Number.isFinite(x) || x < f.min || x > f.max) {
-                await customAlert(`⚠️ «${f.label}» يجب أن تكون بين ${f.min} و${f.max} ${f.unit === 'h' ? 'ساعة' : 'دقيقة'}.`);
+                await customAlert(`⚠️ «${f.label}» يجب أن تكون بين `
+                    + `${f.unit === 'h' ? holdLabel(f.min, true) : minutesLabel(f.min, true)} و`
+                    + `${f.unit === 'h' ? holdLabel(f.max, true) : minutesLabel(f.max, true)}.`);
                 return;
             }
             n[f.key] = x;
@@ -114,30 +123,41 @@ export const BookingHoldsCard: React.FC = () => {
         if (n.maxHold < Math.max(n.pickup, n.delivery) && !(await customConfirm(
             `⚠️ أقصى ما يختاره التاجر (${n.maxHold}) أقصر من افتراضك (${Math.max(n.pickup, n.delivery)}).\nالتاجر الذي يريد مهلةً كافتراضك لن يستطيع اختيارها.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
 
-        // 🔴 v15.46 — مهلةُ الختم تُقاس بالدقائق والمهلةُ بالساعات، وأرضيّةُ
-        //    مهلة التاجر **ربعُ ساعة**. فكلُّ قيمةٍ تقترب من ١٥ دقيقة تُفرّغ
-        //    نافذةَ كلِّ متجرٍ على الأرضيّة إلى الدقيقة الواحدة التي يضمنها
-        //    السقف. (قِيس: مهلة ١٥د + ختمٌ ٣٠د ⇒ المشتري ينتظر ١٤ دقيقة ثم
-        //    نافذةٌ ٦٠ ثانية.) نسأل ولا نمنع — القرارُ قرارُه.
-        if (n.selfClose >= 14 && !(await customConfirm(
-            `⚠️ «قبل الختم بلا كود» = ${n.selfClose} دقيقة، وأقصرُ مهلةٍ يملك التاجرُ اختيارها ١٥ دقيقة.\n`
+        // 🔴 v15.46 — مهلةُ الختم تُقاس بالدقائق والمهلةُ بالساعات. فكلُّ قيمةٍ
+        //    تقترب من **أرضيّة** مهلة التاجر تُفرّغ نافذةَ المتاجر الواقفة عليها
+        //    إلى الدقيقة الواحدة التي يضمنها السقف. نسأل ولا نمنع — القرارُ قرارُه.
+        // 🔴 v15.50 — والعتبةُ تُحسب من الأرضيّة المضبوطة لا من رقمٍ جامد: كانت
+        //    ١٤ دقيقةً مكتوبةً بحساب ربع ساعة، فبدّلها ناصرٌ إلى ساعةٍ فصار
+        //    الإنذارُ يصرخ على قيمٍ آمنة ويسكت عمّا يجب.
+        const floorMin = Math.round(n.minHold * 60);
+        if (n.selfClose >= floorMin - 1 && !(await customConfirm(
+            `⚠️ «قبل الختم بلا كود» = ${minutesLabel(n.selfClose, true)}، وأقصرُ مهلةٍ يملك التاجرُ اختيارها ${holdLabel(n.minHold, true)}.\n`
             + `في تلك المتاجر لن يبقى للمشتري إلا دقيقةٌ واحدة ليضغط «استلمت طلبي».\n\nهل تريد الحفظ رغم ذلك؟`))) return;
         // ومثلُها لو تجاوزت افتراضَ المنصّة نفسَه.
         if (n.selfClose >= n.pickup * 60 && !(await customConfirm(
-            `⚠️ «قبل الختم بلا كود» (${n.selfClose} دقيقة) أطولُ من مهلة الاستلام نفسِها (${n.pickup} ساعة).\n`
+            `⚠️ «قبل الختم بلا كود» (${minutesLabel(n.selfClose, true)}) أطولُ من مهلة الاستلام نفسِها (${holdLabel(n.pickup, true)}).\n`
             + `الزرُّ لن يُفتح إلا قبل انتهاء الطلب بدقيقة.\n\nهل تريد الحفظ رغم ذلك؟`))) return;
+        // والأرضيّةُ فوق السقف تقلب المدى فيُرفض كلُّ رقمٍ يكتبه التاجر.
+        if (n.minHold > n.maxHold) {
+            await customAlert(`⚠️ أقلُّ ما يختاره التاجر (${holdLabel(n.minHold, true)}) أطولُ من أقصاه (${holdLabel(n.maxHold, true)}) — فلا رقمَ يستطيع اختياره. صحّح أحدهما.`);
+            return;
+        }
 
         setSaving(true);
         const e = await writePlatformSetting('booking_holds', {
             ...rawValue,
+            min_hold_hours: n.minHold,
             pickup_hours: n.pickup, delivery_hours: n.delivery, in_progress_hours: n.safety,
             max_hold_hours: n.maxHold, self_close_minutes: n.selfClose,
-        }, 'مهلة الحجز: الاستلام · التوصيل · شبكة الأمان · سقف اختيار التاجر · مهلة الختم بلا كود');
+        }, 'مهلة الحجز: الاستلام · التوصيل · شبكة الأمان · أرضيّة وسقف اختيار التاجر · مهلة الختم بلا كود');
         setSaving(false);
         if (e) { await customAlert('❌ ' + e); return; }
+        // 🪤 v15.50 — كانت هذه السطورُ تصنع «${n} ساعة» بيدها، فتطبع «2 ساعة»
+        //    مكان «ساعتان» و«6 ساعة» مكان «6 ساعات» و«10 دقيقة» مكان «10 دقائق»
+        //    — ثلاثةُ أخطاءٍ نحويّة حيّة. والمحرّكُ واحدٌ (`arPlural`) بقاعدة v14.92.
         await customAlert(
-            `✅ تم الحفظ — استلام ${n.pickup} ساعة · توصيل ${n.delivery} ساعة · شبكة أمان ${n.safety} ساعة`
-            + `\nوسقف اختيار التاجر ${n.maxHold} ساعة · والختم بلا كود بعد ${n.selfClose} دقيقة من تأكيد التاجر.`
+            `✅ تم الحفظ — استلام ${holdLabel(n.pickup, true)} · توصيل ${holdLabel(n.delivery, true)} · شبكة أمان ${holdLabel(n.safety, true)}`
+            + `\nواختيارُ التاجر بين ${holdLabel(n.minHold, true)} و${holdLabel(n.maxHold, true)} · والختم بلا كود بعد ${minutesLabelGen(n.selfClose, true)} من تأكيد التاجر.`
             + `\nيسري على الطلبات الجديدة فوراً.`);
     };
 

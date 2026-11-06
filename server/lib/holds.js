@@ -17,7 +17,7 @@
  * فالتخزين المؤقت واحدٌ للقناتين (كل تعديل على البوت يمسّ الملفين معاً).
  */
 
-const { arCount, enCount } = require('../../shared/arPlural');
+const { arCount, enCount, FORMS } = require('../../shared/arPlural');
 
 // الافتراضات تطابق `taki_booking_hold_hours` على القاعدة حرفياً، كي لا يَعِد
 // البوت برقم لا تُطبّقه القاعدة لو تعذّرت القراءة لحظةً.
@@ -37,9 +37,13 @@ const saneMinutes = (x, d) => {
     return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : d;
 };
 
+// 🪤 v15.50 — حدودُ **سلامةٍ** لا أرضيّة: القيمةُ القادمة من `store_policies`
+//    مقصوصةٌ على القاعدة بـ`taki_booking_hold_min()` أصلاً. ورفعُ هذا الحدّ
+//    إلى الأرضيّة كان يُنتج ارتداداً إلى افتراض المنصّة (٢) حيث تُنفّذ القاعدةُ
+//    الأرضيّةَ (١) — رقمان مختلفان لنفس المتجر بين البوت والقاعدة.
 const sane = (x, d) => {
     const n = typeof x === 'number' ? x : parseFloat(String(x == null ? '' : x));
-    return Number.isFinite(n) && n >= 0.25 && n <= 8760 ? n : d;
+    return Number.isFinite(n) && n > 0 && n <= 8760 ? n : d;
 };
 
 /** أرقام المهلة الحالية — تُعيد آخر قيمة معروفة عند أي فشل عابر. */
@@ -99,16 +103,18 @@ async function forStore(storeId) {
     } catch { return base; }
 }
 
+// 🔴 v15.50 — كانت هاتان نسخةً **رابعةً** للمحرّك، تجاور المحرّكَ المستورد في
+//    هذا الملفّ نفسه. وشرطُها `n <= 10` يشمل الكسورَ فيُنتج «1.5 ساعات» —
+//    والمهلةُ تقبل ١٫٥. و`check-ar-plural.js` لا يراها فنجت. والآن تنادي
+//    `arCount` كبقيّة البيئات الثلاث، فلا صيغةَ خامسة تنحرف.
 /** «ساعتان» / «two hours» — صيغة الرفع. */
 function label(n, lang) {
-    if (lang === 'en') return n === 1 ? 'one hour' : n === 2 ? 'two hours' : `${n} hours`;
-    return n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتان' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
+    return lang === 'en' ? enCount(n, 'hour', 'hours') : arCount(n, FORMS.hours);
 }
 
 /** «خلال ساعتين» / «within two hours» — صيغة المجرور العربية. */
 function labelGen(n, lang) {
-    if (lang === 'en') return label(n, lang);
-    return n === 1 ? 'ساعة واحدة' : n === 2 ? 'ساعتين' : n <= 10 ? `${n} ساعات` : `${n} ساعة`;
+    return lang === 'en' ? enCount(n, 'hour', 'hours') : arCount(n, FORMS.hours, true);
 }
 
 /**

@@ -35,6 +35,9 @@ export const HoldHoursCard: React.FC = () => {
     const [delivery, setDelivery] = useState('');
     const [saved, setSaved] = useState({ p: '', d: '' });
     const [max, setMax] = useState(72);
+    // v15.50 — أرضيّةُ الاختيار. تُقرأ من `store_policies` كما يُقرأ السقف،
+    // والقيمةُ هنا ارتدادٌ قبل وصول الجواب لا رقمٌ مُعتمَد.
+    const [min, setMin] = useState(1);
     const [busy, setBusy] = useState(false);
     const [ready, setReady] = useState(false);
     const [failed, setFailed] = useState(false);
@@ -53,6 +56,8 @@ export const HoldHoursCard: React.FC = () => {
         const d = r.holdDeliveryCustom != null ? String(r.holdDeliveryCustom) : '';
         setPickup(p); setDelivery(d); setSaved({ p, d });
         if (r.holdMaxHours != null) setMax(r.holdMaxHours);
+        // v15.50 — الأرضيّةُ تأتي من القاعدة كما يأتي السقف، فلا تُكتب هنا.
+        if (r.holdMinHours != null) setMin(r.holdMinHours);
         setReady(true);
     }, [user?.id]);
     useEffect(() => { load(); }, [load]);
@@ -74,12 +79,15 @@ export const HoldHoursCard: React.FC = () => {
         try {
             const r = await refundRepository.saveBookingHolds(p, d);
             if (!r.ok) {
-                const lo = r.min ?? 0.25;
+                const lo = r.min ?? min;
                 const hi = r.max ?? max;
+                // 🪤 v15.50 — كانت `${lo} و${hi} ساعة` عبارةً مصنوعةً بيدها:
+                //    «0.25 و72 ساعة» عشريّاً عارياً، و«1 ساعة» مكان «ساعة».
+                //    والمحرّكُ واحدٌ (قاعدةُ v14.92)، والأرضيّةُ من القاعدة.
                 await customAlert(
                     r.error === 'PICKUP_OUT_OF_RANGE' || r.error === 'DELIVERY_OUT_OF_RANGE'
-                        ? (isRTL ? `المهلة يجب أن تكون بين ${lo} و${hi} ساعة.`
-                                 : `The window must be between ${lo} and ${hi} hours.`)
+                        ? (isRTL ? `المهلة يجب أن تكون بين ${holdLabel(lo, true)} و${holdLabel(hi, true)}.`
+                                 : `The window must be between ${holdLabel(lo, false)} and ${holdLabel(hi, false)}.`)
                         : (isRTL ? 'تعذّر الحفظ — حاول مرة أخرى.' : 'Could not save — please try again.'));
                 return;
             }
@@ -184,8 +192,8 @@ export const HoldHoursCard: React.FC = () => {
 
             <div style={hint}>
                 {isRTL
-                    ? `بين ربع ساعة و${max} ساعة. والمعمول به الآن: الاستلام ${holdLabel(saved.p ? Number(saved.p) : platP, true)} والتوصيل ${holdLabel(saved.d ? Number(saved.d) : platD, true)}.`
-                    : `Between 0.25 and ${max} hours. In effect now: pickup ${holdLabel(saved.p ? Number(saved.p) : platP, false)}, delivery ${holdLabel(saved.d ? Number(saved.d) : platD, false)}.`}
+                    ? `بين ${holdLabel(min, true)} و${holdLabel(max, true)}. والمعمول به الآن: الاستلام ${holdLabel(saved.p ? Number(saved.p) : platP, true)} والتوصيل ${holdLabel(saved.d ? Number(saved.d) : platD, true)}.`
+                    : `Between ${holdLabel(min, false)} and ${holdLabel(max, false)}. In effect now: pickup ${holdLabel(saved.p ? Number(saved.p) : platP, false)}, delivery ${holdLabel(saved.d ? Number(saved.d) : platD, false)}.`}
             </div>
             <div style={hint}>
                 {isRTL

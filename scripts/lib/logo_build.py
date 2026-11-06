@@ -85,6 +85,29 @@ def main():
     mark = resize(art, 256, int(round(256 * art.shape[0] / art.shape[1])))
     emit('logo-mark.png', mark)
 
+    # 🔴 v15.50 (أمرُ ناصر: «اللوقو دقته جدا جدا ضعيفه») — شاشةُ الدخول تعرضها
+    #    بـ١٦٨ CSS px، فمصدرُ ٢٥٦ يعني نحو ٢× تكبيرٍ على شاشة الجوال ⇒ ضبابية.
+    #    فتُبنى نسخةٌ ٥١٢ بصيغة WebP: ضعفُ الدقّة و**أقلُّ** بايتات (٦٤ ك.ب
+    #    مقابل ١٠٣ للـPNG ٢٥٦ — قِيس). والترويسةُ تبقى على PNG ٢٥٦، وهي أيضاً
+    #    ارتدادُ `onError` في شاشة الدخول لو عجز متصفّحٌ قديم عن WebP.
+    #    🪤 و`scripts/copy-static.js` يقرأ عرضَها من ترويسة WebP ويُفشل البناءَ
+    #       دون ٥١٢ — فوجودُ الملفّ ليس دقّته.
+    mark2 = resize(art, 512, int(round(512 * art.shape[0] / art.shape[1])))
+    fd, tmp2 = tempfile.mkstemp(suffix='.png'); os.close(fd)
+    img.write_png(tmp2, mark2)
+    out2 = os.path.join(ROOT, 'logo-mark.webp')
+    try:
+        subprocess.run(['cwebp', '-q', '92', '-alpha_q', '100', '-quiet', tmp2, '-o', out2],
+                       check=True, capture_output=True)
+        print('  ✓ logo-mark.webp  512')
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        # 🪤 ولا ارتدادٌ صامت: ملفٌّ قديمٌ باقٍ مع بناءٍ أخضر هو بالضبط الشكلُ
+        #    الذي يجعل «أُصلحت الدقّة» كذباً. يُقال الخطأُ ويُعاد رمزُ فشل.
+        print(f'  ❌ تعذّر بناءُ logo-mark.webp (cwebp): {e}', file=sys.stderr)
+        os.unlink(tmp2)
+        sys.exit(1)
+    os.unlink(tmp2)
+
     # ── صورةُ المشاركة: بطاقةٌ فيها الشعارُ والاسمُ والنطاق ────────────────
     # 🔴 والقديمةُ كانت تحمل نطاقاً ميتاً (`taki-test-eight.vercel.app`) —
     #    أي أن كلَّ رابطٍ شاركه أحدٌ في واتساب كان يعرض عنواناً خاطئاً.

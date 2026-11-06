@@ -37,7 +37,10 @@ if (!fs.existsSync(DIST)) {
 
 /** ملفات لا يعمل الموقع بلا بعضها: غيابُها خطأٌ يُفشل البناء. */
 const REQUIRED_FILES = ['robots.txt', 'og-image.png', 'logo192.png', 'logo512.png',
-    'offline.html', 'apple-touch-icon.png', 'logo-mark.png'];
+    'offline.html', 'apple-touch-icon.png', 'logo-mark.png',
+    // v15.50 — علامةُ ٥١٢ لشاشة الدخول. والإدراجُ هنا **هو** الحارس: السطرُ
+    // ٥٤ يُفشل البناءَ عند غيابها، وبلا الإدراج تُنشر الصفحةُ بصورةٍ ٤٠٤.
+    'logo-mark.webp'];
 /** مجلّدات اختيارية فعلاً (نماذج الفحص والصور التعريفية). */
 const OPTIONAL_DIRS = ['models', 'screenshots'];
 
@@ -49,6 +52,24 @@ for (const f of REQUIRED_FILES) {
     if (!fs.existsSync(src)) { missing.push(f); continue; }
     fs.copyFileSync(src, path.join(DIST, f));
     copied++;
+}
+
+// 🔴 v15.50 — وجودُ الملفّ ليس دقّته. علامةُ شاشة الدخول تُعرض بـ١٦٨ CSS px،
+//    فأقلُّ من ٥١٢ بكسلاً يعود ضبابياً على الجوال — وهو العيبُ الذي أبلغ عنه
+//    ناصر. فيُقاس العرضُ من ترويسة WebP نفسها، لا من حجم الملفّ (بديلٌ ضعيف).
+{
+    const f = path.join(DIST, 'logo-mark.webp');
+    if (fs.existsSync(f)) {
+        const b = fs.readFileSync(f);
+        const riff = b.slice(0, 4).toString() === 'RIFF' && b.slice(8, 12).toString() === 'WEBP';
+        const w = (riff && b.slice(12, 16).toString() === 'VP8X') ? b.readUIntLE(24, 3) + 1 : 0;
+        if (!riff) { console.error('❌ logo-mark.webp ليست WebP صالحة.'); process.exit(1); }
+        if (w < 512) {
+            console.error(`❌ logo-mark.webp عرضُها ${w || '؟'} بكسلاً والمطلوب ٥١٢ على الأقلّ —`);
+            console.error('   تُعاد ببناء العلامة من `branding/taki-logo-master.png` (المتتبَّع).');
+            process.exit(1);
+        }
+    }
 }
 
 if (missing.length) {

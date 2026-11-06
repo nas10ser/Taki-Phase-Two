@@ -102,7 +102,7 @@
       ]
     },
     {
-      "source": "/(og-image.png|logo192.png|logo512.png)",
+      "source": "/(og-image.png|logo192.png|logo512.png|logo-mark.png|logo-mark.webp|apple-touch-icon.png)",
       "headers": [
         {
           "key": "Cache-Control",

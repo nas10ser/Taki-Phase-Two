@@ -82,6 +82,8 @@ export interface StorePoliciesResult {
     holdDeliveryCustom?: number;
     /** أقصى ما يملك التاجرُ اختيارَه (يضبطه المدير). */
     holdMaxHours?: number;
+    /** وأقلُّه — v15.50. الأرضيّةُ إعدادٌ يضبطه المدير، فلا رقمَ في الشاشة. */
+    holdMinHours?: number;
 }
 
 export const refundRepository = {
@@ -165,6 +167,7 @@ export const refundRepository = {
                 holdPickupCustom: n(d.hold_pickup_custom),
                 holdDeliveryCustom: n(d.hold_delivery_custom),
                 holdMaxHours: n(d.hold_max_hours),
+                holdMinHours: n(d.hold_min_hours),
             };
         } catch { return { ok: false }; }
     },

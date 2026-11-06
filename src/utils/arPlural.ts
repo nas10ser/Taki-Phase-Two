@@ -30,7 +30,7 @@ export interface ArForms {
 /**
  * يُرجع العدد مصوغاً. `genitive` للمواضع بعد حرف جرّ («خلال ساعتين»).
  * 🪤 الكسور تُعامَل معاملة ما فوق العشرة («١٫٥ ساعة») — وهي واردة فعلاً:
- *    مهلة الحجز تقبل ربع ساعة.
+ *    ومهلة الحجز تقبل الكسور فوق الأرضيّة (١٫٥ · ٢٫٥).
  */
 export const arCount = (n: number, f: ArForms, genitive = false): string => {
     if (!Number.isFinite(n)) return `${n} ${f.many}`;
