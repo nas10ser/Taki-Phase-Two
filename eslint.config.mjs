@@ -141,6 +141,11 @@ export default tseslint.config(
                 clearTimeout: 'readonly', AbortController: 'readonly',
                 TextEncoder: 'readonly', TextDecoder: 'readonly', atob: 'readonly',
                 btoa: 'readonly', __filename: 'readonly', Uint8Array: 'readonly',
+                // v15.58 — `WebSocket` عالميٌّ في نود ٢٢+ (ويستعمله مصوّرُ
+                // اللقطات للتحدّث مع كروم ببروتوكول أدوات المتصفّح).
+                // 🪤 وغيابُه من هذه القائمة أسقط بناءَ أندرويد في GitHub —
+                //    والمدقّقُ جزءٌ من سلسلة البناء، فخطؤه يُفشل كلَّ شيء.
+                WebSocket: 'readonly', setInterval: 'readonly', clearInterval: 'readonly',
             },
         },
         rules: {
