@@ -15,6 +15,8 @@ import { packageRepository } from '../../repositories/packageRepository';
 import { sponsorRepository } from '../../repositories/sponsorRepository';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 import { useEscClose } from '../../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../../hooks/useBackClose';
 import { CATEGORIES, REGIONS, CITIES } from '../../data/mock';
 import { CopyButton } from './CopyButton';
 import PromoteToAdminDialog from './PromoteToAdminDialog';
@@ -273,6 +275,7 @@ export const SubscriptionModal = memo<{
     // subscription is an explicit action (the "تطبيق" button), so
     // Esc is just "cancel" and that matches the seller's mental model.
     useEscClose(true, onClose);
+    useBackClose(true, onClose);
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[3000] flex items-center justify-center p-4 animate-fade-in">

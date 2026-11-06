@@ -24,7 +24,7 @@ import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
-import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
+import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
 import { invalidateVatMode } from '../../hooks/useVatMode';
 import { normalizeArabicNumerals } from '../../utils/helpers';
@@ -416,30 +416,34 @@ const AdminTax: React.FC = () => {
     };
 
     // ─── الطباعة (المولّد المشترك utils/invoice — نفسه في صفحة التاجر) ───────
-    const print = (title: string, bodyHtml: string) => {
-        if (!openPrintWindow(title, bodyHtml)) customAlert('السماح بالنوافذ المنبثقة مطلوب للطباعة.');
+    // 🔴 v15.51 — تأخذ النافذةَ المفتوحةَ مسبقاً: فتحُها بعد `await` يحجبه
+    //    WebKit لفقدِ تفعيل المستخدم، فكانت الرسالةُ تتّهم متصفّحَ المستخدم.
+    const print = (w: Window | null, title: string, bodyHtml: string) => {
+        if (!fillPrintWindow(w, title, bodyHtml)) customAlert('تعذّر فتح نافذة الطباعة — أعد المحاولة.');
     };
     // v13.35 — توليد QR قابل للمسح قبل الطباعة (شرط الهيئة للفاتورة المبسطة)
     const openInvoice = async (p: PaymentRow) => {
+        const w = openBlankWindow();
         // v13.37 — فاتورة قياسية (B2B): بيانات العميل الضريبية كاملة
         const [qr, cust] = await Promise.all([
             invoiceQrForPayment(p, settings),
             fetchInvoiceCustomer(p.merchant_id),
         ]);
-        print(`فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false, { qrDataUrl: qr, customer: cust }));
+        print(w, `فاتورة ${p.id}`, buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, false, { qrDataUrl: qr, customer: cust }));
     };
 
     // زر واحد: كل فواتير العملاء في الفترة المختارة (فاتورة لكل صفحة).
     const printAllInvoices = async () => {
         const inQ = paid.filter(p => { const t = new Date(p.paid_at || p.created_at).getTime(); return t >= quarter.start && t < quarter.end; });
         if (!inQ.length) { customAlert(`لا توجد فواتير مدفوعة في ${quarter.label}.`); return; }
+        const w = openBlankWindow();
         const [qrs, custs] = await Promise.all([
             Promise.all(inQ.map(p => invoiceQrForPayment(p, settings))),
             // v13.37 — بيانات كل عميل مرة واحدة (طباعة جماعية = فواتير قياسية)
             Promise.all(inQ.map(p => fetchInvoiceCustomer(p.merchant_id))),
         ]);
         const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i], customer: custs[i] })).join('\n');
-        print(`فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
+        print(w, `فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
     };
 
     // زر واحد: تقرير الإقرار الضريبي بصيغة بنود نموذج الهيئة.
@@ -467,7 +471,7 @@ const AdminTax: React.FC = () => {
  </div>
  <div class="foot">أُنشئ آلياً من منصة تاكي — انسخ الأرقام إلى نموذج الإقرار في بوابة الهيئة (دقائق)، أو سلّمه لمحاسبك.</div>
 </div>`;
-        print(`إقرار ${quarter.label}`, html);
+        print(openBlankWindow(), `إقرار ${quarter.label}`, html);
     };
 
     // ─── CSV ─────────────────────────────────────────────────────────────────

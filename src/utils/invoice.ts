@@ -6,7 +6,16 @@
  * بلا ضريبة (النظامي)، وبعد تفعيل الضريبة + الرقم الضريبي تتحول تلقائياً إلى
  * «فاتورة ضريبية مبسطة» ببيانات QR بصيغة ZATCA TLV.
  *
- * الطباعة عبر نافذة جديدة بلا سكربتات خارجية (CSP-safe — inline styles مسموحة).
+ * 🔴 والطباعةُ عبر نافذةٍ جديدة — وهنا كان عيبٌ وُلد مع السطر التالي:
+ *    كُتب «CSP-safe — inline styles مسموحة» لأن كاتبه قرأ «لا سكربت **خارجيّ**»
+ *    فاستنتج الأمان. والحقيقةُ أن `window.open('')` + `document.write` يُنتج
+ *    مستنداً **يرث أصلَ التطبيق وسياستَه**، و`script-src` عندنا بلا
+ *    `unsafe-inline` ⇒ تُمنع كتلةُ `<script>` **وخاصّيّةُ `onclick=`** معاً،
+ *    بينما `style-src 'unsafe-inline'` تسمح بالتنسيق ⇒ **زرّان جميلان لا
+ *    يفعلان شيئاً**، والدالّةُ خلف «رجوع» غيرُ معرَّفةٍ أصلاً. (شكوى ناصر:
+ *    «نقرتُ الرجوع فلم يعُد، واضطررتُ للخروج من التطبيق».)
+ *    والعلاجُ: المعالجاتُ تُركَّب **من النافذة الفاتحة** — نفسُ الأصل، فالوصولُ
+ *    مسموح، وليست سكربتاً مضمَّناً فلا تمنعها السياسة.
  */
 
 export interface InvoiceTaxSettings {
@@ -152,8 +161,18 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
  *      ٣. رسالةٌ صريحة تقول ماذا يفعل — لا صمت.
  *    ولا يظهر أيّ منهما في الورق: كلاهما داخل `.noprint`.
  */
-export function openPrintWindow(title: string, bodyHtml: string): boolean {
-    const w = window.open('', '_blank');
+/**
+ * 🔴 v15.51 — خطوتان لا واحدة. `window.open` **يجب أن تُنادى تزامناً** داخل
+ * معالج النقرة: ثلاثةٌ من خمسة مواضع كانت تناديها **بعد `await`** (جلبُ QR
+ * وبياناتُ العميل)، فيضيع تفعيلُ المستخدم ويحجبها WebKit ⇒ لا تُفتح نافذةٌ
+ * أصلاً، ويُقال للمستخدم «السماح بالنوافذ المنبثقة مطلوب» — رسالةٌ تتّهم
+ * إعداداتِ جهازه بعيبٍ عندنا. فتُفتح النافذةُ فارغةً أوّلاً ثمّ تُملأ.
+ */
+export function openBlankWindow(): Window | null {
+    return window.open('', '_blank');
+}
+
+export function fillPrintWindow(w: Window | null, title: string, bodyHtml: string): boolean {
     if (!w) return false;
     w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${PRINT_CSS}
 .taki-bar{position:sticky;top:0;z-index:9;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:12px;background:#ffffff;border-bottom:1px solid #e4e9ef;margin:-16px -16px 16px}
@@ -163,24 +182,36 @@ export function openPrintWindow(title: string, bodyHtml: string): boolean {
 .taki-hint{display:none;width:100%;text-align:center;font-size:12px;color:#92600a;background:#fdf3dd;padding:9px;border-radius:8px;margin-top:8px}
 @media print{.taki-bar{display:none}}</style></head><body>
 <div class="taki-bar noprint">
-  <button class="taki-btn taki-back" onclick="takiBack()">→ رجوع</button>
-  <button class="taki-btn taki-print" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+  <button class="taki-btn taki-back" id="takiBack" type="button">→ رجوع</button>
+  <button class="taki-btn taki-print" id="takiPrint" type="button">🖨 طباعة / حفظ PDF</button>
   <div class="taki-hint" id="takiHint">لإغلاق هذه الصفحة استعمل زرّ الرجوع في جهازك، أو أغلق هذا التبويب.</div>
 </div>
 ${bodyHtml}
-<script>
-function takiBack(){
-  try { window.close(); } catch (e) {}
-  setTimeout(function(){
-    if (!window.closed) {
-      if (history.length > 1) { history.back(); return; }
-      var h = document.getElementById('takiHint');
-      if (h) h.style.display = 'block';
-    }
-  }, 180);
-}
-<\/script>
 </body></html>`);
     w.document.close();
+
+    // المعالجاتُ من هنا — لا سكربتَ مضمَّن ولا `onclick=` (كلاهما تمنعه السياسة).
+    try {
+        const doc = w.document;
+        const printBtn = doc.getElementById('takiPrint');
+        const backBtn = doc.getElementById('takiBack');
+        const hint = doc.getElementById('takiHint') as HTMLElement | null;
+        printBtn?.addEventListener('click', () => { try { w.print(); } catch { /* المستخدمُ ألغى */ } });
+        backBtn?.addEventListener('click', () => {
+            try { w.close(); } catch { /* نافذةٌ لم يفتحها سكربت */ }
+            // 🪤 وبعضُ المتصفّحات ترفض `close()` لنافذةٍ لها تاريخ، فيُجرَّب
+            //    الرجوعُ ثمّ يُعرض سطرٌ يقول للمستخدم ماذا يفعل — بدل صمت.
+            w.setTimeout(() => {
+                if (w.closed) return;
+                if (w.history.length > 1) { w.history.back(); return; }
+                if (hint) hint.style.display = 'block';
+            }, 180);
+        });
+    } catch { /* نافذةٌ أُغلقت قبل التركيب */ }
     return true;
+}
+
+/** الصيغةُ المتزامنة — تصلح حيث لا `await` قبل النقرة. */
+export function openPrintWindow(title: string, bodyHtml: string): boolean {
+    return fillPrintWindow(openBlankWindow(), title, bodyHtml);
 }

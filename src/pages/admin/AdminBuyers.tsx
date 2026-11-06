@@ -21,6 +21,8 @@ import { useLocation } from 'react-router-dom';
 import { adminService, AdminUserRow } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../../hooks/useBackClose';
 import { useLocalStringList } from '../../hooks/useLocalStringList';
 import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
@@ -180,6 +182,7 @@ const UserEditModal = memo<{
     }, [isDirty, onClose, customConfirm]);
 
     useEscClose(true, handleCloseRequest);
+    useBackClose(true, handleCloseRequest);
 
     const handleSave = async () => {
         if (saving) return;

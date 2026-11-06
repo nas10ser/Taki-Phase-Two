@@ -105,33 +105,21 @@ export const promoRepository = {
     },
 
     /**
-     * Mark a campaign as seen by a user.
+     * تسجيلُ أن المستخدم **رأى** بانر الحملة — v15.51.
+     *
+     * 🔴 كان هذا يكتب صفَّ الانطباع من المتصفّح ثمّ **يزيد عدّاد الحملة** من
+     *    المتصفّح أيضاً. وسياسةُ `promo_write_tools` تشترط صلاحيّةَ أدوات
+     *    الإدارة لكلّ أوامر `promotional_campaigns` ⇒ مشترٍ أو بائع يُصيب
+     *    **صفر صفوف بلا خطأ**، والنتيجةُ مُبتلَعةٌ في `.then(() => {})`.
+     *    قِيس على جدّة: ثلاثُ حملاتٍ لها صفوفُ مشاهدةٍ و`current_impressions = 0`.
+     * 🔴 وأخطرُ منه: صفُّ المشاهدة كان **يحرق الإشعار** — البثُّ يستثني كلَّ
+     *    من له صفٌّ في الجدول، فمن رأى البانر لا يصله الإشعارُ أبداً. والآن
+     *    `seen_at` و`notified_at` عمودان مستقلّان، والكتابةُ بصلاحيّة الخادم.
      */
-    markAsSeen: async (campaignId: string, userId: string): Promise<void> => {
+    markAsSeen: async (campaignId: string, _userId: string): Promise<void> => {
         try {
-            await supabase.from('promo_impressions').upsert({
-                campaign_id: campaignId,
-                user_id: userId,
-                seen_at: new Date().toISOString(),
-                clicked: false
-            });
-
-            // Best-effort impression count increment — non-blocking
-            supabase
-                .from('promotional_campaigns')
-                .select('current_impressions')
-                .eq('id', campaignId)
-                .maybeSingle()
-                .then(({ data: row }) => {
-                    if (row) {
-                        supabase
-                            .from('promotional_campaigns')
-                            .update({ current_impressions: (row.current_impressions || 0) + 1 })
-                            .eq('id', campaignId)
-                            .then(() => {});
-                    }
-                });
-
+            const { error } = await supabase.rpc('taki_mark_campaign_seen', { p_campaign_id: campaignId });
+            if (error) { logger.warn('taki_mark_campaign_seen:', error.message); return; }
             logger.log('✅ Promo impression recorded');
         } catch (e) {
             console.warn('Failed to record promo impression:', e);
@@ -314,10 +302,19 @@ export const promoRepository = {
      * Admin: send a campaign immediately to every targeted user
      * (server-side fan-out via the broadcast_campaign() function).
      * Returns the number of notification rows created.
+     *
+     * v15.51 — و`force` تُعيد الإرسال لمن وصله سابقاً. وبدونها كان البثُّ
+     * الثاني يعود صفراً دائماً ولا طريقَ لإعادة المحاولة من اللوحة.
+     * 🪤 و`Number(...)` لا `as number`: الدالّةُ تُرجع `integer` لكنّ خطأً في
+     *    النوع يُنتج كائناً **صادقاً** فيمرّ `|| 0` كما هو ثمّ يفشل `> 0`
+     *    بصمت — فتقول الشاشةُ «لا يوجد مستخدمون مطابقون» بلا خطأ.
      */
-    broadcastNow: async (id: string): Promise<number> => {
-        const { data, error } = await supabase.rpc('broadcast_campaign', { p_campaign_id: id });
+    broadcastNow: async (id: string, force = false): Promise<number> => {
+        const { data, error } = await supabase.rpc('broadcast_campaign', {
+            p_campaign_id: id, p_force: force,
+        });
         if (error) throw error;
-        return (data as number) || 0;
+        const n = Number(data);
+        return Number.isFinite(n) ? n : 0;
     }
 };

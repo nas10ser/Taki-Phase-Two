@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { reportRepository, ReportType, Role } from '../repositories/reportRepository';
 import { useEscClose } from '../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../hooks/useBackClose';
 
 /**
  * Reusable report dialog (buyer↔merchant only — enforced server-side by
@@ -31,6 +33,7 @@ const TYPES: { key: ReportType; ar: string; en: string }[] = [
 const ReportDialog: React.FC<Props> = ({ reportedId, reportedRole, reportedName, isRTL, onClose }) => {
     // v14.63 — Escape يُغلق الحوار (الخطّاف موجود في المشروع ولم يكن يُستعمل هنا)
     useEscClose(true, onClose);
+    useBackClose(true, onClose);
     const { user, customAlert } = useApp();
     const [type, setType] = useState<ReportType>('scam');
     const [reason, setReason] = useState('');

@@ -977,6 +977,19 @@ const Bookings: React.FC = () => {
                                                     style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed var(--primary)', color: 'var(--primary)', fontWeight: 900, cursor: 'pointer', marginTop: 16 }}>
                                                     {isRTL ? '🖨 طباعة الفاتورة' : '🖨 Print invoice'}
                                                 </button>
+                                                {/* 🔴 v15.53 (شكوى ناصر: «عند اكتمال الطلب لا يظهر تقييم
+                                                    المصداقية») — كان التقييمُ **نافذةً عابرة** وحدها: تظهر
+                                                    مرّةً عند الاكتمال، فمن أغلقها أو كان جوّالُه في جيبه
+                                                    فقد الطريق إليها تماماً. ومدخلٌ دائمٌ على الطلب نفسه
+                                                    يجعلها متاحةً متى شاء — وهو ما يَعِد به «الأسئلة
+                                                    والأجوبة» نصّاً: «يظهر لك خيار تقييم المتجر». */}
+                                                {booking.status === 'completed' && booking.dealId && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); history.push(`/deal/${booking.dealId}`); }}
+                                                        style={{ width: '100%', padding: '12px', borderRadius: 16, background: 'var(--body-bg)', border: '1px dashed #f59e0b', color: '#b45309', fontWeight: 900, cursor: 'pointer', marginTop: 10 }}>
+                                                        {isRTL ? '⭐ قيّم المتجر ومصداقية العرض' : '⭐ Rate the store & offer authenticity'}
+                                                    </button>
+                                                )}
                                                 {/* v14.23 — مسار الاسترداد على الطلبات المنتهية أيضاً.
                                                     الشروط تُحيل مشتري طلبٍ **لم يصل** إلى هذا الزرّ، والتاجر
                                                     يستطيع ختم الطلب «مكتمل» من لوحته دون أن يصل شيء —

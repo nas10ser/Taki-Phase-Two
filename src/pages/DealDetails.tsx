@@ -2681,7 +2681,7 @@ const DealDetails: React.FC = () => {
                 <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 20, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <h3 style={{ fontWeight: 800, fontSize: '0.95rem' }}>{isRTL ? 'التعليقات والآراء' : 'Reviews & Feedback'} ({count})</h3>
-                        {user && user.userType === 'buyer' && (
+                        {/* 🪤 v15.53 — كان `=== 'buyer'` فيُخفي التقييمَ عن حساب ناصر الأدمنيّ؛ والاستحقاقُ تفرضه القاعدة (`tr_guard_rating_purchase`) فلا حارسَ ثانٍ بالدور. */}{user && user.userType !== 'seller' && (
                             myStoreReview ? (
                                 // v12.30 — already rated this store → EDIT the rating
                                 // (opens the same form prefilled; saving updates in place).

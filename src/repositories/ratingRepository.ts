@@ -1,4 +1,6 @@
 import { supabase } from '../services/supabaseClient';
+// v15.53 — الرمزُ الآليّ انتقل إلى `hint` (P0001 وحدها تعبر PostgREST).
+import { isPgCode } from '../utils/pgError';
 
 export interface Rating {
     id: string;
@@ -96,7 +98,7 @@ export const ratingRepository = {
             // either means the buyer already rated this store. v11.97b
             if ((error as any).code === '23505') return 'duplicate';
             // P0011 = حدّ الطلبات (v13.15) — تقييمات كثيرة خلال ساعة
-            if ((error as any).code === 'P0011') return 'rate_limited';
+            if (isPgCode(error, 'P0011')) return 'rate_limited';
             console.error('Rating insert failed:', error.message);
             return null;
         }

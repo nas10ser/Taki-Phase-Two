@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { refundRepository } from '../repositories/refundRepository';
+import { supabase } from '../services/supabaseClient';
 import { holdLabel } from '../utils/bookingHold';
 
 export interface StoreHold {
@@ -27,8 +28,32 @@ export interface StoreHold {
     loaded: boolean;
 }
 
-const cache = new Map<string, { pickup: number; delivery: number }>();
+/**
+ * 🔴 v15.51 (شكوى ناصر: «عند تغيير ساعات الاستلام والتوصيل عند التاجر لا
+ * يتغيّر في نفس اللحظة عند المشتري») — كانت هذه الخريطةُ **خالدة**: لا مهلةَ
+ * ولا إبطال، وصفرُ `cache.delete` في الملفّ كلّه. فمشترٍ فتح صفحةَ عرضٍ لمتجرٍ
+ * قبل التغيير يرى الرقمَ القديم **ما بقيت الصفحةُ مفتوحة**، ولو بدّل التاجرُ
+ * مهلتَه عشر مرّات.
+ *
+ * والعلاجُ طبقتان، لا واحدة:
+ *   ١) مهلةٌ قصيرة: أيُّ قراءةٍ بعدها تسأل الخادمَ من جديد — سقفٌ للخطأ.
+ *   ٢) **بثٌّ لحظيّ** على `store_profiles` حين يتغيّر صفُّ هذا المتجر: يُبطل
+ *      الخريطةَ فوراً فيُعاد الحساب في نفس اللحظة. والجدولُ منشورٌ للريل-تايم
+ *      أصلاً ومفتاحُه `store_id`، وسياسةُ قراءته `true` للجميع — أي أن كلَّ
+ *      القطع كانت موجودةً ولا أحدَ وصلها (قِيس على جدّة).
+ * 🪤 ولا يُشترك على الجدول كلِّه: اشتراكٌ بلا مرشِّح لكلّ عميلٍ يعني أن كلَّ
+ *    تعديلِ متجرٍ يوقظ كلَّ المتصلين — وهو بعينه ما يُسقط الموقع عند الآلاف.
+ *    فالاشتراكُ **بمرشِّح `store_id=eq.<المتجر>`** وعلى المتجر المفتوح وحده.
+ */
+const TTL_MS = 45_000;
+const cache = new Map<string, { pickup: number; delivery: number; at: number }>();
 const inFlight = new Map<string, Promise<void>>();
+
+/** يُبطل متجراً واحداً (أو الكلَّ) فتُعاد القراءةُ عند أقرب استعمال. */
+export const invalidateStoreHold = (storeId?: string | null): void => {
+    const id = (storeId || '').trim();
+    if (id) cache.delete(id); else cache.clear();
+};
 
 export const useStoreHold = (storeId?: string | null): StoreHold => {
     const { platformSettings } = useApp();
@@ -38,20 +63,35 @@ export const useStoreHold = (storeId?: string | null): StoreHold => {
 
     useEffect(() => {
         if (!id) { setHit(undefined); return; }
-        const known = cache.get(id);
-        if (known) { setHit(known); return; }
         let alive = true;
-        const run = inFlight.get(id) || (async () => {
-            const r = await refundRepository.storePolicies(id);
-            // 🪤 ولا يُخزَّن فشلٌ عابر: `ok:false` تعني «تعذّرت القراءة» لا
-            //    «يتبع المنصّة» — وتخزينُه يُجمّد رقماً خاطئاً لبقيّة الجلسة.
-            if (r.ok && r.holdPickupHours != null && r.holdDeliveryHours != null) {
-                cache.set(id, { pickup: r.holdPickupHours, delivery: r.holdDeliveryHours });
-            }
-        })().finally(() => inFlight.delete(id));
-        inFlight.set(id, run);
-        run.then(() => { if (alive) setHit(cache.get(id)); }).catch(() => { /* يبقى افتراضُ المنصّة */ });
-        return () => { alive = false; };
+
+        const load = (force = false) => {
+            const known = cache.get(id);
+            if (!force && known && Date.now() - known.at < TTL_MS) { setHit(known); return; }
+            if (force) cache.delete(id);
+            const run = inFlight.get(id) || (async () => {
+                const r = await refundRepository.storePolicies(id);
+                // 🪤 ولا يُخزَّن فشلٌ عابر: `ok:false` تعني «تعذّرت القراءة» لا
+                //    «يتبع المنصّة» — وتخزينُه يُجمّد رقماً خاطئاً لبقيّة الجلسة.
+                if (r.ok && r.holdPickupHours != null && r.holdDeliveryHours != null) {
+                    cache.set(id, { pickup: r.holdPickupHours, delivery: r.holdDeliveryHours, at: Date.now() });
+                }
+            })().finally(() => inFlight.delete(id));
+            inFlight.set(id, run);
+            run.then(() => { if (alive) setHit(cache.get(id)); }).catch(() => { /* يبقى افتراضُ المنصّة */ });
+        };
+
+        load();
+
+        // البثُّ اللحظيّ على صفّ هذا المتجر وحده.
+        const ch = supabase
+            .channel(`store-hold-${id}`)
+            .on('postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'store_profiles', filter: `store_id=eq.${id}` },
+                () => { if (alive) load(true); })
+            .subscribe();
+
+        return () => { alive = false; try { supabase.removeChannel(ch); } catch { /* أُغلقت */ } };
     }, [id]);
 
     const pickup = hit ? hit.pickup : plat.pickupHours;

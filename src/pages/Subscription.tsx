@@ -6,7 +6,7 @@ import { paymentService } from '../services/paymentService';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-import { buildInvoiceHtml, openPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings, InvoiceCustomer } from '../utils/invoice';
+import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings, InvoiceCustomer } from '../utils/invoice';
 import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
 import { invoiceQrForPayment } from '../utils/zatcaQr';
 import { createT } from '../utils/helpers';
@@ -89,13 +89,17 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; isRTL: boolea
                         </div>
                         <button
                             onClick={async () => {
+                                // 🔴 v15.51 — النافذةُ تُفتح **قبل** أيّ `await`: تفعيلُ المستخدم
+                                // ينتهي مع المعالج، وWebKit يحجب `window.open` بعده ⇒ كان
+                                // يُقال له «اسمح بالنوافذ المنبثقة» وهو لم يمنع شيئاً.
+                                const w = openBlankWindow();
                                 // v13.37 — فاتورة قياسية (B2B): تُجلب بيانات العميل
                                 // الضريبية كاملة، وبدونها لا يخصم ضريبة مدخلاته.
                                 const [qr, cust] = await Promise.all([
                                     invoiceQrForPayment(p, taxSettings),
                                     fetchInvoiceCustomer(userId),
                                 ]);
-                                if (!openPrintWindow(t(`فاتورة ${p.id}`, `Invoice ${p.id}`), buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr, customer: cust }))) onBlocked();
+                                if (!fillPrintWindow(w, t(`فاتورة ${p.id}`, `Invoice ${p.id}`), buildInvoiceHtml(p, taxSettings, merchantName, false, { qrDataUrl: qr, customer: cust }))) onBlocked();
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-teal-50 text-teal-700 border border-teal-200 active:scale-95">
                             🖨 {t('فاتورة', 'Invoice')}
@@ -226,6 +230,12 @@ const Subscription: React.FC = () => {
             <div className="p-8 text-center font-tajawal animate-fade-in" dir={isRTL ? 'rtl' : 'ltr'}>
                 <h2 className="text-2xl font-bold mb-4 text-[var(--text-primary)]">{t('التطبيق حالياً مجاني بالكامل 🎉', 'The platform is completely free right now 🎉')}</h2>
                 <p className="text-[var(--text-secondary)] mb-6">{t('لا حاجة للاشتراك في الوقت الحالي بناءً على صلاحيات الإدارة.', 'No subscription is needed at the moment, by the platform’s own settings.')}</p>
+                {/* 🔴 v15.53 (شكوى ناصر: «في حساب التاجر لا توجد معلومات اشتراكي
+                    ولا أيُّ باقة») — كانت هذه الشاشةُ تقول «مجاني» وتُخفي كلَّ
+                    شيء. والمجّانيّةُ **لا تُلغي الحدود**: `max_branches` ما زال
+                    يحكم عددَ المواقع، ويرفض نشرَ العرض عند تجاوزه. فإخفاءُ
+                    الباقة يترك التاجر يُرفض بلا أن يعرف ما حدُّه. */}
+                <div className="text-start mb-6"><SubscriptionStatusCard /></div>
                 <button onClick={() => history.push('/seller')} className="bg-taki-green text-white px-6 py-2 rounded-lg font-bold">{t('العودة للوحة التحكم', 'Back to dashboard')}</button>
                 <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id} isRTL={isRTL}
                     onBlocked={() => { customAlert(t('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.', 'Pop-ups must be allowed to open the invoice.')); }} />

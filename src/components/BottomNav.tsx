@@ -1,11 +1,15 @@
 import React from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+// v15.51 — صيغةُ المعدود من المحرّك الواحد: «طلبان» لا «2 طلب» (قاعدة v14.92).
+import { arCount } from '../utils/arPlural';
+
+const ORDERS = { one: 'طلب واحد', two: 'طلبان', twoGen: 'طلبين', few: 'طلبات', many: 'طلباً' };
 
 const BottomNav: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType, notifUnread } = useApp();
+    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType, notifUnread, bookings } = useApp();
 
     const isRTL = language === 'ar';
 
@@ -23,12 +27,29 @@ const BottomNav: React.FC = () => {
     const localUnread = notifications.filter(n => !n.isRead && n.userId === user?.id).length;
     const unreadCount = Math.max(notifUnread || 0, localUnread);
 
-    type NavItem = { id: string; icon: string; ar: string; en: string; path: string; badgeCount?: number };
+    // 🔴 v15.51 (أمرُ ناصر) — علامةٌ على «حجوزاتي» تقول إن هناك طلباً قائماً.
+    // الطلبُ القائم `pending` أو `acknowledged` — نفسُ الشرط الذي تستعمله
+    // «حجوزاتي» للفرز (`Bookings.tsx`)، فلا تختلف الشارةُ عمّا يجده بالداخل.
+    // 🪤 ولا تُعدّ الطلباتُ المنتهيةُ زمنياً: حجزٌ مضت مهلتُه يُلغى بكرونٍ كلَّ
+    //    دقيقتين، فالعدُّ عليه يُظهر شارةً لطلبٍ لا إجراءَ فيه (درس v12.06:
+    //    الانتهاءُ بساعة الحائط لا بحالة القاعدة).
+    const activeBookings = user
+        ? bookings.filter(b =>
+            b.userId === user.id
+            && (b.status === 'pending' || b.status === 'acknowledged')
+            && (!b.expiryTime || b.expiryTime > Date.now())).length
+        : 0;
+
+    // 🪤 والشارةُ تُعلن معناها هي: «٣ غير مقروء» صحيحةٌ للجرس وكاذبةٌ على
+    //    «حجوزاتي». فلكلّ تبويبٍ صيغتُه، وقارئُ الشاشة يسمع الصحيح.
+    type NavItem = { id: string; icon: string; ar: string; en: string; path: string;
+                     badgeCount?: number; badgeAr?: (n: number) => string; badgeEn?: (n: number) => string };
     let items: NavItem[] = [
         { id: 'home', icon: '🏠', ar: 'الرئيسية', en: 'Home', path: '/' },
         { id: 'notifications', icon: '🔔', ar: 'الإشعارات', en: 'Alerts', path: '/notifications', badgeCount: unreadCount },
         { id: 'nearby', icon: '📍', ar: 'حولي', en: 'Nearby', path: '/nearby' },
-        { id: 'bookings', icon: '🎟️', ar: 'حجوزاتي', en: 'Bookings', path: '/bookings' },
+        { id: 'bookings', icon: '🎟️', ar: 'حجوزاتي', en: 'Bookings', path: '/bookings', badgeCount: activeBookings,
+          badgeAr: (n) => `${arCount(n, ORDERS)} قائم`, badgeEn: (n) => `${n} active order${n === 1 ? '' : 's'}` },
         { id: 'profile', icon: '👤', ar: 'حسابي', en: 'Profile', path: '/profile' },
     ];
 
@@ -78,7 +99,9 @@ const BottomNav: React.FC = () => {
                                 border: '2px solid var(--card-bg)',
                                 boxShadow: '0 0 0 1px rgba(239,68,68,0.55), 0 2px 6px rgba(239,68,68,0.45)'
                             }}
-                                aria-label={isRTL ? `${count} غير مقروء` : `${count} unread`}
+                                aria-label={isRTL
+                                    ? (item.badgeAr ? item.badgeAr(count) : `${count} غير مقروء`)
+                                    : (item.badgeEn ? item.badgeEn(count) : `${count} unread`)}
                             >
                                 {count > 9 ? '9+' : count}
                             </span>

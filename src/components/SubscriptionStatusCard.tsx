@@ -54,7 +54,10 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
 
     useEffect(() => { load(); }, [load, refreshKey]);
 
-    if (!user || user.userType !== 'seller') return null;
+    // 🪤 v15.53 — كان `userType !== 'seller'` فيُخفي البطاقةَ عن **متجر ناصر**
+    //    نفسِه (يملكه حسابُ أدمن). وهي قاعدةُ المشروع الموثَّقة: كلُّ مرشِّح
+    //    `user_type='seller'` يُخفي متجرَ ناصر ⇒ يُستعمل «ليس مشترياً».
+    if (!user || user.userType === 'buyer') return null;
     if (loading) {
         return <div style={{ height: compact ? 56 : 150, borderRadius: 18, background: 'var(--gray-100)' }} className="animate-pulse" />;
     }

@@ -13,6 +13,8 @@
  * وردودٌ في الاتجاهين، وإشعارٌ يصل صاحب الشكوى عند كل ردٍّ من الإدارة.
  */
 import { supabase } from '../services/supabaseClient';
+// v15.53 — الرمزُ الآليّ انتقل إلى `hint` (P0001 وحدها تعبر PostgREST).
+import { isPgCode } from '../utils/pgError';
 import { logger } from '../utils/logger';
 
 export type ComplaintCategory =
@@ -34,7 +36,7 @@ export interface MyComplaint {
     created_at: string;
     reply_count: number;
     last_reply_at: string | null;
-    /** ردٌّ من الإدارة لم يُردَّ عليه بعد — يُبرز البطاقة في «شكاواي». */
+    /** ردٌّ من الإدارة لم يُردَّ عليه بعد — يُبرز البطاقة في «شكواي». */
     unread_admin: boolean;
 }
 
@@ -94,7 +96,7 @@ export const complaintRepository = {
         if (error) {
             logger.warn('complaint insert failed:', error.message);
             // v13.15 — حدّ الطلبات (P0011): رسالة القاعدة العربية تُعرض كما هي
-            return { ok: false, msg: (error as any).code === 'P0011' ? error.message : undefined };
+            return { ok: false, msg: isPgCode(error, 'P0011') ? error.message : undefined };
         }
         if (!data?.id) return { ok: false };
         return { ok: true, id: data.id as string };
@@ -147,7 +149,7 @@ export const complaintRepository = {
         } catch { return null; }
     },
 
-    /** شكاواي — القائمة التي لم تكن موجودة إطلاقاً. */
+    /** شكواي — القائمة التي لم تكن موجودة إطلاقاً. */
     mine: async (limit = 50): Promise<MyComplaint[]> => {
         const { data, error } = await supabase.rpc('my_complaints', { p_limit: limit });
         if (error) { logger.warn('my_complaints:', error.message); return []; }
@@ -166,7 +168,7 @@ export const complaintRepository = {
         const { error } = await supabase.rpc('complaint_reply', { p_id: complaintId, p_body: body });
         if (error) {
             logger.warn('complaint_reply:', error.message);
-            return { ok: false, msg: (error as any).code === 'P0011' ? error.message : undefined };
+            return { ok: false, msg: isPgCode(error, 'P0011') ? error.message : undefined };
         }
         return { ok: true };
     },

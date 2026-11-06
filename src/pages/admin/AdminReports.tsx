@@ -889,7 +889,7 @@ const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint: c, onOpenAccou
 /**
  * ردُّ الإدارة — الإصلاح الجوهريّ (v14.92).
  * 🔴 قبله: تُغيّر الإدارة الحالة إلى «تم الحل» و**لا يصل صاحب الشكوى شيء**.
- *    الآن كل ردٍّ يُنشئ إشعاراً له، ويظهر في شاشة «شكاواي» عنده.
+ *    الآن كل ردٍّ يُنشئ إشعاراً له، ويظهر في شاشة «شكواي» عنده.
  */
 const ComplaintReplyBox: React.FC<{ complaint: AdminComplaintRow; onDone: () => void }> = ({ complaint: c, onDone }) => {
     const { customAlert } = useApp();
@@ -906,7 +906,7 @@ const ComplaintReplyBox: React.FC<{ complaint: AdminComplaintRow; onDone: () => 
         setBusy(false);
         if (!r.success) { await customAlert('❌ تعذّر إرسال الردّ: ' + (r.error || '')); return; }
         setBody(''); setOpen(false); setCloseIt(false);
-        await customAlert('✅ وصل ردُّك صاحب الشكوى — إشعاراً وفي شاشة «شكاواي» عنده.');
+        await customAlert('✅ وصل ردُّك صاحب الشكوى — إشعاراً وفي شاشة «شكواي» عنده.');
         onDone();
     };
 
@@ -928,7 +928,7 @@ const ComplaintReplyBox: React.FC<{ complaint: AdminComplaintRow; onDone: () => 
     return (
         <div style={{ ...panelStyle, marginBottom: 10 }}>
             <label style={{ display: 'block', fontSize: '.74rem', fontWeight: 800, color: 'var(--adm-fg-2)', marginBottom: 6 }}>
-                ردٌّ يصل صاحب الشكوى (إشعاراً وفي شاشة «شكاواي» عنده)
+                ردٌّ يصل صاحب الشكوى (إشعاراً وفي شاشة «شكواي» عنده)
             </label>
             <textarea
                 value={body}

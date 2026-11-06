@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { complaintRepository, ComplaintCategory } from '../repositories/complaintRepository';
 import { useEscClose } from '../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../hooks/useBackClose';
 // 🪤 الرقم لا يُصاغ يدوياً: «6 ساعة» خطأ نحويّ، و«1 hours» مثله.
 //    هذا الملفّ هو المكان الوحيد الذي يتحوّل فيه رقمُ ساعاتٍ إلى نصّ.
 import { holdLabelGen } from '../utils/bookingHold';
@@ -32,6 +34,7 @@ const CATS: { key: ComplaintCategory; ar: string; en: string }[] = [
 const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
     // v14.63 — Escape يُغلق الحوار
     useEscClose(true, onClose);
+    useBackClose(true, onClose);
     const { user, customAlert, platformSettings } = useApp();
     const [cat, setCat] = useState<ComplaintCategory>('app_issue');
     const [subject, setSubject] = useState('');
@@ -103,7 +106,7 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
             const sent = files.length - failed;
             customAlert(isRTL
                 ? `✅ وصلت شكواك.${files.length ? ` (${sent} من ${files.length} مرفقاً)` : ''}\n`
-                  + `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً — وتتابعها من «حسابي ← شكاواي».`
+                  + `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً — وتتابعها من «حسابي ← شكواي».`
                 + (failed ? `\n⚠️ تعذّر رفع ${failed} مرفقاً — أرسلها في ردٍّ لاحق.` : '')
                 : `✅ Your complaint was received. We reply within ${holdLabelGen(slaHours, false)}; you'll get a notification, and you can follow it in Account → My complaints.`);
         } else {
@@ -260,7 +263,7 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
 
                 <p style={{ marginTop: 14, marginBottom: 0, fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary, #666)', lineHeight: 1.8 }}>
                     {isRTL
-                        ? `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً. وتتابع شكواك من «حسابي ← شكاواي».`
+                        ? `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً. وتتابع شكواك من «حسابي ← شكواي».`
                         : `We reply within ${holdLabelGen(slaHours, false)} and notify you. Follow it in Account → My complaints.`}
                 </p>
 

@@ -31,6 +31,8 @@ import L from 'leaflet';
 import { supabase } from '../services/supabaseClient';
 import { useApp } from '../context/AppContext';
 import useEscClose from '../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../hooks/useBackClose';
 import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
 import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 
@@ -224,6 +226,7 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
     const statusRef = useRef<string | null>(null);
 
     useEscClose(true, onClose);
+    useBackClose(true, onClose);
 
     // قفل تمرير الصفحة خلف الطبقة: مستمعو PullToRefresh على `document` نفسه،
     // فبلا القفل (ولا `aria-modal`) كان سحبُ الخريطة بالإصبع يُترجَم «سحباً

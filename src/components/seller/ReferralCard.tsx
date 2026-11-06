@@ -15,6 +15,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { clickable } from '../../utils/clickable';
 import { useEscClose } from '../../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../../hooks/useBackClose';
 import QrImage, { dataUrlToFile } from '../QrImage';
 
 const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }> = ({ isRTL, onAlert }) => {
@@ -25,7 +27,8 @@ const ReferralCard: React.FC<{ isRTL: boolean; onAlert: (msg: string) => void }>
     const [showQr, setShowQr] = useState(false);
     // v12.34 — تكبير الباركود بالضغط (شاشة كاملة) + مشاركته كصورة.
     const [qrZoom, setQrZoom] = useState(false);
-    useEscClose(qrZoom, () => setQrZoom(false));   // v14.64 — Escape يُغلق التكبير
+    useEscClose(qrZoom, () => setQrZoom(false));
+    useBackClose(qrZoom, () => setQrZoom(false));   // v14.64 — Escape يُغلق التكبير
     const [sharingQr, setSharingQr] = useState(false);
     const [savingQr, setSavingQr] = useState(false);
 

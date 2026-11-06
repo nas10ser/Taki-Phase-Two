@@ -392,7 +392,7 @@ const App = () => {
                         <Route path="/subscription" component={Subscription} />
                         <Route path="/contests" component={Contests} />
                         <Route path="/favorites" component={Favorites} />
-                        {/* v14.92 — «شكاواي»: لم تكن هناك شاشةٌ تعرض للمستخدم شكاواه ولا ردودها. */}
+                        {/* v14.92 — «شكواي»: لم تكن هناك شاشةٌ تعرض للمستخدم شكاواه ولا ردودها. */}
                         <Route path="/complaints" component={MyComplaints} />
                         <Route path="/store/:id" component={StoreDetails} />
                         <Route path="/nearby" component={Nearby} />

@@ -1,5 +1,5 @@
 /**
- * MyComplaints — «شكاواي» (v14.92)
+ * MyComplaints — «شكواي» (v14.92)
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 هذه الشاشة **لم تكن موجودة إطلاقاً**. كان المستخدم يرسل شكواه فيقرأ
  *    «سنراجعها ونتواصل معك» ثم لا شيء: لا يعرف أوصلت، ولا في أي حالٍ هي،
@@ -229,7 +229,7 @@ const MyComplaints: React.FC = () => {
                     {isRTL ? '→' : '←'}
                 </button>
                 <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-primary, #111)' }}>
-                    📣 {isRTL ? 'شكاواي' : 'My complaints'}
+                    📣 {isRTL ? 'شكواي' : 'My complaints'}
                 </h1>
             </div>
             <p style={{ margin: '0 0 16px', fontSize: '0.82rem', lineHeight: 1.8, color: 'var(--text-secondary, #666)', fontWeight: 600 }}>

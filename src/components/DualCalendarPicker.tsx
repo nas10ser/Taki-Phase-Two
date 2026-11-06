@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useEscClose } from '../hooks/useEscClose';
+// v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
+import { useBackClose } from '../hooks/useBackClose';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface DualCalendarPickerProps {
@@ -266,6 +268,7 @@ const DualCalendarPicker: React.FC<DualCalendarPickerProps> = ({
     //    (`useEscClose` يبدأ بـ`if (!active) return;`) — فالنقل بلا أثر سلوكي.
     const panelRef = useRef<HTMLDivElement | null>(null);
     useEscClose(isOpen, onClose);
+    useBackClose(isOpen, onClose);
     useFocusTrap(isOpen, panelRef);
 
     if (!isOpen) return null;

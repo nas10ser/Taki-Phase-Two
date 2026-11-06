@@ -24,7 +24,6 @@ import { packageRepository } from '../../repositories/packageRepository';
 import { subscriptionRepository } from '../../repositories/subscriptionRepository';
 import { sponsorRepository, AdminSponsorRow } from '../../repositories/sponsorRepository';
 import { CATEGORIES, REGIONS, CITIES } from '../../data/mock';
-import { useEscClose } from '../../hooks/useEscClose';
 import { useLocalStringList } from '../../hooks/useLocalStringList';
 import { useAdminRecents } from '../../hooks/useAdminRecents';
 import { CopyButton } from '../../components/admin/CopyButton';
