@@ -116,10 +116,35 @@ s = s.replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${ver};`);
 s = s.replace(/CURRENT_PROJECT_VERSION = [^;]+;/g, `CURRENT_PROJECT_VERSION = ${build};`);
 changes.push(`الإصدار ⇐ ${ver} (${build})`);
 
-// ── ٥) الحدُّ الأدنى للنظام والأجهزة المدعومة ──────────────────────────────
-if (!/IPHONEOS_DEPLOYMENT_TARGET = 14\.0;/.test(s)) {
-    s = s.replace(/IPHONEOS_DEPLOYMENT_TARGET = [^;]+;/g, 'IPHONEOS_DEPLOYMENT_TARGET = 14.0;');
-    changes.push('هدفُ النشر ⇐ iOS 14');
+// ── ٥) الحدُّ الأدنى للنظام ────────────────────────────────────────────────
+// 🔴 **١٥٫٠ لا ١٤٫٠** — ودرسٌ كلّف بناءً كاملاً: ضبطتُها ١٤ فسقط البناءُ على
+//    منصّة GitHub بتسعة أخطاءٍ من صيغةٍ واحدة:
+//      "The package product 'CapacitorApp' requires minimum platform version
+//       15.0 for the iOS platform, but this target supports 14.0"
+//    أي أن إضافاتِ Capacitor 8 تشترط ١٥ بينما قالبُ `Package.swift` يقول ١٤.
+// 🪤 ويلزم تغييرُ **الاثنين معاً**: إعدادُ المشروع و`Package.swift`. وتغييرُ
+//    أحدهما وحدَه يُبقي نفسَ الخطأ حرفياً — فيبدو الإصلاحُ وكأنه لم يقع.
+// 🪤 وiOS 15 لا يُقصي أحداً عملياً (صدر ٢٠٢١)، وأبل تشترط استهدافَ ١٣ فأعلى.
+const IOS_MIN = '15.0';
+if (!new RegExp(`IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN};`).test(s)) {
+    s = s.replace(/IPHONEOS_DEPLOYMENT_TARGET = [^;]+;/g, `IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN};`);
+    changes.push(`هدفُ النشر ⇐ iOS ${IOS_MIN}`);
+}
+
+// و`Package.swift` الذي يولّده Capacitor (ويقول عن نفسه «لا تعدّله») —
+// يُعدَّل هنا بعد كلّ مزامنةٍ لأنها تُعيد كتابتَه بـ.v14.
+{
+    const pkg = path.join(ROOT, 'ios/App/CapApp-SPM/Package.swift');
+    if (fs.existsSync(pkg)) {
+        const before = fs.readFileSync(pkg, 'utf8');
+        const after = before.replace(/platforms:\s*\[\s*\.iOS\(\.v\d+\)\s*\]/,
+                                     'platforms: [.iOS(.v15)]');
+        if (after !== before) { fs.writeFileSync(pkg, after); changes.push('Package.swift ⇐ .iOS(.v15)'); }
+        if (!/\.iOS\(\.v15\)/.test(fs.readFileSync(pkg, 'utf8'))) {
+            console.error('❌ Package.swift ما زال دون .v15 — إضافاتُ Capacitor تشترطها.');
+            process.exit(1);
+        }
+    }
 }
 
 if (s === before) { console.log('ℹ️ مشروعُ Xcode مسجَّلٌ سلفاً — لا تغيير.'); process.exit(0); }
@@ -133,6 +158,7 @@ const must = [
     ['InfoPlist.strings in Resources', 'الترجماتُ في مرحلة الموارد'],
     [`MARKETING_VERSION = ${ver};`, 'الإصدارُ التسويقيّ'],
     ['isa = PBXVariantGroup', 'مجموعةُ التنويع'],
+    ['IPHONEOS_DEPLOYMENT_TARGET = 15.0;', 'الحدُّ الأدنى iOS 15'],
 ];
 let bad = 0;
 for (const [needle, label] of must) {
