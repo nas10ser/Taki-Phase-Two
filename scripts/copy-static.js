@@ -42,7 +42,13 @@ const REQUIRED_FILES = ['robots.txt', 'og-image.png', 'logo192.png', 'logo512.pn
     // ٥٤ يُفشل البناءَ عند غيابها، وبلا الإدراج تُنشر الصفحةُ بصورةٍ ٤٠٤.
     'logo-mark.webp'];
 /** مجلّدات اختيارية فعلاً (نماذج الفحص والصور التعريفية). */
-const OPTIONAL_DIRS = ['models', 'screenshots'];
+// v15.56 — و`.well-known`: يحمل `assetlinks.json` الذي يربط حزمةَ أندرويد
+// (TWA) بالنطاق. اختياريٌّ لأنه لا يُكتب إلا بعد أن تصدر بصمةُ التوقيع من
+// Play Console (`node scripts/set-assetlinks.js <البصمة>`)، والموقعُ يعمل
+// بلا أندرويد تماماً. 🪤 ولا يُنشَر قالبٌ غيرُ معبَّأ: السطرُ أدناه يُفشل
+// البناءَ إن بقي المَوضعُ `__SHA256_FINGERPRINT__` — فبصمةٌ خاطئة تُنتج
+// تطبيقاً يعرض **شريطَ عنوان متصفّح** بلا أي رسالة خطأ.
+const OPTIONAL_DIRS = ['models', 'screenshots', '.well-known'];
 
 const missing = [];
 let copied = 0;
@@ -83,6 +89,22 @@ for (const d of OPTIONAL_DIRS) {
     if (!fs.existsSync(src)) { console.log(`ℹ️ ${d}/ غير موجود — تُخطّي (اختياري)`); continue; }
     fs.cpSync(src, path.join(DIST, d), { recursive: true });
     copied++;
+}
+
+// 🔴 v15.56 — قالبُ ربطِ أندرويد غيرُ المعبَّأ يُفشل البناء. ولماذا خطأٌ لا
+//    تحذير: الربطُ ببصمةٍ وهمية يفشل **بصمت** عند أندرويد فيظهر التطبيقُ
+//    وفيه شريطُ عنوان المتصفّح، وهو عيبٌ يراه كلُّ من ينزّله ولا يُسجَّل
+//    في أي سجلّ. وغيابُ الملفّ أصدقُ من ملفٍّ كاذب.
+{
+    const al = path.join(DIST, '.well-known', 'assetlinks.json');
+    if (fs.existsSync(al)) {
+        const t = fs.readFileSync(al, 'utf8');
+        if (t.includes('__SHA256_FINGERPRINT__')) {
+            console.error('❌ .well-known/assetlinks.json ما زال قالباً غيرَ معبَّأ.');
+            console.error('   يُكتب بـ: node scripts/set-assetlinks.js <البصمة من Play Console>');
+            process.exit(1);
+        }
+    }
 }
 
 console.log(`✅ نُسخت الملفات الثابتة (${copied} عنصراً) — وفشلُ أي خطوة قبل هذه يُفشل البناء الآن.`);

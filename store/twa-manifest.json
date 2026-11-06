@@ -1,0 +1,51 @@
+{
+  "_comment": "إعدادُ Bubblewrap لبناء حزمة أندرويد (TWA) من نفس الموقع. ⚠️ لا تُعدَّل القيمُ المعلَّمة TODO إلا من لوحة Play Console — انظر store/README.md.",
+  "packageId": "net.takisa.app",
+  "host": "www.takisa.net",
+  "name": "تاكي — احجز التخفيض",
+  "launcherName": "تاكي",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#0f172a",
+  "themeColorDark": "#0f172a",
+  "navigationColor": "#0f172a",
+  "navigationColorDark": "#0f172a",
+  "navigationDividerColor": "#0f172a",
+  "navigationDividerColorDark": "#0f172a",
+  "backgroundColor": "#0f172a",
+  "enableNotifications": true,
+  "startUrl": "/?source=android",
+  "iconUrl": "https://www.takisa.net/logo512.png",
+  "maskableIconUrl": "https://www.takisa.net/logo512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android-upload.keystore",
+    "alias": "taki-upload"
+  },
+  "appVersionName": "15.56",
+  "appVersionCode": 1556,
+  "shellApkVersion": 0,
+  "webManifestUrl": "https://www.takisa.net/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": { "enabled": false },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://www.takisa.net/",
+  "minSdkVersion": 23,
+  "shortcuts": [
+    {
+      "name": "العروض",
+      "shortName": "العروض",
+      "url": "/deals?source=android",
+      "chosenIconUrl": "https://www.takisa.net/logo192.png"
+    },
+    {
+      "name": "حجوزاتي",
+      "shortName": "حجوزاتي",
+      "url": "/bookings?source=android",
+      "chosenIconUrl": "https://www.takisa.net/logo192.png"
+    }
+  ]
+}

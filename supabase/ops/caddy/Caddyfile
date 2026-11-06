@@ -1,0 +1,37 @@
+{$PROXY_DOMAIN}, api.takisa.net {
+    @supabase_api path /auth/v1/* /rest/v1/* /graphql/v1 /realtime/v1/* /storage/v1/* /functions/v1/* /mcp /sso/*
+
+    # v15.51 — الضغط. قِيس قبله: ٣٤٬٣٤٦ بايتاً تُرسَل **خاماً** حتى حين يطلب
+    # المتصفّحُ `gzip,br,zstd` — صفرُ ترويسةِ `content-encoding` في الردّ.
+    # وبـgzip تصير ٥٬٤٦٥ (٦٫٣×). وهو أرخصُ مكسبِ سعةٍ على المنصّة كلّها:
+    # يرفع جدارَ النطاق الترددي من ~٧٦ ألف متصلٍ إلى ~٤٨٠ ألفاً بسطرٍ واحد.
+    # 🪤 ولا تُضغط الصورُ: `encode` يتخطّى ما هو مضغوطٌ أصلاً بالنوع.
+    encode {
+        zstd
+        gzip 6
+        minimum_length 512
+    }
+
+    handle @supabase_api {
+        reverse_proxy kong:8000
+    }
+
+    # قوالب بريد GoTrue - يجلبها الخادم نفسه عبر HTTPS. عامّة عمداً (لا أسرار
+    # فيها، مجرد HTML) ولا بد أن تبقى خارج basic_auth، وإلا فشل الجلب وعاد
+    # GoTrue لقوالبه الإنجليزية بصمت.
+    handle_path /email-templates/* {
+        root * /etc/caddy/email-templates
+        file_server
+    }
+
+    handle {
+        basic_auth {
+            # PROXY_AUTH_PASSWORD is overwritten with the bcrypt on startup
+            {$PROXY_AUTH_USERNAME} {$PROXY_AUTH_PASSWORD}
+        }
+
+        reverse_proxy studio:3000
+    }
+
+    header -server
+}

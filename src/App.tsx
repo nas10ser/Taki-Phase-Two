@@ -50,6 +50,7 @@ const Refund          = lazy(() => import('./pages/legal/Refund'));
 const About           = lazy(() => import('./pages/legal/About'));
 const Contact         = lazy(() => import('./pages/legal/Contact'));
 const FAQ             = lazy(() => import('./pages/legal/FAQ'));
+const DeleteAccount   = lazy(() => import('./pages/legal/DeleteAccount'));
 const NotFound        = lazy(() => import('./pages/NotFound'));
 
 const RouteFallback = () => (
@@ -410,6 +411,10 @@ const App = () => {
                         <Route path="/about"   component={About} />
                         <Route path="/contact" component={Contact} />
                         <Route path="/faq"     component={FAQ} />
+                        {/* v15.56 — رابطٌ عامّ لحذف الحساب: شرطٌ صريح في سياسة
+                            قوقل بلاي (يُعلَن في «أمان البيانات») ولا يكفي عنه
+                            الزرُّ داخل «حسابي». */}
+                        <Route path="/delete-account" component={DeleteAccount} />
                         {/* 🔄 Unified Redirects for v7.2 */}
                         <Route path="/dashboard">
                             <Redirect to="/seller" />

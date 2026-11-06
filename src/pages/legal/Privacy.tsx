@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import AnalyticsToggleRow from '../../components/AnalyticsToggleRow';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
@@ -214,14 +215,14 @@ const Privacy: React.FC = () => {
                 <Bullets items={isRTL ? [
                     'الاطّلاع على البيانات التي نَجمعها عنك والغرض من جمعها.',
                     'طلب تصحيح أيّ بيانات غير دقيقة.',
-                    'طلب إتلاف بياناتك إلى الحدّ الذي تَسمح به الأنظمة، مع احتفاظنا بما تَقتضيه التزاماتنا النظامية والمالية والأمنية.',
+                    <>طلب إتلاف بياناتك إلى الحدّ الذي تَسمح به الأنظمة، مع احتفاظنا بما تَقتضيه التزاماتنا النظامية والمالية والأمنية. ولحذف حسابك وبياناتك الشخصية <strong>بنفسك وفوراً</strong> صفحةٌ مستقلّة: <Link to="/delete-account" className="underline font-bold">حذف الحساب</Link>.</>,
                     'سحب موافقتك على المعالجة في الأغراض التي تَستند إليها (كالتسويق المباشر أو الموقع الجغرافي). ولقياس الاستخدام مفتاحُ إيقافٍ مباشر في القسم ٩ أدناه وفي «حسابي ← الإشعارات» — يعمل فوراً بلا طلبٍ منّا.',
                     'الاعتراض على معالجة معيّنة لا تَستند إلى عقد أو نظام.',
                     'تقديم شكوى إلى الجهة المختصّة بحماية البيانات الشخصية في المملكة العربية السعودية.',
                 ] : [
                     'Access to the data we collect about you and the purpose of collecting it.',
                     'Request correction of any inaccurate data.',
-                    'Request destruction of your data to the extent permitted by law, while we retain what is required by our regulatory, financial and security obligations.',
+                    <>Request destruction of your data to the extent permitted by law, while we retain what is required by our regulatory, financial and security obligations. To delete your account and personal data <strong>yourself, immediately</strong>, there is a dedicated page: <Link to="/delete-account" className="underline font-bold">Delete account</Link>.</>,
                     'Withdraw your consent to processing for the purposes that rely on it (such as direct marketing or geolocation). Usage analytics has a direct off switch in section 9 below and in Profile → Notifications — it takes effect immediately, with no request to us.',
                     'Object to a specific processing activity not based on contract or law.',
                     'File a complaint with the competent personal-data-protection authority in the Kingdom of Saudi Arabia.',
@@ -305,14 +306,14 @@ const Privacy: React.FC = () => {
                     <><strong>عناوينك المحفوظة</strong> في حسابك: تبقى حتى تحذفها بنفسك أو تحذف حسابك.</>,
                     <><strong>الطلبات والفواتير:</strong> تبقى في سجلّ التاجر — هي دفاتره التي يُلزمه النظام بحفظها. وعند حذف حسابك تبقى <strong>بلا هويّتك</strong>.</>,
                     <><strong>سجلّ النشاط:</strong> ٩٠ يوماً · <strong>جلسات الدخول:</strong> ٣٠ يوماً · <strong>قياسات المتاجر:</strong> ٩٠ يوماً · <strong>أحداث فتح التطبيق:</strong> ١٨٠ يوماً · <strong>اشتراكات الإشعارات غير المستعملة:</strong> ٩٠ يوماً.</>,
-                    <><strong>الحساب المحذوف:</strong> تعطيلٌ فوريّ وإمكانية تراجع خلال <strong>٣٠ يوماً</strong>، ثم محوٌ نهائي للبيانات الشخصية.</>,
+                    <><strong>الحساب المحذوف:</strong> تعطيلٌ فوريّ وإمكانية تراجع خلال <strong>٣٠ يوماً</strong>، ثم محوٌ نهائي للبيانات الشخصية. والطلبُ من <Link to="/delete-account" className="underline font-bold">صفحة حذف الحساب</Link>.</>,
                 ] : [
                     <><strong>Courier location tracking:</strong> shown to that order\'s buyer only and only while in transit; the position is erased the moment the order closes, and the whole tracking record is deleted <strong>one hour</strong> after closure.</>,
                     <><strong>The delivery address inside an order:</strong> kept for as long as the order exists — it is part of its record and its invoice, both parties need it in any dispute, and tax law requires invoices to be kept.</>,
                     <><strong>Addresses saved</strong> in your account: kept until you delete them or delete your account.</>,
                     <><strong>Orders and invoices:</strong> kept in the merchant\'s records — they are the books the law requires them to keep. If you delete your account they remain <strong>without your identity</strong>.</>,
                     <><strong>Activity log:</strong> 90 days · <strong>sign-in sessions:</strong> 30 days · <strong>store analytics:</strong> 90 days · <strong>app-open events:</strong> 180 days · <strong>unused notification subscriptions:</strong> 90 days.</>,
-                    <><strong>A deleted account:</strong> deactivated immediately with a <strong>30-day</strong> window to undo, then personal data is permanently erased.</>,
+                    <><strong>A deleted account:</strong> deactivated immediately with a <strong>30-day</strong> window to undo, then personal data is permanently erased. Request it from the <Link to="/delete-account" className="underline font-bold">account deletion page</Link>.</>,
                 ]} />
             </Section>
 

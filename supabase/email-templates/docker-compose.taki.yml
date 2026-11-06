@@ -70,3 +70,17 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       PUSH_SHARED_SECRET: ${PUSH_SHARED_SECRET}
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # v15.51 — مجمَّعُ اتصالات PostgREST. قِيس قبله في سجلّ PostgREST نفسه:
+  #   "Connection Pool size: 10" — عشرةُ اتصالاتٍ لكلّ طلبات الموقع والبوتين
+  # معاً على نواةٍ واحدة. والقاعدة `max_connections = 100`، فعشرةٌ كانت
+  # الجدارَ الحقيقيّ لا القاعدة. وبـ٤٠ تأكّد في السجلّ بعد الإقلاع.
+  # 🪤 و`ALTER DATABASE … SET` لا يصل جلسات PostgREST المجمَّعة أبداً (درس
+  #    مسجَّل) — فالضبطُ هنا في بيئة الحاوية هو الموضعُ الوحيد الذي يسري.
+  # 🪤 و`PGRST_DB_POOL_ACQUISITION_TIMEOUT` ثوانٍ: بلا سقفٍ ينتظر الطلبُ
+  #    اتصالاً إلى الأبد فيبدو الموقعُ معلَّقاً بدل أن يردّ خطأً سريعاً.
+  rest:
+    environment:
+      PGRST_DB_POOL: 40
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: 10

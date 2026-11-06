@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
@@ -231,7 +232,7 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني حذف حسابي نهائياً؟',
-        a: <p>نعم. من القائمة الجانبية (☰) ← «حذف الحساب نهائياً». ستُحذَف بياناتك خلال مدّة قصيرة، مع احتفاظنا بالحدّ الأدنى الذي تقتضيه الالتزامات النظامية المعمول بها (مثل سجلّات المعاملات للمدّة التي تتطلّبها الأنظمة).</p>,
+        a: <p>نعم، وبنفسك بلا طلبٍ منّا. ثلاثةُ مسارات: صفحةُ <Link to="/delete-account" className="underline font-bold">حذف الحساب</Link> المستقلّة، أو «حسابي» أسفل الصفحة، أو القائمة الجانبية (☰). والأثرُ واحد: <strong>تعطيلٌ فوريّ</strong> وتسجيلُ خروجٍ من كل الأجهزة، ثمّ مهلةُ تراجعٍ تستعيد فيها الحساب بتسجيل الدخول، وبعدها محوٌ نهائيّ للبيانات الشخصية. وتبقى الطلباتُ والفواتيرُ في دفاتر التاجر <strong>بلا هويّتك</strong> لأن النظام يُلزمه بحفظها. والمدّةُ والتفاصيلُ في <Link to="/privacy" className="underline font-bold">سياسة الخصوصية</Link> (القسم ٧).</p>,
     },
 ];
 
@@ -353,7 +354,7 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'Can I permanently delete my account?',
-        a: <p>Yes. From the side menu (☰) → «Delete account permanently». Your data is deleted within a short period, save the minimum we are required by applicable law to retain (such as transaction records for the period required by the regulations).</p>,
+        a: <p>Yes, and you do it yourself with no request to us. Three routes: the dedicated <Link to="/delete-account" className="underline font-bold">Delete account</Link> page, “My account” at the bottom of the page, or the side menu (☰). The effect is the same: <strong>immediate deactivation</strong> and sign-out from every device, then an undo window during which signing in restores the account, after which personal data is permanently erased. Orders and invoices remain in the merchant's books <strong>stripped of your identity</strong>, because the law requires the merchant to keep them. The window and the details are in the <Link to="/privacy" className="underline font-bold">Privacy Policy</Link> (section 7).</p>,
     },
 ];
 
