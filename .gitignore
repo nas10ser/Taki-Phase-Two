@@ -41,3 +41,20 @@ taki_jeddah*        # 🔑 مفتاحُ الخادم الثاني (١٩ أكتو
 branding/taki-logo-poster-*.png
 __pycache__/
 *.pyc
+
+# ═══ تطبيقا المتجرين (v15.58) ═══
+# 🪤 تُستثنى **مخرجاتُ البناء والنسخُ المولَّدة** وحدها، ويبقى المشروعان
+#    في المستودع: بلا ملفّات Xcode وGradle لا يستطيع سيرُ GitHub بناءَ شيء.
+android/build/
+android/.gradle/
+android/app/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+# نسخةُ الواجهة المنقولة (٢٠ م.ب) — يُعيدها `scripts/native-sync.js` من dist
+android/app/src/main/assets/public/
+ios/App/App/public/
+ios/App/build/
+ios/App/Pods/
+ios/DerivedData/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/

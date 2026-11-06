@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  صلاحيّاتُ التطبيق.
+  🔴 `aps-environment` شرطُ الإشعارات: بلا هذه السطرين لا يُصدر النظامُ رمزَ
+     جهازٍ إطلاقاً، فتبدو الإشعاراتُ «لا تعمل» بلا أيّ خطأ ظاهر.
+     والقيمةُ `development` تُستبدل آلياً بـ`production` عند التوزيع.
+  🪤 و`associated-domains` تجعل روابطَ takisa.net تفتح التطبيقَ لا سفاري
+     (نظيرُ App Links في أندرويد). وتتطلّب ملفَّ `apple-app-site-association`
+     على الموقع — وهو مكتوبٌ في `.well-known` ويُنشر مع البناء.
+-->
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:www.takisa.net</string>
+		<string>applinks:takisa.net</string>
+	</array>
+</dict>
+</plist>

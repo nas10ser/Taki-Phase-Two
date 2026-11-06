@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  قواعدُ استخراج البيانات (أندرويد ١٢+). والنسخُ الاحتياطيُّ **مُعطَّل**
+  (`allowBackup=false`) لأن التطبيق يحمل جلسةَ دخولٍ وبياناتِ طلبات:
+  نسخةُ قوقل السحابيّة تُنقَل إلى جهازٍ آخر فتنتقل معها الجلسة.
+  والملفُّ موجودٌ رغم التعطيل لأن أندرويد يحذّر من غيابه عند النقل المباشر.
+-->
+<data-extraction-rules>
+    <cloud-backup><exclude domain="root" /><exclude domain="sharedpref" />
+        <exclude domain="database" /><exclude domain="file" /></cloud-backup>
+    <device-transfer><exclude domain="root" /><exclude domain="sharedpref" />
+        <exclude domain="database" /><exclude domain="file" /></device-transfer>
+</data-extraction-rules>

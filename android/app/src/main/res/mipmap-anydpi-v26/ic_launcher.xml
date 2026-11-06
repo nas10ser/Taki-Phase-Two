@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  الأيقونةُ التكيّفيّة: طبقتان ١٠٨×١٠٨dp يقصّهما المشغّلُ بشكله (دائرة ·
+  مربّعٌ مستدير · معيّن)، والمنطقةُ الآمنة هي الوسطُ ٧٢dp = ٦٦٫٧٪.
+
+  🔴 **الخلفيّةُ بلا إزاحةٍ إطلاقاً**: المولّدُ وضع `inset 16.7%` على
+     الطبقتين معاً، فكانت الخلفيّةُ النيفي تنكمش وتترك **حوافَّ شفّافة**
+     يملؤها المشغّلُ بلونه — فتظهر الأيقونةُ وكأنّ حولها إطاراً أبيض.
+     الخلفيّةُ **يجب أن تملأ اللوحة كلَّها** بحكم تعريف الأيقونة التكيّفيّة.
+
+  🪤 والأماميّةُ بلا إزاحةٍ أيضاً لأن مصدرَها (`assets/icon-foreground.png`)
+     رُسم أصلاً عند **٠٫٥٥** من الضلع — أي داخلَ المنطقة الآمنة بهامش.
+     وإضافةُ إزاحةٍ فوقها كانت ستُصغّر الرسمةَ إلى ٠٫٣٧ فتبدو نقطةً في فراغ.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

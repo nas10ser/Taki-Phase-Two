@@ -1,0 +1,125 @@
+name: بناء تطبيق أندرويد
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔴 لماذا يُبنى هنا لا على ماك ناصر: ماكُه على macOS 12 وجافا 10، و
+#    Android Gradle Plugin الحديث يحتاج JDK 21. والبناءُ هنا مجّانيّ
+#    (المستودعُ عامّ) ونظيفٌ في كلّ مرّة.
+#
+# 🪤 ويعمل **بلا أيّ سرّ**: بلا مفتاح توقيعٍ يُنتج حزمةَ تصحيحٍ (`debug`)
+#    قابلةً للتثبيت والتجربة — فنثبت أن المشروع يُبنى **قبل** أن يدفع ناصر
+#    خمسةً وعشرين دولاراً. وبوجود السرّ يُنتج `.aab` موقَّعاً جاهزاً للرفع.
+# ═══════════════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'حزمةُ إصدارٍ موقَّعة (تحتاج أسرارَ التوقيع)'
+        type: boolean
+        default: false
+  push:
+    tags: ['app-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # JDK 21: ما يطلبه AGP الحديث. و`temurin` توزيعةٌ مستقرّةٌ ومجّانية.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: تثبيتُ الاعتماديّات
+        run: npm ci
+
+      - name: بناءُ الواجهة
+        env:
+          TAKI_NATIVE_BUILD: '1'
+          # 🪤 والقيمُ من `scripts/native-env.js` — عامّةٌ بطبيعتها، انظر شرحَه.
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          node scripts/native-env.js
+          npm run build
+
+      - name: مزامنةُ Capacitor وترقيعُ سياسة التطبيق
+        run: node scripts/native-sync.js
+
+      # ── التوقيع: لا يُفعَّل إلا بوجود السرّ، ولا يُكتب مفتاحٌ في المستودع ──
+      # 🪤 ووجودُ السرّ يُفحص في **خطوةٍ** لا في شرط `if` مباشرةً: سياقُ
+      #    `secrets` غيرُ مضمون داخل شروط الخطوات، فشرطٌ يبدو صحيحاً قد
+      #    يُقيَّم دائماً خطأً — فيُبنى debug صامتاً حيث يُراد release.
+      - name: هل التوقيعُ متاح؟
+        id: sign
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+          echo "التوقيعُ متاح: $([ -n "$KS" ] && echo نعم || echo 'لا — تُبنى حزمةُ تجربة')"
+
+      - name: فكُّ مفتاح التوقيع
+        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/taki.keystore"
+          test -s "$RUNNER_TEMP/taki.keystore" || { echo "❌ مفتاحُ التوقيع فارغ"; exit 1; }
+          echo "✓ مفتاحُ التوقيع ($(wc -c < "$RUNNER_TEMP/taki.keystore") بايت)"
+
+      - name: حزمةُ إصدارٍ موقَّعة (.aab)
+        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        working-directory: android
+        env:
+          TAKI_KEYSTORE_PATH: ${{ runner.temp }}/taki.keystore
+          TAKI_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TAKI_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TAKI_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon bundleRelease
+
+      - name: حزمةُ تجربةٍ (بلا توقيع)
+        if: steps.sign.outputs.ok != 'true' || !(inputs.release || github.event_name == 'push')
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      # ── عقودٌ تُفحص في الناتج لا في النيّة ──────────────────────────────
+      - name: التحقّقُ من الحزمة
+        run: |
+          set -euo pipefail
+          AAB=$(find android -name '*.aab'  -newermt '-2 hours' | head -1 || true)
+          APK=$(find android -name '*.apk'  -newermt '-2 hours' | head -1 || true)
+          OUT="${AAB:-$APK}"
+          test -n "$OUT" || { echo "❌ لم تُنتج أيُّ حزمة"; exit 1; }
+          echo "✓ الحزمة: $OUT ($(du -h "$OUT" | cut -f1))"
+
+          # الحزمةُ أرشيفُ zip — تُفحص محتوياتُها لا حجمُها وحده.
+          unzip -l "$OUT" > /tmp/list.txt
+          for need in "AndroidManifest.xml" "assets/public/index.html" "res/mipmap"; do
+            grep -q "$need" /tmp/list.txt || { echo "❌ ناقصٌ من الحزمة: $need"; exit 1; }
+          done
+          echo "✓ الواجهةُ والأيقوناتُ والبيانُ داخل الحزمة"
+
+          # 🪤 وحزمةُ الواجهة نفسُها: `index.html` وحده قد يكون قشرةً فارغة.
+          grep -qE "assets/public/.*\.js" /tmp/list.txt || { echo "❌ لا حزمةَ جافاسكربت"; exit 1; }
+          echo "✓ حزمةُ جافاسكربت موجودة"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taki-android
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

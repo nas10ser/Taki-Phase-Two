@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  لغاتُ التطبيق المعلَنة (أندرويد ١٣+): تُمكّن المستخدمَ من اختيار لغة
+  التطبيق من إعدادات النظام بلا تغيير لغة الجهاز كلِّها. والعربيّةُ أوّلاً
+  فهي الافتراضيّة.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="ar"/>
+    <locale android:name="en"/>
+</locale-config>

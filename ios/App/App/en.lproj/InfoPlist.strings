@@ -1,0 +1,8 @@
+/* الترجمةُ الإنجليزية لنصوص الأذونات والاسم الظاهر.
+   🪤 والعربيّةُ هي الأساسُ في Info.plist نفسِه (CFBundleDevelopmentRegion = ar). */
+"CFBundleDisplayName" = "TAKI";
+"NSCameraUsageDescription" = "To scan your booking barcode when you collect your order, and to take photos of your offers if you are a merchant.";
+"NSPhotoLibraryUsageDescription" = "To pick photos of your offers from your library if you are a merchant, and to attach an image in an order chat.";
+"NSPhotoLibraryAddUsageDescription" = "To save your order invoice or booking barcode to your photo library.";
+"NSLocationWhenInUseUsageDescription" = "To show offers near you and to follow the courier while your order is on the way. We never track your location while the app is closed.";
+"NSUserTrackingUsageDescription" = "TAKI does not track you across other apps or websites.";

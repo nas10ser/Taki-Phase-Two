@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["__APPLE_TEAM_ID__.net.takisa.app"],
+        "components": [
+          { "/": "/deal/*",       "comment": "صفحةُ عرض" },
+          { "/": "/store/*",      "comment": "صفحةُ متجر" },
+          { "/": "/booking/*",    "comment": "إيصالُ حجز" },
+          { "/": "/bookings",     "comment": "حجوزاتي" },
+          { "/": "/deals",        "comment": "قائمةُ العروض" },
+          { "/": "/",             "comment": "الرئيسية" }
+        ]
+      }
+    ]
+  },
+  "webcredentials": { "apps": ["__APPLE_TEAM_ID__.net.takisa.app"] }
+}

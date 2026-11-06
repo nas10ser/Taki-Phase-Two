@@ -1,0 +1,182 @@
+name: بناء تطبيق آيفون
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔴 **هذا السيرُ ليس تسهيلاً — هو الطريقُ الوحيد.** منذ ٢٨ أبريل ٢٠٢٦ تشترط
+#    أبل أن تُبنى كلُّ رفعةٍ بـ**Xcode 26** على الأقلّ (SDK iOS 26). وماكُ ناصر
+#    على macOS 12.7.6 وXcode 14 (SDK iOS 16)، و Xcode 26 يحتاج macOS 15+
+#    — أي أن ترقيةَ Xcode على جهازه **غيرُ ممكنة**، لا صعبةٌ فحسب.
+#    ومنصّاتُ GitHub من نوع `macos-26` تحمل Xcode 26، ومجّانيّةٌ لمستودعٍ عامّ.
+#
+# 🪤 ويعمل **بلا شهادةِ أبل**: بلا أسرارٍ يبني التطبيقَ بلا توقيع — فيثبت أن
+#    المشروعَ **يُجمَّع فعلاً** قبل أن يدفع ناصر ٩٩ دولاراً. وبوجود الشهادة
+#    يُنتج `.ipa` جاهزاً للرفع إلى App Store Connect.
+# ═══════════════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'أرشيفٌ موقَّع للرفع (يحتاج شهادةَ أبل)'
+        type: boolean
+        default: false
+  push:
+    tags: ['app-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # 🪤 `macos-26` صراحةً لا `macos-latest`: الأخيرةُ تتحرّك مع الزمن، وقد
+    #    تنتقل يوماً إلى نسخةٍ لا تحمل Xcode المطلوب — فينكسر البناءُ بلا
+    #    تغييرٍ منّا. والإصدارُ المثبَّت يُراجَع عمداً عند كلّ شرطٍ جديد من أبل.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: إثباتُ أن Xcode يُحقّق شرطَ أبل
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          MAJOR=$(xcodebuild -version | head -1 | sed -E 's/Xcode ([0-9]+).*/\1/')
+          echo "نسخةُ Xcode الكبرى: $MAJOR"
+          # 🔴 عقدٌ صريح: أقلُّ من ٢٦ يعني أن الرفعةَ سترفضها أبل آلياً.
+          #    يُفشل السيرُ هنا — لا بعد ساعةٍ من البناء وعند الرفع.
+          if [ "$MAJOR" -lt 26 ]; then
+            echo "❌ Xcode $MAJOR أقدمُ من شرط أبل (٢٦). المنصّةُ تغيّرت — يُراجَع runs-on."
+            exit 1
+          fi
+          xcodebuild -showsdks | grep -i "iOS" || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: تثبيتُ الاعتماديّات
+        run: npm ci
+
+      - name: بناءُ الواجهة
+        env:
+          TAKI_NATIVE_BUILD: '1'
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          node scripts/native-env.js
+          npm run build
+
+      - name: مزامنةٌ وترقيعُ سياسة التطبيق
+        run: node scripts/native-sync.js
+
+      # 🔴 تسجيلُ ملفّات المتجر في مشروع Xcode. وبلا هذه الخطوة يُبنى التطبيق
+      #    **بلا `PrivacyInfo.xcprivacy`** فتردّه أبل آلياً، وبلا الترجمات
+      #    فيظهر بالإنجليزية على جهازٍ عربيّ. ولا شيءَ في البناء يصرخ.
+      - name: تسجيلُ ملفّات المتجر في مشروع Xcode
+        run: node scripts/ios-project-patch.js
+
+      # ── التوقيع: خطوةٌ تفحص وجودَ السرّ (سياقُ secrets غيرُ مضمونٍ في if) ──
+      - name: هل الشهادةُ متاحة؟
+        id: sign
+        env:
+          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          PROF: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$PROF" ]; then echo "ok=true" >> "$GITHUB_OUTPUT";
+          else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+          echo "الشهادةُ متاحة: $([ -n "$CERT" ] && [ -n "$PROF" ] && echo نعم || echo 'لا — يُبنى بلا توقيع')"
+
+      - name: تركيبُ الشهادة وملفّ التزويد
+        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        env:
+          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.APPLE_CERT_PASSWORD }}
+          PROF: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          # 🪤 سلسلةُ مفاتيحَ مؤقّتةٌ للجلسة وحدها: لا تُلمَس سلسلةُ المنصّة،
+          #    وتختفي مع الجهاز الافتراضيّ عند انتهاء السير.
+          KC="$RUNNER_TEMP/taki.keychain-db"
+          KC_PW=$(uuidgen)
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          echo "$CERT" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PW" "$KC" >/dev/null
+          security list-keychain -d user -s "$KC"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$PROF" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/taki.mobileprovision"
+          echo "✓ هويّاتُ التوقيع: $(security find-identity -v -p codesigning "$KC" | grep -c 'valid identities' || true)"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: أرشيفٌ موقَّع ثمّ تصديرُ .ipa
+        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          cd ios/App
+          xcodebuild -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" \
+            -allowProvisioningUpdates archive
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>uploadSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates
+
+      - name: بناءُ تحقّقٍ بلا توقيع
+        if: steps.sign.outputs.ok != 'true' || !(inputs.release || github.event_name == 'push')
+        run: |
+          set -euo pipefail
+          cd ios/App
+          # 🪤 بلا شهادةٍ لا يُمكن الأرشفة، لكن **التجميعَ** ممكن — وهو ما
+          #    يُثبت أن المشروعَ والإضافاتِ سليمةٌ فعلاً.
+          xcodebuild -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      # ── عقودٌ تُفحص في الناتج ───────────────────────────────────────────
+      - name: التحقّقُ من الحزمة
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP" -name 'App.app' -maxdepth 6 | head -1 || true)
+          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' 2>/dev/null | head -1 || true)
+          if [ -n "$IPA" ]; then
+            echo "✓ الحزمة: $IPA ($(du -h "$IPA" | cut -f1))"
+            unzip -l "$IPA" > /tmp/l.txt
+          elif [ -n "$APP" ]; then
+            echo "✓ التطبيقُ المُجمَّع: $APP"
+            (cd "$(dirname "$APP")" && zip -qr /tmp/a.zip App.app && unzip -l /tmp/a.zip > /tmp/l.txt)
+          else
+            echo "❌ لم يُنتج شيء"; exit 1
+          fi
+          # 🔴 بيانُ الخصوصية: غيابُه رفضٌ آليٌّ من App Store Connect.
+          grep -q "PrivacyInfo.xcprivacy" /tmp/l.txt || { echo "❌ بيانُ الخصوصية ليس في الحزمة"; exit 1; }
+          grep -q "public/index.html"     /tmp/l.txt || { echo "❌ واجهةُ الويب ليست في الحزمة"; exit 1; }
+          grep -qE "ar\.lproj"            /tmp/l.txt || { echo "❌ الترجمةُ العربية ليست في الحزمة"; exit 1; }
+          grep -qE "AppIcon"              /tmp/l.txt || { echo "❌ الأيقونةُ ليست في الحزمة"; exit 1; }
+          echo "✓ بيانُ الخصوصية · الواجهة · العربية · الأيقونة — كلُّها داخل الحزمة"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taki-ios
+          path: |
+            ${{ runner.temp }}/export/*.ipa
+            ${{ runner.temp }}/App.xcarchive
+          if-no-files-found: ignore
+          retention-days: 30

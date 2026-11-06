@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  Info.plist — تطبيق آيفون/آيباد (v15.58)
+  ───────────────────────────────────────────────────────────────────────────
+  🔴 نصوصُ الأذونات (`NS*UsageDescription`) **سببُ رفضٍ شائع**: أبل تطلب أن
+     يقول النصُّ **لماذا** يحتاجه هذا التطبيقُ بعينه، لا «لتحسين التجربة».
+     وكلُّ نصٍّ هنا يصف استعمالاً حقيقياً في المنصّة ويُمكن إثباتُه بالشاشة.
+  🔴 و`ITSAppUsesNonExemptEncryption = false` صحيحةٌ هنا: لا تشفيرَ خاصّاً بنا
+     — HTTPS وحده، وهو مستثنى صراحةً. وتركُها يجعل كلَّ رفعةٍ تسأل السؤالَ
+     يدوياً فتتأخّر المراجعة.
+  🪤 و`CFBundleDevelopmentRegion = ar`: السوقُ سعوديّ، فالعربيّةُ هي الأساس
+     والإنجليزيّةُ ترجمة (`en.lproj/InfoPlist.strings`). وعكسُها يجعل اسمَ
+     التطبيق إنجليزياً على جهازٍ عربيّ.
+  🪤 و`armv7` المولَّدةُ افتراضاً **خاطئةٌ تماماً**: iOS الحديث arm64 وحده،
+     وتركُها قد يُقصي أجهزةً حديثة من التوافق المعلَن.
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<plist version="1.0">
+<dict>
+	<key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
+
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ar</string>
+	<key>CFBundleDisplayName</key>
+	<string>تاكي</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ar</string>
+		<string>en</string>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!-- ═══ إفصاحُ التشفير: لا تشفيرَ خاصّاً بنا، HTTPS فقط ═══ -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- ═══ نصوصُ الأذونات — كلُّ واحدٍ يصف استعمالاً حقيقياً ═══ -->
+	<key>NSCameraUsageDescription</key>
+	<string>لمسح باركود الحجز عند استلام طلبك من المتجر، ولالتقاط صور العروض إن كنت تاجراً.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>لاختيار صور عروضك من ألبومك إن كنت تاجراً، ولإرفاق صورة في محادثة الطلب.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>لحفظ فاتورة طلبك أو باركود الحجز في ألبومك.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>لعرض العروض القريبة منك، ولمتابعة موقع مندوب التوصيل أثناء توصيل طلبك. لا نتتبّع موقعك والتطبيق مغلق.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>لا تستخدم تاكي أي تتبّع عبر التطبيقات أو المواقع الأخرى.</string>
+
+	<!-- ═══ الإشعاراتُ في الخلفية (تصل وأنت خارج التطبيق) ═══ -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+
+	<!--
+	  الاتجاه: الجوّالُ طوليٌّ فقط (الواجهةُ مصمَّمةٌ له، وهو ما يُعلنه
+	  `manifest.webmanifest` حرفياً). والآيباد يقبل الاتجاهات الأربعة —
+	  🪤 وأبل تطلب ذلك من تطبيقات الآيباد ما لم يكن هناك مبرّرٌ تقنيّ.
+	-->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+
+	<!-- شريطُ الحالة فاتحُ الأيقونات فوق الخلفية النيفي -->
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
+
+	<!--
+	  مسارُ عودةِ الدخول الخارجيّ (Google/Apple) إلى التطبيق.
+	  🪤 ولا يُحذف: بدونه يبقى المستخدمُ في المتصفّح بعد الدخول ولا يعود.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>net.takisa.app</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

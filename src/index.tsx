@@ -19,6 +19,27 @@ if (!localStorage.getItem(INIT_KEY)) {
 const container = document.getElementById('root');
 const root = createRoot(container!);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// تطبيقا المتجرين (v15.58): الجسرُ الأصليّ يُحمَّل **ديناميكياً وبشرط**.
+// 🪤 ولا يُستورد ساكناً: الموقعُ يُحمَّل في متصفّحٍ لا يعرف Capacitor، وحزمةُ
+//    الدخول عند ٦٣٧ ك.ب من سقف ٧٦٠ — فاستيرادٌ ساكنٌ يُدخل إضافاتِ المنصّتين
+//    في حزمة **كل زائر**. والشرطُ `window.Capacitor` يحقنه الجسرُ الأصليّ وحده.
+// ═══════════════════════════════════════════════════════════════════════════
+if ((globalThis as any).Capacitor?.isNativePlatform?.()) {
+    void import('./native/capacitor').then(n => n.initNative({
+        // رابطٌ عميق: يُفتح داخل التطبيق بالتوجيه لا بإعادة تحميل الصفحة
+        // (إعادةُ التحميل تُفقد الحالةَ وتُظهر وميضَ شاشةِ بدءٍ ثانية).
+        onDeepLink: (path) => { window.history.pushState({}, '', path);
+                                window.dispatchEvent(new PopStateEvent('popstate')); },
+        // زرُّ الرجوع: تبتلعه أيُّ نافذةٍ مفتوحة أوّلاً (نفسُ عقد `useBackClose`).
+        onBack: () => {
+            const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+            document.dispatchEvent(esc);
+            return document.querySelector('[data-taki-modal="open"]') !== null;
+        },
+    }));
+}
+
 const renderApp = () => root.render(
     <ErrorBoundary>
         <AppProvider>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  بيانُ تطبيق أندرويد — تاكي (v15.58)
+  ───────────────────────────────────────────────────────────────────────────
+  🪤 كلُّ إذنٍ هنا يظهر للمستخدم في المتجر وفي أوّل تشغيل، ويُسأل عنه في
+     استمارة «أمان البيانات». فلا يُطلب إذنٌ «احتياطاً»: الزائدُ يُخيف
+     المستخدمَ ويُطيل مراجعةَ قوقل.
+  🔴 ولا `ACCESS_BACKGROUND_LOCATION` عمداً: تتبّعُ المندوب يعمل والتطبيقُ
+     مفتوحٌ فقط — كما في الموقع حرفياً. وطلبُه يستلزم استمارةَ تبريرٍ خاصّة
+     عند قوقل ومراجعةً يدويّةً تؤخّر كلَّ إصدار، مقابل خاصّيةٍ لا نملكها بعد.
+  🔴 ولا أذوناتِ تخزينٍ قديمة (`READ/WRITE_EXTERNAL_STORAGE`): منتقي الصور
+     في أندرويد ١٣+ لا يحتاج إذناً إطلاقاً، وطلبُها يُرفض في المراجعة.
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:enableOnBackInvokedCallback="true">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              روابطُ التطبيق (App Links): فتحُ رابطِ تاكي يفتح التطبيقَ لا
+              المتصفّح. و`autoVerify` يتحقّق من ملكيّة النطاق عبر
+              `/.well-known/assetlinks.json`.
+              🪤 وبلا ذلك الملفِّ (يحتاج بصمةَ التوقيع من لوحة Play) يفشل
+                 التحقّقُ **بصمت** فيُفتح الرابطُ في المتصفّح كأن شيئاً لم يكن.
+                 يُكتب بـ`node scripts/set-assetlinks.js <البصمة>`.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.takisa.net" />
+                <data android:scheme="https" android:host="takisa.net" />
+            </intent-filter>
+
+            <!-- مسارُ عودةِ الدخول الخارجيّ (OAuth) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="@string/custom_url_scheme" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+    <!-- ═══ الأذونات ═══ -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- الإشعارات: إذنٌ وقتَ التشغيل منذ أندرويد ١٣ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- الموقع: «القريب منّي» وتتبّعُ التوصيل — أثناء الاستعمال فقط -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- الكاميرا: صورُ العروض ومسحُ باركود الحجز -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- الاهتزازُ اللمسيّ عند تأكيد الحجز والمسح -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      🪤 والجهازُ بلا كاميرا (جهازٌ لوحيٌّ رخيص) يجب ألّا يُحجب من المتجر:
+         `required=false` تجعل الكاميرا تحسيناً لا شرطاً للتثبيت.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+</manifest>

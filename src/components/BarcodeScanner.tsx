@@ -175,6 +175,28 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const startCamera = useCallback(async () => {
         try {
+            // ═══════════════════════════════════════════════════════════════
+            // v15.58 — داخل تطبيق المتجر: الماسحُ **الأصليّ** (ML Kit) أوّلاً.
+            // 🔴 وهذا فرقٌ حقيقيّ لا تجميل: ماسحُ الويب أدناه يفكّ كلَّ إطارٍ
+            //    برمجياً بـ`jsQR` على خيط الواجهة — بطيءٌ في ضوء المتجر
+            //    الخافت، ويعجز عن الباركود الخطّيّ (Code128) تماماً.
+            //    والأصليُّ مُسرَّعٌ بالعتاد ويقرأ QR و‍Code128 و‍EAN-13.
+            // 🪤 و`undefined` تعني «تعذّر الأصليّ» فنكمل إلى ماسح الويب —
+            //    ولا يُترك التاجرُ بلا وسيلة. و`null` تعني «ألغى المستخدم»
+            //    فنتوقّف بهدوء. والفرقُ بينهما مقصود.
+            // ═══════════════════════════════════════════════════════════════
+            const { isNative, scanBarcodeNative } = await import('../native/capacitor');
+            if (isNative()) {
+                const code = await scanBarcodeNative();
+                if (code === null) return;                 // ألغى
+                if (typeof code === 'string' && code.trim()) {
+                    setScanError('');
+                    handleDetected(code.trim());
+                    return;
+                }
+                // undefined ⇒ تعذّر الماسحُ الأصليّ، نُكمل إلى ماسح الويب
+            }
+
             // On iOS/iPhone, getUserMedia ONLY works over HTTPS.
             if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
                 setScanError(isRTL
@@ -206,7 +228,10 @@ const BarcodeScanner: React.FC<Props> = ({ isOpen, onClose }) => {
                 : (isRTL ? `فشل الوصول للكاميرا: ${err.message || 'خطأ غير معروف'}` : `Camera error: ${err.message || 'Unknown error'}`);
             setScanError(msg);
         }
-    }, [isRTL]);
+    // 🪤 و`handleDetected` في الاعتماديّات لزوماً لا تجميلاً: صارت الدالّةُ
+    //    تناديها في المسار الأصليّ، وإغفالُها يُجمّد نسخةً قديمةً من الحجوزات
+    //    فيقول الماسحُ «رمزٌ غير معروف» عن حجزٍ ظهر للتوّ.
+    }, [isRTL, handleDetected]);
 
     // Bind the live stream to the always-mounted <video> and kick off the
     // decode loop. Running this in an effect (after render) guarantees the

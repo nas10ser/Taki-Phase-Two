@@ -671,6 +671,31 @@ const geoPositionOnce = (enableHighAccuracy: boolean, timeoutMs: number): Promis
 export const getCurrentPositionSafe = async (opts?: { highMs?: number; lowMs?: number }): Promise<GeoPos> => {
     const highMs = opts?.highMs ?? 8000;
     const lowMs = opts?.lowMs ?? 8000;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v15.58 — داخل تطبيق المتجر: موقعُ النظام الأصليّ أوّلاً.
+    // 🔴 وليس تكراراً لما تحته: `navigator.geolocation` داخل WebView آيفون
+    //    يطلب إذناً **للويب** لا للتطبيق، فيظهر للمستخدم سؤالٌ غامضٌ عن
+    //    «موقعٍ لهذا الموقع» داخل تطبيقٍ نزّله من المتجر — وأبل تعدّ ذلك
+    //    تجربةً رديئةً وقد ترفضه. والإضافةُ الأصليّة تطلب إذنَ **التطبيق**
+    //    بالنصّ الذي كتبناه في `Info.plist`، وهو ما يراه المراجِع.
+    // 🪤 والارتدادُ تحته يبقى كما هو: فشلُ الأصليّ لا يترك المستخدمَ بلا موقع.
+    // ═══════════════════════════════════════════════════════════════════════
+    if ((globalThis as any).Capacitor?.isNativePlatform?.()) {
+        try {
+            const { Geolocation } = await import('@capacitor/geolocation');
+            const perm = await Geolocation.checkPermissions();
+            if (perm.location === 'prompt' || perm.location === 'prompt-with-rationale') {
+                await Geolocation.requestPermissions({ permissions: ['location'] });
+            }
+            const pos = await Geolocation.getCurrentPosition({
+                enableHighAccuracy: true, timeout: highMs, maximumAge: 0,
+            });
+            return { lat: pos.coords.latitude, lng: pos.coords.longitude,
+                     accuracy: pos.coords.accuracy ?? undefined };
+        } catch { /* يُكمل إلى مسار الويب أدناه */ }
+    }
+
     const viaTelegram = async (fallbackErr: unknown): Promise<GeoPos> => {
         const tg = await getTelegramLocation(Math.max(highMs, 8000));
         if (tg) return tg;

@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  الاسمُ الظاهر — عربيٌّ افتراضاً لأن السوقَ سعوديّ، والإنجليزيُّ في values-en.
+  🪤 و`app_name` هو ما يظهر تحت الأيقونة، و`title_activity_main` ما يظهر في
+     مبدِّل التطبيقات. يُضبطان معاً وإلّا ظهر اسمان مختلفان للتطبيق الواحد.
+  🪤 ولا تُمسّ `package_name` و`custom_url_scheme`: الأولى يقرؤها الجسرُ
+     والثانيةُ مسارُ عودةِ الدخول الخارجيّ — وتغييرُها يكسر OAuth بصمت.
+-->
+<resources>
+    <string name="app_name">تاكي</string>
+    <string name="title_activity_main">تاكي</string>
+    <string name="package_name">net.takisa.app</string>
+    <string name="custom_url_scheme">net.takisa.app</string>
+</resources>
