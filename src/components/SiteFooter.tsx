@@ -27,9 +27,14 @@ const SiteFooter: React.FC = () => {
     const isRTL = language === 'ar';
     const t = (ar: string, en: string) => (isRTL ? ar : en);
 
-    if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/seller')) {
-        return null;
-    }
+    // 🪤 والحدُّ صريحٌ لا `startsWith` عارياً: `startsWith('/seller')` يُطابق
+    //    **`/sellers`** أيضاً (قِيس بالتجربة على المنطق نفسِه)، و`sellers_public`
+    //    موجودٌ كعرضٍ عامٍّ فدليلُ تجّارٍ محتمل — فكان التذييلُ سيختفي منه
+    //    صامتاً يومَ يُضاف. ولا مسارَ كذلك اليوم، فالخللُ كامنٌ لا حيّ،
+    //    وتصحيحُه حرفان.
+    const WORKSPACES = ['/admin', '/seller'];
+    const p = location.pathname;
+    if (WORKSPACES.some((w) => p === w || p.startsWith(w + '/'))) return null;
 
     const info = platformSettings.contactEmails.info;
     const year = new Date().getFullYear();
