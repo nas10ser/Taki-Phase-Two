@@ -443,6 +443,42 @@ export const bookingRepository = {
         logger.log('✅ Merchant handover (no code):', barcode);
     },
 
+    /**
+     * v15.76 — «سُئل عن هذا الطلب»: وسمٌ على الخادم لنافذة التقييم.
+     *
+     * 🔴 كانت النافذة تُحجب بشرطٍ **عُمريّ** (`has_rating AND has_vote`)،
+     *    و`has_rating` تعني «قيّم هذا المتجرَ مرّةً في حياته» — فمن قيّم
+     *    متجراً مرّةً لم يُسأل عنه أبداً بعدها، بكودٍ أو بلا كود. صار الوسمُ
+     *    **لكلّ طلب**، والقاعدةُ هي من تحفظه فلا تُعيد النافذةُ نفسها على
+     *    جهازٍ ثانٍ (ذاكرةُ المتصفّح كانت الحافظَ الوحيد).
+     * 🪤 ولا يُرمى من هنا: فشلُ الوسم لا يُفسد تقييماً نجح — يبقى سجلّاً.
+     */
+    markRatingPromptSeen: async (barcode: string): Promise<void> => {
+        const { error } = await supabase.rpc('rating_prompt_seen', { p_barcode: barcode });
+        if (error) logger.warn('rating_prompt_seen:', error.message);
+    },
+
+    /**
+     * v15.77 (أمرُ ناصر) — عددُ الطلبات التي تنتظر التاجر، **من الخادم**.
+     *
+     * 🪤 ولا يُعدّ من `bookings` المحمَّلة: نافذتُها `BOOKINGS_WINDOW` (٢٠٠ صفّ)
+     *    وتشمل **الطرفين** (`user_id OR store_id`) — فتاجرٌ نشطٌ يخرج أقدمُ
+     *    طلباته القائمة من النافذة، فتقول الشارةُ رقماً أصغر من الحقيقة عند
+     *    أوّل ضغطٍ حقيقي. والعدُّ `head` بلا صفوف، فكلفتُه لا شيء.
+     * 🪤 و`expiry_time` **bigint بالمللي ثانية** لا timestamp (فخُّ v14.29)،
+     *    والصفُّ بلا مهلةٍ يُحسب قائماً — كما تفعل شارةُ المشتري بالضبط.
+     */
+    countOpenForStore: async (storeId: string): Promise<number> => {
+        const { count, error } = await supabase
+            .from('bookings')
+            .select('barcode', { count: 'exact', head: true })
+            .eq('store_id', storeId)
+            .in('status', ['pending', 'acknowledged'])
+            .or(`expiry_time.is.null,expiry_time.gt.${Date.now()}`);
+        if (error) { logger.warn('countOpenForStore:', error.message); return 0; }
+        return count || 0;
+    },
+
     remove: async (barcode: string): Promise<void> => {
         // v13.71 — كان يبتلع كل شيء: لا يقرأ `error` العائد أصلاً، ولا يميّز
         // حذفاً رفضته RLS (يعود بصفر صفوف و`error=null`). أي نداء مستقبلي كان

@@ -9,7 +9,7 @@ const ORDERS = { one: 'طلب واحد', two: 'طلبان', twoGen: 'طلبين'
 const BottomNav: React.FC = () => {
     const history = useHistory();
     const location = useLocation();
-    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType, notifUnread, bookings } = useApp();
+    const { language, user, notifications, darkMode, toggleDarkMode, effectiveUserType, notifUnread, bookings, storeOpenOrders } = useApp();
 
     const isRTL = language === 'ar';
 
@@ -56,7 +56,11 @@ const BottomNav: React.FC = () => {
     if (showSellerNav) {
         items = [
             { id: 'home', icon: '🏠', ar: 'الرئيسية', en: 'Home', path: '/' },
-            { id: 'seller', icon: '➕', ar: 'لوحتي', en: 'Dashboard', path: '/seller' },
+            // 🔴 v15.77 (أمرُ ناصر) — نظيرُ شارة «حجوزاتي»: طلباتٌ تنتظر التاجر.
+            // 🪤 وصيغةُ المعدود من المحرّك الواحد، و«بانتظارك» لا تتغيّر بالعدد
+            //    فتسلم من مطابقة المثنّى («طلبان ينتظرانك») التي تنكسر في الجمع.
+            { id: 'seller', icon: '➕', ar: 'لوحتي', en: 'Dashboard', path: '/seller', badgeCount: storeOpenOrders,
+              badgeAr: (n) => `${arCount(n, ORDERS)} بانتظارك`, badgeEn: (n) => `${n} order${n === 1 ? '' : 's'} awaiting you` },
             { id: 'notifications', icon: '🔔', ar: 'الإشعارات', en: 'Alerts', path: '/notifications', badgeCount: unreadCount },
             { id: 'store', icon: '🏪', ar: 'صفحتي', en: 'My Store', path: `/store/${user.id}` },
             { id: 'profile', icon: '👤', ar: 'حسابي', en: 'Profile', path: '/profile' },

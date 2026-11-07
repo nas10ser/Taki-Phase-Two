@@ -19,6 +19,7 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt, openOrdersFloor } from './ratingPrompts';
 import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
@@ -97,6 +98,8 @@ interface AppContextType {
     notifications: Notification[];
     /** عدد غير المقروء من الجدول كلّه لا من النافذة المحمّلة (v14.26). */
     notifUnread: number;
+    /** طلباتُ التاجر التي تنتظره (قائمة وغير منتهية) — للشارة على «لوحتي» (v15.77). */
+    storeOpenOrders: number;
     addNotification: (userId: string, title: { ar: string, en: string }, body: { ar: string, en: string }, type: Notification['type'], metadata?: any) => Promise<void>;
     markNotifRead: (id: string) => void;
     markAllNotifsRead: () => void;
@@ -408,7 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // their booking is marked completed (seller scanned the QR). Distinct
     // from the (removed) booking spam box — this is a one-time "rate the
     // store" prompt the owner explicitly asked for.
-    const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeId: string; storeName: string } | null>(null);
+    const [ratingPrompt, setRatingPrompt] = useState<{ barcode: string; dealId: string; storeId: string; storeName: string; myVote?: boolean | null } | null>(null);
     // Two-step post-purchase flow (v11.97): 'auth' asks «is this offer real?»
     // first, then either 'rate' (rate / edit the store rating) or 'done'
     // (already rated → show the previous rating with EDIT + DELETE options —
@@ -424,14 +427,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
      * للتطبيق. ومدة الحفظ ١٤ يوماً — أطول من نافذة الدالة (٧ أيام) فالرفض نهائيّ
      * عملياً، ويبقى بابُ التقييم مفتوحاً من صفحة العرض متى شاء.
      */
-    const RATE_DISMISS_KEY = 'taki_rate_dismissed_v1';
     const rateDismissedRef = useRef<Record<string, number>>({});
     const rateCheckingRef = useRef(false);
     // مراجع (لا حالة) حتى لا يُعاد بناء دالة القياس مع كل تغيّر — فتُستدعى من
     // اشتراكات تُسجّل مرة واحدة، ولو أُعيد بناؤها لاحتجنا إعادة الاشتراك كلّه.
     const userIdRef = useRef<string | undefined>(undefined);
     const languageRef = useRef<'ar' | 'en'>('ar');
-    const ratingPromptRef = useRef<{ barcode: string; dealId: string; storeId: string; storeName: string } | null>(null);
+    const ratingPromptRef = useRef<{ barcode: string; dealId: string; storeId: string; storeName: string; myVote?: boolean | null } | null>(null);
     const ingestDealsRef = useRef<(incoming: Deal[]) => void>(() => {});
     const checkRatingRef = useRef<() => void>(() => {});
     const [ratingStars, setRatingStars] = useState(5);
@@ -2210,65 +2212,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
      */
     const checkPendingRatingPrompts = useCallback(async () => {
         if (rateCheckingRef.current) return;
-        const uid = userIdRef.current;
-        if (!uid) return;
-        // نافذة مفتوحة أصلاً؟ لا نُكدّس نافذتين فوق بعضهما.
-        if (ratingPromptRef.current) return;
+        if (!userIdRef.current) return;
+        if (ratingPromptRef.current) return;   // لا تُكدَّس نافذتان
         rateCheckingRef.current = true;
         try {
-            if (!Object.keys(rateDismissedRef.current).length) {
-                try {
-                    const raw = localStorage.getItem(RATE_DISMISS_KEY);
-                    const parsed = raw ? JSON.parse(raw) : {};
-                    const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
-                    rateDismissedRef.current = Object.fromEntries(
-                        Object.entries(parsed as Record<string, number>).filter(([, ts]) => Number(ts) > cutoff)
-                    );
-                } catch { rateDismissedRef.current = {}; }
-            }
-            const { data, error } = await supabase.rpc('pending_rating_prompts');
-            if (error) { logger.warn('pending_rating_prompts:', error.message); return; }
-            const rows: any[] = Array.isArray(data) ? data : [];
-            const next = rows.find(r => r && r.barcode
-                && !rateDismissedRef.current[r.barcode]
-                && !promptedRatingRef.current.has(r.barcode));
-            if (!next) return;
-
-            // العرض غير محمَّل؟ اجلبه وأدخِله في النافذة — خطوة التصويت
-            // («حقيقي/شكلي») تحتاج صفّ العرض لتعرض التصويت السابق وتحدّثه.
-            let deal = dealsRef.current.find(x => x.id === next.deal_id);
-            if (!deal) {
-                try {
-                    const fetched = await dealRepository.getById(next.deal_id);
-                    if (fetched) { ingestDealsRef.current([fetched]); deal = fetched; }
-                } catch { /* النافذة تُفتح بلا العرض — النجوم لا تحتاجه */ }
-            }
-
-            // تقييم سابق لهذا المتجر (لتعديله لا تكراره) — من العرض المحمَّل إن وُجد.
-            let myStoreReview: any = null;
-            let myReviewDealId = '';
-            for (const x of dealsRef.current) {
-                if (x.storeId !== next.store_id) continue;
-                const r = (x.ratings || []).find((rr: any) => rr.userId === uid);
-                if (r) { myStoreReview = r; myReviewDealId = x.id; break; }
-            }
-            setRatingStars(myStoreReview ? myStoreReview.score : 5);
-            setRatingComment('');
-            setPrevReview(myStoreReview ? {
-                id: myStoreReview.id,
-                dealId: myReviewDealId,
-                score: myStoreReview.score,
-                comment: myStoreReview.comment || '',
-            } : null);
-            // الخطوة الأولى = ما ينقص فعلاً: لم يصوّت ⇒ «حقيقي/شكلي»، صوّت ولم
-            // يقيّم ⇒ النجوم مباشرة. (الدالة لا تُرجع من أتمّ الاثنين.)
-            setRatingStep(next.has_vote ? 'rate' : 'auth');
-            setRatingPrompt({
-                barcode: next.barcode,
-                dealId: next.deal_id,
-                storeId: next.store_id,
-                storeName: next.shop_name || deal?.shopName || (languageRef.current === 'ar' ? 'المتجر' : 'the store'),
+            if (!Object.keys(rateDismissedRef.current).length) rateDismissedRef.current = loadRateDismissed();
+            const pick = await pickRatingPrompt({
+                dismissed: rateDismissedRef.current, prompted: promptedRatingRef.current,
+                deals: dealsRef.current, ingestDeals: ingestDealsRef.current,
+                isAr: languageRef.current === 'ar',
             });
+            if (!pick) return;
+            setRatingStars(pick.stars);
+            setRatingComment('');
+            setPrevReview(pick.prev);
+            setRatingStep(pick.step);
+            setRatingPrompt(pick.prompt);
         } catch (e) {
             logger.warn('checkPendingRatingPrompts failed:', e);
         } finally {
@@ -2276,11 +2235,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
-    /** «لاحقاً»/إغلاق: يُسجَّل الرفض في الجهاز فلا تُلاحقه النافذة كل فتح. */
+    /**
+     * «لاحقاً»/إغلاق: يُسجَّل في الجهاز **وعلى الخادم** (v15.76) فلا تُلاحقه
+     * النافذة كل فتح، ولا تُعيد نفسها على جهازٍ ثانٍ لنفس الحساب.
+     */
     const dismissRatingPrompt = useCallback(() => {
         const bc = ratingPromptRef.current?.barcode;
         if (bc) {
             promptedRatingRef.current.add(bc);
+            void bookingRepository.markRatingPromptSeen(bc);
             rateDismissedRef.current[bc] = Date.now();
             try { localStorage.setItem(RATE_DISMISS_KEY, JSON.stringify(rateDismissedRef.current)); } catch { /* وضع التصفّح الخاص */ }
         }
@@ -3280,6 +3243,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const effectiveUserType: 'buyer' | 'seller' | 'admin' =
         (user?.userType === 'admin' && viewAs) ? viewAs : (user?.userType || 'buyer');
 
+    // 🔴 v15.77 (أمرُ ناصر) — نظيرُ شارة «حجوزاتي» للتاجر: علامةٌ على
+    // «لوحتي» تقول إن هناك طلباً ينتظره. والعدُّ **من الخادم** لأن النافذة
+    // المحلّية ٢٠٠ صفّ للطرفين معاً، ويبقى العدُّ المحلّي أرضيّةً حتى يصل
+    // جوابُ الخادم (نفسُ نمط `notifUnread` المقيس في v14.26).
+    const storeOpenLocal = useMemo(() => openOrdersFloor(bookings, user?.id), [bookings, user?.id]);
+    const [storeOpenServer, setStoreOpenServer] = useState(0);
+    useEffect(() => {
+        const uid = user?.id;
+        if (!uid || (effectiveUserType !== 'seller' && effectiveUserType !== 'admin')) { setStoreOpenServer(0); return; }
+        let alive = true;
+        void bookingRepository.countOpenForStore(uid).then(n => { if (alive) setStoreOpenServer(n); });
+        return () => { alive = false; };
+    }, [user?.id, effectiveUserType, storeOpenLocal]);
+    const storeOpenOrders = Math.max(storeOpenServer, storeOpenLocal);
+
     // v11.19 — admin permission derivations. Single source of truth; both
     // the dashboard tab filtering and individual action buttons consult
     // `hasPermission`. Super admin always wins; non-admins always lose.
@@ -3407,7 +3385,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, notifUnread, addNotification, markNotifRead, markAllNotifsRead,
+        notifications, notifUnread, storeOpenOrders, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
@@ -3436,7 +3414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         favorites, toggleFavorite,
         followedMerchants, toggleFollowMerchant,
         blockedMerchants, toggleBlockMerchant,
-        notifications, notifUnread, addNotification, markNotifRead, markAllNotifsRead,
+        notifications, notifUnread, storeOpenOrders, addNotification, markNotifRead, markAllNotifsRead,
         bookings, bookDeal, cancelBooking, completeBooking, acknowledgeBooking,
         sendBookingMessage, fetchBookingMessages, markBookingMessagesRead,
         refreshBookings, lastBookingEvent, refreshDeals, loadMoreDeals, hasMoreDeals, loadingMoreDeals, ingestDeals,
@@ -3616,9 +3594,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 vote is EDITABLE: a previous vote is shown and the buyer can
                                 change it or keep it (anti merchant product-swap). */}
                             {ratingStep === 'auth' && (() => {
-                                const myVote = deals.find(d => d.id === ratingPrompt.dealId)?.myAuthVote;
+                                // العرضُ المحمَّل أوّلاً (يتحدّث لحظةَ التصويت)، ثمّ حمولةُ القاعدة.
+                                const loadedVote = deals.find(d => d.id === ratingPrompt.dealId)?.myAuthVote;
+                                const myVote = typeof loadedVote === 'boolean' ? loadedVote : ratingPrompt.myVote;
                                 const hasVote = myVote === true || myVote === false;
-                                const proceed = () => setRatingStep(prevReview ? 'done' : 'rate');
+                                // 🔴 v15.76 — كانت تقفز إلى 'done' لمن له تقييمٌ سابق، فلا يرى
+                                // النجومَ أبداً بعد أوّل تقييمٍ لذلك المتجر. والنجومُ مهيّأةٌ
+                                // سلفاً بتقييمه السابق فيصير الحفظُ تعديلاً لا تكراراً.
+                                const proceed = () => setRatingStep('rate');
                                 return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                     {/* Tiny, plain-language explainer so the buyer knows what they're voting on. */}
@@ -3738,14 +3721,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                                 ? await updateRating(prevReview!.dealId!, prevReview!.id!, { score: ratingStars, comment: ratingComment.trim() })
                                                 : await addRating(ratingPrompt.dealId, { score: ratingStars, comment: ratingComment.trim() });
                                             setRatingSubmitting(false);
-                                            setRatingPrompt(null);
-                                            if (ok === 'duplicate') {
-                                                customAlert(language === 'ar' ? 'لقد قيّمت هذا المتجر سابقاً — افتح صفحة العرض لتعديل تقييمك.' : 'You already rated this store — open the deal page to edit your rating.');
-                                            } else if (!ok) {
-                                                customAlert(language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later');
-                                            } else if (isEdit) {
-                                                customAlert(language === 'ar' ? '✅ تم تحديث تقييمك بنجاح' : '✅ Your rating was updated');
+                                            if (!ok || ok === 'duplicate') {
+                                                // فشلٌ أو تضارب: **لا يُوسم** الطلب — فتبقى له فرصةٌ لاحقاً.
+                                                setRatingPrompt(null);
+                                                customAlert(ok === 'duplicate'
+                                                    ? (language === 'ar' ? 'لقد قيّمت هذا المتجر سابقاً — افتح صفحة العرض لتعديل تقييمك.' : 'You already rated this store — open the deal page to edit your rating.')
+                                                    : (language === 'ar' ? '❌ تعذّر إرسال التقييم، حاول لاحقاً' : '❌ Could not submit your rating, try later'));
+                                                return;
                                             }
+                                            if (isEdit) {
+                                                // v15.76 — نجح التعديل: يُوسم الطلبُ فوراً (لا عند الإغلاق،
+                                                // فقد يُغلق الجوّالُ قبله) وتبقى شاشةُ «تقييمك» لمتابعةِ
+                                                // المتجر أو حذفِ التقييم.
+                                                promptedRatingRef.current.add(ratingPrompt.barcode);
+                                                void bookingRepository.markRatingPromptSeen(ratingPrompt.barcode);
+                                                setPrevReview({ id: prevReview!.id, dealId: prevReview!.dealId, score: ratingStars, comment: ratingComment.trim() });
+                                                setRatingStep('done');
+                                                customAlert(language === 'ar' ? '✅ تم تحديث تقييمك بنجاح' : '✅ Your rating was updated');
+                                                return;
+                                            }
+                                            dismissRatingPrompt();
                                         }}
                                         disabled={ratingSubmitting}
                                         style={{
