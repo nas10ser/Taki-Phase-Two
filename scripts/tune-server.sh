@@ -255,11 +255,32 @@ if [ "$RC" != "0" ]; then
 fi
 
 # ── ٦) سقوفُ البثّ الحيّ ─────────────────────────────────────────────────
-P "UPDATE _realtime.tenants SET
-     max_concurrent_users = ${RT_USERS}, max_events_per_second = ${RT_EVENTS},
-     max_joins_per_second = ${RT_JOINS}, max_channels_per_client = ${RT_CHANNELS},
-     max_bytes_per_second = ${RT_BYTES}, max_payload_size_in_kb = ${RT_PAYLOAD_KB},
-     max_presence_events_per_second = ${RT_PRESENCE}" >/dev/null && echo "  ✓ سقوفُ البثّ رُفعت"
+# 🪤 **لا تُكتب في `_realtime.tenants` مباشرةً**: بذرُ حاوية البثّ
+#    (`SEED_SELF_HOST=true`) يحذف الصفَّ ويُعيد إدراجه عند كل إقلاع، فأي
+#    كتابةٍ هنا تعيش حتى أوّل إعادة إنشاء ثمّ تعود ٢٠٠ بصمت. وقِيس ذلك
+#    مرّتين: مرّةً بالتحديث المباشر، ومرّةً بتغيير افتراضات الأعمدة (Ecto
+#    يُرسل قيمَه هو فلا يرى افتراضَ القاعدة). الموضعُ الصامد: جدولُ السقوف
+#    + مشغّلٌ يفرضه (هجرة v15.64).
+P "INSERT INTO public.taki_realtime_limits (id,
+     max_concurrent_users, max_events_per_second, max_joins_per_second,
+     max_channels_per_client, max_bytes_per_second, max_payload_size_in_kb,
+     max_presence_events_per_second, derived_from, updated_at)
+   VALUES (true, ${RT_USERS}, ${RT_EVENTS}, ${RT_JOINS}, ${RT_CHANNELS},
+           ${RT_BYTES}, ${RT_PAYLOAD_KB}, ${RT_PRESENCE},
+           '${CORES} نواة · ${RAM_MB} م.ب رام', now())
+   ON CONFLICT (id) DO UPDATE SET
+     max_concurrent_users = EXCLUDED.max_concurrent_users,
+     max_events_per_second = EXCLUDED.max_events_per_second,
+     max_joins_per_second = EXCLUDED.max_joins_per_second,
+     max_channels_per_client = EXCLUDED.max_channels_per_client,
+     max_bytes_per_second = EXCLUDED.max_bytes_per_second,
+     max_payload_size_in_kb = EXCLUDED.max_payload_size_in_kb,
+     max_presence_events_per_second = EXCLUDED.max_presence_events_per_second,
+     derived_from = EXCLUDED.derived_from, updated_at = now()" >/dev/null \
+  && echo "  ✓ جدولُ السقوف كُتب (يفرضه المشغّل عند كل بذر)" \
+  || { echo "  ❌ تعذّر كتابةُ جدول السقوف — هل طُبّقت هجرةُ v15.64؟"; exit 1; }
+# والصفُّ الحيُّ يُحدَّث الآن ليسري فوراً — والمشغّلُ يفرض نفسَ القيم.
+P "UPDATE _realtime.tenants SET max_concurrent_users = ${RT_USERS}" >/dev/null
 
 # يسري الحدُّ على الحاوية العاملة بلا إعادة إنشاء (والملفّ يُثبّته للمستقبل).
 docker update --memory "${RT_MEM_MB}m" --memory-swap "$(( RT_MEM_MB * 2 ))m" "$RT" >/dev/null 2>&1 \
