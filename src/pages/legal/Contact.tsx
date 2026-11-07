@@ -12,7 +12,7 @@ import { LegalLayout, Section, Paragraph } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 
 const Contact: React.FC = () => {
-    const { language } = useApp();
+    const { language, platformSettings } = useApp();
     const isRTL = language === 'ar';
 
     return (
@@ -27,6 +27,74 @@ const Contact: React.FC = () => {
                     ? 'نُحبّ سماعك دائماً. اختر القناة الأنسب لطلبك:'
                     : 'We always like to hear from you. Choose the channel that best suits your request:'}
             </Paragraph>
+
+            {/* 🔴 كان هذا القسمُ يُحيل إلى زرٍّ **بالاسم ولا يربطه**، وكلُّ
+                مسارات الشكاوى تشترط حساباً (قِيس: `/complaints` تطلب الدخول،
+                وكلُّ دوالّ الشكاوى ممنوحةٌ لـ`authenticated` وحده). أي أن
+                **زائراً بلا حسابٍ لم يكن يملك طريقةً واحدة للتواصل** — ولا
+                عنوانَ بريدٍ منشوراً. وصفحةُ «اتصل بنا» لا تقول كيف تتصل. */}
+            <Section title={isRTL ? '✉️ كيف تصل إلينا' : '✉️ How to reach us'}>
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>ولك حساب:</strong>{' '}
+                            <a href="/complaints" className="text-emerald-600 font-bold underline">افتح «شكواي»</a>{' '}
+                            واكتب رسالتك — تصل الإدارةَ مباشرةً وتُردّ عليك داخل التطبيق،
+                            وتبقى عندك بسجلّها وردودها.
+                        </>
+                    ) : (
+                        <>
+                            <strong>If you have an account:</strong>{' '}
+                            <a href="/complaints" className="text-emerald-600 font-bold underline">open «My complaints»</a>{' '}
+                            and write your message — it reaches the admin team directly, is
+                            answered inside the app, and stays with you with its full thread.
+                        </>
+                    )}
+                </Paragraph>
+                <Paragraph>
+                    {isRTL ? (
+                        <>
+                            <strong>ولا حساب لك:</strong> التسجيل مجّانيٌّ ولا يحتاج أكثر من
+                            بريدٍ ورقم جوّال —{' '}
+                            <a href="/register" className="text-emerald-600 font-bold underline">سجّل هنا</a>{' '}
+                            ثمّ افتح «شكواي». ونقولها بصراحة: قناةُ الشكاوى داخل التطبيق تشترط
+                            حساباً كي يصلك الردُّ ولا يضيع.
+                        </>
+                    ) : (
+                        <>
+                            <strong>If you do not have an account:</strong> signing up is free
+                            and needs only an email and a mobile number —{' '}
+                            <a href="/register" className="text-emerald-600 font-bold underline">register here</a>,{' '}
+                            then open «My complaints». To be plain: the in-app channel requires
+                            an account so that our reply reaches you and is not lost.
+                        </>
+                    )}
+                </Paragraph>
+                {/* 🪤 ولا يُعرض بريدٌ لم يُؤكَّد صندوقُه: الفراغُ يُخفي القسم.
+                    عنوانٌ منشورٌ بلا صندوقٍ يستقبله = شكوى إلى الفراغ. */}
+                {(platformSettings.contactEmails.info || platformSettings.contactEmails.complain) && (
+                    <ul className="list-disc ps-6 space-y-1.5 text-sm">
+                        {platformSettings.contactEmails.info && (
+                            <li>
+                                {isRTL ? 'للاستفسارات العامّة: ' : 'General enquiries: '}
+                                <a href={`mailto:${platformSettings.contactEmails.info}`}
+                                   className="text-emerald-600 font-bold underline">
+                                    {platformSettings.contactEmails.info}
+                                </a>
+                            </li>
+                        )}
+                        {platformSettings.contactEmails.complain && (
+                            <li>
+                                {isRTL ? 'للشكاوى: ' : 'Complaints: '}
+                                <a href={`mailto:${platformSettings.contactEmails.complain}`}
+                                   className="text-emerald-600 font-bold underline">
+                                    {platformSettings.contactEmails.complain}
+                                </a>
+                            </li>
+                        )}
+                    </ul>
+                )}
+            </Section>
 
             <Section title={isRTL ? '📣 الشكاوى والاقتراحات والاستفسارات' : '📣 Complaints, suggestions and enquiries'}>
                 <Paragraph>
@@ -99,14 +167,14 @@ const Contact: React.FC = () => {
                 <Paragraph>
                     {isRTL ? (
                         <>
-                            من زرّ «📣 الشكاوى / تواصل الإدارة»، اكتب في عنوان الرسالة كلمة
+                            من <a href="/complaints" className="text-emerald-600 font-bold underline">«شكواي»</a>، اكتب في عنوان الرسالة كلمة
                             <strong> «خصوصية»</strong> أو <strong>«قانوني»</strong>. تُحوَّل مباشرة
                             إلى مسؤول حماية البيانات (DPO)، ويُرَدّ عليها خلال 30 يوماً
                             كحدّ أقصى بموجب نظام حماية البيانات الشخصية السعودي.
                         </>
                     ) : (
                         <>
-                            Through the «📣 Complaints / Contact the Admin» button, include
+                            Through <a href="/complaints" className="text-emerald-600 font-bold underline">«My complaints»</a>, include
                             the word <strong>«Privacy»</strong> or <strong>«Legal»</strong>{' '}
                             in the subject line. The message is routed directly to the Data
                             Protection Officer (DPO) and answered within 30 days at most,

@@ -66,6 +66,14 @@ export interface PlatformSettings {
      *     أسوأُ من غيابها. ويبقى **ظاهراً لحساب الأدمن** ليجرّبه قبل الفتح.
      *  🪤 وفشلٌ مغلق: غيابُ الصفّ = مخفيّ، لا ظاهر. */
     stockLinkEnabled: boolean;
+    /**
+     * عناوينُ التواصل المنشورة — **فارغةٌ افتراضاً، فلا تُعرض**.
+     * 🔴 ولا تُكتب في الكود: عنوانٌ منشورٌ لا صندوقَ له يستقبله يعني
+     *    مستخدماً يشكو إلى الفراغ، ومراجعاً في المتجر يُرسل ولا يُجاب.
+     *    والمنفذُ ٢٥ محجوبٌ من جهاز ناصر ومن أوراكل معاً، فلا سبيلَ لي
+     *    للتحقّق — فلا أنشرها إلّا بتأكيدٍ صريحٍ منه.
+     */
+    contactEmails: { info: string; complain: string };
 }
 
 /** المفاتيح التي تُجلب عند الإقلاع — **مشتقّةٌ من فروع التطبيق أدناه**. */
@@ -75,7 +83,7 @@ export const PLATFORM_SETTING_KEYS = [
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
     'complaints_sla_hours', 'chat_limits', 'verification', 'refund_window',
-    'stock_link_enabled', 'image_cdn_host',
+    'stock_link_enabled', 'image_cdn_host', 'contact_emails',
 ];
 
 /**
@@ -109,6 +117,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     refundWindow: { hours: 2, merchantButton: true },
     // 🔴 مطفأ افتراضياً: فشلٌ مغلق — غيابُ الصفّ يعني مخفيّاً لا ظاهراً.
     stockLinkEnabled: false,
+    contactEmails: { info: '', complain: '' },
 });
 
 /**
@@ -184,6 +193,17 @@ export const applyPlatformSetting = (
                 hours: num(v.hours, 2, 0, 720),
                 merchantButton: typeof v.merchant_button === 'boolean' ? v.merchant_button : true,
             } });
+        }
+        case 'contact_emails': {
+            // 🪤 ويُنظَّف ما يُقرأ: عنوانٌ بصيغةٍ غريبةٍ في الإعداد يُنتج
+            //    `mailto:` مكسوراً يفتح برنامجَ بريدٍ بعنوانٍ خاطئ — أسوأُ من
+            //    لا عنوان. ما لا يطابق الصيغةَ يُهمَل فتبقى الخانةُ فارغةً.
+            const ok = (v: unknown): string => {
+                const t = String(v || '').trim();
+                return /^[^\s@]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/.test(t) ? t : '';
+            };
+            const v = (value || {}) as Record<string, unknown>;
+            return prev => ({ ...prev, contactEmails: { info: ok(v.info), complain: ok(v.complain) } });
         }
         case 'image_cdn_host':
             // v15.72 — مضيفُ شبكة التوصيل للصور. لا حالةَ واجهةٍ له: القارئُ
