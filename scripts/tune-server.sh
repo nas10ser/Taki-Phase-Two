@@ -324,8 +324,31 @@ chk "حدُّ ذاكرة البثّ"   "$(( $(docker inspect -f '{{.HostConfig.M
 chk "إنذارُ حجم القاعدة" "$(P "SELECT value->>'db_size_warn_mb' FROM public.platform_settings WHERE key='capacity_limits'")" "$DB_WARN_MB"
 chk "لا سقفَ للمستخدمين" "$(P "SELECT (value ? 'users_warn')::text FROM public.platform_settings WHERE key='capacity_limits'")" "false"
 AK=$(grep -m1 '^ANON_KEY=' .env | cut -d= -f2)
-chk "القاعدةُ عبر الشبكة" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 -H "apikey: $AK" -H "Authorization: Bearer $AK" 'https://api.takisa.net/rest/v1/regions?select=id&limit=1')" "200"
-chk "الموقع"            "$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.takisa.net/)" "200"
+# 🔴 وتُعاد المحاولةُ بعد إعادة تشغيل القاعدة. وقع فعلاً: ردّت البوّابةُ ٥٠٣
+#    لثوانٍ لأن PostgREST كان يُعيد الاتّصال ويبني مخزَن المخطّط (٥٤٦ دالّة)،
+#    فأعطى تحقّقي **❌ كاذباً** وأنهى السكربتَ بـ١ على ضبطٍ ناجح. وتحقّقٌ
+#    يصرخ على نجاحٍ يُدرّب على تجاهل صرخته يوم يقع عطلٌ حقيقيّ.
+# 🪤 والانتظارُ **مسقوفٌ** لا لا نهائيّ: ٥٠٣ باقيةٌ بعد دقيقةٍ عطلٌ حقيقيّ.
+api_code() {
+  curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+    -H "apikey: $AK" -H "Authorization: Bearer $AK" \
+    'https://api.takisa.net/rest/v1/regions?select=id&limit=1'
+}
+API=""
+for i in $(seq 1 12); do
+  API=$(api_code)
+  [ "$API" = "200" ] && break
+  echo "  … البوّابةُ تردّ $API — انتظارُ إعادةِ اتّصال PostgREST ($i/12)"
+  sleep 5
+done
+chk "القاعدةُ عبر الشبكة" "$API" "200"
+SITE=""
+for i in $(seq 1 6); do
+  SITE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://www.takisa.net/)
+  [ "$SITE" = "200" ] && break
+  sleep 5
+done
+chk "الموقع" "$SITE" "200"
 echo "  اتصالاتٌ مستعملة: $(P "SELECT count(*) FROM pg_stat_activity") من $MAXCONN"
 [ "$BAD" = "0" ] && echo "✅ الضبطُ تمّ وقِيس." || { echo "❌ فشلَ تحقّقٌ — النسخُ في .bak.*$TS"; exit 1; }
 REMOTE
