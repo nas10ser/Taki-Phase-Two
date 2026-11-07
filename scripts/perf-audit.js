@@ -59,6 +59,27 @@ const verdict = (k, v) => {
         console.error('❌ تعذّر القياس:', e.message); process.exit(1);
     }
 
+    // 🔴 **لا يُقرأ رقمٌ قبل إثبات أن المقيسَ تطبيقُنا.** جرى قياسٌ كاملٌ
+    //    وخرج بـ«✅ FCP ٩٠٤ · TBT ٢٦ · CLS ٠٫٠٠٤» وهو يقيس صفحةَ تحدّي
+    //    روبوتاتٍ من فيرسِل (طلبٌ واحد · ١٥ ك.ب · ٢٣ عقدة). ولو قُرئت تلك
+    //    الأرقامُ لقيل «تحسّنٌ هائل» عن جدارٍ لا عن موقع.
+    //    🪤 ولا يُفحص بـ«هل فيه #root»: صفحةُ التحدّي قد تحمل أيّ وسم. العقدُ
+    //       الصادق: **حزمةُ TAKI محمَّلة** و#root فيه أبناء.
+    for (const r of rows) {
+        if (r.error) continue;
+        const m = r.appMarkers || {};
+        if (!m.takiBundle || !m.rootKids) {
+            console.error(`\n🔴 القياسُ باطل على «${r.page}»: الصفحةُ المحمَّلة ليست تاكي.`);
+            console.error(`   العنوان: «${m.title || '(بلا)'}» · حزمُ TAKI: ${m.takiBundle || 0}`
+                        + ` · أبناءُ #root: ${m.rootKids || 0} · طلبات: ${r.requests} · ${r.kb} ك.ب`);
+            console.error('   السببُ الغالب: جدارُ فيرسِل بعد استجوابٍ متكرّر للإنتاج —');
+            console.error('   يُنتظر قليلاً، أو يُقاس على نسخةٍ محلّية:');
+            console.error('     node scripts/serve-dist.js &  ثمّ');
+            console.error('     TAKI_PERF_SITE=http://127.0.0.1:4321 node scripts/perf-audit.js');
+            process.exit(1);
+        }
+    }
+
     let worst = 0;
     for (const r of rows) {
         if (r.error) { console.log(`\n■ ${r.page}: ❌ ${r.error}`); worst = 2; continue; }
@@ -77,10 +98,19 @@ const verdict = (k, v) => {
         const s = r.scroll || {};
         // 🪤 والحكمُ على **تخطّي الإطار** (٣٣ م.ث) لا على تجاوز ١٦٫٧:
         //    إطارٌ بـ١٧ م.ث سليمٌ تماماً، وعدُّه «متأخّراً» ضجيجٌ لا جنك.
+        // 🪤 وسقفُ المُحاكي لا يُحسب تقطيعاً: المتصفّحُ بلا رأسٍ هنا مسقوفٌ
+        //    عند ٣٠ هرتز، فتصير كلُّ إطاراته ٣٣ م.ث و«١٠٠٪ متخطّاة» — وهو
+        //    حدٌّ في الأداة لا عيبٌ في الصفحة، وإنذارٌ عليه ضجيج.
+        if (s.vsyncCapped) {
+            console.log(`   ℹ️ التمرير: ${s.fps} إطاراً/ث بانتظامٍ تامّ (p50=${s.p50} · أسوأ ${s.worst})`);
+            console.log('      ⇒ المتصفّحُ بلا رأسٍ مسقوفٌ عند ٣٠ هرتز — السلاسةُ لا تُقاس هنا،'
+                      + ' تُقاس على جوّالٍ حقيقيّ.');
+        } else {
         const smooth = (s.stallPct ?? 100) <= 2 ? '✅' : ((s.stallPct ?? 100) <= 8 ? '🟡' : '🔴');
         if (smooth === '🔴') worst = 2; else if (smooth === '🟡') worst = Math.max(worst, 1);
         console.log(`   ${smooth} التمرير: ${s.fps} إطاراً/ث · ${s.stallPct}% إطاراتٍ مُتخطّاة · ` +
                     `${s.latePct}% فوق ٢٠ م.ث · أسوأ ${s.worst} م.ث · مُرّر ${s.scrolled}px`);
+        }
         if ((s.scrolled || 0) < 100) console.log('     ⚠️ الصفحةُ لم تُمرَّر فعلاً — قياسُ التمرير لا يعني شيئاً هنا.');
 
         if (r.profile) {

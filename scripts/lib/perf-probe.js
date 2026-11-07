@@ -80,6 +80,17 @@ const COLLECT_JS = [
     '    kbImg: Math.round(img / 1024),',
     '    heapMb: Math.round(((performance.memory || {}).usedJSHeapSize || 0) / 1048576),',
     '    nodes: document.querySelectorAll("*").length,',
+    // 🔴 دليلُ أن المقيسَ هو تطبيقُنا لا صفحةً أخرى. أُضيف بعد قياسٍ كامل
+    //    خرج بـ«✅ FCP ٩٠٤ م.ث · TBT ٢٦» وهو يقيس **صفحةَ تحدّي روبوتاتٍ من
+    //    فيرسِل** حُجب بها عنواني بعد استجوابٍ متكرّر للإنتاج. والعلاماتُ كانت
+    //    في المخرَج نفسِه: طلبٌ واحد · ١٥ ك.ب · ٢٣ عقدة · صفرُ تمرير.
+    //    و**قياسٌ يبدو ممتازاً لأنه قاس الشيءَ الخطأ أسوأُ من لا قياس.**
+    '    appMarkers: {',
+    '      root: !!document.getElementById("root"),',
+    '      rootKids: document.getElementById("root") ? document.getElementById("root").children.length : 0,',
+    '      takiBundle: Array.from(document.scripts).filter(x => /TAKI\\.[a-z0-9]+\\.js/.test(x.src || "")).length,',
+    '      title: (document.title || "").slice(0, 60),',
+    '    },',
     '  });',
     '})()',
 ].join('\n');
@@ -116,6 +127,17 @@ const SCROLL_JS = [
     '    p50: Math.round(f[Math.floor(f.length * 0.5)] || 0),',
     '    p95: Math.round(f[Math.floor(f.length * 0.95)] || 0),',
     '    worst: Math.round(f[f.length - 1] || 0),',
+    // 🔴 سقفُ العرض يُكشف ويُعلَن، ولا يُسمّى تقطيعاً. كلُّ قياسٍ هنا خرج
+    //    بـ«١٠٠٪ إطاراتٍ مُتخطّاة · أسوأ ٣٣ م.ث»، وهو **انتظامٌ تامّ** عند
+    //    ٣٠ إطاراً — أي أن المتصفّحَ بلا رأسٍ مسقوفٌ عند ٣٠ هرتز، لا أن
+    //    الصفحةَ تتقطّع. والدليلُ: التشتّتُ شبهُ صفرٍ (p50 = الأسوأ).
+    //    وإنذارٌ على حدٍّ في المُحاكي يُدرّب على تجاهل الإنذارات.
+    '    vsyncCapped: (() => {',
+    '      if (f.length < 20) return false;',
+    '      const p50 = f[Math.floor(f.length * 0.5)] || 0;',
+    '      const p95 = f[Math.floor(f.length * 0.95)] || 0;',
+    '      return p50 > 28 && p50 < 38 && (p95 - p50) < 6;',
+    '    })(),',
     '  });',
     '})()',
 ].join('\n');
