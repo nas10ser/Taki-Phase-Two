@@ -248,6 +248,7 @@ const SeasonalGate: React.FC = () => {
 const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
 // v12.35 — mobile-browser «ثبّت التطبيق» recommendation (non-blocking).
 const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
+const SiteFooter    = lazy(() => import('./components/SiteFooter'));
 
 // v12.98 — «استعادة موضع التمرير» بمستوى المواقع العالمية (بلاغ ناصر: زر الرجوع كان
 // يرمي المتسوّق لأعلى الرئيسية بدل إعادته لمكانه). القاعدة الطبيعية للمتصفحات:
@@ -435,6 +436,10 @@ const App = () => {
                         <Route component={NotFound} />
                     </Switch>
                 </Suspense>
+                {/* v15.74 — تذييلٌ عامّ: لم يكن للوثائق القانونيّة طريقٌ ثابتٌ
+                    من أيّ صفحة، ومراجعُ المتجر والجهةُ الرقابيّة يبحثان عنه
+                    أوّلاً. ويُخفي نفسَه في /admin و/seller. */}
+                <Suspense fallback={null}><SiteFooter /></Suspense>
             </div>
         </Router>
     );

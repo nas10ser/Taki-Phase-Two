@@ -165,7 +165,7 @@ const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> =
             ))}
 
             {/* ── الإفصاحاتُ التي يُلزم بها البند ٣٫١٫٢ ──────────────────── */}
-            <div className="rounded-2xl p-4 bg-[var(--bg-secondary)] text-xs leading-7 text-[var(--text-secondary)] space-y-2">
+            <div className="rounded-2xl p-4 bg-[var(--card-bg)] border border-[var(--border-color)] text-xs leading-7 text-[var(--text-secondary)] space-y-2">
                 {/* 🪤 ولا يُكتب توقيتُ التجديد رقماً **من عندنا**: «قبل ٢٤ ساعة»
                     شرطُ أبل المنشور، ولا تقوله قوقل بنفس الصيغة — فعرضُه
                     لتاجرٍ على أندرويد يقول له موعداً لا يسري عليه. وقاعدةُ

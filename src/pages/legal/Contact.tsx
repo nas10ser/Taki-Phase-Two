@@ -70,29 +70,19 @@ const Contact: React.FC = () => {
                         </>
                     )}
                 </Paragraph>
-                {/* 🪤 ولا يُعرض بريدٌ لم يُؤكَّد صندوقُه: الفراغُ يُخفي القسم.
-                    عنوانٌ منشورٌ بلا صندوقٍ يستقبله = شكوى إلى الفراغ. */}
-                {(platformSettings.contactEmails.info || platformSettings.contactEmails.complain) && (
-                    <ul className="list-disc ps-6 space-y-1.5 text-sm">
-                        {platformSettings.contactEmails.info && (
-                            <li>
-                                {isRTL ? 'للاستفسارات العامّة: ' : 'General enquiries: '}
-                                <a href={`mailto:${platformSettings.contactEmails.info}`}
-                                   className="text-emerald-600 font-bold underline">
-                                    {platformSettings.contactEmails.info}
-                                </a>
-                            </li>
-                        )}
-                        {platformSettings.contactEmails.complain && (
-                            <li>
-                                {isRTL ? 'للشكاوى: ' : 'Complaints: '}
-                                <a href={`mailto:${platformSettings.contactEmails.complain}`}
-                                   className="text-emerald-600 font-bold underline">
-                                    {platformSettings.contactEmails.complain}
-                                </a>
-                            </li>
-                        )}
-                    </ul>
+                {/* 🪤 و`info@` **وحده** هنا — أمرُ ناصر: «الشكوى خلّها لما يرفع
+                    شكوى». وهذه صفحةٌ عامّةٌ كالتذييل، فعنوانُ الشكاوى يُعرض في
+                    **حوار رفع الشكوى** وحده: بريدٌ عامٌّ للشكاوى يُحوّلها من
+                    قناةٍ لها سجلٌّ ومهلةُ ردٍّ وإشعارٌ إلى بريدٍ بلا تتبُّع.
+                    🪤 ولا يُعرض بريدٌ لم يُؤكَّد صندوقُه: الفراغُ يُخفي السطر. */}
+                {platformSettings.contactEmails.info && (
+                    <Paragraph>
+                        {isRTL ? 'وللاستفسارات العامّة (لا الشكاوى): ' : 'For general enquiries (not complaints): '}
+                        <a href={`mailto:${platformSettings.contactEmails.info}`}
+                           className="text-emerald-600 font-bold underline">
+                            {platformSettings.contactEmails.info}
+                        </a>
+                    </Paragraph>
                 )}
             </Section>
 

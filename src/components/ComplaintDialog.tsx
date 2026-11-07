@@ -36,6 +36,7 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
     useEscClose(true, onClose);
     useBackClose(true, onClose);
     const { user, customAlert, platformSettings } = useApp();
+    const complainEmail = platformSettings.contactEmails.complain;
     const [cat, setCat] = useState<ComplaintCategory>('app_issue');
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
@@ -266,6 +267,24 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
                         ? `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً. وتتابع شكواك من «حسابي ← شكواي».`
                         : `We reply within ${holdLabelGen(slaHours, false)} and notify you. Follow it in Account → My complaints.`}
                 </p>
+
+                {/* 🪤 وعنوانُ الشكاوى **هنا وحده** — أمرُ ناصر: «ضع فقط info في
+                    الفوتر، والشكوى خلّها لما يرفع شكوى». والسببُ سليم: عنوانٌ
+                    في تذييل كلّ صفحةٍ يُحوِّل الشكاوى من قناةٍ لها سجلٌّ ومهلةُ
+                    ردٍّ وإشعارٌ إلى بريدٍ بلا تتبُّعٍ ولا مهلة — فيخسر المشتكي
+                    ويخسر السجلّ. وهو بديلٌ **لمن تعذّر عليه الإرسال من هنا**
+                    لا طريقٌ موازٍ يُسحب إليه الناس.
+                    🪤 ولا يُعرض إن لم يُؤكَّد صندوقُه (فارغٌ ⇒ تُخفى الفقرة). */}
+                {complainEmail && (
+                    <p style={{ marginTop: 10, marginBottom: 0, fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary, #666)', lineHeight: 1.8 }}>
+                        {isRTL ? 'وإن تعذّر الإرسال من هنا، راسلنا على ' : 'If sending fails here, email us at '}
+                        <a href={`mailto:${complainEmail}`} style={{ color: 'var(--primary)', fontWeight: 800 }}>
+                            {complainEmail}
+                        </a>
+                        {isRTL ? ' — والإرسالُ من هذه الشاشة أفضل: يُسجَّل بردوده ومهلته.'
+                               : ' — though sending from here is better: it is logged with its replies and deadline.'}
+                    </p>
+                )}
 
                 <button type="button" onClick={submit} disabled={busy}
                     style={{
