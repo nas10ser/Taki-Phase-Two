@@ -74,7 +74,7 @@ export const PLATFORM_SETTING_KEYS = [
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
     'complaints_sla_hours', 'chat_limits', 'verification', 'refund_window',
-    'stock_link_enabled',
+    'stock_link_enabled', 'image_cdn_host',
 ];
 
 /**
@@ -184,6 +184,13 @@ export const applyPlatformSetting = (
                 merchantButton: typeof v.merchant_button === 'boolean' ? v.merchant_button : true,
             } });
         }
+        case 'image_cdn_host':
+            // v15.72 — مضيفُ شبكة التوصيل للصور. لا حالةَ واجهةٍ له: الأثرُ
+            // كلُّه في `utils/thumb.ts` (وحدةٌ نقيّةٌ تقرؤه عند التصيير)،
+            // ويُنفَّذ في AppContext حيث تسكن الآثارُ لا في هذا المُختصِر.
+            // 🪤 وإرجاعُ `null` يعني «مفتاحٌ معروفٌ بلا تعديلِ حالة» — لا
+            //    «مفتاحٌ مجهول»، وإلّا سقط في `default` وبدا خطأً.
+            return null;
         case 'stock_link_enabled':
             // v15.25 — إظهارُ بطاقة ربط المخزون للتجّار، بيد ناصر.
             // 🪤 `=== true` لا `!== false`: البوتُ «يفشل مفتوحاً» لأنه خدمةٌ

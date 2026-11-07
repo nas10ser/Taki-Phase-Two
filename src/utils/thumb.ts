@@ -30,6 +30,43 @@ const THUMB_WIDTH = 600;
 const THUMB_QUALITY = 70;
 
 /** علامة «لهذه الصورة مصغّرة مرفوعة ومؤكَّدة» — تُكتب في الرابط لحظة الرفع. */
+/**
+ * مضيفُ شبكة التوصيل (CDN) للصور — **فارغٌ افتراضاً، أي لا تغيير**.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * يُضبط من «الأدوات ← صور المنصّة» ويُقرأ هنا، فيُبدَّل مضيفُ **عناوين الصور
+ * وحدها** عند التصيير — بلا هجرةِ قاعدةٍ ولا تعديلِ صفٍّ واحد.
+ *
+ * 🟢 ومقبضُ الإيقاف هو الفراغ: تفريغُ الإعداد يُعيد كلَّ عنوانٍ إلى الأصل في
+ *    اللحظة نفسِها، بلا نشرٍ ولا انتظار. وأيُّ تجربةٍ على بنيةٍ حيّةٍ تحتاج
+ *    طريقَ رجوعٍ بضغطةٍ واحدة قبل أن تُجرَّب.
+ *
+ * 🔴 وما يقوله القياسُ عن الحاجة إليها (٧ نوفمبر ٢٠٢٦): **ليست ضرورةً اليوم.**
+ *    الجدارُ الذي كان قائماً هو محوّلُ الصور الآنيّ (٤١٢ م.ث معالجاً لكلّ
+ *    مشاهدة = سقفُ ~٢٫٤ في الثانية)، وقد زال بتوأمٍ ثابتٍ يُخدَم بـ٦ م.ث.
+ *    وما بقي نطاقٌ: مصغّرةٌ ٦٥ ك.ب وهيرو ١٨٠ ك.ب من مستودعٍ كلُّه ٤٢ م.ب.
+ *    فإشعالُها يُضيف طرفاً ثالثاً وطريقَ فشلٍ جديداً مقابل مكسبٍ لا يقيسه
+ *    أحدٌ بعد — ولذلك هي **مفتاحٌ جاهزٌ** لا تغييرٌ مُنفَّذ.
+ *
+ * 🪤 ولا يُبدَّل إلا مضيفُنا بعينه: رابطٌ خارجيٌّ (بديلةُ Unsplash مثلاً) أو
+ *    رابطٌ نسبيّ يبقى كما هو، وإلّا أنتجنا عنواناً مكسوراً لصورةٍ ليست لنا.
+ */
+let CDN_HOST = '';
+const OWN_HOST = 'api.takisa.net';
+
+export const setImageCdnHost = (host?: string | null): void => {
+    const h = String(host || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    // حارسٌ: مضيفٌ بصيغةٍ غريبة يُهمَل بدل أن يُنتج عناوينَ مكسورة للجميع.
+    CDN_HOST = /^([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/.test(h) ? h : '';
+};
+export const imageCdnHost = (): string => CDN_HOST;
+
+/** يُبدّل مضيفَ صورةٍ من عندنا إلى شبكة التوصيل — أو يُعيدها كما هي. */
+export const cdnUrl = (url: string): string => {
+    if (!CDN_HOST) return url;
+    if (!url.startsWith(`https://${OWN_HOST}/`)) return url;
+    return `https://${CDN_HOST}/` + url.slice(`https://${OWN_HOST}/`.length);
+};
+
 export const THUMB_MARK = 't=1';
 
 /** يضيف علامة المصغّرة لرابط رُفعت مصغّرته بنجاح. */
@@ -58,7 +95,7 @@ export const thumbUrl = (url?: string | null): string => {
     if (/_t$/i.test(m[1])) return u;        // مصغّرة أصلاً
     if (hasThumb(u)) {
         // مصغّرة ثابتة مرفوعة ومؤكَّدة: ملفٌّ عادي بترويسة سنة — أرخص ما يمكن.
-        return u.replace(SUPABASE_DEAL_IMAGE, `/storage/v1/object/public/deals/${m[1]}_t.jpg${m[3] || ''}`);
+        return cdnUrl(u.replace(SUPABASE_DEAL_IMAGE, `/storage/v1/object/public/deals/${m[1]}_t.jpg${m[3] || ''}`));
     }
     // v14.14 — صورة في مستودعنا بلا مصغّرة مؤكَّدة: نطلب من الخادم تصغيرها
     // لحظياً بدل تحميل الأصل كاملاً في بطاقة صغيرة. (مقيس على صور حقيقية:
@@ -106,8 +143,8 @@ export const sizedUrl = (url: string | null | undefined, width: number, quality 
     if (!m) return u;
     const q = m[3] || '';
     const sep = q ? '&' : '?';
-    return u.replace('/storage/v1/object/public/deals/', '/storage/v1/render/image/public/deals/')
-        + `${sep}width=${width}&quality=${quality}`;
+    return cdnUrl(u.replace('/storage/v1/object/public/deals/', '/storage/v1/render/image/public/deals/')
+        + `${sep}width=${width}&quality=${quality}`);
 };
 
 /**
@@ -127,8 +164,8 @@ export const heroUrl = (url?: string | null): string => {
     if (!m) return u;
     if (/_[th]$/i.test(m[1])) return u;
     if (hasThumb(u)) {
-        return u.replace(SUPABASE_DEAL_IMAGE,
-            `/storage/v1/object/public/deals/${m[1]}_h.jpg${m[3] || ''}`);
+        return cdnUrl(u.replace(SUPABASE_DEAL_IMAGE,
+            `/storage/v1/object/public/deals/${m[1]}_h.jpg${m[3] || ''}`));
     }
     return sizedUrl(u, 1080);   // بلا توأمٍ مؤكَّد: محوّلٌ آنيّ (شبكةُ أمان)
 };

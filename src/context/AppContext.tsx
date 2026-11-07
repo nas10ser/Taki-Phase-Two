@@ -19,6 +19,7 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { setImageCdnHost } from '../utils/thumb';
 import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
@@ -638,6 +639,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (!patch) return;
             // أثر الموسم على DOM يبقى هنا: تبديلُه realtime ينساب بنعومة.
             if (key === 'seasonal_theme') { animateThemeSwap(); applySeasonSkin(value); }
+            // v15.72 — مضيفُ شبكة التوصيل للصور: وحدةٌ نقيّةٌ تقرؤه عند
+            // التصيير، فتفريغُ الإعداد يُعيد كلَّ عنوانٍ إلى الأصل فوراً.
+            if (key === 'image_cdn_host') setImageCdnHost(value as unknown as string);
             setPlatformSettings(patch);
         };
         (async () => {
