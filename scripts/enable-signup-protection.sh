@@ -16,8 +16,8 @@
 # ============================================================================
 set -euo pipefail
 
-HOST="ubuntu@141.147.142.147"
-KEY="$HOME/.ssh/taki_oracle"
+HOST="ubuntu@207.127.99.122"
+KEY="$HOME/.ssh/taki_jeddah2"
 COMPOSE_DIR="/opt/taki/supabase"
 OVERRIDE="$COMPOSE_DIR/docker-compose.taki.yml"
 RATE="${TAKI_EMAIL_RATE:-1000}"

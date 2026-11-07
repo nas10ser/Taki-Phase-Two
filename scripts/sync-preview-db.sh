@@ -5,8 +5,8 @@
 # يُشغَّل **على خادم جدة**، لأن الاستخراج والدفع يصيران محلّيين فلا يمرّ
 # ميجابايت المخطّط عبر أي وسيط:
 #
-#   scp scripts/sync-preview-db.sh ubuntu@141.147.142.147:~/
-#   ssh ubuntu@141.147.142.147 'PREVIEW_DB_URL="postgresql://…" bash ~/sync-preview-db.sh'
+#   scp scripts/sync-preview-db.sh ubuntu@207.127.99.122:~/
+#   ssh ubuntu@207.127.99.122 'PREVIEW_DB_URL="postgresql://…" bash ~/sync-preview-db.sh'
 #
 # ولماذا سكربتٌ لا عمليةٌ يدوية: قاعدةُ المعاينة **تتعفّن مع أوّل هجرة قادمة**.
 # مزامنةٌ لمرّة واحدة تعطي معاينةً تكذب بعد أسبوع — وهي أسوأ من لا معاينة، لأن

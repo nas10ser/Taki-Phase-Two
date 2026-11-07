@@ -7,8 +7,8 @@
 # ============================================================================
 set -euo pipefail
 
-HOST="ubuntu@141.147.142.147"
-KEY="$HOME/.ssh/taki_oracle"
+HOST="ubuntu@207.127.99.122"
+KEY="$HOME/.ssh/taki_jeddah2"
 DIR="/opt/taki/supabase"
 
 echo "> استرجاع آخر نسخة احتياطية"

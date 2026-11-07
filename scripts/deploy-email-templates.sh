@@ -10,8 +10,8 @@
 # ============================================================================
 set -euo pipefail
 
-HOST="ubuntu@141.147.142.147"
-KEY="$HOME/.ssh/taki_oracle"
+HOST="ubuntu@207.127.99.122"
+KEY="$HOME/.ssh/taki_jeddah2"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/supabase/email-templates"
 CADDY_DIR="/opt/taki/supabase/volumes/proxy/caddy"
 DEST="$CADDY_DIR/email-templates"

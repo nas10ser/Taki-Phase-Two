@@ -16,10 +16,10 @@
 # ════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-KEYS="$HOME/Desktop/TAKI-مفاتيح-الخدمات.txt"
+KEYS="$HOME/Desktop/TAKI/محلّي/مفاتيح/TAKI-مفاتيح-الخدمات.txt"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOX="ubuntu@141.147.142.147"
-SSH_KEY="$HOME/.ssh/taki_oracle"
+BOX="ubuntu@207.127.99.122"
+SSH_KEY="$HOME/.ssh/taki_jeddah2"
 HOSTPART="postgres.kbmqzxcjdankdgiovctm"
 POOLER="aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
 

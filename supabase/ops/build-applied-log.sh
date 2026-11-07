@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 TMP=$(mktemp -d)
-ssh -i ~/.ssh/taki_oracle ubuntu@141.147.142.147 \
+ssh -i ~/.ssh/taki_jeddah2 ubuntu@207.127.99.122 \
  "sudo docker exec supabase-db psql -U supabase_admin -d postgres -t -A -c \"
   SELECT 'f:'||p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
   UNION SELECT 't:'||table_name FROM information_schema.tables WHERE table_schema='public';\"" \
