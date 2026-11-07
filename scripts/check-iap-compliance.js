@@ -159,3 +159,77 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
     }
     console.log('✅ الإقرار/الإنهاء: الجسرُ + أندرويد + آيفون · والتسجيلُ في المشروعين (٤ فحوص)');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ٨) كلُّ نداءِ فوترةٍ في أندرويد تُقرأ نتيجتُه — **بوحدة الدالّة**
+// ───────────────────────────────────────────────────────────────────────────
+// 🔴 `queryPurchasesAsync` كان يتجاهل `BillingResult`: استعلامٌ فاشل يُسلّم
+//    قائمةً فارغة فيردّ كائناً فارغاً — **مطابقاً تماماً** لـ«هذا الحساب لا
+//    يملك اشتراكاً». فيُقال لتاجرٍ يملك اشتراكاً إنه لا يملكه، وهو الذي
+//    يحتاج هذا الزرَّ بعينه (بدّل جهازه).
+//
+// 🪤 وهذا الحارسُ أُعيد **مرّتين** بعد قياسٍ كشف ثقبيه:
+//    (أ) أوّلُه عدّ **المجموع** (١١ قراءةً مقابل ٣ مُستدعيات) فمُستدعىً فيه
+//        ثلاثُ قراءاتٍ يُغطّي آخرَ بلا قراءة.
+//    (ب) وثانيه قطّع «من مُستدعىً إلى الذي يليه» — فنَزَّ جسمُ `restore`
+//        إلى `finalizePurchase` بعده (لامبدا `r -> {` بلا أقواس لا يراها
+//        النمط) فابتلع قراءتَه ومرّ أخضرَ على كسرةٍ حقيقيّة. وثمّ مُستدعىً
+//        رابعٌ باسم `result` كان **غيرَ مرئيٍّ أصلاً**.
+//    ⇒ الوحدةُ الصحيحة **الدالّة**: أيُّ دالّةٍ تُنادي فوترةً غيرَ متزامنةٍ
+//      يجب أن تقرأ النتيجةَ في جسمها هي. وأسماءُ المعاملات لا تُفترض.
+{
+    const f = path.join(ROOT, 'android/app/src/main/java/net/takisa/app/TakiIapPlugin.java');
+    if (fs.existsSync(f)) {
+        const t = fs.readFileSync(f, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        // نداءاتُ الفوترة غيرُ المتزامنة: كلٌّ منها يُسلّم BillingResult.
+        const ASYNC = /(queryProductDetailsAsync|queryPurchasesAsync|acknowledgePurchase|startConnection)\s*\(/;
+        // الوحداتُ: دوالُّ الإضافة + حقلُ المُستدعى العامّ (listener).
+        const units = [];
+        // 🪤 وحدودُ الوحدة تُقاس **بعمق الأقواس**: تصريحُ دالّةٍ داخل صنفٍ
+        //    مجهولٍ (`new BillingClientStateListener() { @Override public void
+        //    onBillingSetupFinished(…) }`) يطابق نمطَ الدالّة، فيبدأ وحدةً
+        //    جديدةً **تقطع جسمَ حاضنتها قبل قراءتها** — واتُّهمت `withClient`
+        //    بالعمى وهي تقرأ النتيجةَ فعلاً. والدالّةُ الحقيقيّة وحدها على
+        //    عمق ١ (جسمُ الصنف)، وما دونها جزءٌ من حاضنته.
+        const depthAt = (idx) => {
+            let d = 0;
+            for (let x = 0; x < idx; x++) {
+                const c = t[x];
+                if (c === '{') d++; else if (c === '}') d--;
+            }
+            return d;
+        };
+        const reMethod = /(?:public|private)\s+(?:void|[A-Za-z<>,\s\[\]]+)\s+(\w+)\s*\([^)]*\)\s*\{/g;
+        const marks = [...t.matchAll(reMethod)]
+            .filter((m) => depthAt(m.index) === 1)
+            .map((m) => ({ name: m[1], at: m.index }));
+        const reField = /private\s+final\s+PurchasesUpdatedListener\s+(\w+)\s*=/g;
+        for (const m of t.matchAll(reField)) marks.push({ name: m[1], at: m.index });
+        marks.sort((a, b) => a.at - b.at);
+        for (let k = 0; k < marks.length; k++) {
+            units.push({
+                name: marks[k].name,
+                body: t.slice(marks[k].at, k + 1 < marks.length ? marks[k + 1].at : t.length),
+            });
+        }
+        if (!units.length) fail('لم تُقرأ بنيةُ إضافة أندرويد — يُحدَّث الحارس، ولا يُحكم عمياً.');
+
+        const blind = [];
+        let checked = 0;
+        for (const u of units) {
+            // وحدةٌ تستلم نتيجةَ فوترةٍ: إمّا تُنادي نداءً غيرَ متزامن، أو
+            // هي المُستدعى العامّ (يستلم BillingResult دائماً).
+            const takesResult = ASYNC.test(u.body) || /PurchasesUpdatedListener/.test(u.body);
+            if (!takesResult) continue;
+            checked++;
+            if (!/\.\s*getResponseCode\s*\(\s*\)/.test(u.body)) blind.push(u.name);
+        }
+        if (!checked) fail('صفرُ وحدةٍ تستلم نتيجةَ فوترة — تغيّرت البنيةُ فلا يُحكم عمياً.');
+        if (blind.length) {
+            fail(`وحداتُ فوترةٍ لا تقرأ BillingResult: ${blind.join(' · ')}\n`
+               + '   نداءٌ يتجاهل النتيجةَ يردّ "لا شيء" عن فشلٍ — وهو كذبٌ صامت.');
+        }
+        console.log(`✅ أندرويد: ${checked}/${checked} وحدةَ فوترةٍ تقرأ نتيجتَها`);
+    }
+}

@@ -166,6 +166,18 @@ public class TakiIapPlugin extends Plugin {
                 QueryPurchasesParams.newBuilder()
                         .setProductType(BillingClient.ProductType.SUBS).build(),
                 (r, purchases) -> {
+                    // 🔴 ونتيجةُ الاستعلام **تُقرأ**. كان هذا المُستدعى الوحيد
+                    //    في الملفّ الذي يتجاهل `r`: فاستعلامٌ فاشل (شبكةٌ
+                    //    منقطعة · خدمةُ الفوترة مقطوعة · متجرُ Play يُحدَّث)
+                    //    يُسلّم قائمةً فارغةً، فتردّ الدالّةُ كائناً فارغاً —
+                    //    وهو **مطابقٌ تماماً** لـ«هذا الحسابُ لا يملك شيئاً».
+                    //    فيُقال لتاجرٍ يملك اشتراكاً إنه لا يملكه، وقد اشترك
+                    //    من جهازٍ آخرَ ويحتاج هذا الزرَّ بعينه.
+                    if (r.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                        call.reject("restore_failed:" + r.getResponseCode()
+                                  + " " + r.getDebugMessage());
+                        return;
+                    }
                     JSObject o = new JSObject();
                     for (Purchase p : purchases) {
                         if (p.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {

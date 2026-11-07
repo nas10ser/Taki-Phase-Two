@@ -24,6 +24,14 @@
  *    لا دليل — يُستخرج منه `transactionId` ثمّ يُسأل خادمُ أبل بمفتاحنا،
  *    والردُّ هو الحقيقة.
  *
+ * 🔴 و**نتائجُ العمل تُردّ بـ٢٠٠**، والرموزُ في الجسم. قِيس في العميل: مكتبةُ
+ *    سوبابيس تُلقي `FunctionsHttpError` على أيّ ردٍّ غيرِ ٢xx برسالةٍ **ثابتة**
+ *    («Edge Function returned a non-2xx status code») و`data = null`، ولا
+ *    تقرأ الجسمَ إطلاقاً — فكلُّ رمزٍ صريحٍ كتبناه (`unmapped_product` ·
+ *    `not_active` · `IAP_APPLE_NOT_CONFIGURED`) كان يُنهار إلى «فشلَ
+ *    التحقّق» العامّ، ويُرسل ناصراً يبحث عن عيبٍ حيث لا عيب.
+ *    ⇒ ٢xx لنتائج العمل (نجحت أو رُفضت)، وغيرُ ٢xx للانقطاع التقنيّ وحده.
+ *
  * ⏳ وما ينتظر حسابَي المتجرين (لا شيءَ تقنيٌّ غيره):
  *      APPLE_IAP_KEY_P8 · APPLE_IAP_KEY_ID · APPLE_IAP_ISSUER_ID · APPLE_BUNDLE_ID
  *      GOOGLE_PLAY_SA_JSON · GOOGLE_PLAY_PACKAGE
@@ -54,10 +62,10 @@ Deno.serve(async (req) => {
 
         // ── حارسٌ ١: هويّةُ المنادي من توكنه، لا من جسم الطلب ──────────────
         const auth = req.headers.get("Authorization") || "";
-        if (!auth.startsWith("Bearer ")) return json({ error: "not_authenticated" }, 401);
+        if (!auth.startsWith("Bearer ")) return json({ success: false, error: "not_authenticated" }, 401);
         const asUser = createClient(URL_, ANON, { global: { headers: { Authorization: auth } } });
         const { data: who, error: whoErr } = await asUser.auth.getUser();
-        if (whoErr || !who?.user?.id) return json({ error: "not_authenticated" }, 401);
+        if (whoErr || !who?.user?.id) return json({ success: false, error: "not_authenticated" }, 401);
         const storeId = who.user.id;
 
         const admin = createClient(URL_, SR);
@@ -65,13 +73,13 @@ Deno.serve(async (req) => {
         const { data: row } = await admin.from("users")
             .select("user_type, deleted_at").eq("id", storeId).maybeSingle();
         if (!row || row.deleted_at || !["seller", "admin"].includes(String(row.user_type))) {
-            return json({ error: "not_a_merchant" }, 403);
+            return json({ success: false, error: "not_a_merchant" }, 403);
         }
 
         const body = await req.json().catch(() => ({}));
         const platform = String(body?.platform || "");
         if (platform !== "apple" && platform !== "google") {
-            return json({ error: "bad_platform" }, 400);
+            return json({ success: false, error: "bad_platform" }, 400);
         }
 
         // ── الحقيقةُ من خادم المتجر، لا من جسم الطلب ──────────────────
@@ -81,16 +89,28 @@ Deno.serve(async (req) => {
             if (!txn && body?.jws) {
                 try { txn = String(jwsPayload(String(body.jws))?.transactionId || ""); } catch { /* */ }
             }
-            if (!txn) return json({ error: "missing_transaction_id" }, 400);
+            if (!txn) return json({ success: false, error: "missing_transaction_id" }, 400);
             st = await appleState(txn);
         } else {
             const token = String(body?.purchaseToken || "");
-            if (!token) return json({ error: "missing_purchase_token" }, 400);
+            if (!token) return json({ success: false, error: "missing_purchase_token" }, 400);
             st = await googleState(token);
         }
-        if (!st.active) return json({ error: "not_active", status: st.status }, 409);
+        // 🪤 وشراءٌ غيرُ سارٍ **يُربط بمالكه قبل الردّ**: المعلَّق (دفعٌ نقديٌّ
+        //    عند قوقل · موافقةُ وليٍّ عند أبل) يكتمل بعد أيّامٍ بإشعارٍ **بلا
+        //    هويّة** — فبلا الربط لا يجد مالكاً ويُهمَل، والتاجرُ يدفع ولا
+        //    ينال شيئاً ولا يعلم. والربطُ لا يُفعّل شيئاً.
+        if (!st.active) {
+            const { data: claimed } = await admin.rpc("taki_iap_claim", {
+                p_store_id: storeId, p_platform: st.platform, p_product_id: st.productId,
+                p_purchase_key: st.key, p_latest_txn: st.latest,
+                p_environment: st.environment, p_raw: st.raw,
+            });
+            return json({ success: false, error: "not_active", status: st.status,
+                          claimed: !!(claimed as any)?.success }, 200);
+        }
 
-        if (!st.productId) return json({ error: "no_product_id" }, 502);
+        if (!st.productId) return json({ success: false, error: "no_product_id" }, 502);
 
         const { data: applied, error: rpcErr } = await admin.rpc("taki_iap_apply", {
             p_store_id: storeId, p_platform: st.platform, p_product_id: st.productId,
@@ -98,8 +118,9 @@ Deno.serve(async (req) => {
             p_environment: st.environment, p_auto_renew: st.autoRenew,
             p_event: "VERIFY", p_raw: st.raw,
         });
-        if (rpcErr) return json({ error: "apply_failed", detail: rpcErr.message }, 500);
-        return json(applied, applied?.success ? 200 : 409);
+        if (rpcErr) return json({ success: false, error: "apply_failed", detail: rpcErr.message }, 500);
+        // نتيجةُ عملٍ ⇒ ٢٠٠ دائماً، والرمزُ في الجسم.
+        return json(applied, 200);
     } catch (e) {
         const m = (e as Error)?.message || String(e);
         // 🪤 وتُعاد الرموزُ كما هي: «غير مضبوط» ليس «فشل التحقّق»، والخلطُ

@@ -37,7 +37,8 @@ export interface IapProduct {
 export type IapResult =
     | { ok: true; expiresAt: string | null; maxBranches: number | null }
     | { ok: false; code: 'cancelled' | 'unavailable' | 'pending' | 'not_mapped'
-                       | 'not_configured' | 'verify_failed' | 'nothing_to_restore';
+                       | 'not_configured' | 'verify_failed' | 'nothing_to_restore'
+                       | 'owned_elsewhere' | 'products_failed';
         detail?: string };
 
 interface TakiIapPlugin {
@@ -79,17 +80,31 @@ export async function iapProductMap(): Promise<Record<string, number>> {
     return out;
 }
 
-/** قائمةُ المنتجات **بأسعار المتجر** — لا تُعرض أسعارُنا في التطبيق. */
-export async function iapProducts(): Promise<IapProduct[]> {
+/**
+ * قائمةُ المنتجات **بأسعار المتجر** — لا تُعرض أسعارُنا في التطبيق.
+ *
+ * 🔴 ويُفرَّق بين «لا منتجاتَ مربوطة» و«تعذّر الجلب». كان كلُّ فشلٍ يردّ
+ *    مصفوفةً فارغةً، فتقول الشاشةُ «لا باقاتٌ متاحة» وتُحيل التاجرَ إلى
+ *    الموقع — بينما السببُ الحقيقيُّ شبكةٌ منقطعةٌ أو متجرُ Play يُحدَّث
+ *    (`billing_unavailable` · `query_failed`). فنصيحةٌ خاطئةٌ تُبنى على خطأٍ
+ *    مكتوم، والتاجرُ يُصدّق أن لا باقاتَ له.
+ */
+export async function iapProducts(): Promise<
+    { ok: true; products: IapProduct[] } | { ok: false; code: 'unavailable' | 'not_mapped'; detail?: string }
+> {
     const p = await plugin();
-    if (!p) return [];
-    const map = await iapProductMap();
+    if (!p) return { ok: false, code: 'unavailable' };
+    let map: Record<string, number>;
+    try { map = await iapProductMap(); }
+    catch (e) { return { ok: false, code: 'unavailable', detail: String((e as Error)?.message || e) }; }
     const ids = Object.keys(map);
-    if (!ids.length) return [];
+    if (!ids.length) return { ok: false, code: 'not_mapped' };
     try {
         const r = await p.products({ productIds: ids });
-        return (r?.products || []).map((x) => ({ ...x, packageId: map[x.productId] }));
-    } catch { return []; }
+        return { ok: true, products: (r?.products || []).map((x) => ({ ...x, packageId: map[x.productId] })) };
+    } catch (e) {
+        return { ok: false, code: 'unavailable', detail: String((e as Error)?.message || e) };
+    }
 }
 
 /**
@@ -115,16 +130,38 @@ async function verifyWithServer(
         ? { platform, transactionId: ref.transactionId }
         : { platform, purchaseToken: ref.purchaseToken };
     const { data, error } = await supabase.functions.invoke('iap-verify', { body });
+
+    // 🔴 والرمزُ يُقرأ من **الجسم**، لا من `error.message`. قِيس على المكتبة
+    //    المثبَّتة (@supabase/functions-js 2.105.1): أيُّ ردٍّ غيرِ ٢xx يُلقي
+    //    `FunctionsHttpError` برسالةٍ **ثابتة** («Edge Function returned a
+    //    non-2xx status code») و`data = null`، والجسمُ لا يُفكَّك إطلاقاً —
+    //    فاختباري `/NOT_CONFIGURED/.test(error.message)` **لم يكن ليُطابق
+    //    أبداً**، وكلُّ رمزٍ صريحٍ كان ينهار إلى «فشلَ التحقّق» العامّ.
+    //    ⇒ الدالّةُ تردّ نتائجَ العمل بـ٢٠٠ (فتصل في `data`)، وما بقي غيرَ
+    //      ٢xx يُقرأ من `error.context` وهو الـ`Response` الأصليّ.
+    let payload: Record<string, unknown> | null = (data as Record<string, unknown>) ?? null;
     if (error) {
-        // 🪤 ورمزُ «غير مضبوط» لا يُخلط بـ«فشل التحقّق»: الأوّلُ ينتظر حسابَ
-        //    المتجر، والثاني عيبٌ أو تلاعب. وخلطُهما يُرسل ناصراً يبحث عن
-        //    عطلٍ حيث لا عطل.
-        const m = String(error.message || '');
-        if (/NOT_CONFIGURED/.test(m)) return { ok: false, code: 'not_configured', detail: m };
-        return { ok: false, code: 'verify_failed', detail: m };
+        try {
+            const res = (error as unknown as { context?: Response }).context;
+            if (res && typeof res.json === 'function') payload = await res.json();
+        } catch { /* جسمٌ غيرُ قابلٍ للتفكيك — نُكمل بالرمز العامّ */ }
+        if (!payload) return { ok: false, code: 'verify_failed', detail: String(error.message || '') };
     }
-    if (data?.error === 'unmapped_product') return { ok: false, code: 'not_mapped' };
-    if (!data?.success) return { ok: false, code: 'verify_failed', detail: String(data?.error || '') };
+
+    const code = String((payload?.error as string) || '');
+    if (/NOT_CONFIGURED/.test(code)) return { ok: false, code: 'not_configured', detail: code };
+    if (code === 'unmapped_product') return { ok: false, code: 'not_mapped' };
+    if (code === 'not_active') {
+        // ربِط الشراءُ بمالكه عند الخادم، فالاكتمالُ يأتي بإشعار.
+        return { ok: false, code: 'pending', detail: String(payload?.status || '') };
+    }
+    if (code === 'owned_by_another_account') {
+        return { ok: false, code: 'owned_elsewhere' };
+    }
+    if (!payload?.success) {
+        return { ok: false, code: 'verify_failed', detail: code };
+    }
+    const dataOk = payload;
 
     // التفعيلُ وقع ⇒ يُقَرّ الشراءُ الآن عند المتجر.
     try {
@@ -134,8 +171,8 @@ async function verifyWithServer(
         console.warn('[iap] الإقرارُ فشل — الاشتراكُ مفعَّل، ويُعاد الإقرارُ عند الاستعادة.',
                      (e as Error)?.message || e);
     }
-    return { ok: true, expiresAt: data?.expires_at ?? null,
-             maxBranches: Number(data?.max_branches) || null };
+    return { ok: true, expiresAt: (dataOk.expires_at as string) ?? null,
+             maxBranches: Number(dataOk.max_branches) || null };
 }
 
 /** الشراء. يُرجع `cancelled` حين يُغلق المستخدمُ ورقةَ المتجر — لا خطأً. */
@@ -155,7 +192,17 @@ export async function iapPurchase(productId: string): Promise<IapResult> {
     // 🪤 و«معلّق» حالةٌ حقيقيّة لا خطأ: قوقل تسمح بالدفع نقداً في متجرٍ فعليّ
     //    فيبقى الشراءُ أيّاماً، وأبل تطلب موافقةَ وليٍّ في حساب العائلة.
     //    والتفعيلُ يأتي من إشعار الخادم لا من هنا.
-    if (ref.state === 'pending') return { ok: false, code: 'pending' };
+    // 🔴 والمعلَّقُ **يُسلَّم للخادم** ليربطه بالمالك قبل أن نردّ: كان يُردّ
+    //    محلياً فلا تُسجَّل هويّةٌ، فيأتي إشعارُ الاكتمال بعد أيّامٍ بلا هويّة
+    //    ولا يجد مالكاً — فتدفع ولا تنال شيئاً، والشاشةُ وعدتك بالعكس.
+    if (ref.state === 'pending') {
+        if (ref.transactionId || ref.purchaseToken) {
+            const r = await verifyWithServer(platform, ref);
+            // الخادمُ يردّ `pending` بعد الربط؛ وأيُّ ردٍّ آخرَ يُنقل كما هو.
+            return r.ok ? r : (r.code === 'pending' ? r : r);
+        }
+        return { ok: false, code: 'pending' };
+    }
     if (!ref.transactionId && !ref.purchaseToken) {
         return { ok: false, code: 'unavailable', detail: 'no_reference' };
     }

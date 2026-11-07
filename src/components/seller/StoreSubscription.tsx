@@ -42,19 +42,30 @@ const MSG: Record<string, [string, string]> = {
                     'We could not verify the purchase. Nothing was activated and nothing is lost — tap “Restore purchases”.'],
     nothing_to_restore: ['لا يوجد اشتراكٌ سابقٌ على هذا الحساب في المتجر.',
                          'No previous subscription was found on this store account.'],
+    owned_elsewhere: ['هذا الاشتراكُ مسجَّلٌ لحسابٍ آخرَ في تاكي. سجّل الدخول بذلك الحساب، أو راسِلنا.',
+                      'This subscription belongs to a different TAKI account. Sign in with that account, or contact us.'],
+    products_failed: ['تعذّر جلبُ الباقات من المتجر — تحقّق من الاتّصال وأعِد المحاولة.',
+                      'Could not load plans from the store — check your connection and try again.'],
 };
 
 const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> = ({ isRTL, onActivated }) => {
     const [products, setProducts] = useState<IapProduct[] | null>(null);
+    // 🪤 ويُفصل «لم يُجلب بعد» عن «فشل الجلب» عن «لا منتجاتَ مربوطة»:
+    //    ثلاثُ حالاتٍ تُعطي نفسَ الشاشة الفارغة لو جُمعت، وإحداها نصيحةٌ
+    //    خاطئة («اشترك من الموقع») لمن مشكلتُه شبكةٌ منقطعة.
+    const [loadErr, setLoadErr] = useState<'unavailable' | 'not_mapped' | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
     const ios = nativePlatform() === 'ios';
 
-    useEffect(() => {
-        let alive = true;
-        iapProducts().then((p) => { if (alive) setProducts(p); });
-        return () => { alive = false; };
+    const load = useCallback(() => {
+        setLoadErr(null); setProducts(null);
+        iapProducts().then((r) => {
+            if (r.ok) { setProducts(r.products); return; }
+            setProducts([]); setLoadErr(r.code);
+        });
     }, []);
+    useEffect(() => { load(); }, [load]);
 
     const handle = useCallback((r: IapResult) => {
         if (r.ok) {
@@ -81,22 +92,38 @@ const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> =
         </div>;
     }
 
-    // 🪤 وقائمةٌ فارغةٌ ليست خطأً دائماً: قد تكون المنتجاتُ لم تُنشأ بعد في
-    //    لوحة المتجر، أو لم تُعتمد. فالنصُّ يقول الحقيقةَ ولا يتّهم الشبكة.
+    // 🔴 وثلاثُ حالاتٍ لا واحدة، لأن نصيحةَ كلٍّ منها مختلفة:
+    //    • فشلُ الجلب (شبكةٌ · متجرُ Play يُحدَّث) ⇒ «أعِد المحاولة»، ولا
+    //      يُقال «اشترك من الموقع» فذاك إرسالُ تاجرٍ مشكلتُه دقيقةٌ إلى مسارٍ
+    //      آخرَ بناءً على خطأٍ كُتم.
+    //    • لا منتجاتَ مربوطة ⇒ «لم تُفتح بعد»، وهي حالتُنا نحن لا حالتُه.
+    //    • مربوطةٌ وصفرُ نتيجة ⇒ المتجرُ لم يعتمدها بعد.
     if (!products.length) {
+        const [title, hint] = loadErr === 'unavailable'
+            ? [t(isRTL, 'تعذّر جلبُ الباقات من المتجر.', 'Could not load plans from the store.'),
+               t(isRTL, 'تحقّق من الاتّصال وأعِد المحاولة — لا شيءَ خطأٌ في حسابك.',
+                        'Check your connection and try again — nothing is wrong with your account.')]
+            : loadErr === 'not_mapped'
+            ? [t(isRTL, 'الاشتراكُ داخل التطبيق لم يُفتح بعد.', 'In-app subscriptions are not open yet.'),
+               t(isRTL, 'يمكنك الاشتراك من موقع تاكي على المتصفّح الآن.',
+                        'You can subscribe from the TAKI website in a browser for now.')]
+            : [t(isRTL, 'لا توجد باقاتٌ متاحةٌ في المتجر الآن.',
+                        'No plans are available from the store right now.'),
+               t(isRTL, 'قد تكون قيد الاعتماد — أعِد المحاولة لاحقاً.',
+                        'They may still be under review — try again later.')];
         return <div className="py-10 px-4 text-center space-y-3">
-            <p className="font-bold text-[var(--text-primary)]">
-                {t(isRTL, 'لا توجد باقاتٌ متاحةٌ في المتجر الآن.',
-                          'No plans are available from the store right now.')}
-            </p>
-            <p className="text-sm text-[var(--text-secondary)]">
-                {t(isRTL, 'يمكنك الاشتراك من موقع تاكي على المتصفّح، أو إعادة المحاولة لاحقاً.',
-                          'You can subscribe from the TAKI website in a browser, or try again later.')}
-            </p>
-            <button onClick={restore} disabled={busy !== null}
-                className="px-5 py-2.5 rounded-full font-bold border-2 border-[var(--border-color)] text-[var(--text-primary)]">
-                {t(isRTL, '↻ استعادة المشتريات', '↻ Restore purchases')}
-            </button>
+            <p className="font-bold text-[var(--text-primary)]">{title}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{hint}</p>
+            <div className="flex flex-wrap gap-2 justify-center pt-1">
+                <button onClick={load} disabled={busy !== null}
+                    className="px-5 py-2.5 rounded-full font-bold bg-[var(--card-bg)] border-2 border-[var(--border-color)] text-[var(--text-primary)]">
+                    {t(isRTL, '↻ إعادة المحاولة', '↻ Try again')}
+                </button>
+                <button onClick={restore} disabled={busy !== null}
+                    className="px-5 py-2.5 rounded-full font-bold border-2 border-[var(--border-color)] text-[var(--text-primary)]">
+                    {t(isRTL, '↻ استعادة المشتريات', '↻ Restore purchases')}
+                </button>
+            </div>
         </div>;
     }
 
