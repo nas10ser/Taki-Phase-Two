@@ -507,8 +507,22 @@ const merchantFAQ_EN: QA[] = [
         a: <p>Yes. From the store settings, set your <strong>working hours</strong> per day (up to two shifts a day). Outside those hours the booking button locks automatically and buyers see the opening time; booking resumes the moment the shop opens — and your store benefits from the «Open now» browsing filter.</p>,
     },
     {
+        q: 'I subscribed inside the app — who takes the money, and how do I cancel?',
+        a: <p>App stores (the App Store and Google Play) require digital subscriptions bought
+            inside an app to use <strong>their own payment system</strong>. If you subscribed
+            inside the app, <strong>the money is collected by the store, not by the
+            platform</strong>, and never passes through our accounts. Renewal and cancellation
+            are managed from <strong>your store account</strong> — our subscription page cannot
+            stop a renewal the store created, and where to cancel is shown on the purchase screen
+            itself. Refund requests go to the store under its policy; we record your request and
+            assist you, but <strong>we cannot refund money we never received</strong> (see the
+            <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).
+            Subscribing from the TAKI website in a browser goes through our own payment gateway,
+            and our policy applies to it in full.</p>,
+    },
+    {
         q: 'Does my subscription auto-renew?',
-        a: <p>Yes. The paid subscription <strong>auto-renews at the same package and amount</strong> at the end of each period so your offers never stop appearing, and you receive a <strong>reminder several days before renewal</strong>. You can <strong>turn off auto-renewal at any moment</strong> from the subscription page — your subscription then remains effective until the end of the paid period and stops with no further charge, and your offers stop appearing until you renew yourself (re-activating them within the location cap of your package).</p>,
+        a: <p>Yes. The paid subscription <strong>auto-renews at the same package and amount</strong> at the end of each period so your offers never stop appearing, and you receive a <strong>reminder several days before renewal</strong>. You can <strong>turn off auto-renewal at any moment</strong> — from the subscription page if you paid through the platform's gateway, or from your app-store account (App Store / Google Play) if you bought inside the app, in which case the store collects the money, not the platform, and cancellation is handled by the store — your subscription then remains effective until the end of the paid period and stops with no further charge, and your offers stop appearing until you renew yourself (re-activating them within the location cap of your package).</p>,
     },
     {
         q: 'How do I receive bookings?',
@@ -564,7 +578,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'How do I close my merchant account?',
-        a: <p>From «Account settings» → «Delete account». Ongoing bookings must be fulfilled or cancelled first. Where a paid subscription is enabled, turn off <strong>auto-renewal</strong> first from the subscription page; the subscription remains effective until the end of the paid period with no partial refund (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p>From «Account settings» → «Delete account». Ongoing bookings must be fulfilled or cancelled first. Where a paid subscription is enabled, turn off <strong>auto-renewal</strong> first — from the subscription page, or from your app-store account if you bought inside the app; the subscription remains effective until the end of the paid period with no partial refund (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
 ];
 

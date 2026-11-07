@@ -139,12 +139,20 @@ const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> =
 
             {/* ── الإفصاحاتُ التي يُلزم بها البند ٣٫١٫٢ ──────────────────── */}
             <div className="rounded-2xl p-4 bg-[var(--bg-secondary)] text-xs leading-7 text-[var(--text-secondary)] space-y-2">
+                {/* 🪤 ولا يُكتب توقيتُ التجديد رقماً **من عندنا**: «قبل ٢٤ ساعة»
+                    شرطُ أبل المنشور، ولا تقوله قوقل بنفس الصيغة — فعرضُه
+                    لتاجرٍ على أندرويد يقول له موعداً لا يسري عليه. وقاعدةُ
+                    ناصر الثابتة: لا مدّةَ برقمٍ ما لم يَنُصّ عليها نظامٌ
+                    سعوديّ ويُسمّى. ⇒ يُنسب التوقيتُ إلى المتجر ويُحال إلى
+                    شاشته، وهي الموضعُ الذي يُعلنه فعلاً. */}
                 <p>
                     {t(isRTL,
-                       'الاشتراكُ شهريٌّ ويُجدَّد تلقائياً بنفس السعر حتى تُلغيه. '
-                     + 'يُحصَّل المبلغُ من حساب متجر التطبيقات، ويُجدَّد قبل انتهاء المدّة بأربعٍ وعشرين ساعة.',
-                       'This is a monthly subscription that renews automatically at the same price until you cancel. '
-                     + 'You are charged through your app store account, and renewal happens 24 hours before the period ends.')}
+                       'الاشتراكُ شهريٌّ ويُجدَّد تلقائياً بنفس السعر حتى تُلغيه، '
+                     + 'ويُحصَّل المبلغُ من حساب متجر التطبيقات لا من تاكي. '
+                     + 'وموعدُ التجديد والمهلةَ قبله يُحدّدهما المتجر ويُعلنهما على شاشة الشراء.',
+                       'This is a monthly subscription that renews automatically at the same price '
+                     + 'until you cancel, and you are charged through your app store account, not by TAKI. '
+                     + 'The renewal date and the notice before it are set by the store and shown on its purchase screen.')}
                 </p>
                 <p>
                     {/* 🪤 ونصُّ الإلغاء يطابق واقعَ المنصّة: مكانُه مختلفٌ فيهما،

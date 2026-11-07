@@ -131,11 +131,33 @@ console.log(`✅ نُسخت الملفات الثابتة (${copied} عنصرا�
 // 🪤 ولا يُثبت وجودُ القاعدة أن الملفَّ موجود: كلُّ عنوانٍ في الورقة يُتتبَّع
 //    إلى ملفٍّ على القرص — و`url()` إلى ملفٍّ غائب يعود ٤٠٤ بلا أي خطأ CSS.
 {
-    const css = fs.readdirSync(DIST).filter((f) => f.endsWith('.css'))
-        .map((f) => fs.readFileSync(path.join(DIST, f), 'utf8'))
-        .find((t) => t.includes('@font-face'));
+    // 🔴 الورقةُ تُختار من **ما تربطه الصفحةُ فعلاً** لا بأوّل ملفٍّ في
+    //    ترتيب المجلّد. و`Parcel` لا ينظّف `dist`، فبقايا بناءٍ سابقٍ تجتمع
+    //    مع الحالي — وقِيس: سبعُ أوراقٍ من بناءٍ قديم مع ورقةِ الحاليّ في
+    //    نفس المجلّد. فكان الحارسُ قد يُصادق **ورقةَ الأمس** ويمرّ أخضرَ
+    //    على بناءٍ اليوم بلا خطّ. (ونفسُ درس «dist يحتفظ بقطعٍ قديمة».)
+    //    والمرساةُ موجودةٌ في اليد أصلاً: نفسُ الكتلة تقرأ `index.html` بعد
+    //    أسطرٍ قليلةٍ لفحص التحميل المسبق.
+    const indexHtml = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+    const linked = [...indexHtml.matchAll(/<link[^>]*rel=["']?stylesheet["']?[^>]*href=["']?([^"'\s>]+\.css)/g)]
+        .map((m) => m[1].replace(/^\//, ''));
+    if (!linked.length) {
+        console.error('❌ لا ورقةَ أنماطٍ مربوطةً في dist/index.html — الصفحةُ بلا تنسيق.');
+        process.exit(1);
+    }
+    let css = null;
+    for (const rel of linked) {
+        const f = path.join(DIST, rel);
+        if (!fs.existsSync(f)) {
+            console.error(`❌ الصفحةُ تربط ${rel} ولا وجودَ له في dist.`);
+            process.exit(1);
+        }
+        const t = fs.readFileSync(f, 'utf8');
+        if (t.includes('@font-face')) { css = t; break; }
+    }
     if (!css) {
-        console.error('❌ لا قاعدة @font-face في أي ورقة أنماط — الخطُّ لم يُحزَم.');
+        console.error('❌ لا قاعدة @font-face في الورقة التي تربطها الصفحة'
+                    + ` (${linked.join(' · ')}) — الخطُّ لم يُحزَم في هذا البناء.`);
         process.exit(1);
     }
     const EXPECTED = 10;   // عربيّ + لاتينيّ × ٥ أوزان (٤٠٠ ٥٠٠ ٧٠٠ ٨٠٠ ٩٠٠)

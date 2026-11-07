@@ -99,8 +99,13 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
 //    واحدٍ يُنتج منصّةً تعمل وأخرى تخسر المالَ صامتةً.
 {
     const FILES = [
-        [path.join(ROOT, 'src/native/iap.ts'), /finalizePurchase\s*\(/,
-         'جسرُ الويب لا ينادي الإقرار بعد التحقّق'],
+        // 🔴 والنمطُ **نداءُ عضوٍ** (`.finalizePurchase(`) لا الاسمَ وحده:
+        //    `finalizePurchase(o: {…}): Promise<unknown>;` في تصريح الواجهة
+        //    يُطابق `/finalizePurchase\s*\(/` بذاته، فحذفُ **النداء الوحيد**
+        //    كان يمرّ أخضرَ (أُثبت بالتنفيذ). والتصريحُ بلا نقطةٍ سابقة
+        //    والنداءُ بها — فهي الفارقُ الوحيد الذي لا يُلتبس.
+        [path.join(ROOT, 'src/native/iap.ts'), /[.?]\s*finalizePurchase\s*\(/,
+         'جسرُ الويب لا ينادي الإقرار بعد التحقّق (تصريحُ الواجهة لا يكفي)'],
         [path.join(ROOT, 'android/app/src/main/java/net/takisa/app/TakiIapPlugin.java'),
          /acknowledgePurchase\s*\(/,
          'إضافةُ أندرويد لا تُقِرّ الشراء — قوقل تستردّ المالَ بعد ثلاثة أيّام'],
@@ -137,8 +142,16 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
         if (!/registerPlugin\s*\(\s*TakiIapPlugin\.class\s*\)/.test(t)) {
             fail('TakiIapPlugin غيرُ مسجَّلٍ في MainActivity — الـWebView لن يراه.');
         }
-        const r = t.indexOf('registerPlugin(TakiIapPlugin.class)');
-        const sup = t.indexOf('super.onCreate');
+        // 🔴 ويُستعمل **نفسُ النمط المتسامح** لتحديد الموضع. كان الوجودُ
+        //    يُفحص بـ`/registerPlugin\s*\(…\)/` والترتيبُ بـ`indexOf` على
+        //    حرفيّةٍ بلا فراغ — فمسافةٌ واحدة تجعل `indexOf` يردّ `-1`،
+        //    و`-1 > sup` خطأٌ دائماً ⇒ **فحصُ الترتيب يصير لا شيء، بصمت**.
+        //    وهو الفحصُ الوحيد الذي يحمي مسارَ أندرويد من الموت الكامل.
+        const mReg = /registerPlugin\s*\(\s*TakiIapPlugin\.class\s*\)/.exec(t);
+        const mSup = /super\s*\.\s*onCreate\s*\(/.exec(t);
+        const r = mReg ? mReg.index : -1;
+        const sup = mSup ? mSup.index : -1;
+        if (r < 0) fail('تعذّر تحديدُ موضع registerPlugin — تغيّرت البنيةُ فلا يُحكم عمياً.');
         if (sup >= 0 && r > sup) {
             fail('registerPlugin بعد super.onCreate — الجسرُ يُبنى داخل super،\n'
                + '   فتسجيلٌ بعده لا يراه الـWebView ويردّ «الإضافةُ غير موجودة».');

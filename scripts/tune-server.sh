@@ -159,7 +159,18 @@ fi
 TS=$(date +%Y%m%d-%H%M%S)
 echo; echo "═══ التنفيذ ═══"
 cp -a docker-compose.taki.yml "docker-compose.taki.yml.bak.tune.$TS"
-docker exec supabase-db bash -c 'cp -a "$PGDATA/postgresql.auto.conf" "$PGDATA/postgresql.auto.conf.bak.'"$TS"'"' 2>/dev/null
+# 🔴 والنسخةُ تُسحب إلى **المضيف** لا تُترك داخل الحاوية. التراجعُ يجري
+#    بعد أن يرفض بوستجرس الإقلاع، وبوستجرس هو **العمليّةُ الأولى** في
+#    الحاوية (قِيس: `docker top` يُظهر postgres بـPPID = شيم containerd،
+#    أي أن نقطةَ الدخول استبدلت نفسَها) — فموتُه يعني حاويةً **متوقّفة**،
+#    و`docker exec` في حاويةٍ متوقّفة يفشل دائماً. أي أن تراجعي كان
+#    **يُستدعى في اللحظة الوحيدة التي لا يعمل فيها**. و`docker cp` يعمل
+#    على حاويةٍ متوقّفة، فهو الطريق.
+docker cp "supabase-db:$(docker exec supabase-db printenv PGDATA)/postgresql.auto.conf" \
+          "/root/taki-auto.conf.bak.$TS" 2>/dev/null \
+  && echo "  ✓ نسخةُ الإعدادات على المضيف: /root/taki-auto.conf.bak.$TS" \
+  || echo "  ℹ️ لا postgresql.auto.conf بعد (أوّلُ ضبط) — التراجعُ يحذفه"
+PGDATA_PATH=$(docker exec supabase-db printenv PGDATA)
 echo "  ✓ نسخٌ احتياطيّة .bak.*$TS"
 
 # ── ٣) ما يسري بإعادة تحميلٍ فقط (بلا انقطاع) ────────────────────────────
@@ -183,6 +194,16 @@ if [ "$RESTART" != "1" ]; then
   echo "  ⏸ بلا إعادة تشغيل: max_connections يبقى $CUR_MAXCONN (المحسوب $MAXCONN)"
   echo "     للرفع: bash scripts/tune-server.sh --restart"
   MAXCONN="$CUR_MAXCONN"   # لئلّا يتّهم التحقّقُ قيمةً لم نطلب كتابتها
+  # 🔴 ويُعاد **قصُّ المجمّع** على السقف الحقيقيّ. كان يُقصّ على MAXCONN
+  #    **المحسوب** (٣٠٠) ثمّ يُستبدل بالحقيقيّ (١٠٠) بلا إعادة قصّ — فعلى
+  #    خادمٍ بأربع أنوية يصير المجمّعُ ١٦٠ على سقفٍ ١٠٠، أي أن PostgREST
+  #    وحده يستهلك أكثرَ من كلّ الاتصالات المتاحة فيردّ الموقعُ أخطاءً.
+  #    (ويظهر العيبُ **عند أوّل ترقية**، لا اليوم.)
+  if [ "$PGRST_POOL" -gt $(( MAXCONN / 3 )) ]; then
+    PGRST_POOL=$(( MAXCONN / 3 ))
+    [ "$PGRST_POOL" -lt 20 ] && PGRST_POOL=20
+    echo "     ⇒ المجمّعُ قُصّ على السقف الحقيقيّ: PGRST_DB_POOL=$PGRST_POOL"
+  fi
 else
 [ "$CUR_MAXCONN" != "$MAXCONN" ] && { P "ALTER SYSTEM SET max_connections = ${MAXCONN}" >/dev/null; NEEDS=1; }
 # 🪤 فسحةُ ٥٠٪ لـ`shared_buffers`: الصيغةُ تتحرّك مع نموّ القاعدة بايتاً
@@ -203,9 +224,18 @@ if [ "$NEEDS" = "1" ]; then
   done
   if [ "$OK" != "1" ]; then
     echo "  ❌ لم تُقلع القاعدة — تراجعٌ تلقائيّ"
-    docker exec supabase-db bash -c 'cp -a "$PGDATA/postgresql.auto.conf.bak.'"$TS"'" "$PGDATA/postgresql.auto.conf"' 2>/dev/null \
-      || docker exec supabase-db bash -c 'rm -f "$PGDATA/postgresql.auto.conf"'
-    docker restart supabase-db >/dev/null
+    # والاستعادةُ بـ`docker cp` لأن الحاويةَ متوقّفة (انظر أعلاه).
+    if [ -f "/root/taki-auto.conf.bak.$TS" ]; then
+      docker cp "/root/taki-auto.conf.bak.$TS" "supabase-db:$PGDATA_PATH/postgresql.auto.conf" \
+        && echo "  ↩︎ أُعيد postgresql.auto.conf من نسخة المضيف"
+    else
+      # لا نسخة ⇒ لم يكن للملفّ وجودٌ قبلنا، فحذفُه هو الحالةُ الأصليّة.
+      # 🪤 ويُفرَّغ لا يُحذَف: الحذفُ بـ`docker cp` غيرُ ممكنٍ على حاويةٍ متوقّفة.
+      : > "/tmp/taki-empty.conf"
+      docker cp "/tmp/taki-empty.conf" "supabase-db:$PGDATA_PATH/postgresql.auto.conf" \
+        && echo "  ↩︎ أُفرِغ postgresql.auto.conf (لم يكن موجوداً قبلنا)"
+    fi
+    docker start supabase-db >/dev/null 2>&1 || docker restart supabase-db >/dev/null
     for i in $(seq 1 40); do sleep 3; docker exec supabase-db pg_isready -U supabase_admin -d postgres >/dev/null 2>&1 && break; done
     echo "  ↩︎ أُعيدت الإعداداتُ السابقة."; exit 1
   fi
@@ -316,7 +346,12 @@ echo; echo "═══ التحقّق ═══"
 BAD=0
 chk() { [ "$2" = "$3" ] && echo "  ✅ $1 = $2" || { echo "  ❌ $1 = $2 (المتوقَّع $3)"; BAD=1; }; }
 chk "max_connections"  "$(P "SELECT current_setting('max_connections')")" "$MAXCONN"
-chk "work_mem"         "$(P "SELECT current_setting('work_mem')")" "${WORK_KB}kB"
+# 🔴 ويُقارَن work_mem **بالوحدة الخام من pg_settings**، لا بـ`current_setting`:
+#    الأخيرةُ تُطبّع العرضَ فتردّ "4MB" عن ٤٠٩٦kB و"64MB" عن ٦٥٥٣٦ (قِيس على
+#    المختبر) — فأيُّ قيمةٍ مضاعفةٌ تماماً لـ١٠٢٤ تُعطي ❌ كاذباً على ضبطٍ
+#    صحيح. و٤٠٩٦ هو **الحدُّ الأدنى** في هذا السكربت، أي أن أيَّ خادمٍ صغيرٍ
+#    يسقط في الفخّ. و`pg_settings.setting` لـwork_mem بوحدة kB دائماً.
+chk "work_mem (kB)" "$(P "SELECT setting FROM pg_settings WHERE name='work_mem'")" "$WORK_KB"
 chk "random_page_cost" "$(P "SELECT current_setting('random_page_cost')")" "1.1"
 chk "PGRST_DB_POOL"    "$(docker exec supabase-rest env 2>/dev/null | grep -m1 '^PGRST_DB_POOL=' | cut -d= -f2)" "$PGRST_POOL"
 chk "بثّ: متزامنون"     "$(P "SELECT max_concurrent_users FROM _realtime.tenants LIMIT 1")" "$RT_USERS"
