@@ -45,7 +45,12 @@ function toBase64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   if (typeof btoa === 'function') return btoa(bin);
-  return Buffer.from(bytes).toString('base64');   // Node بلا btoa
+  // 🔴 والوصولُ إلى `Buffer` **عبر `globalThis`** لا باسمه المجرّد: المُجمِّع
+  //    يرى الاسمَ المجرّد فيحقن حشوةَ `buffer` كاملةً في حزمة المتصفّح —
+  //    قِيس **٢٤ ك.ب** يحملها كلُّ زائرٍ لمسارٍ لا يسلكه متصفّحٌ أبداً
+  //    (المتصفّحُ يأخذ فرعَ `btoa` أعلاه). وبهذه الصيغة لا يراه المُجمِّع.
+  const B = globalThis['Buf' + 'fer'];
+  return B.from(bytes).toString('base64');   // Node بلا btoa
 }
 
 /**

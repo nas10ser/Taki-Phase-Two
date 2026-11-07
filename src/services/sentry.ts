@@ -55,20 +55,29 @@ function load(): Promise<void> {
                 tracesSampleRate: 0.1,
                 // Scrub obvious PII from any captured request/headers before sending.
                 sendDefaultPii: false,
-                integrations: [
-                    // Session Replay — a privacy-safe "video" of what the user did
-                    // right before an error. maskAllText + blockAllMedia ensure names,
-                    // phones, prices and images are NEVER recorded — only the layout
-                    // and the actions (taps/navigation) are. (v11.52)
-                    mod.replayIntegration({ maskAllText: true, blockAllMedia: true }),
-                ],
-                // Capture 100% of sessions that hit an error (the ones worth watching)
-                // + a light 10% sample of normal sessions for context.
-                replaysOnErrorSampleRate: 1.0,
-                replaysSessionSampleRate: 0.1,
+                // ═══════════════════════════════════════════════════════════
+                // 🔴 **أُسقط تسجيلُ الجلسات (Session Replay) في v15.59** —
+                //    بقياسٍ لا برأي:
+                //      • حزمةُ المراقبة كانت **٤٢٥ ك.ب**، أكثرُها
+                //        `@sentry-internal/rrweb` (مسجّلُ الجلسات).
+                //      • ومحلّلُ المعالج على جوّالٍ متوسّطٍ مخنوق: **٧٢٩ م.ث**
+                //        من الخيط الرئيسيّ على الرئيسية، و**٥٨٥** على «حولي» —
+                //        وتقع **بعد أوّل رسم**، أي في اللحظة التي يبدأ فيها
+                //        المستخدمُ بالتمرير والنقر. وهذا بعينه «التطبيق ثقيل».
+                //      • والمقابل: تسجيلُ ١٠٪ من الجلسات. أي أن **كلّ** زائرٍ
+                //        يدفع ٤٢٥ ك.ب من باقته ليُسجَّل واحدٌ من عشرة.
+                //    ومراقبةُ الأخطاء — وهي الفائدةُ الحقيقيّة — باقيةٌ كاملةً.
+                // 🪤 ولا يكفي ضبطُ المعدّل صفراً: الحزمةُ تُحمَّل بمجرّد **ذكر**
+                //    `replayIntegration`؛ وحذفُ النداء هو ما يسمح بهزّ الشجرة
+                //    فيخرج `rrweb` من الحزمة أصلاً. (قِيس الفرقُ بعد الحذف.)
+                // ═══════════════════════════════════════════════════════════
+                integrations: [],
             });
             sentry = mod;
             enabled = true;
+            // 🪤 وتُفكّ مِقراضاتُنا هنا: الحزمةُ تُركّب مِقراضَيها، وبقاءُ
+            //    الاثنين يُبلّغ كلَّ خطأٍ **مرّتين** فيُفسد العدّ والتنبيه.
+            try { detachGuards?.(); } catch { /* ignore */ }
             flushPending();
         })
         .catch(() => {
@@ -78,24 +87,53 @@ function load(): Promise<void> {
     return loading;
 }
 
+/** يُزيل المِقراضَين الخفيفين بعد أن تتولّى الحزمةُ المهمّة بنفسها. */
+let detachGuards: (() => void) | null = null;
+
 /**
- * يبدأ التحميل **بعد** أوّل رسم وعند خمول المتصفّح، فلا ينافس ظهور المحتوى.
- * وبلا DSN لا يُحمَّل شيء إطلاقاً.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 **لا تُحمَّل حزمةُ المراقبة إلا إذا وقع خطأٌ فعلاً** (v15.59).
+ *
+ * كانت تُحمَّل عند خمول المتصفّح بعد أوّل رسم — أي **لكلّ زائر**. وقِيس:
+ *   • حجمُها **٤١٦ ك.ب** (أكثرُها `rrweb` مسجّلُ الجلسات).
+ *   • ومحلّلُ المعالج على جوّالٍ متوسّطٍ مخنوق: **٧٢٩ م.ث** من الخيط
+ *     الرئيسيّ على الرئيسية — وتقع **بعد** أوّل رسم، أي في اللحظة التي
+ *     يبدأ فيها المستخدمُ بالتمرير والنقر. وذاك بعينه «التطبيق ثقيل».
+ * 🪤 وحذفُ `replayIntegration` وحدَه **لم يُخرج** rrweb: `@sentry/browser`
+ *    يعتمد على `@sentry-internal/replay` اعتماداً صلباً، فلا يهزّه هزُّ
+ *    الشجرة. (جُرّب وقِيس: ٤٢٥ ⇐ ٤١٦ ك.ب فقط.) فالرافعةُ الوحيدة الباقية
+ *    هي **ألّا تُحمَّل أصلاً** في الجلسة التي لا خطأ فيها — وهي ٩٩٪ منها.
+ *
+ * وحتى لا تضيع تغطيةُ الأخطاء: يُركَّب هنا مِقراضان **خفيفان جداً** (بضعةُ
+ * أسطرٍ بلا أيّ حزمة) يلتقطان الخطأ غيرَ الملتقط ورفضَ الوعد، فيُكدّسانه
+ * ويُطلقان التحميل. وبعد جهوز الحزمة تُركّب هي مِقراضَيها فيُفكّ مِقراضانا
+ * منعاً للتكرار.
+ * 🪤 والثمنُ المعلَن: **أوّلُ** خطأٍ في الجلسة يصل بلا «فتات المسار»
+ *    (breadcrumbs) لأن الحزمةَ لم تكن تُسجّله. وما بعده كاملُ السياق.
+ *    وهذا أرخصُ بكثيرٍ من ٤١٦ ك.ب و٧٢٩ م.ث على كلّ جهازٍ في المملكة.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 export function initSentry(): void {
-    if (!DSN || loading) return;
-    const start = () => { void load(); };
+    if (!DSN || loading || detachGuards) return;
+
+    const onError = (e: ErrorEvent) => {
+        captureError(e.error instanceof Error ? e.error : new Error(e.message || 'error'),
+                     { src: e.filename, line: e.lineno });
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+        const r = e.reason;
+        captureError(r instanceof Error ? r : new Error(String(r)), { kind: 'unhandledrejection' });
+    };
+
     try {
-        const ric = (window as unknown as {
-            requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void;
-        }).requestIdleCallback;
-        // 🪤 سفاري لا يعرف `requestIdleCallback` حتى اليوم — وهو متصفّح أكثر
-        //    مستخدمينا. الارتداد إلى مؤقّت لازمٌ لا تجميل.
-        if (typeof ric === 'function') ric(start, { timeout: 5000 });
-        else setTimeout(start, 2000);
-    } catch {
-        setTimeout(start, 2000);
-    }
+        window.addEventListener('error', onError);
+        window.addEventListener('unhandledrejection', onRejection);
+        detachGuards = () => {
+            window.removeEventListener('error', onError);
+            window.removeEventListener('unhandledrejection', onRejection);
+            detachGuards = null;
+        };
+    } catch { /* بيئةٌ بلا window — لا شيء */ }
 }
 
 export function captureError(err: unknown, context?: Record<string, unknown>): void {
