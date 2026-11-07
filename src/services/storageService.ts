@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { supabase } from './supabaseClient';
 import { logger } from '../utils/logger';
-import { compressImage, THUMB } from '../utils/imageCompression';
+import { compressImage, THUMB, HERO } from '../utils/imageCompression';
 import { markThumbed } from '../utils/thumb';
 
 /**
@@ -137,6 +137,10 @@ export const storageService = {
             }
             const wantThumb = opts?.thumb !== false;
             const thumb = wantThumb ? await compressImage(rawFile, THUMB) : null;
+            // توأمُ الهيرو — بنفس شرط المصغّرة: ما لا مصغّرةَ له لا هيروَ له
+            // (بانرٌ أو صورةُ محادثة)، وما له كلتاهما يُنتجهما معاً فلا تنشأ
+            // صورةٌ موسومةٌ `t=1` بلا `_h.jpg` بجوارها.
+            const hero = wantThumb ? await compressImage(rawFile, HERO) : null;
             // v14.57 — 🔴 كانت الصور تُرفع في **جذر المستودع** بلا مجلّد، وسياسة
             // الكتابة لا تفحص إلا امتداد الاسم: `bucket_id='deals' AND name LIKE
             // '%.jpg'`. أي أن **أي مستخدم موثَّق** — ولو مشترياً لا متجر له —
@@ -173,6 +177,14 @@ export const storageService = {
 
                 // المصغّرة: رفعها لا يُعطّل المنتج أبداً — لو فشلت يبقى الرابط
                 // بلا علامة `?t=1` فتعرض الواجهةُ الأصلَ مباشرة (بلا طلب فاشل).
+                if (hero) {
+                    // 🪤 ولا يُنتظَر: فشلُ الهيرو لا يمنع العرضَ من الظهور —
+                    //    `heroUrl` يرتدّ إلى المحوّل ثمّ إلى الأصل. والانتظارُ
+                    //    له كان سيُبطئ كلَّ رفعٍ لأجل ملفٍّ له بديلان.
+                    void supabase.storage.from('deals')
+                        .upload(`${stem}_h.jpg`, hero, { cacheControl: '31536000', upsert: false })
+                        .then(({ error }) => { if (error) logger.warn('hero upload failed:', error.message); });
+                }
                 if (thumb) {
                     thumbUploaded = supabase.storage.from('deals')
                         .upload(`${stem}_t.jpg`, thumb, { cacheControl: '31536000', upsert: false })

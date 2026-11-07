@@ -110,11 +110,37 @@ export const sizedUrl = (url: string | null | undefined, width: number, quality 
         + `${sep}width=${width}&quality=${quality}`;
 };
 
+/**
+ * عنوانُ صورة الهيرو: **الملفُّ الثابتُ أوّلاً** (`_h.jpg`) ثمّ المحوّل.
+ *
+ * 🔴 ولماذا الترتيبُ هكذا: قِيس أن المحوّلَ لا يخزّن شيئاً ويكلّف ٤١٢ م.ث
+ *    معالجاً لكلّ طلب — سقفُ ~٢٫٤ مشاهدةٍ في الثانية على نواةٍ واحدة. أمّا
+ *    `_h.jpg` فملفٌّ يُخدَم بصفر معالجة وبترويسة سنة.
+ * 🪤 والعلامةُ `t=1` تدلّ على التوأمين معاً: الرفعُ يُنتجهما في نفس النداء
+ *    (v15.71)، والقديمُ مُلئ بـ`scripts/backfill-hero.js`. فلا صورةٌ موسومةٌ
+ *    بلا `_h.jpg`. وإن سقط أحدُها فـ`imgFallback` يرتدّ إلى الأصل.
+ */
+export const heroUrl = (url?: string | null): string => {
+    const u = String(url || '');
+    if (!u) return '';
+    const m = u.match(SUPABASE_DEAL_IMAGE);
+    if (!m) return u;
+    if (/_[th]$/i.test(m[1])) return u;
+    if (hasThumb(u)) {
+        return u.replace(SUPABASE_DEAL_IMAGE,
+            `/storage/v1/object/public/deals/${m[1]}_h.jpg${m[3] || ''}`);
+    }
+    return sizedUrl(u, 1080);   // بلا توأمٍ مؤكَّد: محوّلٌ آنيّ (شبكةُ أمان)
+};
+
 /** مقاساتُ الهيرو — وسمٌ واحدٌ يختار منه المتصفّح بحسب الشاشة والكثافة. */
 export const HERO_WIDTHS = [800, 1080, 1600] as const;
 export const heroSrcSet = (url: string | null | undefined): string => {
     const u = String(url || '');
     if (!u || !SUPABASE_DEAL_IMAGE.test(u)) return '';
+    // 🪤 ولا srcset للملفّ الثابت: مقاسٌ واحدٌ مرفوعٌ (١٠٨٠) يكفي كلَّ جوّال،
+    //    وطلبُ مقاساتٍ أخرى يُعيدنا إلى المحوّل الذي هربنا منه.
+    if (hasThumb(u)) return '';
     return HERO_WIDTHS.map((w) => `${sizedUrl(u, w)} ${w}w`).join(', ');
 };
 /** الهيرو يشغل عرضَ الشاشة كاملاً. */

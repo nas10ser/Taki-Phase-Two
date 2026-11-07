@@ -18,7 +18,7 @@ import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar, waLink } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
-import { thumbUrl, imgFallback, hideBrokenImg, sizedUrl, heroSrcSet, HERO_SIZES } from '../utils/thumb';
+import { thumbUrl, imgFallback, hideBrokenImg, heroUrl, heroSrcSet, HERO_SIZES } from '../utils/thumb';
 import ImageZoomViewer from '../components/ImageZoomViewer';
 import { holdLabel } from '../utils/bookingHold';
 import { useStoreHold } from '../hooks/useStoreHold';
@@ -1768,7 +1768,7 @@ const DealDetails: React.FC = () => {
             {/* Image Gallery */}
             <div className="animate-fade-in" style={{ position: 'relative' }}>
                 {/* مقاسٌ لا الأصل (٢٨٠١ ⇐ ٥٧ ك.ب) — الشرحُ في utils/thumb.ts:sizedUrl */}
-                <img src={sizedUrl(images[currentImage], 1080)}
+                <img src={heroUrl(images[currentImage])}
                     srcSet={heroSrcSet(images[currentImage]) || undefined}
                     sizes={heroSrcSet(images[currentImage]) ? HERO_SIZES : undefined}
                     loading="eager" decoding="async" alt={deal.itemName}
