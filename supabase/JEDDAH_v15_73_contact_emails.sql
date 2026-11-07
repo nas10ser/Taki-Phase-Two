@@ -65,8 +65,9 @@ DO $$
 DECLARE v_n integer; v_v jsonb;
 BEGIN
   SET LOCAL ROLE anon;
-  SELECT count(*), max(value) INTO v_n, v_v
-    FROM public.platform_settings WHERE key='contact_emails';
+  -- 🪤 ولا `max(jsonb)`: لا تجميعةَ ترتيبٍ لهذا النوع في بوستجرس. يُقرأ الصفّ.
+  SELECT count(*) INTO v_n FROM public.platform_settings WHERE key='contact_emails';
+  SELECT value INTO v_v FROM public.platform_settings WHERE key='contact_emails';
   RESET ROLE;
   IF v_n <> 1 THEN
     RAISE EXCEPTION 'الزائرُ يقرأ % صفّاً (المتوقَّع ١) — سترتدّ الصفحةُ إلى الفراغ بلا خطأ', v_n;
