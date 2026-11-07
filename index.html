@@ -15,9 +15,11 @@
   <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
   <meta name="HandheldFriendly" content="true">
   <meta name="MobileOptimized" content="320">
-  <!-- Telegram Mini App SDK — provides window.Telegram.WebApp for in-Telegram
-       auto-login. Loads before the app module so initData is ready on startup. -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Telegram Mini App SDK is NOT loaded here (v15.66). It was a blocking
+       third-party <script> paid for by every visitor: measured 54 ms of main
+       thread on /deals and 302 ms on /nearby. It is now fetched on demand by
+       `services/telegramMiniApp.ts`, only when the URL / sessionStorage say we
+       are actually inside Telegram. -->
   <title>TAKI — حجز التخفيضات</title>
   <meta name="description" content="TAKI - منصة حجوزات التخفيضات الذكية في المملكة العربية السعودية. احجز أفضل العروض في المولات والأسواق قبل الجميع.">
   <meta name="keywords" content="تخفيضات السعودية، عروض اليوم، حجز عروض، خصومات المولات، تخفيضات الرياض، تخفيضات جدة، تخفيضات الدمام، عروض المطاعم، عروض المقاهي، تنزيلات، اوفرات، صفقات اليوم، كوبونات خصم، تخفيضات نهاية الموسم، عروض الجمعة البيضاء، تطبيق تخفيضات، منصة عروض سعودية، حجز خصم، تاكي، Saudi deals, discounts Saudi Arabia, book deals, Riyadh offers, Jeddah discounts, daily deals KSA, mall offers, restaurant deals, coupon app Saudi, TAKI app">
@@ -62,12 +64,16 @@
        بدل التوفير المقصود. يجب أن يظلّ مطابقاً لـSUPABASE_URL. -->
   <link rel="preconnect" href="https://api.takisa.net" crossorigin>
   <link rel="dns-prefetch" href="https://api.takisa.net">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!-- لا وصلَ مسبقاً إلى قوقل: الخطُّ مستضافٌ ذاتياً (v15.66). ويُحمَّل
+       المقطعُ العربيُّ للوزنين اللذين يرسمهما أوّلُ إطار — ٤٠٠ للنصّ و٩٠٠
+       لعنوان شاشة البدء — فيصل مع الورقة لا بعدها.
+       🪤 ويُحمَّل العربيُّ وحده: تحميلُ اللاتينيّ مسبقاً يُنزّل ١٠ ك.ب
+          لا يحتاجها زائرٌ عربيّ، ويزاحم حزمةَ جافاسكربت على النطاق. -->
+  <link rel="preload" href="/fonts/tajawal-arabic-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/tajawal-arabic-900.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="/logo192.png">
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
     /* ═══════════════════════════════════════════════════════════════════════
        🔴 ومضةٌ بيضاء لكلّ مستخدمٍ في الوضع الداكن — قِيس على الموقع الحيّ:

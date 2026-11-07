@@ -24,6 +24,64 @@ function getWebApp(): TgWebApp | null {
     try { return (window as any)?.Telegram?.WebApp || null; } catch { return null; }
 }
 
+/**
+ * Is this document *plausibly* running inside Telegram — decided WITHOUT the
+ * SDK, synchronously, from the URL and sessionStorage alone?
+ *
+ * 🔴 Why this exists (v15.66): the SDK used to be a BLOCKING `<script>` in
+ *    `<head>`, fetched from telegram.org by **every visitor on every page**.
+ *    Measured cost on a throttled mid-range phone: 54 ms of main thread on
+ *    /deals and **302 ms on /nearby** (its `onWindowResize` alone was 270 ms),
+ *    plus a third-party DNS + TLS + download before the app could render —
+ *    all of it paid by the >99% of visitors who never open TAKI in Telegram.
+ *
+ * 🪤 Telegram hands the Mini App its payload in the URL **fragment**
+ *    (`#tgWebAppData=…&tgWebAppVersion=…`). The SDK then consumes the hash and
+ *    mirrors it into `sessionStorage.__telegram__initParams`, so after the
+ *    first navigation the hash is gone and only the storage key remains —
+ *    checking the hash alone would break auto-login on any in-app reload.
+ *    The UA check is a last resort (Android's Telegram WebView says so; iOS
+ *    does not), and it only ever causes the SDK to load, never a login.
+ */
+export function looksLikeTelegram(): boolean {
+    try {
+        if ((window as any)?.Telegram?.WebApp) return true;
+        const u = window.location.hash + window.location.search;
+        if (u.includes('tgWebApp')) return true;
+        if (sessionStorage.getItem('__telegram__initParams')) return true;
+        return /Telegram/i.test(navigator.userAgent || '');
+    } catch { return false; }
+}
+
+const TG_SDK = 'https://telegram.org/js/telegram-web-app.js';
+let sdkPromise: Promise<boolean> | null = null;
+
+/**
+ * Load the Telegram SDK on demand. Idempotent, never throws, and resolves
+ * `false` on any failure so startup is never blocked.
+ *
+ * 🪤 A `<script>` that 404s or is blocked fires `onerror`, but one that is
+ *    merely *slow* fires nothing — so the race in `index.tsx` keeps its own
+ *    safety timeout; this timeout only stops the promise leaking forever.
+ */
+export function ensureTelegramSdk(): Promise<boolean> {
+    if (sdkPromise) return sdkPromise;
+    sdkPromise = new Promise<boolean>((resolve) => {
+        try {
+            if ((window as any)?.Telegram?.WebApp) { resolve(true); return; }
+            const el = document.createElement('script');
+            el.src = TG_SDK;
+            el.async = true;
+            const done = (ok: boolean) => resolve(ok && !!(window as any)?.Telegram?.WebApp);
+            el.onload = () => done(true);
+            el.onerror = () => done(false);
+            setTimeout(() => done(false), 3500);
+            document.head.appendChild(el);
+        } catch { resolve(false); }
+    });
+    return sdkPromise;
+}
+
 /** True only when running inside Telegram with a real signed initData payload. */
 export function isTelegramMiniApp(): boolean {
     const wa = getWebApp();
@@ -37,6 +95,7 @@ let attempted = false;
  * Never throws — telemetry/login must never block app startup.
  */
 export async function initTelegramMiniApp(): Promise<boolean> {
+    await ensureTelegramSdk();
     const wa = getWebApp();
     if (!wa) return false;
     // Tell Telegram we're ready + use the full height sheet.
@@ -87,6 +146,7 @@ export function getInitData(): string {
  * authenticated afterwards.
  */
 export async function loginViaTelegram(): Promise<boolean> {
+    await ensureTelegramSdk();
     const initData = getInitData();
     if (!initData) return false;
     try {
@@ -111,6 +171,7 @@ export async function loginViaTelegram(): Promise<boolean> {
  *   'failed'            — transient/server error
  */
 export async function linkTelegramToCurrentUser(): Promise<'linked' | 'not_authenticated' | 'not_telegram' | 'failed'> {
+    await ensureTelegramSdk();
     const initData = getInitData();
     if (!initData) return 'not_telegram';
     try {
@@ -133,6 +194,8 @@ export async function linkTelegramToCurrentUser(): Promise<'linked' | 'not_authe
  * link button.
  */
 export async function ensureTelegramLinked(): Promise<'linked' | 'not_authenticated' | 'failed' | 'not_telegram'> {
+    if (!looksLikeTelegram()) return 'not_telegram';
+    await ensureTelegramSdk();
     if (!isTelegramMiniApp()) return 'not_telegram';
     const r = await linkTelegramToCurrentUser();
     if (r === 'linked') return 'linked';

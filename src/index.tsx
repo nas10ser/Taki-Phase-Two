@@ -4,7 +4,7 @@ import { AppProvider } from './context/AppContext';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initSentry } from './services/sentry';
-import { isTelegramMiniApp, initTelegramMiniApp } from './services/telegramMiniApp';
+import { looksLikeTelegram, ensureTelegramSdk, initTelegramMiniApp } from './services/telegramMiniApp';
 
 // Error monitoring — no-op until SENTRY_DSN is configured (see services/sentry.ts).
 initSentry();
@@ -61,9 +61,14 @@ const wantsTgLink = (() => {
 // the auth redirector sends them to /profile?tglink=1 to finish linking,
 // instead of the normal home/dashboard landing.
 if (wantsTgLink) { try { sessionStorage.setItem('taki_tglink', '1'); } catch { /* ignore */ } }
-if (isTelegramMiniApp() && !wantsTgLink) {
+// 🪤 والانتظارُ يقع في **الفرعين** داخل تيليجرام، لا في فرع الدخول وحده:
+//    مسارُ الربط (`?tglink=1`) يُصيّر فوراً ثمّ تقرأ صفحةُ «حسابي»
+//    `isTelegramMiniApp()` **متزامنةً** — فلو لم يُنتظر السكربتُ هنا لقرأت
+//    `undefined` على جهازٍ هو داخل تيليجرام فعلاً، فيصمت زرُّ الربط بلا خطأ.
+if (looksLikeTelegram()) {
     const safety = new Promise((res) => setTimeout(res, 4000));
-    Promise.race([initTelegramMiniApp(), safety]).finally(renderApp);
+    const boot = ensureTelegramSdk().then(() => (wantsTgLink ? null : initTelegramMiniApp()));
+    Promise.race([boot, safety]).finally(renderApp);
 } else {
     renderApp();
 }

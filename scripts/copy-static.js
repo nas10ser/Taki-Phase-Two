@@ -53,6 +53,11 @@ const REQUIRED_FILES = ['robots.txt', 'og-image.png', 'logo192.png', 'logo512.pn
 // البناءَ إن بقي المَوضعُ `__SHA256_FINGERPRINT__` — فبصمةٌ خاطئة تُنتج
 // تطبيقاً يعرض **شريطَ عنوان متصفّح** بلا أي رسالة خطأ.
 const OPTIONAL_DIRS = ['models', 'screenshots', '.well-known'];
+// 🪤 و`fonts/` **لا يُنسخ هنا**: Parcel يرى `url(/fonts/…woff2)` في الورقة
+//    فيحزمها بنفسه ويبصمها (`tajawal-arabic-400.1be156fe.woff2`) ويُعيد كتابة
+//    حتى وسومَ `preload`. فنسخُها هنا ينتج **نسخةً ثانيةً بـ٩٣ ك.ب لا
+//    يطلبها أحد** — قِيس: ١٠ في الجذر مبصومةً و١٠ في `fonts/` ميتة.
+//    والحارسُ مكانُه المُخرَج لا المصدر (أدناه).
 
 const missing = [];
 let copied = 0;
@@ -112,3 +117,63 @@ for (const d of OPTIONAL_DIRS) {
 }
 
 console.log(`✅ نُسخت الملفات الثابتة (${copied} عنصراً) — وفشلُ أي خطوة قبل هذه يُفشل البناء الآن.`);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v15.66 — حارسُ الخطّ المستضاف ذاتياً، **على المُخرَج لا على المصدر**
+// ───────────────────────────────────────────────────────────────────────────
+// الخطُّ صار من عندنا، فغيابُه يعني موقعاً وتطبيقاً يعرضان العربيةَ بخطّ
+// النظام — عيبٌ يراه كلُّ مستخدم ولا يظهر في أيّ سجلّ ولا يُفشل أي بناء.
+//
+// 🪤 ويُقاس من `dist` لا من `fonts/`: المصدرُ الكاملُ لا يُثبت حزمةً كاملة
+//    (Parcel قد يُسقط قاعدةً أو لا يحزم ملفّاً، وقد غيّر الأسماءَ فعلاً).
+// 🪤 والعددُ شرطٌ لا تزيين: تسعُ قواعدَ بدل عشرٍ تُسقط وزناً بصمت فيُرسم
+//    العنوانُ بوزنٍ آخر ولا يشكو أحد.
+// 🪤 ولا يُثبت وجودُ القاعدة أن الملفَّ موجود: كلُّ عنوانٍ في الورقة يُتتبَّع
+//    إلى ملفٍّ على القرص — و`url()` إلى ملفٍّ غائب يعود ٤٠٤ بلا أي خطأ CSS.
+{
+    const css = fs.readdirSync(DIST).filter((f) => f.endsWith('.css'))
+        .map((f) => fs.readFileSync(path.join(DIST, f), 'utf8'))
+        .find((t) => t.includes('@font-face'));
+    if (!css) {
+        console.error('❌ لا قاعدة @font-face في أي ورقة أنماط — الخطُّ لم يُحزَم.');
+        process.exit(1);
+    }
+    const EXPECTED = 10;   // عربيّ + لاتينيّ × ٥ أوزان (٤٠٠ ٥٠٠ ٧٠٠ ٨٠٠ ٩٠٠)
+    const rules = (css.match(/@font-face/g) || []).length;
+    if (rules !== EXPECTED) {
+        console.error(`❌ قواعدُ @font-face ${rules} والمتوقَّع ${EXPECTED} — سقط وزنٌ أو مقطع.`);
+        process.exit(1);
+    }
+    const urls = [...css.matchAll(/url\(["']?([^"')]*\.woff2)["']?\)/g)].map((m) => m[1]);
+    if (urls.length !== EXPECTED) {
+        console.error(`❌ عناوينُ woff2 في الورقة ${urls.length} والمتوقَّع ${EXPECTED}.`);
+        process.exit(1);
+    }
+    for (const u of urls) {
+        const f = path.join(DIST, u.replace(/^\//, ''));
+        if (!fs.existsSync(f)) {
+            console.error(`❌ الورقةُ تطلب ${u} ولا وجودَ له في dist — سيعود ٤٠٤ بلا أي خطأ ظاهر.`);
+            process.exit(1);
+        }
+        if (fs.statSync(f).size < 1024) {
+            console.error(`❌ ${u} حجمُه ${fs.statSync(f).size} بايت — ملفٌّ معطوب.`);
+            process.exit(1);
+        }
+    }
+    // والتحميلُ المسبق يجب أن يشير إلى ملفٍّ **تطلبه الورقةُ فعلاً**، وإلّا
+    // نُزّل خطٌّ مرّتين بعنوانين (أسوأُ من لا تحميلٍ مسبق).
+    const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+    const pre = [...html.matchAll(/<link[^>]*rel=["']?preload["']?[^>]*href=["']?([^"'\s>]+\.woff2)/g)]
+        .map((m) => m[1]);
+    if (pre.length < 2) {
+        console.error(`❌ وسومُ preload للخطّ ${pre.length} والمتوقَّع ٢ على الأقلّ.`);
+        process.exit(1);
+    }
+    for (const u of pre) {
+        if (!urls.includes(u) && !urls.includes(u.replace(/^\//, ''))) {
+            console.error(`❌ preload يشير إلى ${u} ولا تطلبه الورقة — تنزيلٌ مهدور.`);
+            process.exit(1);
+        }
+    }
+    console.log(`✅ الخطُّ المستضاف: ${rules} قاعدة · ${urls.length} ملفّاً موجوداً · ${pre.length} تحميلاً مسبقاً مطابقاً`);
+}
