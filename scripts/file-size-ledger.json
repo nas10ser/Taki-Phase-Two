@@ -1,7 +1,7 @@
 {
   "src/components/seller/DeliveryCard.tsx": 1734,
   "src/context/AppContext.tsx": 3948,
-  "src/pages/DealDetails.tsx": 3827,
+  "src/pages/DealDetails.tsx": 3504,
   "src/pages/Register.tsx": 1706,
   "src/pages/SellerDashboard.tsx": 5593,
   "src/pages/admin/AdminAnalyst.tsx": 1591,
