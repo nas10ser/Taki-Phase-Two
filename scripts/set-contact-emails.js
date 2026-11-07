@@ -80,9 +80,13 @@ if (!args.includes('--confirmed')) {
     process.exit(2);
 }
 
+// 🪤 ونصُّ SQL يُحاط بعلامةٍ **مفردة**: `JSON.stringify` يُنتج مزدوجةً وهي
+//    **معرِّفٌ** في بوستجرس لا نصّاً، فينفجر `column "info@…" does not exist`.
+//    وقع فعلاً. والصيغةُ الآمنة: مفردةٌ مع تضعيف ما فيها.
+const lit = (v) => `'${String(v).replace(/'/g, "''")}'`;
 sql(`UPDATE public.platform_settings
-        SET value = jsonb_build_object('info', ${JSON.stringify(info)},
-                                       'complain', ${JSON.stringify(complain)})
+        SET value = jsonb_build_object('info', ${lit(info)},
+                                       'complain', ${lit(complain)})
       WHERE key='contact_emails'`);
 const back = sql("SELECT (value->>'info')||'|'||(value->>'complain') FROM public.platform_settings WHERE key='contact_emails'");
 if (back !== `${info}|${complain}`) {
