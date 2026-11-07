@@ -69,12 +69,41 @@
   <link rel="icon" type="image/png" href="/logo192.png">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
-    body {
-      margin: 0;
-      font-family: 'Tajawal', sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
+    /* ═══════════════════════════════════════════════════════════════════════
+       🔴 ومضةٌ بيضاء لكلّ مستخدمٍ في الوضع الداكن — قِيس على الموقع الحيّ:
+          الصفحةُ تُرسم بخلفيّة `rgb(26,17,20)` والتنسيقُ المضمّن هنا كان
+          يقول `#f8fafc`. فكلُّ من يفتح التطبيقَ على جهازٍ داكن يرى **وميضاً
+          أبيض** ثمّ يُظلم. وهو أوّلُ ما يُحسّ به المستخدمُ وأسوأُ انطباعٍ أوّل.
+       ═══════════════════════════════════════════════════════════════════════ */
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
+           background-color: #f1f5f9; color: #1e293b; }
+    @media (prefers-color-scheme: dark) {
+      body { background-color: #0f172a; color: #e2e8f0; }
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       قشرةُ الإقلاع — تُرسم **فوراً** قبل أيّ جافاسكربت.
+       🔴 لماذا: الصفحةُ كانت `<div id="root"></div>` فارغاً، فلا شيءَ
+          «ذو محتوى» يُرسم حتى تصل ٢٣١ ك.ب من الجافاسكربت وتُنفَّذ. قِيس على
+          جوّالٍ متوسّطٍ على ٤G: **٣٥٠٤ م.ث شاشةٌ فارغة**. وبهذه القشرة
+          يرى المستخدمُ الهويّةَ خلال جزءٍ من الثانية.
+       🪤 ولا تُحسب ارتجاجاً (CLS): الاستبدالُ ظهورُ عناصرَ جديدة لا تحريكُ
+          عناصرَ قائمة — والمقياسُ لا يعدّ إلا الثاني.
+       🪤 ولا صورةَ فيها ولا خطّ: الصورةُ طلبٌ إضافيّ، والخطُّ الخارجيّ قد
+          يتأخّر — فتعود الشاشةُ فارغةً وهو عينُ ما نُصلحه. نصٌّ بخطّ النظام.
+       ═══════════════════════════════════════════════════════════════════════ */
+    #taki-boot { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px; z-index: 1; }
+    #taki-boot b { font-size: 2.6rem; font-weight: 900; letter-spacing: 0;
+      color: #10b981; line-height: 1; }
+    #taki-boot span { font-size: .95rem; font-weight: 700; opacity: .72; }
+    #taki-boot i { display: block; width: 132px; height: 4px; border-radius: 99px;
+      background: rgba(127,127,127,.22); overflow: hidden; position: relative; }
+    #taki-boot i::after { content: ''; position: absolute; inset: 0; width: 42%;
+      border-radius: 99px; background: #10b981; animation: taki-boot-run 1.1s ease-in-out infinite; }
+    @keyframes taki-boot-run { 0% { transform: translateX(-110%) } 100% { transform: translateX(260%) } }
+    @media (prefers-reduced-motion: reduce) { #taki-boot i::after { animation: none; width: 100% } }
   </style>
   <link rel="stylesheet" href="./src/styles.css">
   <!-- v14.63 — تنسيق الخرائط صار يُحزَّم داخل الموقع (`import 'leaflet/dist/leaflet.css'`
@@ -218,7 +247,9 @@
 </head>
 
 <body>
-  <div id="root"></div>
+  <div id="root"><div id="taki-boot" role="status" aria-live="polite">
+      <b>تاكي</b><span>احجز التخفيض الآن</span><i></i>
+    </div></div>
   <noscript>
     <main lang="ar" dir="rtl" style="max-width:60ch;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif;line-height:1.9;">
       <h1>TAKI (تاكي) — منصة حجز التخفيضات في السعودية</h1>

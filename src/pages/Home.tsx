@@ -499,7 +499,12 @@ const Home: React.FC = () => {
                     // Skeleton placeholders while initial fetch is in flight.
                     // Shows immediately so the user never sees a blank screen.
                     Array.from({ length: 8 }).map((_, i) => (
-                        <div key={`sk-${i}`} className="taki-skeleton" style={{ height: 240 }} />
+                        /* 🔴 ٤٤٠ لا ٢٤٠: قِيس ارتفاعُ البطاقة الحقيقيّ على الموقع
+                           الحيّ بعرض ٣٩٠ px فكان **٤١٧–٤٥٠**. والهيكلُ بـ٢٤٠ يعني
+                           أن الشبكةَ تقفز ٢٠٠ px لحظةَ وصول البيانات — وهو مصدرُ
+                           `CLS = 0.187` المقيس (أكبرُ ارتجاجين كلاهما على
+                           `.taki-deals-grid`). والمطابقةُ تُلغيه. */
+                        <div key={`sk-${i}`} className="taki-skeleton" style={{ height: 440 }} />
                     ))
                 ) : (
                     <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
