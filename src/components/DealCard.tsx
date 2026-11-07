@@ -20,6 +20,19 @@ interface Props {
     onClick: (id: string) => void;
     isSponsored?: boolean;
     sponsorLabel?: SponsorLabel;   // 'ad' | 'sponsor' | 'none' — controls the badge text
+    /**
+     * بطاقةٌ فوق الطيّة: تُحمَّل صورتُها **فوراً وبأولويّةٍ عالية**.
+     *
+     * 🔴 كانت **كلُّ** صورةٍ `loading="lazy"` بلا استثناء — ومنها أوّلُ بطاقةٍ
+     *    يراها المستخدم. والمتصفّحُ لا يبدأ تحميلَ صورةٍ مؤجَّلةٍ حتى يكتمل
+     *    التخطيط، فتأخّر أكبرُ عنصرٍ يُرسم (LCP) حتى **٤٦٧٦ م.ث** على جوّالٍ
+     *    مخنوق، و**التقطه نصٌّ** لا صورة: قِيس عنصرُ LCP فكان كتلةَ نصٍّ
+     *    متأخّرة لا بطاقةً. أي أن المقياسَ كان يقيس شيئاً لا يهمّ المستخدم،
+     *    لأن ما يهمّه لم يُرسم بعد.
+     * 🪤 وتُعطى للصفّ الأوّل وحده: تحميلٌ عاجلٌ لكلّ البطاقات يُزاحم حزمةَ
+     *    جافاسكربت على نطاقٍ محدود فيُبطئ كلَّ شيء.
+     */
+    priority?: boolean;
 }
 
 const GENDER_EMOJI: { [key: string]: string } = {
@@ -30,7 +43,7 @@ const GENDER_EMOJI: { [key: string]: string } = {
     other: '✨',
 };
 
-const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel }) => {
+const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel, priority }) => {
     const { toggleFollowMerchant, followedMerchants, language, storeProfiles, incrementDealClick, favorites, toggleFavorite } = useApp();
     const shopStatus = getShopStatus((storeProfiles[deal.storeId] as any)?.workingHours);
     // v13.24 — العدّاد المثبَّت على الصف (trigger في القاعدة) هو المصدر متى وُجد،
@@ -165,7 +178,11 @@ const DealCard: React.FC<Props> = ({ deal, onClick, isSponsored, sponsorLabel })
                     src={thumbUrl(imageUrl)}
                     srcSet={thumbSrcSet(imageUrl) || undefined}
                     sizes={thumbSrcSet(imageUrl) ? CARD_SIZES : undefined}
-                    loading="lazy"
+                    loading={priority ? 'eager' : 'lazy'}
+                    /* 🪤 و`fetchpriority` **بحروفٍ صغيرة**: React 18.2 لا تعرف
+                       `fetchPriority` فتُسقطها بتحذير، أمّا الصيغةُ الصغيرة
+                       فتُمرَّر إلى DOM كما هي. وأُثبت وصولُها إلى الحزمة. */
+                    {...(priority ? { fetchpriority: 'high' } : {})}
                     decoding="async"
                     width={400}
                     height={400}

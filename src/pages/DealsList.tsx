@@ -303,13 +303,15 @@ const DealsList: React.FC = () => {
                 gap: 10,
             }} className="taki-deals-list-grid">
                 {displayDeals.length > 0 ? (
-                    displayDeals.map(({ deal, sponsored, sponsorLabel }) => (
+                    displayDeals.map(({ deal, sponsored, sponsorLabel }, i) => (
                         <DealCard
                             key={deal.id}
                             deal={deal}
                             onClick={(id) => history.push(`/deal/${id}`)}
                             isSponsored={sponsored}
                             sponsorLabel={sponsorLabel}
+                            /* الصفُّ الأوّل (عمودان) — ما يراه المستخدم قبل أن يُمرّر. */
+                            priority={i < 2}
                         />
                     ))
                 ) : loading ? (
