@@ -263,7 +263,7 @@ const Refund: React.FC = () => {
                                 <li>التاجر يدفع مبلغ الباقة عبر بوّابة الدفع المُرخَّصة.</li>
                                 <li>الاشتراك يُفعَّل فوراً ويبقى نافذاً <strong>للمدّة المحدَّدة في الباقة</strong> من تاريخ الدفع.</li>
                                 <li><strong>يتجدَّد الاشتراك تلقائياً</strong> بنفس الباقة والمبلغ عند نهاية كلّ مدّة — حتى لا تنقطع عروض التاجر عن الظهور — ويصل التاجر <strong>تذكير قبل التجديد بعدّة أيام</strong>.</li>
-                                <li>في أيّ لحظة، يحقّ للتاجر <strong>إيقاف التجديد التلقائي</strong> من صفحة الاشتراك. وعند الإيقاف: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف <strong>دون أيّ سحب إضافي</strong>.</li>
+                                <li>في أيّ لحظة، يحقّ للتاجر <strong>إيقاف التجديد التلقائي</strong> — من صفحة الاشتراك إن كان الدفع عبر بوّابتنا، أو من حساب متجر التطبيقات إن كان الشراء من داخل التطبيق. وعند الإيقاف: <strong>يبقى الاشتراك نافذاً حتى نهاية المدّة المدفوعة</strong>، ثم يتوقّف <strong>دون أيّ سحب إضافي</strong>.</li>
                                 <li>بعد التوقّف يتوقّف ظهور العروض تلقائياً حتى يُجدِّد التاجر بنفسه، ويُعيد تفعيل عروضه بما يوافق سقف المواقع في باقته؛ والانتقال لباقة أدنى يسري بسقفها الجديد فور انتهاء الباقة الأعلى.</li>
                             </>
                         ) : (
@@ -271,11 +271,65 @@ const Refund: React.FC = () => {
                                 <li>The merchant pays the package fee through the licensed payment gateway.</li>
                                 <li>The subscription is activated immediately and remains effective for <strong>the period specified in the plan</strong> from the date of payment.</li>
                                 <li><strong>The subscription auto-renews</strong> at the same package and amount at the end of each period — so the merchant's offers never stop appearing — and the merchant receives a <strong>reminder several days before renewal</strong>.</li>
-                                <li>At any moment, the merchant may <strong>turn off auto-renewal</strong> from the subscription page. On turning it off: <strong>the subscription remains effective until the end of the paid period</strong>, then stops <strong>with no further charge</strong>.</li>
+                                <li>At any moment, the merchant may <strong>turn off auto-renewal</strong> — from the subscription page if paid through our gateway, or from their app-store account if bought inside the app. On turning it off: <strong>the subscription remains effective until the end of the paid period</strong>, then stops <strong>with no further charge</strong>.</li>
                                 <li>After it stops, the offers stop appearing automatically until the merchant renews themselves, re-activating them within the location cap of their package; a downgrade takes effect at the lower cap as soon as the higher package ends.</li>
                             </>
                         )}
                     </ol>
+                </div>
+                {/* 🔴 v15.67 — الشراءُ داخل تطبيق المتجرين: المالُ عند أبل أو قوقل
+                    لا عندنا، فما نَعِد به هنا يجب أن يكون ما نملكه فعلاً. وبلا
+                    هذا القسم كانت الوثيقةُ تَعِد بإيقافٍ «من صفحة الاشتراك»
+                    وبردٍّ عند خطأٍ تقنيّ — ونحن لا نملك أيّاً منهما في هذا
+                    المسار. (ووثيقةٌ تَعِد بما لا يُنفَّذ أسوأُ من وثيقةٍ لا تَعِد.) */}
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 my-3">
+                    <div className="text-base font-extrabold text-amber-900 mb-2">
+                        {isRTL ? 'وإن كان الاشتراك قد شُري من داخل التطبيق'
+                               : 'If the subscription was bought inside the app'}
+                    </div>
+                    <ul className="list-disc ps-6 space-y-2 text-sm text-amber-900 font-medium">
+                        {isRTL ? (
+                            <>
+                                <li>تُلزم متاجرُ التطبيقات (App Store و Google Play) بأن يكون
+                                    شراءُ الاشتراكات الرقميّة داخل التطبيق <strong>بنظام دفعها
+                                    هي</strong>. وفي هذه الحالة <strong>يُحصَّل المبلغ لدى
+                                    المتجر لا لدى TAKI</strong>، ولا يمرّ بحساباتنا في أيّ لحظة.</li>
+                                <li>التجديدُ والإلغاءُ يُداران من <strong>حساب التاجر في
+                                    المتجر</strong>، لا من صفحة الاشتراك عندنا — وصفحتُنا لا
+                                    تستطيع إيقافَ تجديدٍ أنشأه المتجر. ومكانُ الإلغاء وشروطُه
+                                    وتوقيتُه يُحدّدها المتجرُ ويُعلنها على شاشة الشراء.</li>
+                                <li>وطلباتُ الاسترداد لهذا الاشتراك تَخضع
+                                    <strong> لسياسة ذلك المتجر</strong> وتُقدَّم إليه مباشرةً.
+                                    و<strong>TAKI لا تستطيع إصدار ردٍّ لمبلغ لم تستلمه</strong> —
+                                    لكنّها تُسجّل طلبك وتُزوّدك بما يَلزم من إثباتٍ وتُعاونك عليه.</li>
+                                <li>وما تبقّى من هذه السياسة — الإيقاف من صفحتنا، والردُّ عند
+                                    خطأٍ تقنيّ منّا — يسري على الاشتراكات المدفوعة
+                                    <strong> عبر بوّابة الدفع لدينا</strong> وحدها.</li>
+                            </>
+                        ) : (
+                            <>
+                                <li>App stores (the App Store and Google Play) require digital
+                                    subscriptions bought inside an app to use
+                                    <strong> their own payment system</strong>. In that case
+                                    <strong> the money is collected by the store, not by TAKI</strong>,
+                                    and never passes through our accounts.</li>
+                                <li>Renewal and cancellation are managed from
+                                    <strong> your store account</strong>, not from our subscription
+                                    page — our page cannot stop a renewal the store created. Where
+                                    and how to cancel, and by when, is set by the store and
+                                    disclosed on its purchase screen.</li>
+                                <li>Refund requests for such a subscription are governed by
+                                    <strong> that store's policy</strong> and are submitted to it
+                                    directly. <strong>TAKI cannot refund money it never
+                                    received</strong> — but we will record your request, provide
+                                    any evidence needed, and assist you with it.</li>
+                                <li>The remainder of this policy — turning renewal off from our
+                                    page, and refunds for a technical error on our side — applies
+                                    only to subscriptions paid <strong>through our own payment
+                                    gateway</strong>.</li>
+                            </>
+                        )}
+                    </ul>
                 </div>
                 <Paragraph>
                     {isRTL ? (
@@ -342,7 +396,7 @@ const Refund: React.FC = () => {
                     )}
                 </Paragraph>
                 <Bullets items={isRTL ? [
-                    <><strong>خطأ تقنيّ من المنصّة</strong>: سحب المبلغ مرّتين عن نفس الفترة، أو خصم بدون تفعيل اشتراك.</>,
+                    <><strong>خطأ تقنيّ من المنصّة</strong>: سحب المبلغ مرّتين عن نفس الفترة، أو خصم بدون تفعيل اشتراك — <strong>في الاشتراكات المدفوعة عبر بوّابتنا</strong>؛ أمّا ما شُري من داخل التطبيق فالردُّ يُطلب من المتجر لأن المبلغ لديه.</>,
                     <><strong>سحب بدون موافقة</strong>: استخدام طرف آخر بطاقة التاجر دون إذنه — مع تقديم بلاغ شرطة وتجميد البطاقة وإثبات بنكي.</>,
                     <><strong>انقطاع جوهريّ ومُطوَّل في الخدمة من جانب المنصّة</strong> يَحول دون الانتفاع بها — قد تَنظر الإدارة في تعويض مناسب وفق تقديرها.</>,
                     <><strong>إنهاء حساب التاجر من قِبَل الإدارة بدون مخالفة منه</strong> — قد يُنظَر في ردّ ما تبقّى من الفترة المدفوعة وفق تقدير الإدارة.</>,
