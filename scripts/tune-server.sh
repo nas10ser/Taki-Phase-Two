@@ -64,13 +64,15 @@ RAM_MB=$(free -m | awk '/Mem:/{print $2}')
 DB_MB=$(( $(P "SELECT pg_database_size('postgres')") / 1048576 ))
 HIT=$(P "SELECT round(100.0*sum(blks_hit)/nullif(sum(blks_hit+blks_read),0),2) FROM pg_stat_database")
 # ما تستهلكه بقيّةُ الخدمات فعلاً (بلا القاعدة) — لا تقديراً.
+DISK_MB=$(df -Pm /var/lib/docker 2>/dev/null | awk 'NR==2{print $2}')
+[ -n "${DISK_MB:-}" ] || DISK_MB=$(df -Pm / | awk 'NR==2{print $2}')
 OTHER_MB=$(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' \
   | grep -v supabase-db | awk '{print $2}' | sed 's/MiB//;s/GiB/*1024/' \
   | awk -F'*' '{s += ($2 ? $1*$2 : $1)} END {printf "%d", s+0}')
 
 echo "═══ العتادُ المقيس ═══"
 echo "  أنوية: $CORES · رام: ${RAM_MB} م.ب · خدماتٌ أخرى: ${OTHER_MB} م.ب"
-echo "  القاعدة: ${DB_MB} م.ب · إصابةُ المخزَن المؤقّت: ${HIT}%"
+echo "  القاعدة: ${DB_MB} م.ب · إصابةُ المخزَن المؤقّت: ${HIT}% · القرص: ${DISK_MB} م.ب"
 
 # ── ٢) الحسبة — كلُّ رقمٍ مشتقّ، وكلُّ صيغةٍ مشروحة ───────────────────────
 OS_RESERVE=$(( 512 + OTHER_MB ))                 # النظامُ + بقيّةُ الحاويات
@@ -128,6 +130,13 @@ RT_BYTES=$(( CORES * 50 * 1024 * 1024 ))
 # فإن تجاوزته تُقتل وتعود وحدها **وتبقى القاعدةُ والموقعُ واقفين**.
 RT_MEM_MB=$(( RAM_MB * 40 / 100 ))
 
+# حدودُ إنذار الطاقة: **نِسَبٌ من القرص المقيس** لا أرقاماً لخادمٍ ماضٍ.
+# (كانت ٤ ج.ب للقاعدة و٢٠ للصور — مُعايَرةً لجهاز ٢٤ ج.ب مات في أكتوبر.)
+# والقاعدةُ والصورُ يتقاسمان نفس القرص، ومجموعُ الحرجين ٧٥٪ يُبقي فسحةً
+# للـWAL والنسخ والسجلّات — فالقرصُ الممتلئ يُفشل كلَّ أمرٍ بصمت (درسٌ مدفوع).
+DB_WARN_MB=$(( DISK_MB * 20 / 100 ));   DB_CRIT_MB=$(( DISK_MB * 30 / 100 ))
+ST_WARN_MB=$(( DISK_MB * 30 / 100 ));   ST_CRIT_MB=$(( DISK_MB * 45 / 100 ))
+
 echo
 echo "═══ الحسبة (كلُّها مشتقّة) ═══"
 printf "  %-24s %s\n"       "max_connections"       "$MAXCONN"
@@ -140,6 +149,8 @@ printf "  %-24s %s\n"       "بثّ: متزامنون"          "$RT_USERS"
 printf "  %-24s %s\n"       "بثّ: أحداث/ث"           "$RT_EVENTS"
 printf "  %-24s %s م.ب/ث\n" "بثّ: نطاق"              "$(( RT_BYTES / 1048576 ))"
 printf "  %-24s %s م.ب\n"   "حدُّ ذاكرة حاوية البثّ"  "$RT_MEM_MB"
+printf "  %-24s %s / %s م.ب\n" "إنذارُ حجم القاعدة"    "$DB_WARN_MB" "$DB_CRIT_MB"
+printf "  %-24s %s / %s م.ب\n" "إنذارُ حجم الصور"      "$ST_WARN_MB" "$ST_CRIT_MB"
 
 if [ "$APPLY" != "1" ]; then
   echo; echo "ℹ️ عرضٌ فقط. بلا انقطاع: --apply · ومعه رفعُ الاتصالات: --restart"; exit 0
@@ -279,6 +290,15 @@ P "INSERT INTO public.taki_realtime_limits (id,
      derived_from = EXCLUDED.derived_from, updated_at = now()" >/dev/null \
   && echo "  ✓ جدولُ السقوف كُتب (يفرضه المشغّل عند كل بذر)" \
   || { echo "  ❌ تعذّر كتابةُ جدول السقوف — هل طُبّقت هجرةُ v15.64؟"; exit 1; }
+# حدودُ الطاقة: **دمجٌ** (`||`) لا دهساً — فشاشةُ «الأدوات ← حدود السعة»
+# تكتب في نفس الصفّ (التهدئة · البريد · الكرون)، ودهسُه يمحو ضبطَ ناصر.
+P "INSERT INTO public.platform_settings (key, value)
+   VALUES ('capacity_limits', jsonb_build_object(
+     'db_size_warn_mb', ${DB_WARN_MB}, 'db_size_crit_mb', ${DB_CRIT_MB},
+     'storage_warn_mb', ${ST_WARN_MB}, 'storage_crit_mb', ${ST_CRIT_MB}))
+   ON CONFLICT (key) DO UPDATE SET value = public.platform_settings.value || EXCLUDED.value" >/dev/null \
+  && echo "  ✓ حدودُ إنذار الطاقة اشتُقّت من القرص (${DISK_MB} م.ب)"
+
 # والصفُّ الحيُّ يُحدَّث الآن ليسري فوراً — والمشغّلُ يفرض نفسَ القيم.
 P "UPDATE _realtime.tenants SET max_concurrent_users = ${RT_USERS}" >/dev/null
 
@@ -301,6 +321,8 @@ chk "random_page_cost" "$(P "SELECT current_setting('random_page_cost')")" "1.1"
 chk "PGRST_DB_POOL"    "$(docker exec supabase-rest env 2>/dev/null | grep -m1 '^PGRST_DB_POOL=' | cut -d= -f2)" "$PGRST_POOL"
 chk "بثّ: متزامنون"     "$(P "SELECT max_concurrent_users FROM _realtime.tenants LIMIT 1")" "$RT_USERS"
 chk "حدُّ ذاكرة البثّ"   "$(( $(docker inspect -f '{{.HostConfig.Memory}}' "$RT") / 1048576 ))" "$RT_MEM_MB"
+chk "إنذارُ حجم القاعدة" "$(P "SELECT value->>'db_size_warn_mb' FROM public.platform_settings WHERE key='capacity_limits'")" "$DB_WARN_MB"
+chk "لا سقفَ للمستخدمين" "$(P "SELECT (value ? 'users_warn')::text FROM public.platform_settings WHERE key='capacity_limits'")" "false"
 AK=$(grep -m1 '^ANON_KEY=' .env | cut -d= -f2)
 chk "القاعدةُ عبر الشبكة" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 -H "apikey: $AK" -H "Authorization: Bearer $AK" 'https://api.takisa.net/rest/v1/regions?select=id&limit=1')" "200"
 chk "الموقع"            "$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.takisa.net/)" "200"
