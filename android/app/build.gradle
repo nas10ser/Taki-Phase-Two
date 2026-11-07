@@ -56,6 +56,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Google Play Billing — اشتراكُ التاجر داخل التطبيق (v15.67).
+    // 🪤 وإصدارٌ مثبَّتٌ لا نطاق: Billing غيّر واجهته جذرياً بين ٥ و٦ و٧
+    //    (`queryProductDetailsAsync` و`PendingPurchasesParams` و`offerToken`)،
+    //    فنطاقٌ مفتوح يكسر البناءَ في نشرةٍ لا نعرف متى.
+    implementation 'com.android.billingclient:billing:7.1.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

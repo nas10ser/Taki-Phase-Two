@@ -1,0 +1,148 @@
+#!/usr/bin/env node
+/**
+ * check-iap-compliance.js — البندُ ٣٫١٫١ لا يُترك لذاكرة أحد (v15.67)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * أبل تُلزم بنظام دفعها لأيّ خدمةٍ رقميّة تُشترى في التطبيق، **وتمنع حتى
+ * الإحالةَ** إلى شراءٍ خارجه. وقوقل تُلزم بالمِثل. وعقوبةُ المخالفة ليست
+ * تحذيراً: رفضُ النشرة، وقد يتكرّر أسابيع.
+ *
+ * 🔴 وهذا من صنف العيوب التي **لا يكشفها أيّ اختبارٍ وظيفيّ**: التطبيقُ
+ *    يعمل، والزرُّ يعمل، والمراجعُ وحده يرفض. فيلزم حارسٌ في سلسلة البناء.
+ *
+ * 🪤 ولا يُفحص بكلمةٍ مفتاحيّة: `initiateMoyasarPayment` موجودٌ في الملفّ
+ *    بطبيعته (تعريفُ الدالّة لمسار الويب)، ووجودُه ليس مخالفة. والعقدُ
+ *    **بنيويّ**: الخروجُ المبكّر `if (iapIsStoreFlow())` يجب أن يسبق كلَّ
+ *    موضعِ تصييرٍ يستدعي مسارَ البوّابة — فلا يُصيَّر أصلاً في التطبيق.
+ *    (وقياسي الأوّل قارن بموضع **تعريف** الدالّة فاتّهم كوداً سليماً.)
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const F = path.join(ROOT, 'src', 'pages', 'Subscription.tsx');
+const fail = (m) => { console.error('❌ ' + m); process.exit(1); };
+
+if (!fs.existsSync(F)) fail('src/pages/Subscription.tsx غير موجود.');
+const s = fs.readFileSync(F, 'utf8');
+
+// ١) الخروجُ المبكّر موجود.
+const iGate = s.indexOf('if (iapIsStoreFlow())');
+if (iGate < 0) {
+    fail('لا خروجَ مبكّراً `if (iapIsStoreFlow())` في صفحة الاشتراك —\n'
+       + '   فمسارُ البوّابة سيُصيَّر داخل التطبيق، ويُرفض بالبند ٣٫١٫١.');
+}
+
+// ٢) ويسبق **كلَّ** موضعِ تصييرٍ يستدعي الدفعَ الخارجيّ.
+//    (الأنماطُ مواضعُ تصييرٍ لا تعريفات: مُعالِجُ حدثٍ في JSX.)
+const RENDER_SITES = [
+    /onClick=\{\s*handleSubscribe\s*\}/g,
+    /onClick=\{\s*\(\s*\)\s*=>\s*handleSubscribe/g,
+    /onClick=\{\s*\(\s*\)\s*=>\s*paymentService\./g,
+];
+let found = 0;
+for (const re of RENDER_SITES) {
+    for (const m of s.matchAll(re)) {
+        found++;
+        if (m.index < iGate) {
+            fail(`موضعُ تصييرٍ للدفع الخارجيّ (${m[0].trim()}) يسبق الخروجَ المبكّر —\n`
+               + '   فسيظهر داخل التطبيق ويُرفض بالبند ٣٫١٫١.');
+        }
+    }
+}
+// 🪤 وصفرُ موضعٍ ليس نجاحاً: يعني أن النمطَ تخلّف عن إعادةِ كتابةٍ للصفحة،
+//    فيصير الحارسُ أخضرَ دائماً وهو لا يحرس شيئاً. (درسُ «الفحوص التي لا
+//    تستطيع الفشل» — ونفسُ منطق «غير موجود ليس نجاحاً» في الفحص الأمنيّ.)
+if (found === 0) {
+    fail('لم يُعثر على أيّ موضعِ تصييرٍ لمسار البوّابة في صفحة الاشتراك.\n'
+       + '   إن أُزيل مسارُ الويب عمداً فيُحدَّث هذا الحارس؛ وإلّا فالنمطُ تخلّف\n'
+       + '   عن تعديلٍ في الصفحة وصار الحارسُ أخضرَ بلا أن يحرس شيئاً.');
+}
+
+// ٣) ولوحةُ المتجر تحمل ما يُلزم به البندُ ٣٫١٫٢: الاستعادةُ والإفصاح.
+const P = path.join(ROOT, 'src', 'components', 'seller', 'StoreSubscription.tsx');
+if (!fs.existsSync(P)) fail('src/components/seller/StoreSubscription.tsx غير موجود.');
+const p = fs.readFileSync(P, 'utf8');
+// 🔴 والعلاماتُ **تعابيرُ نمطيّةٌ بحدودِ كلمات، لا نصوصٌ مُضمَّنة.** جُرِّب
+//    الحارسُ مكسوراً فمرّ كاذباً: أُعيدت تسميةُ `iapRestore` إلى
+//    `iapRestore_gone` و`'iapRestore_gone'.includes('iapRestore')` **صحيح** —
+//    فبقي الحارسُ أخضرَ وزرُّ الاستعادة مكسور. والعقدُ الصحيح: **نداءٌ**
+//    بحدودِ كلمةٍ (`\biapRestore\s*\(`)، و**وسمٌ** للرابط لا مسارٌ عارٍ.
+const MUST = [
+    [/\biapRestore\s*\(/, 'نداءُ «استعادة المشتريات» — يُلزم به البند ٣٫١٫١ لكل اشتراكٍ متجدّد'],
+    [/to=["']\/terms["']/, 'رابطُ الشروط — يُلزم به البند ٣٫١٫٢ على شاشة الشراء'],
+    [/to=["']\/privacy["']/, 'رابطُ الخصوصية — يُلزم به البند ٣٫١٫٢ على شاشة الشراء'],
+    [/\bpriceLabel\b/, 'السعرُ من المتجر — لا يُصاغ عندنا ولا تُضاف عليه ضريبة'],
+];
+for (const [re, why] of MUST) {
+    if (!re.test(p)) fail(`ناقصٌ في لوحة المتجر: ${why}\n   (المطلوب نمطُ ${re})`);
+}
+// ٤) ولا يُعرض سعرٌ نحسبه نحن بجوار سعر المتجر — تناقضٌ يراه المستخدم.
+for (const bad of ['vatOnTop', 'effectivePrice', 'fmtSAR']) {
+    if (new RegExp('\\b' + bad + '\\s*\\(').test(p)) {
+        fail(`لوحةُ المتجر تستعمل «${bad}» — السعرُ هنا من المتجر وحده،\n`
+           + '   وعرضُ رقمٍ يخالف ما يقوله المتجر مخالفةُ البند ٣٫١٫٢.');
+    }
+}
+
+console.log(`✅ امتثالُ الشراء داخل التطبيق: الخروجُ المبكّر يسبق ${found} موضعَ تصييرٍ للبوّابة`
+          + ' · والاستعادةُ والإفصاحُ والسعرُ من المتجر قائمة (٤ فحوص)');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ٥) الإقرار/الإنهاء — في الثلاثة معاً
+// ───────────────────────────────────────────────────────────────────────────
+// 🔴 غيابُه **يُلغي البيع بلا أيّ رسالة**: قوقل تستردّ مالَ شراءٍ لم يُقَرّ
+//    خلال ثلاثة أيّام وتُلغي الاشتراك، وأبل تُعيد تسليمَ معاملةٍ لم تُنتهَ
+//    عند كل إقلاع. والعيبُ لا يظهر في أيّ اختبار: الشراءُ ينجح والاشتراكُ
+//    يُفعَّل ثمّ يتبخّر بعد ثلاثة أيّام.
+// 🪤 ويُفحص في **ثلاثة ملفّات**: الجسرُ ينادي، والمنصّتان تُنفّذان. ونقصُ
+//    واحدٍ يُنتج منصّةً تعمل وأخرى تخسر المالَ صامتةً.
+{
+    const FILES = [
+        [path.join(ROOT, 'src/native/iap.ts'), /finalizePurchase\s*\(/,
+         'جسرُ الويب لا ينادي الإقرار بعد التحقّق'],
+        [path.join(ROOT, 'android/app/src/main/java/net/takisa/app/TakiIapPlugin.java'),
+         /acknowledgePurchase\s*\(/,
+         'إضافةُ أندرويد لا تُقِرّ الشراء — قوقل تستردّ المالَ بعد ثلاثة أيّام'],
+        [path.join(ROOT, 'ios/App/App/TakiIapPlugin.swift'), /await\s+txn\.finish\(\)/,
+         'إضافةُ آيفون لا تُنهي المعاملة — تُعاد تسليمُها إلى الأبد'],
+    ];
+    for (const [f, re, why] of FILES) {
+        if (!fs.existsSync(f)) fail(`ملفٌّ ناقص: ${path.relative(ROOT, f)}`);
+        if (!re.test(fs.readFileSync(f, 'utf8'))) fail(`${why}\n   (المطلوب نمطُ ${re})`);
+    }
+    // ٦) وملفُّ Swift مسجَّلٌ في مرحلة Sources — وإلّا لم يُترجَم إطلاقاً.
+    const pbx = path.join(ROOT, 'ios/App/App.xcodeproj/project.pbxproj');
+    if (fs.existsSync(pbx)) {
+        const t = fs.readFileSync(pbx, 'utf8');
+        const i = t.indexOf('isa = PBXSourcesBuildPhase');
+        const j = t.indexOf('/* End PBXSourcesBuildPhase section */');
+        const inSources = i >= 0 && j > i
+            && t.slice(i, j).includes('TakiIapPlugin.swift in Sources');
+        if (!inSources) {
+            fail('TakiIapPlugin.swift ليس في مرحلة Sources من مشروع Xcode —\n'
+               + '   فلن يُترجَم إطلاقاً، والبناءُ ينجح أخضرَ وأوّلُ نداءٍ يردّ «غير منفَّذة».\n'
+               + '   يُصلَح بـ: node scripts/ios-project-patch.js');
+        }
+    }
+    // ٧) وتسجيلُ الإضافة في أندرويد يسبق super.onCreate.
+    const ma = path.join(ROOT, 'android/app/src/main/java/net/takisa/app/MainActivity.java');
+    if (fs.existsSync(ma)) {
+        // 🪤 **تُجرَّد التعليقاتُ قبل الفحص.** وقع فعلاً: التعليقُ الذي يشرح
+        //    «التسجيلُ قبل super.onCreate» يحوي العبارةَ نفسَها ويسبقها، فاتّهم
+        //    الحارسُ كوداً سليماً. وهو فخٌّ تكرّر في هذا المشروع أربع مرّات —
+        //    أيُّ فحصٍ بموضعٍ نصّيّ يُجرّد التعليقَ أوّلاً، بلا استثناء.
+        const t = fs.readFileSync(ma, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        if (!/registerPlugin\s*\(\s*TakiIapPlugin\.class\s*\)/.test(t)) {
+            fail('TakiIapPlugin غيرُ مسجَّلٍ في MainActivity — الـWebView لن يراه.');
+        }
+        const r = t.indexOf('registerPlugin(TakiIapPlugin.class)');
+        const sup = t.indexOf('super.onCreate');
+        if (sup >= 0 && r > sup) {
+            fail('registerPlugin بعد super.onCreate — الجسرُ يُبنى داخل super،\n'
+               + '   فتسجيلٌ بعده لا يراه الـWebView ويردّ «الإضافةُ غير موجودة».');
+        }
+    }
+    console.log('✅ الإقرار/الإنهاء: الجسرُ + أندرويد + آيفون · والتسجيلُ في المشروعين (٤ فحوص)');
+}

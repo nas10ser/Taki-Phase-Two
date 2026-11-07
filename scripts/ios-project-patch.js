@@ -35,6 +35,7 @@ const ID = {
     entRef: 'TAKI0003000000000000ENTI',
     strGroup: 'TAKI0004000000000000STRG', strBuild: 'TAKI0005000000000000STRB',
     strAr: 'TAKI0006000000000000STAR', strEn: 'TAKI0007000000000000STEN',
+    iapRef: 'TAKI0008000000000000IAPR', iapBuild: 'TAKI0009000000000000IAPB',
 };
 
 /** يُدرج نصّاً بعد أوّل مرساة، ويتأكّد أن الإدراج وقع فعلاً. */
@@ -43,6 +44,29 @@ function insertAfter(anchor, text, label) {
     if (i < 0) throw new Error(`المرساةُ غائبة (${label}): ${anchor.slice(0, 60)}`);
     s = s.slice(0, i + anchor.length) + text + s.slice(i + anchor.length);
     changes.push(label);
+}
+
+// ── ٠) إضافةُ الشراء داخل التطبيق (TakiIapPlugin.swift) ────────────────────
+// 🔴 **ملفُّ Swift غيرُ مسجَّلٍ في مرحلة `Sources` لا يُترجَم إطلاقاً** — ولا
+//    يصرخ أيُّ شيء: البناءُ ينجح أخضرَ، والتطبيقُ يعمل، وأوّلُ نداءٍ للإضافة
+//    يردّ «غير منفَّذة» لا أكثر. و`cap sync` **لا يسجّل ملفّات هدف التطبيق**
+//    (يسجّل الإضافاتَ المحزومة وحدها)، فلا سبيلَ غيرُ هذا السطر.
+// 🪤 ويلزم **ثلاثُ مواضع لا موضعان**: مرجعُ الملفّ (PBXFileReference)،
+//    وعنصرُ البناء (PBXBuildFile)، **ومرحلةُ Sources**. ونسيانُ الثالث يُنتج
+//    ملفّاً ظاهراً في Xcode ولا يُترجَم — وهو أخبثُ الثلاثة.
+if (!s.includes('TakiIapPlugin.swift')) {
+    insertAfter('/* Begin PBXFileReference section */\n',
+        `\t\t${ID.iapRef} /* TakiIapPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakiIapPlugin.swift; sourceTree = "<group>"; };\n`,
+        'مرجعُ TakiIapPlugin.swift');
+    insertAfter('/* Begin PBXBuildFile section */\n',
+        `\t\t${ID.iapBuild} /* TakiIapPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = ${ID.iapRef} /* TakiIapPlugin.swift */; };\n`,
+        'عنصرُ بناء TakiIapPlugin.swift');
+    insertAfter('\t\t\t\t504EC3081FED79650016851F /* AppDelegate.swift in Sources */,\n',
+        `\t\t\t\t${ID.iapBuild} /* TakiIapPlugin.swift in Sources */,\n`,
+        'TakiIapPlugin.swift في مرحلة Sources');
+    insertAfter('\t\t\t\t504EC3071FED79650016851F /* AppDelegate.swift */,\n',
+        `\t\t\t\t${ID.iapRef} /* TakiIapPlugin.swift */,\n`,
+        'TakiIapPlugin.swift في مجموعة الملفّات');
 }
 
 // ── ١) PrivacyInfo.xcprivacy ───────────────────────────────────────────────
@@ -159,6 +183,7 @@ const must = [
     [`MARKETING_VERSION = ${ver};`, 'الإصدارُ التسويقيّ'],
     ['isa = PBXVariantGroup', 'مجموعةُ التنويع'],
     ['IPHONEOS_DEPLOYMENT_TARGET = 15.0;', 'الحدُّ الأدنى iOS 15'],
+    ['TakiIapPlugin.swift in Sources', 'إضافةُ الشراء في مرحلة Sources'],
 ];
 let bad = 0;
 for (const [needle, label] of must) {

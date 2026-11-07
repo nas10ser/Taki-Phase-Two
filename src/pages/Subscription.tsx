@@ -6,6 +6,8 @@ import { paymentService } from '../services/paymentService';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
+import StoreSubscription from '../components/seller/StoreSubscription';
+import { iapIsStoreFlow } from '../native/iap';
 import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoicePayment, InvoiceTaxSettings, InvoiceCustomer } from '../utils/invoice';
 import { splitInclusive, vatOnTop, fmtSAR } from '../utils/vat';
 import { invoiceQrForPayment } from '../utils/zatcaQr';
@@ -237,6 +239,48 @@ const Subscription: React.FC = () => {
                     الباقة يترك التاجر يُرفض بلا أن يعرف ما حدُّه. */}
                 <div className="text-start mb-6"><SubscriptionStatusCard /></div>
                 <button onClick={() => history.push('/seller')} className="bg-taki-green text-white px-6 py-2 rounded-lg font-bold">{t('العودة للوحة التحكم', 'Back to dashboard')}</button>
+                <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id} isRTL={isRTL}
+                    onBlocked={() => { customAlert(t('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.', 'Pop-ups must be allowed to open the invoice.')); }} />
+            </div>
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔴 داخل تطبيق المتجرين: الشراءُ بنظام دفعهما، و**لا أثرَ لمسار البوّابة**
+    // ───────────────────────────────────────────────────────────────────────
+    // البندُ ٣٫١٫١ عند أبل يُلزم بنظام دفعها لأيّ خدمةٍ رقميّة تُشترى في
+    // التطبيق، **ويمنع حتى الإحالةَ** إلى شراءٍ خارجه — ورفضُه فوريّ. وقوقل
+    // تُلزم بالمِثل. فالخروجُ المبكّر هنا ليس تحسينَ شكل: هو ما يضمن أن
+    // `handleSubscribe` (مسارُ ميسر) **لا يُصيَّر أصلاً** في التطبيق،
+    // لا أن يُخفى بـCSS أو بشرطٍ داخل الزرّ.
+    // 🪤 وموضعُه **بعد** فحص `isPaymentEnabled`: لو أوقف ناصر الاشتراكَ
+    //    وصارت المنصّةُ مجّانيّة، فلا يجوز أن يبيع التطبيقُ باقةً.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (iapIsStoreFlow()) {
+        return (
+            <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in"
+                dir={isRTL ? 'rtl' : 'ltr'}
+                style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}>
+                <div className="flex justify-between items-center gap-3 mb-3">
+                    <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">
+                        {t('باقات الاشتراك 🚀', 'Subscription plans 🚀')}
+                    </h1>
+                    <button onClick={() => history.goBack()}
+                        className="shrink-0 flex items-center gap-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold text-sm px-4 py-2 rounded-full shadow-sm active:scale-95 transition"
+                        aria-label={t('رجوع', 'Back')}>
+                        <span aria-hidden>{isRTL ? '→' : '←'}</span> {t('رجوع', 'Back')}
+                    </button>
+                </div>
+                <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
+                    {t('اختر الباقة المناسبة لعدد مواقعك. والشراءُ يتمّ عبر متجر التطبيقات، بصفر عمولة على حجوزاتك.',
+                       'Pick the plan that matches how many locations you cover. Purchases go through the app store, with zero commission on your bookings.')}
+                </p>
+                <SubscriptionStatusCard />
+                <h2 className="text-lg font-extrabold text-[var(--text-primary)] mt-6 mb-3">
+                    {currentMax > 0 ? t('الترقية أو تغيير الباقة', 'Upgrade or change your plan')
+                                    : t('اختر باقتك', 'Choose your plan')}
+                </h2>
+                <StoreSubscription isRTL={isRTL} onActivated={() => history.push('/seller')} />
                 <MyInvoices userId={user.id} merchantName={user.shop || user.name || user.id} isRTL={isRTL}
                     onBlocked={() => { customAlert(t('السماح بالنوافذ المنبثقة مطلوب لعرض الفاتورة.', 'Pop-ups must be allowed to open the invoice.')); }} />
             </div>
