@@ -88,7 +88,14 @@ const COLLECT_JS = [
     '    appMarkers: {',
     '      root: !!document.getElementById("root"),',
     '      rootKids: document.getElementById("root") ? document.getElementById("root").children.length : 0,',
-    '      takiBundle: Array.from(document.scripts).filter(x => /TAKI\\.[a-z0-9]+\\.js/.test(x.src || "")).length,',
+    // 🪤 والعلامةُ **عدُّ سكربتاتٍ خارجيّةٍ من نفس الأصل**، لا نمطُ اسمٍ.
+    //    أوّلُ كتابةٍ بحثت عن `TAKI.<بصمة>.js` فخرج الناتجُ مهرَّباً مرّتين
+    //    (`/TAKI\\.[…]/` = شرطةٌ مائلةٌ ثمّ أيُّ محرف) فلم يُطابق شيئاً أبداً
+    //    وأطلقَ الحارسُ إنذاراً كاذباً على قياسٍ سليم. واسمُ الحزمة اصطلاحٌ
+    //    يتغيّر؛ أمّا «صفحةٌ تحمّل سكربتاتٍ من أصلها» فعقدٌ لا يتغيّر —
+    //    وصفحةُ التحدّي تحمل سكربتاً **مضمَّناً** بلا أيّ ملفّ خارجيّ.
+    '      extScripts: Array.from(document.scripts)',
+    '        .filter(x => x.src && x.src.indexOf(location.origin) === 0).length,',
     '      title: (document.title || "").slice(0, 60),',
     '    },',
     '  });',

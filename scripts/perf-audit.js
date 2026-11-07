@@ -68,9 +68,9 @@ const verdict = (k, v) => {
     for (const r of rows) {
         if (r.error) continue;
         const m = r.appMarkers || {};
-        if (!m.takiBundle || !m.rootKids) {
+        if (!m.extScripts || !m.rootKids) {
             console.error(`\n🔴 القياسُ باطل على «${r.page}»: الصفحةُ المحمَّلة ليست تاكي.`);
-            console.error(`   العنوان: «${m.title || '(بلا)'}» · حزمُ TAKI: ${m.takiBundle || 0}`
+            console.error(`   العنوان: «${m.title || '(بلا)'}» · سكربتاتٌ خارجيّة: ${m.extScripts || 0}`
                         + ` · أبناءُ #root: ${m.rootKids || 0} · طلبات: ${r.requests} · ${r.kb} ك.ب`);
             console.error('   السببُ الغالب: جدارُ فيرسِل بعد استجوابٍ متكرّر للإنتاج —');
             console.error('   يُنتظر قليلاً، أو يُقاس على نسخةٍ محلّية:');
@@ -117,7 +117,17 @@ const verdict = (k, v) => {
             console.log(`     أين ذهب الخيطُ الرئيسيّ (${r.profile.totalMs} م.ث مُحلَّلة):`);
             for (const f of r.profile.files) console.log(`        ${String(f.ms).padStart(6)} م.ث  ${f.file}`);
             if (r.profile.top.length) {
-                console.log('     أثقلُ الدوالّ:');
+                // 🔴 **أسماءُ الدوالّ في حزمةٍ مصغَّرة إشاريّةٌ لا قاطعة.** قِيس:
+                //    نُسب ٥٤٨ م.ث إلى `refreshIfEnabled` (وهي من الأسماء التي
+                //    تنجو من التصغير لأنها مفتاحُ خاصّية)، وجسمُها يعود في
+                //    السطر الثاني: `Notification.permission !== 'granted'`.
+                //    وقِيس الإذنُ في الإنتاج بمتصفّحٍ حقيقيّ = **denied** —
+                //    أي أن الزمنَ عملُ إطاراتٍ مجهولةٍ مجاورة، نُسب إلى أقربِ
+                //    اسمٍ باقٍ. فسطرُ «أثقلُ الدوالّ» دليلُ **مكان** لا دليلُ
+                //    **سبب**، وأرقامُ الملفّات أعلاه هي الموثوقة (مصدرُها
+                //    عنوانُ السكربت لا اسمٌ مُستنتَج).
+                console.log('     أثقلُ الدوالّ (إشاريّةٌ — الأسماءُ في حزمةٍ مصغَّرة'
+                          + ' تُنسَب لأقربِ اسمٍ باقٍ، فالملفّاتُ أعلاه هي الموثوقة):');
                 for (const t of r.profile.top.slice(0, 6))
                     console.log(`        ${String(t.ms).padStart(6)} م.ث  ${t.fn}  ← ${t.url}`);
             }
