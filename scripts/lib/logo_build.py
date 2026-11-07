@@ -85,6 +85,27 @@ def main():
     mark = resize(art, 256, int(round(256 * art.shape[0] / art.shape[1])))
     emit('logo-mark.png', mark)
 
+    # 🔴 v15.59 — علامةُ الترويسة الصغيرة. قِيس على الموقع الحيّ: الترويسةُ
+    #    تعرض `logo-mark.png` (**١٠٠ ك.ب · ٢٥٦ بكسلاً**) بعرض **٣٦ CSS px**
+    #    في **كلّ صفحة**، واستغرق تحميلُها ١٤١٦ م.ث على شبكة ٤G. أي أن كلَّ
+    #    زائرٍ يدفع مئةَ كيلوبايت لصورةٍ بحجم ظُفر.
+    #    و١٢٨ بكسلاً تكفي شاشةَ ٣× (٣٦×٣ = ١٠٨) بهامش.
+    #    🪤 ولا تُستعمل `logo-mark.webp` (٥١٢) هنا: تلك لشاشة الدخول التي
+    #       تعرضها بـ١٦٨ px، واستعمالُها في الترويسة يُعيد العيبَ مصغَّراً.
+    small = resize(art, 128, int(round(128 * art.shape[0] / art.shape[1])))
+    emit('logo-mark-sm.png', small)
+    fd, tmp3 = tempfile.mkstemp(suffix='.png'); os.close(fd)
+    img.write_png(tmp3, small)
+    out3 = os.path.join(ROOT, 'logo-mark-sm.webp')
+    try:
+        subprocess.run(['cwebp', '-q', '90', '-alpha_q', '100', '-quiet', tmp3, '-o', out3],
+                       check=True, capture_output=True)
+        print(f'  ✓ logo-mark-sm.webp  128  {os.path.getsize(out3)/1024:.1f} KB')
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        print(f'  ❌ تعذّر بناءُ logo-mark-sm.webp: {e}', file=sys.stderr)
+        os.unlink(tmp3); sys.exit(1)
+    os.unlink(tmp3)
+
     # 🔴 v15.50 (أمرُ ناصر: «اللوقو دقته جدا جدا ضعيفه») — شاشةُ الدخول تعرضها
     #    بـ١٦٨ CSS px، فمصدرُ ٢٥٦ يعني نحو ٢× تكبيرٍ على شاشة الجوال ⇒ ضبابية.
     #    فتُبنى نسخةٌ ٥١٢ بصيغة WebP: ضعفُ الدقّة و**أقلُّ** بايتات (٦٤ ك.ب

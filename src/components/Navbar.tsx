@@ -66,7 +66,16 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                             border: '1px solid rgba(255,255,255,.18)',
                             boxShadow: '0 6px 16px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.20)',
                         }}>
-                            <img src="/logo-mark.png" alt="TAKI" width={36} height={34}
+                            {/* 🔴 v15.59 — كانت `/logo-mark.png`: **١٠٠ ك.ب بعرض ٢٥٦ بكسلاً
+                                تُعرض بـ٣٦ CSS px**، في ترويسة **كلّ صفحة**. وقِيس على
+                                الموقع الحيّ أنها استغرقت ١٤١٦ م.ث على شبكة ٤G وكانت
+                                أثقلَ موردٍ بعد حزمة الجافاسكربت. والبديلُ ١٢٨ بكسلاً
+                                بصيغة WebP = **٧ ك.ب** — تكفي شاشةَ ٣× (٣٦×٣ = ١٠٨)
+                                بهامش، وتوفّر ٩٣ ك.ب لكلّ زائرٍ في كلّ زيارة.
+                                🪤 و`onError` يرتدّ إلى PNG **مرّةً واحدة** (علامةٌ على
+                                   العنصر) فلا تدور حلقةٌ لو عجز متصفّحٌ قديم عن WebP. */}
+                            <img src="/logo-mark-sm.webp" alt="TAKI" width={36} height={34}
+                                onError={e => { const i = e.currentTarget; if (!i.dataset.fb) { i.dataset.fb = '1'; i.src = '/logo-mark-sm.png'; } }}
                                 style={{ width: 36, height: 34, objectFit: 'contain', display: 'block' }} />
                         </div>
                         <div>
