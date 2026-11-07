@@ -182,6 +182,19 @@ const Home: React.FC = () => {
 
     // الشبكة الرئيسية — بحث/تصنيف/ترتيب على القاعدة مع ترقيم keyset.
     // أثناء البحث ينتقل الترتيب تلقائياً إلى «أفضل مطابقة».
+    /** يحفظ عددَ ما وصل فعلاً كي تُرسم الزيارةُ التالية بلا ارتجاج. */
+    const rememberGridCount = React.useCallback((n: number) => {
+        try { if (n > 0) sessionStorage.setItem('taki_grid_n', String(Math.min(30, n))); } catch { /* وضعُ تصفّحٍ خاصّ */ }
+    }, []);
+
+    /** عددُ هياكل التحميل — يُقرأ ممّا وصل في الزيارة السابقة. */
+    const skeletonCount = React.useMemo(() => {
+        try {
+            const n = Number(sessionStorage.getItem('taki_grid_n'));
+            return Number.isFinite(n) && n > 0 && n <= 30 ? n : 6;
+        } catch { return 6; }
+    }, []);
+
     const gridSort: BrowseSort = searchQuery.trim() ? 'best' : sortBy;
     const {
         deals: gridDeals, total: gridTotal, hasMore: gridHasMore,
@@ -206,6 +219,13 @@ const Home: React.FC = () => {
         // v11.23 — Official Sponsors: gold ads interleaved per sponsor_layout.
         return interleaveSponsored(live, sponsors, platformSettings.sponsorLayout);
     }, [gridDeals, searchQuery, sponsors, platformSettings.sponsorLayout, nowTick]);
+
+    // 🪤 ويُحفظ **بعد** انتهاء التحميل لا أثناءه: الحفظُ أثناء التحميل يكتب
+    //    صفراً (الشبكةُ فارغة) فتُرسم الزيارةُ التالية بلا هياكلَ إطلاقاً،
+    //    ويعود الارتجاجُ أكبرَ ممّا كان.
+    React.useEffect(() => {
+        if (!gridLoading && filteredDeals.length > 0) rememberGridCount(filteredDeals.length);
+    }, [gridLoading, filteredDeals.length, rememberGridCount]);
 
     return (
         <>
@@ -498,16 +518,18 @@ const Home: React.FC = () => {
                 ) : gridLoading ? (
                     // Skeleton placeholders while initial fetch is in flight.
                     // Shows immediately so the user never sees a blank screen.
-                    /* 🔴 **أربعةٌ لا ثمانية** — وهذا هو مصدرُ الارتجاج الحقيقيّ:
-                       كانت ثمانيةُ هياكلَ (أربعةُ صفوفٍ بعمودين) تُستبدل بما
-                       تُرجعه القاعدةُ فعلاً. وقِيس على الإنتاج: خمسةُ عروضٍ
-                       ⇒ الشبكةُ **تنهار صفّين** لحظةَ وصول البيانات، فيقفز
-                       كلُّ ما تحتها ٤٤٠ بكسلاً. والمقيس: `CLS = 0.21` من
-                       `.taki-deals-grid` وحدها.
-                       وأربعةٌ تملأ الشاشةَ الأولى (صفّان على جوّالٍ ٨٤٤ px)
-                       ولا تتجاوز غالبَ النتائج — فالحركةُ تصير نموّاً لأسفل
-                       لا انهياراً، والنموُّ تحت الطيّة لا يُحسّ به أحد. */
-                    Array.from({ length: 4 }).map((_, i) => (
+                    /* 🔴 **عددُ الهياكل يُتعلَّم، لا يُخمَّن** — ودرسٌ دفعتُه هنا:
+                       أيُّ رقمٍ ثابت يرتجّ، لأنه لن يساوي عددَ النتائج أبداً.
+                       قِيس على الإنتاج: ثمانيةٌ ⇒ انهيارُ صفّين و`CLS = 0.19`،
+                       فجرّبتُ أربعةً ⇒ **نموُّ صفٍّ و`CLS = 0.33`** — أي أن
+                       تخميني جعله **أسوأ**. والارتجاجُ ليس في الاتّجاه بل في
+                       الفرق نفسِه.
+                       فيُحفظ عددُ ما وصل فعلاً في `sessionStorage`، وتُرسم
+                       الزيارةُ التالية بالعدد الصحيح تماماً ⇒ صفرُ ارتجاج.
+                       🪤 وأوّلُ زيارةٍ تبقى تخميناً (ستّة: صفّان ونصف على
+                          جوّالٍ ٨٤٤ px) — لكنّ أثرَها يزول من ثاني زيارة،
+                          وهي الغالبُ الأعظم من الجلسات. */
+                    Array.from({ length: skeletonCount }).map((_, i) => (
                         /* 🔴 ٤٤٠ لا ٢٤٠: قِيس ارتفاعُ البطاقة الحقيقيّ على الموقع
                            الحيّ بعرض ٣٩٠ px فكان **٤١٧–٤٥٠**. والهيكلُ بـ٢٤٠ يعني
                            أن الشبكةَ تقفز ٢٠٠ px لحظةَ وصول البيانات — وهو مصدرُ
