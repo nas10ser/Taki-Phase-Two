@@ -269,6 +269,7 @@ DECLARE
   v_res     jsonb;
   v_net     numeric;
   v_pay_id  text;
+  v_plan_id text;
 BEGIN
   -- 🔴 لا يُنادى هذا من متصفّح أبداً: التفعيلُ بلا تحقّقٍ خادميّ = اشتراكٌ
   --    مجّانيّ لكلّ من يستطيع فتح لوحة المطوّر.
@@ -335,19 +336,31 @@ BEGIN
   -- 🪤 وصفُّ الدفعة **خاملُ التكرار بمرجعه**: المرجعُ هو معرّفُ المعاملة،
   --    فإعادةُ نفس الإشعار لا تُنشئ فاتورةً ثانيةً ولا تحرق رقمَ فاتورة.
   v_pay_id := p_platform || ':' || COALESCE(p_latest_txn, p_purchase_key);
+  -- 🔴 `plan_id` **مفتاحٌ أجنبيٌّ إلى `subscription_plans`** لا معرّفُ باقة.
+  --    كتبتُ فيه معرّفَ الباقة فانفجر القيد `…plan_id_fkey` في أوّل اختبار:
+  --    «Key (plan_id)=(1) is not present». وجدولُ الخطط فيه صفٌّ واحدٌ رمزُه
+  --    `basic`، والوسمُ `premium` الذي نكتبه في `store_profiles` عمودُ نصٍّ
+  --    في جدولٍ آخر — لا علاقةَ له بهذا المفتاح. فيُبحَث عن الخطّة، و`NULL`
+  --    إن لم تُطابق (العمودُ يقبلها، ودالّةُ الويب تفعل الشيءَ نفسَه)،
+  --    ومعرّفُ الباقةِ يُحفظ في `metadata` و`branches_count` حيث يخصّه.
+  SELECT id INTO v_plan_id FROM public.subscription_plans
+   WHERE code = 'premium' OR id = 'premium' LIMIT 1;
+
   INSERT INTO public.subscription_payments (
     id, merchant_id, plan_id, amount, currency, status, payment_method,
-    gateway_provider, gateway_reference, period_start, period_end,
+    gateway_provider, gateway_reference, branches_count, period_start, period_end,
     metadata, paid_at, created_at)
   VALUES (
-    v_pay_id, p_store_id, v_pkg_id::text, v_net, 'SAR', 'paid',
+    v_pay_id, p_store_id, v_plan_id, v_net, 'SAR', 'paid',
     CASE p_platform WHEN 'apple' THEN 'apple_iap' ELSE 'google_play' END,
     CASE p_platform WHEN 'apple' THEN 'App Store' ELSE 'Google Play' END,
     COALESCE(p_latest_txn, p_purchase_key),
+    (v_res->>'max_branches')::int,
     now(), p_expires_at,
     jsonb_build_object('platform', p_platform, 'product_id', p_product_id,
                        'environment', COALESCE(p_environment, 'Production'),
-                       'event', p_event),
+                       'event', p_event, 'package_id', v_pkg_id,
+                       'source', CASE p_platform WHEN 'apple' THEN 'app_store' ELSE 'play_store' END),
     now(), now())
   ON CONFLICT (id) DO NOTHING;
 
@@ -483,6 +496,11 @@ BEGIN
   SELECT count(*) INTO v_n FROM public.subscription_payments
    WHERE gateway_reference = 'T1' AND merchant_id = v_store AND status = 'paid';
   IF v_n <> 1 THEN RAISE EXCEPTION 'صفوفُ الدفعة % والمتوقَّع ١', v_n; END IF;
+  -- ومعرّفُ الباقة محفوظٌ في metadata لا في مفتاح الخطّة الأجنبيّ
+  IF (SELECT (metadata->>'package_id')::int FROM public.subscription_payments
+       WHERE gateway_reference = 'T1') IS DISTINCT FROM v_pkg THEN
+    RAISE EXCEPTION 'معرّفُ الباقة لم يُحفظ في metadata';
+  END IF;
 
   -- ── ٣) **خاملُ التكرار**: أبل تُعيد الإشعارَ أيّاماً حتى يُجاب ٢٠٠ ────
   PERFORM public.taki_iap_apply(v_store, 'apple', v_prod, v_key, 'T1',
