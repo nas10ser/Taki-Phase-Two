@@ -83,6 +83,32 @@ export interface SmartAlertRule {
     radiusKm?: number;
 }
 
+/**
+ * v15.79 — مَحوُ مرفقات المحادثات والشكاوى من مخزون العامل عند الخروج.
+ *
+ * 🔴 قِيس: `/storage/v1` لم يكن في `API_PATHS` داخل `sw.js`، فمرفقُ محادثةٍ
+ *    بعنوانٍ **موقَّعٍ** يسقط في فرع «المخزونُ أوّلاً»، ويُخزَّن بمفتاحِ
+ *    العنوان الموقَّع كاملاً، ثمّ **يُقدَّم للأبد متجاهلاً انتهاءَ الرمز** —
+ *    على جهازٍ قد يستعمله غيرُ صاحب الحساب بعد خروجه.
+ *    (وُجّه الفرعُ في v15.79 إلى الشبكة وحدها، فهذا دفاعٌ ثانٍ لا أوّل.)
+ *
+ * 🪤 ولا يُمحى المخزونُ كلُّه: `sw.js` لا يَحذف المخزونَ القديم إلا بعد أن
+ *    يملك `/index.html` صالحاً، فمَحوٌ شاملٌ عند الخروج يترك جهازاً بلا
+ *    شبكةٍ **لا يفتح شيئاً** — وهو عيبُ «الموقع عندي لا يفتح» بعينه.
+ *    فالمحوُ مقصورٌ على ما يحمل بياناتِ شخص.
+ */
+const purgePrivateCache = async (): Promise<void> => {
+    try {
+        if (typeof caches === 'undefined') return;
+        for (const name of await caches.keys()) {
+            const c = await caches.open(name);
+            for (const req of await c.keys()) {
+                if (/\/storage\/v1\//.test(req.url)) await c.delete(req);
+            }
+        }
+    } catch { /* متصفّحٌ بلا Cache Storage، أو تصفّحٌ خاصّ */ }
+};
+
 export const authService = {
     // Current memory-only profile for synchronous checks
     _profile: null as UserProfile | null,
@@ -104,11 +130,12 @@ export const authService = {
             }
         });
 
-        try { 
-            await supabase.auth.signOut(); 
-        } catch (e) { 
-            console.error('Signout Error', e); 
+        try {
+            await supabase.auth.signOut();
+        } catch (e) {
+            console.error('Signout Error', e);
         }
+        await purgePrivateCache();
     },
 
     deleteAccount: async (): Promise<void> => {
@@ -121,6 +148,7 @@ export const authService = {
         }
         authService._profile = null;
         localStorage.removeItem('supabase.auth.token');
+        await purgePrivateCache();
     },
 
     isAuthenticated: (): boolean => {

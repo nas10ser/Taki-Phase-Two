@@ -24,7 +24,7 @@ import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { CsvColumn } from '../../utils/csvExport';
-import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoiceCustomer } from '../../utils/invoice';
+import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoiceCustomer, esc } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
 import { invalidateVatMode } from '../../hooks/useVatMode';
 import { normalizeArabicNumerals } from '../../utils/helpers';
@@ -443,7 +443,7 @@ const AdminTax: React.FC = () => {
             Promise.all(inQ.map(p => fetchInvoiceCustomer(p.merchant_id))),
         ]);
         const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i], customer: custs[i] })).join('\n');
-        print(w, `فواتير ${quarter.label}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${quarter.label} (${inQ.length} فاتورة)</div>` + html);
+        print(w, `فواتير ${esc(quarter.label)}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${esc(quarter.label)} (${inQ.length} فاتورة)</div>` + html);
     };
 
     // زر واحد: تقرير الإقرار الضريبي بصيغة بنود نموذج الهيئة.
@@ -451,8 +451,8 @@ const AdminTax: React.FC = () => {
         const r = vatReturn;
         const refundable = r.netDue < 0;
         const html = `<div class="inv">
- <h1>⚖️ تقرير الإقرار الضريبي — ${quarter.label}</h1>
- <div class="sub">${settings.entity_name}${settings.cr_number ? ' — سجل/وثيقة: ' + settings.cr_number : ''}${settings.vat_number ? ' — الرقم الضريبي: ' + settings.vat_number : ' — (غير مسجّل ضريبياً بعد)'}</div>
+ <h1>⚖️ تقرير الإقرار الضريبي — ${esc(quarter.label)}</h1>
+ <div class="sub">${esc(settings.entity_name)}${settings.cr_number ? ' — سجل/وثيقة: ' + esc(settings.cr_number) : ''}${settings.vat_number ? ' — الرقم الضريبي: ' + esc(settings.vat_number) : ' — (غير مسجّل ضريبياً بعد)'}</div>
  <table>
   <tr><th>البند (مطابق لنموذج إقرار الهيئة)</th><th>المبلغ (ر.س)</th><th>الضريبة (ر.س)</th></tr>
   <tr><td>١. المبيعات الخاضعة للنسبة الأساسية ١٥٪ (${r.salesCount} فاتورة)</td><td>${r.salesNet.toFixed(2)}</td><td>${r.salesVat.toFixed(2)}</td></tr>

@@ -153,22 +153,40 @@ const Contact: React.FC = () => {
                 </Paragraph>
             </Section>
 
-            <Section title={isRTL ? '⚖️ الاستفسارات القانونية وحماية البيانات (DPO)' : '⚖️ Legal and data-protection enquiries (DPO)'}>
+            {/*
+              🔴 v15.79 — كان هنا وعدٌ **لا كودَ ينفّذه**، وهذا أسوأُ من ألّا نَعِد:
+                 «تُحوَّل مباشرةً إلى مسؤول حماية البيانات (DPO) ويُرَدّ عليها
+                  خلال ٣٠ يوماً كحدّ أقصى».
+                 وقِيس: لا دورَ DPO ولا بريدَ له ولا تحويلَ بكلمةٍ مفتاحيّة ولا
+                 عدّادَ ثلاثين يوماً في أيّ موضعٍ من الكود — الشكوى تَصل كأيّ
+                 شكوى. والوعدُ المنشورُ بلا تنفيذٍ مسؤوليّةٌ لا ميزة.
+              🪤 وأُزيل الوعدُ ولم يُبنَ الدور: تعيينُ مسؤولٍ لحماية البيانات
+                 ليس لازماً على كيانٍ كهذا نظاماً، فبناءُ الدور ليطابق جملةً
+                 مكتوبةً اختراعُ التزامٍ. والقناةُ الحقيقيّةُ تبقى كما هي:
+                 «شكواي» لها خيطٌ وردٌّ وسجلّ، وتصعيدُ سدايا مذكورٌ أدناه.
+              🔴 ولا مدّةَ برقمٍ هنا: مُهَل الاستجابة ينصّ عليها نظامُ حماية
+                 البيانات الشخصية ولوائحُه، فيُحال إليه بالاسم ولا يُنسخ رقمُه.
+            */}
+            <Section title={isRTL ? '⚖️ الاستفسارات القانونية والخصوصية' : '⚖️ Legal and privacy enquiries'}>
                 <Paragraph>
                     {isRTL ? (
                         <>
                             من <a href="/complaints" className="text-emerald-600 font-bold underline">«شكواي»</a>، اكتب في عنوان الرسالة كلمة
-                            <strong> «خصوصية»</strong> أو <strong>«قانوني»</strong>. تُحوَّل مباشرة
-                            إلى مسؤول حماية البيانات (DPO)، ويُرَدّ عليها خلال 30 يوماً
-                            كحدّ أقصى بموجب نظام حماية البيانات الشخصية السعودي.
+                            <strong> «خصوصية»</strong> أو <strong>«قانوني»</strong> — تَصل الإدارةَ
+                            كأيّ شكوى، ويبقى لها خيطٌ وردٌّ داخل التطبيق. ولممارسة
+                            حقوقك على بياناتك راجع قسم حقوقك في سياسة الخصوصية؛
+                            ونستجيب ضمن المُدَد المنصوص عليها في نظام حماية البيانات
+                            الشخصية ولوائحه التنفيذية.
                         </>
                     ) : (
                         <>
                             Through <a href="/complaints" className="text-emerald-600 font-bold underline">«My complaints»</a>, include
                             the word <strong>«Privacy»</strong> or <strong>«Legal»</strong>{' '}
-                            in the subject line. The message is routed directly to the Data
-                            Protection Officer (DPO) and answered within 30 days at most,
-                            in line with the Saudi Personal Data Protection Law (PDPL).
+                            in the subject line — it reaches the administration like any other
+                            complaint, and keeps a thread and a reply inside the app. To
+                            exercise your rights over your data see the rights section of the
+                            Privacy Policy; we respond within the periods prescribed by the
+                            Personal Data Protection Law and its implementing regulations.
                         </>
                     )}
                 </Paragraph>

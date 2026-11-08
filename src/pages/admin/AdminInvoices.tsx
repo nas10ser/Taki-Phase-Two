@@ -58,7 +58,14 @@ const PROVIDER_AR: Record<string, string> = {
     moyasar: 'ميسر', tap: 'تاب', paytabs: 'بيتابس',
     payfort: 'بيفورت', hyperpay: 'هايبر باي', checkout: 'Checkout.com',
 };
-const STATUS_AR: Record<string, string> = { paid: 'مدفوعة', amount_mismatch: '⚠️ مبلغ غير مطابق', refunded: 'مستردة' };
+// 🪤 v15.79 — ومفتاحٌ ثالثٌ لزم: `amount_unknown`. والمفتاحُ هنا يسكن
+//    **موضعين لا واحداً**: هذا الجدولُ للعرض، ومُرشِّحُ الحالة أدناه يُبنى من
+//    `Object.entries(STATUS_AR)` — فنسيانُه يُخفي الحالةَ من القائمة كلّها.
+//    (نفسُ شكلِ «المفتاحُ الجديد في ثلاثة مواضع» الذي كلّف v14.92.)
+// 🔴 ومعناها: مزوّدُ الدفع أكّد العمليةَ ولم يُرجع مبلغاً. وكان الكودُ يَضع
+//    **إجماليَّ الفاتورة** مكانَ المبلغ الغائب فيختم الطلبَ «مدفوعاً» بلا
+//    مال؛ صار المجهولُ فشلاً، وهذا الصفُّ أثرُه في سجلّ المدفوعات.
+const STATUS_AR: Record<string, string> = { paid: 'مدفوعة', amount_mismatch: '⚠️ مبلغ غير مطابق', amount_unknown: '⚠️ مبلغ مجهول', refunded: 'مستردة' };
 
 const fmtDate = (iso: string) => {
     const d = new Date(iso);

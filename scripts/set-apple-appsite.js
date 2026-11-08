@@ -42,5 +42,9 @@ fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, 'apple-app-site-association'), JSON.stringify(parsed, null, 2));
 console.log(`✅ كُتب .well-known/apple-app-site-association للفريق ${team}`);
 console.log('   ثمّ: npm run build && git push');
-console.log('   التحقّقُ بعد النشر (لاحظ: بلا امتداد، ونوعُه application/json):');
-console.log('     curl -sI https://www.takisa.net/.well-known/apple-app-site-association | grep -i content-type');
+// 🪤 و`curl -sI` يفحص **الترويسة** وحدها — والعيبُ المقيس كان ترويسةً
+//    سليمةً على جسمِ HTML (٢٠٠ · application/json · والجسمُ index.html).
+//    فالترويسةُ كانت التمويه. يُفحص **الجسمُ** إذن، و`-f` تُفشله على ٤٠٤.
+console.log('   التحقّقُ بعد النشر (يفحص الجسمَ لا الترويسة — فالترويسةُ كانت تكذب):');
+console.log("     curl -fsS https://www.takisa.net/.well-known/apple-app-site-association \\");
+console.log("       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"سليم:\", d[\"applinks\"][\"details\"][0][\"appIDs\"])'");

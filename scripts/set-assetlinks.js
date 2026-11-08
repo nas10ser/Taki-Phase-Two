@@ -66,5 +66,9 @@ fs.writeFileSync(OUT, out);
 console.log(`✅ كُتب .well-known/assetlinks.json للحزمة ${parsed[0].target.package_name}`);
 console.log(`   البصمة: ${fingerprint.slice(0, 11)}…${fingerprint.slice(-11)}`);
 console.log('   ثمّ: npm run build && git push — و`copy-static` ينسخه إلى dist.');
-console.log('   التحقّقُ بعد النشر:');
-console.log('     curl -s https://www.takisa.net/.well-known/assetlinks.json');
+// 🪤 التحقّقُ يجب أن **يستطيع الفشل**: `curl -s` وحده يَخرج بصفرٍ على ٤٠٤
+//    وعلى جسمِ HTML، فكان يُطمئن كذباً — وهو بعينُه ما خفى ١٠ أشهر. فـ`-f`
+//    تُفشله على ٤٠٤، و`jq`/`python` يُفشله على جسمٍ ليس JSON.
+console.log('   التحقّقُ بعد النشر (أمرٌ واحد، يقول «سليم» أو يفشل):');
+console.log("     curl -fsS https://www.takisa.net/.well-known/assetlinks.json \\");
+console.log("       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"سليم:\", d[0][\"target\"][\"package_name\"])'");
