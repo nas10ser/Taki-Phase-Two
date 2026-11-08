@@ -4,7 +4,7 @@ DO
 -- @@VOLATILE الخادم: محلّي-داخل-الحاوية
 -- القاعدة: postgres
 -- النسخة: PostgreSQL 17.6
--- @@VOLATILE وُلِّدت: 2026-11-08 21:34 (توقيت الرياض)
+-- @@VOLATILE وُلِّدت: 2026-11-09 00:17 (توقيت الرياض)
 -- 🪤 مولَّدٌ آلياً بـscripts/export-db-logic.sh — لا يُحرَّر بيد.
 --    وهو لقطةٌ للمقارنة والتعافي، وليس ملفَّ هجرة: لا تُشغّله.
 
@@ -833,6 +833,46 @@ AS $function$
          CASE WHEN p_locations IS NOT NULL AND jsonb_typeof(p_locations) = 'array'
               THEN p_locations ELSE '[]'::jsonb END) e
   WHERE COALESCE(e->>'id','') <> 'primary';
+$function$
+;
+
+
+-- ═══ FUNCTION _taki_hook_url_ok(p_url text) INVOKER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public._taki_hook_url_ok(p_url text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE v_auth text; v_host text; v_port text; v_tld text;
+BEGIN
+  IF p_url IS NULL THEN RETURN false; END IF;
+  -- لا تهذيبَ ولا توحيدَ حالة: ما لا يبدأ حرفياً بـ`https://` مرفوضٌ كما كان،
+  -- فلا تُوسَّع المدخلاتُ المقبولةُ بحجّة التحسين.
+  IF left(p_url, 8) <> 'https://' THEN RETURN false; END IF;
+  IF length(p_url) < 12 OR length(p_url) > 500 THEN RETURN false; END IF;
+  IF p_url ~ '[[:space:][:cntrl:]]' THEN RETURN false; END IF;
+
+  v_auth := lower(split_part(split_part(split_part(substr(p_url, 9), '/', 1), '?', 1), '#', 1));
+  IF v_auth !~ '^[a-z0-9.-]+(:[0-9]{1,5})?$' THEN RETURN false; END IF;
+
+  v_host := split_part(v_auth, ':', 1);
+  v_port := CASE WHEN v_auth ~ ':' THEN split_part(v_auth, ':', 2) ELSE '' END;
+  IF v_port NOT IN ('', '443') THEN RETURN false; END IF;
+
+  IF v_host !~ '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$' THEN RETURN false; END IF;
+
+  v_tld := split_part(v_host, '.', (length(v_host) - length(replace(v_host, '.', '')))::int + 1);
+  -- 🪤 سببٌ ثانٍ **مستقلّ** لا تجميل: لاحقاتُ الاستخدام الخاصّ (RFC 6761/6762
+  --    و`.internal` و`.corp`) تمرّ من شرط الحروف الخالصة وتُشير إلى شبكةٍ
+  --    داخليّة. وتُسمّى هنا صريحةً ولا تُترك للشكل.
+  IF v_tld IN ('local','localhost','internal','intranet','corp','home','lan',
+               'test','example','invalid','onion','i2p','alt') THEN
+    RETURN false;
+  END IF;
+
+  RETURN true;
+END
 $function$
 ;
 
@@ -6487,6 +6527,54 @@ END $function$
 ;
 
 
+-- ═══ FUNCTION admin_stock_bind_parked(p_parked bigint, p_integration uuid, p_note text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.admin_stock_bind_parked(p_parked bigint, p_integration uuid, p_note text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE v_uid text := (SELECT auth.uid())::text;
+        v_p record; v_tok jsonb; v_note text; r jsonb; v_store text;
+BEGIN
+  IF NOT public.taki_admin_perm('tab_sellers') THEN
+    RAISE EXCEPTION 'forbidden: tab_sellers required';
+  END IF;
+  v_note := btrim(COALESCE(p_note, ''));
+  -- 🪤 الحجّةُ إلزاميّةٌ لا تجميل: هذا القرارُ يُسلّم توكنَ متجرٍ إلى حسابٍ
+  --    بعينه بناءً على ما رآه إنسانٌ خارج النظام. وبعد شهرٍ لن يتذكّر أحدٌ لماذا.
+  IF length(v_note) < 10 THEN RAISE EXCEPTION 'NOTE_REQUIRED'; END IF;
+
+  SELECT * INTO v_p FROM public.stock_oauth_parked WHERE id = p_parked FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'NOT_FOUND'; END IF;
+  IF v_p.claimed_by IS NOT NULL THEN RAISE EXCEPTION 'ALREADY_CLAIMED'; END IF;
+
+  SELECT store_id INTO v_store FROM public.stock_integrations
+   WHERE id = p_integration AND lower(provider) = v_p.provider;
+  IF v_store IS NULL THEN RAISE EXCEPTION 'NO_INTEGRATION'; END IF;
+
+  SELECT decrypted_secret::jsonb INTO v_tok FROM vault.decrypted_secrets WHERE name = v_p.secret_name;
+  IF v_tok IS NULL THEN RAISE EXCEPTION 'SECRET_GONE'; END IF;
+
+  r := public.taki_stock_oauth_store(p_integration, v_tok, v_p.remote_id);
+  IF NOT COALESCE((r->>'ok')::boolean, false) THEN
+    RAISE EXCEPTION 'STORE_FAILED: %', COALESCE(r->>'error', '?');
+  END IF;
+
+  UPDATE public.stock_oauth_parked SET claimed_by = p_integration, claimed_at = now() WHERE id = v_p.id;
+  DELETE FROM vault.secrets WHERE name = v_p.secret_name;
+
+  INSERT INTO public.activity_log (user_id, user_type, action, entity_type, entity_id, metadata)
+  VALUES (v_uid, 'admin', 'stock_parked_bound', 'stock_integration', p_integration::text,
+          jsonb_build_object('parked', p_parked, 'provider', v_p.provider,
+                             'remote_id', v_p.remote_id, 'store_id', v_store, 'note', v_note));
+
+  RETURN jsonb_build_object('ok', true, 'expires_at', r->>'expires_at');
+END
+$function$
+;
+
+
 -- ═══ FUNCTION admin_stuck_refunds(p_limit integer) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.admin_stuck_refunds(p_limit integer DEFAULT 50)
  RETURNS jsonb
@@ -10243,6 +10331,7 @@ DECLARE
   v_uid text; v_b bookings%ROWTYPE; v_role text; v_cnt int; v_cap int;
   v_body text := btrim(COALESCE(p_body, ''));
   v_att  text := NULLIF(btrim(COALESCE(p_attachment_path, '')), '');
+  v_other text; v_since timestamptz; v_allow int; v_sent int;
 BEGIN
   IF NOT public._bot_gate_ok() THEN
     RETURN jsonb_build_object('success', false, 'error', 'not_authorized');
@@ -10275,6 +10364,22 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = 'chat' AND o.name = v_att) THEN
       RETURN jsonb_build_object('success', false, 'error', 'attachment_missing');
+    END IF;
+  END IF;
+
+  -- v15.80 — الحجب. نفسُ دلالةِ مشغّلِ الجدول حرفياً (مصدرُ البحث واحد:
+  -- `taki_block_since`)، لكن **رمزاً** لا استثناءً كي يبلغ القناتين.
+  v_other := CASE WHEN v_role = 'buyer' THEN v_b.store_id ELSE v_b.user_id END;
+  v_since := public.taki_block_since(v_uid, v_other);
+  IF v_since IS NOT NULL THEN
+    IF v_b.paid_at IS NULL AND COALESCE(v_b.fulfillment, '') <> 'delivery' THEN
+      RETURN jsonb_build_object('success', false, 'error', 'blocked');
+    END IF;
+    v_allow := (public.taki_chat_limits()->>'blocked_inflight')::int;
+    SELECT count(*) INTO v_sent FROM booking_messages
+     WHERE barcode = v_b.barcode AND sender_role = v_role AND created_at >= v_since;
+    IF v_allow <= 0 OR v_sent >= v_allow THEN
+      RETURN jsonb_build_object('success', false, 'error', 'blocked_cap');
     END IF;
   END IF;
 
@@ -10728,17 +10833,30 @@ CREATE OR REPLACE FUNCTION public.bot_toggle_block(p_telegram_id bigint, p_store
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE v_uid text; v_arr text[]; v_blocked boolean;
+DECLARE v_uid text; v_blocked boolean; v_n int;
 BEGIN
-  SELECT id, COALESCE(blocked_merchants,'{}') INTO v_uid, v_arr FROM users WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
-  IF v_uid IS NULL THEN RETURN jsonb_build_object('success',false,'error','not_linked'); END IF;
-  IF p_store_id = ANY(v_arr) THEN
-    UPDATE users SET blocked_merchants = array_remove(v_arr, p_store_id) WHERE id=v_uid; v_blocked := false;
-  ELSE
-    UPDATE users SET blocked_merchants = array_append(v_arr, p_store_id) WHERE id=v_uid; v_blocked := true;
+  SELECT id INTO v_uid FROM users WHERE id = public._bot_uid(p_telegram_id, p_whatsapp_id) AND deleted_at IS NULL LIMIT 1;
+  IF v_uid IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'not_linked'); END IF;
+
+  -- 🪤 ويُفحص الهدفُ هنا لا يُترك للمفتاح الأجنبيّ: استثناءٌ مرفوعٌ يبتلعه
+  --    غلافُ `rpc()` إلى `null` فيصمت البوت.
+  IF v_uid = p_store_id THEN RETURN jsonb_build_object('success', false, 'error', 'self'); END IF;
+  IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_store_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not_found');
   END IF;
-  RETURN jsonb_build_object('success',true,'blocked',v_blocked);
-END; $function$
+
+  DELETE FROM public.user_blocks WHERE blocker_id = v_uid AND blocked_id = p_store_id;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n > 0 THEN
+    v_blocked := false;
+  ELSE
+    INSERT INTO public.user_blocks (blocker_id, blocked_id) VALUES (v_uid, p_store_id)
+      ON CONFLICT DO NOTHING;
+    v_blocked := true;
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'blocked', v_blocked);
+END $function$
 ;
 
 
@@ -12100,10 +12218,10 @@ AS $function$
 DECLARE
     v_payment subscription_payments;
     v_sub merchant_subscriptions;
-    v_caller_role TEXT;
 BEGIN
-    SELECT user_type INTO v_caller_role FROM users WHERE id = auth.uid()::text;
-    IF v_caller_role IS DISTINCT FROM 'admin' THEN
+    -- v15.80 ⑦ — كان `SELECT user_type … IS DISTINCT FROM 'admin'`: أيُّ أدمنٍ
+    --   فرعيٍّ يَختم دفعةً ويُفعّل اشتراكاً. ونصُّ الرسالة يبقى كما هو.
+    IF NOT public.taki_admin_finance() THEN
         RAISE EXCEPTION 'Only admins can confirm payments';
     END IF;
 
@@ -13156,9 +13274,10 @@ BEGIN
     RETURN jsonb_build_object('error','not_found');
   END IF;
 
+  -- v15.80 ⑦ — كان `SELECT (user_type='admin')` خاماً: أيُّ أدمنٍ فرعيٍّ يقرأ
+  --   جوّالَ أيِّ مشترٍ وعنوانَه والمدفوع. صار صلاحيةً صريحة.
   IF v_uid IS NOT NULL THEN
-    SELECT (user_type = 'admin')
-      INTO v_is_admin FROM users WHERE id = v_uid;
+    v_is_admin := public.taki_admin_finance();
   END IF;
   v_is_admin := coalesce(v_is_admin,false);
 
@@ -13226,7 +13345,9 @@ BEGIN
   IF v_me IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO v_r FROM public.booking_refunds WHERE barcode = upper(btrim(p_barcode));
   IF NOT FOUND THEN RETURN NULL; END IF;
-  IF v_me <> v_r.buyer_id AND v_me <> v_r.store_id AND NOT public.is_admin() THEN RETURN NULL; END IF;
+  -- v15.80 ⑦
+  IF v_me <> v_r.buyer_id AND v_me <> v_r.store_id
+     AND NOT public.taki_admin_finance() THEN RETURN NULL; END IF;
   RETURN jsonb_build_object(
     'barcode', v_r.barcode, 'status', v_r.status, 'amount', v_r.amount,
     'opened_by', v_r.opened_by, 'reason', v_r.reason, 'requested_at', v_r.requested_at,
@@ -13438,7 +13559,10 @@ BEGIN
   IF v_me IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO v_row FROM public.order_invoices WHERE barcode = upper(btrim(p_barcode));
   IF NOT FOUND THEN RETURN NULL; END IF;
-  IF v_me <> COALESCE(v_row.buyer_id, '') AND v_me <> v_row.store_id AND NOT public.is_admin() THEN
+  -- v15.80 ⑦ — والمشتري والتاجرُ لا يتأثّران: الفرعُ المُضيَّقُ هو فرعُ الأدمن
+  --   وحده. و`enforcedAt` لـ`action_view_finance` يُسمّي `RLS order_invoices`.
+  IF v_me <> COALESCE(v_row.buyer_id, '') AND v_me <> v_row.store_id
+     AND NOT public.taki_admin_finance() THEN
     RETURN NULL;
   END IF;
   v_vat := NULLIF(btrim(COALESCE(v_row.seller->>'vat_number', '')), '');
@@ -14057,6 +14181,8 @@ DECLARE
     rec             RECORD;
     now_ms          BIGINT;
     window_cutoff   BIGINT;
+    blk_out         TEXT[];   -- v15.80 — من حجبهم هذا المتجر
+    blk_in          TEXT[];   -- v15.80 — من حجبوا هذا المتجر
 BEGIN
     IF NEW.status <> 'active' THEN
         RETURN NEW;
@@ -14098,6 +14224,10 @@ BEGIN
         END IF;
     END IF;
 
+    -- v15.80 — الحجبُ في الاتجاهين، ومسحٌ واحدٌ لا واحدٌ لكلّ مستخدم.
+    blk_out := ARRAY(SELECT ub.blocked_id FROM public.user_blocks ub WHERE ub.blocker_id = NEW.store_id);
+    blk_in  := ARRAY(SELECT ub.blocker_id FROM public.user_blocks ub WHERE ub.blocked_id = NEW.store_id);
+
     FOR rec IN
         SELECT id, smart_alerts, followed_merchants
         FROM public.users
@@ -14109,6 +14239,10 @@ BEGIN
           -- (قِيس: ١٠.٦ ثانية عند ١٠٠ ألف مستخدم — التاجر ينتظرها عند كل إضافة).
           AND ( COALESCE(jsonb_array_length(smart_alerts), 0) > 0
              OR NEW.store_id = ANY(COALESCE(followed_merchants, ARRAY[]::text[])) )
+          -- v15.80 — ووعدُ شاشةِ المتجر: «لن تصلك أي تنبيهات منه — حتى لو
+          -- طابقت تنبيهك الذكي». كان نصّاً بلا شرط.
+          AND NOT (id = ANY(blk_out))
+          AND NOT (id = ANY(blk_in))
     LOOP
         PERFORM public.taki_dispatch_smart_alert(
             rec.id,
@@ -14435,7 +14569,11 @@ BEGIN
 
   -- لا مشترك = لا نداء. يوفّر نداءً لكل إشعار لمستخدم بلا جهاز مسجَّل،
   -- وهي الحالة الغالبة اليوم (١١٧٧ إشعاراً مقابل صفر اشتراك).
-  IF NOT EXISTS (SELECT 1 FROM public.push_subscriptions WHERE user_id = NEW.user_id) THEN
+  -- 🔴 v15.81 — **ويُسأل الجدولان**: تطبيقُ المتجر لا يستلم Web Push
+  --    إطلاقاً، فرمزُ الجهاز هو قناتُه الوحيدة. وبسؤال جدولٍ واحدٍ كان
+  --    مستخدمُ التطبيق يُستبعَد عند الباب.
+  IF NOT EXISTS (SELECT 1 FROM public.push_subscriptions  WHERE user_id = NEW.user_id)
+ AND NOT EXISTS (SELECT 1 FROM public.device_push_tokens WHERE user_id = NEW.user_id) THEN
     RETURN NEW;
   END IF;
 
@@ -14770,7 +14908,9 @@ AS $function$
 declare v_me text := auth.uid()::text; v_out jsonb;
 begin
   if v_me is null then return null; end if;
-  if v_me <> p_merchant_id and not public.is_admin() then return null; end if;
+  -- v15.80 ⑦ — ومنادي الأدمن هو `src/pages/admin/AdminTax.tsx:84` لأيّ تاجر،
+  --   و`tab_launch` هو ما يفتح «الزكاة والضريبة» بنصّ الكتالوج.
+  if v_me <> p_merchant_id and not public.taki_admin_finance() then return null; end if;
 
   select jsonb_build_object(
     'name',    coalesce(nullif(u.shop,''), u.name),
@@ -14784,7 +14924,8 @@ begin
   where u.id = p_merchant_id;
 
   return v_out;
-end $function$
+end
+$function$
 ;
 
 
@@ -15059,6 +15200,11 @@ BEGIN
   END IF;
   IF p_webhook_url IS NOT NULL AND p_webhook_url !~ '^https://' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'HTTPS_REQUIRED');
+  END IF;
+  -- v15.80 ③ — وشكلُ المضيف فوق ذلك: `https` وحده يسمح بـ`https://127.0.0.1/`
+  IF p_webhook_url IS NOT NULL AND NOT public._taki_hook_url_ok(p_webhook_url) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'WEBHOOK_URL_REJECTED',
+      'hint', 'use a public DNS host over https on port 443 — no IP address, no port, no credentials in the URL');
   END IF;
   -- 🪤 يُولَّد على الخادم: مفتاحٌ يمرّ عبر متصفّحٍ أو محادثةٍ صار معروفاً.
   v_key := 'taki_' || encode(extensions.gen_random_bytes(24), 'hex');
@@ -15783,6 +15929,7 @@ CREATE OR REPLACE FUNCTION public.merchant_stock_claim_parked(p_id uuid, p_remot
 AS $function$
 DECLARE v_me text := NULLIF((SELECT auth.uid())::text, '');
         v_owner text; v_prov text; v_p record; v_tok jsonb; r jsonb;
+        v_n int; v_mine boolean;
 BEGIN
   IF v_me IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'AUTH_REQUIRED'); END IF;
   SELECT store_id, lower(provider) INTO v_owner, v_prov
@@ -15798,6 +15945,28 @@ BEGIN
      AND remote_id = btrim(p_remote_id)
    ORDER BY created_at DESC LIMIT 1;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); END IF;
+
+  -- 🔴 v15.80 ④ — الرقمُ وحده ادّعاء. فيُشترط معه أنّ نافذةً كانت مفتوحةً
+  --    لحظةَ وصولِ التوكن، وأنّها **نافذةُ المُطالب**، وأنّها **الوحيدة**.
+  SELECT count(*), COALESCE(bool_or(si.id = p_id), false)
+    INTO v_n, v_mine
+    FROM public.stock_integrations si
+   WHERE lower(si.provider) = v_prov
+     AND si.connect_nonce IS NOT NULL
+     AND si.oauth_attempt_at IS NOT NULL
+     AND si.oauth_attempt_at <= v_p.created_at
+     AND si.oauth_attempt_at >  v_p.created_at - interval '30 minutes';
+  IF v_n = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'NO_WINDOW',
+      'hint', 'press Connect in TAKI first, then install from your store — the token must arrive while your window is open');
+  END IF;
+  IF NOT v_mine THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'NOT_YOUR_WINDOW');
+  END IF;
+  IF v_n > 1 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'AMBIGUOUS_WINDOW', 'open_claims', v_n,
+      'hint', 'another store had a connect window open at the same moment — retry, or ask TAKI support to bind it');
+  END IF;
 
   SELECT decrypted_secret::jsonb INTO v_tok FROM vault.decrypted_secrets WHERE name = v_p.secret_name;
   IF v_tok IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'SECRET_GONE'); END IF;
@@ -15835,11 +16004,26 @@ BEGIN
       'provider', v_i.provider);
   END IF;
 
-  v_nonce := encode(extensions.gen_random_bytes(16), 'hex');
-  UPDATE public.stock_integrations
-     SET connect_nonce = v_nonce, oauth_attempt_at = now(),
-         last_note = 'CONNECT_STARTED'
-   WHERE id = p_id;
+  -- v15.80 ④ — نافذةٌ قائمةٌ تُعاد كما هي، ولا يُفتح غيرُها إلا بحصّة.
+  IF v_i.connect_nonce IS NOT NULL
+     AND v_i.oauth_attempt_at IS NOT NULL
+     AND v_i.oauth_attempt_at > now() - interval '30 minutes' THEN
+    v_nonce := v_i.connect_nonce;
+  ELSE
+    -- 🪤 ويُردّ شكلاً ثابتاً: `taki_rate_check` ترفع استثناءً، وهذه الدالّةُ
+    --    عقدُها jsonb. فيُلفّ النداءُ ولا يُغيَّر شكلُ الردّ على الواجهة.
+    BEGIN
+      PERFORM public.taki_rate_check('stockconnect:' || p_id::text, 5, 3600,
+                                     'too many connect attempts — wait and retry');
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'RATE_LIMITED');
+    END;
+    v_nonce := encode(extensions.gen_random_bytes(16), 'hex');
+    UPDATE public.stock_integrations
+       SET connect_nonce = v_nonce, oauth_attempt_at = now(),
+           last_note = 'CONNECT_STARTED'
+     WHERE id = p_id;
+  END IF;
 
   IF lower(v_i.provider) = 'zid' THEN
     -- مقيسٌ من https://docs.zid.sa/authorization.md — و`state` تُعاد كما هي
@@ -15911,9 +16095,15 @@ BEGIN
   SELECT store_id, lower(provider) INTO v_owner, v_prov
     FROM public.stock_integrations WHERE id = p_id;
   IF v_owner IS NULL OR v_owner <> v_me THEN RETURN 0; END IF;
-  RETURN (SELECT count(*) FROM public.stock_oauth_parked
-           WHERE provider = v_prov AND claimed_by IS NULL
-             AND created_at > now() - interval '7 days');
+  RETURN (SELECT count(*) FROM public.stock_oauth_parked p
+           WHERE p.provider = v_prov AND p.claimed_by IS NULL
+             AND p.created_at > now() - interval '7 days'
+             AND EXISTS (SELECT 1 FROM public.stock_integrations si
+                          WHERE si.id = p_id
+                            AND si.connect_nonce IS NOT NULL
+                            AND si.oauth_attempt_at IS NOT NULL
+                            AND si.oauth_attempt_at <= p.created_at
+                            AND si.oauth_attempt_at >  p.created_at - interval '30 minutes'));
 END
 $function$
 ;
@@ -16071,6 +16261,13 @@ BEGIN
   -- 🪤 خطّافٌ بلا https يُرسل أحداثَ مخزونٍ موقَّعةً على قناةٍ مكشوفة.
   IF p_webhook_url IS NOT NULL AND btrim(p_webhook_url) <> '' AND p_webhook_url !~ '^https://' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'HTTPS_REQUIRED');
+  END IF;
+  -- v15.80 ③ — ونفسُ الحارس في الكاتب الثاني. ونصٌّ واحدٌ يُستدعى من الموضعين
+  --   لا نسختان تنحرفان (درسُ «مفرداتُ الأخطاء في مكانٍ واحد»، v14.96).
+  IF p_webhook_url IS NOT NULL AND btrim(p_webhook_url) <> ''
+     AND NOT public._taki_hook_url_ok(btrim(p_webhook_url)) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'WEBHOOK_URL_REJECTED',
+      'hint', 'use a public DNS host over https on port 443 — no IP address, no port, no credentials in the URL');
   END IF;
   UPDATE public.stock_integrations
      SET is_enabled  = COALESCE(p_enabled, is_enabled),
@@ -16457,6 +16654,24 @@ $function$
 ;
 
 
+-- ═══ FUNCTION prune_device_push_tokens() DEFINER owner=supabase_admin search_path=search_path=public anon=no ═══
+CREATE OR REPLACE FUNCTION public.prune_device_push_tokens()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE v_n integer;
+BEGIN
+  DELETE FROM public.device_push_tokens
+   WHERE coalesce(last_used_at, created_at) < now() - interval '90 days';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END
+$function$
+;
+
+
 -- ═══ FUNCTION prune_push_subscriptions() DEFINER owner=supabase_admin search_path=search_path=public anon=no ═══
 CREATE OR REPLACE FUNCTION public.prune_push_subscriptions()
  RETURNS integer
@@ -16742,8 +16957,15 @@ DECLARE
   v_me   text := (SELECT auth.uid()::text);
   v_ip   text;
   v_prev text;
+  v_age  boolean;
+  v_same boolean;
 BEGIN
   IF v_me IS NULL THEN RETURN jsonb_build_object('changed', false, 'error', 'AUTH_REQUIRED'); END IF;
+
+  -- 🔴 الرايةُ هنا، مرّةً واحدةً، **قبل فرعِ البوّابة** (انظر أعلاه).
+  --    محلّيّةُ المعاملة: تموت بموتها، ولكلّ طلبِ PostgREST معاملتُه، فلا
+  --    يستطيع متصفّحٌ رفعَها (ولا دالّةَ عامّةً تأخذ مفتاحَ إعدادٍ من منادٍ).
+  PERFORM set_config('taki.consent_write', '1', true);
 
   -- العنوان من الترويسة لا من العميل: ما يُمرّره المتصفّح عن نفسه ليس دليلاً.
   -- v15.79 — ومن **دالّةٍ واحدة**: كانت هنا نسخةٌ ثانيةٌ من استخراج العنوان،
@@ -16758,15 +16980,25 @@ BEGIN
     RETURN jsonb_build_object('changed', true, 'kind', 'gateway');
   END IF;
 
-  SELECT consent_terms_version INTO v_prev FROM public.users WHERE id = v_me;
-  IF v_prev IS NOT DISTINCT FROM p_terms_version AND p_min_age IS NULL THEN
-    RETURN jsonb_build_object('changed', false);
+  SELECT consent_terms_version, consent_age_confirmed INTO v_prev, v_age
+    FROM public.users WHERE id = v_me;
+  v_same := v_prev IS NOT DISTINCT FROM p_terms_version;
+
+  -- v15.80 — العودةُ المبكّرة كانت **لا تُصيب أبداً**: شرطُها القديم
+  -- `AND p_min_age IS NULL` ومنادِيا الموقع يُمرّران السنَّ دائماً. فكلُّ
+  -- نداءٍ مُعادٍ كان يدهس `consent_terms_at` بـ`now()` — أي أنّ البوّابة التي
+  -- تسأل عند كلّ فتحةٍ كانت ستمحو **تاريخَ التوقيع الأصليّ** وهو كلُّ الغرض
+  -- من حفظه. الآن: نفسُ الإصدار **وإقرارُ السنّ قائم** ⇒ لا كتابةَ إطلاقاً.
+  IF v_same AND (p_min_age IS NULL OR COALESCE(v_age, false)) THEN
+    RETURN jsonb_build_object('changed', false, 'already', true);
   END IF;
 
   UPDATE public.users
-     SET consent_terms_at      = now(),
-         consent_privacy_at    = now(),
-         consent_refund_at     = now(),
+     SET -- أوّلُ كتابةٍ تفوز **لنفس الإصدار**؛ وإصدارٌ جديد توقيعٌ جديد
+         -- فيستحقّ وقتَه. و`COALESCE` لصفٍّ يحمل إصداراً بلا وقت.
+         consent_terms_at      = CASE WHEN v_same THEN COALESCE(consent_terms_at,   now()) ELSE now() END,
+         consent_privacy_at    = CASE WHEN v_same THEN COALESCE(consent_privacy_at, now()) ELSE now() END,
+         consent_refund_at     = CASE WHEN v_same THEN COALESCE(consent_refund_at,  now()) ELSE now() END,
          consent_terms_version = p_terms_version,
          consent_ip            = COALESCE(v_ip, consent_ip),
          consent_user_agent    = COALESCE(NULLIF(btrim(COALESCE(p_user_agent, '')), ''), consent_user_agent),
@@ -16848,6 +17080,7 @@ DECLARE
   v_r         public.booking_refunds%ROWTYPE;
   v_admin     boolean;
   v_amt       numeric;
+  v_cap       numeric;
   v_seq       integer;
   v_cn        text;
   v_shop      text;
@@ -16856,7 +17089,9 @@ DECLARE
   v_rows      integer;
 BEGIN
   IF v_me IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'AUTH_REQUIRED'); END IF;
-  v_admin := public.is_admin();
+  -- v15.80 ⑦ — صلاحيةٌ ماليّةٌ صريحة بدل `is_admin()`، التي تُرجع TRUE لأيّ
+  --   أدمنٍ حين لا يوجد إطارُ `admin_*` على المكدّس (نصُّها الحيّ، درسُ v14.38).
+  v_admin := public.taki_admin_finance();
 
   -- v14.21 — قفل صفّ الحجز. بدونه يسبق «استلمتُ طلبي» تأكيدَ الردّ فيقرأ هذا
   -- النداء حالةً قديمة، فيُصدر إشعاراً دائناً ويقول «أُلغي الطلب» ولا إلغاء وقع.
@@ -16872,6 +17107,20 @@ BEGIN
       CASE WHEN v_b.refund_state = 'claiming' THEN 'REFUND_IN_FLIGHT' ELSE 'ALREADY_REFUNDED' END);
   END IF;
 
+  -- 🔴 v15.80 ① — السقفُ يُفحص **هنا**، قبل أيّ قراءةٍ لصفّ الاسترداد وقبل أيّ
+  --    كتابة: فمبلغٌ أكبرُ من فاتورةِ الطلب باطلٌ بذاته، لا يصير صالحاً بوجود
+  --    طلبِ استردادٍ ولا باطلاً بغيابه. وموضعُه هذا هو أيضاً ما يجعله **قابلاً
+  --    للكسر** على أيّ طلبٍ مدفوع بلا إنشاء إشعارٍ دائنٍ ولا إحراقِ رقم.
+  --    والسماحُ `0.011` منقولٌ من `supabase/functions/merchant-pay/index.ts:200`
+  --    (`got < expected - 0.011`) لا مُخترَعاً — فالسماحان لا ينحرفان.
+  IF p_action = 'refund' THEN
+    v_cap := public.taki_refund_remaining(v_b.barcode);
+    IF p_amount IS NOT NULL AND round(p_amount, 2) > v_cap + 0.011 THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'AMOUNT_ABOVE_INVOICE',
+                                'cap', v_cap, 'sent', round(p_amount, 2));
+    END IF;
+  END IF;
+
   SELECT COALESCE(NULLIF(u.shop,''), u.name) INTO v_shop FROM public.users u WHERE u.id = v_b.store_id;
 
   -- v14.21 — الحارس **قبل** كل فرع. كان بعد فرع `open`، فيُعاد فتح استرداد
@@ -16884,7 +17133,12 @@ BEGIN
 
   -- ── التاجر يفتحها بنفسه: يُسجَّل الدَّين ثم يُثبته لاحقاً بمرجع ──────────
   IF p_action = 'open' THEN
-    v_amt := round(COALESCE(NULLIF(v_b.paid_amount, 0), v_b.total_amount, 0), 2);
+    -- v15.80 ① — ومن نفس المصدر: لو كان إجماليُّ الفاتورة أقلَّ من المدفوع
+    --   لسُجِّل دَينٌ لا يستطيع التاجرُ تثبيتَه بعدها (الحارسُ أدناه يرفضه)
+    --   فيَعلق الطلبُ. والسقفُ هنا يمنع تلك العُقدة من المنشأ.
+    --   (قِيس: في الطلباتِ المدفوعة السبعة كلِّها `paid = total = invoice`،
+    --    فالسلوكُ اليومَ لا يتغيّر بحرف.)
+    v_amt := COALESCE(public.taki_refund_cap(v_b.barcode), 0);
     INSERT INTO public.booking_refunds (barcode, store_id, buyer_id, status, opened_by, amount, merchant_note)
     VALUES (v_b.barcode, v_b.store_id, v_b.user_id, 'approved',
             CASE WHEN v_admin AND v_me <> v_b.store_id THEN 'admin' ELSE 'seller' END,
@@ -16934,6 +17188,22 @@ BEGIN
 
   v_amt := round(COALESCE(p_amount, v_r.amount, 0), 2);
   IF NOT (v_amt > 0) THEN RETURN jsonb_build_object('ok', false, 'error', 'ZERO_AMOUNT'); END IF;
+
+  -- 🔴 v15.80 ① — وحارسٌ ثانٍ على **القيمة المكتوبة** لا على المُرسَلة وحدها،
+  --    وهو يفرّق بين مصدرَين عن عمد:
+  --    • رقمٌ أرسله العميلُ ⇒ **يُرفض** صراحةً (وقد رُفض مبكّراً؛ وهذا تكرارُ
+  --      حصانةٍ لا زينة: أيُّ فرعٍ جديدٍ يُدخل `p_amount` سيجده هنا).
+  --    • رقمٌ كتبه الخادمُ في `booking_refunds.amount` ⇒ **يُقصّ** ولا يُرفض.
+  --      ورفضُه كان يَعلق الطلبَ: التاجرُ لا يملك تغييرَ رقمٍ كتبه الخادم،
+  --      فيبقى دَينٌ لا يُثبَّت أبداً. والقصُّ لا يُفرط على أحد.
+  IF p_amount IS NOT NULL AND v_amt > COALESCE(v_cap, 0) + 0.011 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'AMOUNT_ABOVE_INVOICE',
+                              'cap', COALESCE(v_cap, 0), 'sent', v_amt);
+  END IF;
+  IF p_amount IS NULL AND v_amt > COALESCE(v_cap, 0) THEN
+    v_amt := COALESCE(v_cap, 0);
+    IF NOT (v_amt > 0) THEN RETURN jsonb_build_object('ok', false, 'error', 'ZERO_AMOUNT'); END IF;
+  END IF;
 
   INSERT INTO public.store_invoice_counters (store_id, last_credit_seq)
   VALUES (v_b.store_id, 1)
@@ -17459,12 +17729,13 @@ AS $function$
 DECLARE
     v_uid text := (auth.uid())::text;
     v_store_id text;
+    v_rater_id text;
 BEGIN
     IF v_uid IS NULL THEN
         RAISE EXCEPTION 'auth required';
     END IF;
     -- Only the seller who owns the deal (or an admin) can reply
-    SELECT d.store_id INTO v_store_id FROM public.ratings r
+    SELECT d.store_id, r.user_id INTO v_store_id, v_rater_id FROM public.ratings r
         JOIN public.deals d ON d.id = r.deal_id
         WHERE r.id = p_rating_id AND r.deleted_at IS NULL;
     IF v_store_id IS NULL THEN
@@ -17472,6 +17743,15 @@ BEGIN
     END IF;
     IF v_store_id <> v_uid AND NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_uid AND u.user_type='admin') THEN
         RAISE EXCEPTION 'forbidden';
+    END IF;
+    -- v15.80 — الحجب يقطع الردَّ العامّ لا التقييم. ولو أسكت التقييمَ لصار
+    -- أداةَ تاجرٍ يدفن نقّاده، ولذلك `ratings` تبقى كما هي تماماً.
+    -- 🪤 ومحوُ الردّ (نصٌّ فارغ) يبقى مسموحاً: سحبُ كلامٍ منشورٍ ليس إساءة.
+    IF v_rater_id IS NOT NULL
+       AND NULLIF(trim(p_reply), '') IS NOT NULL
+       AND public.taki_is_blocked_pair(v_uid, v_rater_id) THEN
+        RAISE EXCEPTION 'لا يمكن الرد على هذا التقييم'
+          USING ERRCODE = 'P0001', HINT = 'P0032';
     END IF;
     UPDATE public.ratings
         SET reply = NULLIF(trim(p_reply), ''),
@@ -17541,7 +17821,10 @@ DECLARE
 BEGIN
     -- v12.75: an authenticated caller may only start a trial for HIMSELF
     -- (admins and internal definer/cron chains that carry no other uid pass).
-    IF auth.uid() IS NOT NULL AND auth.uid()::text <> p_merchant_id AND NOT is_admin() THEN
+    -- v15.80 ⑦ — و«أدمن» صارت صلاحيةً صريحة بدل `is_admin()`.
+    IF auth.uid() IS NOT NULL AND auth.uid()::text <> p_merchant_id
+       AND NOT (public.taki_admin_perm('tab_sellers')
+             OR public.taki_admin_perm('action_manage_users')) THEN
         RAISE EXCEPTION 'forbidden';
     END IF;
 
@@ -17901,6 +18184,19 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_admin_finance() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_admin_finance()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT public.taki_admin_perm('action_view_finance')
+      OR public.taki_admin_perm('tab_launch');
+$function$
+;
+
+
 -- ═══ FUNCTION taki_admin_perm(p_perm text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
 CREATE OR REPLACE FUNCTION public.taki_admin_perm(p_perm text)
  RETURNS boolean
@@ -17917,6 +18213,118 @@ AS $function$
          OR p_perm = ANY(COALESCE(u.admin_permissions, '{}'::text[])) )
   );
 $function$
+;
+
+
+-- ═══ FUNCTION taki_alert_dispatch(p_title text, p_body text, p_level text, p_key text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_alert_dispatch(p_title text, p_body text, p_level text DEFAULT 'crit'::text, p_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_chan   jsonb;
+  v_to     text;
+  v_key    text;
+  v_fp     text;
+  v_floor  int;
+  v_req    bigint;
+  v_html   text;
+BEGIN
+  -- البصمةُ: مفتاحُ المنادي + محتوى الرسالة. فمحتوًى مختلفٌ يمرّ، ومكرَّرٌ
+  -- حرفيٌّ يُكتم — وهي أرضيّةٌ **أضعفُ** من تهدئة المنادي عمداً، فلا تُلغيها.
+  v_fp := COALESCE(p_key, 'alert') || ':' || md5(COALESCE(p_title,'') || '|' || COALESCE(p_body,''));
+
+  SELECT value INTO v_chan FROM public.platform_settings WHERE key = 'alert_channels';
+  IF COALESCE((v_chan->>'email')::boolean, false) IS NOT TRUE THEN
+    INSERT INTO public.taki_alert_log (fingerprint, level, channel, ok, reason, title)
+    VALUES (v_fp, p_level, 'email', false, 'channel_off', left(COALESCE(p_title,''), 200));
+    RETURN jsonb_build_object('sent', false, 'reason', 'channel_off');
+  END IF;
+
+  -- 🪤 وقيمةٌ غيرُ رقميّةٍ في الإعداد لا تُجهض التنبيه: `::int` على نصٍّ
+  --    فاسدٍ يرفع استثناءً، ومسارٌ مُجهَضٌ هنا يعني تنبيهاً **ضائعاً** بسبب
+  --    خطأِ ضبطٍ — فالارتدادُ إلى الافتراضيّ أصحُّ من السقوط.
+  BEGIN
+    v_floor := GREATEST(COALESCE((v_chan->>'min_minutes')::int, 30), 0);
+  EXCEPTION WHEN OTHERS THEN
+    v_floor := 30;
+  END;
+  IF EXISTS (SELECT 1 FROM public.taki_alert_log
+              WHERE fingerprint = v_fp AND ok
+                AND sent_at > now() - make_interval(mins => v_floor)) THEN
+    RETURN jsonb_build_object('sent', false, 'reason', 'deduped');
+  END IF;
+
+  SELECT value #>> '{}' INTO v_to FROM public.platform_settings WHERE key = 'alert_email';
+  -- 🪤 عنوانٌ مشوَّهٌ يُنتج نداءً يفشل بصمت، فيُفحص بالصيغة قبل الإرسال
+  --    (نفسُ حارسِ `contact_emails` في الواجهة — درسُ الرابط المعطوب v14.77).
+  IF COALESCE(v_to,'') !~ '^[^[:space:]@]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$' THEN
+    INSERT INTO public.taki_alert_log (fingerprint, level, channel, ok, reason, title)
+    VALUES (v_fp, p_level, 'email', false, 'no_address', left(COALESCE(p_title,''), 200));
+    RETURN jsonb_build_object('sent', false, 'reason', 'no_address');
+  END IF;
+
+  -- 🪤 الخزنةُ تُقرأ **بعد** الفحوص — نفسُ ترتيب v15.51 في
+  --    `handle_notification_push`: لا قراءةَ سرٍّ لنداءٍ لن يحدث.
+  BEGIN
+    SELECT value INTO v_key FROM public.app_secrets WHERE key = 'resend_api_key';
+  EXCEPTION WHEN OTHERS THEN
+    v_key := NULL;
+  END;
+  IF COALESCE(v_key,'') = '' THEN
+    INSERT INTO public.taki_alert_log (fingerprint, level, channel, ok, reason, title)
+    VALUES (v_fp, p_level, 'email', false, 'no_secret', left(COALESCE(p_title,''), 200));
+    RETURN jsonb_build_object('sent', false, 'reason', 'no_secret');
+  END IF;
+
+  -- الجسمُ عربيٌّ وإنجليزيٌّ معاً: المنصّةُ ثنائيّةُ اللغة، والتنبيهُ يُقرأ
+  -- على جوّالٍ قد يكون بأيّ منهما.
+  -- 🪤 ولا تهريبَ HTML هنا عن قصدٍ مقيس: المنادِيان الوحيدان يبنيان النصَّ
+  --    من ثوابتَ ومن `format()` على أرقامِ خادمٍ وأسماءِ وظائفَ — صفرُ مدخلٍ
+  --    من مستخدم. وأيُّ منادٍ **قادمٍ** يحمل نصَّ مستخدمٍ يجب أن يهرّبه قبل
+  --    النداء، وإلّا صار البريدُ سطحَ حقنٍ في صندوقِ ناصر.
+  v_html :=
+      '<div dir="rtl" style="font:16px/1.7 -apple-system,system-ui,sans-serif">'
+   || '<h3 style="margin:0 0 8px">' || p_title || '</h3>'
+   || '<pre style="white-space:pre-wrap;font:inherit;margin:0">' || COALESCE(p_body,'') || '</pre>'
+   || '<p style="color:#666;font-size:13px">المستوى / level: ' || COALESCE(p_level,'') || '</p>'
+   || '</div>'
+   || '<hr><div dir="ltr" style="font:14px/1.6 -apple-system,system-ui,sans-serif;color:#444">'
+   || 'TAKI server alert. This message is sent straight from the database, '
+   || 'independently of the bots and of web push.'
+   || '</div>';
+
+  BEGIN
+    SELECT net.http_post(
+      url     := 'https://api.resend.com/emails',
+      body    := jsonb_build_object(
+                   'from',    'TAKI <no-reply@takisa.net>',
+                   'to',      jsonb_build_array(v_to),
+                   'subject', p_title,
+                   'html',    v_html),
+      headers := jsonb_build_object(
+                   'Content-Type',  'application/json',
+                   'Authorization', 'Bearer ' || v_key),
+      timeout_milliseconds := 5000
+    ) INTO v_req;
+  EXCEPTION WHEN OTHERS THEN
+    -- 🔴 و«ابتلاعُ الاستثناء» هنا لا يُخفي العيب: السببُ يُكتب في السجلّ،
+    --    فالإدراجُ في معالِج الاستثناء ينجو من تراجعِ الكتلة الداخليّة.
+    INSERT INTO public.taki_alert_log (fingerprint, level, channel, ok, reason, title)
+    VALUES (v_fp, p_level, 'email', false, 'http_error:' || left(SQLERRM, 120), left(COALESCE(p_title,''), 200));
+    RETURN jsonb_build_object('sent', false, 'reason', 'http_error');
+  END;
+
+  INSERT INTO public.taki_alert_log (fingerprint, level, channel, ok, reason, request_id, title)
+  VALUES (v_fp, p_level, 'email', true, 'queued', v_req, left(COALESCE(p_title,''), 200));
+
+  -- تنظيفٌ ذاتيٌّ بلا كرونٍ جديد: الحجمُ قِيس ٣٣ تنبيهاً في أحد عشر أسبوعاً.
+  DELETE FROM public.taki_alert_log WHERE sent_at < now() - interval '180 days';
+
+  RETURN jsonb_build_object('sent', true, 'reason', 'queued', 'request_id', v_req);
+END $function$
 ;
 
 
@@ -18058,6 +18466,20 @@ AS $function$
                  COALESCE(p_booked_at, 0) + (public.taki_booking_grace_hours() * 3600000)::bigint,
                  COALESCE(p_expiry_time, 0) + 3600000)
                > (EXTRACT(EPOCH FROM NOW())*1000)::bigint );
+$function$
+;
+
+
+-- ═══ FUNCTION taki_block_since(p_a text, p_b text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_block_since(p_a text, p_b text)
+ RETURNS timestamp with time zone
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT min(created_at) FROM public.user_blocks
+   WHERE (blocker_id = p_a AND blocked_id = p_b)
+      OR (blocker_id = p_b AND blocked_id = p_a);
 $function$
 ;
 
@@ -18217,6 +18639,81 @@ AS $function$
   SELECT GREATEST(0.25, LEAST(public.taki_booking_hold_max(), COALESCE(
     (SELECT NULLIF(value->>'min_hold_hours','')::numeric
        FROM public.platform_settings WHERE key = 'booking_holds' LIMIT 1), 1)));
+$function$
+;
+
+
+-- ═══ FUNCTION taki_booking_options_fault(p_deal_id text, p_selected jsonb) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_booking_options_fault(p_deal_id text, p_selected jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_opts jsonb; v_vars jsonb; v_grp jsonb; v_sel jsonb; v_var jsonb;
+  v_arr  jsonb := CASE WHEN jsonb_typeof(COALESCE(p_selected, 'null'::jsonb)) = 'array'
+                       THEN p_selected ELSE '[]'::jsonb END;
+BEGIN
+  SELECT CASE WHEN jsonb_typeof(d.options)  = 'array' THEN d.options  ELSE '[]'::jsonb END,
+         CASE WHEN jsonb_typeof(d.variants) = 'array' THEN d.variants ELSE '[]'::jsonb END
+    INTO v_opts, v_vars
+    FROM public.deals d WHERE d.id = p_deal_id;
+  -- عرضٌ غير موجود: لا قاعدةَ تُطبَّق هنا (المفتاحُ الأجنبيُّ على `deal_id` هو
+  -- موضعُ ذلك)، وسلوكُ النصّ السابق نفسُه.
+  IF v_opts IS NULL THEN RETURN NULL; END IF;
+
+  -- (١) 🔴 كلُّ مدخلٍ يُشير إلى شيءٍ **موجودٍ فعلاً**. وبلا هذا الشرط يكون
+  --     الشرطان (٢) و(٣) قابلَين للتجاوز بمعرّفٍ مخترَع: `taki_booking_amount`
+  --     تتجاوز المجهول (`CONTINUE WHEN v_node IS NULL`) فتُسقط ثمنَه، ومدخلٌ
+  --     بمعرّفِ نسخةٍ وهميّ يُرضي (٢) ثم يُسقط الأساسَ إلى سعرِ العرض.
+  FOR v_sel IN SELECT * FROM jsonb_array_elements(v_arr) LOOP
+    IF v_sel->>'g' = '__variant__' THEN
+      IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_vars) e WHERE e->>'id' = v_sel->>'c') THEN
+        RETURN 'NEEDS_OPTIONS';
+      END IF;
+    ELSE
+      IF NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_opts) g,
+             jsonb_array_elements(CASE WHEN jsonb_typeof(g->'choices') = 'array'
+                                       THEN g->'choices' ELSE '[]'::jsonb END) c
+         WHERE g->>'id' = v_sel->>'g' AND c->>'id' = v_sel->>'c')
+      THEN
+        RETURN 'NEEDS_OPTIONS';
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- (٢) 🔴 عرضٌ له نسخ ⇒ لا بدّ من اختيار نسخة — **لكلّ المصادر**. كان هذا
+  --     الشرطُ داخل `IF COALESCE(NEW.source,'web') <> 'web'`، فالويبُ معفى.
+  IF jsonb_array_length(v_vars) > 0
+     AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_arr) s WHERE s->>'g' = '__variant__')
+  THEN
+    RETURN 'NEEDS_OPTIONS';
+  END IF;
+
+  -- (٣) كلُّ مجموعةٍ إلزاميّةٍ مختارة — لكلّ المصادر كذلك
+  FOR v_grp IN SELECT * FROM jsonb_array_elements(v_opts) LOOP
+    IF COALESCE((v_grp->>'required')::boolean, false)
+       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_arr) s WHERE s->>'g' = v_grp->>'id')
+    THEN
+      RETURN 'NEEDS_OPTIONS';
+    END IF;
+  END LOOP;
+
+  -- (٤) كمّيةُ النسخة المتبقّية تكفي المطلوب (كما كان، بلا تغييرٍ في النصّ)
+  FOR v_sel IN SELECT * FROM jsonb_array_elements(v_arr) LOOP
+    CONTINUE WHEN v_sel->>'g' IS DISTINCT FROM '__variant__';
+    SELECT e INTO v_var FROM jsonb_array_elements(v_vars) e WHERE e->>'id' = v_sel->>'c' LIMIT 1;
+    CONTINUE WHEN v_var IS NULL OR NOT (v_var ? 'qty') OR NULLIF(v_var->>'qty','') IS NULL;
+    IF (v_var->>'qty')::numeric < GREATEST(COALESCE((v_sel->>'qty')::int,1),1) THEN
+      RETURN 'VARIANT_STOCK:' || COALESCE(v_var->>'label','?') || ':'
+             || GREATEST((v_var->>'qty')::int, 0)::text;
+    END IF;
+  END LOOP;
+
+  RETURN NULL;
+END
 $function$
 ;
 
@@ -18410,6 +18907,24 @@ BEGIN
         FROM public.users u
         WHERE u.user_type = 'admin' AND u.deleted_at IS NULL;
 
+        -- v15.80 ⟵ ساقٌ ثانية، **إضافيّةٌ** وداخلَ نفس التهدئة أعلاه.
+        -- والنصُّ ثنائيُّ اللغة، وبصمةُ الكتم لكلّ مقياسٍ على حِدة فلا يكتم
+        -- مقياسٌ غيرَه.
+        BEGIN
+          PERFORM public.taki_alert_dispatch(
+            (CASE WHEN v_level='crit' THEN '🔴 بلغت الطاقة القصوى: ' ELSE '🟠 اقتربت الطاقة القصوى: ' END)
+              || m.label || ' · '
+              || (CASE WHEN v_level='crit' THEN 'Capacity reached: ' ELSE 'Capacity near: ' END) || m.metric,
+            m.label || ' الآن ' || trim(to_char(m.val, 'FM999999999990.9')) || m.unit
+              || ' والحدُّ ' || trim(to_char(CASE WHEN v_level='crit' THEN m.crit ELSE m.warn END, 'FM999999999990.9')) || m.unit
+              || '. تُضبط الحدودُ من «الأدوات ← حدود السعة».' || E'\n'
+              || m.metric || ' is ' || trim(to_char(m.val, 'FM999999999990.9')) || ' (limit '
+              || trim(to_char(CASE WHEN v_level='crit' THEN m.crit ELSE m.warn END, 'FM999999999990.9')) || ').',
+            v_level, 'capacity:' || m.metric);
+        EXCEPTION WHEN OTHERS THEN
+          NULL;
+        END;
+
         v_raised := v_raised + 1;
       END;
     ELSE
@@ -18565,7 +19080,12 @@ AS $function$
          WHERE key='chat_limits' AND jsonb_typeof(value->'per_hour')='number'), 120))),
     'bot_page',    GREATEST(5, LEAST(100, COALESCE((
         SELECT floor((value->>'bot_page')::numeric)::int FROM public.platform_settings
-         WHERE key='chat_limits' AND jsonb_typeof(value->'bot_page')='number'), 30)))
+         WHERE key='chat_limits' AND jsonb_typeof(value->'bot_page')='number'), 30))),
+    -- v15.80 — رسائلُ طرفٍ محجوبٍ على طلبٍ جارٍ (مدفوعٍ أو توصيل)، تُحسب من
+    -- لحظة الحجب. صفرٌ = حجبٌ قاطعٌ حتى على الطلب الجاري (قرارُ تشغيلٍ متاح).
+    'blocked_inflight', GREATEST(0, LEAST(50, COALESCE((
+        SELECT floor((value->>'blocked_inflight')::numeric)::int FROM public.platform_settings
+         WHERE key='chat_limits' AND jsonb_typeof(value->'blocked_inflight')='number'), 3)))
   );
 $function$
 ;
@@ -18912,6 +19432,8 @@ DECLARE
     now_ms          BIGINT;
     window_cutoff   BIGINT;
     processed       INTEGER := 0;
+    blk_out         TEXT[];   -- v15.80
+    blk_in          TEXT[];   -- v15.80
 BEGIN
     now_ms        := (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
     window_cutoff := now_ms + (7 * 24 * 60 * 60 * 1000);
@@ -18956,6 +19478,10 @@ BEGIN
             END IF;
         END IF;
 
+        -- v15.80 — نفسُ شرط مشغّلِ النشر: الحجبُ في الاتجاهين، ومسحٌ واحد.
+        blk_out := ARRAY(SELECT ub.blocked_id FROM public.user_blocks ub WHERE ub.blocker_id = deal_rec.store_id);
+        blk_in  := ARRAY(SELECT ub.blocker_id FROM public.user_blocks ub WHERE ub.blocked_id = deal_rec.store_id);
+
         FOR rec IN
             SELECT id, smart_alerts, followed_merchants
             FROM public.users
@@ -18964,6 +19490,8 @@ BEGIN
               -- v13.31 — نفس إصلاح ترغر الإضافة: المعنيّون فقط
               AND ( COALESCE(jsonb_array_length(smart_alerts), 0) > 0
                  OR deal_rec.store_id = ANY(COALESCE(followed_merchants, ARRAY[]::text[])) )
+              AND NOT (id = ANY(blk_out))
+              AND NOT (id = ANY(blk_in))
         LOOP
             PERFORM public.taki_dispatch_smart_alert(
                 rec.id,
@@ -19814,6 +20342,42 @@ END $function$
 ;
 
 
+-- ═══ FUNCTION taki_guard_user_consent() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+CREATE OR REPLACE FUNCTION public.taki_guard_user_consent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- الأعمدةُ العشرة لم تُمسّ ⇒ لا شأنَ لنا (فلا يُعطَّل `saveProfile`
+  -- الجزئيّ ولا بطاقةُ المتجر ولا مزامنةُ اللغة ولا أيٌّ من ١٤ مشغّلاً).
+  IF  NEW.consent_terms_at          IS NOT DISTINCT FROM OLD.consent_terms_at
+  AND NEW.consent_terms_version     IS NOT DISTINCT FROM OLD.consent_terms_version
+  AND NEW.consent_privacy_at        IS NOT DISTINCT FROM OLD.consent_privacy_at
+  AND NEW.consent_refund_at         IS NOT DISTINCT FROM OLD.consent_refund_at
+  AND NEW.consent_ip                IS NOT DISTINCT FROM OLD.consent_ip
+  AND NEW.consent_user_agent        IS NOT DISTINCT FROM OLD.consent_user_agent
+  AND NEW.consent_age_confirmed     IS NOT DISTINCT FROM OLD.consent_age_confirmed
+  AND NEW.consent_min_age           IS NOT DISTINCT FROM OLD.consent_min_age
+  AND NEW.gateway_agreement_version IS NOT DISTINCT FROM OLD.gateway_agreement_version
+  AND NEW.gateway_agreement_at      IS NOT DISTINCT FROM OLD.gateway_agreement_at
+  THEN RETURN NEW;
+  END IF;
+
+  -- كتابةٌ صادرةٌ من `record_user_consent` في نفس المعاملة
+  IF current_setting('taki.consent_write', true) = '1' THEN RETURN NEW; END IF;
+
+  -- وعملُ الخادم (كرونُ التجهيل · هجرةٌ · خدمةٌ بمفتاح service_role)
+  IF public.taki_is_system_caller() THEN RETURN NEW; END IF;
+
+  RAISE EXCEPTION 'سجلُّ الموافقة لا يُعدَّل إلّا من خلال تسجيل الموافقة. / The consent record can only be written by recording consent.'
+    USING ERRCODE = 'P0001', HINT = 'P0032';
+END
+$function$
+;
+
+
 -- ═══ FUNCTION taki_guard_user_created_at() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
 CREATE OR REPLACE FUNCTION public.taki_guard_user_created_at()
  RETURNS trigger
@@ -20072,6 +20636,18 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'status', p_status,
                             'store_id', v_row.store_id);
 END $function$
+;
+
+
+-- ═══ FUNCTION taki_is_blocked_pair(p_a text, p_b text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_is_blocked_pair(p_a text, p_b text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT public.taki_block_since(p_a, p_b) IS NOT NULL;
+$function$
 ;
 
 
@@ -20841,6 +21417,30 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_prune_stock_parked() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_prune_stock_parked()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE v_n int := 0; v_row record;
+BEGIN
+  FOR v_row IN
+    SELECT id, secret_name FROM public.stock_oauth_parked
+     WHERE created_at < now() - interval '30 days'
+  LOOP
+    -- السرُّ أوّلاً: صفٌّ يُحذف وسرُّه باقٍ يُخلّف توكناً بلا أيّ أثرٍ يقود إليه.
+    DELETE FROM vault.secrets WHERE name = v_row.secret_name;
+    DELETE FROM public.stock_oauth_parked WHERE id = v_row.id;
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN v_n;
+END
+$function$
+;
+
+
 -- ═══ FUNCTION taki_prune_stock_queue() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.taki_prune_stock_queue()
  RETURNS integer
@@ -21086,6 +21686,24 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_refund_cap(p_barcode text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_refund_cap(p_barcode text)
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT round(LEAST(
+           COALESCE(NULLIF(b.paid_amount, 0), b.total_amount, 0),
+           (SELECT oi.total FROM public.order_invoices oi
+             WHERE oi.barcode = b.barcode AND oi.total > 0 LIMIT 1)
+         ), 2)
+    FROM public.bookings b
+   WHERE b.barcode = upper(btrim(p_barcode));
+$function$
+;
+
+
 -- ═══ FUNCTION taki_refund_policy() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.taki_refund_policy()
  RETURNS jsonb
@@ -21107,6 +21725,23 @@ AS $function$
                     THEN (value->>'merchant_button')::boolean END
           FROM public.platform_settings WHERE key = 'refund_window'), true)
   );
+$function$
+;
+
+
+-- ═══ FUNCTION taki_refund_remaining(p_barcode text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_refund_remaining(p_barcode text)
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT GREATEST(
+           COALESCE(public.taki_refund_cap(p_barcode), 0)
+           - COALESCE((SELECT sum(r.refund_amount) FROM public.booking_refunds r
+                        WHERE r.barcode = upper(btrim(p_barcode))
+                          AND r.status = 'refunded'), 0),
+           0);
 $function$
 ;
 
@@ -21657,7 +22292,7 @@ AS $function$
     -- الشراء داخل التطبيق
     'iap_products', 'iap_allow_sandbox',
     -- مفتاحُ دفعِ الإشعارات العامّ (تبديلُه يُسكت كلَّ الإشعارات)
-    'vapid_public_key'
+    'consent_gate_enabled', 'vapid_public_key'
   ]::text[]);
 $function$
 ;
@@ -21856,38 +22491,34 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'NO_ACCESS_TOKEN');
   END IF;
 
-  -- (أ) أقوى مطابقة: متجرٌ ربط قبلاً بنفس الرقم (إعادةُ تفويضٍ أو تجديد)
+  -- (أ) المطابقةُ الوحيدةُ المقبولة: متجرٌ ربط قبلاً بنفس الرقم (إعادةُ تفويضٍ
+  --     أو تجديد). وهي **إثباتٌ** لأنّ الرقمَ كُتب في ربطٍ سابقٍ تمّ فعلاً.
   SELECT id INTO v_id FROM public.stock_integrations
    WHERE lower(provider) = 'salla'
      AND COALESCE(oauth_remote_id,'') = COALESCE(btrim(p_remote_id),'~')
    LIMIT 1;
 
-  -- (ب) وإلّا: نافذةُ طلبٍ مفتوحة، **وواحدةٌ فقط**
-  IF v_id IS NULL THEN
-    SELECT count(*) INTO v_n FROM public.stock_integrations
-     WHERE lower(provider) = 'salla' AND connect_nonce IS NOT NULL
-       AND oauth_attempt_at > now() - interval '30 minutes';
-    IF v_n = 1 THEN
-      SELECT id INTO v_id FROM public.stock_integrations
-       WHERE lower(provider) = 'salla' AND connect_nonce IS NOT NULL
-         AND oauth_attempt_at > now() - interval '30 minutes';
-    END IF;
-  END IF;
-
   IF v_id IS NOT NULL THEN
     RETURN public.taki_stock_oauth_store(v_id, p_tok, p_remote_id)
-           || jsonb_build_object('matched_by', CASE WHEN v_n IS NULL THEN 'remote_id' ELSE 'window' END);
+           || jsonb_build_object('matched_by', 'remote_id');
   END IF;
 
-  -- (ج) 🔴 لا تُخمَّن: تُحفظ جانباً. وتخمينُ متجرٍ يعني تسليمَ توكنِ تاجرٍ
-  --     لتاجرٍ آخر — وهو أسوأُ ما يمكن أن يحدث في هذا الملفّ كلِّه.
+  -- 🔴 v15.80 ④ — وحُذف فرعُ «نافذةٌ مفتوحةٌ واحدة». كان يَربط توكناً مجهولَ
+  --    النسبة بمن له نافذة، فيُبقي مهاجمٌ نافذتَه مفتوحةً ويحصد تثبيتَ الضحيّة.
+  --    و«واحدةٌ فقط» ليست إثباتاً: المهاجمُ يملك أن يكون الوحيد.
+  --    (ويبقى العددُ محسوباً لأنه يُقال للمُطالب في `open_claims`.)
+  SELECT count(*) INTO v_n FROM public.stock_integrations
+   WHERE lower(provider) = 'salla' AND connect_nonce IS NOT NULL
+     AND oauth_attempt_at > now() - interval '30 minutes';
+
+  -- (ب) تُحفظ جانباً. وتخمينُ متجرٍ يعني تسليمَ توكنِ تاجرٍ لتاجرٍ آخر — وهو
+  --     أسوأُ ما يمكن أن يحدث في هذا الملفّ كلِّه.
   v_name := 'stock_park:' || encode(extensions.gen_random_bytes(12), 'hex');
   PERFORM vault.create_secret(p_tok::text, v_name, 'TAKI parked stock OAuth token (v15.18)');
   INSERT INTO public.stock_oauth_parked (provider, remote_id, secret_name)
   VALUES ('salla', NULLIF(btrim(COALESCE(p_remote_id,'')),''), v_name)
   RETURNING id INTO v_park;
-  RETURN jsonb_build_object('ok', false,
-    'error', CASE WHEN COALESCE(v_n,0) > 1 THEN 'AMBIGUOUS_CLAIM' ELSE 'NO_OPEN_CLAIM' END,
+  RETURN jsonb_build_object('ok', false, 'error', 'PARKED_AWAITING_CLAIM',
     'parked', v_park, 'open_claims', COALESCE(v_n, 0));
 END
 $function$
@@ -22536,8 +23167,8 @@ $function$
 ;
 
 
--- ═══ FUNCTION taki_stock_webhook(p_key text, p_body jsonb, p_event_id text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
-CREATE OR REPLACE FUNCTION public.taki_stock_webhook(p_key text, p_body jsonb, p_event_id text DEFAULT NULL::text)
+-- ═══ FUNCTION taki_stock_webhook(p_key text, p_body jsonb, p_event_id text, p_observed_at timestamp with time zone) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_stock_webhook(p_key text, p_body jsonb, p_event_id text DEFAULT NULL::text, p_observed_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -22552,6 +23183,7 @@ DECLARE
   v_pair   text[];
   v_ev     text;
   v_res    jsonb;
+  v_obs    timestamptz := COALESCE(p_observed_at, now());
 BEGIN
   IF p_key IS NULL OR length(btrim(p_key)) < 20 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'BAD_KEY');
@@ -22645,7 +23277,7 @@ BEGIN
   --           (زد: منتجٌ له أصناف جذرُ كمّيته صفرٌ دائماً.)
   IF v_qty IS NOT NULL AND jsonb_typeof(COALESCE(v_map->'skip_when','null'::jsonb)) = 'array'
      AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_map->'skip_when') c
-                  WHERE lower(COALESCE(public._taki_jpath(p_body, c->>'path'), '~absent~')) 
+                  WHERE lower(COALESCE(public._taki_jpath(p_body, c->>'path'), '~absent~'))
                         = lower(c->>'equals')) THEN
     -- يُقلَّد الفرعُ القائم حرفياً: وسمٌ على الاتصال، والحمولةُ محفوظةٌ
     -- في `last_payload` بمشغّلٍ قائم. ولا جدولَ آخر — `stock_inbox`
@@ -22669,17 +23301,20 @@ BEGIN
   --    رسالةٍ بـ`EVENT_ID_REQUIRED`. أمسكه القياسُ السلوكيّ لا القراءة.
   -- 🪤 والبصمةُ وحدها تكفي: رسالتان متطابقتان تماماً تكرارٌ بالتعريف، وضبطُ
   --    نفس الرقم مرّتين لا أثر له أصلاً (الكمّيات مطلقة).
+  -- 🔴 v15.80 ⑤ — والدلوُ من **زمنِ الرسالة** لا من `now()`: جسمٌ موقَّعٌ
+  --    يُعاد بعد النافذة كان يدخل دلواً جديداً فيُطبَّق ثانياً، ولا يمسكه
+  --    `STALE_OBSERVATION` لأنّ زمنَه كان يُولَد عند الاستقبال لا عند الرصد.
   v_ev := COALESCE(NULLIF(btrim(COALESCE(p_event_id, '')), ''),
                    NULLIF(btrim(COALESCE(public._taki_jpath(p_body, 'event_id'), '')), ''),
                    -- v15.16 window — بصمةٌ + نافذةُ خمس دقائق. وبلا النافذة
                    -- كانت كمّيةٌ تعود لقيمةٍ سبقت (٥ ⇐ ٨ ⇐ ٥) تُهمَل أبداً
                    -- فتبقى تاكي على ٨ والواقعُ ٥ ⇒ بيعٌ زائدٌ دائم.
                    'h:' || encode(extensions.digest(p_body::text, 'sha256'), 'hex')
-                        || ':' || (floor(extract(epoch from now()) / 300))::bigint::text);
+                        || ':' || (floor(extract(epoch from v_obs) / 300))::bigint::text);
 
   v_res := public.taki_stock_push(p_key,
              jsonb_build_array(jsonb_build_object('external_id', v_id, 'on_hand', v_qty::int)),
-             now(), v_ev);
+             v_obs, v_ev);
 
   UPDATE public.stock_integrations
      SET last_note = CASE WHEN COALESCE((v_res->>'applied')::int, 0) > 0 THEN 'OK'
@@ -23653,6 +24288,7 @@ DECLARE
   v_notif   timestamptz;
   v_sent    int := 0;
   v_streak  int := 0;          -- v15.33 — نبضاتُ فشلِ البوت المتتالية
+  v_dbwarn  numeric;           -- v15.80 ⟵ سقفُ الحجم من الإعداد لا من الكود
   r         record;
 BEGIN
   SELECT coalesce(h.bot_fail_streak,0) INTO v_streak FROM public.system_heartbeat h WHERE h.id = 1;
@@ -23707,7 +24343,12 @@ BEGIN
     v_streak := 0;
   END IF;
 
-  IF v_dbmb >= 4096 THEN v_status := public.taki_worse(v_status,'warn');
+  -- v15.80 ⟵ السقفُ من `capacity_limits` (الحيُّ ٣٩٤٦٣ م.ب)، وارتدادُه ٤٠٩٦
+  -- فالسلوكُ لا يتغيّر إن غاب المفتاح. وكانت ٤٠٩٦ مثبَّتةً في الكود تخالف
+  -- الإعدادَ الحيّ ⇒ تحذيرٌ دائمٌ ينتظر مرورَ الزمن.
+  SELECT (value->>'db_size_warn_mb')::numeric INTO v_dbwarn
+    FROM public.platform_settings WHERE key = 'capacity_limits';
+  IF v_dbmb >= COALESCE(v_dbwarn, 4096) THEN v_status := public.taki_worse(v_status,'warn');
     v_issues := v_issues || to_jsonb(format('حجم القاعدة %s ميجابايت', v_dbmb)); END IF;
 
   -- ── v14.85: الاقتراب من السقف ─────────────────────────────────────────────
@@ -23751,6 +24392,22 @@ BEGIN
               'system', jsonb_build_object('audience','admin','heartbeat',true), now());
       v_sent := v_sent + 1;
     END LOOP;
+
+    -- v15.80 ⟵ ساقٌ ثانية، **إضافيّةٌ** لا بديلة: الإشعارُ أعلاه يبقى كما هو
+    -- (مركزُ الإشعارات ودفعُ الويب)، وهذا بريدٌ لا يمرّ بالبوت ولا بمفتاح
+    -- إطفائه ولا بصندوقه الصادر. ومرّةً واحدةً لكلّ دخولِ حالةٍ حرجة لا
+    -- لكلّ أدمن — فهو **داخلَ** التهدئة لا داخلَ الحلقة.
+    -- 🪤 ومحاطٌ بمعالِجٍ خاصٍّ به: النبضُ لا يسقط لأجل بريدٍ فاشل، والسببُ
+    --    مسجَّلٌ في `taki_alert_log` فلا يصير الابتلاعُ عمًى.
+    BEGIN
+      PERFORM public.taki_alert_dispatch(
+        '🚨 تنبيه خادم تاكي · TAKI server alert',
+        array_to_string(ARRAY(SELECT jsonb_array_elements_text(v_issues)), E'\n'),
+        'crit', 'heartbeat');
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+
     UPDATE public.system_heartbeat SET notified_at = now() WHERE id = 1;
   END IF;
 
@@ -24045,19 +24702,25 @@ $function$
 ;
 
 
--- ═══ FUNCTION tr_assign_invoice_no() DEFINER owner=postgres search_path=search_path=public anon=no ═══
+-- ═══ FUNCTION tr_assign_invoice_no() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.tr_assign_invoice_no()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
-begin
-  if new.invoice_no is null then
-    new.invoice_no := nextval('taki_invoice_seq');
-  end if;
-  return new;
-end $function$
+DECLARE v_no bigint;
+BEGIN
+  IF NEW.invoice_no IS NOT NULL THEN RETURN NEW; END IF;
+  INSERT INTO public.taki_invoice_counter (id, last_seq)
+  VALUES (true, 1)
+  ON CONFLICT (id) DO UPDATE
+    SET last_seq = public.taki_invoice_counter.last_seq + 1, updated_at = now()
+  RETURNING last_seq INTO v_no;
+  NEW.invoice_no := v_no;
+  RETURN NEW;
+END
+$function$
 ;
 
 
@@ -24328,6 +24991,46 @@ $function$
 ;
 
 
+-- ═══ FUNCTION tr_guard_bot_channel_disclosure() INVOKER owner=supabase_admin search_path=search_path=public anon=YES ═══
+CREATE OR REPLACE FUNCTION public.tr_guard_bot_channel_disclosure()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE v_on boolean; v_disclosed boolean;
+BEGIN
+  IF NEW.key NOT IN ('telegram_bot_enabled', 'whatsapp_bot_enabled') THEN
+    RETURN NEW;
+  END IF;
+
+  -- قيمةٌ ليست بوليانيّةً تُعَدّ إطفاءً فلا تُحرَس (وتُرفض لاحقاً عند القراءة)
+  BEGIN
+    v_on := COALESCE(NEW.value::boolean, false);
+  EXCEPTION WHEN others THEN
+    RETURN NEW;
+  END;
+  IF NOT v_on THEN RETURN NEW; END IF;                 -- الإطفاءُ حرٌّ دائماً
+
+  v_disclosed := COALESCE(
+    (SELECT value::boolean FROM public.platform_settings WHERE key = 'bot_channels_disclosed'),
+    false);
+
+  IF NOT v_disclosed THEN
+    RAISE EXCEPTION
+      'BOT_CHANNEL_NOT_DISCLOSED'
+      USING HINT = 'BOT_CHANNEL_NOT_DISCLOSED',
+            DETAIL = 'تشغيلُ «' || NEW.key || '» يُعيد معالجةَ بياناتٍ شخصيةٍ عبر قناةٍ '
+                   || 'أُسقط إفصاحُها من سياسة الخصوصية في v15.80 بقرار المالك. '
+                   || 'أعِد الإفصاحَ أوّلاً في src/pages/legal/Privacy.tsx (نطاقُ السياسة · '
+                   || 'ما نجمعه · مصادرُ الجمع · النقلُ خارج المملكة) ووصفَ التجّار في '
+                   || 'index.html، وارفع LEGAL_VERSION، ثمّ اضبط '
+                   || 'platform_settings.bot_channels_disclosed = true وأعِد المحاولة.';
+  END IF;
+  RETURN NEW;
+END $function$
+;
+
+
 -- ═══ FUNCTION tr_guard_delivery_zone() INVOKER owner=supabase_admin search_path=search_path=public anon=YES ═══
 CREATE OR REPLACE FUNCTION public.tr_guard_delivery_zone()
  RETURNS trigger
@@ -24417,6 +25120,80 @@ BEGIN
   END IF;
   RETURN NEW;
 END
+$function$
+;
+
+
+-- ═══ FUNCTION tr_guard_message_block() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+CREATE OR REPLACE FUNCTION public.tr_guard_message_block()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_b      public.bookings;
+  v_actor  text;
+  v_other  text;
+  v_since  timestamptz;
+  v_allow  int;
+  v_sent   int;
+  v_att    text := NULLIF(btrim(COALESCE(NEW.attachment_path, '')), '');
+BEGIN
+  SELECT * INTO v_b FROM public.bookings WHERE barcode = NEW.barcode;
+  -- حجزٌ غيرُ موجود: يُترك للمفتاح الأجنبيّ ليرفضه بخطأٍ صريح، لا يُبتلع هنا.
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  -- (أ) محادثةٌ مغلقة. نصُّ الرفض ورمزُه منسوخان حرفياً من `send_booking_message`
+  --     الحيّة (`P0001` بلا HINT) — مفرداتُ الأخطاء لا تُخترع نسخةٌ ثانية منها.
+  IF v_b.status IN ('cancelled', 'completed', 'expired') THEN
+    RAISE EXCEPTION 'انتهى هذا الطلب — المحادثة للقراءة فقط' USING ERRCODE = 'P0001';
+  END IF;
+
+  -- (ب) المرفق: تحت مجلّد هذا الحجز، وموجودٌ فعلاً.
+  --     🪤 ولا فحصَ مِلكيّةٍ هنا: البوتُ لا يحمل `auth.uid()` إطلاقاً، فشرطُ
+  --        `o.owner = auth.uid()` يبقى في دالّة الويب حيث يصحّ وحدها.
+  IF v_att IS NOT NULL THEN
+    IF split_part(v_att, '/', 1) <> NEW.barcode THEN
+      RAISE EXCEPTION 'المرفق لا يخصّ هذا الطلب' USING ERRCODE = 'P0001', HINT = 'P0017';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM storage.objects o
+                    WHERE o.bucket_id = 'chat' AND o.name = v_att) THEN
+      RAISE EXCEPTION 'المرفق غير موجود' USING ERRCODE = 'P0001', HINT = 'P0017';
+    END IF;
+  END IF;
+
+  -- (ج) 🔴 الفاعلُ من `sender_role` لا من `sender_id`: الثاني يكتبه العميل،
+  --     والأوّلُ وحده ما تربطه سياسةُ RLS بـ`uid()` وما يعتمده
+  --     `tr_booking_message_recipient`.
+  v_actor := CASE WHEN NEW.sender_role = 'buyer' THEN v_b.user_id  ELSE v_b.store_id END;
+  v_other := CASE WHEN NEW.sender_role = 'buyer' THEN v_b.store_id ELSE v_b.user_id  END;
+
+  v_since := public.taki_block_since(v_actor, v_other);
+  IF v_since IS NULL THEN RETURN NEW; END IF;
+
+  -- محجوبان. والاستثناءُ الوحيد: طلبٌ مفتوحٌ (ثبت أعلاه) **ومدفوعٌ أو توصيل**.
+  IF v_b.paid_at IS NULL AND COALESCE(v_b.fulfillment, '') <> 'delivery' THEN
+    RAISE EXCEPTION 'لا يمكن إرسال رسالة في هذه المحادثة'
+      USING ERRCODE = 'P0001', HINT = 'P0032';
+  END IF;
+
+  -- والعددُ **من لحظة الحجب**: لو حُسب من أوّل المحادثة لبلغ سقفَه فوراً من
+  -- تحدّث قبل الحجب — فيعود التوصيلُ عالقاً وهو ما جاء الاستثناءُ لأجله.
+  v_allow := (public.taki_chat_limits()->>'blocked_inflight')::int;
+  SELECT count(*) INTO v_sent
+    FROM public.booking_messages
+   WHERE barcode = NEW.barcode
+     AND sender_role = NEW.sender_role
+     AND created_at >= v_since;
+
+  IF v_allow <= 0 OR v_sent >= v_allow THEN
+    RAISE EXCEPTION 'تعذّر إرسال المزيد من الرسائل على هذا الطلب — تواصل مع الطرف الآخر مباشرة'
+      USING ERRCODE = 'P0001', HINT = 'P0033';
+  END IF;
+
+  RETURN NEW;
+END;
 $function$
 ;
 
@@ -24898,6 +25675,21 @@ $function$
 ;
 
 
+-- ═══ FUNCTION tr_purge_user_blocks_on_anon() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+CREATE OR REPLACE FUNCTION public.tr_purge_user_blocks_on_anon()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  DELETE FROM public.user_blocks WHERE blocker_id = NEW.id OR blocked_id = NEW.id;
+  RETURN NULL;
+END;
+$function$
+;
+
+
 -- ═══ FUNCTION tr_rate_limit_authvote() DEFINER owner=postgres search_path=search_path=public anon=YES ═══
 CREATE OR REPLACE FUNCTION public.tr_rate_limit_authvote()
  RETURNS trigger
@@ -25280,6 +26072,43 @@ $function$
 ;
 
 
+-- ═══ FUNCTION tr_user_blocks_mirror() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+CREATE OR REPLACE FUNCTION public.tr_user_blocks_mirror()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE v_blocker text; v_blocked text; v_type text;
+BEGIN
+  v_blocker := COALESCE(NEW.blocker_id, OLD.blocker_id);
+  v_blocked := COALESCE(NEW.blocked_id, OLD.blocked_id);
+  SELECT user_type INTO v_type FROM public.users WHERE id = v_blocked;
+
+  -- 🪤 بـ«ليس مشترياً» لا بـ«بائع»: متجرُ ناصر يملكه حسابٌ أدمن، ومرشِّحُ
+  --    `user_type='seller'` كان يُخفيه دائماً.
+  IF COALESCE(v_type, '') = 'buyer' THEN
+    RETURN NULL;                       -- حجبُ مشترٍ لا مرآةَ له: العمودُ للمتاجر
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    UPDATE public.users
+       SET blocked_merchants  = ARRAY(SELECT DISTINCT e
+                                        FROM unnest(COALESCE(blocked_merchants, '{}'::text[])
+                                                    || ARRAY[v_blocked]) e),
+           followed_merchants = array_remove(COALESCE(followed_merchants, '{}'::text[]), v_blocked)
+     WHERE id = v_blocker;
+  ELSE
+    UPDATE public.users
+       SET blocked_merchants = array_remove(COALESCE(blocked_merchants, '{}'::text[]), v_blocked)
+     WHERE id = v_blocker;
+  END IF;
+  RETURN NULL;
+END;
+$function$
+;
+
+
 -- ═══ FUNCTION tr_validate_booking_options() DEFINER owner=postgres search_path=search_path=public anon=no ═══
 CREATE OR REPLACE FUNCTION public.tr_validate_booking_options()
  RETURNS trigger
@@ -25287,43 +26116,17 @@ CREATE OR REPLACE FUNCTION public.tr_validate_booking_options()
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE
-  v_opts jsonb; v_vars jsonb; v_grp jsonb; v_sel jsonb; v_var jsonb;
+DECLARE v_fault text;
 BEGIN
-  SELECT d.options, d.variants INTO v_opts, v_vars FROM deals d WHERE d.id = NEW.deal_id;
-
-  IF COALESCE(NEW.source,'web') <> 'web' THEN
-    IF v_vars IS NOT NULL AND jsonb_typeof(v_vars) = 'array' AND jsonb_array_length(v_vars) > 0 THEN
-      RAISE EXCEPTION 'NEEDS_OPTIONS';
-    END IF;
-    IF v_opts IS NOT NULL AND jsonb_typeof(v_opts) = 'array' AND jsonb_array_length(v_opts) > 0 THEN
-      FOR v_grp IN SELECT * FROM jsonb_array_elements(v_opts) LOOP
-        IF COALESCE((v_grp->>'required')::boolean, false)
-           AND NOT EXISTS (
-             SELECT 1 FROM jsonb_array_elements(COALESCE(NEW.selected_options,'[]'::jsonb)) s
-             WHERE s->>'g' = v_grp->>'id')
-        THEN
-          RAISE EXCEPTION 'NEEDS_OPTIONS';
-        END IF;
-      END LOOP;
-    END IF;
+  v_fault := public.taki_booking_options_fault(NEW.deal_id, NEW.selected_options);
+  IF v_fault IS NULL THEN RETURN NEW; END IF;
+  IF v_fault = 'NEEDS_OPTIONS' THEN
+    RAISE EXCEPTION 'NEEDS_OPTIONS' USING ERRCODE = 'P0001', HINT = 'NEEDS_OPTIONS';
   END IF;
-
-  -- كمية النسخة المتبقية يجب أن تكفي المطلوب
-  IF v_vars IS NOT NULL AND jsonb_typeof(v_vars) = 'array'
-     AND NEW.selected_options IS NOT NULL AND jsonb_typeof(NEW.selected_options) = 'array' THEN
-    FOR v_sel IN SELECT * FROM jsonb_array_elements(NEW.selected_options) LOOP
-      CONTINUE WHEN v_sel->>'g' IS DISTINCT FROM '__variant__';
-      SELECT e INTO v_var FROM jsonb_array_elements(v_vars) e WHERE e->>'id' = v_sel->>'c' LIMIT 1;
-      CONTINUE WHEN v_var IS NULL OR NOT (v_var ? 'qty') OR NULLIF(v_var->>'qty','') IS NULL;
-      IF (v_var->>'qty')::numeric < GREATEST(COALESCE((v_sel->>'qty')::int,1),1) THEN
-        RAISE EXCEPTION 'VARIANT_STOCK:%:%', COALESCE(v_var->>'label','?'), GREATEST((v_var->>'qty')::int, 0);
-      END IF;
-    END LOOP;
-  END IF;
-
-  RETURN NEW;
-END $function$
+  -- `VARIANT_STOCK:<الاسم>:<المتبقّي>` — عقدٌ نصّيٌّ تقرؤه الواجهةُ والبوتان
+  RAISE EXCEPTION '%', v_fault USING ERRCODE = 'P0001', HINT = 'VARIANT_STOCK';
+END
+$function$
 ;
 
 
@@ -25712,6 +26515,7 @@ $function$
 
 -- ═══ TRIGGERS ═══
 CREATE TRIGGER tr_a0_bm_force_sender BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_bm_force_sender();
+CREATE TRIGGER tr_a0_guard_message_block BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_guard_message_block();
 CREATE TRIGGER tr_aa_rate_limit_message BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_rate_limit_message();
 CREATE TRIGGER tr_booking_message_notification AFTER INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION handle_booking_message_notification();
 CREATE TRIGGER tr_booking_message_recipient BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_booking_message_recipient();
@@ -25764,6 +26568,7 @@ CREATE TRIGGER tr_moderation_escalate AFTER INSERT ON public.moderation_flags FO
 CREATE TRIGGER tr_notification_push AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION handle_notification_push();
 CREATE TRIGGER tr_payment_attempts_touch BEFORE UPDATE ON public.payment_attempts FOR EACH ROW EXECUTE FUNCTION tr_payment_attempts_touch();
 CREATE TRIGGER set_updated_at_pin BEFORE UPDATE ON public.pinned_stores FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER tr_a0_guard_bot_channel_disclosure BEFORE INSERT OR UPDATE ON public.platform_settings FOR EACH ROW EXECUTE FUNCTION tr_guard_bot_channel_disclosure();
 CREATE TRIGGER tr_season_campaign_sync AFTER INSERT OR UPDATE ON public.platform_settings FOR EACH ROW WHEN ((new.key = 'season_campaign'::text)) EXECUTE FUNCTION tr_season_campaign_sync_fn();
 CREATE TRIGGER tr_aa_rate_limit_rating BEFORE INSERT ON public.ratings FOR EACH ROW EXECUTE FUNCTION tr_rate_limit_rating();
 CREATE TRIGGER tr_deal_rating_stats AFTER INSERT OR DELETE OR UPDATE ON public.ratings FOR EACH ROW EXECUTE FUNCTION _taki_sync_deal_rating_stats();
@@ -25800,10 +26605,12 @@ CREATE TRIGGER tr_invoice_no BEFORE INSERT ON public.subscription_payments FOR E
 CREATE TRIGGER tr_notify_subscription_invoice AFTER INSERT OR UPDATE OF status ON public.subscription_payments FOR EACH ROW EXECUTE FUNCTION notify_subscription_invoice();
 CREATE TRIGGER tr_guard_user_address BEFORE INSERT OR UPDATE ON public.user_addresses FOR EACH ROW EXECUTE FUNCTION tr_guard_user_address();
 CREATE TRIGGER tr_zz_single_default_address AFTER INSERT OR UPDATE OF is_default, lat, lng, label, details, city, phone ON public.user_addresses FOR EACH ROW EXECUTE FUNCTION tr_single_default_address();
+CREATE TRIGGER tr_user_blocks_mirror AFTER INSERT OR DELETE ON public.user_blocks FOR EACH ROW EXECUTE FUNCTION tr_user_blocks_mirror();
 CREATE TRIGGER set_updated_at_users BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER tr_aa_guard_banned_signup BEFORE INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION taki_guard_banned_signup();
 CREATE TRIGGER tr_ab_guard_store_rename BEFORE UPDATE OF shop ON public.users FOR EACH ROW EXECUTE FUNCTION taki_guard_store_rename();
 CREATE TRIGGER tr_ae_guard_user_created_at BEFORE UPDATE OF created_at ON public.users FOR EACH ROW EXECUTE FUNCTION taki_guard_user_created_at();
+CREATE TRIGGER tr_af_guard_user_consent BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION taki_guard_user_consent();
 CREATE TRIGGER tr_auto_start_trial AFTER INSERT OR UPDATE OF user_type ON public.users FOR EACH ROW EXECUTE FUNCTION auto_start_seller_trial();
 CREATE TRIGGER tr_follow_notification AFTER UPDATE OF followed_merchants ON public.users FOR EACH ROW WHEN ((old.followed_merchants IS DISTINCT FROM new.followed_merchants)) EXECUTE FUNCTION handle_follow_notification();
 CREATE TRIGGER tr_guard_user_delete BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION tr_guard_user_delete();
@@ -25814,6 +26621,7 @@ CREATE TRIGGER tr_new_user_admin_alert AFTER INSERT ON public.users FOR EACH ROW
 CREATE TRIGGER tr_smart_alerts_backfill AFTER UPDATE OF smart_alerts ON public.users FOR EACH ROW WHEN ((old.smart_alerts IS DISTINCT FROM new.smart_alerts)) EXECUTE FUNCTION handle_smart_alerts_backfill();
 CREATE TRIGGER tr_sync_auth_lang AFTER UPDATE OF preferred_lang ON public.users FOR EACH ROW WHEN ((old.preferred_lang IS DISTINCT FROM new.preferred_lang)) EXECUTE FUNCTION sync_auth_lang();
 CREATE TRIGGER tr_zz_propagate_store_name AFTER UPDATE OF shop ON public.users FOR EACH ROW EXECUTE FUNCTION taki_propagate_store_name();
+CREATE TRIGGER tr_zz_purge_user_blocks_on_anon AFTER UPDATE OF is_anonymized ON public.users FOR EACH ROW WHEN ((COALESCE(new.is_anonymized, false) AND (NOT COALESCE(old.is_anonymized, false)))) EXECUTE FUNCTION tr_purge_user_blocks_on_anon();
 
 
 -- ═══ RLS POLICIES (public) ═══
@@ -25938,6 +26746,19 @@ CREATE POLICY deals_update_seller ON public.deals FOR UPDATE TO public
 -- delivery_tracks · delivery_tracks_select_parties
 CREATE POLICY delivery_tracks_select_parties ON public.delivery_tracks FOR SELECT TO public
   USING ((((( SELECT uid() AS uid))::text = user_id) OR ((( SELECT uid() AS uid))::text = store_id) OR ( SELECT taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
+-- device_push_tokens · device_tokens_self_delete
+CREATE POLICY device_tokens_self_delete ON public.device_push_tokens FOR DELETE TO public
+  USING (((( SELECT uid() AS uid))::text = user_id));
+-- device_push_tokens · device_tokens_self_insert
+CREATE POLICY device_tokens_self_insert ON public.device_push_tokens FOR INSERT TO public
+  WITH CHECK (((( SELECT uid() AS uid))::text = user_id));
+-- device_push_tokens · device_tokens_self_select
+CREATE POLICY device_tokens_self_select ON public.device_push_tokens FOR SELECT TO public
+  USING (((( SELECT uid() AS uid))::text = user_id));
+-- device_push_tokens · device_tokens_self_update
+CREATE POLICY device_tokens_self_update ON public.device_push_tokens FOR UPDATE TO public
+  USING (((( SELECT uid() AS uid))::text = user_id))
+  WITH CHECK (((( SELECT uid() AS uid))::text = user_id));
 -- email_outbox · email_outbox_admin_read
 CREATE POLICY email_outbox_admin_read ON public.email_outbox FOR SELECT TO public
   USING (( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
@@ -26021,7 +26842,7 @@ CREATE POLICY ppl_select_parties ON public.platform_payment_log FOR SELECT TO pu
   USING ((((( SELECT uid() AS uid))::text = merchant_id) OR ((( SELECT uid() AS uid))::text = buyer_id) OR ( SELECT taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 -- platform_settings · platform_settings_select
 CREATE POLICY platform_settings_select ON public.platform_settings FOR SELECT TO public
-  USING (((key = ANY (ARRAY['contact_emails'::text, 'image_cdn_host'::text, 'iap_products'::text, 'delivery_enabled'::text, 'oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'capacity_limits'::text, 'vapid_public_key'::text, 'merchant_vat'::text, 'chat_limits'::text, 'verification'::text, 'refund_window'::text, 'complaints_sla_hours'::text, 'stock_link_enabled'::text])) OR ( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_launch'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
+  USING (((key = ANY (ARRAY['sitemap_catalogue_enabled'::text, 'contact_emails'::text, 'image_cdn_host'::text, 'iap_products'::text, 'delivery_enabled'::text, 'consent_gate_enabled'::text, 'oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'capacity_limits'::text, 'vapid_public_key'::text, 'merchant_vat'::text, 'chat_limits'::text, 'verification'::text, 'refund_window'::text, 'complaints_sla_hours'::text, 'stock_link_enabled'::text])) OR ( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_launch'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
 -- platform_settings · platform_settings_write_scoped
 CREATE POLICY platform_settings_write_scoped ON public.platform_settings FOR ALL TO public
   USING (((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text) OR has_admin_permission('tab_launch'::text) OR has_admin_permission('tab_reports'::text)) AND (( SELECT is_super_admin() AS is_super_admin) OR (NOT taki_setting_is_protected(key)))))
@@ -26218,6 +27039,9 @@ CREATE POLICY plans_select_all ON public.subscription_plans FOR SELECT TO public
 CREATE POLICY plans_update_admin ON public.subscription_plans FOR UPDATE TO public
   USING (( SELECT taki_admin_perm('tab_sellers'::text) AS taki_admin_perm))
   WITH CHECK (( SELECT taki_admin_perm('tab_sellers'::text) AS taki_admin_perm));
+-- taki_alert_log · taki_alert_log_admin
+CREATE POLICY taki_alert_log_admin ON public.taki_alert_log FOR SELECT TO public
+  USING (taki_admin_perm('tab_tools'::text));
 -- user_addresses · user_addresses_delete_own
 CREATE POLICY user_addresses_delete_own ON public.user_addresses FOR DELETE TO public
   USING (((( SELECT uid() AS uid))::text = user_id));
@@ -26231,6 +27055,15 @@ CREATE POLICY user_addresses_select_own ON public.user_addresses FOR SELECT TO p
 CREATE POLICY user_addresses_update_own ON public.user_addresses FOR UPDATE TO public
   USING (((( SELECT uid() AS uid))::text = user_id))
   WITH CHECK (((( SELECT uid() AS uid))::text = user_id));
+-- user_blocks · user_blocks_delete_own
+CREATE POLICY user_blocks_delete_own ON public.user_blocks FOR DELETE TO authenticated
+  USING (((( SELECT uid() AS uid))::text = blocker_id));
+-- user_blocks · user_blocks_insert_own
+CREATE POLICY user_blocks_insert_own ON public.user_blocks FOR INSERT TO authenticated
+  WITH CHECK (((( SELECT uid() AS uid))::text = blocker_id));
+-- user_blocks · user_blocks_select_own
+CREATE POLICY user_blocks_select_own ON public.user_blocks FOR SELECT TO authenticated
+  USING (((( SELECT uid() AS uid))::text = blocker_id));
 -- user_sessions · sessions_select_admin
 CREATE POLICY sessions_select_admin ON public.user_sessions FOR SELECT TO public
   USING (( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
@@ -26373,6 +27206,7 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- deal_branches rls=true forced=false policies=1
 -- deals rls=true forced=false policies=4
 -- delivery_tracks rls=true forced=false policies=1
+-- device_push_tokens rls=true forced=false policies=4
 -- email_outbox rls=true forced=false policies=1
 -- expense_invoices rls=true forced=false policies=1
 -- favorites rls=true forced=false policies=3
@@ -26419,11 +27253,14 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- subscription_payments rls=true forced=false policies=4
 -- subscription_plans rls=true forced=false policies=4
 -- system_heartbeat rls=true forced=false policies=0
+-- taki_alert_log rls=true forced=false policies=1
 -- taki_cron_seen rls=true forced=false policies=0
 -- taki_cron_uptime rls=true forced=false policies=0
+-- taki_invoice_counter rls=true forced=false policies=0
 -- taki_realtime_limits rls=true forced=false policies=0
 -- telegram_link_tokens rls=true forced=false policies=0
 -- user_addresses rls=true forced=false policies=4
+-- user_blocks rls=true forced=false policies=3
 -- user_sessions rls=true forced=false policies=3
 -- user_warnings rls=true forced=false policies=1
 -- users rls=true forced=false policies=3
@@ -26504,6 +27341,7 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- deal_branches authenticated : DELETE,INSERT,SELECT,UPDATE
 -- deals authenticated : DELETE,INSERT,SELECT,UPDATE
 -- delivery_tracks authenticated : SELECT
+-- device_push_tokens authenticated : DELETE,INSERT,SELECT,UPDATE
 -- email_outbox authenticated : DELETE,INSERT,SELECT,UPDATE
 -- expense_invoices authenticated : DELETE,INSERT,SELECT,UPDATE
 -- favorites authenticated : DELETE,INSERT,SELECT,UPDATE
@@ -26544,7 +27382,9 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- store_verifications authenticated : SELECT
 -- subscription_payments authenticated : DELETE,INSERT,SELECT,UPDATE
 -- subscription_plans authenticated : DELETE,INSERT,SELECT,UPDATE
+-- taki_alert_log authenticated : SELECT
 -- user_addresses authenticated : DELETE,INSERT,SELECT,UPDATE
+-- user_blocks authenticated : DELETE,INSERT,SELECT
 -- user_sessions authenticated : DELETE,INSERT,SELECT,UPDATE
 -- user_warnings authenticated : DELETE,INSERT,SELECT,UPDATE
 -- users authenticated : INSERT,SELECT,UPDATE
@@ -26589,3 +27429,5 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- [95] */15 * * * * active=true :: SELECT public.taki_capacity_check();
 -- [98] 25 3 * * * active=true :: SELECT public.taki_prune_auth_audit()
 -- [99] 40 3 * * * active=true :: SELECT public.taki_prune_notifications()
+-- [102] 17 4 * * 0 active=true :: SELECT public.prune_device_push_tokens();
+-- [103] 5 2 * * * active=true :: SELECT public.taki_prune_stock_parked();
