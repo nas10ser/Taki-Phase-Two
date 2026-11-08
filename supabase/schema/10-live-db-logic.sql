@@ -4,7 +4,7 @@ DO
 -- @@VOLATILE الخادم: محلّي-داخل-الحاوية
 -- القاعدة: postgres
 -- النسخة: PostgreSQL 17.6
--- @@VOLATILE وُلِّدت: 2026-11-08 11:30 (توقيت الرياض)
+-- @@VOLATILE وُلِّدت: 2026-11-08 21:34 (توقيت الرياض)
 -- 🪤 مولَّدٌ آلياً بـscripts/export-db-logic.sh — لا يُحرَّر بيد.
 --    وهو لقطةٌ للمقارنة والتعافي، وليس ملفَّ هجرة: لا تُشغّله.
 
@@ -198,23 +198,44 @@ $function$
 -- ═══ FUNCTION _bot_gate_ok() DEFINER owner=postgres search_path=search_path=public anon=no ═══
 CREATE OR REPLACE FUNCTION public._bot_gate_ok()
  RETURNS boolean
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  SELECT
-    COALESCE((SELECT value FROM public.app_secrets WHERE key = 'bot_gate_enforced'), '0') <> '1'
-    -- لا ترويسات = نداءٌ من داخل القاعدة (مشغّل/كرون/خدمي) لا من متصفّح.
-    -- PostgREST يضع الترويسات دائماً، فهذا الفرع غير قابل للوصول من الشبكة.
-    OR current_setting('request.headers', true) IS NULL
-    OR current_setting('request.headers', true) = ''
-    OR EXISTS (
-      SELECT 1 FROM public.app_secrets
-      WHERE key IN ('bot_gateway_secret', 'bot_gateway_secret_next')
-        AND value IS NOT NULL AND value <> ''
-        AND value = (current_setting('request.headers', true)::json ->> 'x-bot-secret')
-    );
-$function$
+DECLARE
+  v_hdr    text;
+  v_sent   text;
+BEGIN
+  -- v15.79 — تعطيلٌ صريحٌ وغائبٌ افتراضاً. والقيمةُ المطلوبةُ `'1'` بعينها.
+  IF COALESCE((SELECT value FROM public.app_secrets WHERE key = 'bot_gate_bypass'), '') = '1' THEN
+    RETURN true;
+  END IF;
+
+  v_hdr := current_setting('request.headers', true);
+
+  -- لا ترويسات = نداءٌ من داخل القاعدة (مشغّل/كرون/خدمي) لا من متصفّح.
+  -- PostgREST يضع الترويسات دائماً، فهذا الفرع غير قابل للوصول من الشبكة.
+  IF v_hdr IS NULL OR v_hdr = '' THEN
+    RETURN true;
+  END IF;
+
+  IF NOT (v_hdr IS JSON) THEN          -- PG16+ ; القاعدة هنا 17.6
+    RETURN false;
+  END IF;
+
+  v_sent := v_hdr::json ->> 'x-bot-secret';
+  IF v_sent IS NULL OR v_sent = '' THEN
+    RETURN false;
+  END IF;
+
+  -- نافذةُ التدوير: السرُّ والسرُّ التالي مقبولان معاً (كما كانت).
+  RETURN EXISTS (
+    SELECT 1 FROM public.app_secrets
+     WHERE key IN ('bot_gateway_secret', 'bot_gateway_secret_next')
+       AND value IS NOT NULL AND value <> ''
+       AND value = v_sent
+  );
+END $function$
 ;
 
 
@@ -715,17 +736,56 @@ $function$
 -- ═══ FUNCTION _taki_client_ip() DEFINER owner=postgres search_path=search_path=public anon=no ═══
 CREATE OR REPLACE FUNCTION public._taki_client_ip()
  RETURNS text
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  SELECT nullif(
-           split_part(
-             coalesce(
+DECLARE
+  -- 🔴 المقدارُ الوحيد الذي يُعدَّل: عددُ الوسائط التي تُلحقها سلسلةُ
+  --    وكلائنا بآخر الترويسة. اليومَ **واحد** (Kong). والسلسلةُ:
+  --      المتصفّح → Caddy (الحافة، بلا trusted_proxies) → Kong → PostgREST
+  --    وCloudflare اليومَ سحابةٌ رمادية (DNS فقط). فلحظةَ تخضيرها
+  --    يصير العددُ **٢** — ولا موضعَ آخرَ يُعدَّل.
+  c_hops  constant int := 1;
+  v_raw   text;
+  v_arr   text[];
+  v_keep  int;
+  v_i     int;
+  v_cand  text;
+BEGIN
+  BEGIN
+    v_raw := COALESCE(
                nullif(current_setting('request.headers', true), '')::json ->> 'x-forwarded-for',
-               ''),
-             ',', 1),
-           '');
+               nullif(current_setting('request.headers', true), '')::json ->> 'x-real-ip');
+  EXCEPTION WHEN OTHERS THEN
+    v_raw := NULL;        -- ترويسةٌ مشوّهة ليست سبباً لإسقاط الطلب
+  END;
+  IF v_raw IS NULL OR btrim(v_raw) = '' THEN RETURN NULL; END IF;
+
+  v_arr  := string_to_array(v_raw, ',');
+  v_keep := COALESCE(array_length(v_arr, 1), 0) - c_hops;
+  -- ترويسةٌ أقصرُ من السلسلة (مثلاً `x-real-ip` وهي مفردةٌ دائماً) ⇒ الأوّل
+  IF v_keep < 1 THEN v_keep := 1; END IF;
+
+  -- 🔴 شبكةُ أمانٍ لا تجميل: لو أخطأ `c_hops` فاستُقرّ على عنوانٍ خاصّ،
+  --    صار الحدُّ دلواً عالمياً — فيُتزحزح يساراً حتى أوّلِ عنوانٍ عامّ.
+  --    ولا يُتزحزح يميناً أبداً: اليمينُ هو وسيطُنا نحن.
+  v_i := v_keep;
+  WHILE v_i >= 1 LOOP
+    v_cand := nullif(btrim(v_arr[v_i]), '');
+    IF v_cand IS NOT NULL AND v_cand !~
+       '^(10\.|127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.|::1$|[fF][cCdD])'
+    THEN
+      RETURN v_cand;
+    END IF;
+    v_i := v_i - 1;
+  END LOOP;
+
+  -- كلُّ السلسلة خاصّة (نداءٌ من داخل الشبكة) ⇒ كما كانت الدالّةُ تماماً.
+  -- وNULL هنا غيرُ خطِر بعد البند ② : يصير الدلوُ `noip` المشترك، فالمهاجمُ
+  -- الذي يُفلت من الاستنباط يَخنق **نفسه** ولا يمسّ أحداً.
+  RETURN nullif(btrim(v_arr[1]), '');
+END
 $function$
 ;
 
@@ -1840,12 +1900,15 @@ DECLARE
   v_ip          text;
 BEGIN
   v_ip := public._taki_client_ip();
-  IF v_ip IS NOT NULL THEN
-    PERFORM public.taki_rate_check('acex1m:' || v_ip, 20, 60,
-      '⏳ محاولات كثيرة خلال وقت قصير — انتظر دقيقة ثم أعد المحاولة.');
-    PERFORM public.taki_rate_check('acex1h:' || v_ip, 200, 3600,
-      '⏳ محاولات كثيرة — أعد المحاولة بعد قليل.');
-  END IF;
+  -- v15.79 — بلا شرطٍ (انظر `find_email_by_phone`). ولا دلوَ رقمٍ هنا عن
+  -- قصد: `p_phone` تُقرأ **خاماً** (`WHERE phone = p_phone`) فمفتاحٌ على
+  -- نصٍّ غيرِ مطبَّعٍ يُنشئ صفَّ عدٍّ لكلّ صيغةِ كتابة — والبديلُ (تطبيعٌ
+  -- هنا) يغيّر دلالةَ الفحص. فالحدُّ على العنوان وحده، والبندُ مُسجَّلٌ في
+  -- التقرير بوصفه خياراً مؤجَّلاً لا نسياناً.
+  PERFORM public.taki_rate_check('acex1m:' || COALESCE(v_ip, 'noip'), 20, 60,
+    '⏳ محاولات كثيرة خلال وقت قصير — انتظر دقيقة ثم أعد المحاولة.');
+  PERFORM public.taki_rate_check('acex1h:' || COALESCE(v_ip, 'noip'), 200, 3600,
+    '⏳ محاولات كثيرة — أعد المحاولة بعد قليل.');
 
   IF p_email IS NOT NULL AND length(btrim(p_email)) > 0 THEN
     SELECT EXISTS(SELECT 1 FROM public.users WHERE email ILIKE p_email AND deleted_at IS NULL) INTO v_email_taken;
@@ -10761,6 +10824,11 @@ DECLARE v_uid text := public._bot_uid(p_telegram_id, p_whatsapp_id);
         v_src text := CASE WHEN p_telegram_id IS NOT NULL THEN 'telegram' ELSE 'whatsapp' END;
         v_lat double precision; v_lng double precision;
 BEGIN
+    -- v15.79 — الموافقةُ على الخادم.
+    IF v_uid IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND COALESCE(analytics_opt_out, false)
+    ) THEN RETURN; END IF;
+
     IF v_uid IS NOT NULL AND EXISTS (
         SELECT 1 FROM analytics_events
         WHERE kind='app_open' AND user_id=v_uid AND source=v_src
@@ -10768,7 +10836,10 @@ BEGIN
     ) THEN RETURN; END IF;
     -- آخر موقع معروف للمستخدم المربوط (المشترك يشارك موقعه في التطبيق).
     IF v_uid IS NOT NULL THEN
-        SELECT u.lat, u.lng INTO v_lat, v_lng FROM users u WHERE u.id = v_uid;
+        SELECT round(u.lat::numeric, 2)::double precision,
+               round(u.lng::numeric, 2)::double precision
+          INTO v_lat, v_lng
+          FROM users u WHERE u.id = v_uid;
     END IF;
     INSERT INTO analytics_events (kind, user_id, source, lat, lng)
     VALUES ('app_open', v_uid, v_src, v_lat, v_lng);
@@ -11120,6 +11191,7 @@ CREATE OR REPLACE FUNCTION public.browse_deal_ratings(p_deal_id text, p_cursor_a
 AS $function$
 DECLARE
   v_lim  int := GREATEST(1, LEAST(50, COALESCE(p_limit, 20)));
+  v_me   text := (SELECT auth.uid())::text;
   v_rows jsonb;
   v_more boolean := false;
 BEGIN
@@ -11130,7 +11202,10 @@ BEGIN
   SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC, r.id DESC), '[]'::jsonb)
     INTO v_rows
   FROM (
-    SELECT rt.*
+    SELECT rt.id, rt.deal_id, rt.store_id, rt.user_name, rt.score, rt.comment,
+           rt.created_at, rt.reply, rt.replied_at, rt.like_count,
+           (v_me IS NOT NULL AND rt.user_id = v_me)                            AS is_mine,
+           (v_me IS NOT NULL AND v_me = ANY(COALESCE(rt.liked_by, '{}'::text[]))) AS liked_by_me
     FROM public.ratings rt
     WHERE rt.deal_id = p_deal_id
       AND rt.deleted_at IS NULL
@@ -11150,7 +11225,8 @@ BEGIN
   END IF;
 
   RETURN jsonb_build_object('ok', true, 'rows', COALESCE(v_rows, '[]'::jsonb), 'has_more', v_more);
-END $function$
+END
+$function$
 ;
 
 
@@ -11527,6 +11603,7 @@ CREATE OR REPLACE FUNCTION public.browse_store_ratings(p_store_id text, p_cursor
 AS $function$
 DECLARE
   v_lim int := GREATEST(1, LEAST(50, COALESCE(p_limit, 10)));
+  v_me  text := (SELECT auth.uid())::text;
   v_rows jsonb; v_more boolean := false; v_total int;
 BEGIN
   IF p_store_id IS NULL THEN
@@ -11536,7 +11613,13 @@ BEGIN
   SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.created_at DESC, r.id DESC), '[]'::jsonb)
     INTO v_rows
   FROM (
-    SELECT rt.*, d.item_name
+    -- v15.79 — أعمدةٌ مُسمّاةٌ لا `rt.*`: أيُّ عمودٍ جديدٍ على `ratings`
+    -- لا يُنشر من تلقاء نفسه بعد اليوم.
+    SELECT rt.id, rt.deal_id, rt.store_id, rt.user_name, rt.score, rt.comment,
+           rt.created_at, rt.reply, rt.replied_at, rt.like_count,
+           (v_me IS NOT NULL AND rt.user_id = v_me)                            AS is_mine,
+           (v_me IS NOT NULL AND v_me = ANY(COALESCE(rt.liked_by, '{}'::text[]))) AS liked_by_me,
+           d.item_name
     FROM public.ratings rt
     JOIN public.deals d ON d.id = rt.deal_id
     WHERE d.store_id = p_store_id
@@ -11559,7 +11642,8 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'rows', COALESCE(v_rows,'[]'::jsonb),
                             'has_more', v_more, 'total', v_total);
-END $function$
+END
+$function$
 ;
 
 
@@ -12857,12 +12941,11 @@ DECLARE
     v_ip        TEXT;
 BEGIN
     v_ip := public._taki_client_ip();
-    IF v_ip IS NOT NULL THEN
-      PERFORM public.taki_rate_check('fep1m:' || v_ip, 3, 60,
-        '⏳ محاولات كثيرة خلال وقت قصير — انتظر دقيقة ثم أعد المحاولة.');
-      PERFORM public.taki_rate_check('fep1h:' || v_ip, 15, 3600,
-        '⏳ محاولات كثيرة — أعد المحاولة بعد قليل.');
-    END IF;
+    -- v15.79 — بلا شرطٍ: عنوانٌ مجهولٌ يسقط في دلوٍ مشترك، لا في فراغ.
+    PERFORM public.taki_rate_check('fep1m:' || COALESCE(v_ip, 'noip'), 3, 60,
+      '⏳ محاولات كثيرة خلال وقت قصير — انتظر دقيقة ثم أعد المحاولة.');
+    PERFORM public.taki_rate_check('fep1h:' || COALESCE(v_ip, 'noip'), 15, 3600,
+      '⏳ محاولات كثيرة — أعد المحاولة بعد قليل.');
 
     digits_only := regexp_replace(COALESCE(input_phone, ''), '\D', '', 'g');
 
@@ -12875,6 +12958,23 @@ BEGIN
     IF length(digits_only) < 9 THEN
         RETURN NULL;
     END IF;
+
+    -- v15.79 — دلوٌ لكلّ رقم: **بعد** التطبيع و**بعد** الخروج المبكّر، فلا
+    -- يُنشئ نصٌّ مختلَقٌ صفَّ عدٍّ. وترتيبُه بعد دلوَي العنوان مقصود: نموُّ
+    -- الصفوف يبقى محصوراً بسقف العنوان (١٥/ساعة) لا بخيال المهاجم.
+    -- وموضعُه قبل أيّ بحثٍ في الجدول مقصودٌ أيضاً: فالخنقُ يقع سواءٌ كان
+    -- الرقمُ مسجَّلاً أم لا، فلا يصير العدّادُ بنفسه عرّافاً عن وجود حساب.
+    --
+    -- 🔴 والسقفُ سخيٌّ عن قصدٍ مقيس: هذه الدالّة تُنادى في **كلّ** محاولة
+    --    دخولٍ بالجوّال حتى الخاطئة — `src/services/authService.ts:293`
+    --    قبل `signInWithPassword` في :298 — بنداءٍ واحدٍ لكلّ محاولة. وسقفُ
+    --    العنوان (١٥/ساعة) يَبتُّ قبل هذا السقف لمن على اتّصالٍ واحد، فهذا
+    --    الدلوُ لا يَعضُّ إلا هجمةً **موزَّعةً على عناوين كثيرة** — وهي
+    --    الحالةُ التي يُفلتها سقفُ العنوان وحده. وشبكاتُ المشغّلين
+    --    السعوديّة مشتركةُ العنوان (NAT)، فالمفتاحُ على **الرقم** لا على
+    --    العنوان حتى لا يُعاقَب جارٌ بفعل جار.
+    PERFORM public.taki_rate_check('fepph:' || digits_only, 20, 3600,
+      '⏳ محاولات كثيرة على هذا الرقم — أعد المحاولة بعد قليل، أو ادخل ببريدك الإلكتروني.');
 
     IF left(digits_only, 1) = '0' THEN
         bare := substring(digits_only from 2);
@@ -14585,7 +14685,9 @@ BEGIN
   SELECT u.is_super_admin, u.admin_permissions
     INTO is_super, perms
   FROM public.users u
-  WHERE u.id = target_uid AND u.user_type = 'admin';
+  WHERE u.id = target_uid
+    AND u.user_type = 'admin'
+    AND u.deleted_at IS NULL;          -- v15.79
   IF NOT FOUND THEN RETURN FALSE; END IF;
   IF COALESCE(is_super, FALSE) THEN RETURN TRUE; END IF;
   RETURN perm = ANY(COALESCE(perms, '{}'::TEXT[]));
@@ -14758,7 +14860,10 @@ BEGIN
   IF target_uid IS NULL THEN RETURN FALSE; END IF;
   SELECT EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.id = target_uid AND u.user_type = 'admin' AND u.is_super_admin = TRUE
+    WHERE u.id = target_uid
+      AND u.user_type = 'admin'
+      AND u.is_super_admin = TRUE
+      AND u.deleted_at IS NULL         -- v15.79
   ) INTO found;
   RETURN found;
 END;
@@ -15406,7 +15511,7 @@ $function$
 ;
 
 
--- ═══ FUNCTION merchant_set_payment_declaration(p_accepts_cod boolean) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+-- ═══ FUNCTION merchant_set_payment_declaration(p_accepts_cod boolean) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.merchant_set_payment_declaration(p_accepts_cod boolean)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -16446,6 +16551,48 @@ BEGIN
              ELSE delivery_address - 'phone' - 'details' - 'lat' - 'lng' END
      WHERE user_id = r.id;
 
+    -- ───────────────────────────────────────────────────────────────────
+    -- (هـ) v15.79 — قياسٌ سلوكيّ: **يُحذف**. لا قيمةَ قانونيّةَ ولا مالية،
+    --      وهو يحمل إحداثيّاتٍ ونصَّ بحثٍ وجهازاً ومُحيلاً وحملةً — كلُّها
+    --      مربوطةٌ بالمعرّف، وكانت تبقى ١٨٠ يوماً **بعد** وعدِ المحو.
+    DELETE FROM public.analytics_events        WHERE user_id = r.id;
+    DELETE FROM public.store_analytics_events  WHERE user_id = r.id;
+    DELETE FROM public.site_sessions           WHERE user_id = r.id;
+    DELETE FROM public.user_sessions           WHERE user_id = r.id;
+    DELETE FROM public.favorites               WHERE user_id = r.id;
+    DELETE FROM public.deal_authenticity_votes WHERE user_id = r.id;
+    DELETE FROM public.promo_impressions       WHERE user_id = r.id;
+    DELETE FROM public.pending_warnings        WHERE user_id = r.id;
+    DELETE FROM public.telegram_link_tokens    WHERE user_id = r.id;
+
+    -- (و) v15.79 — أثرٌ إداريٌّ يبقى، ونصُّه الحرُّ وهويّتُه يذهبان. ولا
+    --     يُحذف الصفُّ: بلاغٌ أو إنذارٌ لا يُمحى بطلبِ من صدر بحقّه.
+    --     🪤 وهذه الخمسةُ **بلا منظّفٍ دوريٍّ إطلاقاً** (صفرُ وظيفةِ كرون
+    --        تذكرها) — أي أنّ نصَّها كان يبقى أبداً.
+    UPDATE public.complaints
+       SET subject = NULL, message = NULL, admin_note = NULL
+     WHERE user_id = r.id;
+    UPDATE public.complaint_replies SET body = NULL            WHERE author_id  = r.id;
+    UPDATE public.reports           SET reason = NULL          WHERE reporter_id = r.id;
+    UPDATE public.moderation_flags
+       SET offender_name = 'مستخدم محذوف', content = NULL
+     WHERE offender_id = r.id;
+    UPDATE public.user_warnings
+       SET context_message = NULL, context_barcode = NULL
+     WHERE user_id = r.id;
+    UPDATE public.activity_log      SET user_id = NULL, metadata = NULL WHERE user_id = r.id;
+    UPDATE public.admin_impersonation_log
+       SET target_email = NULL, ip_address = NULL, user_agent = NULL
+     WHERE target_id::text = r.id;
+
+    -- (ز) v15.79 — وللبائع: `store_id` **هو** معرّفُ حسابه. فبياناتُ
+    --     الاتّصال شخصيّةٌ وتذهب؛ و`cr_number`/`vat_number` تبقى لأنها
+    --     سجلٌّ تجاريٌّ مجمَّدٌ على الفواتير الضريبية أصلاً.
+    UPDATE public.store_profiles
+       SET email = NULL, phone = NULL, address = NULL,
+           bio = NULL, avatar_url = NULL, admin_notes = NULL
+     WHERE store_id = r.id;
+
     v_n := v_n + 1;
   END LOOP;
   RETURN v_n;
@@ -16514,6 +16661,11 @@ BEGIN
   IF jsonb_array_length(p_events) > 50 THEN
     RAISE EXCEPTION 'batch too large';
   END IF;
+
+  -- v15.79 — الموافقةُ على الخادم. وتُرجع صفراً لا خطأً: القياسُ لا يُعطّل.
+  IF v_uid IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.users WHERE id = v_uid AND COALESCE(analytics_opt_out, false)
+  ) THEN RETURN 0; END IF;
 
   INSERT INTO public.store_analytics_events (
     store_id, deal_id, user_id, session_id, event_type, duration_ms, metadata, created_at
@@ -16594,12 +16746,9 @@ BEGIN
   IF v_me IS NULL THEN RETURN jsonb_build_object('changed', false, 'error', 'AUTH_REQUIRED'); END IF;
 
   -- العنوان من الترويسة لا من العميل: ما يُمرّره المتصفّح عن نفسه ليس دليلاً.
-  BEGIN
-    v_ip := NULLIF(split_part(COALESCE(
-      current_setting('request.headers', true)::json->>'x-forwarded-for',
-      current_setting('request.headers', true)::json->>'x-real-ip', ''), ',', 1), '');
-  EXCEPTION WHEN OTHERS THEN v_ip := NULL; END;
-  v_ip := COALESCE(btrim(v_ip), NULLIF(btrim(COALESCE(p_ip, '')), ''));
+  -- v15.79 — ومن **دالّةٍ واحدة**: كانت هنا نسخةٌ ثانيةٌ من استخراج العنوان،
+  --          فإصلاحُ الأصلِ وحده كان يتركها تنحرف.
+  v_ip := public._taki_client_ip();
 
   IF p_kind = 'gateway' THEN
     UPDATE public.users
@@ -20126,10 +20275,28 @@ CREATE OR REPLACE FUNCTION public.taki_mark_session_booked(p_session text)
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
+DECLARE
+  v_sid text := left(btrim(COALESCE(p_session,'')), 64);
+  v_me  text := (SELECT auth.uid())::text;
 BEGIN
-    UPDATE public.site_sessions SET booked = true, last_seen_at = now()
-     WHERE session_id = left(btrim(COALESCE(p_session,'')), 64);
-END $function$
+  IF v_sid = '' THEN RETURN; END IF;
+
+  -- حدٌّ خشنٌ يمنع تمشيطَ معرّفاتِ الجلسات. ولا يُرفع استثناءً: القياسُ لا
+  -- يُعطّل حجزاً، والمنادي يبتلع الخطأ أصلاً (siteVisit.ts:125 `.catch`).
+  BEGIN
+    PERFORM public.taki_rate_check('mkbk:' || COALESCE(public._taki_client_ip(), 'noip'),
+                                   30, 60, 'too many conversion marks');
+  EXCEPTION WHEN OTHERS THEN RETURN;
+  END;
+
+  UPDATE public.site_sessions
+     SET booked = true, last_seen_at = now()
+   WHERE session_id = v_sid
+     AND COALESCE(booked, false) = false
+     AND last_seen_at > now() - interval '30 minutes'
+     AND (user_id IS NULL OR user_id = v_me);
+END
+$function$
 ;
 
 
@@ -21469,6 +21636,33 @@ END $function$
 ;
 
 
+-- ═══ FUNCTION taki_setting_is_protected(p_key text) INVOKER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
+CREATE OR REPLACE FUNCTION public.taki_setting_is_protected(p_key text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT p_key = ANY (ARRAY[
+    -- الدفع والبوّابات
+    'payment_gateway_enabled', 'payment_gateway_provider',
+    'payment_gateway_publishable_key', 'payment_gateway_webhook_url',
+    'payment_publishable_key', 'enabled_pay_providers', 'direct_pay_enabled',
+    -- الضريبة
+    'tax_settings', 'merchant_vat',
+    -- التسعير والباقات
+    'basic_plan_price_sar', 'extra_branch_fee_sar', 'trial_days',
+    'trial_warning_days_before', 'included_branches', 'default_package_id',
+    'location_packages',
+    -- الشراء داخل التطبيق
+    'iap_products', 'iap_allow_sandbox',
+    -- مفتاحُ دفعِ الإشعارات العامّ (تبديلُه يُسكت كلَّ الإشعارات)
+    'vapid_public_key'
+  ]::text[]);
+$function$
+;
+
+
 -- ═══ FUNCTION taki_settle_booking_refund(p_barcode text, p_ok boolean, p_refund_ref text, p_reason text) DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.taki_settle_booking_refund(p_barcode text, p_ok boolean, p_refund_ref text DEFAULT NULL::text, p_reason text DEFAULT NULL::text)
  RETURNS jsonb
@@ -21829,14 +22023,31 @@ BEGIN
   IF p_key IS NULL OR length(btrim(p_key)) < 20 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'BAD_KEY');
   END IF;
-  -- 🪤 حدُّ المعدّل **قبل** أيّ عملٍ وعلى بصمة المفتاح لا على المفتاح:
-  --    لئلّا يُسجَّل سرٌّ في `rate_limit_counters`.
   v_hash := encode(extensions.digest(btrim(p_key), 'sha256'), 'hex');
-  PERFORM public.taki_rate_check('stockpush:' || left(v_hash, 16), 120, 60,
-                                 'too many stock pushes — slow down');
+
+  -- v15.79 — التعرّفُ أوّلاً، كما في `taki_stock_webhook`.
   SELECT id INTO v_id FROM public.stock_integrations
    WHERE api_key_hash = v_hash AND is_enabled AND direction IN ('in','both');
-  IF v_id IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'UNKNOWN_KEY'); END IF;
+
+  IF v_id IS NULL THEN
+    -- 🔴 دلوٌ **واحدٌ مشتركٌ** لكلّ المفاتيح المجهولة: عددُ الصفوف لا ينمو
+    --    بمدخلات المهاجم أبداً، صفٌّ واحدٌ لكلّ نافذة.
+    -- 🪤 ولا يُرفع استثناءٌ هنا مهما تجاوز: `taki_stock_webhook` تنادي هذه
+    --    الدالّةَ **بلا معالج**، وخطأٌ منها يصير ٥٠٢ عند الحافة — و٥٠٢
+    --    تُحسب فشلاً عند زد (٣٠ في ساعةٍ ⇒ تعطيلُ الخطّاف وإلغاءُ أحداثه
+    --    المعلّقة). فالردُّ يبقى `UNKNOWN_KEY` حرفياً كما كان، والدلوُ
+    --    للرصد وتثبيتِ عدد الصفوف لا للرفض.
+    BEGIN
+      PERFORM public.taki_rate_check('stockpush:unknown', 600, 60, 'unknown stock key flood');
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    RETURN jsonb_build_object('ok', false, 'error', 'UNKNOWN_KEY');
+  END IF;
+
+  -- والمفتاحُ صار **معرّفَ الاتصال** لا بصمةَ السرّ: فسببُ v15.20 («لا
+  -- يُسجَّل سرٌّ في `rate_limit_counters`») متحقّقٌ بالبناء لا بالتعمية.
+  PERFORM public.taki_rate_check('stockpush:' || v_id::text, 120, 60,
+                                 'too many stock pushes — slow down');
   RETURN public._taki_stock_apply(v_id, p_items, p_observed_at, p_event_id);
 END
 $function$
@@ -23850,6 +24061,33 @@ end $function$
 ;
 
 
+-- ═══ FUNCTION tr_bm_force_sender() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
+CREATE OR REPLACE FUNCTION public.tr_bm_force_sender()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_party text;
+BEGIN
+  SELECT CASE WHEN NEW.sender_role = 'buyer' THEN b.user_id ELSE b.store_id END
+    INTO v_party
+    FROM public.bookings b
+   WHERE b.barcode = NEW.barcode;
+
+  -- حجزٌ غيرُ موجود: يُترك العمودُ كما هو ليفشلَ الإدراجُ بخطأ المفتاح
+  -- الأجنبيّ الصريح، لا بخطأ `NULL` مُضلِّل.
+  IF v_party IS NOT NULL THEN
+    NEW.sender_id := v_party;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$
+;
+
+
 -- ═══ FUNCTION tr_booking_message_recipient() DEFINER owner=supabase_admin search_path=search_path=public anon=YES ═══
 CREATE OR REPLACE FUNCTION public.tr_booking_message_recipient()
  RETURNS trigger
@@ -24013,6 +24251,7 @@ CREATE OR REPLACE FUNCTION public.tr_guard_booking_integrity()
 AS $function$
 BEGIN
   -- The lifecycle RPCs, pg_cron and the payment function all run as the owner.
+  -- 🪤 `INVOKER` عمداً: `current_user` هنا هو المنادي الحقيقيّ.
   IF current_user IN ('postgres', 'service_role', 'supabase_admin') THEN
     RETURN NEW;
   END IF;
@@ -24039,6 +24278,9 @@ BEGIN
   END IF;
 
   -- UPDATE from a client session: identity, money, stock and lifecycle frozen.
+  -- 🪤 سياسةُ RLS **لا تستطيع** قولَ هذا: بوستجرس لا يُمرّر `OLD` إلى
+  --    السياسات، فهذه القائمةُ هي الموضعُ الوحيدُ الممكن. عمودٌ يُحذف منها
+  --    يصير مكتوباً للطرفين فوراً وبلا أيّ صوت.
   IF NEW.barcode          IS DISTINCT FROM OLD.barcode
   OR NEW.backup_code      IS DISTINCT FROM OLD.backup_code
   OR NEW.deal_id          IS DISTINCT FROM OLD.deal_id
@@ -24070,7 +24312,12 @@ BEGIN
   OR NEW.refund_amount    IS DISTINCT FROM OLD.refund_amount
   OR NEW.refund_reason    IS DISTINCT FROM OLD.refund_reason
   OR NEW.refund_by        IS DISTINCT FROM OLD.refund_by
-  OR NEW.delivery_fee     IS DISTINCT FROM OLD.delivery_fee THEN
+  OR NEW.delivery_fee     IS DISTINCT FROM OLD.delivery_fee
+  -- v15.79 — هويّةُ المشتري وملاحظتُه وتاريخُ الطلب
+  OR NEW.user_name        IS DISTINCT FROM OLD.user_name
+  OR NEW.user_phone       IS DISTINCT FROM OLD.user_phone
+  OR NEW.notes            IS DISTINCT FROM OLD.notes
+  OR NEW.created_at       IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'forbidden: booking payment and lifecycle fields are server-managed'
       USING ERRCODE = '42501';
   END IF;
@@ -24206,7 +24453,19 @@ BEGIN
   IF current_user IN ('postgres', 'service_role', 'supabase_admin') THEN
     RETURN NEW;
   END IF;
-  IF public.is_admin() THEN
+
+  -- v15.79 — هويّةُ المراجعة مجمّدةٌ بعد الإنشاء (قبل أيّ إعفاء).
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.user_id  IS DISTINCT FROM OLD.user_id
+    OR NEW.deal_id  IS DISTINCT FROM OLD.deal_id
+    OR NEW.store_id IS DISTINCT FROM OLD.store_id THEN
+      RAISE EXCEPTION 'forbidden: a review cannot be moved to another deal, store or user'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  -- أدواتُ البلاغات (كان هنا `is_admin()` — راجع أعلاه).
+  IF public.taki_admin_perm('tab_reports') THEN
     RETURN NEW;
   END IF;
 
@@ -24216,14 +24475,15 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  -- The actual gate: a completed booking with this store.
+  -- البوّابةُ الفعليّة: شراءٌ مكتملٌ **لهذا العرض** من هذا المتجر.
   IF NOT EXISTS (
     SELECT 1 FROM public.bookings b
      WHERE b.user_id  = NEW.user_id
        AND b.store_id = NEW.store_id
+       AND b.deal_id  = NEW.deal_id
        AND b.status   = 'completed'
   ) THEN
-    RAISE EXCEPTION 'forbidden: only a completed purchase from this store allows a review'
+    RAISE EXCEPTION 'forbidden: only a completed purchase of this deal allows a review'
       USING ERRCODE = '42501';
   END IF;
 
@@ -24422,28 +24682,58 @@ DECLARE
   v_touches_privilege boolean;
 BEGIN
   IF TG_OP = 'INSERT' THEN
+    -- 🪤 `admin_permissions` عمودٌ `NOT NULL DEFAULT '{}'`، فهذا الشرطُ
+    --    صادقٌ دائماً — وهو سلوكُ الإنتاج اليوم، أُبقي حرفياً. والأعمدةُ
+    --    المضافةُ بعده للصحّة لا للسلوك (أثرُها صفر ما بقي الشرطُ أعلاه).
     v_touches_privilege :=
          NEW.user_type = 'admin'
       OR coalesce(NEW.is_super_admin, false)
-      OR NEW.admin_permissions IS NOT NULL;
+      OR NEW.admin_permissions IS NOT NULL
+      OR coalesce(NEW.is_suspended, false)
+      OR coalesce(NEW.under_review, false)
+      OR coalesce(NEW.is_anonymized, false)
+      OR NEW.under_review_at      IS NOT NULL
+      OR NEW.booking_banned_until IS NOT NULL
+      OR NEW.booking_ban_reason   IS NOT NULL
+      OR NEW.deleted_at           IS NOT NULL
+      OR NEW.purge_after          IS NOT NULL
+      OR NEW.anonymized_at        IS NOT NULL
+      OR NEW.admin_notes          IS NOT NULL;
   ELSE
     v_touches_privilege :=
-         NEW.user_type         IS DISTINCT FROM OLD.user_type
-      OR NEW.is_super_admin    IS DISTINCT FROM OLD.is_super_admin
-      OR NEW.admin_permissions IS DISTINCT FROM OLD.admin_permissions;
+      -- الامتيازات (كما كانت)
+         NEW.user_type            IS DISTINCT FROM OLD.user_type
+      OR NEW.is_super_admin       IS DISTINCT FROM OLD.is_super_admin
+      OR NEW.admin_permissions    IS DISTINCT FROM OLD.admin_permissions
+      -- v15.79 — أعمدةُ الفرض: العقوبةُ والمراجعةُ والحذفُ والتجهيلُ
+      OR NEW.is_suspended         IS DISTINCT FROM OLD.is_suspended
+      OR NEW.under_review         IS DISTINCT FROM OLD.under_review
+      OR NEW.under_review_at      IS DISTINCT FROM OLD.under_review_at
+      OR NEW.booking_banned_until IS DISTINCT FROM OLD.booking_banned_until
+      OR NEW.booking_ban_reason   IS DISTINCT FROM OLD.booking_ban_reason
+      OR NEW.deleted_at           IS DISTINCT FROM OLD.deleted_at
+      OR NEW.purge_after          IS DISTINCT FROM OLD.purge_after
+      OR NEW.is_anonymized        IS DISTINCT FROM OLD.is_anonymized
+      OR NEW.anonymized_at        IS DISTINCT FROM OLD.anonymized_at
+      OR NEW.admin_notes          IS DISTINCT FROM OLD.admin_notes;
   END IF;
 
+  -- كتابةٌ لا تمسّ شيئاً من ذلك تمرّ كما هي (فالحفظُ الجزئيّ للملفّ الشخصيّ
+  -- ونداءُ «احفظ» مكرَّراً بنفس القيمة لا يُرفضان).
   IF NOT v_touches_privilege THEN
     RETURN NEW;
   END IF;
 
-  -- Trusted server-side callers: admin RPCs (SECURITY DEFINER → owner),
-  -- pg_cron, and the service role.
+  -- المنادونَ الموثوقون: الدوالُّ الإداريّة (`DEFINER` ⇒ المالك)، والكرون
+  -- (قِيس: `cron.job.username = supabase_admin` في الوظائف كلِّها)، ودورُ
+  -- الخدمة. 🪤 يبقى `current_user` لأنّ هذه الدالّةَ `INVOKER` — ولو كانت
+  -- `DEFINER` لصار الشرطُ صادقاً في كلّ نداءٍ ولم يمنع أحداً (v14.93).
   IF current_user IN ('postgres', 'service_role', 'supabase_admin') THEN
     RETURN NEW;
   END IF;
 
-  -- A genuine super admin may manage roles.
+  -- الأدمنُ الأعلى يُدير الأدوار. (وبعد ⑦ صارت `is_super_admin()` ترفض
+  -- الأدمنَ المحذوفَ ناعماً أيضاً.)
   IF public.is_super_admin() THEN
     RETURN NEW;
   END IF;
@@ -24453,6 +24743,22 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  -- v15.79 — الرفضُ الجديد **قبل** الذيل القديم، فلا يُمسّ الذيل.
+  IF NEW.is_suspended         IS DISTINCT FROM OLD.is_suspended
+  OR NEW.under_review         IS DISTINCT FROM OLD.under_review
+  OR NEW.under_review_at      IS DISTINCT FROM OLD.under_review_at
+  OR NEW.booking_banned_until IS DISTINCT FROM OLD.booking_banned_until
+  OR NEW.booking_ban_reason   IS DISTINCT FROM OLD.booking_ban_reason
+  OR NEW.deleted_at           IS DISTINCT FROM OLD.deleted_at
+  OR NEW.purge_after          IS DISTINCT FROM OLD.purge_after
+  OR NEW.is_anonymized        IS DISTINCT FROM OLD.is_anonymized
+  OR NEW.anonymized_at        IS DISTINCT FROM OLD.anonymized_at
+  OR NEW.admin_notes          IS DISTINCT FROM OLD.admin_notes THEN
+    RAISE EXCEPTION 'forbidden: account enforcement fields are server-managed'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- ── الذيلُ القديم، حرفياً: ترقيةُ المشتري تاجراً تبقى تعمل ─────────────
   IF NEW.is_super_admin IS DISTINCT FROM OLD.is_super_admin THEN
     RAISE EXCEPTION 'forbidden: is_super_admin is not self-editable'
       USING ERRCODE = '42501';
@@ -25099,9 +25405,15 @@ CREATE OR REPLACE FUNCTION public.track_app_open(p_source text DEFAULT 'web'::te
 AS $function$
 DECLARE v_uid text := auth.uid()::text;
         v_src text := CASE WHEN p_source IN ('web','telegram','whatsapp') THEN p_source ELSE 'web' END;
-        v_lat double precision := CASE WHEN p_lat BETWEEN -90 AND 90 THEN p_lat END;
-        v_lng double precision := CASE WHEN p_lng BETWEEN -180 AND 180 THEN p_lng END;
+        -- v15.79 — تدويرٌ عند الكتابة لا عند العرض.
+        v_lat double precision := CASE WHEN p_lat BETWEEN -90  AND 90  THEN round(p_lat::numeric, 2)::double precision END;
+        v_lng double precision := CASE WHEN p_lng BETWEEN -180 AND 180 THEN round(p_lng::numeric, 2)::double precision END;
 BEGIN
+    -- v15.79 — الموافقةُ تُفحص على الخادم فتصير قراراً لا تفضيلَ متصفّح.
+    IF v_uid IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND COALESCE(analytics_opt_out, false)
+    ) THEN RETURN; END IF;
+
     -- نفس المستخدم خلال ٣٠ دقيقة = جلسة واحدة (المجهول يعتمد على كبح العميل).
     IF v_uid IS NOT NULL AND EXISTS (
         SELECT 1 FROM analytics_events
@@ -25126,6 +25438,12 @@ DECLARE v_q text := lower(btrim(COALESCE(p_query, '')));
         v_uid text := auth.uid()::text;
 BEGIN
     IF length(v_q) < 2 OR length(v_q) > 80 THEN RETURN; END IF;
+
+    -- v15.79 — الموافقةُ على الخادم.
+    IF v_uid IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND COALESCE(analytics_opt_out, false)
+    ) THEN RETURN; END IF;
+
     -- نفس المستخدم + نفس الكلمة خلال ١٠ دقائق = بحث واحد (يمنع تضخيم العدّاد أثناء الكتابة)
     IF v_uid IS NOT NULL AND EXISTS (
         SELECT 1 FROM analytics_events
@@ -25162,6 +25480,11 @@ DECLARE
 BEGIN
     -- معرّف جلسةٍ مشوّه أو غائب ⇒ لا نكتب شيئاً (ولا نُخطئ: القياس لا يُفشل تصفّحاً).
     IF v_sid !~ '^[A-Za-z0-9_.-]{8,64}$' THEN RETURN; END IF;
+
+    -- v15.79 — الموافقةُ على الخادم.
+    IF v_uid IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.users WHERE id = v_uid AND COALESCE(analytics_opt_out, false)
+    ) THEN RETURN; END IF;
 
     -- المسار: بلا مضيف، وبلا أي استعلام (فلا يُخزَّن باركود ولا رمز في العنوان).
     v_path := left(split_part(split_part(COALESCE(p_path, '/'), '?', 1), '#', 1), 120);
@@ -25200,7 +25523,8 @@ BEGIN
         v_dev, COALESCE(p_pwa, false), v_lang, v_path, v_uid
     )
     ON CONFLICT (session_id) DO NOTHING;   -- سباقُ تبويبين على نفس الجلسة
-END $function$
+END
+$function$
 ;
 
 
@@ -25387,6 +25711,7 @@ $function$
 
 
 -- ═══ TRIGGERS ═══
+CREATE TRIGGER tr_a0_bm_force_sender BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_bm_force_sender();
 CREATE TRIGGER tr_aa_rate_limit_message BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_rate_limit_message();
 CREATE TRIGGER tr_booking_message_notification AFTER INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION handle_booking_message_notification();
 CREATE TRIGGER tr_booking_message_recipient BEFORE INSERT ON public.booking_messages FOR EACH ROW EXECUTE FUNCTION tr_booking_message_recipient();
@@ -25482,7 +25807,7 @@ CREATE TRIGGER tr_ae_guard_user_created_at BEFORE UPDATE OF created_at ON public
 CREATE TRIGGER tr_auto_start_trial AFTER INSERT OR UPDATE OF user_type ON public.users FOR EACH ROW EXECUTE FUNCTION auto_start_seller_trial();
 CREATE TRIGGER tr_follow_notification AFTER UPDATE OF followed_merchants ON public.users FOR EACH ROW WHEN ((old.followed_merchants IS DISTINCT FROM new.followed_merchants)) EXECUTE FUNCTION handle_follow_notification();
 CREATE TRIGGER tr_guard_user_delete BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION tr_guard_user_delete();
-CREATE TRIGGER tr_guard_user_privileges BEFORE UPDATE OF user_type, is_super_admin, admin_permissions ON public.users FOR EACH ROW EXECUTE FUNCTION tr_guard_user_privileges();
+CREATE TRIGGER tr_guard_user_privileges BEFORE UPDATE OF user_type, is_super_admin, admin_permissions, is_suspended, under_review, under_review_at, booking_banned_until, booking_ban_reason, deleted_at, purge_after, is_anonymized, anonymized_at, admin_notes ON public.users FOR EACH ROW EXECUTE FUNCTION tr_guard_user_privileges();
 CREATE TRIGGER tr_guard_user_privileges_ins BEFORE INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION tr_guard_user_privileges();
 CREATE TRIGGER tr_new_seller_trial AFTER INSERT OR UPDATE OF user_type ON public.users FOR EACH ROW EXECUTE FUNCTION handle_new_seller_trial();
 CREATE TRIGGER tr_new_user_admin_alert AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION handle_new_user_admin_alert();
@@ -25492,9 +25817,6 @@ CREATE TRIGGER tr_zz_propagate_store_name AFTER UPDATE OF shop ON public.users F
 
 
 -- ═══ RLS POLICIES (public) ═══
--- activity_log · activity_insert_self
-CREATE POLICY activity_insert_self ON public.activity_log FOR INSERT TO public
-  WITH CHECK ((((( SELECT uid() AS uid))::text = user_id) OR (user_id IS NULL)));
 -- activity_log · activity_select_admin
 CREATE POLICY activity_select_admin ON public.activity_log FOR SELECT TO public
   USING (( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm));
@@ -25521,11 +25843,6 @@ CREATE POLICY banners_select ON public.banners FOR SELECT TO public
 CREATE POLICY banners_write_tools ON public.banners FOR ALL TO public
   USING ((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text)))
   WITH CHECK ((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text)));
--- booking_messages · booking_messages_insert_party
-CREATE POLICY booking_messages_insert_party ON public.booking_messages FOR INSERT TO public
-  WITH CHECK ((EXISTS ( SELECT 1
-   FROM bookings b
-  WHERE ((b.barcode = booking_messages.barcode) AND (((booking_messages.sender_role = 'buyer'::text) AND ((( SELECT uid() AS uid))::text = b.user_id)) OR ((booking_messages.sender_role = 'seller'::text) AND ((( SELECT uid() AS uid))::text = b.store_id)))))));
 -- booking_messages · booking_messages_select_party
 CREATE POLICY booking_messages_select_party ON public.booking_messages FOR SELECT TO public
   USING ((EXISTS ( SELECT 1
@@ -25534,11 +25851,6 @@ CREATE POLICY booking_messages_select_party ON public.booking_messages FOR SELEC
 -- booking_refunds · booking_refunds_select_parties
 CREATE POLICY booking_refunds_select_parties ON public.booking_refunds FOR SELECT TO public
   USING (((( SELECT (uid())::text AS uid) = buyer_id) OR (( SELECT (uid())::text AS uid) = store_id) OR ( SELECT taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
--- bookings · bookings_delete_own
-CREATE POLICY bookings_delete_own ON public.bookings FOR DELETE TO public
-  USING (((paid_at IS NULL) AND (status <> ALL (ARRAY['completed'::text, 'cancelled'::text])) AND (NOT (EXISTS ( SELECT 1
-   FROM order_invoices oi
-  WHERE ((oi.barcode = bookings.barcode) AND (oi.invoice_no IS NOT NULL))))) AND ((( SELECT (uid())::text AS uid) = user_id) OR (( SELECT (uid())::text AS uid) = store_id))));
 -- bookings · bookings_insert_auth
 CREATE POLICY bookings_insert_auth ON public.bookings FOR INSERT TO public
   WITH CHECK (((( SELECT uid() AS uid))::text = user_id));
@@ -25709,11 +26021,11 @@ CREATE POLICY ppl_select_parties ON public.platform_payment_log FOR SELECT TO pu
   USING ((((( SELECT uid() AS uid))::text = merchant_id) OR ((( SELECT uid() AS uid))::text = buyer_id) OR ( SELECT taki_admin_perm('action_view_finance'::text) AS taki_admin_perm)));
 -- platform_settings · platform_settings_select
 CREATE POLICY platform_settings_select ON public.platform_settings FOR SELECT TO public
-  USING (((key = ANY (ARRAY['contact_emails'::text, 'image_cdn_host'::text, 'iap_products'::text, 'delivery_enabled'::text, 'oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'capacity_limits'::text, 'vapid_public_key'::text, 'merchant_vat'::text, 'chat_limits'::text, 'verification'::text, 'refund_window'::text, 'complaints_sla_hours'::text, 'stock_link_enabled'::text])) OR ( SELECT is_admin() AS is_admin)));
+  USING (((key = ANY (ARRAY['contact_emails'::text, 'image_cdn_host'::text, 'iap_products'::text, 'delivery_enabled'::text, 'oauth_google_enabled'::text, 'oauth_apple_enabled'::text, 'telegram_bot_enabled'::text, 'whatsapp_bot_enabled'::text, 'whatsapp_bot_number'::text, 'seasonal_theme'::text, 'season_campaign'::text, 'sponsor_layout'::text, 'banner_autoplay_seconds'::text, 'payment_gateway_enabled'::text, 'tax_settings'::text, 'location_packages'::text, 'booking_holds'::text, 'capacity_limits'::text, 'vapid_public_key'::text, 'merchant_vat'::text, 'chat_limits'::text, 'verification'::text, 'refund_window'::text, 'complaints_sla_hours'::text, 'stock_link_enabled'::text])) OR ( SELECT taki_admin_perm('tab_tools'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_launch'::text) AS taki_admin_perm) OR ( SELECT taki_admin_perm('tab_reports'::text) AS taki_admin_perm)));
 -- platform_settings · platform_settings_write_scoped
 CREATE POLICY platform_settings_write_scoped ON public.platform_settings FOR ALL TO public
-  USING ((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text) OR has_admin_permission('tab_launch'::text) OR has_admin_permission('tab_reports'::text)))
-  WITH CHECK ((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text) OR has_admin_permission('tab_launch'::text) OR has_admin_permission('tab_reports'::text)));
+  USING (((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text) OR has_admin_permission('tab_launch'::text) OR has_admin_permission('tab_reports'::text)) AND (( SELECT is_super_admin() AS is_super_admin) OR (NOT taki_setting_is_protected(key)))))
+  WITH CHECK (((( SELECT is_super_admin() AS is_super_admin) OR has_admin_permission('tab_tools'::text) OR has_admin_permission('tab_launch'::text) OR has_admin_permission('tab_reports'::text)) AND (( SELECT is_super_admin() AS is_super_admin) OR (NOT taki_setting_is_protected(key)))));
 -- promo_impressions · imp_insert_own
 CREATE POLICY imp_insert_own ON public.promo_impressions FOR INSERT TO public
   WITH CHECK (((( SELECT uid() AS uid))::text = user_id));
@@ -25828,9 +26140,7 @@ CREATE POLICY stock_refresh_own ON public.stock_refresh_queue FOR SELECT TO auth
   USING (((store_id = (( SELECT uid() AS uid))::text) OR taki_admin_perm('tab_launch'::text)));
 -- store_analytics_events · an_select_owner_or_admin
 CREATE POLICY an_select_owner_or_admin ON public.store_analytics_events FOR SELECT TO public
-  USING ((((( SELECT uid() AS uid))::text = store_id) OR ((( SELECT uid() AS uid))::text IN ( SELECT users.id
-   FROM users
-  WHERE (users.user_type = 'admin'::text)))));
+  USING ((((( SELECT uid() AS uid))::text = store_id) OR ( SELECT taki_admin_perm('tab_analytics'::text) AS taki_admin_perm)));
 -- store_branches · branches_delete_own
 CREATE POLICY branches_delete_own ON public.store_branches FOR DELETE TO public
   USING ((((( SELECT uid() AS uid))::text = merchant_id) OR ( SELECT taki_admin_perm('tab_sellers'::text) AS taki_admin_perm)));
@@ -25966,7 +26276,7 @@ CREATE POLICY chat_read_members ON storage.objects FOR SELECT TO authenticated
   USING (((bucket_id = 'chat'::text) AND taki_chat_member(name)));
 -- storage.objects · chat_write_members
 CREATE POLICY chat_write_members ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (((bucket_id = 'chat'::text) AND taki_chat_member(name) AND (owner = uid())));
+  WITH CHECK (((bucket_id = 'chat'::text) AND taki_chat_member(name) AND (owner = uid()) AND (name !~ '\.\.'::text) AND (array_length(string_to_array(name, '/'::text), 1) = 2)));
 -- storage.objects · complaints_files_del
 CREATE POLICY complaints_files_del ON storage.objects FOR DELETE TO authenticated
   USING (((bucket_id = 'complaints'::text) AND taki_complaint_party(name)));
@@ -25975,7 +26285,7 @@ CREATE POLICY complaints_files_read ON storage.objects FOR SELECT TO authenticat
   USING (((bucket_id = 'complaints'::text) AND taki_complaint_party(name)));
 -- storage.objects · complaints_files_write
 CREATE POLICY complaints_files_write ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (((bucket_id = 'complaints'::text) AND (split_part(name, '/'::text, 1) = (uid())::text) AND (owner = uid())));
+  WITH CHECK (((bucket_id = 'complaints'::text) AND (split_part(name, '/'::text, 1) = (uid())::text) AND (owner = uid()) AND (name !~ '\.\.'::text) AND (array_length(string_to_array(name, '/'::text), 1) = 3)));
 
 
 -- ═══ VIEWS ═══
@@ -25993,7 +26303,10 @@ CREATE OR REPLACE VIEW public.sellers_public AS
     avatar_url,
     bio,
     contact_phone,
-    user_type,
+        CASE
+            WHEN (user_type = 'buyer'::text) THEN 'buyer'::text
+            ELSE 'seller'::text
+        END AS user_type,
     lat,
     lng,
     google_maps_link,
@@ -26038,7 +26351,7 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 
 
 -- ═══ RLS STATE ═══
--- activity_log rls=true forced=false policies=2
+-- activity_log rls=true forced=false policies=1
 -- admin_draws rls=true forced=false policies=1
 -- admin_impersonation_log rls=true forced=false policies=2
 -- admin_permission_log rls=true forced=false policies=2
@@ -26046,9 +26359,9 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- analytics_events rls=true forced=false policies=0
 -- app_secrets_legacy rls=true forced=false policies=0
 -- banners rls=true forced=false policies=2
--- booking_messages rls=true forced=false policies=2
+-- booking_messages rls=true forced=false policies=1
 -- booking_refunds rls=true forced=false policies=1
--- bookings rls=true forced=false policies=4
+-- bookings rls=true forced=false policies=3
 -- bot_gate_usage rls=true forced=false policies=0
 -- capacity_alerts rls=true forced=false policies=1
 -- cities rls=true forced=false policies=1
@@ -26171,15 +26484,15 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- user_warnings anon : SELECT
 -- users anon : SELECT
 -- wathq_config anon : SELECT
--- activity_log authenticated : DELETE,INSERT,SELECT,UPDATE
+-- activity_log authenticated : SELECT
 -- admin_draws authenticated : DELETE,INSERT,SELECT,UPDATE
 -- admin_impersonation_log authenticated : DELETE,INSERT,SELECT,UPDATE
 -- admin_permission_log authenticated : DELETE,INSERT,SELECT,UPDATE
 -- analytics_events authenticated : DELETE,INSERT,SELECT,UPDATE
 -- banners authenticated : DELETE,INSERT,SELECT,UPDATE
--- booking_messages authenticated : DELETE,INSERT,SELECT,UPDATE
+-- booking_messages authenticated : DELETE,SELECT,UPDATE
 -- booking_refunds authenticated : DELETE,INSERT,SELECT,UPDATE
--- bookings authenticated : DELETE,INSERT,SELECT,UPDATE
+-- bookings authenticated : INSERT,SELECT,UPDATE
 -- bot_gate_usage authenticated : DELETE,INSERT,SELECT,UPDATE
 -- capacity_alerts authenticated : SELECT
 -- cities authenticated : DELETE,INSERT,SELECT,UPDATE
