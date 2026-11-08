@@ -586,7 +586,7 @@ const Nearby: React.FC = () => {
                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); history.push(`/store/${store.id}`); } }}
                                         style={{ flexShrink: 0, width: 110, background: 'var(--card-bg)', borderRadius: 16, padding: '12px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', border: '1px solid var(--border-color)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
                                     >
-                                        <img src={store.avatar_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150'} alt={store.shop || store.name} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', marginBottom: 10, border: '2px solid var(--gray-100)' }} />
+                                        <img src={store.avatar_url || '/logo-mark.png'} alt={store.shop || store.name} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', marginBottom: 10, border: '2px solid var(--gray-100)' }} />
                                         <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{store.shop || store.name}</div>
                                         <button onClick={(e) => { e.stopPropagation(); toggleFollowMerchant(store.id); }} style={{ background: isFollowed ? 'var(--gray-100)' : 'var(--primary)', color: isFollowed ? 'var(--gray-600)' : 'white', border: 'none', borderRadius: 20, padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, width: '100%' }}>
                                             {isFollowed ? (isRTL ? 'متابع' : 'Following') : (isRTL ? '+ متابعة' : '+ Follow')}
@@ -633,7 +633,7 @@ const Nearby: React.FC = () => {
                                 يُحفظ من كل مكانٍ إلا هنا. */}
                             <div style={{ position: 'relative', flexShrink: 0 }}>
                                 <img src={thumbUrl(deal.images[0])} srcSet={thumbSrcSet(deal.images[0]) || undefined} sizes="85px" loading="lazy" decoding="async" width={85} height={85} alt={deal.itemName} style={{ width: 85, height: 85, borderRadius: 16, objectFit: 'cover', display: 'block' }}
-                                    onError={imgFallback(deal.images[0], 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=300')} />
+                                    onError={imgFallback(deal.images[0], '/logo-mark.png')} />
                                 <button
                                     onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleFavorite(deal.id); }}
                                     onKeyDown={(e) => { e.stopPropagation(); }}

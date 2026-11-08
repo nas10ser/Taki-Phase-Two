@@ -28,7 +28,12 @@ async function drainEmails(rpc, mailer, mailerFrom) {
                 await rpc('bot_mark_email', { p_id: m.id, p_ok: true });
                 sent++;
             } catch (e) {
-                console.error('email send:', m.to_email, e.message);
+                // 🔴 v15.79 — كان يُطبع `m.to_email`: بريدُ عميلٍ كاملاً في سجلّ
+                //    Render — خارجَ جدة وخارجَ RLS وخارجَ تجهيلِ الثلاثين يوماً.
+                //    وارتدادُ بريدٍ أو تأخيرُه مسارٌ عاديّ لا حالةٌ نادرة، فكلُّ
+                //    واحدٍ يكتب عميلاً مُعرَّفاً في سجلٍّ محفوظ. ورقمُ الصفّ يكفي
+                //    للربط: `email_outbox.id` يحمل `to_email` في القاعدة نفسها.
+                console.error('email send: outbox id=%s %s', m.id, e.message);
                 await rpc('bot_mark_email', {
                     p_id: m.id, p_ok: false,
                     p_error: String(e.message || e).slice(0, 300),

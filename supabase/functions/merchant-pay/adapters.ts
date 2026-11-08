@@ -5,7 +5,7 @@
  * كل مزود ملف/كائن واحد يلتزم الواجهة الإلزامية:
  *   createHostedPayment(cfg, ctx) → { url, ref }
  *   verifyCredentials(cfg)        → { ok, error? }
- *   confirmPayment(cfg, ref, barcode) → { paid, amountSar?, ref? }   ← نداء خادم→خادم دائماً
+ *   confirmPayment(cfg, ref, barcode) → { paid, amountSar, ref? }   ← نداء خادم→خادم دائماً
  *   verifyWebhook(cfg, evt)       → { sigOk, ref?, barcode? }
  *   refundPayment(cfg, ref, amountSar, reason, barcode?) → { ok, refundRef?, reason? }  (v14.96)
  *
@@ -47,7 +47,20 @@ export interface PayCtx {
 }
 
 export interface CreatedPayment { url: string; ref: string; }
-export interface ConfirmResult { paid: boolean; amountSar?: number; ref?: string; reason?: string; }
+/**
+ * نتيجة التأكيد الخادمي — **و`paid:true` يستلزم `amountSar` موجباً** (v15.79).
+ *
+ * 🔴 الخلل الذي أُغلق: المنادي (`applyConfirmed`) كان يستبدل المبلغَ الغائب
+ *    بـ**إجمالي الفاتورة** نفسِه، فتنجح المقارنةُ `got >= expected` دائماً —
+ *    أي أن أيَّ ردِّ تأكيدٍ بشكلِ نجاحٍ وبلا مبلغ كان يختم الطلبَ «مدفوعاً»
+ *    بلا أن يمرّ ريال. فصار العقدُ هنا: **مبلغٌ مجهولٌ ليس نجاحاً**، ومن لا
+ *    يستطيع أن يقول كم وصل لا يقول «وصل».
+ * 🪤 ولذلك `amountSar` **إلزاميّ** في النوع لا اختياريّ: نسيانُه في مهايئٍ
+ *    جديد يُسقط `npx tsc` بدل أن يصير ثغرةً صامتة.
+ */
+export interface ConfirmUnpaid { paid: false; amountSar?: number; ref?: string; reason?: string; }
+export interface ConfirmPaid { paid: true; amountSar: number; ref?: string; reason?: string; }
+export type ConfirmResult = ConfirmUnpaid | ConfirmPaid;
 export interface WebhookEvt {
     headers: Record<string, string>;
     rawBody: string;
@@ -97,6 +110,29 @@ export interface ProviderAdapter {
 
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
+/**
+ * مبلغٌ يصحّ أن يُقارَن بالفاتورة، أو `null` ⇒ «لا أعرف» (v15.79).
+ *
+ * 🪤 و`Number(undefined)` = `NaN` و`Number(null)` = **صفرٌ صالح**، وكلاهما كان
+ *    يمرّ عبر `Number(j?.amount || 0)` فيخرج صفراً يبدو رقماً. الصفرُ هنا
+ *    ليس «مجّاناً» بل «حقلٌ غائب» — ويُفرَّق عنه صراحةً.
+ */
+const amountOf = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? round2(n) : null;
+};
+
+/**
+ * عملةُ العملية: الريالُ وحده يُقارَن بفاتورتنا.
+ * 🪤 ومقارنةُ المبلغ **عميّةٌ عن العملة**: ٩٥ ين ليست ٩٥ ريالاً. والغيابُ لا
+ *    يُجرَّم (بعض المزوّدين لا يُعيد الحقل في ردّ الاستعلام) — ونُجرّم المُعلَن
+ *    المخالف وحده.
+ */
+const sarOk = (v: unknown): boolean => {
+    const c = str(v).toUpperCase();
+    return !c || c === 'SAR';
+};
+
 // ============================================================
 // Sim (🧪 الوضع التجريبي) — محاكاة دفع كاملة بلا أموال حقيقية (v12.83)
 // لعدم امتلاك ناصر وثيقة عمل حر بعد: نفس القناة الآمنة حرفياً
@@ -114,9 +150,13 @@ const sim: ProviderAdapter = {
     async renderPage(_cfg, ctx) {
         // رمز نجاح موقّع بمفتاح الخادم — «التأكيد» لاحقاً يتحقق منه خادمياً،
         // فلا يستطيع متصفحٌ تعليم حجز كمدفوع بمجرد فتح رابط العودة.
+        // 🔴 v15.79 — و**المبلغ داخل المُوقَّع**: المحاكاة كانت تقول «مدفوع» بلا
+        //    مبلغ، فيستبدله المنادي بإجمالي الفاتورة. وهو هنا بالهللات (عددٌ
+        //    صحيح) لا بالريال، فنقطةُ الكسر العشري تفصل حقول الرمز نفسَه.
         const exp = String(Date.now() + 30 * 60_000);
-        const sig = await hmacSha256Hex(simKey(), `simpay|${ctx.barcode}|${exp}`);
-        const payUrl = `${ctx.returnUrl}&simref=${exp}.${sig}`;
+        const minor = String(toMinor(ctx.amountSar));
+        const sig = await hmacSha256Hex(simKey(), `simpay|${ctx.barcode}|${exp}|${minor}`);
+        const payUrl = `${ctx.returnUrl}&simref=${exp}.${minor}.${sig}`;
         const esc = (s: string) => s.replace(/"/g, '&quot;');
         return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>محاكاة دفع — تاكي</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
@@ -146,15 +186,19 @@ const sim: ProviderAdapter = {
         return { ok: true };
     },
     async confirmPayment(_cfg, ref, barcode) {
-        // ref = "<exp>.<sig>" من زر المحاكاة — HMAC بمفتاح الخادم لا يُزوَّر
-        const dot = String(ref).indexOf('.');
-        if (dot < 1) return { paid: false, reason: 'sim_no_token' };
-        const exp = String(ref).slice(0, dot);
-        const sig = String(ref).slice(dot + 1);
-        if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return { paid: false, reason: 'sim_token_expired' };
-        const calc = await hmacSha256Hex(simKey(), `simpay|${barcode}|${exp}`);
+        // ref = "<exp>.<هللات>.<sig>" من زر المحاكاة — HMAC بمفتاح الخادم لا يُزوَّر
+        // 🪤 والصيغةُ القديمة ذاتُ الحقلين (بلا مبلغ) **تُرفض**: قبولُها يُعيد
+        //    الثقبَ نفسَه، ومهلةُ الرمز نصفُ ساعة فلا رمزَ قديمٌ حيٌّ يُكسَر.
+        const parts = String(ref).split('.');
+        if (parts.length !== 3) return { paid: false, reason: 'sim_no_token' };
+        const [exp, minor, sig] = parts;
+        if (!/^\d+$/.test(exp) || !/^\d+$/.test(minor)) return { paid: false, reason: 'sim_bad_token' };
+        if (Number(exp) < Date.now()) return { paid: false, reason: 'sim_token_expired' };
+        const calc = await hmacSha256Hex(simKey(), `simpay|${barcode}|${exp}|${minor}`);
         if (!timingSafeEqual(calc, sig)) return { paid: false, reason: 'sim_bad_token' };
-        return { paid: true, ref: `SIM-${barcode}` };
+        const amountSar = amountOf(Number(minor) / 100);
+        if (amountSar === null) return { paid: false, reason: 'sim_no_amount' };
+        return { paid: true, amountSar, ref: `SIM-${barcode}` };
     },
     async verifyWebhook() {
         // لا webhooks في المحاكاة — مسار العودة الموقّع هو التأكيد الوحيد
@@ -204,7 +248,12 @@ const moyasar: ProviderAdapter = {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return { paid: false, reason: `moyasar_fetch_${r.status}` };
-        return { paid: j?.status === 'paid', amountSar: round2(Number(j?.amount || 0) / 100), ref };
+        if (str(j?.status) !== 'paid') return { paid: false, reason: `moyasar_${str(j?.status) || 'no_status'}` };
+        if (!sarOk(j?.currency)) return { paid: false, reason: `moyasar_currency_${str(j?.currency)}` };
+        // المبلغ عند ميسر بالهللات — والغائبُ منه «لا أعرف» لا صفر (v15.79)
+        const amountSar = amountOf(Number(j?.amount) / 100);
+        if (amountSar === null) return { paid: false, reason: 'moyasar_no_amount' };
+        return { paid: true, amountSar, ref };
     },
     async verifyWebhook(cfg, evt) {
         // ميسر يرسل secret_token في الحمولة — ثم التأكيد الفعلي بجلب الفاتورة (server→server)
@@ -304,7 +353,12 @@ const tap: ProviderAdapter = {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return { paid: false, reason: `tap_fetch_${r.status}` };
-        return { paid: j?.status === 'CAPTURED', amountSar: round2(Number(j?.amount || 0)), ref };
+        if (str(j?.status) !== 'CAPTURED') return { paid: false, reason: `tap_${str(j?.status) || 'no_status'}` };
+        if (!sarOk(j?.currency)) return { paid: false, reason: `tap_currency_${str(j?.currency)}` };
+        // تاب بوحداتٍ كبرى عشرية (كما في الإنشاء حرفياً) — لا بالهللات
+        const amountSar = amountOf(j?.amount);
+        if (amountSar === null) return { paid: false, reason: 'tap_no_amount' };
+        return { paid: true, amountSar, ref };
     },
     async verifyWebhook(cfg, evt) {
         // تاب يرسل hashstring — لكن الحكم النهائي دائماً لجلب الـcharge بمفتاحنا
@@ -400,8 +454,13 @@ const paytabs: ProviderAdapter = {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return { paid: false, reason: `paytabs_query_${r.status}` };
-        const ok = j?.payment_result?.response_status === 'A';
-        return { paid: ok, amountSar: round2(Number(j?.cart_amount || 0)), ref };
+        const st = str(j?.payment_result?.response_status);
+        if (st !== 'A') return { paid: false, reason: `paytabs_${st || 'no_status'}` };
+        if (!sarOk(j?.cart_currency)) return { paid: false, reason: `paytabs_currency_${str(j?.cart_currency)}` };
+        // `cart_amount` بوحداتٍ كبرى (ريال) كما أُرسل في الإنشاء
+        const amountSar = amountOf(j?.cart_amount);
+        if (amountSar === null) return { paid: false, reason: 'paytabs_no_amount' };
+        return { paid: true, amountSar, ref };
     },
     async verifyWebhook(cfg, evt) {
         // HMAC-SHA256 للجسم الخام بمفتاح الخادم — ثم استعلام تأكيدي server→server
@@ -530,11 +589,23 @@ const payfort: ProviderAdapter = {
             body: JSON.stringify(fields),
         });
         const j = await r.json().catch(() => ({}));
-        // transaction_status '14' = Purchase Success — والمبلغ محمي أصلاً لأنه
-        // مُوقَّع داخل نموذج الإنشاء (تغييره يبطل التوقيع)، فالمطابقة تتم هناك.
-        const paid = str(j?.transaction_status) === '14';
-        const fortId = str(j?.fort_id);
-        return { paid, ref: fortId || barcode };
+        // transaction_status '14' = Purchase Success
+        if (str(j?.transaction_status) !== '14') {
+            return { paid: false, reason: `payfort_${str(j?.transaction_status) || 'no_status'}` };
+        }
+        if (!sarOk(j?.currency)) return { paid: false, reason: `payfort_currency_${str(j?.currency)}` };
+        /**
+         * 🔴 v15.79 — كان هذا المهايئ **لا يُرجع مبلغاً إطلاقاً**، وتعليقُه يقول
+         * إن المبلغ «محميٌّ بالتوقيع في نموذج الإنشاء فالمطابقة تتمّ هناك».
+         * وهذا صحيحٌ عن النموذج وخطأٌ عن المطابقة: المنادي كان يستبدل الغائبَ
+         * بإجمالي الفاتورة فلا تُطابق شيئاً — أيُّ ردّ `14` يختم «مدفوع».
+         * فالمبلغ يُقرأ من ردّ `CHECK_STATUS` نفسِه (**بأصغر وحدة** كما أُرسل
+         * في `PURCHASE`)، و`captured_amount` بديلٌ حين يُعيده المزوّد وحده.
+         * 🪤 وإن غاب الحقلان فلا ختمَ — ولا استبدالَ بالمتوقَّع أبداً.
+         */
+        const amountSar = amountOf(Number(j?.amount) / 100) ?? amountOf(Number(j?.captured_amount) / 100);
+        if (amountSar === null) return { paid: false, reason: 'payfort_no_amount' };
+        return { paid: true, amountSar, ref: str(j?.fort_id) || barcode };
     },
     async verifyWebhook(cfg, evt) {
         // إشعار بيفورت (feed/return) موقّع بعبارة الـresponse — نتحقق بإعادة الحساب
@@ -603,6 +674,23 @@ const hyperpayHost = (cfg: GatewayCfg) =>
     cfg.extra_config?.test_mode ? 'https://eu-test.oppwa.com' : 'https://eu-prod.oppwa.com';
 const HYPERPAY_OK = /^(000\.000\.|000\.100\.1|000\.[36])/;
 
+/**
+ * 🔴 **مسارُ الدفعة لا يختاره المتصفّح** (v15.79) — وهذه كانت الثغرة الحقيقية.
+ *
+ * `?op=return` سطحٌ **بلا أيّ مصادقة** (هو متصفّحُ المشتري عائداً من البوّابة،
+ * قِيس: `curl -X POST …?op=return -d '{}'` ⇒ 303). وكان يقبل `resourcePath`
+ * كما هو متى بدأ بشرطة، فيصير المنادي هو من **يختار مسارَ النداء** على مضيف
+ * OPPWA — ويُنفَّذ بـ`Authorization: Bearer <مفتاح التاجر السريّ>`. ومسارُ
+ * التقارير `/v1/query` يردّ برمزِ نجاحِ **الاستعلام** وبلا `amount` في الجذر،
+ * فيجتمع «شكلُ نجاح» مع «بلا مبلغ» ⇒ ختمٌ «مدفوع» بصفر ريال.
+ *
+ * فالمقبولُ مسارُ **دفعةِ جلسةِ سحبٍ حقيقيّة** وحده، مثبَّتُ الطرفين:
+ *   `/v1/checkouts/<id>/payment`
+ * 🪤 ولا يُوسَّع هذا النمط لـ`[\s\S]` ولا تُترك نهايتُه مفتوحة: `$` هو ما يمنع
+ *    `/v1/checkouts/x/payment/../../query`.
+ */
+export const HYPERPAY_RP_OK = /^\/v1\/checkouts\/[A-Za-z0-9._-]{8,}\/payment$/;
+
 const hyperpay: ProviderAdapter = {
     async createHostedPayment(_cfg, ctx) {
         // الودجت يحتاج صفحة تستضيف paymentWidgets.js — عبر صفحتنا الوسيطة الموقعة
@@ -653,28 +741,40 @@ const hyperpay: ProviderAdapter = {
     async confirmPayment(cfg, ref, barcode) {
         const host = hyperpayHost(cfg);
         const entity = encodeURIComponent(str(cfg.extra_config?.entity_id));
-        // ref هنا = resourcePath القادم من مسار العودة (المصدر المعتمد)
-        if (ref && ref.startsWith('/')) {
+        // ref هنا = resourcePath القادم من مسار العودة — ويُقبَل بنمطه المثبَّت وحده
+        if (HYPERPAY_RP_OK.test(ref)) {
             const r = await fetch(`${host}${ref}?entityId=${entity}`, {
                 headers: { Authorization: `Bearer ${cfg.secret_key || ''}` },
             });
+            // 🪤 و«٢٠٠ بجسمٍ فاشل ليس نجاحاً» يسبقه «ردٌّ غيرُ ٢٠٠ ليس جواباً»:
+            //    جسمُ خطأٍ قد يحمل `result.code` بشكلِ نجاحٍ لعمليةٍ أخرى.
+            if (!r.ok) return { paid: false, reason: `hyperpay_fetch_${r.status}` };
             const j = await r.json().catch(() => ({}));
             const code = str(j?.result?.code);
-            return {
-                paid: HYPERPAY_OK.test(code),
-                amountSar: round2(Number(j?.amount || 0)),
-                ref: str(j?.id) || barcode,
-                reason: code || undefined,
-            };
+            if (!HYPERPAY_OK.test(code)) return { paid: false, reason: code || 'hyperpay_no_code' };
+            if (!sarOk(j?.currency)) return { paid: false, reason: `hyperpay_currency_${str(j?.currency)}` };
+            const amountSar = amountOf(j?.amount);
+            if (amountSar === null) return { paid: false, reason: 'hyperpay_no_amount' };
+            return { paid: true, amountSar, ref: str(j?.id) || barcode, reason: code };
         }
-        // بديل: استعلام التقارير برقم عمليتنا
+        // 🔴 وأيُّ مسارٍ خارج النمط **رفضٌ صريح** لا سقوطٌ هادئ إلى الفرع التالي:
+        //    السقوطُ الهادئ يُحوّل مسارَ مهاجمٍ إلى استعلامٍ ينجح بلا مبلغ.
+        if (ref.includes('/')) return { paid: false, reason: 'hyperpay_bad_resource_path' };
+        // بديل: استعلام التقارير برقم عمليتنا — وبنفس الشرط حرفياً
         const r = await fetch(`${host}/v1/query?entityId=${entity}&merchantTransactionId=${encodeURIComponent(barcode)}`, {
             headers: { Authorization: `Bearer ${cfg.secret_key || ''}` },
         });
+        if (!r.ok) return { paid: false, reason: `hyperpay_query_${r.status}` };
         const j = await r.json().catch(() => ({}));
-        const p = Array.isArray(j?.payments) ? j.payments[0] : null;
-        const code = str(p?.result?.code);
-        return { paid: HYPERPAY_OK.test(code), amountSar: round2(Number(p?.amount || 0)), ref: str(p?.id) || barcode, reason: code || undefined };
+        const p = (Array.isArray(j?.payments) ? j.payments[0] : null) as Record<string, unknown> | null;
+        const code = str((p?.result as Record<string, unknown>)?.code);
+        if (!HYPERPAY_OK.test(code)) return { paid: false, reason: code || 'hyperpay_no_code' };
+        if (!sarOk(p?.currency)) return { paid: false, reason: `hyperpay_currency_${str(p?.currency)}` };
+        // 🔴 وهنا كان الصفرُ يمرّ: ردُّ `/v1/query` يحمل رمزَ نجاحِ الاستعلام
+        //    وبلا `amount` في الجذر ⇒ صفرٌ يُستبدل عند المنادي بالفاتورة كلّها.
+        const amountSar = amountOf(p?.amount);
+        if (amountSar === null) return { paid: false, reason: 'hyperpay_no_amount' };
+        return { paid: true, amountSar, ref: str(p?.id) || barcode, reason: code };
     },
     async verifyWebhook(_cfg, evt) {
         // إشعارات هايبر باي مشفّرة — القاعدة المعتمدة: الاستعلام server→server
@@ -767,8 +867,14 @@ const checkout: ProviderAdapter = {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return { paid: false, reason: `checkout_fetch_${r.status}` };
         const status = str(j?.status);
-        const paid = j?.approved === true && (status === 'Captured' || status === 'Paid' || status === 'Authorized');
-        return { paid, amountSar: round2(Number(j?.amount || 0) / 100), ref: str(j?.id) || ref };
+        if (j?.approved !== true || !(status === 'Captured' || status === 'Paid' || status === 'Authorized')) {
+            return { paid: false, reason: `checkout_${status || 'no_status'}` };
+        }
+        if (!sarOk(j?.currency)) return { paid: false, reason: `checkout_currency_${str(j?.currency)}` };
+        // تشيك‑أوت بأصغر وحدة (هللات)
+        const amountSar = amountOf(Number(j?.amount) / 100);
+        if (amountSar === null) return { paid: false, reason: 'checkout_no_amount' };
+        return { paid: true, amountSar, ref: str(j?.id) || ref };
     },
     async verifyWebhook(cfg, evt) {
         const sig = str(evt.headers['cko-signature']);

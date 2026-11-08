@@ -23,6 +23,7 @@ import { CommandPalette } from '../components/admin/CommandPalette';
 import { AdminGroupBar, AdminTabBar, AdminNavPanel } from '../components/admin/AdminNav';
 import type { AdminBadges } from '../components/admin/AdminNav';
 import { AdmCard, AdmPageHeader, AdmSkeleton } from '../components/admin/ui';
+import BottomNav from '../components/BottomNav';
 import {
     ADMIN_TABS, ADMIN_TAB_BY_ID, ADMIN_GROUP_BY_ID,
     AdminTabId, AdminGroupId, AdminTabDef,
@@ -99,8 +100,9 @@ TabFallback.displayName = 'TabFallback';
 // ═══════════════════════════════════════════════════════════════════════════
 
 const AdminDashboard: React.FC = () => {
-    const { user, hasPermission, isSuperAdmin } = useApp();
+    const { user, hasPermission, isSuperAdmin, language, isAuthReady } = useApp();
     const history = useHistory();
+    const isRTL = language === 'ar';
     const location = useLocation();
 
     const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
@@ -260,10 +262,69 @@ const AdminDashboard: React.FC = () => {
     const head = ADMIN_TAB_BY_ID[activeTab];
     const group = ADMIN_GROUP_BY_ID[activeGroup];
 
+    // ── مسلكٌ مسدود كان هنا (v15.79) ────────────────────────────────────────
+    // قِيس: الزائرُ المجهول الذي يفتح `/admin` كان يصل إلى **جملةٍ واحدةٍ في
+    // منتصف شاشةٍ فارغة** — بلا شريطِ تنقّلٍ (BottomNav يُركَّب في كل صفحةٍ
+    // بنفسها ولا تُركّبه هذه العودةُ المبكرة) وبلا تذييل (`SiteFooter` يُخفي
+    // نفسه على `/admin` و`/seller` عمداً). فلا رجوعَ إلا بزرّ المتصفّح،
+    // وعلى تطبيقٍ مثبَّتٍ (PWA) لا زرَّ متصفّح أصلاً.
+    // 🔴 وكانت الجملةُ **تُخبر غريباً أنّ ثمّة لوحةَ إدارة** — وقاعدةُ ناصر:
+    //    لا تسمية إدارةٍ في أي نصٍّ ظاهرٍ لغير أهلها.
+    // وحالتان لا واحدة: غيرُ داخلٍ ⇒ دعوةُ دخول · داخلٌ بلا صلاحية ⇒ الجملةُ
+    // ومعها مخرج. 🪤 و`isAuthReady` لازمةٌ وإلّا ومضت الدعوةُ للأدمن نفسِه
+    // في أوّل إطارٍ قبل أن تُحسم الجلسة.
+    if (isAuthReady && !user) {
+        return (
+            <div style={{ padding: '40px 18px', textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
+                <div style={{ fontSize: '3rem', marginBottom: 20 }}>🔒</div>
+                <h2 style={{ marginBottom: 10 }}>{isRTL ? 'هذه الصفحة تحتاج تسجيل الدخول' : 'This page requires sign-in'}</h2>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: 22 }}>
+                    {isRTL ? 'أو تابع تصفّح العروض من الرئيسية.' : 'Or carry on browsing the offers from the home page.'}
+                </p>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => history.push('/register')}
+                        style={{
+                            padding: '12px 24px', borderRadius: 12, background: 'var(--primary)',
+                            color: '#fff', border: 'none', fontWeight: 900, cursor: 'pointer',
+                        }}
+                    >
+                        {isRTL ? 'تسجيل الدخول' : 'Sign in'}
+                    </button>
+                    <button
+                        onClick={() => history.push('/')}
+                        style={{
+                            padding: '12px 24px', borderRadius: 12, background: 'transparent',
+                            color: 'var(--text-primary)', border: '1px solid var(--border)',
+                            fontWeight: 800, cursor: 'pointer',
+                        }}
+                    >
+                        {isRTL ? 'الرئيسية' : 'Home'}
+                    </button>
+                </div>
+                <BottomNav />
+            </div>
+        );
+    }
+
     if (!visibleTabs.length) {
         return (
-            <div style={{ padding: '40px 18px', textAlign: 'center', color: 'var(--adm-fg-2)' }}>
-                لا توجد لك صلاحيةٌ على أي شاشةٍ في لوحة الإدارة. راجع مالك المنصّة.
+            <div style={{ padding: '40px 18px', textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
+                <div style={{ color: 'var(--adm-fg-2)', marginBottom: 20 }}>
+                    {isRTL
+                        ? 'لا توجد لك صلاحيةٌ على أي شاشةٍ هنا. راجع مالك المنصّة.'
+                        : 'You have no permission on any screen here. Please contact the platform owner.'}
+                </div>
+                <button
+                    onClick={() => history.push('/')}
+                    style={{
+                        padding: '12px 24px', borderRadius: 12, background: 'var(--primary)',
+                        color: '#fff', border: 'none', fontWeight: 900, cursor: 'pointer',
+                    }}
+                >
+                    {isRTL ? 'الرئيسية' : 'Home'}
+                </button>
+                <BottomNav />
             </div>
         );
     }

@@ -22,12 +22,16 @@
  *  - لا يُصدَّق أي رد قادم من متصفح المشتري — التأكيد دائماً بنداء خادم→خادم
  *  - المبلغ يُطابَق مع إجمالي الفاتورة (bookings.total_amount) قبل التعليم كمدفوع،
  *    ودفعةٌ أنقص منه لا تُختم «مدفوعة» أبداً (v14.11)
+ *  - 🔴 و**مبلغٌ مجهول ليس نجاحاً** (v15.79): لا يُستبدل الغائبُ بالمتوقَّع، ولا
+ *    يختار المنادي مزوّدَ الطلب ولا مسارَ النداء على مضيف المزوّد. `?op=return`
+ *    سطحٌ بلا مصادقة بطبيعته (متصفّحُ المشتري عائداً) — فكلُّ ما يأتي منه وسمٌ
+ *    يُفحَص، لا معلومةٌ تُصدَّق.
  *  - التكرار يُتجاهل عبر UNIQUE(provider, payment_ref) — _apply_merchant_payment
  *  - بيانات البطاقات لا تلمس تاكي إطلاقاً (Hosted Checkout — نطاق PCI SAQ-A)
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { ADAPTERS, GatewayCfg, PayCtx, RefundResult } from './adapters.ts';
+import { ADAPTERS, GatewayCfg, HYPERPAY_RP_OK, PayCtx, RefundResult } from './adapters.ts';
 import { CORS_HEADERS, hmacSha256Hex, htmlResponse, json, round2, seeOther, timingSafeEqual } from './helpers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -149,30 +153,73 @@ async function loadBooking(barcode: string): Promise<Record<string, unknown> | n
 }
 
 /**
- * تطبيق نتيجة تأكيد خادمي على الحجز — **لا يُختم طلبٌ «مدفوع» بأقلّ من فاتورته**.
+ * تطبيق نتيجة تأكيد خادمي على الحجز — **لا يُختم طلبٌ «مدفوع» بأقلّ من فاتورته،
+ * ولا بمبلغٍ لا نعرفه.**
  *
  * المرجع هو `total_amount` (إجمالي الفاتورة المجمّد لحظة الحجز)، وإن غاب فـ
- * `payment_expected` الذي كُتب عند إنشاء رابط الدفع. ودفعةٌ أنقص من الفاتورة
- * تُسجَّل `amount_mismatch` فيبقى الطلب غير مدفوع ويظهر الفرق في سجل الدفعات —
- * أفضل من ختمٍ كاذب يُخرج بضاعةً بلا مقابلها.
+ * `payment_expected` الذي كُتب عند إنشاء رابط الدفع.
  *
- * 🔵 الزيادة ليست نقصاً: مبلغٌ أكبر من الفاتورة يُقبل مدفوعاً (المال وصل التاجر)،
- *    ويبقى مسجَّلاً بقيمته الفعلية في `paid_amount` وسجلّ الدفعات.
+ * 🔴 v15.79 — وهذا السطرُ بعينه كان الثغرة:
+ *       `const got = (amountSar === undefined || amountSar === 0) ? expected : …`
+ *    استبدالُ المبلغ الغائب بـ**إجمالي الفاتورة نفسِه** يجعل المقارنةَ التالية
+ *    `got >= expected` صحيحةً **دائماً**، فلا تقارن شيئاً. فأيُّ ردِّ تأكيدٍ
+ *    بشكلِ نجاحٍ وبلا مبلغ كان يختم الطلبَ «مدفوعاً» بصفر ريال — و`?op=return`
+ *    سطحٌ **بلا أيّ مصادقة** (قِيس: `curl -X POST …?op=return -d '{}'` ⇒ 303).
+ *    والمجهولُ الآن **فشلٌ مسجَّل** (`amount_unknown`) لا نجاح. ونصفُ الإصلاح
+ *    في طبقة المهايئات: لا `paid:true` بلا `amountSar` موجب.
+ * 🔵 والزيادة ليست نقصاً: مبلغٌ أكبر من الفاتورة يُقبل مدفوعاً (المال وصل
+ *    التاجر)، ويبقى بقيمته الفعلية في `paid_amount` وسجلّ الدفعات.
+ * 🪤 ومرجعُ صفوفِ **غير المدفوعة** يُوسَم: قيدُ `UNIQUE(provider, payment_ref)`
+ *    يجعل أوّلَ صفٍّ بمرجعٍ ما يُسكت كلَّ ما بعده (`ON CONFLICT DO NOTHING`)،
+ *    فصفُّ تدقيقٍ بالمرجع الخام كان **يحرق مرجعَ الدفعة الحقيقية** فلا تُختم
+ *    أبداً ⇒ حبسٌ دائمٌ لطلبٍ دُفع فعلاً. (والبحث في السجل بالبادئة فيبقى
+ *    الصفُّ الموسوم ظاهراً عند البحث بالمرجع.)
  */
 async function applyConfirmed(provider: string, merchantId: string, booking: Record<string, unknown>, ref: string, amountSar: number | undefined): Promise<boolean> {
+    const barcode = String(booking.barcode);
     const expected = round2(Number(booking.total_amount || 0) || Number(booking.payment_expected || 0));
-    // مزوّد لا يُرجع مبلغاً في ردّ التأكيد: نسأل القاعدة لا نفترض النجاح.
-    const got = (amountSar === undefined || amountSar === 0) ? expected : round2(amountSar);
-    const ok = expected > 0 && (got >= expected - 0.011);
-    await service.rpc('_apply_merchant_payment', {
+    const reported = Number(amountSar);
+
+    /** محاولةٌ لم تُختم: تُسجَّل للتدقيق بمرجعٍ موسوم — ولا تُقال «مدفوعة». */
+    const record = async (status: string, amount: number): Promise<false> => {
+        await service.rpc('_apply_merchant_payment', {
+            p_provider: provider,
+            p_merchant_id: merchantId,
+            p_payment_ref: `${ref}#${status}`,
+            p_amount: amount,
+            p_barcode: barcode,
+            p_status: status,
+        });
+        return false;
+    };
+
+    // ① مبلغٌ مجهولٌ أو غيرُ موجب ⇒ فشل. ولا يُستبدل بالمتوقَّع إطلاقاً.
+    if (!Number.isFinite(reported) || reported <= 0) return await record('amount_unknown', 0);
+    // ② وأنقصُ من الفاتورة ⇒ فشلٌ مسجَّلٌ بقيمته الفعلية لا بالمتوقَّع
+    const got = round2(reported);
+    if (!(expected > 0) || got < expected - 0.011) return await record('amount_mismatch', got);
+
+    // ③ مدفوع — وبالمرجع الخام وحده، فهو مفتاحُ عدم التكرار في القاعدة
+    const { data: res, error } = await service.rpc('_apply_merchant_payment', {
         p_provider: provider,
         p_merchant_id: merchantId,
         p_payment_ref: ref,
         p_amount: got,
-        p_barcode: String(booking.barcode),
-        p_status: ok ? 'paid' : 'amount_mismatch',
+        p_barcode: barcode,
+        p_status: 'paid',
     });
-    return ok;
+    // 🪤 وكان ردُّ الدالّة مُهمَلاً كلّه: ترفض `sim` خارج المختبر
+    //    (`{ok:false,error:'SIM_NOT_ALLOWED'}`) وتردّ `{duplicate:true}` لمرجعٍ
+    //    مستهلَك **بلا ختمٍ** — فكانت الصفحة تقول «دُفع» والطلبُ غيرُ مدفوع.
+    if (error) { console.error('apply_payment_failed:', error.message); return false; }
+    if ((res as Record<string, unknown> | null)?.ok === false) {
+        console.error('apply_payment_refused:', String((res as Record<string, unknown>).error || ''));
+        return false;
+    }
+    // ④ والحكمُ الأخير من **الحجز نفسِه** لا من ردّ الدالّة: `duplicate` تعني
+    //    مرجعاً مستهلَكاً — وقد يكون لطلبٍ آخر.
+    const { data: after } = await service.from('bookings').select('paid_at').eq('barcode', barcode).maybeSingle();
+    return !!after?.paid_at;
 }
 
 Deno.serve(async (req: Request) => {
@@ -299,8 +346,14 @@ Deno.serve(async (req: Request) => {
             if (!adapter) return json(500, { error: 'NO_ADAPTER' });
 
             // hyperpay: المتصفح يمرر resourcePath — لكن الاستعلام نفسه خادمي دائماً
-            const resourcePath = String(body.resource_path || '');
-            const ref = (resourcePath && resourcePath.startsWith('/')) ? resourcePath : String(booking.payment_ref || '');
+            // 🔴 v15.79 — و«يبدأ بشرطة» ليس تحقّقاً: كان المنادي يختار بذلك
+            //    **أيَّ مسارٍ** على مضيف المزوّد ويُنادى بمفتاح التاجر السريّ.
+            //    النمطُ المثبَّت واحدٌ لا نسختان (نفسُه في مسار العودة أدناه).
+            // 🪤 ولا يُقرأ الحقلُ إلا لمن له مسارٌ أصلاً: كان أيُّ منادٍ يحقنه
+            //    مرجعاً لأيّ مزوّد، فيُستعلم عن «فاتورةٍ» اسمُها مسار.
+            const resourcePath = provider === 'hyperpay' ? String(body.resource_path || '') : '';
+            if (resourcePath && !HYPERPAY_RP_OK.test(resourcePath)) return json(400, { error: 'BAD_RESOURCE_PATH' });
+            const ref = resourcePath || String(booking.payment_ref || '');
             if (!ref) return json(409, { error: 'NO_PAYMENT_REF' });
             const result = await adapter.confirmPayment(cfg, ref, String(booking.barcode));
             if (!result.paid) return json(200, { paid: false, reason: result.reason });
@@ -463,6 +516,10 @@ Deno.serve(async (req: Request) => {
             const adapter = ADAPTERS[provider];
             const cfg = m ? await gatewayCfg(m) : null;
             if (!adapter || !cfg) return json(200, { ok: true }); // لا نكشف شيئاً للمجهول
+            // المزوّد في العنوان يجب أن يكون بوّابةَ هذا التاجر: عنوانُ الإشعار
+            // نفسُه يُبنى من إعداده (buildCtx)، فالاختلافُ انتحالُ مهايئ.
+            // 🪤 ويبقى الردُّ ٢٠٠ فلا يصير هذا السطح كاشفاً لأيّ معلومة.
+            if (String(cfg.provider || '') !== provider) return json(200, { ok: true });
             const headers: Record<string, string> = {};
             req.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
             const chk = await adapter.verifyWebhook(cfg, { headers, rawBody, body, query: url.searchParams });
@@ -498,15 +555,48 @@ Deno.serve(async (req: Request) => {
             const adapter = ADAPTERS[provider];
             if (!cfg || !adapter) return back(false);
 
+            /**
+             * 🔴 v15.79 — **المزوّد لا يختاره المنادي.** هذا السطح بلا مصادقة،
+             * فكان بإمكان أيّ أحد أن يُسلّم طلباً إلى **مهايئٍ غير الذي أنشأ
+             * جلسته** (هايبر باي على طلبٍ أُنشئ عند ميسر مثلاً) فيُحاكم بقواعد
+             * مهايئٍ آخر. والحقيقةُ مكتوبةٌ في موضعين يُطابَقان كلاهما:
+             * بوّابةُ التاجر الحيّة، و`bookings.payment_provider` الذي يُكتب
+             * لحظة إنشاء رابط الدفع.
+             * 🪤 والثاني **معلَّقٌ على كون العمود مكتوباً**: قِيس على جدة ١٠٩
+             *    طلباً بلا `payment_provider` (أسبقُ من العمود)، فشرطٌ مطلق كان
+             *    سيرفض عودةَ كلّ طلبٍ قديم.
+             */
+            if (String(cfg.provider || '') !== provider) return back(false);
+            const bookedProvider = String(booking.payment_provider || '');
+            if (bookedProvider && bookedProvider !== provider) return back(false);
+
             // مرجع التأكيد لكل مزود — والاستعلام نفسه خادمي دائماً
             let ref = String(booking.payment_ref || '');
             if (provider === 'sim') {
-                // الوضع التجريبي: الرمز الموقّع بمفتاح الخادم هو «تأكيد المزود»
+                /**
+                 * الوضع التجريبي: الرمزُ الموقَّع بمفتاح الخادم هو «تأكيد
+                 * المزوّد» — **ولا ارتدادَ إلى `payment_ref` هنا أبداً**.
+                 * والتوقيعُ `HMAC-SHA256` بمفتاح `service_role` (لا يصل
+                 * المتصفّحَ إطلاقاً) على `simpay|<الطلب>|<الانتهاء>|<الهللات>`:
+                 * يُثبت أن الصفحةَ نحن أنشأناها، لهذا الطلب بعينه، وبهذا المبلغ،
+                 * وقبل انتهاء نصف الساعة. فلا يُختم طلبٌ بفتح رابط العودة.
+                 * 🔴 وقفلٌ ثانٍ لا بديلٌ عنه: القاعدة ترفض `sim` + `paid` خارج
+                 *    المختبر (`SIM_NOT_ALLOWED`) — ونقرأ ردَّها الآن.
+                 */
                 ref = url.searchParams.get('simref') || '';
             } else if (provider === 'hyperpay') {
+                // مسارٌ خارج النمط ⇒ وقوفٌ هنا، لا تمريرٌ إلى المهايئ
                 const rp = url.searchParams.get('resourcePath') || '';
-                if (rp.startsWith('/')) ref = rp;
+                if (rp && !HYPERPAY_RP_OK.test(rp)) return back(false);
+                if (rp) ref = rp;
             } else if (provider === 'checkout') {
+                /**
+                 * 🪤 المنادي يسمّي `cko-session-id` — وهذا سليمٌ **بعد** إصلاح
+                 *    المبلغ وحده: الاستعلامُ يجري بمفتاح التاجر فلا يرى إلا
+                 *    عملياتِ حسابه، وجلسةٌ رخيصةٌ تُعاد على طلبٍ غالٍ تعود
+                 *    بمبلغها الحقيقي ⇒ `amount_mismatch`. وقبله كانت جلسةٌ بلا
+                 *    مبلغٍ في الردّ تعود «مدفوعة».
+                 */
                 ref = url.searchParams.get('cko-session-id') || ref;
             } else if (provider === 'payfort') {
                 // عودة بيفورت نموذج موقّع بعبارة الـresponse — تحقق ثم CHECK_STATUS

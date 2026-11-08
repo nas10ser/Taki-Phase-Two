@@ -479,19 +479,18 @@ export const bookingRepository = {
         return count || 0;
     },
 
-    remove: async (barcode: string): Promise<void> => {
-        // v13.71 — كان يبتلع كل شيء: لا يقرأ `error` العائد أصلاً، ولا يميّز
-        // حذفاً رفضته RLS (يعود بصفر صفوف و`error=null`). أي نداء مستقبلي كان
-        // سيحصل على «نجاح» وهمي. الآن يرمي، فيقرّر المُستدعي ماذا يعرض.
-        const { data, error } = await supabase.from('bookings').delete().eq('barcode', barcode).select('barcode');
-        if (error) {
-            console.error('Remote delete failed:', error);
-            throw error;
-        }
-        if (!data || data.length === 0) {
-            throw new Error('BOOKING_DELETE_NOOP: لم يُحذف الحجز من القاعدة (لا صلاحية أو باركود غير موجود).');
-        }
-    },
+    // 🗑 v15.79 — حُذفت `remove(barcode)`: حذفٌ مباشرٌ لصفِّ حجز.
+    //
+    // قِيس أنها **ميتة** (صفرُ منادٍ في `src/` كلِّه)، وأُسقط معها منحُ
+    // `DELETE ON bookings` من `authenticated` في هجرة v15.79 — فالسطحُ
+    // كان يسمح لمشترٍ أن **يُحرق كمّيةَ التاجر إحراقاً دائماً**: مُشغّلُ
+    // إعادةِ الكمّية `AFTER INSERT OR UPDATE` ولا يشمل `DELETE` إطلاقاً،
+    // فتنقص الكمّيةُ ولا تعود. ويسمح لتاجرٍ أن يمحو طلباً حيّاً بلا أيّ أثر.
+    //
+    // والإلغاءُ له مسارٌ ذرّيٌّ مُدقَّقٌ يُعيد الكمّية: `cancel_booking` /
+    // `bot_cancel_booking`. 🪤 ولا يُعاد بناءُ هذا الحذف: `tr_guard_booking_delete`
+    // يرفض حذفَ حجزٍ صدرت فاتورتُه (P0016) لأن تسلسلَ الفواتير الضريبيّة
+    // لا يحتمل فجوة.
 
     // ── Messages thread ──────────────────────────────────────────
     getMessages: async (barcode: string): Promise<BookingMessage[]> => {

@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
 import SearchInput from '../components/SearchInput';
+import { safeInternalPath } from '../utils/returnTo';
 
 const Notifications: React.FC = () => {
     const history = useHistory();
@@ -156,12 +157,15 @@ const Notifications: React.FC = () => {
                                 const audience = (n.metadata as any)?.audience as 'seller' | 'buyer' | 'admin' | undefined;
                                 // v12.35 — broadcast notifications (contest announcements,
                                 // platform-mode changes, campaigns) can carry an explicit
-                                // INTERNAL destination in meta_data.actionUrl. Only paths
-                                // starting with '/' are honored so external URLs from
-                                // campaign metadata can never hijack navigation.
+                                // INTERNAL destination in meta_data.actionUrl.
+                                // 🔴 v15.79 — كان الشرطُ `startsWith('/')` وحده، وهو
+                                // **لا يُنفّذ ما يقوله تعليقُه**: `//host` و`/\host`
+                                // كلاهما يبدأ بشرطةٍ مائلة وكلاهما يخرج من الموقع.
+                                // والحكمُ الآن من `utils/returnTo` — نسخةٌ واحدة تحكم
+                                // كلَّ توجيهٍ داخليّ، فلا تنحرف نسختان.
                                 const rawActionUrl = (n.metadata as any)?.actionUrl;
-                                const actionUrl = typeof rawActionUrl === 'string' && rawActionUrl.startsWith('/')
-                                    ? rawActionUrl : null;
+                                const actionUrl = safeInternalPath(
+                                    typeof rawActionUrl === 'string' ? rawActionUrl : null);
                                 // Booking-related notifications (creation confirmation, seller
                                 // acknowledgement, chat messages, completion, cancellation) must
                                 // land on the page where the booking + its chat thread lives:

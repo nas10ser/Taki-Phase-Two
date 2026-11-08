@@ -53,6 +53,27 @@ export const invoiceIsPaid = (p: InvoicePayment): boolean =>
 // لفاتورة **اشتراك تاكي** وحدها.
 import { zatcaTlvBase64 } from '../../shared/zatcaTlv';
 
+/**
+ * 🔴 v15.79 — التهريبُ عند المَصرف لا عند المنادي.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * كان اسمُ المشتري واسمُ التاجر يُدسّان في HTML الفاتورة **خاماً** ثم يُكتبان
+ * بـ`document.write` في نافذةٍ **ترث أصلَ التطبيق**. وأيُّ مشترٍ يكتب اسمَ
+ * حسابه بنفسه (`users_update_admin` تسمح `uid()::text = id`، ولا مشغّلَ يُنظّف
+ * `name`)، فيصير وسمُه HTMLاً حيّاً على مستندٍ ضريبيّ يطبعه ناصر للهيئة:
+ * منارةُ `<img>` إلى مضيفٍ خارجيّ (`img-src https:` مفتوحة)، و
+ * `<meta http-equiv="refresh">` تنقل نافذةَ المدير **بلا شريط عنوان** داخل
+ * التطبيق المثبَّت، وإعادةُ كتابة الرقم الضريبي والإجمالي والتسلسل.
+ * (لا سكربت: `script-src` بلا `unsafe-inline` — قِيس. فالباقي تسريبٌ وتحويلٌ
+ * وتزييفُ مستند، وذلك وحده يكفي.)
+ *
+ * 🪤 ونسخةٌ واحدة لا نسختان تنحرفان: `printInvoice.ts` كانت تحمل نفس الدالّة
+ *    حرفياً (وهي الصحيحة)، فصارت تستوردها من هنا.
+ */
+export const esc = (s: unknown): string =>
+    String(s ?? '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+    ));
+
 const PRINT_CSS = `
  body{font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;margin:0;padding:32px;color:#111;background:#fff}
  .inv{max-width:640px;margin:0 auto 24px;border:1px solid #ddd;border-radius:14px;padding:28px}
@@ -117,8 +138,8 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
     const qrBlock = !isTax
         ? '<div class="qr">منشأة غير مسجلة في ضريبة القيمة المضافة بعد — لا تُحصَّل ضريبة على هذه الفاتورة.</div>'
         : (opts?.qrDataUrl
-            ? `<div style="text-align:center;margin-top:14px"><img src="${opts.qrDataUrl}" alt="ZATCA QR" width="150" height="150" style="border:1px solid #eee;border-radius:8px"><div style="font-size:10px;color:#999">رمز الفوترة الإلكترونية (المرحلة الأولى)</div></div>`
-            : `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${tlv}</div>`);
+            ? `<div style="text-align:center;margin-top:14px"><img src="${esc(opts.qrDataUrl)}" alt="ZATCA QR" width="150" height="150" style="border:1px solid #eee;border-radius:8px"><div style="font-size:10px;color:#999">رمز الفوترة الإلكترونية (المرحلة الأولى)</div></div>`
+            : `<div class="qr"><b>ZATCA QR (TLV Base64):</b><br>${esc(tlv)}</div>`);
     // v13.37 — نوع الفاتورة: عميلنا منشأة (اشتراك B2B) فالواجب **فاتورة ضريبية
     // قياسية** لا مبسطة. المبسطة للأفراد. الفرق ليس شكلياً: القياسية تحمل بيانات
     // المشتري كاملة (اسم/عنوان/رقم ضريبي) وبها وحدها يخصم ضريبة مدخلاته.
@@ -126,22 +147,24 @@ export function buildInvoiceHtml(p: InvoicePayment, s: InvoiceTaxSettings, merch
     const custVat = c.vat || opts?.merchantVat || '';
     const custName = c.name || merchantName;
     const invTitle = isTax ? 'فاتورة ضريبية' : 'فاتورة';
+    // 🪤 كلُّ قيمةٍ غيرِ رقميّة تمرّ بـ`esc` — والوسمُ المقصود (`<span>` · `<br>`)
+    //    يبقى خارجها، فلا يُهرَّب ما كتبناه نحن ولا يُترك ما كتبه غيرنا.
     const custRows = isTax ? `
  <table style="margin-top:6px"><tr><th colspan="2" style="text-align:center">بيانات العميل (المشتري)</th></tr>
-  <tr><td>الاسم</td><td>${custName}</td></tr>
-  <tr><td>الرقم الضريبي</td><td>${custVat || '<span style="color:#b45309">غير مسجّل ضريبياً</span>'}</td></tr>
-  ${c.cr ? `<tr><td>السجل التجاري</td><td>${c.cr}</td></tr>` : ''}
-  ${c.address ? `<tr><td>العنوان</td><td>${c.address}</td></tr>` : ''}
+  <tr><td>الاسم</td><td>${esc(custName)}</td></tr>
+  <tr><td>الرقم الضريبي</td><td>${custVat ? esc(custVat) : '<span style="color:#b45309">غير مسجّل ضريبياً</span>'}</td></tr>
+  ${c.cr ? `<tr><td>السجل التجاري</td><td>${esc(c.cr)}</td></tr>` : ''}
+  ${c.address ? `<tr><td>العنوان</td><td>${esc(c.address)}</td></tr>` : ''}
  </table>` : '';
     return `<div class="inv${pageBreak ? ' pb' : ''}">
- <h1>🧾 ${invTitle} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : String(p.status || '')}</span></h1>
- <div class="sub"><b>البائع:</b> ${s.entity_name}${s.cr_number ? ' — سجل/وثيقة: ' + s.cr_number : ''}${isTax ? ' — الرقم الضريبي: ' + s.vat_number : ''}${s.entity_address ? '<br>العنوان: ' + s.entity_address : ''}</div>
- <div class="meta">رقم الفاتورة: <b>${invoiceDisplayNo(p)}</b><br>تاريخ الإصدار: <b>${dt.toLocaleDateString('ar-SA-u-ca-gregory')} ${dt.toLocaleTimeString('ar-SA')}</b><br>
-  تاريخ التوريد: <b>${period}</b><br>${isTax ? '' : `العميل: <b>${custName}</b><br>`}البيان: اشتراك باقة مواقع${p.branches_count ? ` (${p.branches_count} مواقع)` : ''}</div>
+ <h1>🧾 ${invTitle} <span class="badge">${invoiceIsPaid(p) ? 'مدفوعة' : esc(p.status || '')}</span></h1>
+ <div class="sub"><b>البائع:</b> ${esc(s.entity_name)}${s.cr_number ? ' — سجل/وثيقة: ' + esc(s.cr_number) : ''}${isTax ? ' — الرقم الضريبي: ' + esc(s.vat_number) : ''}${s.entity_address ? '<br>العنوان: ' + esc(s.entity_address) : ''}</div>
+ <div class="meta">رقم الفاتورة: <b>${esc(invoiceDisplayNo(p))}</b><br>تاريخ الإصدار: <b>${esc(dt.toLocaleDateString('ar-SA-u-ca-gregory'))} ${esc(dt.toLocaleTimeString('ar-SA'))}</b><br>
+  تاريخ التوريد: <b>${esc(period)}</b><br>${isTax ? '' : `العميل: <b>${esc(custName)}</b><br>`}البيان: اشتراك باقة مواقع${p.branches_count ? ` (${Number(p.branches_count)} مواقع)` : ''}</div>
  ${custRows}
  <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
   <tr><td>قيمة الاشتراك${includeVat && isTax ? ' (قبل الضريبة)' : ''}</td><td>${net.toFixed(2)}</td></tr>
-  ${isTax ? `<tr><td>ضريبة القيمة المضافة ${rate}٪</td><td>${vat.toFixed(2)}</td></tr>` : ''}
+  ${isTax ? `<tr><td>ضريبة القيمة المضافة ${Number(rate)}٪</td><td>${vat.toFixed(2)}</td></tr>` : ''}
   <tr class="tot"><td>الإجمالي${isTax ? ' شامل الضريبة' : ''}</td><td>${total.toFixed(2)}</td></tr></table>
  ${qrBlock}
  <div class="foot">فاتورة صادرة إلكترونياً من منصة تاكي</div></div>`;
@@ -174,7 +197,7 @@ export function openBlankWindow(): Window | null {
 
 export function fillPrintWindow(w: Window | null, title: string, bodyHtml: string): boolean {
     if (!w) return false;
-    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${PRINT_CSS}
+    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${esc(title)}</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${PRINT_CSS}
 .taki-bar{position:sticky;top:0;z-index:9;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:12px;background:#ffffff;border-bottom:1px solid #e4e9ef;margin:-16px -16px 16px}
 .taki-btn{padding:11px 22px;border-radius:10px;border:0;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
 .taki-back{background:#eef2f6;color:#334155}

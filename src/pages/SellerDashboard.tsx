@@ -786,38 +786,14 @@ const SellerDashboard: React.FC = () => {
         }
     }, [user, loading, history]);
 
-    const handleGenerateSyncLink = () => {
-        const myDeals = deals.filter(d => d.storeId === user?.id);
-        const myProfileInfo = storeProfiles[user?.id || ''] || {};
-        const allNotifs = notifications || [];
-        const allBookings = bookings || [];
-        const data = {
-            deals: myDeals,
-            profiles: { [user?.id || '']: myProfileInfo },
-            notifications: allNotifs,
-            bookings: allBookings,
-            user: user
-        };
-        const jsonStr = JSON.stringify(data);
-        const encoded = btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (match, p1) => {
-            return String.fromCharCode(parseInt(p1, 16))
-        }));
-        const syncUrl = `${window.location.origin.replace(/\/$/, '')}${window.location.pathname}?sync=${encoded}`;
-        
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(syncUrl).then(() => {
-                customAlert(language === 'ar' ? '🚀 تم نسخ رابط المزامنة الشامل! افتحه في أي متصفح آخر.' : '🚀 Full sync link copied! Open it in any other browser.');
-            });
-        } else {
-            const el = document.createElement('textarea');
-            el.value = syncUrl;
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand('copy');
-            document.body.removeChild(el);
-            customAlert(language === 'ar' ? '🚀 تم نسخ رابط المزامنة الشامل!' : '🚀 Full sync link copied!');
-        }
-    };
+    // 🔴 v15.79 — حُذف `handleGenerateSyncLink`: كان يرمّز **كلّ طلبات التاجر**
+    // (أسماءَ المشترين وجوّالاتهم ولقطاتَ عناوين التوصيل) بـbase64 داخل
+    // **سلسلةِ استعلامٍ في رابط**، ويضعه في الحافظة مع رسالةٍ تقول «افتحه في أي
+    // متصفّح آخر» — أي تلصيقُ بياناتٍ شخصيّةٍ لطرفٍ ثالث في أوّل قناةٍ تصادفه
+    // (واتساب · تاريخُ المتصفّح · سجلّاتُ أي وسيط). وهو **ميتٌ مقيس**: صفرُ
+    // مُنادٍ في المستودع كلّه، ولا موضعَ واحد يقرأ `?sync=` فالرابط لم يكن
+    // يعمل أصلاً لو ضُغط. ولو أُريدت المزامنةُ يوماً فصفٌّ قصيرُ العمر على
+    // الخادم برمزٍ معتِم (نمطُ `telegram-auth`)، ولا بياناتَ في رابطٍ أبداً.
 
     // toHijri and normalizeArabicNumerals imported from '../utils/helpers'
 

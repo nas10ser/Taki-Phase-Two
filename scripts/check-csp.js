@@ -21,6 +21,18 @@
  * 🪤 وبعض المضيفات تُستعمل **بلا أن يُذكر اسمها في الكود** (خطوط جوجل تجلب
  *    ملفّات الخطّ من `fonts.gstatic.com` بنفسها). لذلك قائمة استثناءٍ صريحة
  *    ومعلَّلة — لا تُوسَّع إلا بسبب مكتوب.
+ *
+ *  ٤) **نمطٌ على نطاقٍ يوزّع نطاقاتٍ فرعيّةً لمن طلب** (v15.79، S8-04). كانت
+ *     السياسةُ تسمح بـ`https://*.supabase.co` و`wss://*.supabase.co`، وتسجيلُ
+ *     مضيفٍ داخل ذلك النمط يأخذ دقيقتين ومشروعاً مجّانياً — أي أن السياسةَ،
+ *     التي وظيفتُها منعُ البيانات من الخروج بعد تنفيذِ سكربتٍ على أصلنا،
+ *     كانت تحمل نقطةَ تصريفٍ جاهزة. والفرقُ ليس في وجود النمط بل في **من
+ *     يملك النطاقَ الأمّ**: `*.takisa.net` نطاقُنا لا يُنشئ فيه أحدٌ سجلّاً،
+ *     و`*.supabase.co` بابٌ مفتوح. فقائمةُ المنع أدناه بالنطاقات الأمّ.
+ *
+ *  ٥) **انحرافُ مضيف قاعدة المعاينة**. المضيفُ مثبَّتٌ بعينه في ثلاثة مواضع
+ *     (`vercel.json` · `scripts/inject-csp.js` · `scripts/preview-env.js`)،
+ *     وتغييرُ واحدٍ منها بلا الآخرين يُنتج معاينةً محجوبةً بصمت. يُقارَن هنا.
  */
 
 const fs = require('fs');
@@ -67,11 +79,27 @@ for (const m of policy.match(/\bws:\/\/\S+/gi) || []) {
  */
 const INDIRECT = {
     'fonts.gstatic.com': 'ملفّات الخطّ يطلبها ملفّ fonts.googleapis.com بنفسه، فلا يظهر اسمها في كودنا',
-    '*.supabase.co': 'قاعدة المعاينة (VERCEL_ENV=preview) تُحقن وقت البناء لا في الكود',
+    // 🔴 كان هنا `*.supabase.co` بالعلّة نفسها — وهو نمطٌ يستطيع أيُّ إنسانٍ
+    //    تسجيلَ مضيفٍ داخله، أي نقطةُ تصريفٍ مجّانيّة في سياسة الإنتاج (S8-04).
+    //    حلَّ مكانَه المضيفُ **بعينه**، و`inject-csp.js` يُسقطه من النسخة
+    //    المحقونة في كلّ بناءٍ غيرِ معاينة فيحجبه التقاطعُ في الإنتاج.
+    'kbmqzxcjdankdgiovctm.supabase.co':
+        'قاعدةُ المعاينة — يُحقَن اسمُها وقتَ البناء (scripts/preview-env.js) فلا يظهر في كود المتصفّح',
     '*.sentry.io': 'يُبنى العنوان داخل حزمة Sentry من الـDSN',
     'challenges.cloudflare.com': 'Turnstile يجلب موارده بنفسه بعد تحميل السكربت',
     'web.telegram.org': 'frame-ancestors — تيليجرام هو من يضع صفحتنا في إطاره (التطبيق المصغّر)، فلا نذكره نحن',
 };
+
+/**
+ * نطاقاتٌ أمٌّ **توزّع نطاقاتٍ فرعيّةً لمن طلب**. نمطٌ على أيٍّ منها يعني
+ * «اسمح لأيّ إنسان على الأرض»، فلا يجوز في أيّ توجيه.
+ * 🪤 والمعيارُ مِلكيّةُ النطاق الأمّ لا شكلُ النمط: `*.takisa.net` نطاقُنا.
+ */
+const SELF_SERVICE_DOMAINS = [
+    'supabase.co', 'supabase.in', 'vercel.app', 'netlify.app', 'pages.dev', 'workers.dev',
+    'github.io', 'firebaseapp.com', 'web.app', 'herokuapp.com', 'ngrok.io', 'ngrok-free.app',
+    'sslip.io', 'nip.io', 'r2.dev', 'amazonaws.com', 'blob.core.windows.net', 'trycloudflare.com',
+];
 
 /** ملفّات المصدر التي قد تحمل مضيفاً، بلا تعليقات. */
 function sourceTextWithoutComments() {
@@ -114,6 +142,52 @@ for (const h of unused) {
         `المضيف «${h}» مسموحٌ في السياسة ولا يظهر في الكود إطلاقاً (خارج التعليقات).\n` +
         '     إمّا يُحذف من vercel.json، أو يُضاف إلى INDIRECT في هذا الملفّ **بسببٍ مكتوب**.'
     );
+}
+
+// ── ٤) لا نمطَ على نطاقٍ يوزّع نطاقاتٍ فرعيّةً لمن طلب ──────────────────────
+for (const h of hosts) {
+    if (!h.startsWith('*.')) continue;
+    const base = h.slice(2).toLowerCase();
+    const hit = SELF_SERVICE_DOMAINS.find((d) => base === d || base.endsWith('.' + d));
+    if (hit) {
+        problems.push(
+            `نمطٌ على نطاقٍ مفتوحٍ للتسجيل: «${h}» — أيُّ إنسانٍ يسجّل مضيفاً داخل «${hit}»\n` +
+            '     فيصير مسموحاً في سياستنا، أي نقطةُ تصريفِ بياناتٍ جاهزة.\n' +
+            '     يُستبدل بالمضيف **بعينه**، لا بنمطٍ على نطاقٍ لا نملكه.'
+        );
+    }
+}
+
+// ── ٥) مضيفُ قاعدة المعاينة: قيمةٌ واحدةٌ في ثلاثة مواضع ────────────────────
+/** يقرأ ملفّ سكربتٍ بلا تعليقاته — فلا يُمسك الحارسُ تعليقاً يسمّي ما يحرسه. */
+function scriptBody(rel) {
+    let t;
+    try { t = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return null; }
+    return t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1 ');
+}
+
+const injectBody = scriptBody('scripts/inject-csp.js');
+const previewBody = scriptBody('scripts/preview-env.js');
+if (!injectBody || !previewBody) {
+    problems.push('لم أجد scripts/inject-csp.js أو scripts/preview-env.js — ولا يُحكم على سياسةٍ بلا حاقنها.');
+} else {
+    const pinned = (/PREVIEW_DB_HOST\s*=\s*['"]([^'"]+)['"]/.exec(injectBody) || [])[1] || null;
+    const fromEnv = (/SUPABASE_URL:\s*['"]https:\/\/([^/'"]+)/.exec(previewBody) || [])[1] || null;
+    if (!pinned) {
+        problems.push('scripts/inject-csp.js لا يُثبّت PREVIEW_DB_HOST — فمضيفُ المعاينة لا يُسقَط من بناء الإنتاج.');
+    } else if (!fromEnv) {
+        problems.push('scripts/preview-env.js لا يحمل SUPABASE_URL بصيغةٍ تُقرأ — تعذّرت مقارنةُ مضيف المعاينة.');
+    } else if (pinned !== fromEnv) {
+        problems.push(
+            `مضيفُ قاعدة المعاينة منحرف: inject-csp.js يقول «${pinned}» و preview-env.js يقول «${fromEnv}».\n` +
+            '     الانحرافُ هنا يُنتج معاينةً محجوبةً بصمت — لا خطأً ظاهراً.'
+        );
+    } else if (!hosts.has(pinned)) {
+        problems.push(
+            `مضيفُ قاعدة المعاينة «${pinned}» غائبٌ عن سياسة vercel.json — فالمعاينةُ ستُحجب،\n` +
+            '     لأن الترويسةَ واحدةٌ للبيئتين والمتصفّحُ ينفّذ تقاطعَ السياسات لا اتّحادَها.'
+        );
+    }
 }
 
 if (problems.length) {

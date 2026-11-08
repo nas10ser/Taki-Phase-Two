@@ -565,7 +565,7 @@ const Bookings: React.FC = () => {
                                         }}>
                                         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                             <img 
-                                                src={thumbUrl(booking.deal?.images?.[0]) || 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=400'}
+                                                src={thumbUrl(booking.deal?.images?.[0]) || '/logo-mark.png'}
                                                 srcSet={thumbSrcSet(booking.deal?.images?.[0]) || undefined}
                                                 sizes="96px"
                                                 onError={imgFallback(booking.deal?.images?.[0])}
@@ -911,7 +911,7 @@ const Bookings: React.FC = () => {
                                         }}>
                                         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                             <img 
-                                                src={thumbUrl(booking.deal?.images?.[0]) || 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=400'}
+                                                src={thumbUrl(booking.deal?.images?.[0]) || '/logo-mark.png'}
                                                 srcSet={thumbSrcSet(booking.deal?.images?.[0]) || undefined}
                                                 sizes="96px"
                                                 onError={imgFallback(booking.deal?.images?.[0])}

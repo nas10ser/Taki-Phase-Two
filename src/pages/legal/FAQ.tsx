@@ -458,6 +458,7 @@ const merchantFAQ_AR: QA[] = [
         q: 'ما المسؤوليات النظامية على عاتقي كتاجر؟',
         a: <ul className="list-disc ps-5 space-y-1">
             <li>حِيازَة سجلّ تجاري ساري أو وثيقة عمل حرّ، وأيّ ترخيص نظامي يَلزم نشاطك.</li>
+            <li>توثيق المتجر عند طلبه — ولا تُنشر العروض قبله. يُرسل رقم السجلّ التجاري أو وثيقة العمل الحرّ من «توثيق المتجر» في لوحة التاجر، وتُعرض فيها مدّة المراجعة المعلنة.</li>
             <li>إصدار فواتير ضريبية للمشتري إن انطبق عليك ذلك بحسب أنظمة هيئة الزكاة والضريبة.</li>
             <li>الالتزام بسياسة استرداد واضحة ومُعلَنة للمشتري، وفقاً لنظام حماية المستهلك.</li>
             <li>دقّة وصف العروض — لا «طُعم وتبديل» (bait-and-switch) ولا تسعير مُضلِّل.</li>
@@ -569,6 +570,7 @@ const merchantFAQ_EN: QA[] = [
         q: 'What regulatory obligations do I bear as a merchant?',
         a: <ul className="list-disc ps-5 space-y-1">
             <li>Hold a valid commercial register or freelance permit, and any regulatory licence required by your activity.</li>
+            <li>Store verification when it is required — offers are not published before it. Submit the commercial-register number or the freelance document from «Store verification» in the seller dashboard, where the published review time is shown.</li>
             <li>Issue tax invoices to the buyer where this applies to you under the Zakat, Tax and Customs Authority rules.</li>
             <li>Maintain a clear, published refund policy for the buyer, in line with the Consumer Protection Law.</li>
             <li>Accuracy of offer descriptions — no «bait-and-switch» and no misleading pricing.</li>

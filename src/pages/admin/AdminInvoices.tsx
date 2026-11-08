@@ -17,7 +17,7 @@ import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { AdmStat, AdmPill, admNum, admMoney } from '../../components/admin/ui';
 import RefundWindowCard from '../../components/admin/RefundWindowCard';
-import { openPrintWindow } from '../../utils/invoice';
+import { openPrintWindow, esc } from '../../utils/invoice';
 import { downloadCsv } from '../../utils/csvExport';
 
 interface LogRow {
@@ -161,17 +161,21 @@ const AdminInvoices: React.FC = () => {
     };
 
     // PDF فردي — بترويسة التاجر (مصدر الفاتورة نظاماً)، تاكي سجل وسيط فقط
+    // 🔴 v15.79 — كلُّ حقلٍ نصّيّ يمرّ بـ`esc`: `buyer_name` يأتي من
+    //    `users.name` **كما كتبه المشتري بنفسه**، وهذه الورقةُ تُكتب
+    //    بـ`document.write` في نافذةٍ ترث أصلَ التطبيق وتُفتح بلا شريط عنوان
+    //    داخل التطبيق المثبَّت. (التفصيلُ في رأس `utils/invoice.ts`.)
     const printRow = (r: LogRow) => {
         const html = `<div class="inv">
- <h1>🧾 سند عملية دفع إلكتروني <span class="badge">${STATUS_AR[r.status] || r.status}</span></h1>
- <div class="sub">البائع (مصدر الفاتورة الضريبية نظاماً): ${r.merchant_name || r.merchant_id}</div>
+ <h1>🧾 سند عملية دفع إلكتروني <span class="badge">${esc(STATUS_AR[r.status] || r.status)}</span></h1>
+ <div class="sub">البائع (مصدر الفاتورة الضريبية نظاماً): ${esc(r.merchant_name || r.merchant_id)}</div>
  <div class="meta">
-  رقم العملية: <b>PPL-${r.id}</b><br>
-  مرجع بوابة الدفع: <b>${r.payment_ref}</b><br>
-  رقم الحجز: <b>${r.booking_barcode}</b><br>
-  التاريخ: <b>${fmtDate(r.created_at)}</b><br>
-  العميل: <b>${r.buyer_name || r.buyer_id || '—'}</b><br>
-  بوابة الدفع: <b>${PROVIDER_AR[r.provider] || r.provider}</b>
+  رقم العملية: <b>PPL-${Number(r.id)}</b><br>
+  مرجع بوابة الدفع: <b>${esc(r.payment_ref)}</b><br>
+  رقم الحجز: <b>${esc(r.booking_barcode)}</b><br>
+  التاريخ: <b>${esc(fmtDate(r.created_at))}</b><br>
+  العميل: <b>${esc(r.buyer_name || r.buyer_id || '—')}</b><br>
+  بوابة الدفع: <b>${esc(PROVIDER_AR[r.provider] || r.provider)}</b>
  </div>
  <table><tr><th>البند</th><th>المبلغ (ر.س)</th></tr>
   <tr class="tot"><td>المبلغ المدفوع لحساب التاجر مباشرة</td><td>${Number(r.amount).toFixed(2)}</td></tr></table>

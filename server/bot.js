@@ -42,7 +42,6 @@
 try { require('dotenv').config(); } catch { /* optional */ }
 
 const express  = require('express');
-const crypto   = require('crypto');
 const { Telegraf, Markup } = require('telegraf');
 const { createClient }     = require('@supabase/supabase-js');
 
@@ -105,11 +104,11 @@ const BOT_VERSION              = '15.63.0';
 // v12.77 — مهلة ١٥ ثانية على كل طلب للقاعدة: بدونها اتصال TCP معلّق واحد
 // كان يجمّد rpc() للأبد، وأعلام busy في حلقات outbox/email تبقى مرفوعة
 // فتتوقف الإشعارات بصمت حتى إعادة التشغيل.
-const fetchWithTimeout = (url, opts = {}) => {
-    const c = new AbortController();
-    const t = setTimeout(() => c.abort(), 15_000);
-    return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
-};
+// 🔴 v15.79 — وهذا بالضبط ما لم يكن يمنعه: `.finally(clearTimeout)` تتعلّق
+//    بوعدِ الجلب، وهو يُحسم عند **الترويسات**، فقراءةُ الجسم كانت بلا مهلة.
+//    (التفصيلُ والقياسُ في `lib/httpDeadline.js`؛ ونسخةُ واتساب كانت توأماً
+//    حرفياً فصارتا موضعاً واحداً.)
+const { fetchWithDeadline: fetchWithTimeout } = require('./lib/httpDeadline');
 const supabase = (SUPABASE_URL && SUPABASE_KEY)
     ? createClient(SUPABASE_URL, SUPABASE_KEY, {
         global: {
@@ -122,27 +121,17 @@ const bot = TELEGRAM_TOKEN ? new Telegraf(TELEGRAM_TOKEN) : null;
 
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
-app.use('/webhook/whatsapp', express.raw({ type: 'application/json', limit: '1mb' }));
-app.use(express.json({ limit: '1mb' }));
-const globalRL = new Map();
-app.use((req, res, next) => {
-    if (req.path === '/health') return next();
-    const ip = req.ip || req.headers['x-forwarded-for'] || 'x';
-    const now = Date.now(), e = globalRL.get(ip);
-    if (!e || now - e.t > 300_000) { globalRL.set(ip, { t: now, n: 1 }); return next(); }
-    if (++e.n > 300) return res.status(429).json({ error: 'rate limit' });
-    next();
-});
-setInterval(() => { const n = Date.now(); for (const [k,v] of globalRL) if (n-v.t > 600_000) globalRL.delete(k); }, 600_000).unref?.();
-
-// ── Per-chat rate limit ───────────────────────────────────────────────────────
-const chatRL = new Map();
-function checkRL(k) {
-    const now = Date.now(), e = chatRL.get(k);
-    if (!e || now - e.t > 60_000) { chatRL.set(k, { t: now, n: 1 }); return true; }
-    return ++e.n <= 30;
-}
-setInterval(() => { const n = Date.now(); for (const [k,v] of chatRL) if (n-v.t > 120_000) chatRL.delete(k); }, 300_000).unref?.();
+// 🔴 v15.79 — يُوثَّق أوّلاً ثم يُعدّ، والعدُّ على هويّةٍ نراها لا على عنوان
+//    وكيل Render (الذي كان دلواً واحداً للإنترنت كلّه = مفتاحَ إطفاءٍ بـ٣٠٠
+//    طلبٍ مجهول). ولا عدَّ لكلّ عنوانٍ هنا ولا `trust proxy` — القياسُ في
+//    `lib/webhookGuard.js` أسقط كلَيهما.
+const GUARD = require('./lib/webhookGuard');
+app.use('/webhook/telegram', GUARD.webhookEdge({ tgSecret: TELEGRAM_WEBHOOK_SECRET }));
+app.use('/webhook/whatsapp', GUARD.webhookEdge({}));
+// 🪤 و`inflate:false`: لا تيليجرام ولا ميتا تُرسل جسماً مضغوطاً، ومسارُ فكّ
+//    الضغط هو سطحُ `GHSA-27r3-jxmh-p828` — فيُغلق بالإعداد لا بالترقية وحدها.
+app.use('/webhook/whatsapp', express.raw({ type: 'application/json', limit: '1mb', inflate: false }));
+app.use(express.json({ limit: '1mb', inflate: false }));
 
 // ── Shared helpers (extracted to lib/ — modular, no tech debt) ───────────────
 const F = require('./lib/format');
@@ -576,6 +565,16 @@ bot.use(async (ctx, next) => {
         } catch { /* ignore */ }
         return;
     }
+    // 🔴 v15.79 — حدُّ المعدّل **هنا**، في الموضع الذي يمرّ به كلُّ تحديث.
+    //    كان `checkRL` موصولاً بسبعةِ مواضع مختارةٍ باليد من ١٦٧ زرّاً، فكلُّ
+    //    ما عداها بلا عدّ — وأغلاها `inv:` يبني PDF بخطَّي Tajawal وباركود
+    //    ورمز زاتكا على نواةٍ واحدة، ويضرب قاعدةَ جدة (نواةٌ واحدة تخدم
+    //    الموقعَ أيضاً) مع كلّ ضغطة. والردُّ صامتٌ كما كان، لكن الدوّارة
+    //    تُطفأ فلا يبقى المستخدم على «يتم التحميل…».
+    if (!GUARD.allow(`up:${chatId(ctx)}`, 30, 60_000)) {
+        try { if (ctx.updateType === 'callback_query') await ctx.answerCbQuery(); } catch { /* ignore */ }
+        return;
+    }
     try { const id = tgId(ctx); if (id && !getSession(id).userId) await refreshSession(ctx); }
     catch { /* never block the update */ }
     // v12.50 — «جمهور المدن»: جلسة «فتح» واحدة كل ٣٠ دقيقة لكل مستخدم تُغذي
@@ -601,7 +600,6 @@ const sellerH = sellerDeals.register(bot, { rpc, uploadPhoto, W, refreshSession,
 
 // ── /start (handles deep-link token: /start link_<token>) ─────────────────────
 bot.start(async ctx => {
-    if (!checkRL(`start:${chatId(ctx)}`)) return;
     const payload = (ctx.startPayload || '').trim();
     if (payload.startsWith('link_')) {
         const token = payload.slice(5);
@@ -966,7 +964,6 @@ async function submitContest(ctx){
 // br:<sortLetter>:<category|->:<offset>
 bot.action(/^br:([pdnsxr]):([A-Za-z_\-]+):(\d+)$/, async ctx => { await ctx.answerCbQuery(); await renderList(ctx, ctx.match[1], ctx.match[2], +ctx.match[3]); });
 async function renderList(ctx, sortLetter, cat, offset){
-    if(!checkRL(`br:${chatId(ctx)}`)) return;
     const s=getSession(tgId(ctx));
     const sort=SORTMAP[sortLetter]||'newest';
     const geo=(sort==='nearby')?s.geo:undefined;
@@ -1030,7 +1027,6 @@ function soonCard(d, n){
     return `${tr('q502_head_plain', numEsc(n), md(d.item_name))}\n🏪 ${md(d.shop_name)}   ${loc}\n${price}${soon}`;
 }
 async function renderUpcoming(ctx, offset){
-    if(!checkRL(`soon:${chatId(ctx)}`)) return;
     const s=getSession(tgId(ctx));
     const deals=await rpc('bot_browse_deals',{ p_sort:'newest', p_limit:PAGE, p_offset:offset, p_upcoming:true })||[];
     s.temp.listCb='browse:soon';
@@ -1058,7 +1054,6 @@ bot.action(/^soon:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); await re
 // ── عروض الموسم (حملة الموسم v12.51) — العروض التي وسمها التجار بالموسم فقط،
 //    وتظهر للمتسوقين خلال النافذة العامة التي حددها المالك (نفس صفحة /seasonal). ──
 async function renderSeason(ctx, offset){
-    if(!checkRL(`ssn:${chatId(ctx)}`)) return;
     const s=getSession(tgId(ctx));
     const camp = await SEASON.campaign();
     if(!SEASON.publicLive(camp)){
@@ -2440,6 +2435,9 @@ const invoiceText = (v) => {
 
 bot.action(/^inv:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
+    // 🪤 دلوٌ ثانٍ أضيق للغالي: خمسُ فواتيرَ في الدقيقة فوقَ أيّ استعمالٍ
+    //    حقيقيّ بمراحل، و٣٠ ضغطةً منها تكفي لإشباع نواةٍ واحدة.
+    if (!GUARD.allow(`inv:${tgId(ctx)}`, 5, 60_000)) return;
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
     const bc = ctx.match[1];
@@ -2471,6 +2469,8 @@ bot.action(/^inv:(.+)$/, async ctx => {
 // ── v12.81: زر «ادفع الآن» — رابط الدفع المستضاف على بوابة تاجر الحجز ─────────
 bot.action(/^payb:(.+)$/, async ctx => {
     await ctx.answerCbQuery();
+    // كلُّ ضغطةٍ تُنشئ رابطَ دفعٍ عند بوّابة التاجر عبر دالّةِ حافة — فتُعدّ.
+    if (!GUARD.allow(`payb:${tgId(ctx)}`, 5, 60_000)) return;
     const s = getSession(tgId(ctx));
     if (!s.userId) return ctx.reply(tr('b1231_login_first'), { parse_mode:'MarkdownV2', reply_markup: kbGuest().reply_markup });
     const bc = ctx.match[1];
@@ -3092,7 +3092,6 @@ bot.action(/^nfr:(\d+)$/, async ctx => {
 // ── Run the filtered nearby search → cards (same engine as the website) ────────
 bot.action(/^nf:go:(\d+)$/, async ctx => { await ctx.answerCbQuery(); return runNearby(ctx, +ctx.match[1]); });
 async function runNearby(ctx, offset){
-    if(!checkRL(`nf:${chatId(ctx)}`)) return;
     const s=getSession(tgId(ctx)); const f=nfDraft(s);
     const useGeo = !!(f.useGeo && s.geo);
     const deals = await rpc('bot_browse_deals',{
@@ -3655,7 +3654,6 @@ bot.on('photo', async ctx => {
 
 // ── Free text (multi-step flows + shortcuts) ──────────────────────────────────
 bot.on('text', async ctx => {
-    if (!checkRL(`text:${chatId(ctx)}`)) return;
     const s = getSession(tgId(ctx));
     const text = sanitize(ctx.message.text, 500);
     const lc = text.toLowerCase().trim();
@@ -3857,8 +3855,12 @@ bot.on('text', async ctx => {
 bot.catch((err,ctx) => console.error(`Bot error [${ctx?.updateType}]:`, err?.message||err));
 
 app.post('/webhook/telegram', (req, res) => {
-    if (!TELEGRAM_WEBHOOK_SECRET) return res.status(503).json({ error:'not configured' });
-    if (req.headers['x-telegram-bot-api-secret-token'] !== TELEGRAM_WEBHOOK_SECRET) return res.status(403).json({ error:'Forbidden' });
+    // 🔴 v15.79 — السرُّ يُقارَن بزمنٍ ثابتٍ في `GUARD.webhookEdge` المركَّب على
+    //    هذا المسار **قبل** أيّ محلِّلِ جسم؛ وكان هنا `!==` يخرج عند أوّل بايتٍ
+    //    مختلف، والنظيرُ الصحيح مستوردٌ في السطر ٤٥ منذ البداية.
+    // 🪤 ونافذةُ تكرارٍ على `update_id`: تيليجرام يُعيد التسليمَ حتى يصل ٢٠٠،
+    //    فتحديثٌ واحدٌ كان يُنفَّذ مرّتين لو تعثّر الردّ.
+    if (req.body?.update_id && !GUARD.fresh(`tg:${req.body.update_id}`)) return res.status(200).end();
     // Never let a rejected update escape as an unhandled rejection (→ status-1 crash). v11.90
     Promise.resolve(bot.handleUpdate(req.body, res)).catch(e => console.error('handleUpdate:', e?.message || e));
 });
@@ -4064,34 +4066,10 @@ if (supabase) {
     require('./lib/stockSync').startStockWorker(rpc, (...a) => console.warn(...a));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  WhatsApp Cloud API — منطق القناة كاملاً في flows/whatsapp.js (الكائن WA أعلاه).
-//  bot.js يملك هنا النقل فقط: تحقّق webhook (GET) + توقيع HMAC (POST)، ثم يفوّض كل
-//  رسالة واردة إلى WA.handleMessage. كل المنطق والـi18n والهوية في الوحدة (لا دين تقني).
-//  v11.91: مشتري+تاجر بالتطابق مع تيليجرام، خامل حتى تُضبط WHATSAPP_* في البيئة.
-// ═══════════════════════════════════════════════════════════════════════════════
-app.get('/webhook/whatsapp', (req, res) => {
-    if (req.query['hub.mode']==='subscribe' && req.query['hub.verify_token']===WHATSAPP_VERIFY_TOKEN && WHATSAPP_VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
-    res.status(403).send('Forbidden');
-});
-app.post('/webhook/whatsapp', async (req, res) => {
-    if (!WHATSAPP_APP_SECRET) return res.status(503).json({ error:'not configured' });
-    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
-    const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(raw).digest('hex');
-    try { if (!crypto.timingSafeEqual(Buffer.from(req.headers['x-hub-signature-256']||''), Buffer.from(expected))) return res.status(403).json({error:'Invalid signature'}); }
-    catch { return res.status(403).json({error:'Invalid signature'}); }
-    let body; try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).json({error:'Bad JSON'}); }
-    res.status(200).send('OK');
-    try {
-        for (const entry of body?.entry||[]) for (const change of entry.changes||[]) {
-            // فشل التسليم يصل كتقرير status ولا يُرى في أي مكان آخر — نسجّله وإلا ضاع السبب (v12.23)
-            for (const st of change.value?.statuses||[]) if (st.status === 'failed') console.error('WA delivery FAILED →', st.recipient_id, JSON.stringify(st.errors||[]));
-            for (const msg of change.value?.messages||[]) {
-                const from = msg.from; if (!from || !checkRL(`wa:${from}`)) continue;
-                await WA.handleMessage(from, msg);
-            }
-        }
-    } catch(e) { console.error('WA processing:', e.message); }
+// WhatsApp Cloud API — النقلُ كلُّه في `lib/waWebhook.js` (استُخرج v15.79:
+// السقّافة تمنع نموَّ bot.js، وهذه الكتلةُ نقلٌ لا منطق — «قلّص، لا ترفع»).
+require('./lib/waWebhook').mount(app, {
+    verifyToken: WHATSAPP_VERIFY_TOKEN, appSecret: WHATSAPP_APP_SECRET, WA, GUARD,
 });
 
 // ── Health + Boot ─────────────────────────────────────────────────────────────

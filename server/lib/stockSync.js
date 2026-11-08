@@ -22,8 +22,75 @@
  *    الردّ ويُعلّم النتيجة، بنفس نمط طابور البريد المُجرَّب على هذا الخادم.
  */
 
+const dns = require('dns').promises;
+
 const TIMEOUT_MS = 8000;
 const BATCH = 20;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 v15.79 — عنوانُ الخطّاف يملكه **التاجر**، وتحقّقُ القاعدة كان
+ *    `p_webhook_url !~ '^https://'` وحده: بادئةٌ لا مضيف. فتاجرٌ موثَّقٌ
+ *    يحفظ `https://127.0.0.1:8000/` أو `https://10.0.1.147:8000/rest/v1/users`
+ *    أو `https://169.254.169.254/`، ثم يُحرّك مخزونَ عرضِه هو، فيصير البوتُ
+ *    يُرسل له POST **موقَّعاً من تاكي** من داخل شبكة Render — ونتيجةُ الطلب
+ *    تُكتب في صفّ الحدث: `err = 'HTTP ' + res.status`، أي **عرّافُ حالاتٍ**
+ *    يفرّق بين ٤٠١ و٤٠٤ و٢٠٠ ورفضِ الاتصال، فيُمسح به الداخلُ مضيفاً مضيفاً.
+ *
+ * 🪤 **والتحقّقُ وقتَ الحفظ لا يكفي أبداً**: DNS يُعاد توجيهُه بعد الحفظ،
+ *    فنطاقٌ عامّ مرّ الفحصَ اليوم قد يُشير إلى `127.0.0.1` غداً (ولا يملك
+ *    أحدٌ منعَ ذلك). ⇒ القرارُ **عند فتح المقبس**: يُحلَّل الاسم ويُرفض أيُّ
+ *    جوابٍ محلّيّ أو خاصّ أو link-local أو RFC4193. والنصفُ الآخر (قيدُ
+ *    القاعدة في `merchant_create_integration`/`merchant_update_integration`)
+ *    يمنع حفظَ العنوان أصلاً، فالدفاعُ طبقتان لا طبقة.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function isPrivateAddr(ip, family) {
+    const a = String(ip || '');
+    if (family === 6 || a.includes(':')) {
+        const h = a.toLowerCase();
+        if (h === '::1' || h === '::' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true;
+        // 🪤 و`::ffff:127.0.0.1` عنوانٌ محلّيّ بثوبٍ سادس — وهو نفسُ الالتفاف
+        //    الذي يحمله `GHSA-jqcg-44mw-7w3h`. يُقشَّر ويُفحص بالقواعد الرابعة.
+        const m = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i.exec(h);
+        if (m) return isPrivateAddr(m[1], 4);
+        return false;
+    }
+    const p = a.split('.').map(Number);
+    if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+    const [x, y] = p;
+    if (x === 0 || x === 10 || x === 127 || x >= 224) return true;
+    if (x === 172 && y >= 16 && y <= 31) return true;
+    if (x === 192 && y === 168) return true;
+    if (x === 169 && y === 254) return true;               // بيانات وصف السحابة
+    if (x === 100 && y >= 64 && y <= 127) return true;     // CGNAT — RFC6598
+    return false;
+}
+
+/**
+ * يُرجع سببَ الرفض، أو `null` إن جاز الاتصال. لا مقبسَ قبل هذا.
+ * 🪤 ولا فحصَ نصّيّ على شكل المضيف إطلاقاً: `dns.lookup` يُطبّع الحرفيّات
+ *    بنفسه — قِيس: `127.1` و`2130706433` كلاهما يعود `127.0.0.1`. وأيُّ
+ *    تعبيرٍ نمطيّ هنا يتّهم البريء (`abc.def` كلُّه محارفُ ستّ عشرية).
+ * 🪤 و**تبقى نافذةُ إعادةِ ربطِ DNS مفتوحةً نظرياً**: `fetch` يُحلّل الاسمَ
+ *    ثانيةً بنفسه، فمهاجمٌ يملك نطاقاً بـTTL صفر قد يُبدّل الجوابَ بين
+ *    فحصِنا واتصالِه. إغلاقُها يلزمه موزّعٌ مخصَّص (undici) يُثبّت العنوانَ
+ *    ويمرّر `servername` لـTLS — حزمةٌ جديدة وسطحٌ جديد. فالدفاعُ طبقتان:
+ *    قيدُ القاعدة يمنع **حفظَ** العنوان الداخليّ، وهذا يمنع تحليلَه إليه.
+ *    ولا يُدّعى أكثرُ من ذلك.
+ */
+async function dialBlocked(rawUrl) {
+    let u;
+    try { u = new URL(String(rawUrl || '')); } catch { return 'bad url'; }
+    if (u.protocol !== 'https:') return 'not https';
+    let answers = null;
+    try { answers = await dns.lookup(u.hostname.replace(/^\[|\]$/g, ''), { all: true }); }
+    catch { return null; }   // 🪤 اسمٌ لا يُحلَّل لا يصل شيئاً — و`fetch` سيفشل بنفسه
+    // 🪤 ويُرفض إن كان **أيُّ** جوابٍ محلّياً لا إن كانت كلُّها: اسمٌ بجوابين
+    //    أحدُهما عامٌّ والآخر `127.0.0.1` يُختار بينهما عشوائياً.
+    if (answers.length && answers.some(a => isPrivateAddr(a.address, a.family))) return 'private host';
+    return null;
+}
 
 /**
  * 🔴 v15.20 — لم يبقَ هنا توقيعٌ ولا بناءُ جسم، وذلك **إصلاحُ ثغرة**:
@@ -61,24 +128,43 @@ async function drainStockEvents(rpc, log) {
                 await rpc('bot_mark_stock_event', { p_id: ev.id, p_ok: false, p_error: 'no signed body' });
                 failed++; continue;
             }
+            // 🔴 القرارُ قبل المقبس: يُحلَّل الاسم ويُرفض الجوابُ الداخليّ.
+            const blocked = await dialBlocked(ev.webhook_url);
+            if (blocked) {
+                await rpc('bot_mark_stock_event', { p_id: ev.id, p_ok: false, p_error: 'endpoint not allowed' });
+                if (log) log('stockSync refused endpoint:', blocked);   // السببُ في السجلّ لا في صفّ التاجر
+                failed++; continue;
+            }
             let ok = false, err = '';
             try {
                 const ctrl = new AbortController();
                 const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-                const res = await fetch(ev.webhook_url, {
-                    method: 'POST', signal: ctrl.signal,
-                    headers: {
-                        'content-type': 'application/json',
-                        'x-taki-signature': ev.signature,
-                        'x-taki-event-id': String(ev.id),
-                    },
-                    body: raw,
-                });
-                clearTimeout(t);
+                let res;
+                // 🪤 و`clearTimeout` كان **قبل** قراءة أيّ شيء: نفسُ عيب
+                //    `fetchWithTimeout` — فتُمسح المهلة عند الترويسات.
+                try {
+                    res = await fetch(ev.webhook_url, {
+                        method: 'POST', signal: ctrl.signal, redirect: 'manual',
+                        headers: {
+                            'content-type': 'application/json',
+                            'x-taki-signature': ev.signature,
+                            'x-taki-event-id': String(ev.id),
+                        },
+                        body: raw,
+                    });
+                    try { await res.body?.cancel(); } catch { /* بلا جسم */ }
+                } finally { clearTimeout(t); }
+                // 🪤 و`redirect:'manual'`: تحويلٌ من نطاق التاجر إلى `127.0.0.1`
+                //    يلتفّ على كلّ ما فوق — فالتحويلُ ليس تسليماً ولا يُتبع.
                 ok = res.ok;
-                if (!ok) err = 'HTTP ' + res.status;
+                // 🔴 وحالةُ المنبع لم تعد تُكتب في صفّ الحدث: كانت عرّافاً
+                //    يفرّق ٤٠١ من ٤٠٤ من رفضِ الاتصال، فيُمسح به الداخل.
+                //    والتاجرُ يحتاج «لم يُسلَّم» لا رقمَ حالةٍ لمضيفٍ ليس له.
+                if (!ok) err = (res.status >= 300 && res.status < 400) ? 'redirect refused' : 'delivery failed';
             } catch (e) {
-                err = String((e && e.message) || e).slice(0, 200);
+                // 🪤 ورسالةُ الاستثناء تحمل الاسمَ والعنوانَ والمنفذ
+                //    (`ECONNREFUSED 10.0.1.147:8000`) — وهي نفسُ العرّاف.
+                err = (e && e.name === 'AbortError') ? 'delivery timeout' : 'delivery failed';
             }
             await rpc('bot_mark_stock_event', { p_id: ev.id, p_ok: ok, p_error: ok ? null : err });
             if (ok) sent++; else failed++;
@@ -90,6 +176,8 @@ async function drainStockEvents(rpc, log) {
 }
 
 module.exports = { drainStockEvents, TIMEOUT_MS, BATCH };
+// تُصدَّر للاختبار السالب وحده — ضابطٌ بلا اختبارٍ سالب ضابطٌ مجهول.
+module.exports._internals = { dialBlocked, isPrivateAddr };
 
 /**
  * يُشغّل مؤقّتَ التسليم. ⚠️ ويُنادى **خارج** أيّ شرطٍ يخصّ البريد:

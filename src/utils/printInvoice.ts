@@ -13,6 +13,7 @@
 import { code128SVG } from './barcode128';
 import { KSA_VAT_RATE, fmtSAR } from './vat';
 import { qrFromTlv, isValidSaudiVat } from './zatcaQr';
+import { esc } from './invoice';
 import { supabase } from '../services/supabaseClient';
 
 export interface InvoiceLineItem {
@@ -100,10 +101,8 @@ export interface InvoiceData {
     isRTL: boolean;
 }
 
-const esc = (s: string): string =>
-    String(s ?? '').replace(/[&<>"']/g, (c) => (
-        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
-    ));
+// v15.79 — نسخةٌ واحدة لا نسختان: `esc` انتقلت إلى `utils/invoice.ts` (مَصرفُ
+// `document.write` الآخر)، فلا تنحرف إحداهما عن الأخرى بعد اليوم.
 
 // v13.11 — بناء بيانات الفاتورة من صفّ حجز واحد (طلب ناصر: يستخدمها التاجر
 // (لوحته) والمشتري (حجوزاتي) معاً بلا تكرار). تبني العناصر المهيكلة من النوع/
@@ -345,7 +344,7 @@ const buildHtml = (d: InvoiceData): string => {
     <div class="row" style="margin-top:10px"><span class="k">${L('المجموع قبل الضريبة', 'Subtotal (excl. VAT)')}</span><span class="v">${fmtSAR(Number(d.vatBase))} ${cur}</span></div>
     <div class="row"><span class="k">${L(`ضريبة القيمة المضافة ${rate}٪ (مضمّنة)`, `VAT ${rate}% (included)`)}</span><span class="v">${fmtSAR(Number(d.vatAmount))} ${cur}</span></div>
     <div class="total"><span>${L('الإجمالي شامل الضريبة', 'Total (VAT incl.)')}</span><span>${fmtSAR(Number(d.totalAmount))} ${cur}</span></div>
-    ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${d.qrDataUrl}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
+    ${d.qrDataUrl ? `<div style="text-align:center;margin-top:10px"><img src="${esc(d.qrDataUrl)}" alt="ZATCA QR" width="130" height="130"><div style="font-size:9px;color:#94a3b8">${L('رمز الفوترة الإلكترونية — امسحه بتطبيق زاتكا للتحقق', 'ZATCA e-invoicing QR')}</div></div>` : ''}`;
     })()}
     ${d.creditNoteNo ? `
     <div class="delivery" style="margin-top:12px;border-color:#10b981">

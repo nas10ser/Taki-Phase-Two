@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v15.78';
+const CACHE_NAME = 'taki-cache-v15.79';
 // 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
 // manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
 // واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
@@ -48,14 +48,53 @@ const isNavigation = req => req.mode === 'navigate' || (req.headers.get('accept'
 // قادم. ويُستثنى `/storage/v1/object/public` عمداً: الصور غير قابلة للتغيير
 // (اسم فريد لكل ملف) وتخزينها هو المطلوب.
 const API_PATHS = ['/rest/v1', '/auth/v1', '/realtime/v1', '/functions/v1', '/graphql/v1', '/api/'];
+/**
+ * 🔴 v15.79 — حدُّ المقطع يُثبَّت بالنقطة، وقاعدةٌ واحدة لكلّ المقارنات.
+ * كان `h.endsWith('supabase.co')` عارياً، فـ`evilsupabase.co` و`x-supabase.co`
+ * «خادمُنا» — نفسُ طبقةِ الخطأ التي سجّلتها CLAUDE.md عن `evil-takisa.net`.
+ * (لم يكن ينفذ منها شيءٌ اليوم: `connect-src` تُقيّد `fetch` العاملِ نفسَه
+ * ونمطُها `*.supabase.co` يشترط النقطة — أي أن السياسة كانت الحارسَ الوحيد.)
+ */
+const hostIs = (h, d) => h === d || h.endsWith('.' + d);
 /** خادمنا نحن (القاعدة والتخزين) — يبقى على معالجته القديمة. وما عداه من
  *  مضيفين (بلاطات الخرائط، الخطوط، تيليجرام) يذهب للمتصفّح مباشرةً. */
 const isOwnBackend = h =>
-  h === 'api.takisa.net' || h.endsWith('supabase.co');
+  h === 'api.takisa.net' || hostIs(h, 'supabase.co');
+
+/**
+ * 🔴 v15.79 — تخزينٌ **مستحيلُ الصلاحية**: `/storage/v1` لم يكن في `API_PATHS`
+ * وشرطُ المضيف لا يطابق `api.takisa.net`، فكلُّ رابطٍ **موقَّع** لمرفق محادثةٍ
+ * أو دليلِ شكوى كان ينزل إلى فرع «الملفّات الساكنة» (الامتداد `.jpg`)،
+ * فيُخزَّن **بمفتاحِ الرابطِ الموقَّع كاملاً** ثم يُقدَّم من `cache.match`
+ * **بلا أي إعادة تحقّق** — أي أن رمزاً منتهيَ الصلاحية يظلّ يسلّم المحتوى من
+ * الجهاز أبداً، على جهازٍ قد يشترك فيه أكثرُ من شخص.
+ * (لم يصل شيءٌ إلى المخزون اليوم لأن الصور تُطلب `no-cors` فتعود مبهمةً
+ * (`status === 0`) فيرفضها شرطُ `status === 200` — أي أن الحمايةَ كانت **صفةً
+ * عارضةً في موضعَي تصيير** لا قاعدةً في المُوجِّه. سطرٌ واحد (`crossOrigin`)
+ * كان يكفي لإسقاطها.)
+ * و`/object/public` و`/render/image/public` يبقيان قابلَين للتخزين عمداً:
+ * صورُ العروض لا تتغيّر (اسمٌ فريد لكلّ ملفّ) وتخزينُها هو المطلوب.
+ */
+const isPrivateStorage = url =>
+  /^\/storage\/v1\/(?:object|render\/image)\/(?:sign|authenticated|upload)\//.test(url.pathname);
 
 const isApi = url =>
+  isPrivateStorage(url) ||
   API_PATHS.some(p => url.pathname.startsWith(p)) ||
-  (url.hostname.endsWith('supabase.co') && !url.pathname.startsWith('/storage/v1/object/public'));
+  (hostIs(url.hostname, 'supabase.co') && !url.pathname.startsWith('/storage/v1/object/public'));
+
+/**
+ * وجهةُ إشعارٍ داخليّة أو `null` — نفسُ حكم `src/utils/returnTo.ts`
+ * (`safeInternalPath`)، ولا سبيلَ لاستيراده هنا: العاملُ ملفٌّ مستقلّ لا
+ * تحزمه Parcel. فالقاعدةُ مكتوبةٌ مرّتين **بنصٍّ واحد** وكلتاهما مقيسة.
+ * 🪤 `//host` و`/\host` كلاهما يبدأ بشرطةٍ مائلة وكلاهما يخرج من الأصل
+ *    (المتصفّح يحوّل `\` إلى `/`)، فالحكمُ بحلّ المسار ومقارنةِ الأصل.
+ */
+const safePath = p => {
+  if (typeof p !== 'string' || !p.startsWith('/') || p.length > 512) return null;
+  try { return new URL(p, self.location.origin).origin === self.location.origin ? p : null; }
+  catch { return null; }
+};
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -257,7 +296,9 @@ self.addEventListener('push', event => {
   const title = payload.title || payload.titleAr || payload.titleEn || 'TAKI';
   const body  = payload.body  || payload.bodyAr  || payload.bodyEn  || '';
   const data  = payload.data || {};
-  const url   = data.dealId ? `/deal/${data.dealId}` : (data.url || '/profile');
+  // v15.79 — الوجهةُ تُفحَص عند المَصدر أيضاً، فلا يُخزَّن في الإشعار نفسه
+  // عنوانٌ يخرج من الموقع.
+  const url   = safePath(data.dealId ? `/deal/${data.dealId}` : data.url) || '/profile';
 
   event.waitUntil(self.registration.showNotification(title, {
     body,
@@ -272,7 +313,10 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || '/';
+  // 🔴 v15.79 — كان الرابطُ يُسلَّم إلى `c.navigate()` و`openWindow()` **بلا أي
+  // فحصٍ إطلاقاً**، وهو يأتي من بيانات الإشعار (`meta_data`). الشكلُ يُفحَص هنا
+  // أيضاً لا في المَصدر وحده: إشعاراتٌ قديمة ما زالت على الأجهزة.
+  const url = safePath(event.notification.data && event.notification.data.url) || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {

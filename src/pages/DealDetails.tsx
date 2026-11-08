@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStoreReviews } from '../hooks/useStoreReviews';
 import { goRegister } from '../utils/returnTo'; import { branchHasStock } from '../utils/locationQty'; import { bookingPreflight, preflightMessage, deliveryBlockReason } from '../utils/bookingPreflight';
+import { isMapUrl, directionsLink } from '../utils/mapLinks';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 // v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
@@ -1309,7 +1310,7 @@ const DealDetails: React.FC = () => {
     const moreReviewsAvailable = shownReviews.length < reviewTotal;
     const loc = getLocation(deal.locationId);
     const booked = isBooked(deal.id);
-    const images = deal.images.length > 0 ? deal.images : ['https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=800'];
+    const images = deal.images.length > 0 ? deal.images : ['/logo-mark.png'];
 
     // A deal is "sold out" only when the seller actually capped the stock and
     // bookings have drained it. Time-based offers (no cap) ignore quantity.
@@ -2339,13 +2340,12 @@ const DealDetails: React.FC = () => {
                         </div>
                         <button type="button" onClick={() => {
                             // Prefer the precise name-search link over approximate coordinates. v12.04
+                            // 🔴 v15.79 — رابطُ التاجر كان يُفتح خاماً (تحويلٌ غيرُ متحقَّقٍ منه). القاعدةُ `isMapUrl`، والشرحُ في scripts/check-map-link-gate.js
                             const link = branch ? (branch.googleMapsLink || null) : deal.googleMapsLink;
-                            if (link) { openExternalUrl(link); return; }
+                            if (isMapUrl(link)) { openExternalUrl(String(link).trim()); return; }
                             const lat = branch ? (branchKnown?.lat || branch.lat || 0) : (deal.mapLocation?.lat || loc?.lat || 0);
                             const lng = branch ? (branchKnown?.lng || branch.lng || 0) : (deal.mapLocation?.lng || loc?.lng || 0);
-                            if(lat && lng) {
-                                openExternalUrl(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
-                            }
+                            const href = directionsLink({ lat, lng }); if (href) openExternalUrl(href);
                         }} style={{ width: '100%', padding: '12px', borderRadius: 14, background: '#e0f2fe', color: '#0369a1', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s' }}>
                             🗺️ {isRTL ? 'الاتجاهات عبر خرائط جوجل' : 'Directions on Google Maps'}
                         </button>
@@ -2410,8 +2410,8 @@ const DealDetails: React.FC = () => {
 
                     {shownReviews.length > 0 ? shownReviews.map((r: any, i: number) => {
                         const ratingKey = r.id || `${r.userId}-${i}`;
-                        const liked = !!(user && r.likedBy && r.likedBy.includes(user.id));
-                        const canDelete = !!user && (user.id === r.userId || user.userType === 'admin');
+                        const liked = !!(user && (r.likedByMe === true || (Array.isArray(r.likedBy) && r.likedBy.includes(user.id))));   // v15.79: الشكلان — محسوبٌ من القاعدة، أو مصفوفةٌ من الجدول
+                        const canDelete = !!user && (r.isMine === true || user.id === r.userId || user.userType === 'admin');
                         const canReply = isOwner && !!r.id;
                         return (
                         <div key={ratingKey} style={{ padding: '16px 0', borderBottom: i < shownReviews.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>

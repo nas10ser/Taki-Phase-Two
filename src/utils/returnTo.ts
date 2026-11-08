@@ -13,15 +13,32 @@ const KEY = 'taki_return_to';
 /** المسارات التي لا يجوز أن تكون وجهة عودة: لأنها تُعيدك إلى الحلقة نفسها. */
 const BLOCKED = ['/register', '/complete-profile', '/login', '/auth'];
 
-const safe = (path: string | null | undefined): string | null => {
+/**
+ * مسارٌ داخليّ أو `null` — **الموضع الوحيد** لهذا الحكم في الواجهة.
+ *
+ * v15.79 — صُدِّرت لأن شاشةَ الإشعارات كانت تحمل نسخةً **أضعف**
+ * (`startsWith('/')` وحدها) فتقبل `//host` ⇒ وجهةً خارج الموقع.
+ *
+ * 🪤 وقِيس أن `startsWith('//')` وحدها **لا تكفي**: الشرطةُ المائلة العكسية
+ *    تُحوَّل إلى `/` في المخططات الخاصّة، فـ`new URL('/\\evil.com/x',
+ *    'https://www.takisa.net').href === 'https://evil.com/x'` — مسارٌ يبدو
+ *    داخلياً للعين وللشرط، وللمتصفّح مضيفٌ آخر. فالحكمُ بالقياس لا بالنمط:
+ *    يُحلّ المسارُ على أصلٍ وهميّ ويُشترط بقاءُ الأصل كما هو.
+ */
+export const safeInternalPath = (path: string | null | undefined): string | null => {
     if (!path || typeof path !== 'string') return null;
-    // مسار داخلي فقط. `//host` و`https://host` كلاهما يخرج من الموقع، و`//`
-    // خصوصاً يبدو داخلياً للعين وليس كذلك للمتصفّح.
-    if (!path.startsWith('/') || path.startsWith('//')) return null;
-    const base = path.split('?')[0].split('#')[0];
-    if (BLOCKED.some(b => base === b || base.startsWith(b + '/'))) return null;
-    if (path.length > 512) return null;
+    if (!path.startsWith('/') || path.length > 512) return null;
+    const BASE = 'https://taki.invalid';
+    try { if (new URL(path, BASE).origin !== BASE) return null; } catch { return null; }
     return path;
+};
+
+const safe = (path: string | null | undefined): string | null => {
+    const p = safeInternalPath(path);
+    if (!p) return null;
+    const base = p.split('?')[0].split('#')[0];
+    if (BLOCKED.some(b => base === b || base.startsWith(b + '/'))) return null;
+    return p;
 };
 
 export const returnTo = {

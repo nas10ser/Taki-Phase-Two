@@ -19,6 +19,17 @@
  * ٤. لا إحداثيات ولا رابط → لا زرّ. لا نعرض زرّاً يقود إلى لا شيء.
  *
  * كل واجهة تعرض «الاتجاهات» أو «الخريطة» تمرّ من هنا — الويب والبوتان.
+ *
+ * ── v15.79: والرابطُ المحفوظ **لا يُفتح قبل أن يُثبَت أنه خريطةُ قوقل** ──────
+ * 🔴 `google_maps_link` يكتبه التاجرُ نفسه (`deals_update_seller` و
+ *    `users_update_admin` كلتاهما عمياءُ الأعمدة، ولا قيدَ `CHECK` على القاعدة)،
+ *    وكان يُسلَّم حرفياً إلى `<a href>` تحت وسمٍ يقول «الاتجاهات عبر خرائط
+ *    جوجل» ⇒ **تحويلٌ غيرُ مُتحقَّق من صفحةٍ موثوقة**: صفحةُ دخولٍ مزيّفة
+ *    تحصد بريدَ المشتري وكلمتَه، والمستخدم يظنّ أنه ذاهبٌ إلى قوقل.
+ * 🪤 ولا يُكتب الحارسُ بنمطٍ نصّيّ: CLAUDE.md تسجّل حارساً بـ`[^/]*` قَبِل
+ *    `https://evil-takisa.net/`. فالتحليلُ بـ`new URL`، والمقارنةُ **تطابقٌ
+ *    تامّ أو لاحقةٌ مثبّتةٌ بالنقطة** (`h === host || h.endsWith('.' + host)`)،
+ *    و`https:` وحدها — ويُجرَّب سالباً قبل التصديق.
  */
 
 export interface MapPoint {
@@ -45,9 +56,38 @@ export const isNameSearchLink = (url?: string | null): boolean => {
     return !/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/.test(decodeURIComponent(u));
 };
 
+/**
+ * مضيفاتٌ **لا تخدم إلا الخرائط** — أيُّ مسارٍ عليها مقبول، فروابطُ المشاركة
+ * القصيرة (`maps.app.goo.gl/AbC`) بلا مسارٍ دالّ أصلاً.
+ */
+const MAP_ONLY_HOSTS = ['maps.app.goo.gl', 'maps.google.com', 'maps.google.com.sa'];
+/**
+ * مضيفاتُ قوقل **العامّة** — تُقبل بمسار `/maps` وحده.
+ * 🔴 وهذا ليس تزيّداً: `*.google.com` يحوي `sites.google.com` الذي **يستضيف
+ *    صفحةَ المهاجم نفسها** بلا أيّ وسيط، و`www.google.com/url?q=` محوّلٌ
+ *    مفتوح. فلاحقةُ النقطة وحدها تُبقي الثغرةَ مفتوحةً باسم قوقل.
+ */
+const GOOGLE_HOSTS = ['google.com', 'google.com.sa', 'goo.gl'];
+
+/** هل هذا رابطُ خرائطِ قوقل حقيقيّ؟ (الموضع الوحيد الذي يُسأل عن ذلك) */
+export const isMapUrl = (url?: string | null): boolean => {
+    const s = String(url || '').trim();
+    if (!s) return false;
+    let u: URL;
+    try { u = new URL(s); } catch { return false; }
+    if (u.protocol !== 'https:') return false;          // لا `javascript:` ولا `data:` ولا `http:`
+    const h = u.hostname.toLowerCase();
+    const is = (host: string) => h === host || h.endsWith('.' + host);
+    if (MAP_ONLY_HOSTS.some(is)) return true;
+    // `/maps` أو `/maps/...` — لا `/maps-evil`.
+    const onMapsPath = u.pathname === '/maps' || u.pathname.startsWith('/maps/');
+    return GOOGLE_HOSTS.some(is) && onMapsPath;
+};
+
 /** رابط يفتح المكان على الخريطة، أو '' إن لم يكن لدينا ما يُفتح. */
 export const placeLink = (p: MapPoint): string => {
-    const saved = String(p.googleMapsLink || '').trim();
+    // الرابطُ المحفوظ لا يُستعمل إلا إن كان خريطةَ قوقل؛ وإلّا فهو كالعدم.
+    const saved = isMapUrl(p.googleMapsLink) ? String(p.googleMapsLink).trim() : '';
     if (hasCoords(p)) {
         // رابط التاجر يفوز إلا أن يكون بحثاً بالاسم — عندها الإحداثي أوثق.
         if (saved && !isNameSearchLink(saved)) return saved;
@@ -58,11 +98,10 @@ export const placeLink = (p: MapPoint): string => {
 
 /** رابط ملاحة فعلية (اتجاهات القيادة) — نفس القاعدة. */
 export const directionsLink = (p: MapPoint): string => {
-    const saved = String(p.googleMapsLink || '').trim();
     if (hasCoords(p)) {
         return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
     }
-    return saved;
+    return isMapUrl(p.googleMapsLink) ? String(p.googleMapsLink).trim() : '';
 };
 
 /** إحداثيات صالحة للرسم على خريطة داخل التطبيق (أو null). */

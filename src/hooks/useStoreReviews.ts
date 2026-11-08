@@ -28,13 +28,24 @@ export interface StoreReview {
     repliedBy?: string;
     likeCount?: number;
     likedBy?: string[];
+    /**
+     * v15.79 — بوليانيّان يُحسبان في القاعدة بدل تسليم المعرّفات.
+     * 🔴 كانت `browse_store_ratings` تُعيد `SELECT rt.*`، أي `user_id`
+     *    (معرّفُ مصادقةِ المُقيِّم) و`liked_by` (معرّفاتُ كلّ من أعجبه) إلى
+     *    **أيّ زائرٍ مجهول** — فبترقيم المتاجر تُبنى خريطةُ «أيُّ حسابٍ قيَّم
+     *    أيَّ متجرٍ وأعجبه»، وهي بيانُ سلوكٍ شخصيّ لا حاجةَ للشاشة به.
+     * 🪤 والشاشةُ تدمج صفوفَ هذه الدالّة بصفوفٍ تُقرأ من الجدول مباشرةً
+     *    (ولها الشكلُ الكامل)، فالقارئُ يقبل الشكلين كليهما.
+     */
+    isMine?: boolean;
+    likedByMe?: boolean;
 }
 
 const fromRow = (r: any): StoreReview => ({
     id: r.id,
     dealId: r.deal_id,
     itemName: r.item_name ?? undefined,
-    userId: r.user_id,
+    userId: r.user_id ?? '',          // لم تعُد الدالّةُ تُسلّمه — `isMine` بديله
     userName: r.user_name,
     score: Number(r.score) || 0,
     comment: r.comment ?? '',
@@ -47,8 +58,11 @@ const fromRow = (r: any): StoreReview => ({
     repliedBy: r.replied_by ?? undefined,
     likeCount: Number(r.like_count) || 0,
     // بلا هذا يظهر إعجابُ المستخدم مُلغًى على الصفحات المجلوبة من الخادم،
-    // فيضغط مرّة ثانية ويُلغي إعجابه وهو يظنّ أنه يضيفه.
+    // فيضغط مرّة ثانية ويُلغي إعجابه وهو يظنّ أنه يضيفه. والقاعدةُ تحسبه
+    // الآن (`liked_by_me`) فلا تُسلَّم مصفوفةُ المعجبين إلى أحد.
     likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
+    likedByMe: r.liked_by_me === true,
+    isMine: r.is_mine === true,
 });
 
 export function useStoreReviews(storeId: string | undefined, enabled = true) {

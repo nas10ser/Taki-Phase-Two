@@ -4,6 +4,9 @@
  */
 
 const { tr } = require('./i18n');   // request-scoped translation (ar/en) — v11.85
+// 🪤 قراءةُ الجسم موضعٌ واحدٌ للمشروع كلّه (`lib/httpDeadline.js`): كانت هنا
+//    نسخةٌ ثانية، ونسختان تنحرفان — وهذا بالضبط ما كلّف `chatView.js`.
+const { readCapped } = require('./httpDeadline');
 
 function haversineKm(la1, lo1, la2, lo2) {
     const R = 6371, dLa = (la2 - la1) * Math.PI / 180, dLo = (lo2 - lo1) * Math.PI / 180,
@@ -31,28 +34,112 @@ function extractFromMapsUrl(url) {
     } catch { /* ignore */ }
     return null;
 }
+// ═══════════════════════════════════════════════════════════════════════════
+//  v15.79 — موضعُ القرار الوحيد: مَن يجوز جلبُه، وكم بايتاً، وإلى متى.
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 **الكلفة مقيسة لا مفترضة.** رسالةٌ نصّيةٌ واحدة من غريبٍ على تيليجرام —
+//    بلا حساب تاكي ولا ربط — كانت تقتل عمليّةَ البوت كلّها: جلسةُ الغريب
+//    `step:'idle'` فيدخل فرعُ الموقع، و`clearTimeout` كان **قبل** قراءة
+//    الجسم فتُلغى مهلةُ الثماني ثوانٍ لحظةَ وصول الترويسات، ثم `r.text()`
+//    يُجمّع بثّاً مفتوحاً بلا سقف. قِيس على خادمٍ معاديّ محلّيّ:
+//    `RESULT <NEVER-RETURNED> elapsed_s 25.0+ rss_before_MiB 34 rss_peak_MiB 761`
+//    وRender المجّانيّة ٥١٢ م.ب ⇒ قتلٌ بنظام التشغيل قبل الثانية العاشرة،
+//    ولا يُمسكه `uncaughtException`. وتموت معها حلقاتُ الإشعارات والبريد
+//    والمخزون. فالعلاجُ نصفان لا نصف: المهلة في `finally` **و**سقفُ بايتات.
+//
+// 🔴 **ولا قائمةَ مضيفين كانت أصلاً.** `redirect:'follow'` + فحصُ نصٍّ على
+//    الرابط كلّه (`?q=` أو `/maps`) جعل البوت وكيلَ GET مفتوحاً إلى
+//    `127.0.0.1` و`169.254.169.254` وشبكةِ جدة الخاصّة `10.0.1.0/24`.
+//    🪤 والقرار هنا **وحده**: كان في `bot.js` تعبيرٌ نمطيٌّ ثانٍ يحرس
+//       المدخل، و`sellerDeals.js`/`whatsapp.js` تناديان بلا أيّ حارس —
+//       أي ثلاثةُ أبوابٍ لبابٍ واحد. (درسُ `chatView.js`: نسختان تنحرفان.)
+//    🪤 ودرسُ v14.71: حارسٌ بـ`[^/]*` يقبل `https://evil-takisa.net/`.
+//       فالمطابقةُ هنا **على اسم المضيف بعد `new URL`**، مساواةً تامّة أو
+//       لاحقةً **مثبَّتةً بالنقطة** — و`evil-google.com` يُرفض لأنه لا
+//       ينتهي بـ`.google.com`، و`google.com.evil.test` لأنه لا يساويه.
+//    🪤 و**كلُّ قفزة** تُفحص: رابطُ جوجل المختصر يُنشئه أيُّ أحدٍ ويوجّهه
+//       حيث شاء، فالفحصُ الأوّل وحده يحرس البابَ ويترك النافذة.
+//
+// 🪤 ونظيرُها على الويب `api/resolve-map.js` (حُصّن في v14.54 ولم يُنقل
+//    الدرسُ إلى البوت). ولا يُستورَد من هنا: Render تنشر `rootDir: server`
+//    فلا يوجد `api/` في شجرة التشغيل إطلاقاً.
+const MAP_HOSTS = [
+    'maps.app.goo.gl', 'goo.gl', 'g.co',
+    'google.com', 'google.com.sa', 'google.co.uk', 'google.ae',
+];
+const MAX_BODY = 512 * 1024;   // سقفُ جسمِ الصفحة — الإحداثيّة في أوّلها دائماً
+const MAX_HOPS = 3;
+
+/**
+ * 🪤 الفحصُ على النصّ (`/^https?:\/\/127\./`) ليس فحصاً: `127.1` و
+ *    `2130706433` و`0x7f000001` كلُّها المضيفُ المحلّيّ ولا يطابقها.
+ *    (منسوخٌ سلوكاً من `api/resolve-map.js` — نفس الحالات مُختبَرة هناك.)
+ */
+function isPrivateHost(hostname) {
+    const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+    if (!h) return true;
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+    if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80') || h.includes(':')) return true;
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+    if (m) {
+        const a = Number(m[1]), b = Number(m[2]);
+        if (a === 0 || a === 10 || a === 127 || a >= 224) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 169 && b === 254) return true;   // بيانات وصف السحابة
+        return false;
+    }
+    // شكلٌ رقميّ غير منقّط (عشري/ثماني/ستّ عشري) = تحايلٌ لا عنوانُ خرائط.
+    if (/^(0x[0-9a-f]+|\d+)$/.test(h)) return true;
+    return false;
+}
+
+/** يُرجع كائن URL إن جاز جلبُه، و`null` بأيّ سببٍ آخر — قبل فتح أيّ مقبس. */
+function mapUrlOk(raw) {
+    let u;
+    try { u = new URL(String(raw || '')); } catch { return null; }
+    if (u.protocol !== 'https:') return null;      // لا http: ولو لمضيفٍ مسموح
+    if (isPrivateHost(u.hostname)) return null;
+    const h = u.hostname.toLowerCase();
+    const allowed = MAP_HOSTS.some(d => h === d || h.endsWith('.' + d));
+    return allowed ? u : null;
+}
+
 // يقبل إحداثيات مباشرة، رابط ماب كامل، أو رابط قصير (maps.app.goo.gl / goo.gl/maps —
-// يتبعه ويحلّله). v11.95: مهلة أطول + ترويسات تتجاوز صفحة الموافقة (consent) +
-// تحليل final URL ثم جسم الصفحة، لأن الروابط المختصرة كانت تفشل في تيليجرام.
+// يتبعه ويحلّله). v11.95: ترويسات تتجاوز صفحة الموافقة (consent) + تحليل
+// العنوان النهائي ثم جسم الصفحة، لأن الروابط المختصرة كانت تفشل في تيليجرام.
 async function resolveGoogleLocation(text) {
     const t = String(text || '').trim();
     const direct = parseLatLng(t);       if (direct) return direct;
     const inUrl  = extractFromMapsUrl(t); if (inUrl) return inUrl;
-    if (/^https?:\/\//i.test(t)) {
-        try {
-            const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 8000);
-            const r = await fetch(t, { redirect: 'follow', signal: ctrl.signal, headers: {
+    let u = mapUrlOk(t);
+    if (!u) return null;                 // ← القرارُ كلُّه هنا، قبل أيّ شبكة
+    // 🪤 والمهلةُ تُسلَّح مرّةً واحدةً على **كلّ** القفزات: مهلةٌ لكلّ قفزة
+    //    تجمع ثلاثةَ أضعافِ ما ينتظره المستخدم.
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 8000);
+    try {
+        for (let hop = 0; hop < MAX_HOPS; hop++) {
+            const r = await fetch(u.toString(), { redirect: 'manual', signal: ctrl.signal, headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
                 'Cookie': 'CONSENT=YES+cb',   // يتجاوز صفحة موافقة قوقل في بعض المناطق
             } });
-            clearTimeout(to);
-            const fromFinal = extractFromMapsUrl(r.url || t); if (fromFinal) return fromFinal;
-            const body = await r.text().catch(() => '');
-            const fromBody = extractFromMapsUrl(body); if (fromBody) return fromBody;
-        } catch { /* network/timeout → give up */ }
-    }
-    return null;
+            const loc = (r.status >= 300 && r.status < 400) ? r.headers.get('location') : null;
+            if (loc) {
+                try { await r.body?.cancel(); } catch { /* بلا جسم */ }
+                const next = mapUrlOk(new URL(loc, u).toString());
+                if (!next) return null;      // ← تحويلٌ خرج من القائمة: يُوقف ولا يُتبع
+                u = next;
+                const fromHop = extractFromMapsUrl(u.toString()); if (fromHop) return fromHop;
+                continue;
+            }
+            const fromFinal = extractFromMapsUrl(r.url || u.toString()); if (fromFinal) return fromFinal;
+            return extractFromMapsUrl(await readCapped(r, MAX_BODY));
+        }
+        return null;
+    } catch { return null; /* شبكة/مهلة → لا موقع */ }
+    finally { clearTimeout(to); }          // ← تُغطّي الجسمَ لا الترويسات
 }
 
 // v13.66 — رابط «بحث بالاسم» في قوقل ماب: أي رابط بحث لا يحمل زوج إحداثيات.
@@ -94,9 +181,14 @@ async function driveInfo(geo, d) {
     const straight = haversineKm(geo.lat, geo.lng, d.map_lat, d.map_lng);
     try {
         const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 2500);
-        const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${geo.lng},${geo.lat};${d.map_lng},${d.map_lat}?overview=false`, { signal: ctrl.signal });
-        clearTimeout(to); const j = await r.json(); const rt = j && j.routes && j.routes[0];
-        if (rt) return { km: rt.distance / 1000, min: Math.max(1, Math.round(rt.duration / 60)), straight, est: false };
+        // 🪤 و`clearTimeout` كان **قبل** `r.json()` هنا أيضاً: نفسُ عيبِ
+        //    `resolveGoogleLocation` بدرجةٍ أخفّ — العنوانُ ليس بيد المستخدم،
+        //    لكن `router.project-osrm.org` طرفٌ ثالثٌ مجّانيّ يتعلّق جسمُه.
+        try {
+            const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${geo.lng},${geo.lat};${d.map_lng},${d.map_lat}?overview=false`, { signal: ctrl.signal });
+            const j = JSON.parse(await readCapped(r, MAX_BODY) || "null"); const rt = j && j.routes && j.routes[0];
+            if (rt) return { km: rt.distance / 1000, min: Math.max(1, Math.round(rt.duration / 60)), straight, est: false };
+        } finally { clearTimeout(to); }
     } catch { /* OSRM down / slow → estimate */ }
     const km = straight * 1.3; return { km, min: Math.max(1, Math.round(km / 0.6)), straight, est: true };
 }
@@ -126,3 +218,5 @@ module.exports = {
     haversineKm, fmtKm, parseLatLng, extractFromMapsUrl, resolveGoogleLocation,
     placeLink, dirLink, driveInfo, remainingText, durationEndsAt,
 };
+// تُصدَّر للاختبار وحده: ضابطُ أمانٍ بلا اختبارٍ سالب ضابطٌ مجهول.
+module.exports._internals = { mapUrlOk, isPrivateHost, MAP_HOSTS, MAX_BODY, MAX_HOPS };

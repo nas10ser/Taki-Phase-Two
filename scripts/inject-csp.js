@@ -20,6 +20,34 @@
  *    الطرفية. يُحذف من النسخة المحقونة وحدها — ويبقى في الترويسة حيث يعمل.
  * 🪤 ولا تعمل هذه الخطوة على `index.html` في المستودع أبداً: التطوير المحلّي
  *    بلا سياسة عمداً (ولذلك كانت عناوين `ws://` هناك أصلاً).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 v15.79 — قاعدةُ المعاينة تخرج من سياسة الإنتاج (S8-04)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ما كان: `connect-src` تسمح بـ`https://*.supabase.co` و`wss://*.supabase.co`
+ * — **نمطٌ يستطيع أيُّ إنسانٍ أن يسجّل مضيفاً داخله** في دقيقتين بمشروعٍ
+ * مجّانيّ. أي أنّ سياسةَ الأمان، التي وظيفتُها منعُ البيانات من الخروج لحظةَ
+ * وقوع تنفيذِ سكربتٍ على أصلنا، كانت تحمل **نقطةَ تصريفٍ جاهزة**. ولم يكن
+ * النمطُ للإنتاج أصلاً: الإنتاج يتكلّم `api.takisa.net` وحده، والنمطُ موجودٌ
+ * من أجل بيئة المعاينة (قاعدةُ طوكيو).
+ *
+ * ما صار، على خطوتين لأن **الترويسةَ واحدةٌ للبيئتين**:
+ *   ١) في `vercel.json` أُسقط النمطُ وحلَّ مكانَه **مضيفُ المعاينة بعينه**
+ *      (`kbmqzxcjdankdgiovctm.supabase.co`). فزال الثقبُ الأصليّ: لا أحدَ
+ *      يستطيع تسجيلَ هذا المضيف — هو لنا.
+ *   ٢) وهنا: يُحذف ذلك المضيفُ من النسخة المحقونة **إلّا في بناء المعاينة**
+ *      (`VERCEL_ENV === 'preview'`، تحقنها Vercel تلقائياً كما في
+ *      `scripts/preview-env.js`).
+ *
+ * 🪤 ولماذا تكفي الخطوةُ الثانية مع أن الترويسةَ تحمل المضيف: المتصفّح
+ *    يُنفّذ **كلَّ** سياسةٍ يستلمها، والمطلوبُ هو **تقاطعُها** لا اتّحادُها
+ *    (CSP §«Multiple policies»). فمضيفٌ في الترويسة وغائبٌ عن الـmeta =
+ *    **محجوبٌ فعلاً** في الإنتاج. وفي المعاينة يحضر في الاثنتين فيعمل.
+ *    والوسمُ يُدسّ بعد `<meta charset>` مباشرةً — قبل أيّ مورد — فالتقاطعُ
+ *    سارٍ على كلّ طلبٍ بلا استثناء.
+ * 🪤 ولا يُستعمل شرطُ `has: host` في `vercel.json` بدلاً من هذا: ترويستان
+ *    بنفس المفتاح تُنتجان سياستين تتقاطعان أيضاً، وسلوكُ الدمج عند Vercel
+ *    لا يُقاس إلّا بنشرةٍ فعليّة — فاخترتُ ما أستطيع قياسَه هنا.
  */
 
 const fs = require('fs');
@@ -27,6 +55,25 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const distFile = path.join(root, 'dist', 'index.html');
+
+/**
+ * مضيفُ قاعدة المعاينة — **مثبَّتٌ بعينه لا بنمط**، ونفسُه في
+ * `scripts/preview-env.js`. و`scripts/check-csp.js` يرفض انحرافَ الاثنين.
+ */
+const PREVIEW_DB_HOST = 'kbmqzxcjdankdgiovctm.supabase.co';
+
+/** يُسقط كلَّ وسمٍ يشير إلى مضيف المعاينة من كلّ توجيه. */
+function stripPreviewHost(pol) {
+    return pol
+        .split(';')
+        .map((d) => d
+            .trim()
+            .split(/\s+/)
+            .filter((tok) => tok !== `https://${PREVIEW_DB_HOST}` && tok !== `wss://${PREVIEW_DB_HOST}`)
+            .join(' '))
+        .filter(Boolean)
+        .join('; ');
+}
 
 /** يقرأ السياسة من مصدرها الوحيد. */
 function policyFromVercelJson() {
@@ -69,11 +116,24 @@ if (html !== before) {
 }
 
 // النسخة المحقونة بلا `frame-ancestors` (يتجاهله meta) — والترويسة تحمله.
-const metaPolicy = policy
+let metaPolicy = policy
     .split(';')
     .map((d) => d.trim())
     .filter((d) => d && !/^frame-ancestors\b/i.test(d))
     .join('; ');
+
+// ── قاعدةُ المعاينة: تبقى في بناء المعاينة وتُحذف من كلّ بناءٍ آخر ──────────
+const isPreview = process.env.VERCEL_ENV === 'preview';
+if (isPreview) {
+    console.log(`  ↳ بناءُ معاينة (VERCEL_ENV=preview) — أُبقي مضيفُ قاعدة المعاينة ${PREVIEW_DB_HOST}`);
+} else {
+    const trimmed = stripPreviewHost(metaPolicy);
+    if (trimmed !== metaPolicy) {
+        metaPolicy = trimmed;
+        console.log(`  ↳ أُسقط مضيفُ قاعدة المعاينة (${PREVIEW_DB_HOST}) من النسخة المحقونة`
+            + ' — فتقاطعُ الترويسة والـmeta يحجبه فعلاً.');
+    }
+}
 
 const tag = `<meta http-equiv="Content-Security-Policy" content="${metaPolicy.replace(/"/g, '&quot;')}">`;
 

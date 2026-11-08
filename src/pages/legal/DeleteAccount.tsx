@@ -65,11 +65,11 @@ const DeleteAccount: React.FC = () => {
                 <Bullets items={isRTL ? [
                     <><strong>فوراً:</strong> يُعطَّل حسابُك وتُخفى عروضُك إن كنت تاجراً، ويُسجَّل خروجُك من كل الأجهزة.</>,
                     <><strong>خلال مهلة التراجع:</strong> إن سجّلت الدخول مرّةً أخرى فستُعرض عليك استعادةُ الحساب. المهلةُ منصوصةٌ في <Link to="/privacy" className="underline font-bold">سياسة الخصوصية</Link> (القسم ٧).</>,
-                    <><strong>بعد المهلة:</strong> تُمحى بياناتُك الشخصية محواً لا رجعةَ فيه — الاسمُ والبريدُ والجوّالُ والعناوينُ وإحداثياتُها واسمُك تحت تقييماتك، وصفُّ المصادقة وجلساتُه.</>,
+                    <><strong>بعد المهلة:</strong> تُمحى بياناتُك الشخصية محواً لا رجعةَ فيه — الاسمُ والبريدُ والجوّالُ والعناوينُ وإحداثياتُها واسمُك تحت تقييماتك، وصفُّ المصادقة وجلساتُه. ويُحذف <strong>سجلُّ مصادقة الدخول</strong> (وهو سجلُّ أوقاتِ الدخول وطلباتِ استعادة كلمة المرور) في مدّته المنشورة في <Link to="/privacy" className="underline font-bold">سياسة الخصوصية</Link> (القسم ٧).</>,
                 ] : [
                     <><strong>Immediately:</strong> your account is deactivated, your deals are hidden if you are a merchant, and you are signed out of every device.</>,
                     <><strong>During the undo window:</strong> signing in again offers to restore the account. The window is stated in the <Link to="/privacy" className="underline font-bold">Privacy Policy</Link> (section 7).</>,
-                    <><strong>After the window:</strong> your personal data is irreversibly erased — name, email, phone, saved addresses and their coordinates, your name under your reviews, and your authentication record and sessions.</>,
+                    <><strong>After the window:</strong> your personal data is irreversibly erased — name, email, phone, saved addresses and their coordinates, your name under your reviews, and your authentication record and sessions. The <strong>sign-in audit log</strong> (the record of sign-in times and password-recovery requests) is deleted within the period published in the <Link to="/privacy" className="underline font-bold">Privacy Policy</Link> (section 7).</>,
                 ]} />
             </Section>
 

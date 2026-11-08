@@ -82,11 +82,11 @@ function create(deps) {
     // ── الإرسال منخفض المستوى (no-op حتى تُضبط البيانات) ──────────────────────
     // v12.77 — مهلة ١٥ ثانية على كل نداء خارجي: اتصال معلّق كان يجمّد
     // معالجة رسالة المستخدم بلا نهاية.
-    const fetchWithTimeout = (url, opts = {}) => {
-        const c = new AbortController();
-        const t = setTimeout(() => c.abort(), 15_000);
-        return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
-    };
+    // 🔴 v15.79 — وكان توأماً حرفياً لنسخة `bot.js`، وفيهما نفسُ العيب:
+    //    `.finally(clearTimeout)` تُمسح المهلةَ عند الترويسات، فـ`r.json()`
+    //    و`r.text()` بعدها بلا مهلةٍ إطلاقاً. صارت موضعاً واحداً — ونسختان
+    //    تنحرفان (درسُ `chatView.js`). التفصيلُ في `lib/httpDeadline.js`.
+    const { fetchWithDeadline: fetchWithTimeout } = require('../lib/httpDeadline');
     async function sendWA(to, payload) {
         if (!enabled()) return null;
         try {
