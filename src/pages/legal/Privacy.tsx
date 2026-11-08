@@ -64,11 +64,11 @@ const Privacy: React.FC = () => {
 
             <Section n={1} title={isRTL ? 'نطاق السياسة' : 'Scope of the policy'}>
                 <Bullets items={isRTL ? [
-                    'تنطبق هذه السياسة على كلّ من يصل إلى منصّة TAKI، سواء عبر الموقع أو تطبيق الهاتف الجوّال أو عبر بوت تاكي على تيليجرام وواتساب، وسواء كان مشترياً أو تاجراً أو زائراً غير مُسجَّل.',
+                    'تنطبق هذه السياسة على كلّ من يصل إلى منصّة TAKI، سواء عبر الموقع أو تطبيق الهاتف الجوّال، وسواء كان مشترياً أو تاجراً أو زائراً غير مُسجَّل.',
                     'تُكمِّل هذه السياسة شروط الاستخدام وسياسة الاسترداد، وتُقرَأ معها كوثيقة واحدة متكاملة.',
                     'قد يَشتمل الموقع على روابط لمواقع أو خدمات الغير. لا نَتحكّم بسياسات الغير ولا نَتحمّل مسؤوليتها — يُرجى مراجعة سياسة الخصوصية الخاصّة بكلّ موقع تَزوره.',
                 ] : [
-                    'This policy applies to anyone who accesses the TAKI platform — whether through the website, the mobile app, or the TAKI bot on Telegram and WhatsApp — and whether buyer, merchant or unregistered visitor.',
+                    'This policy applies to anyone who accesses the TAKI platform — whether through the website or mobile app, and whether buyer, merchant or unregistered visitor.',
                     'It complements the Terms of Service and the Refund Policy and is read together with them as a single integrated document.',
                     'The platform may contain links to third-party sites or services. We do not control third-party policies and bear no responsibility for them — please review the privacy policy of each site you visit.',
                 ]} />
@@ -92,7 +92,6 @@ const Privacy: React.FC = () => {
                     <><strong>بيانات التوصيل</strong> (عند طلب التوصيل فقط): عنوان التسليم ووصفه ومدينته وجوّال التواصل وإحداثياته. يُحفظ داخل الطلب لأنّه جزء من مستنده وفاتورته. ويمكنك حفظ عناوين في حسابك لتسهيل الطلب التالي، وحذفها متى شئت.</>,
                     <><strong>موقع مندوب التوصيل اللحظي</strong>: يُبثّ من جهاز التاجر أو مندوبه بعد إعلان الانطلاق، ويُعرض <strong>لمشتري ذلك الطلب وحده</strong>. لا نحفظ مسار الرحلة — آخر نقطة فقط — وتُمحى فور إغلاق الطلب، ويُحذف سجلّ التتبّع بعد ساعة.</>,
                     <><strong>بيانات الموافقات القانونية</strong>: تاريخ ووقت موافقتك على الشروط والسياسات، وإصدار الوثائق الذي وافقت عليه، وإقرارك بالسنّ، وعنوان الإنترنت ونوع المتصفّح وقت الموافقة — دليلاً على التوقيع الإلكتروني.</>,
-                    <><strong>بيانات قنوات المراسلة</strong> (إن اخترت استخدام بوت تاكي على تيليجرام أو واتساب): مُعرِّفك ومُعرِّف محادثتك على تلك القناة — <strong>وهو رقم جوّالك في حالة واتساب</strong> — ولغتك المفضّلة فيها، ومحتوى رسائلك في المحادثة، وموقعك إن شاركته من داخلها لعرض العروض القريبة وكنت مشترياً (يُحفظ في حسابك كما لو شاركته من التطبيق). ويُربط حسابك بالقناة برمزٍ مؤقّت تُصدره أنت من التطبيق، ويُفصل في أيّ وقت بأمر «تسجيل الخروج» في البوت (<code>/logout</code> في تيليجرام، أو «تسجيل الخروج» من قائمة واتساب).</>,
                 ] : [
                     <><strong>Identity and contact data</strong>: name, mobile number, email, account type (buyer or merchant).</>,
                     <><strong>Merchant data</strong>: store name, activity category, location, branches, images, and what is needed to verify the commercial activity.</>,
@@ -105,7 +104,6 @@ const Privacy: React.FC = () => {
                     <><strong>Delivery data</strong> (only when you request delivery): the delivery address, its description, city, contact mobile and coordinates. It is stored inside the order because it forms part of its record and invoice. You may also save addresses in your account for the next order and delete them whenever you wish.</>,
                     <><strong>Live courier location</strong>: broadcast from the merchant\'s or courier\'s device after departure is declared, and visible to <strong>that order\'s buyer alone</strong>. We do not keep a route — only the last point — it is erased the moment the order closes, and the tracking record is deleted one hour later.</>,
                     <><strong>Consent records</strong>: the date and time of your acceptance, the document version you accepted, your age attestation, and the IP address and browser at the time of consent — as evidence of the electronic signature.</>,
-                    <><strong>Messaging-channel data</strong> (only if you choose to use the TAKI bot on Telegram or WhatsApp): your identifier and your chat identifier on that channel — <strong>which is your mobile number in the case of WhatsApp</strong> — your preferred language there, the content of your messages in the chat, and your location if you share it from inside the chat to see nearby offers and you are a buyer (it is saved to your account exactly as if you had shared it from the app). Your account is linked to the channel by a short-lived code that you issue yourself from the app, and unlinked at any time with the bot&apos;s log-out command (<code>/logout</code> on Telegram, or «Log out» from the WhatsApp menu).</>,
                 ]} />
                 <Paragraph>
                     {isRTL ? (
@@ -130,12 +128,10 @@ const Privacy: React.FC = () => {
                     <><strong>مباشرة منك</strong>: عند التسجيل، الحجز، النشر، التقييم، الشكاوى، أو أيّ تفاعل تَختار القيام به على المنصّة.</>,
                     <><strong>تلقائياً</strong>: عند استخدامك للمنصّة، تَجمع الأنظمة لدينا — كحال أيّ منصّة رقمية — معلومات تقنية أساسية عن جلستك وجهازك لأغراض التشغيل والأمان.</>,
                     <><strong>من الغير</strong>: قد تَردنا بيانات محدّدة من بوّابات الدفع المرخّصة أو من مزوّدي خدمات تسجيل الدخول الموحَّد عند استخدامك لهم.</>,
-                    <><strong>عبر قنوات المراسلة</strong>: ما تَكتبه أو تُشاركه داخل محادثتك مع بوت تاكي على تيليجرام أو واتساب.</>,
                 ] : [
                     <><strong>Directly from you</strong>: when you register, book, publish, rate, complain, or otherwise interact with the platform.</>,
                     <><strong>Automatically</strong>: when you use the platform, our systems — as on any digital platform — collect basic technical information about your session and device for operational and security purposes.</>,
                     <><strong>From third parties</strong>: we may receive specific data from licensed payment gateways or single-sign-on providers when you choose to use them.</>,
-                    <><strong>Through messaging channels</strong>: whatever you write or share inside your chat with the TAKI bot on Telegram or WhatsApp.</>,
                 ]} />
             </Section>
 
@@ -329,10 +325,6 @@ const Privacy: React.FC = () => {
                             خدمات قد تَكون مَواقعهم خارج المملكة. وفي جميع الأحوال، نَلتزم
                             بأن يَتمّ ذلك وفقاً لأحكام نظام حماية البيانات الشخصية ولوائحه،
                             ووفق الضمانات التي تَقتضيها الأنظمة المعمول بها.
-                            {' '}ومن ذلك <strong>قناتا المراسلة</strong> إن استخدمتهما:
-                            تيليجرام وواتساب (Meta) — تَمرّ بخوادمهما خارج المملكة رسائلُنا
-                            إليك ومُعرِّفُ محادثتك وما يَلزم تنفيذَ طلبك من اسمٍ وجوّالٍ
-                            وعنوانِ تسليمٍ وتفاصيلِ فاتورة، وتَخضع لسياسة خصوصية كلٍّ منهما.
                         </>
                     ) : (
                         <>
